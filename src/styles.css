@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #20242a;
+  background: #f5f7f9;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.heading-balance {
+  text-wrap: balance;
+}
+
+.surface-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 252, 0.9));
+  border-color: #d8dee5;
+  box-shadow: 0 16px 42px rgba(31, 41, 55, 0.07);
+}
+
+.surface-panel {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(148, 163, 184, 0.16), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.88));
+  border-color: #d8dee5;
+  box-shadow: 0 28px 80px rgba(31, 41, 55, 0.13);
+}
+
+.surface-accent {
+  background: linear-gradient(145deg, #171b21, #26313d);
+  border-color: #2f3a46;
+  box-shadow: 0 18px 44px rgba(31, 41, 55, 0.18);
+}
+
+.surface-section {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(148, 163, 184, 0.12), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(239, 244, 248, 0.72));
+}
+
+.floating-particles {
+  contain: paint;
+  z-index: 0;
+}
+
+.floating-particle {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(83, 103, 122, 0.22), rgba(148, 163, 184, 0.1) 54%, transparent 74%);
+  filter: blur(0.55px);
+  opacity: calc(var(--particle-opacity) * 0.56);
+  transform: translate3d(0, 0, 0);
+  animation: particle-float var(--duration) ease-in-out var(--delay) infinite;
+}
+
+.premium-button {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.16) inset,
+    0 14px 30px rgba(31, 41, 55, 0.12);
+}
+
+.reveal {
+  animation: reveal-up 0.8s ease both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 28%;
+}
+
+@supports not (animation-timeline: view()) {
+  .reveal {
+    animation-timeline: auto;
+  }
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes particle-float {
+  0% {
+    opacity: calc(var(--particle-opacity) * 0.6);
+    transform: translate3d(0, 0, 0) scale(0.96);
+  }
+
+  35% {
+    opacity: calc(var(--particle-opacity) + 0.015);
+    transform: translate3d(calc(var(--drift-x) * 0.45), calc(var(--drift-y) * -0.35), 0) scale(1.08);
+  }
+
+  70% {
+    opacity: var(--particle-opacity);
+    transform: translate3d(calc(var(--drift-x) * -0.25), calc(var(--drift-y) * 0.55), 0) scale(0.94);
+  }
+
+  100% {
+    opacity: calc(var(--particle-opacity) * 0.68);
+    transform: translate3d(var(--drift-x), var(--drift-y), 0) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .floating-particle,
+  .floating-particles {
+    animation: none !important;
+  }
+
+  .floating-particle {
+    opacity: 0.08 !important;
+  }
+}
+
+
