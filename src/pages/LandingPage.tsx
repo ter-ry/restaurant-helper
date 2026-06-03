@@ -13,7 +13,10 @@ import {
   Truck,
 } from "lucide-react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { trackEvent } from "../lib/analytics";
+import { submitForm } from "../lib/formSubmission";
 
 const navLinks = [
   ["Problem", "#problem"],
@@ -106,11 +109,6 @@ const pilotSteps = [
   },
 ];
 
-function handleFeedbackSubmit(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
-  window.alert("Thanks - your feedback has been recorded locally for demo purposes.");
-}
-
 function SectionHeading({
   eyebrow,
   title,
@@ -145,6 +143,11 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const inputClass =
   "min-h-11 rounded-lg border border-[#d8dee5] bg-[#ffffff] px-3 py-2 text-sm text-[#20242a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#53677a] focus:ring-4 focus:ring-[#dbe5ef]";
 
+type SubmissionState = {
+  type: "idle" | "success" | "error";
+  message: string;
+};
+
 function FloatingParticles() {
   return (
     <div className="floating-particles pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
@@ -171,6 +174,41 @@ function FloatingParticles() {
 }
 
 export function LandingPage() {
+  const [submission, setSubmission] = useState<SubmissionState>({ type: "idle", message: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formStartedRef = useRef(false);
+
+  const handleFormStarted = () => {
+    if (formStartedRef.current) {
+      return;
+    }
+
+    formStartedRef.current = true;
+    trackEvent("form_started", { form: "feedback" });
+  };
+
+  const handleFeedbackSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setSubmission({ type: "idle", message: "" });
+
+    try {
+      const result = await submitForm(event.currentTarget, "feedback");
+      setSubmission({ type: "success", message: result.message });
+      trackEvent("form_submitted", { form: "feedback", mode: result.mode });
+      event.currentTarget.reset();
+      formStartedRef.current = false;
+    } catch {
+      setSubmission({
+        type: "error",
+        message: "Sorry, the form could not be sent. Please try again or contact us directly.",
+      });
+      trackEvent("form_submission_error", { form: "feedback" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f5f7f9] text-[#20242a]">
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_16%_12%,rgba(96,115,135,0.14),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(31,37,45,0.08),transparent_36%),linear-gradient(135deg,#fbfcfd_0%,#f1f4f7_42%,#e7edf2_100%)]" />
@@ -192,6 +230,7 @@ export function LandingPage() {
           </nav>
           <a
             href="#contact"
+            onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "header" })}
             className="premium-button inline-flex min-h-10 items-center justify-center rounded-lg bg-[#171b21] px-4 py-2 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
             Tell us what wastes time
@@ -200,7 +239,7 @@ export function LandingPage() {
       </header>
 
       <section className="relative z-10 overflow-hidden border-b border-[#d8dee5] bg-gradient-to-br from-[#fbfcfd]/90 via-[#f1f4f7]/80 to-[#e7edf2]/82">
-        <div className="relative z-10 mx-auto grid min-h-[calc(100vh-73px)] max-w-7xl items-center gap-10 px-5 py-12 md:py-16 lg:grid-cols-[1fr_0.9fr] lg:px-8">
+        <div className="hero-grid relative z-10 mx-auto grid min-h-[calc(100vh-73px)] max-w-7xl items-center gap-10 px-5 py-12 md:py-16 lg:grid-cols-[1fr_0.9fr] lg:px-8">
           <div className="reveal">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-white/84 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4" />
@@ -228,6 +267,7 @@ export function LandingPage() {
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
                 href="#contact"
+                onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "hero" })}
                 className="premium-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
               >
                 <MessageSquareText className="h-4 w-4" />
@@ -235,6 +275,7 @@ export function LandingPage() {
               </a>
               <Link
                 to="/pilot"
+                onClick={() => trackEvent("cta_join_early_pilot_click", { location: "hero" })}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8dee5] bg-white px-5 py-3 text-sm font-bold text-[#20242a] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f8fafc]"
               >
                 Join Early Pilot
@@ -323,6 +364,7 @@ export function LandingPage() {
           </div>
           <a
             href="#contact"
+            onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "problem" })}
             className="premium-button mt-8 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
             Tell us what wastes the most time
@@ -400,6 +442,7 @@ export function LandingPage() {
           </div>
           <Link
             to="/pilot"
+            onClick={() => trackEvent("cta_join_early_pilot_click", { location: "pilot" })}
             className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
             Join Early Pilot
@@ -415,16 +458,16 @@ export function LandingPage() {
             sentences is enough.
           </SectionHeading>
 
-          <form onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-lg border p-5 md:p-6">
+          <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-lg border p-5 md:p-6">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Name">
               <input className={inputClass} name="name" type="text" placeholder="Your name" />
             </Field>
             <Field label="Restaurant or business name">
-              <input className={inputClass} name="businessName" type="text" placeholder="Business name" />
+              <input className={inputClass} name="businessName" type="text" placeholder="Business name" required />
             </Field>
             <Field label="Role">
-              <select className={inputClass} name="role" defaultValue="">
+              <select className={inputClass} name="role" defaultValue="" required>
                 <option value="" disabled>
                   Select role
                 </option>
@@ -434,7 +477,7 @@ export function LandingPage() {
               </select>
             </Field>
             <Field label="Business type">
-              <select className={inputClass} name="businessType" defaultValue="">
+              <select className={inputClass} name="businessType" defaultValue="" required>
                 <option value="" disabled>
                   Select type
                 </option>
@@ -444,7 +487,7 @@ export function LandingPage() {
               </select>
             </Field>
             <Field label="Which area is closest to your problem?">
-              <select className={inputClass} name="problemArea" defaultValue="">
+              <select className={inputClass} name="problemArea" defaultValue="" required>
                 <option value="" disabled>
                   Select area
                 </option>
@@ -457,7 +500,7 @@ export function LandingPage() {
 
           <div className="mt-4 grid gap-4">
             <Field label="What admin task takes the most time?">
-              <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." />
+              <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." required />
             </Field>
             <p className="-mt-2 text-xs font-semibold text-[#53677a]">No private numbers needed.</p>
             <fieldset className="rounded-lg border border-[#d8dee5] bg-[#f5f7f9] p-4">
@@ -481,15 +524,37 @@ export function LandingPage() {
               </select>
             </Field>
             <Field label="Email or Instagram handle">
-              <input className={inputClass} name="contact" type="text" placeholder="name@example.com or @handle" />
+              <input className={inputClass} name="contact" type="text" placeholder="name@example.com or @handle" required />
             </Field>
           </div>
 
+          <div className="mt-5 rounded-lg border border-[#d8dee5] bg-white/72 p-4 text-sm leading-6 text-[#53677a]">
+            <p className="font-bold text-[#20242a]">Privacy note</p>
+            <p className="mt-1">
+              No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
+              can be used later if a prototype is reviewed. This project is locally built in Toronto/GTA.
+            </p>
+          </div>
+
+          {submission.type !== "idle" ? (
+            <p
+              className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
+                submission.type === "success"
+                  ? "border-[#b7d2c3] bg-[#f1faf4] text-[#245536]"
+                  : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
+              }`}
+              role="status"
+            >
+              {submission.message}
+            </p>
+          ) : null}
+
           <button
             type="submit"
-            className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038] sm:w-auto"
+            disabled={isSubmitting}
+            className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
           >
-            Send feedback
+            {isSubmitting ? "Sending..." : "Send feedback"}
             <ArrowRight className="h-4 w-4" />
           </button>
         </form>
@@ -503,9 +568,9 @@ export function LandingPage() {
             <p className="mt-1 text-sm text-slate-300">Locally built by Terry in Toronto/GTA.</p>
             <p className="mt-1 text-sm text-slate-300">Helping independent restaurants reduce repetitive admin work.</p>
           </div>
-          <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#f8fafc] hover:text-[#cbd5e1]" href="mailto:your-email@example.com">
+          <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#f8fafc] hover:text-[#cbd5e1]" href="#contact">
             <Mail className="h-4 w-4" />
-            your-email@example.com
+            Share feedback through the form
           </a>
         </div>
       </footer>

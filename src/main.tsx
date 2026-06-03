@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { useEffect } from "react";
+import { createBrowserRouter, RouterProvider, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import "./styles.css";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -13,9 +14,38 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 
+function HashScroll() {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!location.hash) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document
+        .querySelector(location.hash)
+        ?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+    });
+  }, [location.pathname, location.hash]);
+
+  return null;
+}
+
+function PageWithHashScroll({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <HashScroll />
+      {children}
+    </>
+  );
+}
+
 const router = createBrowserRouter([
-  { path: "/", element: <LandingPage /> },
-  { path: "/pilot", element: <PilotPage /> },
+  { path: "/", element: <PageWithHashScroll><LandingPage /></PageWithHashScroll> },
+  { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   {
     path: "/app",
     element: <AppShell />,
@@ -29,7 +59,9 @@ const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
     ],
   },
-]);
+], {
+  basename: import.meta.env.BASE_URL,
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

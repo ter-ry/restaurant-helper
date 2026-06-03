@@ -16,11 +16,13 @@
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: hidden;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -30,6 +32,15 @@ html {
 
 .heading-balance {
   text-wrap: balance;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(83, 103, 122, 0.55);
+  outline-offset: 3px;
 }
 
 .surface-card {
@@ -146,6 +157,23 @@ html {
 
   .floating-particle {
     opacity: 0.08 !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .hero-grid {
+    min-height: auto;
+  }
+
+  .hero-grid h1 {
+    font-size: clamp(2.35rem, 11vw, 3.4rem);
+    line-height: 1.05;
+  }
+
+  .surface-panel,
+  .surface-card,
+  .surface-accent {
+    box-shadow: 0 16px 42px rgba(31, 41, 55, 0.09);
   }
 }
 

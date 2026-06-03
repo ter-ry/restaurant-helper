@@ -1,13 +1,51 @@
 import { ArrowLeft, ArrowRight, Mail, Store } from "lucide-react";
 import type { FormEvent } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { trackEvent } from "../lib/analytics";
+import { submitForm } from "../lib/formSubmission";
 
-function handlePilotSubmit(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
-  window.alert("Thanks - your email has been recorded locally for demo purposes.");
-}
+type SubmissionState = {
+  type: "idle" | "success" | "error";
+  message: string;
+};
 
 export function PilotPage() {
+  const [submission, setSubmission] = useState<SubmissionState>({ type: "idle", message: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formStartedRef = useRef(false);
+
+  const handleFormStarted = () => {
+    if (formStartedRef.current) {
+      return;
+    }
+
+    formStartedRef.current = true;
+    trackEvent("form_started", { form: "pilot" });
+  };
+
+  const handlePilotSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setSubmission({ type: "idle", message: "" });
+
+    try {
+      const result = await submitForm(event.currentTarget, "pilot");
+      setSubmission({ type: "success", message: result.message });
+      trackEvent("form_submitted", { form: "pilot", mode: result.mode });
+      event.currentTarget.reset();
+      formStartedRef.current = false;
+    } catch {
+      setSubmission({
+        type: "error",
+        message: "Sorry, the form could not be sent. Please try again or contact us directly.",
+      });
+      trackEvent("form_submission_error", { form: "pilot" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(96,115,135,0.14),transparent_30%),linear-gradient(135deg,#fbfcfd_0%,#f1f4f7_44%,#e7edf2_100%)] px-5 py-8 text-[#20242a] lg:px-8">
       <div className="mx-auto max-w-5xl">
@@ -31,13 +69,14 @@ export function PilotPage() {
             </p>
           </div>
 
-          <form onSubmit={handlePilotSubmit} className="rounded-lg border border-[#d8dee5] bg-[#ffffff]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
+          <form onFocusCapture={handleFormStarted} onSubmit={handlePilotSubmit} className="rounded-lg border border-[#d8dee5] bg-[#ffffff]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
             <label className="grid gap-2 text-sm font-semibold text-[#20242a]">
               Email
               <input
                 className="min-h-11 rounded-lg border border-[#d8dee5] bg-white px-3 py-2 text-sm text-[#20242a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#53677a] focus:ring-4 focus:ring-[#dbe5ef]"
                 name="email"
                 placeholder="name@example.com"
+                required
                 type="email"
               />
             </label>
@@ -53,15 +92,29 @@ export function PilotPage() {
             <p className="mt-4 text-sm leading-6 text-[#5f6872]">
               No private numbers needed. This list is only for pilot updates and prototype feedback.
             </p>
+            {submission.type !== "idle" ? (
+              <p
+                className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
+                  submission.type === "success"
+                    ? "border-[#b7d2c3] bg-[#f1faf4] text-[#245536]"
+                    : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
+                }`}
+                role="status"
+              >
+                {submission.message}
+              </p>
+            ) : null}
             <button
-              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
+              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038] disabled:cursor-not-allowed disabled:opacity-65"
+              disabled={isSubmitting}
               type="submit"
             >
-              Join early pilot
+              {isSubmitting ? "Joining..." : "Join early pilot"}
               <Mail className="h-4 w-4" />
             </button>
             <Link
               className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#d8dee5] bg-white px-5 py-3 text-sm font-bold text-[#20242a] transition hover:bg-[#fbfcfd]"
+              onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "pilot_page" })}
               to="/#contact"
             >
               Share admin pain instead

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Restaurant Admin Helper">
+  <rect width="64" height="64" rx="14" fill="#171b21"/>
+  <path d="M18 18h28v8H18zM18 31h28v13H18z" fill="#f8fafc"/>
+  <path d="M23 24v-8M32 24v-8M41 24v-8" stroke="#171b21" stroke-width="3" stroke-linecap="round"/>
+  <path d="M24 37h9M24 42h16" stroke="#53677a" stroke-width="3" stroke-linecap="round"/>
+</svg>
