@@ -58,14 +58,14 @@ export function PilotPage() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-[#ffffff]/85 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm">
               <Store className="h-4 w-4" />
-              Early pilot list
+              Restaurant admin review
             </p>
             <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#171b21] md:text-5xl">
-              Get notified when the first version is ready.
+              Request details for a focused workflow review.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-[#5f6872]">
-              Restaurant Admin Helper is being shaped with feedback from local restaurants in Toronto/GTA. Join the early
-              list for updates when a focused prototype is ready to review.
+              Restaurant Admin Helper works with independent restaurants in Toronto/GTA to review admin workflows around
+              invoices, daily close records, delivery payouts, expenses, and reporting.
             </p>
           </div>
 
@@ -90,7 +90,7 @@ export function PilotPage() {
               />
             </label>
             <p className="mt-4 text-sm leading-6 text-[#5f6872]">
-              No private numbers needed. This list is only for pilot updates and prototype feedback.
+              No private numbers needed. This is only to follow up about whether a focused review is useful for your restaurant.
             </p>
             {submission.type !== "idle" ? (
               <p
@@ -109,7 +109,7 @@ export function PilotPage() {
               disabled={isSubmitting}
               type="submit"
             >
-              {isSubmitting ? "Joining..." : "Join early pilot"}
+              {isSubmitting ? "Sending..." : "Request details"}
               <Mail className="h-4 w-4" />
             </button>
             <Link
@@ -117,7 +117,7 @@ export function PilotPage() {
               onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "pilot_page" })}
               to="/#contact"
             >
-              Share admin pain instead
+              Book a review instead
               <ArrowRight className="h-4 w-4" />
             </Link>
           </form>

@@ -39,6 +39,6 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
 
   return {
     mode: "endpoint",
-    message: "Thanks. Your feedback was sent.",
+    message: "Thanks. Your request was sent.",
   };
 }
