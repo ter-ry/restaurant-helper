@@ -214,7 +214,7 @@ export function LandingPage() {
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_16%_12%,rgba(96,115,135,0.14),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(31,37,45,0.08),transparent_36%),linear-gradient(135deg,#fbfcfd_0%,#f1f4f7_42%,#e7edf2_100%)]" />
       <FloatingParticles />
       <header className="sticky top-0 z-20 border-b border-[#d8dee5]/85 bg-[#f7f9fa]/88 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3.5 lg:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
           <a href="#" className="flex items-center gap-2 text-base font-semibold text-[#171b21]">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#171b21] text-[#f8fafc] shadow-sm">
               <Store className="h-5 w-5" />
@@ -239,17 +239,17 @@ export function LandingPage() {
       </header>
 
       <section className="relative z-10 overflow-hidden border-b border-[#d8dee5] bg-gradient-to-br from-[#fbfcfd]/90 via-[#f1f4f7]/80 to-[#e7edf2]/82">
-        <div className="hero-grid relative z-10 mx-auto grid max-w-6xl items-center gap-8 px-5 py-10 md:py-12 lg:min-h-[680px] lg:grid-cols-[minmax(0,1fr)_minmax(360px,470px)] lg:px-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(390px,500px)]">
+        <div className="hero-grid relative z-10 mx-auto grid min-h-[calc(100vh-73px)] max-w-7xl items-center gap-10 px-5 py-12 md:py-16 lg:grid-cols-[1fr_0.9fr] lg:px-8">
           <div className="reveal">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-white/84 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4" />
               Local pilot conversations open
             </p>
-            <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.1rem] xl:text-[3.35rem]">
+            <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.25rem] xl:text-[3.55rem]">
               <span className="block lg:whitespace-nowrap">Save time on admin.</span>
               <span className="block lg:whitespace-nowrap">See where money is going.</span>
             </h1>
-            <div className="mt-6 grid max-w-2xl gap-3">
+            <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#2b3037] md:text-xl">
                 FlowTally helps independent restaurants organize POS reports, invoices, delivery payouts, paper notes,
                 spreadsheets, and accountant requests.
@@ -262,7 +262,7 @@ export function LandingPage() {
                 </span>
               ))}
             </div>
-            <p className="mt-5 max-w-2xl rounded-lg border border-[#d8dee5] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#2b3037] shadow-sm backdrop-blur">
+            <p className="mt-5 max-w-xl rounded-lg border border-[#d8dee5] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#2b3037] shadow-sm backdrop-blur">
               Built for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small food businesses.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -285,8 +285,8 @@ export function LandingPage() {
             </div>
           </div>
 
-          <div className="hero-preview reveal relative">
-            <div className="surface-panel hero-preview-panel relative mx-auto max-w-[500px] rounded-lg border p-4 backdrop-blur md:p-5">
+          <div className="reveal relative">
+            <div className="surface-panel hero-preview-panel relative mx-auto max-w-[600px] rounded-lg border p-4 backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d8dee5] pb-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Concept preview &mdash; demo data</p>
@@ -298,14 +298,14 @@ export function LandingPage() {
                 </div>
               </div>
 
-              <div className="hero-metrics mt-5 grid grid-cols-3 gap-2 md:gap-3">
+              <div className="hero-metrics mt-5 grid grid-cols-3 gap-2 sm:gap-3">
                 {previewMetrics.map(([label, value, status]) => (
-                  <div key={label} className="surface-card rounded-lg border p-3 shadow-none md:p-4">
-                    <div className="flex items-start justify-between gap-2">
+                  <div key={label} className="surface-card rounded-lg border p-3 shadow-none sm:p-4">
+                    <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b7480]">{label}</p>
                       <span className="rounded-full bg-[#e8eef4] px-2 py-0.5 text-[10px] font-bold text-[#53677a]">{status}</span>
                     </div>
-                    <p className="mt-3 text-lg font-semibold text-[#171b21] md:text-xl">{value}</p>
+                    <p className="mt-3 text-lg font-semibold text-[#171b21] sm:text-xl">{value}</p>
                   </div>
                 ))}
               </div>
@@ -350,7 +350,7 @@ export function LandingPage() {
       </section>
 
       <section id="problem" className="surface-section relative overflow-hidden px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto max-w-6xl">
+        <div className="relative z-10 mx-auto max-w-7xl">
           <SectionHeading
             title="Restaurant admin gets messy when every record lives somewhere different."
             headingClassName="max-w-4xl"
@@ -378,7 +378,7 @@ export function LandingPage() {
       </section>
 
       <section id="workflows" className="relative overflow-hidden border-y border-[#d8dee5] bg-white/78 py-16">
-        <div className="relative z-10 mx-auto max-w-6xl px-5 lg:px-6">
+        <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
           <SectionHeading eyebrow="What it helps organize" title="One system for the records around the money.">
             FlowTally is being shaped around the weekly admin work restaurant owners already deal with - the work that
             takes time, creates mistakes, or makes it harder to see where money is going.
@@ -405,7 +405,7 @@ export function LandingPage() {
       </section>
 
       <section className="relative overflow-hidden px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.75fr_1fr]">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1fr]">
           <SectionHeading eyebrow="Positioning" title="Not another POS system.">
             FlowTally is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, accounting software, or
             inventory tools. It is not generic AI software or just an invoice tracker. It is being built for the messy
@@ -429,7 +429,7 @@ export function LandingPage() {
       </section>
 
       <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#d8dee5] py-16">
-        <div className="relative z-10 mx-auto grid max-w-6xl gap-8 px-5 lg:grid-cols-[0.9fr_1fr] lg:px-6">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.9fr_1fr] lg:px-8">
           <SectionHeading eyebrow="How it starts" title="Help shape the first version.">
             FlowTally is speaking with independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food
             trucks, and small food businesses in Toronto/GTA. The goal is to find the admin task that wastes the most
@@ -456,7 +456,7 @@ export function LandingPage() {
       </section>
 
       <section id="contact" className="relative overflow-hidden px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.7fr_1fr]">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.7fr_1fr]">
           <SectionHeading eyebrow="Contact" title="Share what wastes the most time">
             Please do not submit private financial data. Only the workflow and pain points are needed. Even 2-3
             sentences is enough.
@@ -566,7 +566,7 @@ export function LandingPage() {
       </section>
 
       <footer className="border-t border-[#2a3038] bg-[#171b21] px-5 py-8 text-[#f8fafc] lg:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold">FlowTally</p>
             <p className="mt-1 text-sm text-slate-300">Locally built by Terry in Toronto/GTA.</p>
