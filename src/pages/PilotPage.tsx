@@ -3,10 +3,10 @@ import type { FormEvent } from "react";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { trackEvent } from "../lib/analytics";
-import { submitForm } from "../lib/formSubmission";
+import { isFormEndpointConfigured, submitForm } from "../lib/formSubmission";
 
 type SubmissionState = {
-  type: "idle" | "success" | "error";
+  type: "idle" | "success" | "notice" | "error";
   message: string;
 };
 
@@ -31,7 +31,7 @@ export function PilotPage() {
 
     try {
       const result = await submitForm(event.currentTarget, "pilot");
-      setSubmission({ type: "success", message: result.message });
+      setSubmission({ type: result.mode === "demo" ? "notice" : "success", message: result.message });
       trackEvent("form_submitted", { form: "pilot", mode: result.mode });
       if (result.mode === "endpoint") {
         event.currentTarget.reset();
@@ -40,7 +40,7 @@ export function PilotPage() {
     } catch {
       setSubmission({
         type: "error",
-        message: "Sorry, the form could not be sent. Please try again or contact us directly.",
+        message: "Sorry, the form could not be sent. Please send us an Instagram DM, then try again later.",
       });
       trackEvent("form_submission_error", { form: "pilot" });
     } finally {
@@ -72,6 +72,15 @@ export function PilotPage() {
           </div>
 
           <form onFocusCapture={handleFormStarted} onSubmit={handlePilotSubmit} className="rounded-lg border border-[#d8dee5] bg-[#ffffff]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
+            {!isFormEndpointConfigured && import.meta.env.DEV ? (
+              <div className="mb-4 rounded-lg border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
+                <p className="font-bold text-[#3f3210]">Owner setup note</p>
+                <p className="mt-1">
+                  No form endpoint is configured for this local build. Add a Formspree URL to VITE_FORM_ENDPOINT before outreach.
+                </p>
+              </div>
+            ) : null}
+            <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
             <label className="grid gap-2 text-sm font-semibold text-[#20242a]">
               Email
               <input
@@ -99,7 +108,9 @@ export function PilotPage() {
                 className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
                   submission.type === "success"
                     ? "border-[#b7d2c3] bg-[#f1faf4] text-[#245536]"
-                    : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
+                    : submission.type === "notice"
+                      ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
+                      : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
                 }`}
                 role="status"
               >
@@ -128,6 +139,4 @@ export function PilotPage() {
     </main>
   );
 }
-
-
 

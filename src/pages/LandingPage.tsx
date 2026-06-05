@@ -144,7 +144,7 @@ const inputClass =
   "min-h-11 rounded-lg border border-[#d8dee5] bg-[#ffffff] px-3 py-2 text-sm text-[#20242a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#53677a] focus:ring-4 focus:ring-[#dbe5ef]";
 
 type SubmissionState = {
-  type: "idle" | "success" | "error";
+  type: "idle" | "success" | "notice" | "error";
   message: string;
 };
 
@@ -194,7 +194,7 @@ export function LandingPage() {
 
     try {
       const result = await submitForm(event.currentTarget, "feedback");
-      setSubmission({ type: "success", message: result.message });
+      setSubmission({ type: result.mode === "demo" ? "notice" : "success", message: result.message });
       trackEvent("form_submitted", { form: "feedback", mode: result.mode });
       if (result.mode === "endpoint") {
         event.currentTarget.reset();
@@ -203,7 +203,7 @@ export function LandingPage() {
     } catch {
       setSubmission({
         type: "error",
-        message: "Sorry, the form could not be sent. Please try again or contact us directly.",
+        message: "Sorry, the form could not be sent. Please send the same note by Instagram DM, then try again later.",
       });
       trackEvent("form_submission_error", { form: "feedback" });
     } finally {
@@ -473,6 +473,7 @@ export function LandingPage() {
               </p>
             </div>
           ) : null}
+          <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Name">
               <input className={inputClass} name="name" type="text" placeholder="Your name" />
@@ -555,7 +556,9 @@ export function LandingPage() {
               className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
                 submission.type === "success"
                   ? "border-[#b7d2c3] bg-[#f1faf4] text-[#245536]"
-                  : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
+                  : submission.type === "notice"
+                    ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
+                    : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
               }`}
               role="status"
             >

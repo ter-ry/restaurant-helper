@@ -1,5 +1,5 @@
 export type FormSubmissionResult = {
-  mode: "demo" | "endpoint";
+  mode: "demo" | "endpoint" | "spam";
   message: string;
 };
 
@@ -7,23 +7,53 @@ const formEndpoint = import.meta.env.VITE_FORM_ENDPOINT?.trim();
 const setupWarning =
   "[FlowTally setup] VITE_FORM_ENDPOINT is not configured. Form submissions are not being stored. Add a Formspree endpoint before outreach.";
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const isFormEndpointConfigured = Boolean(formEndpoint);
 
 if (!isFormEndpointConfigured) {
   console.warn(setupWarning);
 }
 
+function getSuccessMessage(formType: "feedback" | "pilot") {
+  return formType === "pilot" ? "Thanks. You're on the early pilot list." : "Thanks. Your feedback was sent.";
+}
+
+function getFormSubject(formType: "feedback" | "pilot") {
+  return formType === "pilot" ? "New FlowTally pilot list lead" : "New FlowTally restaurant feedback lead";
+}
+
 export async function submitForm(form: HTMLFormElement, formType: "feedback" | "pilot"): Promise<FormSubmissionResult> {
   const formData = new FormData(form);
+  const honeypotValue = String(formData.get("_gotcha") ?? "").trim();
+
+  if (honeypotValue) {
+    return {
+      mode: "spam",
+      message: getSuccessMessage(formType),
+    };
+  }
+
+  formData.delete("_gotcha");
+
   const tools = formData.getAll("tools").map(String);
   const payload: Record<string, FormDataEntryValue | string[] | string> = {
+    _subject: getFormSubject(formType),
     formType,
     submittedAt: new Date().toISOString(),
+    pageUrl: window.location.href,
+    referrer: document.referrer || "direct",
+    userAgent: navigator.userAgent,
     ...Object.fromEntries(formData.entries()),
   };
 
   if (tools.length) {
     payload.tools = tools;
+  }
+
+  const replyContact = String(payload.email ?? payload.contact ?? "").trim();
+  if (emailPattern.test(replyContact)) {
+    payload._replyto = replyContact;
   }
 
   if (!formEndpoint) {
@@ -32,15 +62,16 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
     return {
       mode: "demo",
       message:
-        "Thanks. This preview form is not connected yet, so your note was not saved. Please send the same note by Instagram DM to the account that shared this link.",
+        "This preview form is not connected yet, so your note was not saved. Please send the same note by Instagram DM to the account that shared this link.",
     };
   }
 
-  // Formspree works with JSON POST bodies. Supabase Edge Functions,
-  // Google Apps Script, or a custom API can use this same payload shape.
   const response = await fetch(formEndpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(payload),
   });
 
@@ -50,7 +81,6 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
 
   return {
     mode: "endpoint",
-    message: "Thanks. Your feedback was sent.",
+    message: getSuccessMessage(formType),
   };
 }
-
