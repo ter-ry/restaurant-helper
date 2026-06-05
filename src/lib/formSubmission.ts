@@ -75,8 +75,16 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
     body: JSON.stringify(payload),
   });
 
+  const responseBody = await response.text();
+
   if (!response.ok) {
-    throw new Error(`Form endpoint returned ${response.status}`);
+    console.error("[FlowTally form] Formspree submission failed", {
+      status: response.status,
+      statusText: response.statusText,
+      responseBody,
+      formType,
+    });
+    throw new Error(`Form endpoint returned ${response.status}: ${responseBody}`);
   }
 
   return {

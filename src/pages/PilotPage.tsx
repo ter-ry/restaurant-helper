@@ -26,18 +26,20 @@ export function PilotPage() {
 
   const handlePilotSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     setIsSubmitting(true);
     setSubmission({ type: "idle", message: "" });
 
     try {
-      const result = await submitForm(event.currentTarget, "pilot");
+      const result = await submitForm(form, "pilot");
       setSubmission({ type: result.mode === "demo" ? "notice" : "success", message: result.message });
       trackEvent("form_submitted", { form: "pilot", mode: result.mode });
       if (result.mode === "endpoint") {
-        event.currentTarget.reset();
+        form.reset();
         formStartedRef.current = false;
       }
-    } catch {
+    } catch (error) {
+      console.error("[FlowTally form] Pilot form submission failed", error);
       setSubmission({
         type: "error",
         message: "Sorry, the form could not be sent. Please send us an Instagram DM, then try again later.",

@@ -189,18 +189,20 @@ export function LandingPage() {
 
   const handleFeedbackSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     setIsSubmitting(true);
     setSubmission({ type: "idle", message: "" });
 
     try {
-      const result = await submitForm(event.currentTarget, "feedback");
+      const result = await submitForm(form, "feedback");
       setSubmission({ type: result.mode === "demo" ? "notice" : "success", message: result.message });
       trackEvent("form_submitted", { form: "feedback", mode: result.mode });
       if (result.mode === "endpoint") {
-        event.currentTarget.reset();
+        form.reset();
         formStartedRef.current = false;
       }
-    } catch {
+    } catch (error) {
+      console.error("[FlowTally form] Feedback form submission failed", error);
       setSubmission({
         type: "error",
         message: "Sorry, the form could not be sent. Please send the same note by Instagram DM, then try again later.",
