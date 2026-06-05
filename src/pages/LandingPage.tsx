@@ -196,8 +196,10 @@ export function LandingPage() {
       const result = await submitForm(event.currentTarget, "feedback");
       setSubmission({ type: "success", message: result.message });
       trackEvent("form_submitted", { form: "feedback", mode: result.mode });
-      event.currentTarget.reset();
-      formStartedRef.current = false;
+      if (result.mode === "endpoint") {
+        event.currentTarget.reset();
+        formStartedRef.current = false;
+      }
     } catch {
       setSubmission({
         type: "error",

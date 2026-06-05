@@ -35,6 +35,9 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_FORM_ENDPOINT: ${{ vars.VITE_FORM_ENDPOINT }}
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
 
       - name: Support client-side routes
         run: cp dist/index.html dist/404.html

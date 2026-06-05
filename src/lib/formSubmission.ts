@@ -19,9 +19,13 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
   }
 
   if (!formEndpoint) {
+    console.warn(
+      "[FlowTally setup] VITE_FORM_ENDPOINT is not configured. Form submissions are not being stored. Add a Formspree endpoint before outreach.",
+    );
+
     return {
       mode: "demo",
-      message: "Thanks. Demo mode is on, so this FlowTally form was not sent anywhere yet.",
+      message: "Thanks. This preview form is not connected yet, so nothing was sent. Please DM FlowTally directly for now.",
     };
   }
 

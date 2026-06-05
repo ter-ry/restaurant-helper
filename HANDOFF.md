@@ -44,6 +44,8 @@ VITE_FORM_ENDPOINT=https://your-form-endpoint.example
 
 The app sends JSON using `fetch` in `src/lib/formSubmission.ts`. Formspree, Supabase Edge Functions, Google Apps Script, or a custom API can be connected there.
 
+Use `docs/form-setup.md` for the recommended Formspree setup steps for GitHub Pages.
+
 Keep the form limited to workflow feedback. Do not request private financial data.
 
 ## Update Copy
@@ -99,7 +101,7 @@ Update `og:image`, `og:url`, and `twitter:image` if the final domain or asset pa
 - Header nav links scroll correctly.
 - CTAs work on desktop and mobile.
 - Required form fields validate.
-- Demo form success appears when no endpoint is configured.
+- Preview-mode form warning appears when no endpoint is configured.
 - Endpoint form success/error states work when an endpoint is configured.
 - No private financial data is requested.
 - No horizontal overflow at 390px, 430px, 768px, 1024px, and desktop widths.

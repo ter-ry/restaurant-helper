@@ -44,7 +44,7 @@ VITE_FORM_ENDPOINT=
 VITE_BASE_PATH=
 ```
 
-`VITE_FORM_ENDPOINT` is optional. When empty, forms stay in demo mode and show a local success message without sending data.
+`VITE_FORM_ENDPOINT` is optional for local previews. When empty, forms stay in preview mode and do not store submissions. Configure it before Instagram outreach.
 
 `VITE_BASE_PATH` is optional. The default base path is `/` for `flowtally.ca`. Use this only if you temporarily deploy under a repository subpath.
 
@@ -71,6 +71,8 @@ To deploy:
 ## Form Setup
 
 The current forms submit through `src/lib/formSubmission.ts`.
+
+Recommended setup: [docs/form-setup.md](docs/form-setup.md).
 
 To connect a backend:
 
@@ -118,7 +120,8 @@ The page states that no private financial data is required, general workflow fee
 - Confirm nav links scroll to the right sections.
 - Confirm CTA buttons go to the feedback form or pilot page.
 - Confirm the feedback form validates required fields.
-- Confirm demo form submission shows a success message with no endpoint configured.
+- Confirm preview-mode form submission warns that no endpoint is configured.
+- Confirm live Formspree submission is captured before outreach.
 - Confirm no horizontal scrolling at mobile widths.
 - Confirm reduced-motion preference disables particle motion.
 - Confirm social metadata, favicon, and `CNAME` are present after build.

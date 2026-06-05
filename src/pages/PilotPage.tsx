@@ -33,8 +33,10 @@ export function PilotPage() {
       const result = await submitForm(event.currentTarget, "pilot");
       setSubmission({ type: "success", message: result.message });
       trackEvent("form_submitted", { form: "pilot", mode: result.mode });
-      event.currentTarget.reset();
-      formStartedRef.current = false;
+      if (result.mode === "endpoint") {
+        event.currentTarget.reset();
+        formStartedRef.current = false;
+      }
     } catch {
       setSubmission({
         type: "error",
