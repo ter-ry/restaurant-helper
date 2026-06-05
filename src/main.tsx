@@ -43,7 +43,21 @@ function PageWithHashScroll({ children }: { children: React.ReactNode }) {
   );
 }
 
-const router = createBrowserRouter([
+function normalizeRouterBasename(baseUrl: string | undefined) {
+  const trimmed = baseUrl?.trim();
+
+  if (!trimmed || trimmed === "/" || trimmed === "." || trimmed === "./" || trimmed === "/./") {
+    return undefined;
+  }
+
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+
+  return withoutTrailingSlash === "" || withoutTrailingSlash === "/." ? undefined : withoutTrailingSlash;
+}
+
+const routerBasename = normalizeRouterBasename(import.meta.env.BASE_URL);
+
+const routes = [
   { path: "/", element: <PageWithHashScroll><LandingPage /></PageWithHashScroll> },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   {
@@ -59,12 +73,13 @@ const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
     ],
   },
-], {
-  basename: import.meta.env.BASE_URL,
-});
+];
+
+const router = createBrowserRouter(routes, routerBasename ? { basename: routerBasename } : undefined);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <RouterProvider router={router} />
   </React.StrictMode>,
 );
+
