@@ -61,7 +61,7 @@ export function PilotPage() {
               Restaurant admin review
             </p>
             <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#171b21] md:text-5xl">
-              Ask about a focused workflow review.
+              Request details for a focused workflow review.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-[#5f6872]">
               Restaurant Admin Helper works with independent restaurants in Toronto/GTA to review admin workflows around
@@ -109,7 +109,7 @@ export function PilotPage() {
               disabled={isSubmitting}
               type="submit"
             >
-              {isSubmitting ? "Sending..." : "Send request"}
+              {isSubmitting ? "Sending..." : "Request details"}
               <Mail className="h-4 w-4" />
             </button>
             <Link

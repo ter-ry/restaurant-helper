@@ -21,7 +21,6 @@ import { submitForm } from "../lib/formSubmission";
 const navLinks = [
   ["Problem", "#problem"],
   ["What You Get", "#outcomes"],
-  ["Fit", "#fit"],
   ["Process", "#pilot"],
   ["Contact", "#contact"],
 ];
@@ -108,38 +107,6 @@ const outcomeCards = [
     text: "Prepare simpler summaries for the owner, manager, bookkeeper, or accountant without chasing scattered notes.",
     Icon: ClipboardList,
   },
-];
-
-const fitCards = [
-  {
-    title: "Owner-operated restaurants",
-    text: "Useful when the owner or manager still has to reconcile records after service or before month-end.",
-    Icon: Store,
-  },
-  {
-    title: "Busy teams using several tools",
-    text: "Useful when POS reports, spreadsheets, delivery apps, paper notes, and bookkeeper messages do not line up cleanly.",
-    Icon: ClipboardList,
-  },
-  {
-    title: "Restaurants watching margins closely",
-    text: "Useful when supplier price changes, delivery fees, refunds, or missed notes can affect operating decisions.",
-    Icon: BarChart3,
-  },
-];
-
-const reviewIncludes = [
-  "Which records are creating the most cleanup",
-  "Where supplier prices, delivery payouts, or close notes should be checked",
-  "What can stay in your current tools",
-  "What a simple weekly handoff could look like",
-];
-
-const trustPoints = [
-  "No private financial data required",
-  "Sample, fake, or blurred records are enough",
-  "No POS or accounting software replacement",
-  "Locally built in Toronto/GTA",
 ];
 
 const serviceSteps = [
@@ -325,11 +292,11 @@ export function LandingPage() {
                 Book a 10-minute review
               </a>
               <Link
-                to="/#outcomes"
-                onClick={() => trackEvent("cta_see_what_gets_checked_click", { location: "hero" })}
+                to="/pilot"
+                onClick={() => trackEvent("cta_join_early_pilot_click", { location: "hero" })}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8dee5] bg-white px-5 py-3 text-sm font-bold text-[#20242a] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f8fafc]"
               >
-                See what gets checked
+                Request details
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
@@ -490,24 +457,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="fit" className="surface-section relative overflow-hidden border-y border-[#d8dee5] py-16">
-        <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
-          <SectionHeading eyebrow="Who this is for" title="Built for restaurants that need cleaner checks, not more software to manage.">
-            The review is best suited for independent restaurants, cafes, bakeries, takeout shops, and food operators
-            where the same records keep getting rebuilt, checked late, or handed off manually.
-          </SectionHeading>
-          <div className="mt-8 grid gap-4 lg:grid-cols-3">
-            {fitCards.map(({ title, text, Icon }) => (
-              <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
-                <Icon className="h-6 w-6 text-[#53677a]" />
-                <h3 className="mt-5 text-base font-semibold text-[#20242a]">{title}</h3>
-                <p className="mt-3 text-sm leading-6 text-[#5f6872]">{text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <section className="relative overflow-hidden border-y border-[#d8dee5] bg-white/78 px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1fr]">
           <SectionHeading eyebrow="Positioning" title="Not another POS system.">
@@ -548,45 +497,12 @@ export function LandingPage() {
           </div>
           <Link
             to="/pilot"
-            onClick={() => trackEvent("cta_request_review_fit_click", { location: "process" })}
+            onClick={() => trackEvent("cta_join_early_pilot_click", { location: "pilot" })}
             className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
-            Ask about review fit
+            Request details
             <ArrowRight className="h-4 w-4" />
           </Link>
-        </div>
-      </section>
-
-      <section className="relative overflow-hidden bg-white/78 px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.8fr_1fr]">
-          <SectionHeading eyebrow="Review scope" title="What the 10-minute review covers.">
-            The first call is practical and narrow. The goal is to identify one admin workflow worth organizing first,
-            not to audit your full business.
-          </SectionHeading>
-          <div className="grid gap-4">
-            <div className="surface-panel reveal rounded-lg border p-5">
-              <p className="text-sm font-bold text-[#20242a]">Included in the first review</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {reviewIncludes.map((item) => (
-                  <div key={item} className="flex gap-3 rounded-lg border border-[#d8dee5] bg-white/78 p-3 text-sm font-semibold leading-6 text-[#20242a]">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#53677a]" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="surface-card reveal rounded-lg border p-5">
-              <p className="text-sm font-bold text-[#20242a]">Trust boundaries</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {trustPoints.map((item) => (
-                  <div key={item} className="flex gap-3 text-sm font-semibold leading-6 text-[#5f6872]">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#53677a]" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 

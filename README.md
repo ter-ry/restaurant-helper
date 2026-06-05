@@ -78,8 +78,7 @@ Analytics hooks live in `src/lib/analytics.ts`.
 Tracked events:
 
 - `cta_tell_wastes_time_click`
-- `cta_see_what_gets_checked_click`
-- `cta_request_review_fit_click`
+- `cta_join_early_pilot_click`
 - `form_started`
 - `form_submitted`
 - `form_submission_error`
