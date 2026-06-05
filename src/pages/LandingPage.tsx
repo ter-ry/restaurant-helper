@@ -239,15 +239,15 @@ export function LandingPage() {
       </header>
 
       <section className="relative z-10 overflow-hidden border-b border-[#d8dee5] bg-gradient-to-br from-[#fbfcfd]/90 via-[#f1f4f7]/80 to-[#e7edf2]/82">
-        <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-12 md:py-16 lg:min-h-[760px] lg:grid-cols-[0.9fr_1fr] lg:px-8 xl:grid-cols-[0.84fr_1fr]">
+        <div className="hero-grid relative z-10 mx-auto grid min-h-[calc(100vh-73px)] max-w-7xl items-center gap-10 px-5 py-12 md:py-16 lg:grid-cols-[1fr_0.9fr] lg:px-8">
           <div className="reveal">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-white/84 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4" />
               Local pilot conversations open
             </p>
-            <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[2.85rem] xl:text-[3.05rem]">
-              <span className="block">Save time on admin.</span>
-              <span className="block">See where money is going.</span>
+            <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.25rem] xl:text-[3.55rem]">
+              <span className="block lg:whitespace-nowrap">Save time on admin.</span>
+              <span className="block lg:whitespace-nowrap">See where money is going.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#2b3037] md:text-xl">
@@ -286,7 +286,7 @@ export function LandingPage() {
           </div>
 
           <div className="reveal relative">
-            <div className="surface-panel hero-preview-panel relative mx-auto max-w-[700px] rounded-lg border p-4 backdrop-blur md:p-6">
+            <div className="surface-panel relative mx-auto max-w-[600px] rounded-lg border p-4 backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d8dee5] pb-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Concept preview &mdash; demo data</p>
@@ -298,19 +298,19 @@ export function LandingPage() {
                 </div>
               </div>
 
-              <div className="hero-metrics mt-5 grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 {previewMetrics.map(([label, value, status]) => (
-                  <div key={label} className="surface-card rounded-lg border p-3 shadow-none sm:p-5">
+                  <div key={label} className="surface-card rounded-lg border p-4 shadow-none">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b7480]">{label}</p>
                       <span className="rounded-full bg-[#e8eef4] px-2 py-0.5 text-[10px] font-bold text-[#53677a]">{status}</span>
                     </div>
-                    <p className="mt-3 text-lg font-semibold text-[#171b21] sm:text-2xl">{value}</p>
+                    <p className="mt-3 text-xl font-semibold text-[#171b21]">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-5 rounded-lg border border-[#dde4eb] bg-white/86 p-4 md:p-5">
+              <div className="mt-5 rounded-lg border border-[#dde4eb] bg-white/86 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-bold text-[#171b21]">Review queue</p>
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#eef2f5] px-3 py-1 text-xs font-bold text-[#53677a]">
@@ -320,7 +320,7 @@ export function LandingPage() {
                 </div>
                 <div className="mt-4 grid gap-3">
                   {previewTasks.slice(0, 2).map(([label, text, status]) => (
-                    <div key={label} className="grid gap-3 rounded-lg border border-[#edf1f5] bg-[#fbfcfd] p-3 sm:grid-cols-[1fr_auto] sm:items-center md:p-4">
+                    <div key={label} className="grid gap-3 rounded-lg border border-[#edf1f5] bg-[#fbfcfd] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
                       <div>
                         <p className="text-sm font-bold text-[#20242a]">{label}</p>
                         <p className="mt-1 text-sm leading-6 text-[#5f6872]">{text}</p>
@@ -333,7 +333,7 @@ export function LandingPage() {
 
             </div>
 
-            <div className="mt-4 hidden gap-3 sm:grid sm:grid-cols-2">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="surface-card rounded-lg border p-4 backdrop-blur">
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Bookkeeper handoff</p>
                 <p className="mt-2 text-sm font-semibold text-[#171b21]">4 records ready to summarize</p>
