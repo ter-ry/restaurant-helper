@@ -20,23 +20,23 @@ import { submitForm } from "../lib/formSubmission";
 
 const navLinks = [
   ["Problem", "#problem"],
-  ["Organizes", "#workflows"],
-  ["How It Starts", "#pilot"],
+  ["What It Organizes", "#workflows"],
+  ["Pilot", "#pilot"],
   ["Contact", "#contact"],
 ];
 
 const problemCards = [
-  "End-of-day records take too long",
-  "Delivery fees and refunds are hard to follow",
-  "Supplier invoices pile up",
+  "End-of-day records take too long to clean up",
+  "Delivery payouts, fees, and refunds are hard to follow",
+  "Supplier invoices, spending notes, and receipts pile up",
   "Bookkeeping handoff gets messy",
   "Records are split across POS, paper, Excel, receipts, and apps",
 ];
 
 const focusAreas = [
   {
-    title: "Supplier Invoices & Expenses",
-    text: "Track supplier invoices, expense records, item prices, and spending categories without relying on scattered notes or messy spreadsheets.",
+    title: "Invoices, Expenses & Spending",
+    text: "Organize supplier invoices, expense notes, receipts, and spending categories without relying on scattered notes or messy spreadsheets.",
     Icon: ReceiptText,
   },
   {
@@ -46,7 +46,7 @@ const focusAreas = [
   },
   {
     title: "Delivery Payout & Fee Checks",
-    text: "Review delivery app payouts, commissions, promotions, refunds, and expected sales to better understand what each channel is actually bringing in.",
+    text: "Review delivery app payouts, commissions, promotions, refunds, and expected sales so each channel is easier to understand.",
     Icon: Truck,
   },
 ];
@@ -94,17 +94,17 @@ const particles = Array.from({ length: 56 }, (_, index) => {
 const pilotSteps = [
   {
     title: "Share what wastes time",
-    text: "Tell us which admin task feels repetitive, messy, or easy to forget.",
+    text: "Tell us which admin or money-visibility task feels repetitive, messy, or easy to miss.",
     Icon: Calculator,
   },
   {
     title: "The workflow is mapped",
-    text: "The problem is turned into a simple workflow or product concept.",
+    text: "The records involved are mapped across POS reports, invoices, delivery apps, notes, and spreadsheets.",
     Icon: BarChart3,
   },
   {
-    title: "The concept is reviewed",
-    text: "If it looks useful, the concept can be shown back for feedback.",
+    title: "The first version is shaped",
+    text: "If the workflow looks useful, it can guide the early FlowTally pilot.",
     Icon: Mail,
   },
 ];
@@ -219,7 +219,7 @@ export function LandingPage() {
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#171b21] text-[#f8fafc] shadow-sm">
               <Store className="h-5 w-5" />
             </span>
-            Restaurant Admin Helper
+            FlowTally
           </a>
           <nav className="hidden items-center rounded-full border border-[#d8dee5] bg-white/78 px-2 py-1 text-sm font-semibold text-[#5e6874] shadow-sm md:flex">
             {navLinks.map(([label, href]) => (
@@ -246,23 +246,24 @@ export function LandingPage() {
               Local pilot conversations open
             </p>
             <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.25rem] xl:text-[3.55rem]">
-              <span className="block lg:whitespace-nowrap">Reduce repetitive</span>
-              <span className="block lg:whitespace-nowrap">restaurant admin work.</span>
+              <span className="block lg:whitespace-nowrap">Save time on admin.</span>
+              <span className="block lg:whitespace-nowrap">See where money is going.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#2b3037] md:text-xl">
-                Built for paper notes, Excel sheets, POS reports, invoices, and delivery records.
+                FlowTally helps independent restaurants organize POS reports, invoices, delivery payouts, paper notes,
+                spreadsheets, and accountant requests.
               </p>
             </div>
             <div className="mt-5 flex max-w-2xl flex-wrap gap-2">
-              {["Save time on admin", "Track expenses and payouts", "See margins more clearly"].map((value) => (
+              {["Less manual admin", "Clearer spending records", "Cleaner handoff"].map((value) => (
                 <span key={value} className="surface-card rounded-full border px-3 py-2 text-sm font-bold text-[#2b3037]">
                   {value}
                 </span>
               ))}
             </div>
             <p className="mt-5 max-w-xl rounded-lg border border-[#d8dee5] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#2b3037] shadow-sm backdrop-blur">
-              Locally built in Toronto/GTA. Currently speaking with local restaurant owners and managers.
+              Built for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small food businesses.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
@@ -289,7 +290,7 @@ export function LandingPage() {
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d8dee5] pb-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Concept preview &mdash; demo data</p>
-                  <p className="mt-1 text-lg font-bold text-[#171b21]">Restaurant Admin Helper</p>
+                  <p className="mt-1 text-lg font-bold text-[#171b21]">FlowTally</p>
                 </div>
                 <div className="inline-flex rounded-lg border border-[#d8dee5] bg-[#f8fafc] p-1 text-xs font-bold text-[#5f6872]">
                   <span className="rounded-md bg-white px-3 py-1 text-[#171b21] shadow-sm">Today</span>
@@ -351,9 +352,12 @@ export function LandingPage() {
       <section id="problem" className="surface-section relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto max-w-7xl">
           <SectionHeading
-            title="Restaurant admin should not eat up your night."
-            headingClassName="max-w-[22rem] sm:max-w-none md:whitespace-nowrap"
-          />
+            title="Restaurant admin gets messy when every record lives somewhere different."
+            headingClassName="max-w-4xl"
+          >
+            POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests all tell
+            part of the money story. FlowTally helps bring the work into one clearer flow.
+          </SectionHeading>
           <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           {problemCards.map((problem) => (
             <div key={problem} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
@@ -375,9 +379,9 @@ export function LandingPage() {
 
       <section id="workflows" className="relative overflow-hidden border-y border-[#d8dee5] bg-white/78 py-16">
         <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
-          <SectionHeading eyebrow="What it helps organize" title="Three admin problems.">
-            Restaurant Admin Helper is being shaped around the repetitive records that small restaurants already deal
-            with every week - the ones that take time, create mistakes, or hide where money is going.
+          <SectionHeading eyebrow="What it helps organize" title="One system for the records around the money.">
+            FlowTally is being shaped around the weekly admin work restaurant owners already deal with - the work that
+            takes time, creates mistakes, or makes it harder to see where money is going.
           </SectionHeading>
           <div className="mt-8 grid gap-4 lg:grid-cols-3">
             {focusAreas.map(({ title, text, Icon }) => (
@@ -403,8 +407,9 @@ export function LandingPage() {
       <section className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1fr]">
           <SectionHeading eyebrow="Positioning" title="Not another POS system.">
-            This project is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, or accounting software.
-            It is being built for the messy admin work around the tools restaurants already use.
+            FlowTally is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, accounting software, or
+            inventory tools. It is not generic AI software or just an invoice tracker. It is being built for the messy
+            admin work around the tools restaurants already use.
           </SectionHeading>
           <div className="surface-accent reveal grid overflow-hidden rounded-lg border md:grid-cols-2">
             <div className="border-b border-white/10 bg-white/5 p-6 md:border-b-0 md:border-r">
@@ -414,9 +419,9 @@ export function LandingPage() {
               </p>
             </div>
             <div className="bg-gradient-to-br from-[#f8fafc] to-[#e9eef3] p-6">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#53677a]">Restaurant Admin Helper</p>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#53677a]">FlowTally</p>
               <p className="mt-4 text-lg font-semibold leading-7 text-[#20242a]">
-                Organized records, payout checks, expense tracking, margin notes, bookkeeper-ready reports
+                Organized records, payout checks, spending visibility, cleaner handoff, bookkeeper-ready reports
               </p>
             </div>
           </div>
@@ -426,10 +431,9 @@ export function LandingPage() {
       <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#d8dee5] py-16">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.9fr_1fr] lg:px-8">
           <SectionHeading eyebrow="How it starts" title="Help shape the first version.">
-            Restaurant Admin Helper is looking for feedback from independent restaurants, cafes, bakeries, takeout shops,
-            and bubble tea shops in Toronto/GTA. The goal is to find the admin task that wastes the most time, then
-            build a focused first version around that workflow. No private numbers are needed. Even 2-3 sentences about
-            what feels messy is enough.
+            FlowTally is speaking with independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food
+            trucks, and small food businesses in Toronto/GTA. The goal is to find the admin task that wastes the most
+            time, then shape a focused first version around that workflow. No private numbers are needed.
           </SectionHeading>
           <div className="grid gap-4 sm:grid-cols-3">
             {pilotSteps.map(({ title, text, Icon }) => (
@@ -453,7 +457,7 @@ export function LandingPage() {
 
       <section id="contact" className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.7fr_1fr]">
-          <SectionHeading eyebrow="Contact" title="Share the admin task that wastes the most time">
+          <SectionHeading eyebrow="Contact" title="Share what wastes the most time">
             Please do not submit private financial data. Only the workflow and pain points are needed. Even 2-3
             sentences is enough.
           </SectionHeading>
@@ -532,7 +536,7 @@ export function LandingPage() {
             <p className="font-bold text-[#20242a]">Privacy note</p>
             <p className="mt-1">
               No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
-              can be used later if a prototype is reviewed. This project is locally built in Toronto/GTA.
+              can be used later if a prototype is reviewed. FlowTally is locally built in Toronto/GTA.
             </p>
           </div>
 
@@ -564,9 +568,9 @@ export function LandingPage() {
       <footer className="border-t border-[#2a3038] bg-[#171b21] px-5 py-8 text-[#f8fafc] lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="font-bold">Restaurant Admin Helper</p>
+            <p className="font-bold">FlowTally</p>
             <p className="mt-1 text-sm text-slate-300">Locally built by Terry in Toronto/GTA.</p>
-            <p className="mt-1 text-sm text-slate-300">Helping independent restaurants reduce repetitive admin work.</p>
+            <p className="mt-1 text-sm text-slate-300">Helping restaurant owners save admin time and see where money is going.</p>
           </div>
           <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#f8fafc] hover:text-[#cbd5e1]" href="#contact">
             <Mail className="h-4 w-4" />

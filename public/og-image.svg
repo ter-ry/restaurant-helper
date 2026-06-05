@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Restaurant Admin Helper preview">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="FlowTally preview">
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0" stop-color="#fbfcfd"/>
@@ -14,10 +14,10 @@
   <rect width="1200" height="630" fill="url(#bg)"/>
   <rect width="1200" height="630" fill="url(#glow)"/>
   <rect x="74" y="70" width="1052" height="490" rx="28" fill="#ffffff" opacity=".72" stroke="#d8dee5"/>
-  <text x="120" y="160" fill="#53677a" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="5">LOCAL TORONTO/GTA PRODUCT CONCEPT</text>
-  <text x="120" y="260" fill="#171b21" font-family="Inter, Arial, sans-serif" font-size="68" font-weight="800">Restaurant Admin Helper</text>
-  <text x="120" y="340" fill="#20242a" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="650">Reduce repetitive restaurant admin work.</text>
+  <text x="120" y="160" fill="#53677a" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="5">LOCAL TORONTO/GTA RESTAURANT SUPPORT</text>
+  <text x="120" y="260" fill="#171b21" font-family="Inter, Arial, sans-serif" font-size="76" font-weight="800">FlowTally</text>
+  <text x="120" y="340" fill="#20242a" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="650">Save time on admin. See where money is going.</text>
   <text x="120" y="424" fill="#5f6872" font-family="Inter, Arial, sans-serif" font-size="30">Invoices. Daily close records. Delivery payouts.</text>
-  <rect x="120" y="470" width="335" height="58" rx="14" fill="#171b21"/>
-  <text x="150" y="507" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Local pilot conversations open</text>
+  <rect x="120" y="470" width="294" height="58" rx="14" fill="#171b21"/>
+  <text x="150" y="507" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Join Early Pilot</text>
 </svg>

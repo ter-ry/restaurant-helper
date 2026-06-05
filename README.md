@@ -1,6 +1,14 @@
-# Restaurant Admin Helper
+# FlowTally
 
-Restaurant Admin Helper is an early local product concept for independent restaurants in Toronto/GTA. The landing page is built for outreach and feedback around repetitive restaurant admin work: supplier invoices, daily close records, delivery payouts, expenses, and reports.
+FlowTally is a restaurant admin and money-visibility service for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups.
+
+Core promise:
+
+```text
+Save time on admin and get a clearer view of where money is going.
+```
+
+FlowTally is not another POS system, accounting software, inventory software, generic AI software, or just an invoice tracker. It helps organize the records around the tools restaurants already use: POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests.
 
 No fake testimonials, logos, customers, or metrics are included. Demo numbers are labeled as concept/demo data.
 
@@ -21,7 +29,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL, usually:
+Open:
 
 ```text
 http://127.0.0.1:5173/
@@ -29,16 +37,16 @@ http://127.0.0.1:5173/
 
 ## Environment Variables
 
-Create a local `.env` file only when needed:
+Create `.env` only when needed:
 
 ```text
 VITE_FORM_ENDPOINT=
 VITE_BASE_PATH=
 ```
 
-`VITE_FORM_ENDPOINT` is optional. When it is empty, the forms stay in demo mode and show a local success message without sending data.
+`VITE_FORM_ENDPOINT` is optional. When empty, forms stay in demo mode and show a local success message without sending data.
 
-`VITE_BASE_PATH` is optional. GitHub Actions automatically sets the Vite base path from the GitHub repository name. Use this only if you need to override the deployment path.
+`VITE_BASE_PATH` is optional. The default base path is `/` for `flowtally.ca`. Use this only if you temporarily deploy under a repository subpath.
 
 ## Build
 
@@ -52,16 +60,17 @@ The workflow is in `.github/workflows/deploy.yml`.
 
 To deploy:
 
-1. Push the repo to GitHub on the `main` branch.
-2. In GitHub, open **Settings → Pages**.
+1. Push the repo to GitHub on `main`.
+2. In GitHub, open **Settings > Pages**.
 3. Set **Source** to **GitHub Actions**.
-4. Push to `main` or run the workflow manually from the **Actions** tab.
+4. Confirm the custom domain is `flowtally.ca` when ready.
+5. Push to `main` or run the workflow manually from the **Actions** tab.
 
-The workflow installs dependencies with `npm ci`, runs `npm run build`, copies `dist/index.html` to `dist/404.html` for client-side routes, and deploys `dist` to GitHub Pages.
+`public/CNAME` contains `flowtally.ca`, so the built GitHub Pages artifact includes the custom domain file.
 
 ## Form Setup
 
-The current forms keep the same UI and submit through `src/lib/formSubmission.ts`.
+The current forms submit through `src/lib/formSubmission.ts`.
 
 To connect a backend:
 
@@ -89,16 +98,17 @@ In development, events log to the console. In production, the helper safely chec
 
 Metadata is defined in `index.html`.
 
-Placeholder assets:
+Assets:
 
 - `public/favicon.svg`
 - `public/og-image.svg`
+- `public/CNAME`
 
-Before a public launch, replace `public/og-image.svg` with a branded preview image and update the `og:image`, `og:url`, and Twitter image URLs in `index.html` if the final repo or domain changes.
+Before launch, verify that `og:image`, `og:url`, and Twitter image URLs point to the final `flowtally.ca` URLs.
 
 ## Privacy / Trust Note
 
-The page states that no private financial data is required, general workflow feedback is enough, sample/fake/blurred data can be used later, and the project is locally built in Toronto/GTA.
+The page states that no private financial data is required, general workflow feedback is enough, sample/fake/blurred data can be used later, and FlowTally is locally built in Toronto/GTA.
 
 ## QA Checklist
 
@@ -111,4 +121,4 @@ The page states that no private financial data is required, general workflow fee
 - Confirm demo form submission shows a success message with no endpoint configured.
 - Confirm no horizontal scrolling at mobile widths.
 - Confirm reduced-motion preference disables particle motion.
-- Confirm social metadata and favicon are present after build.
+- Confirm social metadata, favicon, and `CNAME` are present after build.

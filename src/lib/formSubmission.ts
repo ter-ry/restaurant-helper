@@ -21,7 +21,7 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
   if (!formEndpoint) {
     return {
       mode: "demo",
-      message: "Thanks. Demo mode is on, so this was not sent anywhere yet.",
+      message: "Thanks. Demo mode is on, so this FlowTally form was not sent anywhere yet.",
     };
   }
 

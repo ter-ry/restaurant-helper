@@ -1,16 +1,12 @@
-# Restaurant Admin Helper Handoff
+# FlowTally Handoff
 
 ## What Changed
 
-- Added GitHub Pages deployment workflow.
-- Configured Vite base path for GitHub Pages repository deployments.
-- Added production metadata, favicon, and placeholder OG image.
-- Added endpoint-ready form submission using `VITE_FORM_ENDPOINT`.
-- Added success, error, loading, and demo-mode form states.
-- Added lightweight analytics hooks without dependencies.
-- Added a short trust/privacy note near the feedback form.
-- Added small accessibility and mobile-responsiveness refinements.
-- Added deployment, form, analytics, and QA documentation.
+- Completed the FlowTally public rebrand.
+- Updated landing page positioning around restaurant admin and money visibility.
+- Updated metadata, favicon, OG image, README, and docs.
+- Added `public/CNAME` for `flowtally.ca`.
+- Added outreach and brand planning docs.
 
 ## Run Locally
 
@@ -33,11 +29,12 @@ Push to `main`. The GitHub Actions workflow at `.github/workflows/deploy.yml` bu
 
 In the GitHub repo:
 
-1. Open **Settings → Pages**.
+1. Open **Settings > Pages**.
 2. Set **Source** to **GitHub Actions**.
-3. Run the deploy workflow or push to `main`.
+3. Confirm the custom domain is `flowtally.ca`.
+4. Confirm HTTPS is enabled after DNS is verified.
 
-## Connect the Form Backend
+## Connect The Form Backend
 
 Set this environment variable in the hosting environment:
 
@@ -55,7 +52,14 @@ Most landing page copy is in `src/pages/LandingPage.tsx`.
 
 The early pilot page copy is in `src/pages/PilotPage.tsx`.
 
-Keep claims honest. Do not add fake testimonials, fake logos, fake customers, fake usage numbers, or exaggerated product claims.
+Keep claims honest:
+
+- local conversations
+- early pilot
+- concept preview
+- no fake testimonials
+- no fake customers
+- no fake metrics
 
 ## Update Colors
 
@@ -71,18 +75,19 @@ The current palette is charcoal plus cool/warm neutrals. Keep contrast readable 
 
 Metadata lives in `index.html`.
 
-Replace:
+Assets:
 
 - `public/og-image.svg`
-- `public/favicon.svg` if needed
+- `public/favicon.svg`
+- `public/CNAME`
 
-Update `og:image`, `og:url`, and `twitter:image` when moving to a final GitHub Pages URL or custom domain.
+Update `og:image`, `og:url`, and `twitter:image` if the final domain or asset path changes.
 
 ## Known Limitations
 
 - Forms require a real `VITE_FORM_ENDPOINT` before submissions are captured externally.
 - Analytics requires adding an actual Plausible, Google Analytics, PostHog, or custom provider script.
-- The OG image is a placeholder and should be replaced before serious outreach.
+- The OG image is still a simple generated SVG and can be upgraded before serious outreach.
 - The dashboard routes under `/app` remain product-preview/demo surfaces.
 
 ## Manual QA Before Publishing
@@ -99,13 +104,4 @@ Update `og:image`, `og:url`, and `twitter:image` when moving to a final GitHub P
 - No private financial data is requested.
 - No horizontal overflow at 390px, 430px, 768px, 1024px, and desktop widths.
 - Reduced motion preference is respected.
-- Favicon and social preview metadata are present.
-
-## Next Recommended Tasks
-
-- Create the GitHub repo and push `main`.
-- Set GitHub Pages source to GitHub Actions.
-- Replace the placeholder OG image with a final branded preview.
-- Connect Formspree, Supabase, Google Apps Script, or a custom API.
-- Add a privacy page only when collecting real outreach data at scale.
-- Add a custom domain after the GitHub Pages version is approved.
+- Favicon, social preview metadata, and custom domain CNAME are present.
