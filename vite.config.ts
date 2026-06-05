@@ -5,9 +5,10 @@ declare const process: {
   env: Record<string, string | undefined>;
 };
 
-const base = process.env.VITE_BASE_PATH ?? "/";
+const base = process.env.VITE_BASE_PATH?.trim() || "/";
 
 export default defineConfig({
   base,
   plugins: [react() as PluginOption],
 });
+

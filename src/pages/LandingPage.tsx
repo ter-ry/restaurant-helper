@@ -16,7 +16,7 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { trackEvent } from "../lib/analytics";
-import { submitForm } from "../lib/formSubmission";
+import { isFormEndpointConfigured, submitForm } from "../lib/formSubmission";
 
 const navLinks = [
   ["Problem", "#problem"],
@@ -465,6 +465,14 @@ export function LandingPage() {
           </SectionHeading>
 
           <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-lg border p-5 md:p-6">
+          {!isFormEndpointConfigured && import.meta.env.DEV ? (
+            <div className="mb-4 rounded-lg border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
+              <p className="font-bold text-[#3f3210]">Owner setup note</p>
+              <p className="mt-1">
+                No form endpoint is configured for this local build. Add a Formspree URL to VITE_FORM_ENDPOINT before outreach.
+              </p>
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Name">
               <input className={inputClass} name="name" type="text" placeholder="Your name" />
@@ -473,9 +481,9 @@ export function LandingPage() {
               <input className={inputClass} name="businessName" type="text" placeholder="Business name" required />
             </Field>
             <Field label="Role">
-              <select className={inputClass} name="role" defaultValue="" required>
+              <select className={inputClass} name="role" defaultValue="">
                 <option value="" disabled>
-                  Select role
+                  Select role (optional)
                 </option>
                 {["Owner", "Manager", "Staff", "Bookkeeper", "Other"].map((role) => (
                   <option key={role}>{role}</option>
@@ -483,9 +491,9 @@ export function LandingPage() {
               </select>
             </Field>
             <Field label="Business type">
-              <select className={inputClass} name="businessType" defaultValue="" required>
+              <select className={inputClass} name="businessType" defaultValue="">
                 <option value="" disabled>
-                  Select type
+                  Select type (optional)
                 </option>
                 {["Restaurant", "Cafe", "Bakery", "Takeout", "Bubble Tea", "Bar", "Food Truck", "Other"].map((type) => (
                   <option key={type}>{type}</option>
@@ -493,9 +501,9 @@ export function LandingPage() {
               </select>
             </Field>
             <Field label="Which area is closest to your problem?">
-              <select className={inputClass} name="problemArea" defaultValue="" required>
+              <select className={inputClass} name="problemArea" defaultValue="">
                 <option value="" disabled>
-                  Select area
+                  Select area (optional)
                 </option>
                 {problemAreas.map((area) => (
                   <option key={area}>{area}</option>
@@ -583,5 +591,4 @@ export function LandingPage() {
     </main>
   );
 }
-
 

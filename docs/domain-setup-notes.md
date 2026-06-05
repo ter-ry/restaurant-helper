@@ -31,7 +31,7 @@ Vite copies files from `public/` into the built `dist/` folder, so GitHub Pages 
 Verify manually with the domain provider:
 
 - The domain is registered and active.
-- DNS records point to GitHub Pages as required by GitHub’s current instructions.
+- DNS records point to GitHub Pages as required by GitHub's current instructions.
 - Any old parking or forwarding records are removed if they conflict.
 - Both apex domain and `www` behavior are intentionally configured.
 - DNS propagation has completed.
@@ -63,3 +63,4 @@ Do not invent DNS records here. Follow the current GitHub Pages custom domain in
 - Form backend is connected before serious outreach.
 - Instagram profile link points to `https://flowtally.ca/`.
 - Recheck copy on mobile before DM outreach.
+

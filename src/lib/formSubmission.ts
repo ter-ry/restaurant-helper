@@ -4,6 +4,14 @@ export type FormSubmissionResult = {
 };
 
 const formEndpoint = import.meta.env.VITE_FORM_ENDPOINT?.trim();
+const setupWarning =
+  "[FlowTally setup] VITE_FORM_ENDPOINT is not configured. Form submissions are not being stored. Add a Formspree endpoint before outreach.";
+
+export const isFormEndpointConfigured = Boolean(formEndpoint);
+
+if (!isFormEndpointConfigured) {
+  console.warn(setupWarning);
+}
 
 export async function submitForm(form: HTMLFormElement, formType: "feedback" | "pilot"): Promise<FormSubmissionResult> {
   const formData = new FormData(form);
@@ -19,13 +27,12 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
   }
 
   if (!formEndpoint) {
-    console.warn(
-      "[FlowTally setup] VITE_FORM_ENDPOINT is not configured. Form submissions are not being stored. Add a Formspree endpoint before outreach.",
-    );
+    console.warn(setupWarning);
 
     return {
       mode: "demo",
-      message: "Thanks. This preview form is not connected yet, so nothing was sent. Please DM FlowTally directly for now.",
+      message:
+        "Thanks. This preview form is not connected yet, so your note was not saved. Please send the same note by Instagram DM to the account that shared this link.",
     };
   }
 
@@ -46,3 +53,4 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
     message: "Thanks. Your feedback was sent.",
   };
 }
+

@@ -17,8 +17,8 @@ If `VITE_FORM_ENDPOINT` is blank, the forms run in preview mode:
 - no submission is stored
 - no email is sent
 - the visitor sees an honest preview-mode message
-- the browser console shows an owner setup warning
-- typed form data is kept on screen so the visitor can still copy or DM it
+- the browser console shows an owner setup warning as soon as the app loads
+- typed form data is kept on screen so the visitor can still copy it into an Instagram DM
 
 ## Formspree Setup
 
@@ -68,24 +68,24 @@ Feedback form:
 
 - `formType`
 - `submittedAt`
-- `name`
-- `businessName`
-- `role`
-- `businessType`
-- `problemArea`
-- `biggestPain`
-- `tools`
-- `chatOpen`
-- `contact`
+- `name` optional
+- `businessName` required
+- `role` optional
+- `businessType` optional
+- `problemArea` optional
+- `biggestPain` required
+- `tools` optional
+- `chatOpen` optional
+- `contact` required
 
 Pilot form:
 
 - `formType`
 - `submittedAt`
-- `email`
-- `businessName`
+- `email` required
+- `businessName` optional
 
 ## Launch Rule
 
-Do not start serious Instagram DM outreach until a real `VITE_FORM_ENDPOINT` is configured and tested on the live site.
+Do not start serious Instagram DM outreach until a real `VITE_FORM_ENDPOINT` is configured in GitHub Actions variables, the site has been rebuilt, and a test submission is visible in Formspree.
 
