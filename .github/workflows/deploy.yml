@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    environment:
+      name: github-pages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,10 +35,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify form endpoint config
+        run: |
+          if [ -z "$VITE_FORM_ENDPOINT" ]; then
+            echo "VITE_FORM_ENDPOINT is not configured for this build."
+            echo "Add it as a GitHub Actions variable or secret named VITE_FORM_ENDPOINT."
+            exit 1
+          fi
+          echo "VITE_FORM_ENDPOINT is configured for this build."
+        env:
+          VITE_FORM_ENDPOINT: ${{ vars.VITE_FORM_ENDPOINT || secrets.VITE_FORM_ENDPOINT }}
+
       - name: Build
         run: npm run build
         env:
-          VITE_FORM_ENDPOINT: ${{ vars.VITE_FORM_ENDPOINT }}
+          VITE_FORM_ENDPOINT: ${{ vars.VITE_FORM_ENDPOINT || secrets.VITE_FORM_ENDPOINT }}
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
 
       - name: Support client-side routes
