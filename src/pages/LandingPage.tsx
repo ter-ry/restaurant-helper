@@ -20,41 +20,41 @@ import { submitForm } from "../lib/formSubmission";
 
 const navLinks = [
   ["Problem", "#problem"],
-  ["What You Get", "#outcomes"],
-  ["Process", "#pilot"],
+  ["Organizes", "#workflows"],
+  ["How It Starts", "#pilot"],
   ["Contact", "#contact"],
 ];
 
 const problemCards = [
-  "Daily close records are rebuilt from memory after service",
-  "Delivery payouts, refunds, and fees are hard to reconcile",
-  "Supplier price changes are noticed too late",
-  "Bookkeeper handoff takes extra back-and-forth",
+  "End-of-day records take too long",
+  "Delivery fees and refunds are hard to follow",
+  "Supplier invoices pile up",
+  "Bookkeeping handoff gets messy",
   "Records are split across POS, paper, Excel, receipts, and apps",
 ];
 
 const focusAreas = [
   {
-    title: "Supplier Invoice Review",
-    text: "Organize invoices, item prices, and expense categories so price changes and margin pressure are easier to spot.",
+    title: "Supplier Invoices & Expenses",
+    text: "Track supplier invoices, expense records, item prices, and spending categories without relying on scattered notes or messy spreadsheets.",
     Icon: ReceiptText,
   },
   {
-    title: "Daily Close Checks",
-    text: "Compare POS totals, cash/card/delivery payments, refunds, discounts, voids, and closing notes in one workflow.",
+    title: "Daily Close & Reconciliation",
+    text: "Keep daily records organized across POS totals, cash/card/delivery payments, refunds, discounts, voids, and closing notes.",
     Icon: ClipboardList,
   },
   {
-    title: "Delivery Payout Checks",
-    text: "Review delivery app payouts, commissions, promotions, refunds, and expected sales before variances get buried.",
+    title: "Delivery Payout & Fee Checks",
+    text: "Review delivery app payouts, commissions, promotions, refunds, and expected sales to better understand what each channel is actually bringing in.",
     Icon: Truck,
   },
 ];
 
 const previewMetrics = [
-  ["Sales recorded", "$4,640", "Matched"],
-  ["Delivery fees", "$186", "Review"],
-  ["New invoices", "2", "Check"],
+  ["Sales recorded", "$4,640", "Ready"],
+  ["Delivery fees", "$186", "Check"],
+  ["New invoices", "2", "Review"],
 ];
 
 const previewTasks = [
@@ -91,38 +91,20 @@ const particles = Array.from({ length: 56 }, (_, index) => {
   return { x, y, size, delay, duration, driftX, driftY, opacity };
 });
 
-const outcomeCards = [
+const pilotSteps = [
   {
-    title: "Cleaner weekly records",
-    text: "Keep invoices, close notes, payouts, and expense notes organized before they become month-end cleanup.",
-    Icon: BookOpenCheck,
-  },
-  {
-    title: "Clearer cost pressure",
-    text: "See where supplier prices, delivery fees, refunds, or recurring admin gaps may be affecting margin.",
-    Icon: BarChart3,
-  },
-  {
-    title: "Less bookkeeping friction",
-    text: "Prepare simpler summaries for the owner, manager, bookkeeper, or accountant without chasing scattered notes.",
-    Icon: ClipboardList,
-  },
-];
-
-const serviceSteps = [
-  {
-    title: "Book a short review",
-    text: "Share the admin workflow that is creating cleanup, uncertainty, or missed checks.",
+    title: "Share what wastes time",
+    text: "Tell us which admin task feels repetitive, messy, or easy to forget.",
     Icon: Calculator,
   },
   {
-    title: "Map the records",
-    text: "Identify which POS reports, invoices, payout records, notes, or spreadsheets are involved.",
+    title: "The workflow is mapped",
+    text: "The problem is turned into a simple workflow or product concept.",
     Icon: BarChart3,
   },
   {
-    title: "Review the fit",
-    text: "Get a practical recommendation on whether the workflow is worth organizing first.",
+    title: "The concept is reviewed",
+    text: "If it looks useful, the concept can be shown back for feedback.",
     Icon: Mail,
   },
 ];
@@ -251,7 +233,7 @@ export function LandingPage() {
             onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "header" })}
             className="premium-button inline-flex min-h-10 items-center justify-center rounded-lg bg-[#171b21] px-4 py-2 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
-            Book a review
+            Tell us what wastes time
           </a>
         </div>
       </header>
@@ -261,26 +243,26 @@ export function LandingPage() {
           <div className="reveal">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-white/84 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4" />
-              Toronto/GTA restaurant cost-control support
+              Local pilot conversations open
             </p>
             <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.25rem] xl:text-[3.55rem]">
-              <span className="block lg:whitespace-nowrap">Find the admin gaps</span>
-              <span className="block lg:whitespace-nowrap">that affect restaurant margin.</span>
+              <span className="block lg:whitespace-nowrap">Reduce repetitive</span>
+              <span className="block lg:whitespace-nowrap">restaurant admin work.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#2b3037] md:text-xl">
-                Practical support for invoices, daily close records, delivery payouts, expenses, and reports.
+                Built for paper notes, Excel sheets, POS reports, invoices, and delivery records.
               </p>
             </div>
             <div className="mt-5 flex max-w-2xl flex-wrap gap-2">
-              {["Check supplier prices", "Reconcile delivery payouts", "Prepare cleaner handoffs"].map((value) => (
+              {["Save time on admin", "Track expenses and payouts", "See margins more clearly"].map((value) => (
                 <span key={value} className="surface-card rounded-full border px-3 py-2 text-sm font-bold text-[#2b3037]">
                   {value}
                 </span>
               ))}
             </div>
             <p className="mt-5 max-w-xl rounded-lg border border-[#d8dee5] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#2b3037] shadow-sm backdrop-blur">
-              Locally built in Toronto/GTA. Designed for independent restaurants that need clearer records without replacing their POS or accounting tools.
+              Locally built in Toronto/GTA. Currently speaking with local restaurant owners and managers.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
@@ -289,14 +271,14 @@ export function LandingPage() {
                 className="premium-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
               >
                 <MessageSquareText className="h-4 w-4" />
-                Book a 10-minute review
+                Tell us what wastes time
               </a>
               <Link
                 to="/pilot"
                 onClick={() => trackEvent("cta_join_early_pilot_click", { location: "hero" })}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8dee5] bg-white px-5 py-3 text-sm font-bold text-[#20242a] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f8fafc]"
               >
-                Request details
+                Join Early Pilot
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
@@ -306,7 +288,7 @@ export function LandingPage() {
             <div className="surface-panel relative mx-auto max-w-[600px] rounded-lg border p-4 backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d8dee5] pb-4">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Sample review dashboard &mdash; demo data</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Concept preview &mdash; demo data</p>
                   <p className="mt-1 text-lg font-bold text-[#171b21]">Restaurant Admin Helper</p>
                 </div>
                 <div className="inline-flex rounded-lg border border-[#d8dee5] bg-[#f8fafc] p-1 text-xs font-bold text-[#5f6872]">
@@ -369,13 +351,9 @@ export function LandingPage() {
       <section id="problem" className="surface-section relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto max-w-7xl">
           <SectionHeading
-            eyebrow="Where margin gets unclear"
-            title="The problem is not one tool. It is the handoff between all of them."
-            headingClassName="max-w-4xl"
-          >
-            Most restaurants already have a POS, delivery apps, a spreadsheet, paper notes, and a bookkeeper. The risk is
-            the gaps between those systems.
-          </SectionHeading>
+            title="Restaurant admin should not eat up your night."
+            headingClassName="max-w-[22rem] sm:max-w-none md:whitespace-nowrap"
+          />
           <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           {problemCards.map((problem) => (
             <div key={problem} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
@@ -389,7 +367,7 @@ export function LandingPage() {
             onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "problem" })}
             className="premium-button mt-8 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
-            Book a review
+            Tell us what wastes the most time
             <ArrowRight className="h-4 w-4" />
           </a>
         </div>
@@ -397,9 +375,9 @@ export function LandingPage() {
 
       <section id="workflows" className="relative overflow-hidden border-y border-[#d8dee5] bg-white/78 py-16">
         <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
-          <SectionHeading eyebrow="What gets checked" title="Focused cost-control workflows.">
-            Restaurant Admin Helper focuses on the recurring records that often hide cost movement, payout gaps, or
-            avoidable admin cleanup.
+          <SectionHeading eyebrow="What it helps organize" title="Three admin problems.">
+            Restaurant Admin Helper is being shaped around the repetitive records that small restaurants already deal
+            with every week - the ones that take time, create mistakes, or hide where money is going.
           </SectionHeading>
           <div className="mt-8 grid gap-4 lg:grid-cols-3">
             {focusAreas.map(({ title, text, Icon }) => (
@@ -422,46 +400,11 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="outcomes" className="relative overflow-hidden px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto max-w-7xl">
-          <SectionHeading eyebrow="What you get" title="A clearer operating picture before the month gets messy.">
-            The goal is not another dashboard for its own sake. The goal is cleaner checks, simpler handoff, and fewer
-            surprises when reviewing costs.
-          </SectionHeading>
-          <div className="mt-8 grid gap-4 lg:grid-cols-3">
-            {outcomeCards.map(({ title, text, Icon }) => (
-              <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
-                <Icon className="h-6 w-6 text-[#53677a]" />
-                <h3 className="mt-5 text-base font-semibold text-[#20242a]">{title}</h3>
-                <p className="mt-3 text-sm leading-6 text-[#5f6872]">{text}</p>
-              </div>
-            ))}
-          </div>
-          <div className="surface-panel reveal mt-4 grid gap-4 rounded-lg border p-5 md:grid-cols-[0.75fr_1fr] md:items-center">
-            <div>
-              <p className="text-sm font-bold text-[#20242a]">Built around the tools you already use</p>
-              <p className="mt-2 text-sm leading-6 text-[#5f6872]">
-                POS reports, supplier invoices, Excel or Google Sheets, paper notes, delivery apps, and bookkeeper
-                messages can stay in place.
-              </p>
-            </div>
-            <a
-              href="#contact"
-              onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "outcomes" })}
-              className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
-            >
-              Ask for a workflow review
-              <ArrowRight className="h-4 w-4" />
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <section className="relative overflow-hidden border-y border-[#d8dee5] bg-white/78 px-5 py-16 lg:px-8">
+      <section className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1fr]">
           <SectionHeading eyebrow="Positioning" title="Not another POS system.">
-            This service is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, or accounting software.
-            It is for the cost-control and admin checks around the tools restaurants already use.
+            This project is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, or accounting software.
+            It is being built for the messy admin work around the tools restaurants already use.
           </SectionHeading>
           <div className="surface-accent reveal grid overflow-hidden rounded-lg border md:grid-cols-2">
             <div className="border-b border-white/10 bg-white/5 p-6 md:border-b-0 md:border-r">
@@ -482,12 +425,14 @@ export function LandingPage() {
 
       <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#d8dee5] py-16">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.9fr_1fr] lg:px-8">
-          <SectionHeading eyebrow="How it works" title="Start with one workflow, not a full software rollout.">
-            The first conversation is about where records currently break down. No private financial data is needed, and
-            sample or blurred records are enough if a deeper review makes sense.
+          <SectionHeading eyebrow="How it starts" title="Help shape the first version.">
+            Restaurant Admin Helper is looking for feedback from independent restaurants, cafes, bakeries, takeout shops,
+            and bubble tea shops in Toronto/GTA. The goal is to find the admin task that wastes the most time, then
+            build a focused first version around that workflow. No private numbers are needed. Even 2-3 sentences about
+            what feels messy is enough.
           </SectionHeading>
           <div className="grid gap-4 sm:grid-cols-3">
-            {serviceSteps.map(({ title, text, Icon }) => (
+            {pilotSteps.map(({ title, text, Icon }) => (
               <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.08)]">
                 <Icon className="h-5 w-5 text-[#53677a]" />
                 <p className="mt-4 text-sm font-semibold leading-6 text-[#20242a]">{title}</p>
@@ -500,7 +445,7 @@ export function LandingPage() {
             onClick={() => trackEvent("cta_join_early_pilot_click", { location: "pilot" })}
             className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
           >
-            Request details
+            Join Early Pilot
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -508,8 +453,9 @@ export function LandingPage() {
 
       <section id="contact" className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.7fr_1fr]">
-          <SectionHeading eyebrow="Book a review" title="Request a 10-minute restaurant admin review.">
-            Share the workflow that is creating extra cleanup or unclear costs. No private financial data is required.
+          <SectionHeading eyebrow="Contact" title="Share the admin task that wastes the most time">
+            Please do not submit private financial data. Only the workflow and pain points are needed. Even 2-3
+            sentences is enough.
           </SectionHeading>
 
           <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-lg border p-5 md:p-6">
@@ -553,8 +499,8 @@ export function LandingPage() {
           </div>
 
           <div className="mt-4 grid gap-4">
-            <Field label="What would you like reviewed first?">
-              <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Supplier invoices, daily close, delivery payouts, bookkeeping handoff..." required />
+            <Field label="What admin task takes the most time?">
+              <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." required />
             </Field>
             <p className="-mt-2 text-xs font-semibold text-[#53677a]">No private numbers needed.</p>
             <fieldset className="rounded-lg border border-[#d8dee5] bg-[#f5f7f9] p-4">
@@ -568,7 +514,7 @@ export function LandingPage() {
                 ))}
               </div>
             </fieldset>
-            <Field label="Would you be open to a 10-minute review call?">
+            <Field label="Would you be open to a 10-minute chat?">
               <select className={inputClass} name="chatOpen" defaultValue="">
                 <option value="" disabled>
                   Select answer
@@ -585,8 +531,8 @@ export function LandingPage() {
           <div className="mt-5 rounded-lg border border-[#d8dee5] bg-white/72 p-4 text-sm leading-6 text-[#53677a]">
             <p className="font-bold text-[#20242a]">Privacy note</p>
             <p className="mt-1">
-              No private financial data is required. General workflow notes are enough. Sample, fake, or blurred data
-              can be used later if a deeper review makes sense. This service is locally built in Toronto/GTA.
+              No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
+              can be used later if a prototype is reviewed. This project is locally built in Toronto/GTA.
             </p>
           </div>
 
@@ -608,7 +554,7 @@ export function LandingPage() {
             disabled={isSubmitting}
             className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
           >
-            {isSubmitting ? "Sending..." : "Request review"}
+            {isSubmitting ? "Sending..." : "Send feedback"}
             <ArrowRight className="h-4 w-4" />
           </button>
         </form>
@@ -620,11 +566,11 @@ export function LandingPage() {
           <div>
             <p className="font-bold">Restaurant Admin Helper</p>
             <p className="mt-1 text-sm text-slate-300">Locally built by Terry in Toronto/GTA.</p>
-            <p className="mt-1 text-sm text-slate-300">Helping independent restaurants organize cost-control records.</p>
+            <p className="mt-1 text-sm text-slate-300">Helping independent restaurants reduce repetitive admin work.</p>
           </div>
           <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#f8fafc] hover:text-[#cbd5e1]" href="#contact">
             <Mail className="h-4 w-4" />
-            Request a review
+            Share feedback through the form
           </a>
         </div>
       </footer>
