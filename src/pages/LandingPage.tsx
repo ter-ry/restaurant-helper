@@ -239,15 +239,15 @@ export function LandingPage() {
       </header>
 
       <section className="relative z-10 overflow-hidden border-b border-[#d8dee5] bg-gradient-to-br from-[#fbfcfd]/90 via-[#f1f4f7]/80 to-[#e7edf2]/82">
-        <div className="hero-grid relative z-10 mx-auto grid min-h-[calc(100vh-73px)] max-w-7xl items-center gap-10 px-5 py-12 md:py-16 lg:grid-cols-[1fr_0.9fr] lg:px-8">
+        <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-[72px] md:py-[80px] lg:min-h-[720px] lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)] lg:gap-12 lg:px-8 xl:min-h-[760px] xl:gap-14">
           <div className="reveal">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-white/84 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4" />
               Local pilot conversations open
             </p>
-            <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.25rem] xl:text-[3.55rem]">
-              <span className="block lg:whitespace-nowrap">Save time on admin.</span>
-              <span className="block lg:whitespace-nowrap">See where money is going.</span>
+            <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-normal text-[#171b21] md:text-5xl lg:text-[3.35rem] xl:text-[3.75rem]">
+              <span className="block xl:whitespace-nowrap">Save time on admin.</span>
+              <span className="block xl:whitespace-nowrap">See where money is going.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#2b3037] md:text-xl">
@@ -286,7 +286,7 @@ export function LandingPage() {
           </div>
 
           <div className="reveal relative">
-            <div className="surface-panel relative mx-auto max-w-[600px] rounded-lg border p-4 backdrop-blur md:p-5">
+            <div className="surface-panel relative mx-auto max-w-[620px] rounded-lg border p-4 backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d8dee5] pb-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Concept preview &mdash; demo data</p>
