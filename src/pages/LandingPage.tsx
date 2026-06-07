@@ -217,7 +217,7 @@ export function LandingPage() {
     <main className="relative min-h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A]">
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_16%_12%,rgba(96,115,135,0.14),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(31,37,45,0.08),transparent_36%),linear-gradient(135deg,#F8FAFC_0%,#F1F5F9_42%,#E2E8F0_100%)]" />
       <FloatingParticles />
-      <header className="sticky top-0 z-20 border-b border-[#E2E8F0]/85 bg-[#f7f9fa]/88 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-[#E2E8F0]/85 bg-[#F8FAFC]/88 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
           <a href="#" className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
             <FlowtallyMark className="h-9 w-9 shrink-0" />
