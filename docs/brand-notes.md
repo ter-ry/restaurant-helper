@@ -1,12 +1,12 @@
-# FlowTally Brand Notes
+# Flowtally Brand Notes
 
 ## Brand Name
 
-FlowTally
+Flowtally
 
 ## Meaning
 
-FlowTally combines two ideas:
+Flowtally combines two ideas:
 
 - Flow: the movement of restaurant records across POS reports, invoices, delivery apps, paper notes, spreadsheets, and accountant requests.
 - Tally: the practical act of counting, checking, and organizing records so owners can understand where money is going.
@@ -15,9 +15,9 @@ The name should feel simple, useful, and approachable for busy restaurant owners
 
 ## Positioning Statement
 
-FlowTally is a restaurant admin and money-visibility service for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups.
+Flowtally is a restaurant admin and money-visibility service for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups.
 
-FlowTally helps owners save time on admin and get a clearer view of where money is going by organizing records around invoices, daily close, delivery payouts, expenses, reports, and bookkeeping handoff.
+Flowtally helps owners save time on admin and get a clearer view of where money is going by organizing records around invoices, daily close, delivery payouts, expenses, reports, and bookkeeping handoff.
 
 ## Tagline Options
 
@@ -57,7 +57,7 @@ Use concrete restaurant language:
 
 ## Brand Personality
 
-FlowTally should feel like a practical operator who understands restaurants, not a flashy tech product.
+Flowtally should feel like a practical operator who understands restaurants, not a flashy tech product.
 
 It should be:
 
@@ -87,7 +87,7 @@ It should be:
 
 ## Future Brand Direction
 
-FlowTally can grow from a service-led pilot into a lightweight product around restaurant admin records and money visibility.
+Flowtally can grow from a service-led pilot into a lightweight product around restaurant admin records and money visibility.
 
 Future directions:
 

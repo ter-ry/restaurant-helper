@@ -6,9 +6,9 @@ import {
   PackageSearch,
   Settings,
   Store,
-  Utensils,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { FlowtallyMark } from "./FlowtallyMark";
 
 const navItems = [
   { to: "/app", label: "Dashboard", icon: Gauge },
@@ -24,9 +24,7 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-line bg-white p-5 lg:block">
       <NavLink to="/" className="flex items-center gap-3 rounded-lg text-ink">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
-          <Utensils className="h-5 w-5" />
-        </span>
+        <FlowtallyMark className="h-10 w-10 shrink-0" />
         <span>
           <span className="block text-sm font-bold">Cost-Control</span>
           <span className="block text-xs text-muted">Sample Cafe</span>

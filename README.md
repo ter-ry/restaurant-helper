@@ -1,6 +1,6 @@
-# FlowTally
+# Flowtally
 
-FlowTally is a restaurant admin and money-visibility service for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups.
+Flowtally is a restaurant admin and money-visibility service for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups.
 
 Core promise:
 
@@ -8,7 +8,7 @@ Core promise:
 Save time on admin and get a clearer view of where money is going.
 ```
 
-FlowTally is not another POS system, accounting software, inventory software, generic AI software, or just an invoice tracker. It helps organize the records around the tools restaurants already use: POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests.
+Flowtally is not another POS system, accounting software, inventory software, generic AI software, or just an invoice tracker. It helps organize the records around the tools restaurants already use: POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests.
 
 No fake testimonials, logos, customers, or metrics are included. Demo numbers are labeled as concept/demo data.
 
@@ -110,7 +110,7 @@ Before launch, verify that `og:image`, `og:url`, and Twitter image URLs point to
 
 ## Privacy / Trust Note
 
-The page states that no private financial data is required, general workflow feedback is enough, sample/fake/blurred data can be used later, and FlowTally is locally built in Toronto/GTA.
+The page states that no private financial data is required, general workflow feedback is enough, sample/fake/blurred data can be used later, and Flowtally is locally built in Toronto/GTA.
 
 ## QA Checklist
 

@@ -2,11 +2,11 @@
 
 ## Display Name
 
-FlowTally | Restaurant Admin
+Flowtally | Restaurant Admin
 
 Alternative:
 
-FlowTally | Restaurant Money Visibility
+Flowtally | Restaurant Money Visibility
 
 ## Recommended Handle
 
@@ -63,7 +63,7 @@ Invoices, payouts, close records, reports.
 
 ## Profile Description
 
-FlowTally helps independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups organize the records around invoices, daily close, delivery payouts, expenses, and reporting.
+Flowtally helps independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small restaurant groups organize the records around invoices, daily close, delivery payouts, expenses, and reporting.
 
 ## Highlight Ideas
 
@@ -79,11 +79,11 @@ FlowTally helps independent restaurants, cafes, bakeries, takeout shops, bubble 
 ## First Post Caption
 
 ```text
-Meet FlowTally.
+Meet Flowtally.
 
 Restaurant admin gets messy when records are spread across POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests.
 
-FlowTally is being built locally in Toronto/GTA to help independent restaurants save time on admin and get a clearer view of where money is going.
+Flowtally is being built locally in Toronto/GTA to help independent restaurants save time on admin and get a clearer view of where money is going.
 
 No fake numbers needed. No private financial data needed.
 
@@ -98,7 +98,7 @@ If invoices, delivery payouts, daily close, or bookkeeping handoff takes too muc
 4. Supplier invoices are only one piece of money visibility
 5. What to prepare before sending records to a bookkeeper
 6. Paper notes, spreadsheets, and POS reports: where handoff breaks
-7. What FlowTally is not: not a POS, not accounting software
-8. How a 10-minute FlowTally pilot conversation works
+7. What Flowtally is not: not a POS, not accounting software
+8. How a 10-minute Flowtally pilot conversation works
 9. Common admin tasks restaurant owners push to the end of the night
 10. Why small restaurants need clearer records before month-end

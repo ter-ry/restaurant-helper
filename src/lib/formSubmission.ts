@@ -5,7 +5,7 @@ export type FormSubmissionResult = {
 
 const formEndpoint = import.meta.env.VITE_FORM_ENDPOINT?.trim();
 const setupWarning =
-  "[FlowTally setup] VITE_FORM_ENDPOINT is not configured. Form submissions are not being stored. Add a Formspree endpoint before outreach.";
+  "[Flowtally setup] VITE_FORM_ENDPOINT is not configured. Form submissions are not being stored. Add a Formspree endpoint before outreach.";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -20,7 +20,7 @@ function getSuccessMessage(formType: "feedback" | "pilot") {
 }
 
 function getFormSubject(formType: "feedback" | "pilot") {
-  return formType === "pilot" ? "New FlowTally pilot list lead" : "New FlowTally restaurant feedback lead";
+  return formType === "pilot" ? "New Flowtally pilot list lead" : "New Flowtally restaurant feedback lead";
 }
 
 export async function submitForm(form: HTMLFormElement, formType: "feedback" | "pilot"): Promise<FormSubmissionResult> {
@@ -78,7 +78,7 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
   const responseBody = await response.text();
 
   if (!response.ok) {
-    console.error("[FlowTally form] Formspree submission failed", {
+    console.error("[Flowtally form] Formspree submission failed", {
       status: response.status,
       statusText: response.statusText,
       responseBody,

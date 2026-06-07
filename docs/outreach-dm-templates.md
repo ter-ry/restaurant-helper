@@ -7,7 +7,7 @@ Keep messages conversational. Do not oversell. The goal is to start local conver
 1.
 
 ```text
-Hi [Name], I’m Terry. I’m building FlowTally locally in Toronto/GTA to help restaurants save time on admin and see where money is going. Would you be open to sharing what admin task takes the most time?
+Hi [Name], I’m Terry. I’m building Flowtally locally in Toronto/GTA to help restaurants save time on admin and see where money is going. Would you be open to sharing what admin task takes the most time?
 ```
 
 2.
@@ -19,7 +19,7 @@ Hi [Name], quick question: for your restaurant, is the bigger admin headache inv
 3.
 
 ```text
-Hi [Name], I’m working on FlowTally for independent restaurants. It helps organize POS reports, invoices, delivery payouts, notes, and spreadsheets. Could I ask what admin work is most annoying for your team?
+Hi [Name], I’m working on Flowtally for independent restaurants. It helps organize POS reports, invoices, delivery payouts, notes, and spreadsheets. Could I ask what admin work is most annoying for your team?
 ```
 
 4.
@@ -31,7 +31,7 @@ Hi [Name], I’m speaking with local food businesses about restaurant admin. No 
 5.
 
 ```text
-Hi [Name], does your team still deal with paper notes, Excel, POS reports, invoices, and delivery app records? I’m building FlowTally around that exact admin mess.
+Hi [Name], does your team still deal with paper notes, Excel, POS reports, invoices, and delivery app records? I’m building Flowtally around that exact admin mess.
 ```
 
 ## 5 Longer Versions
@@ -39,7 +39,7 @@ Hi [Name], does your team still deal with paper notes, Excel, POS reports, invoi
 1.
 
 ```text
-Hi [Name], I’m Terry. I’m building FlowTally, a local restaurant admin and money-visibility service for independent food businesses in Toronto/GTA.
+Hi [Name], I’m Terry. I’m building Flowtally, a local restaurant admin and money-visibility service for independent food businesses in Toronto/GTA.
 
 The goal is to help owners organize records across POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests.
 
@@ -51,7 +51,7 @@ Would you be open to a quick 10-minute conversation about which admin task waste
 ```text
 Hi [Name], I noticed your restaurant and wanted to reach out directly.
 
-I’m building FlowTally for restaurants that have records spread across POS reports, delivery apps, supplier invoices, paper notes, and spreadsheets.
+I’m building Flowtally for restaurants that have records spread across POS reports, delivery apps, supplier invoices, paper notes, and spreadsheets.
 
 No private financial data needed - I’m just trying to understand which workflow is most painful: daily close, delivery payouts, invoices, expenses, or bookkeeping handoff.
 
@@ -61,7 +61,7 @@ Would you be open to sharing your experience?
 3.
 
 ```text
-Hi [Name], I’m working on a local service called FlowTally.
+Hi [Name], I’m working on a local service called Flowtally.
 
 It is not another POS system or accounting software. It is meant to help restaurants save time on admin and get a clearer view of where money is going across the records they already use.
 
@@ -73,7 +73,7 @@ Would a quick 10-minute chat be possible sometime this week?
 ```text
 Hi [Name], I’m talking to independent restaurants in Toronto/GTA about admin work that gets pushed to the end of the night.
 
-FlowTally is being shaped around invoices, daily close records, delivery payouts, expense notes, and bookkeeper handoff.
+Flowtally is being shaped around invoices, daily close records, delivery payouts, expense notes, and bookkeeper handoff.
 
 Would you be open to telling me which one causes the most friction for your team?
 ```
@@ -81,7 +81,7 @@ Would you be open to telling me which one causes the most friction for your team
 5.
 
 ```text
-Hi [Name], I’m building FlowTally for small restaurants and food businesses.
+Hi [Name], I’m building Flowtally for small restaurants and food businesses.
 
 The simple idea: less time chasing admin records, clearer view of where money is going.
 
@@ -111,7 +111,7 @@ One last note from me. I’m keeping this local and practical - no private data 
 ## Warm Contact Version
 
 ```text
-Hi [Name], I’m working on a new project called FlowTally.
+Hi [Name], I’m working on a new project called Flowtally.
 
 It helps restaurant owners save time on admin and get a clearer view of where money is going across invoices, daily close, delivery payouts, expenses, and reports.
 
@@ -121,7 +121,7 @@ Since you know the restaurant world better than most people I could ask, would y
 ## Cantonese / English Version
 
 ```text
-Hi [Name], 我係 Terry. 我而家整緊 FlowTally，主要幫餐廳老闆整理 admin 同睇清楚錢去咗邊。
+Hi [Name], 我係 Terry. 我而家整緊 Flowtally，主要幫餐廳老闆整理 admin 同睇清楚錢去咗邊。
 
 例如 POS reports、supplier invoices、delivery payouts、Excel、紙 notes、accountant 要嘅 records.
 
@@ -135,7 +135,7 @@ Hi [Name], 我係 Terry. 我而家整緊 FlowTally，主要幫餐廳老闆整理
 Opening:
 
 ```text
-Thanks for taking the time. I’m building FlowTally to help restaurants save time on admin and get a clearer view of where money is going. I’m not here to ask for private numbers. I only want to understand the workflow.
+Thanks for taking the time. I’m building Flowtally to help restaurants save time on admin and get a clearer view of where money is going. I’m not here to ask for private numbers. I only want to understand the workflow.
 ```
 
 Questions:
@@ -148,7 +148,7 @@ Questions:
 6. Who handles this work today?
 7. What would make this workflow easier?
 8. Would a simple weekly summary or review queue be useful?
-9. What would make you trust or not trust a tool/service like FlowTally?
+9. What would make you trust or not trust a tool/service like Flowtally?
 10. Can I show you a simple concept later and ask for feedback?
 
 Close:

@@ -1,8 +1,8 @@
-# FlowTally Handoff
+# Flowtally Handoff
 
 ## What Changed
 
-- Completed the FlowTally public rebrand.
+- Completed the Flowtally public rebrand.
 - Updated landing page positioning around restaurant admin and money visibility.
 - Updated metadata, favicon, OG image, README, and docs.
 - Added `public/CNAME` for `flowtally.ca`.

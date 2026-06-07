@@ -1,6 +1,6 @@
-# FlowTally Form Setup
+# Flowtally Form Setup
 
-FlowTally can collect real leads through Formspree on GitHub Pages. No endpoint is hardcoded in the app.
+Flowtally can collect real leads through Formspree on GitHub Pages. No endpoint is hardcoded in the app.
 
 ## Current Forms
 
@@ -42,7 +42,7 @@ When `VITE_FORM_ENDPOINT` is configured:
 ## Formspree Setup
 
 1. Create or log in to a Formspree account.
-2. Create a new form named `FlowTally leads`.
+2. Create a new form named `Flowtally leads`.
 3. Copy the endpoint URL. It usually looks like:
 
 ```text
@@ -72,7 +72,7 @@ Do not put private financial data in test submissions.
 
 Landing page feedback form:
 
-- `_subject`: `New FlowTally restaurant feedback lead`
+- `_subject`: `New Flowtally restaurant feedback lead`
 - `_replyto`: set only when the contact field is an email address
 - `formType`: `feedback`
 - `submittedAt`
@@ -91,7 +91,7 @@ Landing page feedback form:
 
 Early pilot form:
 
-- `_subject`: `New FlowTally pilot list lead`
+- `_subject`: `New Flowtally pilot list lead`
 - `_replyto`: set from `email`
 - `formType`: `pilot`
 - `submittedAt`

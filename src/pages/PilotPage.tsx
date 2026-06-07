@@ -39,7 +39,7 @@ export function PilotPage() {
         formStartedRef.current = false;
       }
     } catch (error) {
-      console.error("[FlowTally form] Pilot form submission failed", error);
+      console.error("[Flowtally form] Pilot form submission failed", error);
       setSubmission({
         type: "error",
         message: "Sorry, the form could not be sent. Please send us an Instagram DM, then try again later.",
@@ -51,29 +51,29 @@ export function PilotPage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(96,115,135,0.14),transparent_30%),linear-gradient(135deg,#fbfcfd_0%,#f1f4f7_44%,#e7edf2_100%)] px-5 py-8 text-[#20242a] lg:px-8">
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(96,115,135,0.14),transparent_30%),linear-gradient(135deg,#F8FAFC_0%,#F1F5F9_44%,#E2E8F0_100%)] px-5 py-8 text-[#0F172A] lg:px-8">
       <div className="mx-auto max-w-5xl">
-        <Link className="inline-flex items-center gap-2 text-sm font-bold text-[#53677a] transition hover:text-[#171b21]" to="/">
+        <Link className="inline-flex items-center gap-2 text-sm font-bold text-[#0D9488] transition hover:text-[#0F172A]" to="/">
           <ArrowLeft className="h-4 w-4" />
           Back to landing page
         </Link>
 
         <section className="grid min-h-[calc(100vh-92px)] items-center gap-8 py-12 lg:grid-cols-[0.9fr_1fr]">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-[#ffffff]/85 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm">
+            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-[#FFFFFF]/85 px-3 py-1 text-sm font-bold text-[#0D9488] shadow-sm">
               <Store className="h-4 w-4" />
-              FlowTally early pilot
+              Flowtally early pilot
             </p>
-            <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#171b21] md:text-5xl">
-              Join the early FlowTally pilot list.
+            <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#0F172A] md:text-5xl">
+              Join the early Flowtally pilot list.
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-[#5f6872]">
-              FlowTally is being shaped with feedback from local restaurants and small food businesses in Toronto/GTA.
+            <p className="mt-5 max-w-xl text-base leading-7 text-[#64748B]">
+              Flowtally is being shaped with feedback from local restaurants and small food businesses in Toronto/GTA.
               Join the list for updates when a focused prototype is ready to review.
             </p>
           </div>
 
-          <form onFocusCapture={handleFormStarted} onSubmit={handlePilotSubmit} className="rounded-lg border border-[#d8dee5] bg-[#ffffff]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
+          <form onFocusCapture={handleFormStarted} onSubmit={handlePilotSubmit} className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
             {!isFormEndpointConfigured && import.meta.env.DEV ? (
               <div className="mb-4 rounded-lg border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
                 <p className="font-bold text-[#3f3210]">Owner setup note</p>
@@ -83,33 +83,33 @@ export function PilotPage() {
               </div>
             ) : null}
             <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
-            <label className="grid gap-2 text-sm font-semibold text-[#20242a]">
+            <label className="grid gap-2 text-sm font-semibold text-[#0F172A]">
               Email
               <input
-                className="min-h-11 rounded-lg border border-[#d8dee5] bg-white px-3 py-2 text-sm text-[#20242a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#53677a] focus:ring-4 focus:ring-[#dbe5ef]"
+                className="min-h-11 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]"
                 name="email"
                 placeholder="name@example.com"
                 required
                 type="email"
               />
             </label>
-            <label className="mt-4 grid gap-2 text-sm font-semibold text-[#20242a]">
+            <label className="mt-4 grid gap-2 text-sm font-semibold text-[#0F172A]">
               Restaurant or business name
               <input
-                className="min-h-11 rounded-lg border border-[#d8dee5] bg-white px-3 py-2 text-sm text-[#20242a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#53677a] focus:ring-4 focus:ring-[#dbe5ef]"
+                className="min-h-11 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]"
                 name="businessName"
                 placeholder="Optional"
                 type="text"
               />
             </label>
-            <p className="mt-4 text-sm leading-6 text-[#5f6872]">
+            <p className="mt-4 text-sm leading-6 text-[#64748B]">
               No private numbers needed. This list is only for pilot updates and prototype feedback.
             </p>
             {submission.type !== "idle" ? (
               <p
                 className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
                   submission.type === "success"
-                    ? "border-[#b7d2c3] bg-[#f1faf4] text-[#245536]"
+                    ? "border-[#99F6E4] bg-[#E6FFFA] text-[#0F766E]"
                     : submission.type === "notice"
                       ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
                       : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
@@ -120,7 +120,7 @@ export function PilotPage() {
               </p>
             ) : null}
             <button
-              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038] disabled:cursor-not-allowed disabled:opacity-65"
+              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E] disabled:cursor-not-allowed disabled:opacity-65"
               disabled={isSubmitting}
               type="submit"
             >
@@ -128,7 +128,7 @@ export function PilotPage() {
               <Mail className="h-4 w-4" />
             </button>
             <Link
-              className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#d8dee5] bg-white px-5 py-3 text-sm font-bold text-[#20242a] transition hover:bg-[#fbfcfd]"
+              className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] transition hover:bg-[#F8FAFC]"
               onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "pilot_page" })}
               to="/#contact"
             >

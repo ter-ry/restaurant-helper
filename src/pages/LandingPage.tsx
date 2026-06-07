@@ -9,13 +9,13 @@ import {
   Mail,
   MessageSquareText,
   ReceiptText,
-  Store,
   Truck,
 } from "lucide-react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { trackEvent } from "../lib/analytics";
+import { FlowtallyMark } from "../components/FlowtallyMark";
 import { isFormEndpointConfigured, submitForm } from "../lib/formSubmission";
 
 const navLinks = [
@@ -104,7 +104,7 @@ const pilotSteps = [
   },
   {
     title: "The first version is shaped",
-    text: "If the workflow looks useful, it can guide the early FlowTally pilot.",
+    text: "If the workflow looks useful, it can guide the early Flowtally pilot.",
     Icon: Mail,
   },
 ];
@@ -122,11 +122,11 @@ function SectionHeading({
 }) {
   return (
     <div className="reveal max-w-4xl">
-      {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#53677a]">{eyebrow}</p> : null}
-      <h2 className={`heading-balance mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-[#171b21] md:text-4xl ${headingClassName}`}>
+      {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0D9488]">{eyebrow}</p> : null}
+      <h2 className={`heading-balance mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-[#0F172A] md:text-4xl ${headingClassName}`}>
         {title}
       </h2>
-      {children ? <p className="mt-4 text-base leading-7 text-[#5f6872]">{children}</p> : null}
+      {children ? <p className="mt-4 text-base leading-7 text-[#64748B]">{children}</p> : null}
     </div>
   );
 }
@@ -141,7 +141,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const inputClass =
-  "min-h-11 rounded-lg border border-[#d8dee5] bg-[#ffffff] px-3 py-2 text-sm text-[#20242a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#53677a] focus:ring-4 focus:ring-[#dbe5ef]";
+  "min-h-11 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]";
 
 type SubmissionState = {
   type: "idle" | "success" | "notice" | "error";
@@ -202,7 +202,7 @@ export function LandingPage() {
         formStartedRef.current = false;
       }
     } catch (error) {
-      console.error("[FlowTally form] Feedback form submission failed", error);
+      console.error("[Flowtally form] Feedback form submission failed", error);
       setSubmission({
         type: "error",
         message: "Sorry, the form could not be sent. Please send the same note by Instagram DM, then try again later.",
@@ -214,20 +214,18 @@ export function LandingPage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#f5f7f9] text-[#20242a]">
-      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_16%_12%,rgba(96,115,135,0.14),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(31,37,45,0.08),transparent_36%),linear-gradient(135deg,#fbfcfd_0%,#f1f4f7_42%,#e7edf2_100%)]" />
+    <main className="relative min-h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A]">
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_16%_12%,rgba(96,115,135,0.14),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(31,37,45,0.08),transparent_36%),linear-gradient(135deg,#F8FAFC_0%,#F1F5F9_42%,#E2E8F0_100%)]" />
       <FloatingParticles />
-      <header className="sticky top-0 z-20 border-b border-[#d8dee5]/85 bg-[#f7f9fa]/88 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-[#E2E8F0]/85 bg-[#f7f9fa]/88 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
-          <a href="#" className="flex items-center gap-2 text-base font-semibold text-[#171b21]">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#171b21] text-[#f8fafc] shadow-sm">
-              <Store className="h-5 w-5" />
-            </span>
-            FlowTally
+          <a href="#" className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
+            <FlowtallyMark className="h-9 w-9 shrink-0" />
+            Flowtally
           </a>
-          <nav className="hidden items-center rounded-full border border-[#d8dee5] bg-white/78 px-2 py-1 text-sm font-semibold text-[#5e6874] shadow-sm md:flex">
+          <nav className="hidden items-center rounded-full border border-[#E2E8F0] bg-white/78 px-2 py-1 text-sm font-semibold text-[#64748B] shadow-sm md:flex">
             {navLinks.map(([label, href]) => (
-              <a key={label} href={href} className="rounded-full px-3 py-2 transition hover:bg-white hover:text-[#171b21]">
+              <a key={label} href={href} className="rounded-full px-3 py-2 transition hover:bg-white hover:text-[#0F172A]">
                 {label}
               </a>
             ))}
@@ -235,45 +233,45 @@ export function LandingPage() {
           <a
             href="#contact"
             onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "header" })}
-            className="premium-button inline-flex min-h-10 items-center justify-center rounded-lg bg-[#171b21] px-4 py-2 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
+            className="premium-button inline-flex min-h-10 items-center justify-center rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
           >
             Tell us what wastes time
           </a>
         </div>
       </header>
 
-      <section className="relative z-10 overflow-hidden border-b border-[#d8dee5] bg-gradient-to-br from-[#fbfcfd]/90 via-[#f1f4f7]/80 to-[#e7edf2]/82">
+      <section className="relative z-10 overflow-hidden border-b border-[#E2E8F0] bg-gradient-to-br from-[#F8FAFC]/90 via-[#F1F5F9]/80 to-[#E2E8F0]/82">
         <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-[72px] md:py-[80px] lg:min-h-[720px] lg:grid-cols-[minmax(0,1fr)_minmax(480px,0.9fr)] lg:gap-12 lg:px-8 xl:min-h-[760px]">
           <div className="reveal min-w-0">
-            <p className="inline-flex items-center gap-2 rounded-full border border-[#d8dee5] bg-white/84 px-3 py-1 text-sm font-bold text-[#53677a] shadow-sm backdrop-blur">
+            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/84 px-3 py-1 text-sm font-bold text-[#0D9488] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4" />
               Local pilot conversations open
             </p>
-            <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.02] tracking-normal text-[#171b21] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.2vw,4rem)]">
+            <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.02] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.2vw,4rem)]">
               <span className="block">Save time on admin.</span>
               <span className="block">See where money is going.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
-              <p className="heading-balance text-lg font-semibold leading-7 text-[#2b3037] md:text-xl">
-                FlowTally helps independent restaurants organize POS reports, invoices, delivery payouts, paper notes,
+              <p className="heading-balance text-lg font-semibold leading-7 text-[#334155] md:text-xl">
+                Flowtally helps independent restaurants organize POS reports, invoices, delivery payouts, paper notes,
                 spreadsheets, and accountant requests.
               </p>
             </div>
             <div className="mt-5 flex max-w-2xl flex-wrap gap-2">
               {["Less manual admin", "Clearer spending records", "Cleaner handoff"].map((value) => (
-                <span key={value} className="surface-card rounded-full border px-3 py-2 text-sm font-bold text-[#2b3037]">
+                <span key={value} className="surface-card rounded-full border px-3 py-2 text-sm font-bold text-[#334155]">
                   {value}
                 </span>
               ))}
             </div>
-            <p className="mt-5 max-w-xl rounded-lg border border-[#d8dee5] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#2b3037] shadow-sm backdrop-blur">
+            <p className="mt-5 max-w-xl rounded-lg border border-[#E2E8F0] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#334155] shadow-sm backdrop-blur">
               Built for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small food businesses.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
                 href="#contact"
                 onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "hero" })}
-                className="premium-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
+                className="premium-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
               >
                 <MessageSquareText className="h-4 w-4" />
                 Tell us what wastes time
@@ -281,7 +279,7 @@ export function LandingPage() {
               <Link
                 to="/pilot"
                 onClick={() => trackEvent("cta_join_early_pilot_click", { location: "hero" })}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8dee5] bg-white px-5 py-3 text-sm font-bold text-[#20242a] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f8fafc]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#F8FAFC]"
               >
                 Join Early Pilot
                 <ArrowRight className="h-4 w-4" />
@@ -291,13 +289,13 @@ export function LandingPage() {
 
           <div className="reveal relative min-w-0">
             <div className="surface-panel relative mx-auto w-full max-w-[620px] rounded-lg border p-4 backdrop-blur md:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d8dee5] pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Concept preview &mdash; demo data</p>
-                  <p className="mt-1 text-lg font-bold text-[#171b21]">FlowTally</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#0D9488]">Concept preview &mdash; demo data</p>
+                  <p className="mt-1 text-lg font-bold text-[#0F172A]">Flowtally</p>
                 </div>
-                <div className="inline-flex rounded-lg border border-[#d8dee5] bg-[#f8fafc] p-1 text-xs font-bold text-[#5f6872]">
-                  <span className="rounded-md bg-white px-3 py-1 text-[#171b21] shadow-sm">Today</span>
+                <div className="inline-flex rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-1 text-xs font-bold text-[#64748B]">
+                  <span className="rounded-md bg-white px-3 py-1 text-[#0F172A] shadow-sm">Today</span>
                   <span className="px-3 py-1">Week</span>
                 </div>
               </div>
@@ -306,30 +304,30 @@ export function LandingPage() {
                 {previewMetrics.map(([label, value, status]) => (
                   <div key={label} className="surface-card rounded-lg border p-4 shadow-none">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b7480]">{label}</p>
-                      <span className="rounded-full bg-[#e8eef4] px-2 py-0.5 text-[10px] font-bold text-[#53677a]">{status}</span>
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">{label}</p>
+                      <span className="rounded-full bg-[#DDF7F3] px-2 py-0.5 text-[10px] font-bold text-[#0D9488]">{status}</span>
                     </div>
-                    <p className="mt-3 text-xl font-semibold text-[#171b21]">{value}</p>
+                    <p className="mt-3 text-xl font-semibold text-[#0F172A]">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-5 rounded-lg border border-[#dde4eb] bg-white/86 p-4">
+              <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/86 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-bold text-[#171b21]">Review queue</p>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#eef2f5] px-3 py-1 text-xs font-bold text-[#53677a]">
+                  <p className="text-sm font-bold text-[#0F172A]">Review queue</p>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#DDF7F3] px-3 py-1 text-xs font-bold text-[#0D9488]">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     3 tasks
                   </span>
                 </div>
                 <div className="mt-4 grid gap-3">
                   {previewTasks.slice(0, 2).map(([label, text, status]) => (
-                    <div key={label} className="grid gap-3 rounded-lg border border-[#edf1f5] bg-[#fbfcfd] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                    <div key={label} className="grid gap-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
                       <div>
-                        <p className="text-sm font-bold text-[#20242a]">{label}</p>
-                        <p className="mt-1 text-sm leading-6 text-[#5f6872]">{text}</p>
+                        <p className="text-sm font-bold text-[#0F172A]">{label}</p>
+                        <p className="mt-1 text-sm leading-6 text-[#64748B]">{text}</p>
                       </div>
-                      <span className="w-fit rounded-full border border-[#d8dee5] bg-white px-3 py-1 text-xs font-bold text-[#53677a]">{status}</span>
+                      <span className="w-fit rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-bold text-[#0D9488]">{status}</span>
                     </div>
                   ))}
                 </div>
@@ -339,12 +337,12 @@ export function LandingPage() {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="surface-card rounded-lg border p-4 backdrop-blur">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#53677a]">Bookkeeper handoff</p>
-                <p className="mt-2 text-sm font-semibold text-[#171b21]">4 records ready to summarize</p>
-                <p className="mt-1 text-xs leading-5 text-[#5f6872]">Draft report can be prepared.</p>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#0D9488]">Bookkeeper handoff</p>
+                <p className="mt-2 text-sm font-semibold text-[#0F172A]">4 records ready to summarize</p>
+                <p className="mt-1 text-xs leading-5 text-[#64748B]">Draft report can be prepared.</p>
               </div>
 
-              <div className="surface-accent rounded-lg border p-4 text-[#f8fafc]">
+              <div className="surface-accent rounded-lg border p-4 text-[#F8FAFC]">
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#cbd5e1]">Payout alert</p>
                 <p className="mt-2 text-sm font-semibold">DoorDash is $42 below expected sales.</p>
               </div>
@@ -360,20 +358,20 @@ export function LandingPage() {
             headingClassName="max-w-4xl"
           >
             POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests all tell
-            part of the money story. FlowTally helps bring the work into one clearer flow.
+            part of the money story. Flowtally helps bring the work into one clearer flow.
           </SectionHeading>
           <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           {problemCards.map((problem) => (
             <div key={problem} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
-              <BookOpenCheck className="h-5 w-5 text-[#53677a]" />
-              <p className="mt-4 text-sm font-semibold leading-6 text-[#20242a]">{problem}</p>
+              <BookOpenCheck className="h-5 w-5 text-[#0D9488]" />
+              <p className="mt-4 text-sm font-semibold leading-6 text-[#0F172A]">{problem}</p>
             </div>
           ))}
           </div>
           <a
             href="#contact"
             onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "problem" })}
-            className="premium-button mt-8 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
+            className="premium-button mt-8 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
           >
             Tell us what wastes the most time
             <ArrowRight className="h-4 w-4" />
@@ -381,27 +379,27 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="workflows" className="relative overflow-hidden border-y border-[#d8dee5] bg-white/78 py-16">
+      <section id="workflows" className="relative overflow-hidden border-y border-[#E2E8F0] bg-white/78 py-16">
         <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
           <SectionHeading eyebrow="What it helps organize" title="One system for the records around the money.">
-            FlowTally is being shaped around the weekly admin work restaurant owners already deal with - the work that
+            Flowtally is being shaped around the weekly admin work restaurant owners already deal with - the work that
             takes time, creates mistakes, or makes it harder to see where money is going.
           </SectionHeading>
           <div className="mt-8 grid gap-4 lg:grid-cols-3">
             {focusAreas.map(({ title, text, Icon }) => (
               <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
                 <div className="flex items-center justify-between gap-3">
-                  <Icon className="h-6 w-6 text-[#53677a]" />
-                  <span className="rounded-full border border-[#d8dee5] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#53677a]">Module</span>
+                  <Icon className="h-6 w-6 text-[#0D9488]" />
+                  <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#0D9488]">Module</span>
                 </div>
-                <h3 className="mt-5 text-base font-semibold text-[#20242a]">{title}</h3>
-                <p className="mt-3 text-sm leading-6 text-[#5f6872]">{text}</p>
+                <h3 className="mt-5 text-base font-semibold text-[#0F172A]">{title}</h3>
+                <p className="mt-3 text-sm leading-6 text-[#64748B]">{text}</p>
               </div>
             ))}
           </div>
           <div className="surface-panel reveal mt-4 rounded-lg border p-5">
-            <p className="text-sm font-semibold text-[#20242a]">Bookkeeper-ready reports</p>
-            <p className="mt-2 text-sm leading-6 text-[#5f6872]">
+            <p className="text-sm font-semibold text-[#0F172A]">Bookkeeper-ready reports</p>
+            <p className="mt-2 text-sm leading-6 text-[#64748B]">
               Turn cleaned records into simple weekly or monthly reports for owners, managers, or bookkeepers.
             </p>
           </div>
@@ -411,20 +409,20 @@ export function LandingPage() {
       <section className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1fr]">
           <SectionHeading eyebrow="Positioning" title="Not another POS system.">
-            FlowTally is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, accounting software, or
+            Flowtally is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, accounting software, or
             inventory tools. It is not generic AI software or just an invoice tracker. It is being built for the messy
             admin work around the tools restaurants already use.
           </SectionHeading>
           <div className="surface-accent reveal grid overflow-hidden rounded-lg border md:grid-cols-2">
             <div className="border-b border-white/10 bg-white/5 p-6 md:border-b-0 md:border-r">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#cbd5e1]">Your current tools</p>
-              <p className="mt-4 text-lg font-semibold leading-7 text-[#f8fafc]">
+              <p className="mt-4 text-lg font-semibold leading-7 text-[#F8FAFC]">
                 POS reports, Excel sheets, paper notes, supplier invoices, delivery apps, bookkeeper messages
               </p>
             </div>
-            <div className="bg-gradient-to-br from-[#f8fafc] to-[#e9eef3] p-6">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#53677a]">FlowTally</p>
-              <p className="mt-4 text-lg font-semibold leading-7 text-[#20242a]">
+            <div className="bg-gradient-to-br from-[#F8FAFC] to-[#F1F5F9] p-6">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0D9488]">Flowtally</p>
+              <p className="mt-4 text-lg font-semibold leading-7 text-[#0F172A]">
                 Organized records, payout checks, spending visibility, cleaner handoff, bookkeeper-ready reports
               </p>
             </div>
@@ -432,26 +430,26 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#d8dee5] py-16">
+      <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#E2E8F0] py-16">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.9fr_1fr] lg:px-8">
           <SectionHeading eyebrow="How it starts" title="Help shape the first version.">
-            FlowTally is speaking with independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food
+            Flowtally is speaking with independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food
             trucks, and small food businesses in Toronto/GTA. The goal is to find the admin task that wastes the most
             time, then shape a focused first version around that workflow. No private numbers are needed.
           </SectionHeading>
           <div className="grid gap-4 sm:grid-cols-3">
             {pilotSteps.map(({ title, text, Icon }) => (
               <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.08)]">
-                <Icon className="h-5 w-5 text-[#53677a]" />
-                <p className="mt-4 text-sm font-semibold leading-6 text-[#20242a]">{title}</p>
-                <p className="mt-2 text-sm leading-6 text-[#5f6872]">{text}</p>
+                <Icon className="h-5 w-5 text-[#0D9488]" />
+                <p className="mt-4 text-sm font-semibold leading-6 text-[#0F172A]">{title}</p>
+                <p className="mt-2 text-sm leading-6 text-[#64748B]">{text}</p>
               </div>
             ))}
           </div>
           <Link
             to="/pilot"
             onClick={() => trackEvent("cta_join_early_pilot_click", { location: "pilot" })}
-            className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038]"
+            className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
           >
             Join Early Pilot
             <ArrowRight className="h-4 w-4" />
@@ -519,13 +517,13 @@ export function LandingPage() {
             <Field label="What admin task takes the most time?">
               <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." required />
             </Field>
-            <p className="-mt-2 text-xs font-semibold text-[#53677a]">No private numbers needed.</p>
-            <fieldset className="rounded-lg border border-[#d8dee5] bg-[#f5f7f9] p-4">
+            <p className="-mt-2 text-xs font-semibold text-[#0D9488]">No private numbers needed.</p>
+            <fieldset className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4">
               <legend className="px-1 text-sm font-bold text-ink">What tools do you currently use?</legend>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {tools.map((tool) => (
-                  <label key={tool} className="flex items-center gap-3 text-sm font-semibold text-[#5f5a52]">
-                    <input className="h-4 w-4 accent-[#171b21]" name="tools" type="checkbox" value={tool} />
+                  <label key={tool} className="flex items-center gap-3 text-sm font-semibold text-[#334155]">
+                    <input className="h-4 w-4 accent-[#0F172A]" name="tools" type="checkbox" value={tool} />
                     {tool}
                   </label>
                 ))}
@@ -545,11 +543,11 @@ export function LandingPage() {
             </Field>
           </div>
 
-          <div className="mt-5 rounded-lg border border-[#d8dee5] bg-white/72 p-4 text-sm leading-6 text-[#53677a]">
-            <p className="font-bold text-[#20242a]">Privacy note</p>
+          <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#0D9488]">
+            <p className="font-bold text-[#0F172A]">Privacy note</p>
             <p className="mt-1">
               No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
-              can be used later if a prototype is reviewed. FlowTally is locally built in Toronto/GTA.
+              can be used later if a prototype is reviewed. Flowtally is locally built in Toronto/GTA.
             </p>
           </div>
 
@@ -557,7 +555,7 @@ export function LandingPage() {
             <p
               className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
                 submission.type === "success"
-                  ? "border-[#b7d2c3] bg-[#f1faf4] text-[#245536]"
+                  ? "border-[#99F6E4] bg-[#E6FFFA] text-[#0F766E]"
                   : submission.type === "notice"
                     ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
                     : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
@@ -571,7 +569,7 @@ export function LandingPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#171b21] px-5 py-3 text-sm font-bold text-[#f8fafc] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#2a3038] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
+            className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
           >
             {isSubmitting ? "Sending..." : "Send feedback"}
             <ArrowRight className="h-4 w-4" />
@@ -580,14 +578,14 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-[#2a3038] bg-[#171b21] px-5 py-8 text-[#f8fafc] lg:px-8">
+      <footer className="border-t border-[#0F766E] bg-[#0F172A] px-5 py-8 text-[#F8FAFC] lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="font-bold">FlowTally</p>
+            <p className="font-bold">Flowtally</p>
             <p className="mt-1 text-sm text-slate-300">Locally built by Terry in Toronto/GTA.</p>
             <p className="mt-1 text-sm text-slate-300">Helping restaurant owners save admin time and see where money is going.</p>
           </div>
-          <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#f8fafc] hover:text-[#cbd5e1]" href="#contact">
+          <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#F8FAFC] hover:text-[#cbd5e1]" href="#contact">
             <Mail className="h-4 w-4" />
             Share feedback through the form
           </a>
