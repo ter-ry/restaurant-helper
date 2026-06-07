@@ -239,12 +239,13 @@ export function LandingPage() {
               Local pilot conversations open
             </p>
             <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.02] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.2vw,4rem)]">
-              <span className="block">Restaurant records, invoices, payouts, and admin &mdash; organized in one place.</span>
+              <span className="block">Save time on admin.</span>
+              <span className="block">See where money is going.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#334155] md:text-xl">
-                Flowtally helps independent restaurants keep supplier invoices, delivery payouts, daily records, and
-                spending information organized without changing their POS system.
+                Flowtally helps restaurants organize invoices, delivery payouts, daily records, and spending information
+                without changing their POS.
               </p>
             </div>
             <div className="mt-5 flex max-w-2xl flex-wrap gap-2">
@@ -254,9 +255,6 @@ export function LandingPage() {
                 </span>
               ))}
             </div>
-            <p className="mt-5 max-w-xl rounded-lg border border-[#E2E8F0] bg-white/88 px-4 py-3 text-sm font-semibold leading-6 text-[#334155] shadow-sm backdrop-blur">
-              Built for independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food trucks, and small food businesses.
-            </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
                 href="#contact"
