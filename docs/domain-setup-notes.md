@@ -13,7 +13,7 @@ The project is prepared for GitHub Pages with:
 - `.github/workflows/deploy.yml`
 - `public/CNAME`
 - metadata in `index.html`
-- production OG image path set to `https://flowtally.ca/og-image.svg`
+- production OG image path set to `https://flowtally.ca/og-image.png`
 - production canonical social URL set to `https://flowtally.ca/`
 
 ## CNAME Reminder

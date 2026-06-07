@@ -53,7 +53,10 @@ jobs:
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
 
       - name: Support client-side routes
-        run: cp dist/index.html dist/404.html
+        run: |
+          cp dist/index.html dist/404.html
+          mkdir -p dist/pilot
+          cp dist/index.html dist/pilot/index.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

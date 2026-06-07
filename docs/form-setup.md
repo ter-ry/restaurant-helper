@@ -61,7 +61,7 @@ Value: https://formspree.io/f/yourFormId
 7. Re-run the GitHub Pages deploy workflow or push a new commit.
 8. Open the live site at `https://flowtally.ca/`.
 9. Submit one test entry through the landing page form.
-10. Submit one test entry through `/pilot`.
+10. Submit one test entry through `/pilot` after confirming the direct route loads.
 11. Confirm both test submissions appear in Formspree.
 12. Confirm Formspree email notifications are enabled and going to the right inbox.
 13. Delete the test submissions if you do not want them in the lead list.
@@ -79,15 +79,11 @@ Landing page feedback form:
 - `pageUrl`
 - `referrer`
 - `userAgent`
-- `name` optional
-- `businessName` required
-- `role` optional
-- `businessType` optional
-- `problemArea` optional
 - `biggestPain` required
-- `tools` optional array
-- `chatOpen` optional
 - `contact` required, accepts email or Instagram handle
+- `businessName` optional
+- `chatOpen` optional
+- `_gotcha` hidden honeypot
 
 Early pilot form:
 
@@ -100,6 +96,7 @@ Early pilot form:
 - `userAgent`
 - `email` required
 - `businessName` optional
+- `_gotcha` hidden honeypot
 
 ## Success and Error States
 
@@ -160,8 +157,10 @@ Do not start real Instagram DM outreach until:
 
 - `VITE_FORM_ENDPOINT` is configured in GitHub Actions variables
 - GitHub Pages has rebuilt after the variable was added
+- `https://flowtally.ca/#contact` loads and accepts a test submission
+- `https://flowtally.ca/pilot` loads directly and accepts a test submission
 - one live landing page test lead appears in Formspree
 - one live pilot test lead appears in Formspree
-- email notifications are confirmed
+- Formspree notification email arrives for both tests
 
 If any of those are missing, leads can be lost.

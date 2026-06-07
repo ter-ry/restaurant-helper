@@ -494,8 +494,9 @@ export function LandingPage() {
           <div id="privacy-notice" className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
             <p className="font-bold text-[#0F172A]">Privacy note</p>
             <p className="mt-1">
-              No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
-              can be used later if a prototype is reviewed. Flowtally is locally built in Toronto/GTA.
+              Flowtally collects the admin pain point and contact info submitted in this form. It is used only to
+              respond about Flowtally pilot feedback. No private financial numbers are required, and contact info is
+              not sold.
             </p>
           </div>
 
@@ -532,7 +533,12 @@ export function LandingPage() {
             <p className="font-bold">Flowtally</p>
             <p className="mt-1 text-sm text-slate-300">Built in Toronto, Canada</p>
             <p className="mt-1 text-sm text-slate-300">flowtally.ca</p>
-            <p className="mt-1 text-sm text-slate-300">Instagram: @flowtally.ca</p>
+            <p className="mt-1 text-sm text-slate-300">
+              Instagram:{" "}
+              <a className="font-semibold text-[#F8FAFC] hover:text-[#cbd5e1]" href="https://instagram.com/flowtally.ca" rel="noreferrer" target="_blank">
+                @flowtally.ca
+              </a>
+            </p>
           </div>
           <div className="flex flex-wrap gap-4 text-sm font-semibold text-[#F8FAFC]">
             <a className="hover:text-[#cbd5e1]" href="#privacy-notice">Privacy notice</a>
