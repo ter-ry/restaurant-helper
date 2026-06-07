@@ -63,16 +63,6 @@ const previewTasks = [
   ["Payout check", "DoorDash payout is $42 below expected sales", "Review"],
 ];
 
-const tools = ["POS", "Excel / Google Sheets", "Paper notebook", "Accounting software", "Bookkeeper / accountant", "Delivery apps", "Other"];
-
-const problemAreas = [
-  "Supplier invoices & expenses",
-  "Daily close & reconciliation",
-  "Delivery payout & fee checks",
-  "Bookkeeping handoff",
-  "Not sure / other",
-];
-
 const seededValue = (index: number, salt: number) => {
   const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
   return value - Math.floor(value);
@@ -235,7 +225,8 @@ export function LandingPage() {
             onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "header" })}
             className="premium-button inline-flex min-h-10 items-center justify-center rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
           >
-            Tell us what wastes time
+            <span className="sm:hidden">Share</span>
+            <span className="hidden sm:inline">Tell us what wastes time</span>
           </a>
         </div>
       </header>
@@ -248,13 +239,12 @@ export function LandingPage() {
               Local pilot conversations open
             </p>
             <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.02] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.2vw,4rem)]">
-              <span className="block">Save time on admin.</span>
-              <span className="block">See where money is going.</span>
+              <span className="block">Restaurant records, invoices, payouts, and admin &mdash; organized in one place.</span>
             </h1>
             <div className="mt-6 grid max-w-3xl gap-3">
               <p className="heading-balance text-lg font-semibold leading-7 text-[#334155] md:text-xl">
-                Flowtally helps independent restaurants organize POS reports, invoices, delivery payouts, paper notes,
-                spreadsheets, and accountant requests.
+                Flowtally helps independent restaurants keep supplier invoices, delivery payouts, daily records, and
+                spending information organized without changing their POS system.
               </p>
             </div>
             <div className="mt-5 flex max-w-2xl flex-wrap gap-2">
@@ -459,10 +449,17 @@ export function LandingPage() {
 
       <section id="contact" className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.7fr_1fr]">
-          <SectionHeading eyebrow="Contact" title="Share what wastes the most time">
-            Please do not submit private financial data. Only the workflow and pain points are needed. Even 2-3
-            sentences is enough.
-          </SectionHeading>
+          <div>
+            <SectionHeading eyebrow="Contact" title="Share what wastes the most time">
+              Please do not submit private financial data. Only the workflow and pain points are needed. Even 2-3
+              sentences is enough.
+            </SectionHeading>
+            <div className="surface-panel reveal mt-6 rounded-lg border p-5">
+              <p className="text-sm font-semibold leading-6 text-[#334155]">
+                Built in Toronto and currently speaking with independent restaurants across the GTA.
+              </p>
+            </div>
+          </div>
 
           <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-lg border p-5 md:p-6">
           {!isFormEndpointConfigured && import.meta.env.DEV ? (
@@ -474,76 +471,29 @@ export function LandingPage() {
             </div>
           ) : null}
           <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Name">
-              <input className={inputClass} name="name" type="text" placeholder="Your name" />
-            </Field>
-            <Field label="Restaurant or business name">
-              <input className={inputClass} name="businessName" type="text" placeholder="Business name" required />
-            </Field>
-            <Field label="Role">
-              <select className={inputClass} name="role" defaultValue="">
-                <option value="" disabled>
-                  Select role (optional)
-                </option>
-                {["Owner", "Manager", "Staff", "Bookkeeper", "Other"].map((role) => (
-                  <option key={role}>{role}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Business type">
-              <select className={inputClass} name="businessType" defaultValue="">
-                <option value="" disabled>
-                  Select type (optional)
-                </option>
-                {["Restaurant", "Cafe", "Bakery", "Takeout", "Bubble Tea", "Bar", "Food Truck", "Other"].map((type) => (
-                  <option key={type}>{type}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Which area is closest to your problem?">
-              <select className={inputClass} name="problemArea" defaultValue="">
-                <option value="" disabled>
-                  Select area (optional)
-                </option>
-                {problemAreas.map((area) => (
-                  <option key={area}>{area}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div className="mt-4 grid gap-4">
+          <div className="grid gap-4">
             <Field label="What admin task takes the most time?">
               <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." required />
             </Field>
             <p className="-mt-2 text-xs font-semibold text-[#64748B]">No private numbers needed.</p>
-            <fieldset className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4">
-              <legend className="px-1 text-sm font-bold text-ink">What tools do you currently use?</legend>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {tools.map((tool) => (
-                  <label key={tool} className="flex items-center gap-3 text-sm font-semibold text-[#334155]">
-                    <input className="h-4 w-4 accent-[#0F172A]" name="tools" type="checkbox" value={tool} />
-                    {tool}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <Field label="Would you be open to a 10-minute chat?">
-              <select className={inputClass} name="chatOpen" defaultValue="">
-                <option value="" disabled>
-                  Select answer
-                </option>
-                <option>Yes</option>
-                <option>No</option>
-              </select>
-            </Field>
             <Field label="Email or Instagram handle">
               <input className={inputClass} name="contact" type="text" placeholder="name@example.com or @handle" required />
             </Field>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Restaurant or business name (optional)">
+                <input className={inputClass} name="businessName" type="text" placeholder="Business name" />
+              </Field>
+              <Field label="Open to a short chat? (optional)">
+                <select className={inputClass} name="chatOpen" defaultValue="">
+                  <option value="">Select answer</option>
+                  <option>Yes</option>
+                  <option>No</option>
+                </select>
+              </Field>
+            </div>
           </div>
 
-          <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
+          <div id="privacy-notice" className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
             <p className="font-bold text-[#0F172A]">Privacy note</p>
             <p className="mt-1">
               No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
@@ -579,16 +529,20 @@ export function LandingPage() {
       </section>
 
       <footer className="border-t border-[#334155] bg-[#0F172A] px-5 py-8 text-[#F8FAFC] lg:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold">Flowtally</p>
-            <p className="mt-1 text-sm text-slate-300">Locally built by Terry in Toronto/GTA.</p>
-            <p className="mt-1 text-sm text-slate-300">Helping restaurant owners save admin time and see where money is going.</p>
+            <p className="mt-1 text-sm text-slate-300">Built in Toronto, Canada</p>
+            <p className="mt-1 text-sm text-slate-300">flowtally.ca</p>
+            <p className="mt-1 text-sm text-slate-300">Instagram: @flowtally.ca</p>
           </div>
-          <a className="inline-flex items-center gap-2 text-sm font-semibold text-[#F8FAFC] hover:text-[#cbd5e1]" href="#contact">
-            <Mail className="h-4 w-4" />
-            Share feedback through the form
-          </a>
+          <div className="flex flex-wrap gap-4 text-sm font-semibold text-[#F8FAFC]">
+            <a className="hover:text-[#cbd5e1]" href="#privacy-notice">Privacy notice</a>
+            <a className="inline-flex items-center gap-2 hover:text-[#cbd5e1]" href="#contact">
+              <Mail className="h-4 w-4" />
+              Contact
+            </a>
+          </div>
         </div>
       </footer>
     </main>
