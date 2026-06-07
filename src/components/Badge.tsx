@@ -12,7 +12,7 @@ const tones: Record<BadgeTone, string> = {
   success: "bg-brand-50 text-brand-700",
   warning: "bg-amber-50 text-caution",
   danger: "bg-red-50 text-danger",
-  info: "bg-sky-50 text-ocean",
+  info: "bg-slate-100 text-slate-700",
 };
 
 export function Badge({ children, tone = "neutral" }: BadgeProps) {

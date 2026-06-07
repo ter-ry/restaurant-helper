@@ -60,8 +60,8 @@ export function PilotPage() {
 
         <section className="grid min-h-[calc(100vh-92px)] items-center gap-8 py-12 lg:grid-cols-[0.9fr_1fr]">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-[#FFFFFF]/85 px-3 py-1 text-sm font-bold text-[#0D9488] shadow-sm">
-              <Store className="h-4 w-4" />
+            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-[#FFFFFF]/85 px-3 py-1 text-sm font-bold text-[#334155] shadow-sm">
+              <Store className="h-4 w-4 text-[#0D9488]" />
               Flowtally early pilot
             </p>
             <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#0F172A] md:text-5xl">

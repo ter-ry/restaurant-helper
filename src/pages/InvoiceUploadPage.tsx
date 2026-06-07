@@ -38,7 +38,7 @@ export function InvoiceUploadPage() {
           <SectionHeader title="Step 1: Upload Invoice" />
           <Card className="p-6">
             <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border-2 border-dashed border-line bg-slate-50 p-8 text-center">
-              <UploadCloud className="h-10 w-10 text-brand-700" />
+              <UploadCloud className="h-10 w-10 text-slate-500" />
               <h2 className="mt-4 text-lg font-bold text-ink">Drag and drop invoice files</h2>
               <p className="mt-2 max-w-sm text-sm leading-6 text-muted">
                 Upload supplier PDFs or invoice images. OCR extraction will be added later. This demo uses sample

@@ -122,7 +122,7 @@ function SectionHeading({
 }) {
   return (
     <div className="reveal max-w-4xl">
-      {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0D9488]">{eyebrow}</p> : null}
+      {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">{eyebrow}</p> : null}
       <h2 className={`heading-balance mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-[#0F172A] md:text-4xl ${headingClassName}`}>
         {title}
       </h2>
@@ -243,8 +243,8 @@ export function LandingPage() {
       <section className="relative z-10 overflow-hidden border-b border-[#E2E8F0] bg-gradient-to-br from-[#F8FAFC]/90 via-[#F1F5F9]/80 to-[#E2E8F0]/82">
         <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-[72px] md:py-[80px] lg:min-h-[720px] lg:grid-cols-[minmax(0,1fr)_minmax(480px,0.9fr)] lg:gap-12 lg:px-8 xl:min-h-[760px]">
           <div className="reveal min-w-0">
-            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/84 px-3 py-1 text-sm font-bold text-[#0D9488] shadow-sm backdrop-blur">
-              <Handshake className="h-4 w-4" />
+            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/84 px-3 py-1 text-sm font-bold text-[#334155] shadow-sm backdrop-blur">
+              <Handshake className="h-4 w-4 text-[#0D9488]" />
               Local pilot conversations open
             </p>
             <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.02] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.2vw,4rem)]">
@@ -291,7 +291,7 @@ export function LandingPage() {
             <div className="surface-panel relative mx-auto w-full max-w-[620px] rounded-lg border p-4 backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#0D9488]">Concept preview &mdash; demo data</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Concept preview &mdash; demo data</p>
                   <p className="mt-1 text-lg font-bold text-[#0F172A]">Flowtally</p>
                 </div>
                 <div className="inline-flex rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-1 text-xs font-bold text-[#64748B]">
@@ -305,7 +305,7 @@ export function LandingPage() {
                   <div key={label} className="surface-card rounded-lg border p-4 shadow-none">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">{label}</p>
-                      <span className="rounded-full bg-[#DDF7F3] px-2 py-0.5 text-[10px] font-bold text-[#0D9488]">{status}</span>
+                      <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[10px] font-bold text-[#64748B]">{status}</span>
                     </div>
                     <p className="mt-3 text-xl font-semibold text-[#0F172A]">{value}</p>
                   </div>
@@ -315,8 +315,8 @@ export function LandingPage() {
               <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/86 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-bold text-[#0F172A]">Review queue</p>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#DDF7F3] px-3 py-1 text-xs font-bold text-[#0D9488]">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1 text-xs font-bold text-[#334155]">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#0D9488]" />
                     3 tasks
                   </span>
                 </div>
@@ -327,7 +327,7 @@ export function LandingPage() {
                         <p className="text-sm font-bold text-[#0F172A]">{label}</p>
                         <p className="mt-1 text-sm leading-6 text-[#64748B]">{text}</p>
                       </div>
-                      <span className="w-fit rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-bold text-[#0D9488]">{status}</span>
+                      <span className="w-fit rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-bold text-[#64748B]">{status}</span>
                     </div>
                   ))}
                 </div>
@@ -337,7 +337,7 @@ export function LandingPage() {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="surface-card rounded-lg border p-4 backdrop-blur">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#0D9488]">Bookkeeper handoff</p>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Bookkeeper handoff</p>
                 <p className="mt-2 text-sm font-semibold text-[#0F172A]">4 records ready to summarize</p>
                 <p className="mt-1 text-xs leading-5 text-[#64748B]">Draft report can be prepared.</p>
               </div>
@@ -390,7 +390,7 @@ export function LandingPage() {
               <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
                 <div className="flex items-center justify-between gap-3">
                   <Icon className="h-6 w-6 text-[#0D9488]" />
-                  <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#0D9488]">Module</span>
+                  <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Module</span>
                 </div>
                 <h3 className="mt-5 text-base font-semibold text-[#0F172A]">{title}</h3>
                 <p className="mt-3 text-sm leading-6 text-[#64748B]">{text}</p>
@@ -421,7 +421,7 @@ export function LandingPage() {
               </p>
             </div>
             <div className="bg-gradient-to-br from-[#F8FAFC] to-[#F1F5F9] p-6">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0D9488]">Flowtally</p>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">Flowtally</p>
               <p className="mt-4 text-lg font-semibold leading-7 text-[#0F172A]">
                 Organized records, payout checks, spending visibility, cleaner handoff, bookkeeper-ready reports
               </p>
@@ -517,7 +517,7 @@ export function LandingPage() {
             <Field label="What admin task takes the most time?">
               <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." required />
             </Field>
-            <p className="-mt-2 text-xs font-semibold text-[#0D9488]">No private numbers needed.</p>
+            <p className="-mt-2 text-xs font-semibold text-[#64748B]">No private numbers needed.</p>
             <fieldset className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4">
               <legend className="px-1 text-sm font-bold text-ink">What tools do you currently use?</legend>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -543,7 +543,7 @@ export function LandingPage() {
             </Field>
           </div>
 
-          <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#0D9488]">
+          <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
             <p className="font-bold text-[#0F172A]">Privacy note</p>
             <p className="mt-1">
               No private financial data is required. General workflow feedback is enough. Sample, fake, or blurred data
@@ -578,7 +578,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-[#0F766E] bg-[#0F172A] px-5 py-8 text-[#F8FAFC] lg:px-8">
+      <footer className="border-t border-[#334155] bg-[#0F172A] px-5 py-8 text-[#F8FAFC] lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold">Flowtally</p>

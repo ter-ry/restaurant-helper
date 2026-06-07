@@ -44,10 +44,10 @@ export function ReportsPage() {
                 quiet item-level increases that can squeeze margins before anyone notices. Cooking oil is up 21.8%,
                 chicken is up 9.6%, and packaging costs are moving higher.
               </p>
-              <div className="mt-5 rounded-lg bg-brand-50 p-4">
-                <p className="text-sm font-semibold text-brand-700">Total supplier spending</p>
+              <div className="mt-5 rounded-lg bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-700">Total supplier spending</p>
                 <p className="mt-1 text-3xl font-bold text-ink">$8,420</p>
-                <p className="mt-1 text-xs font-semibold text-brand-700">34 invoices across 7 suppliers</p>
+                <p className="mt-1 text-xs font-semibold text-slate-600">34 invoices across 7 suppliers</p>
               </div>
               <h3 className="mt-6 text-lg font-bold text-ink">Recommended actions</h3>
               <ul className="mt-3 space-y-2 text-sm text-slate-700">
@@ -78,7 +78,7 @@ export function ReportsPage() {
                         <span className="text-muted">{formatCurrency(item.spend)}</span>
                       </div>
                       <div className="mt-2 h-2 rounded-full bg-slate-200">
-                        <div className="h-2 rounded-full bg-brand-600" style={{ width: `${item.share}%` }} />
+                        <div className="h-2 rounded-full bg-brand-700" style={{ width: `${item.share}%` }} />
                       </div>
                     </div>
                   ))}
@@ -97,7 +97,7 @@ export function ReportsPage() {
           <Button variant="secondary" onClick={() => showFeedback("Email preview sent in demo mode.")} icon={<Mail className="h-4 w-4" />}>
             Email Report
           </Button>
-          {message ? <span className="text-sm font-semibold text-brand-700">{message}</span> : null}
+          {message ? <span className="text-sm font-semibold text-slate-700">{message}</span> : null}
         </div>
       </section>
     </PageLayout>

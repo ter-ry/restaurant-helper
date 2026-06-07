@@ -26,7 +26,7 @@ export function MobileNav() {
             end={to === "/app"}
             className={({ isActive }) =>
               `whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
-                isActive ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700"
+                isActive ? "bg-ink text-white" : "bg-slate-100 text-slate-700"
               }`
             }
           >

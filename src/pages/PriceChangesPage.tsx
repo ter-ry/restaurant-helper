@@ -38,7 +38,7 @@ export function PriceChangesPage() {
           <button
             key={item}
             onClick={() => setTab(item)}
-            className={`rounded-full px-4 py-2 text-sm font-semibold ${tab === item ? "bg-brand-600 text-white" : "bg-white text-slate-700 ring-1 ring-line"}`}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${tab === item ? "bg-ink text-white" : "bg-white text-slate-700 ring-1 ring-line"}`}
           >
             {item}
           </button>
