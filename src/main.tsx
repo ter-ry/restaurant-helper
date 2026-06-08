@@ -13,6 +13,7 @@ import { PriceChangesPage } from "./pages/PriceChangesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
+import { initAnalytics, trackPageView } from "./lib/analytics";
 
 function HashScroll() {
   const location = useLocation();
@@ -34,9 +35,24 @@ function HashScroll() {
   return null;
 }
 
+function AnalyticsRouteTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  useEffect(() => {
+    trackPageView(`${location.pathname}${location.search}${location.hash}`);
+  }, [location.pathname, location.search, location.hash]);
+
+  return null;
+}
+
 function PageWithHashScroll({ children }: { children: React.ReactNode }) {
   return (
     <>
+      <AnalyticsRouteTracker />
       <HashScroll />
       {children}
     </>
