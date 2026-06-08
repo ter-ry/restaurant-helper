@@ -527,7 +527,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-[#334155] bg-[#0F172A] px-5 py-8 text-[#F8FAFC] lg:px-8">
+      <footer className="relative z-10 border-t border-[#334155] bg-[#0F172A] px-5 py-8 text-[#F8FAFC] lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold">Flowtally</p>
