@@ -35,7 +35,7 @@ Name: VITE_PLAUSIBLE_DOMAIN
 Value: flowtally.ca
 ```
 
-Use the domain configured in Plausible.
+The deploy workflow defaults this to `flowtally.ca`, so this variable is optional unless the Plausible domain changes.
 
 ## Deploy
 
