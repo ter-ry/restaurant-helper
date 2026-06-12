@@ -57,8 +57,10 @@ jobs:
       - name: Support client-side routes
         run: |
           cp dist/index.html dist/404.html
-          mkdir -p dist/pilot
-          cp dist/index.html dist/pilot/index.html
+          for route in pilot app app/invoices app/price-tracker app/monthly-report app/upload app/suppliers app/items app/settings app/price-changes app/reports; do
+            mkdir -p "dist/$route"
+            cp dist/index.html "dist/$route/index.html"
+          done
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
