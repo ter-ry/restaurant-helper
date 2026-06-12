@@ -118,6 +118,80 @@ The page states that no private financial data is required, general workflow fee
 - Confirm landing page loads at `/`.
 - Confirm early pilot page loads at `/pilot`.
 - Confirm nav links scroll to the right sections.
+
+## Local Job Application Assistant
+
+This repository also includes a local Flask app for tracking and tailoring software, cloud, full-stack, support, implementation, and analyst job applications. It stores data locally in SQLite and does not include auto-submit, scraping bot, login bypass, CAPTCHA bypass, or application automation behavior.
+
+### Setup
+
+Install Python 3.11+ from `https://www.python.org/` if `python` is not available in your terminal.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:5000/
+```
+
+### Features
+
+- Profile/settings page with contact info, preferred roles/locations, work authorization, skills, projects, education, work experience, extracted resume text, and a base cover letter template.
+- Resume upload for `.txt`, `.docx`, and basic text-readable `.pdf` files. Extracted text can be edited manually.
+- Job tracker fields: company, title, location, URL, application URL, source, salary, deadline, remote type, role type, seniority, fit score, status, notes, date added, date applied, required skills, preferred skills, responsibilities, and job description.
+- Paste-job-description flow and safe public URL import. Direct scraping of restricted platforms like LinkedIn and Indeed is intentionally disabled.
+- CSV import for externally collected job links.
+- Detailed scoring for skills match, role match, location/distance, remote/hybrid preference, salary, seniority fit, coding assessment risk, application effort, and overall fit.
+- Local generation for tailored resume suggestions, concise cover letter drafts, common application answers, skills match, missing keywords, and unsupported keywords that should not be added.
+- Version history for generated resume suggestions, cover letters, and application answers.
+- Exports for job tracker CSV plus generated cover letter/resume suggestions as `.txt` and `.docx`.
+- Dashboard metrics for jobs saved, applications this week, follow-ups needed, high-fit jobs, average fit score, role/source counts, interview rate, rejection rate, missing salary, and high coding-assessment risk.
+- Filtering and sorting by status, fit score, role type, remote/hybrid, coding risk, salary, date added, deadline, and location.
+- Follow-up message drafting.
+- CSV export at `/export.csv`.
+
+Data is created at `data/jobs.sqlite` the first time the Flask app runs.
+
+### Tests
+
+```bash
+python -m unittest discover -s tests
+```
+
+The tests cover profile storage/upload, job scoring, generated version history, document export, and CSV import.
+
+### JobSpy Discovery
+
+Automated discovery uses the open-source `python-jobspy` package through `sources/jobspy_source.py`; the app does not implement custom LinkedIn or Indeed scrapers.
+
+Tested and pinned version:
+
+```text
+python-jobspy==1.1.82
+```
+
+Supported source names:
+
+- LinkedIn: `linkedin`
+- Indeed: `indeed`
+- Google Jobs: `google`
+- ZipRecruiter: `zip_recruiter`
+
+Create saved searches in the Discovery tab. Each saved search stores keywords, location, distance, remote preference, minimum salary, target roles, excluded title keywords, maximum experience, posted-within days, enabled sources, maximum results per source, and Indeed country.
+
+Run the standalone low-volume smoke test:
+
+```bash
+python scripts/jobspy_smoke_test.py
+```
+
+Discovery results are deduplicated against previous discovery results and tracked applications, passed through hard rejection filters, scored with the existing scoring engine plus discovery-specific freshness/experience/title/source scores, and shown highest-fit first.
 - Confirm CTA buttons go to the feedback form or pilot page.
 - Confirm the feedback form validates required fields.
 - Confirm preview-mode form submission warns that no endpoint is configured.

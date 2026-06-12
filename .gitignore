@@ -7,3 +7,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.tsbuildinfo
+data/*.sqlite
+data/*.sqlite-*
+__pycache__/
+*.pyc
