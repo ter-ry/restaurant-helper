@@ -1,23 +1,19 @@
 import {
   BarChart3,
-  FileUp,
   Gauge,
   LineChart,
-  PackageSearch,
-  Settings,
-  Store,
+  FileText,
+  Send,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { FlowtallyMark } from "./FlowtallyMark";
 
 const navItems = [
   { to: "/app", label: "Dashboard", icon: Gauge },
-  { to: "/app/upload", label: "Upload Invoice", icon: FileUp },
-  { to: "/app/suppliers", label: "Suppliers", icon: Store },
-  { to: "/app/items", label: "Items", icon: PackageSearch },
-  { to: "/app/price-changes", label: "Price Changes", icon: LineChart },
-  { to: "/app/reports", label: "Reports", icon: BarChart3 },
-  { to: "/app/settings", label: "Settings", icon: Settings },
+  { to: "/app/invoices", label: "Invoices", icon: FileText },
+  { to: "/app/price-tracker", label: "Price Tracker", icon: LineChart },
+  { to: "/app/monthly-report", label: "Monthly Report", icon: BarChart3 },
+  { to: "/pilot", label: "Pilot", icon: Send },
 ];
 
 export function Sidebar() {
@@ -26,8 +22,8 @@ export function Sidebar() {
       <NavLink to="/" className="flex items-center gap-3 rounded-lg text-ink">
         <FlowtallyMark className="h-10 w-10 shrink-0" />
         <span>
-          <span className="block text-sm font-bold">Cost-Control</span>
-          <span className="block text-xs text-muted">Sample Cafe</span>
+          <span className="block text-sm font-bold">Flowtally</span>
+          <span className="block text-xs text-muted">Harbourfront Cafe demo</span>
         </span>
       </NavLink>
       <nav className="mt-8 space-y-1">
@@ -51,9 +47,9 @@ export function Sidebar() {
         })}
       </nav>
       <div className="mt-8 rounded-lg border border-line bg-slate-50 p-4">
-        <p className="text-sm font-bold text-ink">MVP Demo</p>
+        <p className="text-sm font-bold text-ink">Sample workspace</p>
         <p className="mt-1 text-xs leading-5 text-muted">
-          Demo data now. The value story is cost changes, supplier spend, and action-ready reports.
+          Example invoice data for validating cost-control reports with restaurant owners.
         </p>
       </div>
     </aside>

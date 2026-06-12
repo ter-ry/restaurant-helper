@@ -1,18 +1,15 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { useEffect } from "react";
-import { createBrowserRouter, RouterProvider, useLocation } from "react-router-dom";
+import { createBrowserRouter, Navigate, RouterProvider, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import "./styles.css";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InvoiceUploadPage } from "./pages/InvoiceUploadPage";
-import { ItemsPage } from "./pages/ItemsPage";
 import { LandingPage } from "./pages/LandingPage";
 import { PilotPage } from "./pages/PilotPage";
 import { PriceChangesPage } from "./pages/PriceChangesPage";
 import { ReportsPage } from "./pages/ReportsPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { SuppliersPage } from "./pages/SuppliersPage";
 import { initAnalytics, trackPageView } from "./lib/analytics";
 
 function HashScroll() {
@@ -81,12 +78,15 @@ const routes = [
     element: <AppShell />,
     children: [
       { index: true, element: <DashboardPage /> },
-      { path: "upload", element: <InvoiceUploadPage /> },
-      { path: "suppliers", element: <SuppliersPage /> },
-      { path: "items", element: <ItemsPage /> },
-      { path: "price-changes", element: <PriceChangesPage /> },
-      { path: "reports", element: <ReportsPage /> },
-      { path: "settings", element: <SettingsPage /> },
+      { path: "invoices", element: <InvoiceUploadPage /> },
+      { path: "price-tracker", element: <PriceChangesPage /> },
+      { path: "monthly-report", element: <ReportsPage /> },
+      { path: "upload", element: <Navigate to="/app/invoices" replace /> },
+      { path: "suppliers", element: <Navigate to="/app/price-tracker" replace /> },
+      { path: "items", element: <Navigate to="/app/price-tracker" replace /> },
+      { path: "price-changes", element: <Navigate to="/app/price-tracker" replace /> },
+      { path: "reports", element: <Navigate to="/app/monthly-report" replace /> },
+      { path: "settings", element: <Navigate to="/app" replace /> },
     ],
   },
 ];

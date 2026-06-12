@@ -3,12 +3,10 @@ import { NavLink } from "react-router-dom";
 
 const links = [
   ["/app", "Dashboard"],
-  ["/app/upload", "Upload"],
-  ["/app/suppliers", "Suppliers"],
-  ["/app/items", "Items"],
-  ["/app/price-changes", "Prices"],
-  ["/app/reports", "Reports"],
-  ["/app/settings", "Settings"],
+  ["/app/invoices", "Invoices"],
+  ["/app/price-tracker", "Prices"],
+  ["/app/monthly-report", "Report"],
+  ["/pilot", "Pilot"],
 ];
 
 export function MobileNav() {
@@ -16,7 +14,7 @@ export function MobileNav() {
     <div className="border-b border-line bg-white px-4 py-3 lg:hidden">
       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
         <Menu className="h-4 w-4" />
-        Sample Cafe Cost-Control
+        Flowtally demo
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {links.map(([to, label]) => (

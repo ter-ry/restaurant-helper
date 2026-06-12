@@ -1,104 +1,127 @@
-import { Download, Mail, Wand2 } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
+import { PilotCtaPanel } from "../components/PilotCtaPanel";
 import { SectionHeader } from "../components/SectionHeader";
-import { categorySpend, priceChanges, recommendedActions, reportCards } from "../data/mockData";
+import { categorySpend, monthlyInsights, priceChanges, recommendedActions, supplierSpend } from "../data/mockData";
+import type { CategorySpend, PriceChange, SupplierSpend } from "../types";
 import { formatCurrency, formatPercent } from "../utils/format";
 
 export function ReportsPage() {
   const [message, setMessage] = useState("");
-  const biggestIncreases = [...priceChanges]
-    .filter((item) => item.changePercent > 5)
+  const biggestIncreases = priceChanges
+    .filter((item) => item.status === "Increased")
     .sort((a, b) => b.changePercent - a.changePercent)
-    .slice(0, 4);
+    .slice(0, 5);
 
-  const showFeedback = (text: string) => {
-    setMessage(text);
-    window.setTimeout(() => setMessage(""), 2400);
+  const supplierColumns: Column<SupplierSpend>[] = [
+    { header: "Supplier", accessor: "supplier" },
+    { header: "Monthly spend", accessor: (row) => formatCurrency(row.spend) },
+    { header: "Invoices", accessor: "invoices" },
+    { header: "Avg price move", accessor: (row) => <Badge tone={row.change >= 8 ? "danger" : row.change >= 5 ? "warning" : "neutral"}>{formatPercent(row.change)}</Badge> },
+  ];
+
+  const categoryColumns: Column<CategorySpend>[] = [
+    { header: "Category", accessor: "category" },
+    { header: "Spend", accessor: (row) => formatCurrency(row.spend) },
+    { header: "Share of spend", accessor: (row) => `${row.share.toFixed(1)}%` },
+  ];
+
+  const increaseColumns: Column<PriceChange>[] = [
+    { header: "Item", accessor: "item" },
+    { header: "Supplier", accessor: "supplier" },
+    { header: "Category", accessor: "category" },
+    { header: "Was", accessor: (row) => formatCurrency(row.previousPrice) },
+    { header: "Now", accessor: (row) => formatCurrency(row.currentPrice) },
+    { header: "Change", accessor: (row) => <Badge tone={row.severity === "High" ? "danger" : "warning"}>{formatPercent(row.changePercent)}</Badge> },
+  ];
+
+  const showExportMessage = () => {
+    setMessage("Demo only: PDF export would be generated from this report.");
+    window.setTimeout(() => setMessage(""), 2600);
   };
 
   return (
-    <PageLayout title="Reports" description="Owner-ready summaries that turn invoice data into cost-control decisions.">
-      <SectionHeader title="Report Library" />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {reportCards.map((report) => (
-          <Card key={report.title} className="p-5">
-            <Badge tone="info">{report.cadence}</Badge>
-            <h2 className="mt-4 text-base font-bold text-ink">{report.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted">{report.description}</p>
+    <PageLayout
+      title="Monthly Cost Report"
+      eyebrow="Harbourfront Cafe / May 2026"
+      description="Screenshot-friendly owner report showing what changed, where money went, and what to do next."
+    >
+      <Card className="surface-panel p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-ink p-3 text-white">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Executive summary</p>
+                <h2 className="text-2xl font-bold tracking-normal text-ink">Packaging and produce costs need attention this month.</h2>
+              </div>
+            </div>
+            <p className="mt-4 max-w-4xl text-sm leading-6 text-slate-700">
+              Harbourfront Cafe reviewed 29 supplier invoices in May. Total supplier spend is concentrated across GFS,
+              Sysco, Local Produce Co., and packaging vendors. The clearest margin risks are tomatoes, butter, takeout
+              containers, sanitizer, and chicken thighs.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <Button onClick={showExportMessage} icon={<Download className="h-4 w-4" />}>
+              Export PDF
+            </Button>
+            {message ? <p className="mt-2 max-w-48 text-xs leading-5 text-muted">{message}</p> : null}
+          </div>
+        </div>
+      </Card>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {monthlyInsights.map((insight) => (
+          <Card key={insight.label} className="p-5">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">{insight.label}</p>
+            <p className="mt-3 text-2xl font-bold text-ink">{insight.value}</p>
+            <p className="mt-2 text-sm leading-5 text-muted">{insight.helper}</p>
           </Card>
         ))}
       </div>
 
+      <div className="mt-8 grid gap-6 xl:grid-cols-2">
+        <section>
+          <SectionHeader title="Supplier spending" description="Where the restaurant spent money this month." />
+          <DataTable columns={supplierColumns} data={supplierSpend} getRowKey={(row) => row.supplierId} />
+        </section>
+        <section>
+          <SectionHeader title="Category spending" description="The simplest view of food, packaging, beverage, and operating supply costs." />
+          <DataTable columns={categoryColumns} data={categorySpend} getRowKey={(row) => row.category} />
+        </section>
+      </div>
+
       <section className="mt-8">
-        <SectionHeader title="Sample Cafe - Biweekly Cost-Control Report" description="Period: May 1 - May 15, 2026" />
+        <SectionHeader title="Biggest price increases" description="Items most likely to affect menu margin or delivery profitability." />
+        <DataTable columns={increaseColumns} data={biggestIncreases} getRowKey={(row) => row.id} />
+      </section>
+
+      <section className="mt-8">
+        <SectionHeader title="Recommended owner actions" description="Short, practical next steps generated from invoice patterns." />
         <Card className="p-6">
-          <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
-            <div>
-              <h3 className="text-lg font-bold text-ink">Executive summary</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Supplier spending was $8,420 for the period. The main issue is not total spend alone; it is several
-                quiet item-level increases that can squeeze margins before anyone notices. Cooking oil is up 21.8%,
-                chicken is up 9.6%, and packaging costs are moving higher.
-              </p>
-              <div className="mt-5 rounded-lg bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-700">Total supplier spending</p>
-                <p className="mt-1 text-3xl font-bold text-ink">$8,420</p>
-                <p className="mt-1 text-xs font-semibold text-slate-600">34 invoices across 7 suppliers</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {recommendedActions.map((action, index) => (
+              <div key={action} className="flex gap-3 rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-bold text-white">
+                  {index + 1}
+                </span>
+                {action}
               </div>
-              <h3 className="mt-6 text-lg font-bold text-ink">Recommended actions</h3>
-              <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                {recommendedActions.map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            </div>
-            <div className="space-y-5">
-              <div>
-                <h3 className="mb-3 text-sm font-bold text-ink">What got more expensive</h3>
-                <div className="space-y-2">
-                  {biggestIncreases.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm">
-                      <span className="font-semibold text-slate-700">{item.item}</span>
-                      <Badge tone={item.severity === "High" ? "danger" : "warning"}>{formatPercent(item.changePercent)}</Badge>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h3 className="mb-3 text-sm font-bold text-ink">Where spending went</h3>
-                <div className="space-y-2">
-                  {categorySpend.slice(0, 5).map((item) => (
-                    <div key={item.category} className="rounded-lg bg-slate-50 p-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-semibold text-slate-700">{item.category}</span>
-                        <span className="text-muted">{formatCurrency(item.spend)}</span>
-                      </div>
-                      <div className="mt-2 h-2 rounded-full bg-slate-200">
-                        <div className="h-2 rounded-full bg-brand-700" style={{ width: `${item.share}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
         </Card>
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <Button onClick={() => showFeedback("Report generated for Sample Cafe.")} icon={<Wand2 className="h-4 w-4" />}>
-            Generate Report
-          </Button>
-          <Button variant="secondary" onClick={() => showFeedback("PDF export queued for this demo.")} icon={<Download className="h-4 w-4" />}>
-            Download PDF
-          </Button>
-          <Button variant="secondary" onClick={() => showFeedback("Email preview sent in demo mode.")} icon={<Mail className="h-4 w-4" />}>
-            Email Report
-          </Button>
-          {message ? <span className="text-sm font-semibold text-slate-700">{message}</span> : null}
-        </div>
+      </section>
+
+      <section className="mt-8">
+        <PilotCtaPanel />
       </section>
     </PageLayout>
   );

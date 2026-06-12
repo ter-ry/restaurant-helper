@@ -1,5 +1,7 @@
 export type Severity = "Low" | "Medium" | "High";
 export type ItemStatus = "Matched" | "New Item" | "Price Increased" | "Needs Review";
+export type InvoiceStatus = "Processed" | "Needs Review" | "Price Changes Found";
+export type PriceStatus = "Increased" | "Stable" | "Decreased";
 
 export interface Supplier {
   id: string;
@@ -35,17 +37,21 @@ export interface TrackedItem {
   previousPrice: number;
   changePercent: number;
   lastPurchasedDate: string;
+  status: PriceStatus;
+  severity: Severity;
 }
 
 export interface PriceChange {
   id: string;
   item: string;
   supplier: string;
+  category: string;
   previousPrice: number;
   currentPrice: number;
   changePercent: number;
   dateDetected: string;
   severity: Severity;
+  status: PriceStatus;
   suggestedAction: string;
 }
 
@@ -61,10 +67,12 @@ export interface InvoiceLineItem {
 }
 
 export interface ExtractedInvoice {
+  id?: string;
   supplier: string;
   invoiceDate: string;
   invoiceNumber: string;
   totalAmount: number;
+  status?: InvoiceStatus;
   items: InvoiceLineItem[];
 }
 
@@ -72,4 +80,22 @@ export interface ReportCard {
   title: string;
   description: string;
   cadence: string;
+}
+
+export interface InvoiceSummary {
+  id: string;
+  supplier: string;
+  invoiceDate: string;
+  invoiceNumber: string;
+  totalAmount: number;
+  category: string;
+  status: InvoiceStatus;
+  flaggedItems: number;
+  lineItems: InvoiceLineItem[];
+}
+
+export interface MonthlyInsight {
+  label: string;
+  value: string;
+  helper: string;
 }
