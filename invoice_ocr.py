@@ -16,7 +16,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 OCR_ENDPOINT = os.environ.get("OCR_SPACE_ENDPOINT", "https://api.ocr.space/parse/image")
-OCR_API_KEY = os.environ.get("OCR_SPACE_API_KEY", "helloworld")
+OCR_API_KEY = os.environ.get("OCR_SPACE_API_KEY", "")
 OCR_LANGUAGE = os.environ.get("OCR_SPACE_LANGUAGE", "eng")
 OCR_ENGINE = os.environ.get("OCR_SPACE_ENGINE", "2")
 OCR_TIMEOUT_SECONDS = float(os.environ.get("OCR_SPACE_TIMEOUT", "90"))
@@ -93,6 +93,8 @@ def _build_multipart_body(fields: dict[str, str], file_field_name: str, filename
 
 
 def _post_ocr_space(filename: str, content: bytes, content_type: str = "") -> dict[str, Any]:
+    if not OCR_API_KEY or OCR_API_KEY.strip().lower() == "helloworld":
+        raise InvoiceOCRFailure("OCR_SPACE_API_KEY is not configured on the server.")
     normalized_content, normalized_content_type, filetype = _normalize_file_for_ocr(filename, content, content_type)
     payload, multipart_type = _build_multipart_body(
         {
@@ -508,4 +510,3 @@ def normalize_item_comparison_key(description: str) -> str:
 
 def normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
-

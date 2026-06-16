@@ -133,7 +133,7 @@ class InvoiceOcrTest(unittest.TestCase):
         with patch("app.extract_invoice_document", side_effect=InvoiceOCRFailure("OCR service could not process the invoice.")):
             response = self.client.post(
                 "/api/invoices/ocr",
-                data={"file": (io.BytesIO(b"bad"), "invoice.pdf")},
+                data={"file": (io.BytesIO(b"%PDF-1.4\n%fake"), "invoice.pdf")},
                 content_type="multipart/form-data",
             )
 

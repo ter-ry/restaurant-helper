@@ -50,6 +50,7 @@ jobs:
         run: npm run build
         env:
           VITE_FORM_ENDPOINT: ${{ vars.VITE_FORM_ENDPOINT || secrets.VITE_FORM_ENDPOINT }}
+          VITE_OCR_API_BASE_URL: ${{ vars.VITE_OCR_API_BASE_URL || secrets.VITE_OCR_API_BASE_URL || 'https://flowtally-backend.onrender.com' }}
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
           VITE_GA_MEASUREMENT_ID: ${{ vars.VITE_GA_MEASUREMENT_ID || secrets.VITE_GA_MEASUREMENT_ID }}
           VITE_PLAUSIBLE_DOMAIN: ${{ vars.VITE_PLAUSIBLE_DOMAIN || secrets.VITE_PLAUSIBLE_DOMAIN || 'flowtally.ca' }}

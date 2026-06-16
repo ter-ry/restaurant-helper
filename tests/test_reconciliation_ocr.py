@@ -4,8 +4,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
+
 import app as app_module
 from reconciliation_ocr import extract_reconciliation_document, is_supported_reconciliation_file, parse_reconciliation_text
+
+
+def make_image_bytes(format_name: str = "PNG") -> bytes:
+    image = Image.new("RGB", (240, 160), color="white")
+    buffer = io.BytesIO()
+    image.save(buffer, format=format_name)
+    return buffer.getvalue()
 
 
 class ReconciliationOcrTest(unittest.TestCase):
@@ -90,7 +99,7 @@ class ReconciliationOcrTest(unittest.TestCase):
         with patch("reconciliation_ocr.extract_invoice_document", return_value={"rawText": ocr_response["ParsedResults"][0]["ParsedText"], "provider": "ocr.space"}):
             image_response = self.client.post(
                 "/api/reconciliation/extract",
-                data={"file": (io.BytesIO(b"fakepng"), "doordash.png"), "source": "doordash"},
+                data={"file": (io.BytesIO(make_image_bytes("PNG")), "doordash.png"), "source": "doordash"},
                 content_type="multipart/form-data",
             )
         self.assertEqual(image_response.status_code, 200)
@@ -104,7 +113,7 @@ class ReconciliationOcrTest(unittest.TestCase):
             data={"file": (io.BytesIO(b"bad"), "report.txt"), "source": "uber_eats"},
             content_type="multipart/form-data",
         )
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":
