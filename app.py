@@ -16,6 +16,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from flask import Flask, Response, g, jsonify, render_template, request
+from invoice_ocr import InvoiceOCRFailure, extract_invoice_document
 from sources.jobspy_source import fetch_jobspy_jobs
 
 
@@ -131,6 +132,14 @@ def create_app() -> Flask:
         if db is not None:
             db.close()
 
+    @app.after_request
+    def add_cors_headers(response: Response) -> Response:
+        if request.path.startswith("/api/"):
+            response.headers.setdefault("Access-Control-Allow-Origin", "*")
+            response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type")
+            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        return response
+
     @app.get("/")
     def index() -> str:
         return render_template("index.html", statuses=STATUSES, role_types=ROLE_TYPES)
@@ -157,6 +166,19 @@ def create_app() -> Flask:
         profile["resume_text"] = extracted
         upsert_profile(profile)
         return jsonify({"resume_text": extracted})
+
+    @app.post("/api/invoices/ocr")
+    def invoice_ocr() -> Response:
+        uploaded = request.files.get("file")
+        if not uploaded:
+            return jsonify({"error": "No invoice file uploaded"}), 400
+        if not uploaded.filename:
+            return jsonify({"error": "The uploaded file is missing a filename"}), 400
+        try:
+            result = extract_invoice_document(uploaded.filename, uploaded.read(), uploaded.mimetype or "")
+        except InvoiceOCRFailure as exc:
+            return jsonify({"error": str(exc)}), 422
+        return jsonify(result)
 
     @app.get("/api/jobs")
     def list_jobs() -> Response:

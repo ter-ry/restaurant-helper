@@ -1,16 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
-import { suppliers, trackedItems } from "../data/mockData";
+import { useDemoProfile } from "../lib/demoProfile";
 import type { Supplier, TrackedItem } from "../types";
 import { formatCurrency, formatPercent } from "../utils/format";
 
 export function SuppliersPage() {
-  const [selected, setSelected] = useState<Supplier>(suppliers[0]);
-  const items = trackedItems.filter((item) => item.preferredSupplier === selected.name);
+  const demo = useDemoProfile();
+  const [selected, setSelected] = useState<Supplier>(demo.suppliers[0]);
+
+  useEffect(() => {
+    setSelected(demo.suppliers[0]);
+  }, [demo.slug]);
+
+  const items = demo.trackedItems.filter((item) => item.preferredSupplier === selected.name);
   const columns: Column<Supplier>[] = [
     { header: "Supplier name", accessor: "name" },
     { header: "Category focus", accessor: "categoryFocus" },
@@ -31,7 +37,7 @@ export function SuppliersPage() {
       <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
         <section>
           <SectionHeader title="Supplier Spend and Pricing" description="Select a supplier to view tracked items." />
-          <DataTable columns={columns} data={suppliers} getRowKey={(row) => row.id} onRowClick={setSelected} />
+          <DataTable columns={columns} data={demo.suppliers} getRowKey={(row) => row.id} onRowClick={setSelected} />
         </section>
         <section>
           <SectionHeader title="Supplier Detail" />

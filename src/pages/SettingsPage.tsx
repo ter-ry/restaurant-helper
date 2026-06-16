@@ -4,7 +4,7 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
-import { categories, restaurantProfile } from "../data/mockData";
+import { useDemoProfile } from "../lib/demoProfile";
 
 const packages = [
   "Supplier Price Tracker",
@@ -15,27 +15,29 @@ const packages = [
 ];
 
 export function SettingsPage() {
+  const demo = useDemoProfile();
+
   return (
-    <PageLayout title="Settings / Restaurant Profile" description="Configurable restaurant details, alert thresholds, report cadence, and service package selection.">
+    <PageLayout title={demo.copy.settings.title} eyebrow={demo.copy.settings.eyebrow} description={demo.copy.settings.description}>
       <div className="grid gap-6 xl:grid-cols-[1fr_0.8fr]">
         <section>
           <SectionHeader title="Restaurant Profile" />
           <Card className="p-5">
             <div className="grid gap-4 md:grid-cols-2">
-              <Input label="Restaurant name" value={restaurantProfile.name} />
-              <Input label="Business type" value={restaurantProfile.businessType} />
-              <Input label="Main contact" value={restaurantProfile.mainContact} />
-              <Input label="Email" value={restaurantProfile.email} />
-              <Input label="Phone" value={restaurantProfile.phone} />
-              <Input label="Default report frequency" value={restaurantProfile.reportFrequency} />
-              <Input label="Alert threshold percentage" value={`${restaurantProfile.alertThreshold}%`} />
-              <Input label="Currency" value={restaurantProfile.currency} />
+              <Input label="Restaurant name" value={demo.customization.restaurantName} />
+              <Input label="City" value={demo.customization.city} />
+              <Input label="Restaurant type" value={demo.customization.restaurantType} />
+              <Input label="Primary supplier" value={demo.customization.primarySupplier} />
+              <Input label="Owner pain point" value={demo.customization.ownerPainPoint} />
+              <Input label="Default report frequency" value="Monthly" />
+              <Input label="Alert threshold percentage" value="5%" />
+              <Input label="Currency" value={demo.currency} />
             </div>
             <div className="mt-5">
               <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Categories</p>
               <div className="flex flex-wrap gap-2">
-                {categories.map((category) => (
-                  <Badge key={category} tone="neutral">{category}</Badge>
+                {demo.categories.map((category) => (
+                  <Badge key={category.category} tone="neutral">{category.category}</Badge>
                 ))}
               </div>
             </div>

@@ -1,170 +1,157 @@
-import { AlertTriangle, FileText, ReceiptText, Store, TrendingUp } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileText, TrendingUp } from "lucide-react";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
-import { PilotCtaPanel } from "../components/PilotCtaPanel";
 import { SectionHeader } from "../components/SectionHeader";
 import { StatCard } from "../components/StatCard";
-import {
-  categorySpend,
-  dashboardAlerts,
-  invoices,
-  monthlyInsights,
-  monthlySummary,
-  priceChanges,
-  recommendedActions,
-  supplierSpend,
-} from "../data/mockData";
-import type { CategorySpend, InvoiceSummary, PriceChange, SupplierSpend } from "../types";
+import { useDemoProfile } from "../lib/demoProfile";
+import { usePilotWorkspace } from "../lib/pilotWorkspace";
+import type { PilotInvoiceRecord, PilotPriceChangeRecord, PilotReconciliationRecord } from "../types";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 
 export function DashboardPage() {
-  const flaggedChanges = priceChanges.filter((item) => item.status === "Increased");
-  const highRiskChanges = priceChanges
-    .filter((item) => item.severity === "High")
-    .sort((a, b) => b.changePercent - a.changePercent)
-    .slice(0, 5);
-  const recentInvoices = [...invoices].sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate)).slice(0, 5);
+  const demo = useDemoProfile();
+  const { priceChanges, recentInvoices, reviewQueue, unresolvedReconciliations, summary } = usePilotWorkspace();
 
-  const supplierColumns: Column<SupplierSpend>[] = [
+  const reviewColumns: Column<PilotInvoiceRecord>[] = [
     { header: "Supplier", accessor: "supplier" },
-    { header: "Spend", accessor: (row) => formatCurrency(row.spend) },
-    { header: "Invoices", accessor: "invoices" },
-    {
-      header: "Avg move",
-      accessor: (row) => <Badge tone={row.change >= 8 ? "danger" : row.change >= 5 ? "warning" : "neutral"}>{formatPercent(row.change)}</Badge>,
-    },
-  ];
-
-  const categoryColumns: Column<CategorySpend>[] = [
-    { header: "Category", accessor: "category" },
-    { header: "Spend", accessor: (row) => formatCurrency(row.spend) },
-    {
-      header: "Share",
-      accessor: (row) => (
-        <div className="min-w-32">
-          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
-            <span>{row.share.toFixed(1)}%</span>
-          </div>
-          <div className="mt-1 h-2 rounded-full bg-slate-100">
-            <div className="h-2 rounded-full bg-slate-700" style={{ width: `${row.share}%` }} />
-          </div>
-        </div>
-      ),
-    },
-  ];
-
-  const invoiceColumns: Column<InvoiceSummary>[] = [
     { header: "Invoice", accessor: "invoiceNumber" },
-    { header: "Supplier", accessor: "supplier" },
     { header: "Date", accessor: (row) => formatDate(row.invoiceDate) },
     { header: "Total", accessor: (row) => formatCurrency(row.totalAmount) },
-    {
-      header: "Status",
-      accessor: (row) => <Badge tone={row.status === "Price Changes Found" ? "warning" : row.status === "Needs Review" ? "danger" : "success"}>{row.status}</Badge>,
-    },
+    { header: "Notes", accessor: "notes", className: "min-w-72" },
+    { header: "Status", accessor: (row) => <Badge tone={row.status === "Ready" ? "success" : "warning"}>{row.status}</Badge> },
   ];
 
-  const priceColumns: Column<PriceChange>[] = [
-    { header: "Item", accessor: "item" },
+  const changeColumns: Column<PilotPriceChangeRecord>[] = [
+    { header: "Item", accessor: "itemName" },
     { header: "Supplier", accessor: "supplier" },
+    { header: "Previous date", accessor: (row) => formatDate(row.previousInvoiceDate) },
+    { header: "Current date", accessor: (row) => formatDate(row.invoiceDate) },
     { header: "Previous", accessor: (row) => formatCurrency(row.previousPrice) },
     { header: "Current", accessor: (row) => formatCurrency(row.currentPrice) },
-    { header: "Change", accessor: (row) => <Badge tone="danger">{formatPercent(row.changePercent)}</Badge> },
+    { header: "Change", accessor: (row) => <Badge tone={row.status === "Increased" ? "danger" : row.status === "Decreased" ? "success" : "neutral"}>{formatPercent(row.changePercent)}</Badge> },
+    { header: "Severity", accessor: (row) => <Badge tone={row.severity === "High" ? "danger" : row.severity === "Medium" ? "warning" : "neutral"}>{row.severity}</Badge> },
+  ];
+
+  const reconciliationColumns: Column<PilotReconciliationRecord>[] = [
+    { header: "Date", accessor: (row) => formatDate(row.date) },
+    { header: "Uber Eats", accessor: (row) => formatCurrency(row.uberEats) },
+    { header: "DoorDash", accessor: (row) => formatCurrency(row.doorDash) },
+    { header: "Skip", accessor: (row) => formatCurrency(row.skip) },
+    { header: "Cash", accessor: (row) => formatCurrency(row.cash) },
+    { header: "Card", accessor: (row) => formatCurrency(row.card) },
+    { header: "Other", accessor: (row) => formatCurrency(row.other) },
+    { header: "Expected POS", accessor: (row) => formatCurrency(row.expectedPosSales) },
+    { header: "Variance", accessor: (row) => <Badge tone={Math.abs(row.variance) >= 1 ? "danger" : "success"}>{formatCurrency(row.variance)}</Badge> },
+    { header: "Status", accessor: (row) => <Badge tone={row.status === "Balanced" ? "success" : "warning"}>{row.status}</Badge> },
+    { header: "Notes", accessor: "notes", className: "min-w-72" },
   ];
 
   return (
     <PageLayout
-      title="Restaurant cost-control dashboard"
-      eyebrow="Harbourfront Cafe / May 2026"
-      description="Sample restaurant data showing how Flowtally turns supplier invoices into spend visibility, price-change alerts, and owner-ready actions."
+      title="Owner summary"
+      eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
+      description="A single-restaurant view of invoice review, supplier price changes, and daily reconciliation exceptions."
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Monthly invoice spend" value={formatCurrency(monthlySummary.totalSpend)} helper={`${monthlySummary.invoicesReviewed} invoices reviewed; 6 recent shown`} icon={<ReceiptText className="h-5 w-5" />} />
-        <StatCard label="Suppliers tracked" value={String(monthlySummary.suppliersTracked)} helper="GFS, Sysco, Costco, produce, packaging, coffee" icon={<Store className="h-5 w-5" />} />
-        <StatCard label="Price changes detected" value={String(monthlySummary.priceChangesDetected)} helper={`${flaggedChanges.length} increases need review`} icon={<AlertTriangle className="h-5 w-5" />} />
-        <StatCard label="Estimated cost increase" value={formatCurrency(monthlySummary.estimatedCostIncrease)} helper="Approximate monthly impact from flagged items" icon={<TrendingUp className="h-5 w-5" />} />
+        <StatCard
+          label="Invoices needing review"
+          value={String(summary.invoiceReviewQueueCount)}
+          helper={`${summary.invoiceCount} invoices stored locally`}
+          icon={<FileText className="h-5 w-5" />}
+        />
+        <StatCard
+          label="Recent price changes"
+          value={String(summary.recentPriceChangeCount)}
+          helper="Derived automatically from invoice history"
+          icon={<TrendingUp className="h-5 w-5" />}
+        />
+        <StatCard
+          label="Unresolved reconciliations"
+          value={String(summary.unresolvedReconciliationCount)}
+          helper={`${summary.reconciliationCount} daily closes logged`}
+          icon={<AlertTriangle className="h-5 w-5" />}
+        />
+        <StatCard
+          label="Weekly invoice spend"
+          value={formatCurrency(summary.weeklyInvoiceSpend)}
+          helper={`${summary.weeklyInvoiceCount} invoices in the last 7 days`}
+          icon={<CalendarClock className="h-5 w-5" />}
+        />
       </div>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+      <div className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="surface-panel p-6">
-          <div className="flex items-start gap-4">
-            <div className="rounded-lg bg-ink p-3 text-white">
-              <FileText className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-bold uppercase tracking-wide text-muted">Plain-English insight</p>
-              <h2 className="mt-2 text-2xl font-bold tracking-normal text-ink">
-                Your total spend is not the only issue. Packaging and produce prices are moving fastest.
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Tomatoes, butter, takeout containers, and sanitizer have the sharpest increases. Flowtally would flag
-                these before the owner places another order or changes menu pricing.
-              </p>
-            </div>
+          <SectionHeader title="Pilot summary" description="Weekly and monthly rollups from the local restaurant records in this browser." />
+          <div className="grid gap-4 md:grid-cols-2">
+            <SummaryBlock
+              title="Weekly view"
+              lines={[
+                `${summary.weeklyInvoiceCount} invoices worth ${formatCurrency(summary.weeklyInvoiceSpend)}`,
+                `${summary.weeklyVariance >= 0 ? "Positive" : "Negative"} reconciliation variance of ${formatCurrency(summary.weeklyVariance)}`,
+              ]}
+            />
+            <SummaryBlock
+              title="Monthly view"
+              lines={[
+                `${summary.monthlyInvoiceCount} invoices worth ${formatCurrency(summary.monthlyInvoiceSpend)}`,
+                `${summary.monthlyVariance >= 0 ? "Positive" : "Negative"} reconciliation variance of ${formatCurrency(summary.monthlyVariance)}`,
+              ]}
+            />
           </div>
         </Card>
-        <Card className="p-5">
-          <SectionHeader title="Owner actions" description="The report should leave the owner with a short list, not a spreadsheet." />
-          <ol className="space-y-3">
-            {recommendedActions.map((action, index) => (
-              <li key={action} className="flex gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-ink">
-                  {index + 1}
-                </span>
-                {action}
-              </li>
-            ))}
-          </ol>
+        <Card className="p-6">
+          <SectionHeader title="What to test next" description="The pilot is intentionally narrow so a restaurant can try it without new integrations." />
+          <ul className="space-y-3 text-sm leading-6 text-slate-700">
+            <li>Upload a supplier invoice, correct the extracted fields, and save the record.</li>
+            <li>Enter one daily close, compare the variance, and mark it Balanced or Needs Review.</li>
+            <li>Open this summary again to see the unresolved items update automatically.</li>
+          </ul>
         </Card>
       </div>
 
       <section className="mt-8">
-        <SectionHeader title="Top flagged price changes" description="Line items that changed enough to affect menu margin or delivery costs." />
-        <DataTable columns={priceColumns} data={highRiskChanges} getRowKey={(row) => row.id} />
-      </section>
-
-      <div className="mt-8 grid gap-6 xl:grid-cols-2">
-        <section>
-          <SectionHeader title="Spend by supplier" description="Where invoice dollars went this month." />
-          <DataTable columns={supplierColumns} data={supplierSpend} getRowKey={(row) => row.supplierId} />
-        </section>
-        <section>
-          <SectionHeader title="Spend by category" description="Food, packaging, beverage, and operating supply buckets." />
-          <DataTable columns={categoryColumns} data={categorySpend} getRowKey={(row) => row.category} />
-        </section>
-      </div>
-
-      <section className="mt-8">
-        <SectionHeader title="Recent invoices" description="Prototype review queue using mock supplier invoices." />
-        <DataTable columns={invoiceColumns} data={recentInvoices} getRowKey={(row) => row.id} />
-      </section>
-
-      <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {monthlyInsights.map((insight) => (
-          <Card key={insight.label} className="p-5">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">{insight.label}</p>
-            <p className="mt-3 text-2xl font-bold text-ink">{insight.value}</p>
-            <p className="mt-2 text-sm leading-5 text-muted">{insight.helper}</p>
-          </Card>
-        ))}
-      </div>
-
-      <section className="mt-8">
-        <SectionHeader title="What Flowtally would flag" />
-        <div className="grid gap-3 md:grid-cols-2">
-          {dashboardAlerts.map((alert) => (
-            <Card key={alert} className="p-4">
-              <p className="text-sm leading-6 text-slate-700">{alert}</p>
-            </Card>
-          ))}
-        </div>
+        <SectionHeader
+          title="Invoices needing review"
+          description="These are the invoice records that still need an owner check before they are marked ready."
+        />
+        <DataTable columns={reviewColumns} data={reviewQueue.slice(0, 8)} getRowKey={(row) => row.id} />
       </section>
 
       <section className="mt-8">
-        <PilotCtaPanel />
+        <SectionHeader
+          title="Recent supplier price changes"
+          description="Only changes that were detected from the invoice history stored locally."
+        />
+        <DataTable columns={changeColumns} data={priceChanges.slice(0, 8)} getRowKey={(row) => row.id} />
+      </section>
+
+      <section className="mt-8">
+        <SectionHeader
+          title="Unresolved reconciliation differences"
+          description="Daily close entries where the totals are not yet balanced or still need attention."
+        />
+        <DataTable columns={reconciliationColumns} data={unresolvedReconciliations.slice(0, 8)} getRowKey={(row) => row.id} />
+      </section>
+
+      <section className="mt-8">
+        <SectionHeader title="Recent invoices" description="The latest stored invoice records in this pilot workspace." />
+        <DataTable columns={reviewColumns} data={recentInvoices.slice(0, 8)} getRowKey={(row) => row.id} />
       </section>
     </PageLayout>
+  );
+}
+
+function SummaryBlock({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-muted">{title}</p>
+      <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+        {lines.map((line) => (
+          <p key={line}>{line}</p>
+        ))}
+      </div>
+    </div>
   );
 }

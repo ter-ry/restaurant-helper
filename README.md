@@ -42,11 +42,18 @@ Create `.env` only when needed:
 ```text
 VITE_FORM_ENDPOINT=
 VITE_BASE_PATH=
+VITE_OCR_API_BASE_URL=
+OCR_SPACE_API_KEY=
+OCR_SPACE_ENDPOINT=
 ```
 
 `VITE_FORM_ENDPOINT` is optional for local previews. When empty, forms stay in preview mode and do not store submissions. Configure it before Instagram outreach.
 
 `VITE_BASE_PATH` is optional. The default base path is `/` for `flowtally.ca`. Use this only if you temporarily deploy under a repository subpath.
+
+`VITE_OCR_API_BASE_URL` points the invoice upload page at the local Flask backend. Leave it unset for the default `http://127.0.0.1:5000`.
+
+`OCR_SPACE_API_KEY` and `OCR_SPACE_ENDPOINT` are used only by the backend OCR bridge. The browser never sees the OCR API key. The default OCR.space demo key is suitable for light local testing, but it has quota and file-size limits.
 
 ## Build
 
@@ -118,6 +125,42 @@ The page states that no private financial data is required, general workflow fee
 - Confirm landing page loads at `/`.
 - Confirm early pilot page loads at `/pilot`.
 - Confirm nav links scroll to the right sections.
+
+## Invoice OCR
+
+Invoice capture now uses a local Flask endpoint that forwards uploaded invoice files to OCR.space and returns structured fields for review.
+
+Supported uploads:
+
+- `.jpg`
+- `.jpeg`
+- `.png`
+- `.webp`
+- `.pdf`
+
+Notes:
+
+- The invoice file is sent to OCR.space for OCR processing.
+- API keys stay on the backend and are never exposed in React code.
+- OCR results are always shown as extracted data that still needs confirmation.
+- Manual entry remains available if OCR fails.
+
+Known limits:
+
+- The default OCR.space demo key is rate-limited and not suitable for heavy production use.
+- OCR.space has file-size and PDF page limits on the free tier.
+- Very blurry photos, rotated pages, or handwritten invoices may still need manual correction.
+
+To test with your own invoices:
+
+1. Start the Flask app with `python app.py`.
+2. Start the frontend with `npm run dev`.
+3. Open the invoice capture page in the app.
+4. Upload a JPG, PNG, WEBP, or PDF invoice.
+5. Review the extracted supplier, date, number, subtotal, tax, total, and line items.
+6. Correct any uncertain fields.
+7. Check the confirmation box and save.
+8. Upload a second invoice from the same supplier to see price history updates.
 
 ## Local Job Application Assistant
 

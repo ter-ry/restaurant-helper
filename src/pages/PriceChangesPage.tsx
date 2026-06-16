@@ -1,12 +1,12 @@
 import { Search, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, type BadgeTone } from "../components/Badge";
 import { Card } from "../components/Card";
 import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
 import { PilotCtaPanel } from "../components/PilotCtaPanel";
 import { SectionHeader } from "../components/SectionHeader";
-import { categories, priceChanges, suppliers } from "../data/mockData";
+import { useDemoProfile } from "../lib/demoProfile";
 import type { PriceChange, PriceStatus, Severity } from "../types";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 
@@ -23,14 +23,22 @@ function statusTone(status: PriceStatus): BadgeTone {
 }
 
 export function PriceChangesPage() {
+  const demo = useDemoProfile();
   const [query, setQuery] = useState("");
   const [supplier, setSupplier] = useState("All");
   const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("All");
 
+  useEffect(() => {
+    setQuery("");
+    setSupplier("All");
+    setCategory("All");
+    setStatus("All");
+  }, [demo.slug]);
+
   const filtered = useMemo(
     () =>
-      priceChanges
+      demo.priceChanges
         .filter((item) => {
           const matchesQuery =
             item.item.toLowerCase().includes(query.toLowerCase()) ||
@@ -44,8 +52,8 @@ export function PriceChangesPage() {
     [category, query, status, supplier],
   );
 
-  const increasedItems = priceChanges.filter((item) => item.status === "Increased");
-  const highRiskItems = priceChanges.filter((item) => item.severity === "High");
+  const increasedItems = demo.priceChanges.filter((item) => item.status === "Increased");
+  const highRiskItems = demo.priceChanges.filter((item) => item.severity === "High");
 
   const columns: Column<PriceChange>[] = [
     { header: "Item", accessor: "item" },
@@ -64,9 +72,9 @@ export function PriceChangesPage() {
 
   return (
     <PageLayout
-      title="Price Tracker"
-      eyebrow="Harbourfront Cafe / item-level tracking"
-      description="Track supplier item prices from invoice to invoice and surface increases before they quietly squeeze margin."
+      title={demo.copy.priceTracker.title}
+      eyebrow={demo.copy.priceTracker.eyebrow}
+      description={demo.copy.priceTracker.description}
     >
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="p-5">
@@ -109,14 +117,14 @@ export function PriceChangesPage() {
             </label>
             <select value={supplier} onChange={(event) => setSupplier(event.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
               <option>All</option>
-              {suppliers.map((item) => (
+              {demo.suppliers.map((item) => (
                 <option key={item.id}>{item.name}</option>
               ))}
             </select>
             <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
               <option>All</option>
-              {categories.map((item) => (
-                <option key={item}>{item}</option>
+              {demo.categories.map((item) => (
+                <option key={item.category}>{item.category}</option>
               ))}
             </select>
             <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
@@ -127,7 +135,7 @@ export function PriceChangesPage() {
             </select>
           </div>
         </Card>
-        <DataTable columns={columns} data={filtered} getRowKey={(row) => row.id} />
+          <DataTable columns={columns} data={filtered} getRowKey={(row) => row.id} />
       </section>
 
       <section className="mt-8">

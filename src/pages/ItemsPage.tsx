@@ -1,21 +1,27 @@
 import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
-import { categories, trackedItems } from "../data/mockData";
+import { useDemoProfile } from "../lib/demoProfile";
 import type { TrackedItem } from "../types";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 
 export function ItemsPage() {
+  const demo = useDemoProfile();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
 
+  useEffect(() => {
+    setQuery("");
+    setCategory("All");
+  }, [demo.slug]);
+
   const filtered = useMemo(
     () =>
-      trackedItems.filter((item) => {
+      demo.trackedItems.filter((item) => {
         const matchesQuery = item.name.toLowerCase().includes(query.toLowerCase()) || item.preferredSupplier.toLowerCase().includes(query.toLowerCase());
         const matchesCategory = category === "All" || item.category === category;
         return matchesQuery && matchesCategory;
@@ -52,8 +58,8 @@ export function ItemsPage() {
           </label>
           <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
             <option>All</option>
-            {categories.map((item) => (
-              <option key={item}>{item}</option>
+            {demo.categories.map((item) => (
+              <option key={item.category}>{item.category}</option>
             ))}
           </select>
         </div>

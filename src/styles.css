@@ -94,6 +94,30 @@ textarea:focus-visible {
     0 14px 30px rgba(31, 41, 55, 0.12);
 }
 
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.625rem 0.75rem;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.input:focus {
+  outline: 2px solid rgba(13, 148, 136, 0.22);
+  border-color: #0d9488;
+}
+
+textarea.input {
+  min-height: 10rem;
+  resize: vertical;
+}
+
 .reveal {
   animation: reveal-up 0.8s ease both;
   animation-timeline: view();

@@ -7,13 +7,14 @@ import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
 import { PilotCtaPanel } from "../components/PilotCtaPanel";
 import { SectionHeader } from "../components/SectionHeader";
-import { categorySpend, monthlyInsights, priceChanges, recommendedActions, supplierSpend } from "../data/mockData";
+import { useDemoProfile } from "../lib/demoProfile";
 import type { CategorySpend, PriceChange, SupplierSpend } from "../types";
 import { formatCurrency, formatPercent } from "../utils/format";
 
 export function ReportsPage() {
+  const demo = useDemoProfile();
   const [message, setMessage] = useState("");
-  const biggestIncreases = priceChanges
+  const biggestIncreases = demo.priceChanges
     .filter((item) => item.status === "Increased")
     .sort((a, b) => b.changePercent - a.changePercent)
     .slice(0, 5);
@@ -47,9 +48,9 @@ export function ReportsPage() {
 
   return (
     <PageLayout
-      title="Monthly Cost Report"
-      eyebrow="Harbourfront Cafe / May 2026"
-      description="Screenshot-friendly owner report showing what changed, where money went, and what to do next."
+      title={demo.copy.reports.title}
+      eyebrow={demo.copy.reports.eyebrow}
+      description={demo.copy.reports.description}
     >
       <Card className="surface-panel p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -60,13 +61,11 @@ export function ReportsPage() {
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Executive summary</p>
-                <h2 className="text-2xl font-bold tracking-normal text-ink">Packaging and produce costs need attention this month.</h2>
+                <h2 className="text-2xl font-bold tracking-normal text-ink">{demo.dashboardAlerts[0]}</h2>
               </div>
             </div>
             <p className="mt-4 max-w-4xl text-sm leading-6 text-slate-700">
-              Harbourfront Cafe reviewed 29 supplier invoices in May. Total supplier spend is concentrated across GFS,
-              Sysco, Local Produce Co., and packaging vendors. The clearest margin risks are tomatoes, butter, takeout
-              containers, sanitizer, and chicken thighs.
+              {demo.customization.restaurantName} reviewed {demo.monthlySummary.invoicesReviewed} supplier invoices in {demo.monthlySummary.period}. Total supplier spend is concentrated across {demo.customization.primarySupplier} and a few other core vendors. The clearest margin risks are reflected in the items and report notes below.
             </p>
           </div>
           <div className="shrink-0">
@@ -79,7 +78,7 @@ export function ReportsPage() {
       </Card>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {monthlyInsights.map((insight) => (
+        {demo.monthlyInsights.map((insight) => (
           <Card key={insight.label} className="p-5">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">{insight.label}</p>
             <p className="mt-3 text-2xl font-bold text-ink">{insight.value}</p>
@@ -91,11 +90,11 @@ export function ReportsPage() {
       <div className="mt-8 grid gap-6 xl:grid-cols-2">
         <section>
           <SectionHeader title="Supplier spending" description="Where the restaurant spent money this month." />
-          <DataTable columns={supplierColumns} data={supplierSpend} getRowKey={(row) => row.supplierId} />
+          <DataTable columns={supplierColumns} data={demo.supplierSpend} getRowKey={(row) => row.supplierId} />
         </section>
         <section>
           <SectionHeader title="Category spending" description="The simplest view of food, packaging, beverage, and operating supply costs." />
-          <DataTable columns={categoryColumns} data={categorySpend} getRowKey={(row) => row.category} />
+          <DataTable columns={categoryColumns} data={demo.categories} getRowKey={(row) => row.category} />
         </section>
       </div>
 
@@ -108,7 +107,7 @@ export function ReportsPage() {
         <SectionHeader title="Recommended owner actions" description="Short, practical next steps generated from invoice patterns." />
         <Card className="p-6">
           <div className="grid gap-4 md:grid-cols-2">
-            {recommendedActions.map((action, index) => (
+            {demo.recommendedActions.map((action, index) => (
               <div key={action} className="flex gap-3 rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-bold text-white">
                   {index + 1}
