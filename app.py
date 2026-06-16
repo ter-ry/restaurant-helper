@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 
 from flask import Flask, Response, g, jsonify, render_template, request
 from invoice_ocr import InvoiceOCRFailure, extract_invoice_document
+from reconciliation_ocr import InvoiceOCRFailure as ReconciliationOCRFailure, extract_reconciliation_document
 from sources.jobspy_source import fetch_jobspy_jobs
 
 
@@ -177,6 +178,22 @@ def create_app() -> Flask:
         try:
             result = extract_invoice_document(uploaded.filename, uploaded.read(), uploaded.mimetype or "")
         except InvoiceOCRFailure as exc:
+            return jsonify({"error": str(exc)}), 422
+        return jsonify(result)
+
+    @app.post("/api/reconciliation/extract")
+    def reconciliation_extract() -> Response:
+        uploaded = request.files.get("file")
+        source_key = text(request.form.get("source"))
+        if not uploaded:
+            return jsonify({"error": "No reconciliation file uploaded"}), 400
+        if not uploaded.filename:
+            return jsonify({"error": "The uploaded file is missing a filename"}), 400
+        if not source_key:
+            return jsonify({"error": "A source key is required"}), 400
+        try:
+            result = extract_reconciliation_document(uploaded.filename, uploaded.read(), uploaded.mimetype or "", source_key)
+        except ReconciliationOCRFailure as exc:
             return jsonify({"error": str(exc)}), 422
         return jsonify(result)
 

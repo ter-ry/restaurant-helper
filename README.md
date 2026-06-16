@@ -162,6 +162,26 @@ To test with your own invoices:
 7. Check the confirmation box and save.
 8. Upload a second invoice from the same supplier to see price history updates.
 
+## Daily Reconciliation Imports
+
+The daily reconciliation page now supports optional uploads for Uber Eats, DoorDash, Skip, POS close reports, card processor reports, and cash close records.
+
+Supported uploads:
+
+- `.csv`
+- `.pdf`
+- `.jpg`
+- `.jpeg`
+- `.png`
+- `.webp`
+
+Notes:
+
+- Uploads prefill values only. They do not save automatically.
+- The operator still confirms the extracted values before saving the close.
+- Gross sales, net/payout, fees, tips, and taxes are shown separately when the report exposes them.
+- Manual entry remains available for malformed, incomplete, or unsupported exports.
+
 ## Local Job Application Assistant
 
 This repository also includes a local Flask app for tracking and tailoring software, cloud, full-stack, support, implementation, and analyst job applications. It stores data locally in SQLite and does not include auto-submit, scraping bot, login bypass, CAPTCHA bypass, or application automation behavior.
