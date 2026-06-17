@@ -58,7 +58,7 @@ jobs:
       - name: Support client-side routes
         run: |
           cp dist/index.html dist/404.html
-          for route in pilot pilot/invoices pilot/daily-reconciliation pilot/price-changes app app/invoices app/price-tracker app/monthly-report app/upload app/suppliers app/items app/settings app/price-changes app/reports; do
+          for route in pilot pilot/invoices pilot/daily-reconciliation pilot/price-changes demo demo/cafe demo/cafe/invoices demo/cafe/daily-reconciliation demo/cafe/price-tracker demo/cafe/monthly-report demo/cafe/settings demo/quick-service demo/quick-service/invoices demo/quick-service/daily-reconciliation demo/quick-service/price-tracker demo/quick-service/monthly-report demo/quick-service/settings demo/full-service demo/full-service/invoices demo/full-service/daily-reconciliation demo/full-service/price-tracker demo/full-service/monthly-report demo/full-service/settings app app/invoices app/price-tracker app/monthly-report app/upload app/suppliers app/items app/settings app/price-changes app/reports; do
             mkdir -p "dist/$route"
             cp dist/index.html "dist/$route/index.html"
           done
