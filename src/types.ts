@@ -114,6 +114,7 @@ export type PilotReconciliationStatus = "Balanced" | "Needs Review";
 
 export interface PilotInvoiceLineItem extends InvoiceLineItem {
   originalDescription: string;
+  rawSourceLine: string;
   comparisonKey: string;
   confidence: number;
   needsReview: boolean;
@@ -174,6 +175,7 @@ export interface PilotPriceChangeRecord {
   supplier: string;
   itemName: string;
   originalDescription: string;
+  rawSourceLine: string;
   comparisonKey: string;
   category: string;
   previousPrice: number;

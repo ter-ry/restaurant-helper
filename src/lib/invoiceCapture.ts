@@ -25,7 +25,7 @@ export interface InvoiceOcrResult {
     total: InvoiceOcrFieldResult<number>;
   };
   lineItems: Array<
-    Pick<PilotInvoiceLineItem, "originalDescription" | "comparisonKey" | "itemName" | "quantity" | "unit" | "unitPrice" | "lineTotal" | "confidence" | "needsReview">
+    Pick<PilotInvoiceLineItem, "originalDescription" | "rawSourceLine" | "comparisonKey" | "itemName" | "quantity" | "unit" | "unitPrice" | "lineTotal" | "confidence" | "needsReview">
   >;
 }
 

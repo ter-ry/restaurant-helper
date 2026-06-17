@@ -252,7 +252,7 @@ def guess_supplier(lines: list[str]) -> FieldResult:
 
     label_patterns = [
         re.compile(r"^(?:supplier|vendor|from)\s*[:\-]\s*(.+)$", re.I),
-        re.compile(r"^(?:bill to|sold by)\s*[:\-]\s*(.+)$", re.I),
+        re.compile(r"^(?:sold by)\s*[:\-]\s*(.+)$", re.I),
     ]
     generic_skip = {"invoice", "tax invoice", "receipt", "bill", "statement", "purchase order"}
 
@@ -299,23 +299,28 @@ def clean_supplier_name(value: str) -> str:
     return cleaned.strip(" -:;")
 
 
+def is_plausible_invoice_number(value: str) -> bool:
+    candidate = normalize_space(value).strip(" .,:;#")
+    if not candidate or len(candidate) < 3 or len(candidate) > 24:
+        return False
+    if candidate.upper() in {"OICE", "VOICE", "INVO", "INVOICE", "NUMBER", "NO"}:
+        return False
+    if not re.search(r"\d", candidate):
+        return False
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9\-\/]*", candidate, re.I):
+        return False
+    return True
+
+
 def find_invoice_number(lines: list[str]) -> FieldResult:
     patterns = [
-        re.compile(r"invoice\s*(?:number|no\.?|#|id)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-\/]+)", re.I),
-        re.compile(r"inv\s*(?:no\.?|#|id)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-\/]+)", re.I),
-        re.compile(r"bill\s*(?:no\.?|#|id)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-\/]+)", re.I),
+        re.compile(r"\b(?:invoice\s*(?:number|no\.?|#|id)?|inv\s*(?:no\.?|#|id)?|bill\s*(?:no\.?|#|id)?|reference\s*(?:number|no\.?|#|id)?|po\s*(?:number|no\.?|#|id)?|number)\s*[:\-#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})\b", re.I),
     ]
     for line in lines:
         for pattern in patterns:
             match = pattern.search(line)
-            if match:
+            if match and is_plausible_invoice_number(match.group(1)):
                 return FieldResult(match.group(1).strip(), 0.95, False, line)
-
-    for line in lines[:12]:
-        if re.search(r"\b(?:inv|invoice|bill)[\s#:-]*[A-Z0-9\-\/]{4,}\b", line, re.I):
-            guess = re.sub(r"^(?:invoice|inv|bill)[\s#:-]*", "", line, flags=re.I).strip()
-            if guess:
-                return FieldResult(guess[:30], 0.65, True, line)
 
     return FieldResult("", 0.0, True, "Invoice number not found.")
 
@@ -556,7 +561,8 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
     needs_review = confidence < 0.82 or not unit_price or not line_total
 
     return {
-        "originalDescription": normalize_space(line),
+        "originalDescription": text_part,
+        "rawSourceLine": normalize_space(line),
         "comparisonKey": normalize_item_comparison_key(text_part),
         "itemName": text_part,
         "quantity": quantity or 1,

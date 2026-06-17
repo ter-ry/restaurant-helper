@@ -46,6 +46,18 @@ function formatFileStem(fileName: string) {
     .trim();
 }
 
+function normalizeLineItemDescription(value: string) {
+  return value
+    .replace(/\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b/gi, " ")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:x|X|@)\b/g, " ")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b/gi, " ")
+    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?/g, " ")
+    .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
+    .replace(/[|â€¢Â·]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function guessSupplier(sourceText: string, fileName: string) {
   const lower = sourceText.toLowerCase();
   for (const supplier of COMMON_SUPPLIERS) {
@@ -67,21 +79,21 @@ function guessSupplier(sourceText: string, fileName: string) {
 }
 
 function guessInvoiceNumber(sourceText: string, fileName: string) {
-  const invoiceNumberPatterns = [
-    /invoice\s*(?:number|no\.?|#|id)?\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
-    /inv\s*(?:no\.?|#|id)?\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
-    /bill\s*(?:no\.?|#|id)?\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
+  const lines = sourceText.split(/\r?\n/).map((line) => normalizeWhitespace(line)).filter(Boolean);
+  const labelPatterns = [
+    /(?:invoice\s*(?:number|no\.?|#|id)?|inv\s*(?:no\.?|#|id)?|bill\s*(?:no\.?|#|id)?|number)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i,
   ];
 
-  for (const pattern of invoiceNumberPatterns) {
-    const match = sourceText.match(pattern);
-    if (match) {
-      return match[1];
+  for (const line of lines) {
+    for (const pattern of labelPatterns) {
+      const match = line.match(pattern);
+      if (match && /\d/.test(match[1])) {
+        return match[1];
+      }
     }
   }
 
-  const stem = formatFileStem(fileName).toUpperCase().replace(/\s+/g, "-");
-  return stem || `INV-${new Date().getTime()}`;
+  return "";
 }
 
 function guessInvoiceDate(sourceText: string) {
@@ -168,6 +180,7 @@ function parseLineItems(sourceText: string): PilotInvoiceLineItem[] {
       id: `item-${index + 1}`,
       itemName,
       originalDescription: itemName,
+      rawSourceLine: normalizeWhitespace(line),
       comparisonKey: itemName.toLowerCase(),
       quantity,
       unit: "each",
@@ -222,6 +235,7 @@ export function parseInvoiceDraft(sourceText: string, fileName: string, fileType
               id: "item-1",
               itemName: "Review extracted invoice lines",
               originalDescription: "Review extracted invoice lines",
+              rawSourceLine: "Review extracted invoice lines",
               comparisonKey: "review extracted invoice lines",
               quantity: 1,
               unit: "each",

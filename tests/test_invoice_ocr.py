@@ -1,3 +1,4 @@
+import json
 import io
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ from unittest.mock import patch
 from PIL import Image
 
 import app as app_module
-from invoice_ocr import InvoiceOCRFailure, _normalize_file_for_ocr, extract_invoice_document, is_supported_invoice_file, parse_invoice_text
+from invoice_ocr import InvoiceOCRFailure, _normalize_file_for_ocr, extract_invoice_document, find_invoice_number, is_supported_invoice_file, parse_invoice_text
 
 
 def make_image_bytes(format_name: str, rotate: bool = False) -> bytes:
@@ -135,6 +136,7 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual(len(parsed["lineItems"]), 3)
         self.assertEqual({item["itemName"] for item in parsed["lineItems"]}, {"Tomatoes", "Lettuce", "Buns"})
         self.assertTrue(all("Street" not in item["originalDescription"] for item in parsed["lineItems"]))
+        self.assertTrue(all(item["rawSourceLine"] for item in parsed["lineItems"]))
 
     def test_parse_table_aware_invoice_fixture(self):
         raw_text = """
@@ -159,14 +161,38 @@ class InvoiceOcrTest(unittest.TestCase):
         Please make checks payable to: East Repair Inc.
         """
         parsed = parse_invoice_text(raw_text)
+        self.assertEqual(parsed["fields"]["invoiceNumber"]["value"], "US-001")
         self.assertEqual(len(parsed["lineItems"]), 3)
         self.assertEqual(
             [item["itemName"] for item in parsed["lineItems"]],
             ["Front and rear brake cables", "New set of pedal arms", "Labor"],
         )
+        self.assertEqual(
+            [item["rawSourceLine"] for item in parsed["lineItems"]],
+            [
+                "Front and rear brake cables 100.00 100.00",
+                "2 New set of pedal arms 15.00 30.00",
+                "Labor 3hrs 5.00 15.00",
+            ],
+        )
         self.assertEqual([item["quantity"] for item in parsed["lineItems"]], [1, 2, 3])
         self.assertEqual([item["unitPrice"] for item in parsed["lineItems"]], [100.0, 15.0, 5.0])
         self.assertEqual([item["lineTotal"] for item in parsed["lineItems"]], [100.0, 30.0, 15.0])
+        self.assertEqual([item["comparisonKey"] for item in parsed["lineItems"]], ["front and rear brake cables", "new set of pedal arms", "labor"])
+        self.assertEqual([item["originalDescription"] for item in parsed["lineItems"]], ["Front and rear brake cables", "New set of pedal arms", "Labor"])
+
+        serialized = json.loads(json.dumps(parsed))
+        self.assertEqual(serialized["lineItems"][2]["itemName"], "Labor")
+        self.assertEqual(serialized["lineItems"][2]["rawSourceLine"], "Labor 3hrs 5.00 15.00")
+
+    def test_invoice_number_extraction_requires_a_real_identifier(self):
+        self.assertEqual(find_invoice_number(["East Repair Inc. INVOICE"]).value, "")
+        self.assertEqual(find_invoice_number(["OICE"]).value, "")
+        self.assertEqual(find_invoice_number(["Invoice No:"]).value, "")
+        self.assertEqual(find_invoice_number(["Invoice # 1234"]).value, "1234")
+        self.assertEqual(find_invoice_number(["Invoice No: INV-1001"]).value, "INV-1001")
+        self.assertEqual(find_invoice_number(["Invoice Number: US-001"]).value, "US-001")
+        self.assertEqual(find_invoice_number(["Invoice Number: 100245"]).value, "100245")
 
     def test_extract_invoice_document_uses_ocr_response(self):
         ocr_response = {

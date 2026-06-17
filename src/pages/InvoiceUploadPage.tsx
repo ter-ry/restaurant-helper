@@ -19,6 +19,7 @@ function createBlankLineItem(index: number): PilotInvoiceLineItem {
     id: `line-${index + 1}-${Math.random().toString(16).slice(2, 6)}`,
     itemName: "",
     originalDescription: "",
+    rawSourceLine: "",
     comparisonKey: "",
     quantity: 1,
     unit: "each",
@@ -80,7 +81,8 @@ function buildDraftFromOcr(result: Awaited<ReturnType<typeof captureInvoiceDocum
   const lineItems: PilotInvoiceLineItem[] = result.lineItems.length > 0 ? result.lineItems.map((item, index) => ({
     id: `line-${index + 1}-${Math.random().toString(16).slice(2, 6)}`,
     itemName: item.itemName || item.originalDescription || `Line item ${index + 1}`,
-    originalDescription: item.originalDescription || item.itemName || `Line item ${index + 1}`,
+    originalDescription: item.itemName || item.originalDescription || `Line item ${index + 1}`,
+    rawSourceLine: item.rawSourceLine || item.originalDescription || item.itemName || `Line item ${index + 1}`,
     comparisonKey: item.comparisonKey || normalizeComparisonKey(item.itemName || item.originalDescription || ""),
     quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
     unit: item.unit || "each",
@@ -717,12 +719,12 @@ function InvoiceReviewModal({
                     <div key={item.id} className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-soft">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-bold text-ink">Line item {index + 1}</p>
                             <Badge tone={confidenceTone(item.confidence, item.needsReview)}>{confidenceLabel(item.confidence, item.needsReview)}</Badge>
                             <Badge tone={item.status === "Price Increased" ? "danger" : item.status === "Matched" ? "success" : "warning"}>{item.status}</Badge>
                           </div>
-                          <p className="mt-1 text-xs leading-5 text-muted">Original description is stored separately from the comparison key that drives price tracking.</p>
+                          <p className="mt-1 text-xs leading-5 text-muted">The item description is editable. The raw OCR line stays stored separately for traceability.</p>
                         </div>
                         <Button type="button" variant="ghost" className="w-full sm:w-auto" icon={<Trash2 className="h-4 w-4" />} onClick={() => onRemoveLineItem(index)}>
                           Remove
@@ -731,16 +733,16 @@ function InvoiceReviewModal({
 
                       <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                         <FieldEditor
-                          label="Original description"
-                          value={item.originalDescription}
+                          label="Item description"
+                          value={item.itemName}
                           confidence={item.confidence}
                           needsReview={item.needsReview}
-                          helper="Keep the raw invoice wording here."
+                          helper="Product or service name shown on the invoice."
                           onChange={(value) =>
                             setLineItemValue(setDraft, index, (current) => ({
                               ...current,
-                              originalDescription: value,
                               itemName: value,
+                              originalDescription: value,
                             }))
                           }
                           placeholder="Enter line description"

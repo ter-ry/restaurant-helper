@@ -46,6 +46,22 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizeRawLineText(value: string | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanLineItemDescription(value: string) {
+  return value
+    .replace(/\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b/gi, " ")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:x|X|@)\b/g, " ")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b/gi, " ")
+    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?/g, " ")
+    .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
+    .replace(/[|·•]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function itemKey(supplier: string, itemName: string) {
   return `${normalizeText(supplier)}::${normalizeText(itemName)}`;
 }
@@ -116,6 +132,7 @@ function createSeedInvoices(): PilotInvoiceRecord[] {
         lineItems: invoice.lineItems.map((item) => normalizeInvoiceLineItem({
           ...item,
           originalDescription: item.itemName,
+          rawSourceLine: item.itemName,
           comparisonKey: normalizeComparisonKey(item.itemName),
           confidence: 1,
           needsReview: false,
@@ -197,6 +214,38 @@ function isPilotWorkspaceState(value: unknown): value is PilotWorkspaceState {
   return Array.isArray(candidate.invoices) && Array.isArray(candidate.reconciliations);
 }
 
+function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorkspaceState {
+  return {
+    invoices: state.invoices.map(normalizeStoredInvoiceRecord),
+    reconciliations: state.reconciliations.map((record) => ({
+      ...record,
+      notes: record.notes?.trim?.() ?? "",
+    })),
+  };
+}
+
+function normalizeStoredInvoiceRecord(record: PilotInvoiceRecord): PilotInvoiceRecord {
+  return {
+    ...record,
+    supplier: record.supplier?.trim() || "Unknown supplier",
+    invoiceDate: record.invoiceDate,
+    invoiceNumber: record.invoiceNumber?.trim() || "",
+    totalAmount: clampMoney(record.totalAmount),
+    subtotal: clampMoney(record.subtotal),
+    tax: clampMoney(record.tax),
+    status: record.status,
+    notes: record.notes?.trim() || "",
+    fileName: record.fileName || "",
+    fileType: record.fileType || "",
+    extractedText: record.extractedText || "",
+    extractionWarnings: Array.isArray(record.extractionWarnings) ? record.extractionWarnings : [],
+    fieldConfidence: record.fieldConfidence,
+    extractionProvider: record.extractionProvider || "manual",
+    confirmed: Boolean(record.confirmed),
+    lineItems: Array.isArray(record.lineItems) ? record.lineItems.map(normalizeInvoiceLineItem) : [],
+  };
+}
+
 function loadWorkspace(): PilotWorkspaceState {
   if (typeof window === "undefined") {
     return createSeedWorkspace();
@@ -210,7 +259,7 @@ function loadWorkspace(): PilotWorkspaceState {
   try {
     const parsed = JSON.parse(stored) as unknown;
     if (isPilotWorkspaceState(parsed)) {
-      return parsed;
+      return normalizeStoredWorkspace(parsed);
     }
   } catch {
     // Fall back to the seed workspace if storage is corrupted.
@@ -229,13 +278,16 @@ function saveWorkspace(state: PilotWorkspaceState) {
 
 function normalizeInvoiceLineItem(item: InvoiceLineItem | PilotInvoiceLineItem): PilotInvoiceLineItem {
   const line = item as PilotInvoiceLineItem;
+  const rawSourceLine = normalizeRawLineText(line.rawSourceLine || line.originalDescription);
+  const cleanDescription = normalizeRawLineText(item.itemName) || cleanLineItemDescription(rawSourceLine) || "Line item";
   return {
     ...item,
-    itemName: item.itemName.trim() || "Line item",
-    originalDescription: line.originalDescription?.trim() || item.itemName.trim() || "Line item",
-    comparisonKey: line.comparisonKey?.trim() || normalizeComparisonKey(item.itemName),
+    itemName: cleanDescription,
+    originalDescription: cleanDescription,
+    rawSourceLine,
+    comparisonKey: line.comparisonKey?.trim() || normalizeComparisonKey(cleanDescription),
     unit: item.unit.trim() || "each",
-    category: item.category.trim() || detectCategory(item.itemName),
+    category: item.category.trim() || detectCategory(cleanDescription),
     quantity: Number.isFinite(item.quantity) ? Number(item.quantity) : 1,
     unitPrice: clampMoney(item.unitPrice),
     lineTotal: clampMoney(item.lineTotal || item.quantity * item.unitPrice),
@@ -272,7 +324,8 @@ function buildPriceChanges(invoices: PilotInvoiceRecord[]): PilotPriceChangeReco
           previousInvoiceDate: previous.invoiceDate,
           supplier: invoice.supplier,
           itemName: item.itemName,
-          originalDescription: item.originalDescription,
+          originalDescription: item.itemName,
+          rawSourceLine: item.rawSourceLine,
           comparisonKey: item.comparisonKey,
           category: item.category,
           previousPrice: clampMoney(previous.price),
@@ -368,14 +421,18 @@ function deriveInvoiceState(existingInvoices: PilotInvoiceRecord[], draft: Pilot
     const previous = findPreviousPrice(existingInvoices, draft.supplier, comparisonKey);
     const currentUnitPrice = clampMoney(item.unitPrice);
     const lineTotal = clampMoney(item.lineTotal || item.quantity * currentUnitPrice);
+    const rawSourceLine = normalizeRawLineText(item.rawSourceLine || item.originalDescription || item.itemName);
+    const itemName = normalizeRawLineText(item.itemName) || cleanLineItemDescription(rawSourceLine) || `Line item ${index + 1}`;
     const priceChangePercent = previous && previous > PRICE_CHANGE_EPSILON ? ((currentUnitPrice - previous) / previous) * 100 : undefined;
 
     return {
       ...normalizeInvoiceLineItem({
         ...item,
         id: item.id || `line-${index + 1}`,
+        itemName,
         comparisonKey,
-        originalDescription: item.originalDescription || item.itemName,
+        originalDescription: itemName,
+        rawSourceLine,
         quantity: item.quantity || 1,
         unitPrice: currentUnitPrice,
         lineTotal,
