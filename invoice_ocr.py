@@ -264,11 +264,26 @@ def guess_supplier(lines: list[str]) -> FieldResult:
                 if value:
                     return FieldResult(value, 0.97, False, line)
 
+    header_pattern = re.compile(r"^(.+?)\s+(?:invoice|tax invoice|receipt)\b", re.I)
+    for line in lines[:6]:
+        match = header_pattern.match(line)
+        if match:
+            value = clean_supplier_name(match.group(1))
+            if value and len(value) >= 3:
+                return FieldResult(value, 0.88, True, line)
+
     for line in lines[:8]:
         lowered = line.lower()
         if lowered in generic_skip:
             continue
-        if any(keyword in lowered for keyword in ["invoice", "total", "subtotal", "tax", "date", "number", "phone", "email", "address"]):
+        if any(keyword in lowered for keyword in ["invoice", "total", "subtotal", "tax", "date", "number", "phone", "email", "address", "qty", "quantity", "description", "unit price", "amount", "bill to", "ship to"]):
+            continue
+        if re.search(r"\b\d{1,5}\s+[A-Za-z0-9][A-Za-z0-9\s.'-]{1,40}\b", line):
+            if re.search(r"\b(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|unit|suite|floor|po box)\b", lowered):
+                continue
+        if re.search(r"\b[A-Z]\d[A-Z][ -]?\d[A-Z]\d\b", line):
+            continue
+        if re.search(r"\b[A-Za-z]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b", line):
             continue
         if len(line) >= 3 and len(line) <= 80 and any(ch.isalpha() for ch in line):
             value = clean_supplier_name(line)
@@ -394,14 +409,20 @@ def parse_money(value: str) -> float:
 
 
 def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
+    table_lines = extract_item_table_lines(lines)
+    candidate_lines = table_lines if table_lines else lines
+    table_mode = bool(table_lines)
     items: list[dict[str, Any]] = []
-    for line in lines:
+
+    for line in candidate_lines:
         if is_probable_non_item_line(line):
             continue
         amounts = extract_all_amounts(line)
+        if len(amounts) < 2 and table_mode:
+            continue
         if not amounts:
             continue
-        item = parse_line_item(line, amounts)
+        item = parse_line_item(line, amounts, table_mode=table_mode)
         if item:
             items.append(item)
 
@@ -419,6 +440,53 @@ def is_summary_line(line: str) -> bool:
     return bool(re.search(r"\b(subtotal|tax|hst|gst|vat|total|balance due|amount due|invoice total|grand total)\b", line, re.I))
 
 
+def is_table_header_line(line: str) -> bool:
+    normalized = normalize_space(line).lower()
+    if not normalized:
+        return False
+
+    score = 0
+    if re.search(r"\bqty\b|\bquantity\b", normalized):
+        score += 1
+    if re.search(r"\bdescription\b", normalized):
+        score += 1
+    if re.search(r"\b(?:unit\s*price|amount|price)\b", normalized):
+        score += 1
+    return score >= 3
+
+
+def is_table_end_line(line: str) -> bool:
+    normalized = normalize_space(line).lower()
+    if not normalized:
+        return False
+
+    return bool(
+        re.search(
+            r"\b(subtotal|sales tax|tax|grand total|total|terms|notes?|payment|footer|check(?:s)? payable|please make checks payable|thank you|paid)\b",
+            normalized,
+        )
+    )
+
+
+def extract_item_table_lines(lines: list[str]) -> list[str]:
+    start_index = None
+    for index, line in enumerate(lines):
+        if is_table_header_line(line):
+            start_index = index + 1
+            break
+
+    if start_index is None:
+        return []
+
+    end_index = len(lines)
+    for index in range(start_index, len(lines)):
+        if is_table_end_line(lines[index]):
+            end_index = index
+            break
+
+    return [line for line in lines[start_index:end_index] if line]
+
+
 def is_probable_non_item_line(line: str) -> bool:
     normalized = normalize_space(line)
     lowered = normalized.lower()
@@ -429,7 +497,7 @@ def is_probable_non_item_line(line: str) -> bool:
 
     metadata_patterns = [
         r"\b(?:invoice\s*(?:date|no\.?|number|#|id)|inv\s*(?:no\.?|#|id)|bill\s*(?:to|from|no\.?|#|id)|sold\s*to|ship\s*to|ship\s*from|deliver\s*to|remit\s*to|due\s*date|payment\s*terms|terms\s*and\s*conditions|po\s*(?:number|no\.?|#)?|purchase\s*order|account\s*(?:number|no\.?|#)|customer\s*(?:number|no\.?|#)|reference\s*(?:number|no\.?|#))\b",
-        r"\b(?:address|suite|unit|floor|building|apt|apartment|postal|postcode|zip|phone|tel|email|www|http|www\.|thank you|thanks|notes?|deliver(?:y|ies)|shipping|freight|service charge|service fee|discount|promotion|adjustment|credit memo|deposit|balance forward|labor|misc(?:ellaneous)?|handling|setup)\b",
+        r"\b(?:address|suite|unit|floor|building|apt|apartment|postal|postcode|zip|phone|tel|email|www|http|www\.|thank you|thanks|notes?|deliver(?:y|ies)|shipping|freight|service charge|service fee|discount|promotion|adjustment|credit memo|deposit|balance forward|misc(?:ellaneous)?|handling|setup)\b",
         r"\bpage\s*\d+(?:\s*(?:of|/)\s*\d+)?\b",
     ]
     if any(re.search(pattern, lowered, re.I) for pattern in metadata_patterns):
@@ -449,12 +517,15 @@ def is_probable_non_item_line(line: str) -> bool:
     return False
 
 
-def parse_line_item(line: str, amounts: list[float]) -> dict[str, Any] | None:
+def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -> dict[str, Any] | None:
     if is_probable_non_item_line(line):
         return None
 
     text_part = strip_line_item_noise(line)
     if len(text_part) < 2 or not re.search(r"[A-Za-z]{2,}", text_part):
+        return None
+
+    if table_mode and len(amounts) < 2:
         return None
 
     quantity, quantity_confidence = parse_quantity(line)
@@ -500,6 +571,7 @@ def parse_line_item(line: str, amounts: list[float]) -> dict[str, Any] | None:
 def strip_line_item_noise(line: str) -> str:
     text = re.sub(r"\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b", " ", line, flags=re.I)
     text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:x|X|@)\b", " ", text)
+    text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b", " ", text, flags=re.I)
     text = re.sub(r"\$?\s*[0-9][0-9,]*(?:\.\d{2})?", " ", text)
     text = re.sub(r"\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b", " ", text, flags=re.I)
     text = re.sub(r"[|·•×]", " ", text)
@@ -508,12 +580,21 @@ def strip_line_item_noise(line: str) -> str:
 
 
 def parse_quantity(line: str) -> tuple[float, float]:
+    match = re.search(r"\bqty\s*[:\-]?\s*(\d+(?:\.\d+)?)\b", line, re.I)
+    if match:
+        return float(match.group(1)), 0.96
+    match = re.search(r"^\s*(\d+(?:\.\d+)?)\s*(?:x|X|@)\b", line)
+    if match:
+        return float(match.group(1)), 0.94
     match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:x|X|@)\b", line)
     if match:
         return float(match.group(1)), 0.9
-    match = re.search(r"\bqty\s*[:\-]?\s*(\d+(?:\.\d+)?)\b", line, re.I)
+    match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|hr|h)\b", line, re.I)
     if match:
-        return float(match.group(1)), 0.92
+        return float(match.group(1)), 0.88
+    match = re.search(r"^\s*(\d+(?:\.\d+)?)\s+(?=[A-Za-z])", line)
+    if match:
+        return float(match.group(1)), 0.74
     return 1.0, 0.0
 
 
@@ -529,6 +610,8 @@ def parse_unit(line: str) -> str:
         return "g"
     if any(unit in lowered for unit in ["lb", "pound"]):
         return "lb"
+    if any(unit in lowered for unit in ["hrs", "hr", "hour"]):
+        return "hr"
     if any(unit in lowered for unit in ["litre", "liter", " l "]):
         return "L"
     if "ml" in lowered:
@@ -540,7 +623,7 @@ def parse_unit(line: str) -> str:
 
 def normalize_item_comparison_key(description: str) -> str:
     normalized = normalize_space(description).lower()
-    normalized = re.sub(r"\b(?:qty|quantity|x|case|cs|pack|pkg)\b", " ", normalized)
+    normalized = re.sub(r"\b(?:qty|quantity|x|case|cs|pack|pkg|hrs?|hours?|hr|h)\b", " ", normalized)
     normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
     normalized = normalize_space(normalized)
     return normalized

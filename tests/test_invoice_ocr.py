@@ -136,6 +136,38 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual({item["itemName"] for item in parsed["lineItems"]}, {"Tomatoes", "Lettuce", "Buns"})
         self.assertTrue(all("Street" not in item["originalDescription"] for item in parsed["lineItems"]))
 
+    def test_parse_table_aware_invoice_fixture(self):
+        raw_text = """
+        East Repair Inc. INVOICE
+        1912 Harvest Lane
+        New York, NY 12210
+        Bill To Ship To Invoice # US-001
+        John Smith John Smith Invoice Date 11/02/2019
+        2 Court Square 3787 Pineview Drive
+        New York, NY 12210 Cambridge, MA 12210 P.O.# 2312/2019
+        Due Date 26/02/2019
+        QTY DESCRIPTION UNIT PRICE AMOUNT
+        Front and rear brake cables 100.00 100.00
+        2 New set of pedal arms 15.00 30.00
+        Labor 3hrs 5.00 15.00
+        Subtotal 145.00
+        Sales Tax 6.25% 9.06
+        TOTAL $154.06
+        John Smith
+        Terms & Conditions
+        Payment is due within 15 days
+        Please make checks payable to: East Repair Inc.
+        """
+        parsed = parse_invoice_text(raw_text)
+        self.assertEqual(len(parsed["lineItems"]), 3)
+        self.assertEqual(
+            [item["itemName"] for item in parsed["lineItems"]],
+            ["Front and rear brake cables", "New set of pedal arms", "Labor"],
+        )
+        self.assertEqual([item["quantity"] for item in parsed["lineItems"]], [1, 2, 3])
+        self.assertEqual([item["unitPrice"] for item in parsed["lineItems"]], [100.0, 15.0, 5.0])
+        self.assertEqual([item["lineTotal"] for item in parsed["lineItems"]], [100.0, 30.0, 15.0])
+
     def test_extract_invoice_document_uses_ocr_response(self):
         ocr_response = {
             "OCRExitCode": 1,

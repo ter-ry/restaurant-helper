@@ -1,5 +1,5 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, FileUp, Loader2, Plus, RefreshCw, Save, ShieldAlert, Sparkles, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
+import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type MouseEvent, type SetStateAction } from "react";
 import { Badge, type BadgeTone } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -162,16 +162,11 @@ export function InvoiceUploadPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    setDraft(createBlankDraft());
-    setStatusMessage("");
-    setErrorMessage("");
-    setIsProcessing(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    handleResetDraft();
   }, [demo.slug]);
 
   const uncertainFields = useMemo(() => {
@@ -220,6 +215,7 @@ export function InvoiceUploadPage() {
       });
       setErrorMessage("That file type is not supported yet. Use JPG, JPEG, PNG, WEBP, or PDF.");
       setStatusMessage("");
+      setReviewOpen(true);
       return;
     }
 
@@ -231,6 +227,7 @@ export function InvoiceUploadPage() {
       const extracted = await captureInvoiceDocument(file);
       setDraft(buildDraftFromOcr(extracted, file));
       setStatusMessage(`Extracted ${file.name}. Please review every highlighted field before saving.`);
+      setReviewOpen(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invoice OCR failed.";
       setDraft({
@@ -242,6 +239,7 @@ export function InvoiceUploadPage() {
       });
       setErrorMessage(message);
       setStatusMessage("OCR did not finish cleanly, but manual entry is still available.");
+      setReviewOpen(true);
     } finally {
       setIsProcessing(false);
     }
@@ -267,22 +265,34 @@ export function InvoiceUploadPage() {
     const saved = saveInvoice(draft);
     setStatusMessage(`Saved ${saved.invoiceNumber || "the invoice"} and updated local price history.`);
     setErrorMessage("");
+    setReviewOpen(false);
     setDraft(createBlankDraft());
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
+  function handleResetDraft() {
+    setDraft(createBlankDraft());
+    setStatusMessage("");
+    setErrorMessage("");
+    setIsProcessing(false);
+    setReviewOpen(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   return (
     <PageLayout
       title="Invoice capture"
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Upload a photographed invoice or PDF, review the extracted fields, correct them, and save structured invoice data locally."
+      description="Upload a photographed invoice or PDF. The focused review step opens in a modal so you can correct the extracted fields and save structured data locally."
     >
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div className="grid gap-6">
         <Card className="surface-panel min-w-0 p-5 sm:p-6">
           <SectionHeader
-            title="Upload and review"
+            title="Upload invoice"
             description="OCR runs on the local Flask backend and sends the file to OCR.space. The result is extracted data that still needs confirmation."
             action={<Badge tone="info">Single-restaurant pilot</Badge>}
           />
@@ -307,7 +317,7 @@ export function InvoiceUploadPage() {
                   type="button"
                   variant="ghost"
                   icon={<RefreshCw className="h-4 w-4" />}
-                  onClick={() => setDraft(createBlankDraft())}
+                  onClick={handleResetDraft}
                   disabled={isProcessing}
                 >
                   Clear form
@@ -330,7 +340,7 @@ export function InvoiceUploadPage() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Processing invoice
               </div>
-              <p className="mt-1">The file is being uploaded, OCR is running, and the extracted fields will appear here when it finishes.</p>
+              <p className="mt-1">The file is being uploaded, OCR is running, and the review step will open when it finishes.</p>
             </div>
           ) : null}
 
@@ -377,309 +387,66 @@ export function InvoiceUploadPage() {
             />
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <FieldEditor
-              label="Supplier name"
-              value={draft.supplier}
-              confidence={draft.fieldConfidence.supplier}
-              needsReview={draft.fieldConfidence.supplier < confidenceThreshold}
-              helper="OCR result from the supplier header or invoice body."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, supplier: value }))}
-              placeholder="Enter supplier name"
-            />
-            <FieldEditor
-              label="Invoice date"
-              type="date"
-              value={draft.invoiceDate}
-              confidence={draft.fieldConfidence.invoiceDate}
-              needsReview={draft.fieldConfidence.invoiceDate < confidenceThreshold}
-              helper="Keep this as the invoice date printed on the document."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, invoiceDate: value }))}
-            />
-            <FieldEditor
-              label="Invoice number"
-              value={draft.invoiceNumber}
-              confidence={draft.fieldConfidence.invoiceNumber}
-              needsReview={draft.fieldConfidence.invoiceNumber < confidenceThreshold}
-              helper="Reference number or invoice ID."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, invoiceNumber: value }))}
-              placeholder="Enter invoice number"
-            />
-            <FieldEditor
-              label="Subtotal"
-              value={draft.subtotal}
-              confidence={draft.fieldConfidence.subtotal}
-              needsReview={draft.fieldConfidence.subtotal < confidenceThreshold}
-              helper="Pre-tax invoice total."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, subtotal: Number(value) || 0 }))}
-              type="number"
-            />
-            <FieldEditor
-              label="Tax"
-              value={draft.tax}
-              confidence={draft.fieldConfidence.tax}
-              needsReview={draft.fieldConfidence.tax < confidenceThreshold}
-              helper="GST, HST, VAT, or other tax."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, tax: Number(value) || 0 }))}
-              type="number"
-            />
-            <FieldEditor
-              label="Total"
-              value={draft.totalAmount}
-              confidence={draft.fieldConfidence.total}
-              needsReview={draft.fieldConfidence.total < confidenceThreshold}
-              helper="Final invoice total to be checked against the document."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, totalAmount: Number(value) || 0 }))}
-              type="number"
-            />
-          </div>
-
-          <div className="mt-6">
-            <SectionHeader
-              title="Line items"
-              description="Add, remove, or correct line items before saving. Conservative name matching keeps unrelated products separate."
-              action={
-                <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={addLineItem}>
-                  Add line item
-                </Button>
-              }
-            />
-
-            <div className="space-y-4">
-              {draft.lineItems.map((item, index) => (
-                <div key={item.id} className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-soft">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-bold text-ink">Line item {index + 1}</p>
-                        <Badge tone={confidenceTone(item.confidence, item.needsReview)}>{confidenceLabel(item.confidence, item.needsReview)}</Badge>
-                        <Badge tone={item.status === "Price Increased" ? "danger" : item.status === "Matched" ? "success" : "warning"}>{item.status}</Badge>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-muted">Original description is stored separately from the comparison key that drives price tracking.</p>
-                    </div>
-                    <Button type="button" variant="ghost" className="w-full sm:w-auto" icon={<Trash2 className="h-4 w-4" />} onClick={() => removeLineItem(index)}>
-                      Remove
-                    </Button>
-                  </div>
-
-                  <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                    <FieldEditor
-                      label="Original description"
-                      value={item.originalDescription}
-                      confidence={item.confidence}
-                      needsReview={item.needsReview}
-                      helper="Keep the raw invoice wording here."
-                      onChange={(value) =>
-                        setLineItemValue(setDraft, index, (current) => ({
-                          ...current,
-                          originalDescription: value,
-                          itemName: value,
-                        }))
-                      }
-                      placeholder="Enter line description"
-                    />
-                    <FieldEditor
-                      label="Matching key"
-                      value={item.comparisonKey}
-                      confidence={item.confidence}
-                      needsReview={item.needsReview}
-                      helper="Used only for conservative price comparisons."
-                      onChange={(value) =>
-                        setLineItemValue(setDraft, index, (current) => ({
-                          ...current,
-                          comparisonKey: value,
-                        }))
-                      }
-                      placeholder="Normalized match key"
-                    />
-                    <FieldEditor
-                      label="Quantity"
-                      value={item.quantity}
-                      confidence={item.confidence}
-                      needsReview={item.needsReview}
-                      helper="Units on the invoice."
-                      onChange={(value) =>
-                        setLineItemValue(setDraft, index, (current) => ({
-                          ...current,
-                          quantity: Number(value) || 0,
-                        }))
-                      }
-                      type="number"
-                    />
-                    <FieldEditor
-                      label="Unit"
-                      value={item.unit}
-                      confidence={item.confidence}
-                      needsReview={item.needsReview}
-                      helper="Case, kg, each, L, etc."
-                      onChange={(value) =>
-                        setLineItemValue(setDraft, index, (current) => ({
-                          ...current,
-                          unit: value,
-                        }))
-                      }
-                      placeholder="each"
-                    />
-                    <FieldEditor
-                      label="Unit price"
-                      value={item.unitPrice}
-                      confidence={item.confidence}
-                      needsReview={item.needsReview}
-                      helper="Per-unit amount before tax."
-                      onChange={(value) =>
-                        setLineItemValue(setDraft, index, (current) => ({
-                          ...current,
-                          unitPrice: Number(value) || 0,
-                        }))
-                      }
-                      type="number"
-                    />
-                    <FieldEditor
-                      label="Line total"
-                      value={item.lineTotal}
-                      confidence={item.confidence}
-                      needsReview={item.needsReview}
-                      helper="Line total printed on the invoice."
-                      onChange={(value) =>
-                        setLineItemValue(setDraft, index, (current) => ({
-                          ...current,
-                          lineTotal: Number(value) || 0,
-                        }))
-                      }
-                      type="number"
-                    />
-                  </div>
+          {draft.fileName && !reviewOpen ? (
+            <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Review ready</p>
+                  <p className="mt-1 text-sm font-semibold text-ink">{draft.fileName}</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">
+                    {reviewQueue.length} saved invoice records are waiting for owner review. Reopen the focused review step to confirm or correct the extracted fields.
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.65fr)]">
-            <FieldEditor
-              label="Notes"
-              value={draft.notes}
-              confidence={1}
-              needsReview={false}
-              helper="Reason for a correction, a missing item, or a manual follow-up."
-              onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, notes: value }))}
-              placeholder="Add notes"
-              asTextArea
-            />
-            <div className="min-w-0 rounded-xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Processing summary</p>
-              <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
-                <SummaryRow label="File" value={draft.fileName || "No file uploaded"} />
-                <SummaryRow label="Provider" value={draft.extractionProvider || "manual"} />
-                <SummaryRow label="Status" value={draft.status} />
-                <SummaryRow label="Warnings" value={String(draft.extractionWarnings.length)} />
-                <SummaryRow label="Line items" value={String(draft.lineItems.length)} />
-                <SummaryRow label="Needs review" value={String(uncertainFields.length + lineItemsNeedingReview)} />
+                <Button type="button" variant="secondary" onClick={() => setReviewOpen(true)}>
+                  Resume review
+                </Button>
               </div>
             </div>
-          </div>
-
-          <div className="mt-6 min-w-0 rounded-xl border border-line bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Raw extracted text</p>
-            <p className="mt-2 text-xs leading-5 text-muted">This is the OCR text used to populate the structured fields. It is shown here so the operator can verify what the backend extracted.</p>
-            <textarea
-              className="input mt-3 min-h-44 font-mono text-xs leading-5"
-              value={draft.extractedText || "No extracted text yet."}
-              onChange={() => undefined}
-              readOnly
-            />
-          </div>
-
-          <div className="mt-6 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
-            <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-              <input
-                checked={draft.confirmed}
-                onChange={(event) => setDraft((current) => ({ ...current, confirmed: event.target.checked }))}
-                className="mt-1 h-4 w-4 rounded border-line text-brand-600"
-                type="checkbox"
-              />
-              <span>
-                I reviewed this invoice and understand that the fields were extracted and may still need correction before the record is trusted.
-              </span>
-            </label>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button
-                type="button"
-                icon={<Save className="h-4 w-4" />}
-                onClick={handleSave}
-                disabled={!draft.confirmed || isProcessing || !draft.fileName}
-              >
-                Confirm and save
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<CheckCircle2 className="h-4 w-4" />}
-                onClick={() => setDraft((current) => ({ ...current, confirmed: true }))}
-                disabled={isProcessing}
-              >
-                Mark reviewed
-              </Button>
-            </div>
-          </div>
+          ) : null}
         </Card>
 
-        <div className="grid gap-4">
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
-            <div className="flex items-start gap-4">
-              <div className="rounded-lg bg-ink p-3 text-white">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Privacy and architecture</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  The upload is handled by the local Flask backend and then forwarded to OCR.space for real OCR. That keeps API keys out of the frontend, but it does mean the invoice file leaves this machine for OCR processing.
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <SectionHeader title="Invoice review queue" description="Records that still need a final owner check." />
-            <DataTable columns={recentInvoiceColumns} data={reviewQueue.slice(0, 5)} getRowKey={(row) => row.id} />
+            <SectionHeader title="Recent invoices" description="The latest saved invoices are kept locally in this browser." />
+            <DataTable columns={recentInvoiceColumns} data={recentInvoices.slice(0, 5)} getRowKey={(row) => row.id} />
           </Card>
 
           <Card className="p-5">
             <SectionHeader title="Recent price changes" description="Only conservative matches from saved invoice history are shown." />
             <DataTable columns={priceChangeColumns} data={priceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
           </Card>
-
-          <Card className="surface-panel p-5">
-            <div className="flex items-start gap-4">
-              <div className="rounded-lg bg-brand-600 p-3 text-white">
-                <ArrowRight className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">What a restaurant can test now</p>
-                <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
-                  <li>Upload a JPG, PNG, WEBP, or PDF invoice.</li>
-                  <li>Correct any uncertain field or line item and save the record locally.</li>
-                  <li>Upload a second invoice for the same supplier to see the price history update.</li>
-                </ul>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex items-start gap-4">
-              <div className="rounded-lg bg-slate-100 p-3 text-slate-700">
-                <FileUp className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Local storage</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  Saved invoices are stored in this browser only. Refreshing the page should keep the data, and clearing browser storage will remove it.
-                </p>
-                <p className="mt-3 text-sm text-muted">{summary.invoiceCount} invoices stored locally.</p>
-              </div>
-            </div>
-          </Card>
         </div>
+
+        <Card className="surface-panel p-5">
+          <div className="flex items-start gap-4">
+            <div className="rounded-lg bg-slate-100 p-3 text-slate-700">
+              <FileUp className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Local storage</p>
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                Saved invoices are stored in this browser only. Refreshing the page should keep the data, and clearing browser storage will remove it.
+              </p>
+              <p className="mt-3 text-sm text-muted">{summary.invoiceCount} invoices stored locally.</p>
+            </div>
+          </div>
+        </Card>
       </div>
+
+      <InvoiceReviewModal
+        open={reviewOpen}
+        draft={draft}
+        errorMessage={errorMessage}
+        isProcessing={isProcessing}
+        onClose={() => setReviewOpen(false)}
+        onConfirm={() => setDraft((current) => ({ ...current, confirmed: true }))}
+        onSave={handleSave}
+        setDraft={setDraft}
+        uncertainFields={uncertainFields}
+        lineItemsNeedingReview={lineItemsNeedingReview}
+        onAddLineItem={addLineItem}
+        onRemoveLineItem={removeLineItem}
+      />
     </PageLayout>
   );
 }
@@ -752,6 +519,379 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <span className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</span>
       <span className="min-w-0 break-words text-sm text-ink sm:max-w-56 sm:text-right">{value}</span>
+    </div>
+  );
+}
+
+function InvoiceReviewModal({
+  open,
+  draft,
+  errorMessage,
+  isProcessing,
+  onClose,
+  onConfirm,
+  onSave,
+  setDraft,
+  uncertainFields,
+  lineItemsNeedingReview,
+  onAddLineItem,
+  onRemoveLineItem,
+}: {
+  open: boolean;
+  draft: PilotInvoiceDraft;
+  errorMessage: string;
+  isProcessing: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  onSave: () => void;
+  setDraft: Dispatch<SetStateAction<PilotInvoiceDraft>>;
+  uncertainFields: string[];
+  lineItemsNeedingReview: number;
+  onAddLineItem: () => void;
+  onRemoveLineItem: (index: number) => void;
+}) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
+      <div className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Focused review step</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-bold text-ink sm:text-xl">Review extracted invoice</h2>
+              <Badge tone={draft.confirmed ? "success" : "warning"}>{draft.confirmed ? "Confirmed" : "Needs review"}</Badge>
+              <Badge tone="info">{draft.extractionProvider || "manual"}</Badge>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              Confirm or correct the extracted fields before saving. Closing this panel keeps your draft on the page.
+            </p>
+          </div>
+          <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
+            Close
+          </Button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="p-4 sm:p-5">
+            {errorMessage ? (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800" role="alert">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="h-4 w-4" />
+                  OCR or upload problem
+                </div>
+                <p className="mt-1">{errorMessage}</p>
+              </div>
+            ) : null}
+
+            <Card className="surface-panel min-w-0 p-5 sm:p-6">
+              <SectionHeader
+                title="Extracted invoice review"
+                description="The OCR output is a starting point. Review the metadata, line items, notes, and raw text before saving."
+                action={<Badge tone="info">Single-restaurant pilot</Badge>}
+              />
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                  label="Confidence"
+                  value={`${Math.round(((draft.fieldConfidence.supplier + draft.fieldConfidence.invoiceDate + draft.fieldConfidence.invoiceNumber + draft.fieldConfidence.subtotal + draft.fieldConfidence.tax + draft.fieldConfidence.total) / 6) * 100) || 0}%`}
+                  helper="Extracted fields still need confirmation"
+                />
+                <MetricCard
+                  label="Review flags"
+                  value={String(uncertainFields.length + lineItemsNeedingReview)}
+                  helper="Fields and line items marked for attention"
+                />
+                <MetricCard
+                  label="Line items"
+                  value={String(draft.lineItems.length)}
+                  helper="Conservative matches only"
+                />
+                <MetricCard
+                  label="Status"
+                  value={draft.status}
+                  helper="Save only after review"
+                />
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <FieldEditor
+                  label="Supplier name"
+                  value={draft.supplier}
+                  confidence={draft.fieldConfidence.supplier}
+                  needsReview={draft.fieldConfidence.supplier < confidenceThreshold}
+                  helper="OCR result from the supplier header or invoice body."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, supplier: value }))}
+                  placeholder="Enter supplier name"
+                />
+                <FieldEditor
+                  label="Invoice date"
+                  type="date"
+                  value={draft.invoiceDate}
+                  confidence={draft.fieldConfidence.invoiceDate}
+                  needsReview={draft.fieldConfidence.invoiceDate < confidenceThreshold}
+                  helper="Keep this as the invoice date printed on the document."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, invoiceDate: value }))}
+                />
+                <FieldEditor
+                  label="Invoice number"
+                  value={draft.invoiceNumber}
+                  confidence={draft.fieldConfidence.invoiceNumber}
+                  needsReview={draft.fieldConfidence.invoiceNumber < confidenceThreshold}
+                  helper="Reference number or invoice ID."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, invoiceNumber: value }))}
+                  placeholder="Enter invoice number"
+                />
+                <FieldEditor
+                  label="Subtotal"
+                  value={draft.subtotal}
+                  confidence={draft.fieldConfidence.subtotal}
+                  needsReview={draft.fieldConfidence.subtotal < confidenceThreshold}
+                  helper="Pre-tax invoice total."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, subtotal: Number(value) || 0 }))}
+                  type="number"
+                />
+                <FieldEditor
+                  label="Tax"
+                  value={draft.tax}
+                  confidence={draft.fieldConfidence.tax}
+                  needsReview={draft.fieldConfidence.tax < confidenceThreshold}
+                  helper="GST, HST, VAT, or other tax."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, tax: Number(value) || 0 }))}
+                  type="number"
+                />
+                <FieldEditor
+                  label="Total"
+                  value={draft.totalAmount}
+                  confidence={draft.fieldConfidence.total}
+                  needsReview={draft.fieldConfidence.total < confidenceThreshold}
+                  helper="Final invoice total to be checked against the document."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, totalAmount: Number(value) || 0 }))}
+                  type="number"
+                />
+              </div>
+
+              <div className="mt-6">
+                <SectionHeader
+                  title="Line items"
+                  description="Add, remove, or correct line items before saving. Conservative name matching keeps unrelated products separate."
+                  action={
+                    <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={onAddLineItem}>
+                      Add line item
+                    </Button>
+                  }
+                />
+
+                <div className="space-y-4">
+                  {draft.lineItems.map((item, index) => (
+                    <div key={item.id} className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-soft">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-bold text-ink">Line item {index + 1}</p>
+                            <Badge tone={confidenceTone(item.confidence, item.needsReview)}>{confidenceLabel(item.confidence, item.needsReview)}</Badge>
+                            <Badge tone={item.status === "Price Increased" ? "danger" : item.status === "Matched" ? "success" : "warning"}>{item.status}</Badge>
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-muted">Original description is stored separately from the comparison key that drives price tracking.</p>
+                        </div>
+                        <Button type="button" variant="ghost" className="w-full sm:w-auto" icon={<Trash2 className="h-4 w-4" />} onClick={() => onRemoveLineItem(index)}>
+                          Remove
+                        </Button>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                        <FieldEditor
+                          label="Original description"
+                          value={item.originalDescription}
+                          confidence={item.confidence}
+                          needsReview={item.needsReview}
+                          helper="Keep the raw invoice wording here."
+                          onChange={(value) =>
+                            setLineItemValue(setDraft, index, (current) => ({
+                              ...current,
+                              originalDescription: value,
+                              itemName: value,
+                            }))
+                          }
+                          placeholder="Enter line description"
+                        />
+                        <FieldEditor
+                          label="Matching key"
+                          value={item.comparisonKey}
+                          confidence={item.confidence}
+                          needsReview={item.needsReview}
+                          helper="Used only for conservative price comparisons."
+                          onChange={(value) =>
+                            setLineItemValue(setDraft, index, (current) => ({
+                              ...current,
+                              comparisonKey: value,
+                            }))
+                          }
+                          placeholder="Normalized match key"
+                        />
+                        <FieldEditor
+                          label="Quantity"
+                          value={item.quantity}
+                          confidence={item.confidence}
+                          needsReview={item.needsReview}
+                          helper="Units on the invoice."
+                          onChange={(value) =>
+                            setLineItemValue(setDraft, index, (current) => ({
+                              ...current,
+                              quantity: Number(value) || 0,
+                            }))
+                          }
+                          type="number"
+                        />
+                        <FieldEditor
+                          label="Unit"
+                          value={item.unit}
+                          confidence={item.confidence}
+                          needsReview={item.needsReview}
+                          helper="Case, kg, each, L, etc."
+                          onChange={(value) =>
+                            setLineItemValue(setDraft, index, (current) => ({
+                              ...current,
+                              unit: value,
+                            }))
+                          }
+                          placeholder="each"
+                        />
+                        <FieldEditor
+                          label="Unit price"
+                          value={item.unitPrice}
+                          confidence={item.confidence}
+                          needsReview={item.needsReview}
+                          helper="Per-unit amount before tax."
+                          onChange={(value) =>
+                            setLineItemValue(setDraft, index, (current) => ({
+                              ...current,
+                              unitPrice: Number(value) || 0,
+                            }))
+                          }
+                          type="number"
+                        />
+                        <FieldEditor
+                          label="Line total"
+                          value={item.lineTotal}
+                          confidence={item.confidence}
+                          needsReview={item.needsReview}
+                          helper="Line total printed on the invoice."
+                          onChange={(value) =>
+                            setLineItemValue(setDraft, index, (current) => ({
+                              ...current,
+                              lineTotal: Number(value) || 0,
+                            }))
+                          }
+                          type="number"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.65fr)]">
+                <FieldEditor
+                  label="Notes"
+                  value={draft.notes}
+                  confidence={1}
+                  needsReview={false}
+                  helper="Reason for a correction, a missing item, or a manual follow-up."
+                  onChange={(value) => setDraftValue(setDraft, (current) => ({ ...current, notes: value }))}
+                  placeholder="Add notes"
+                  asTextArea
+                />
+                <div className="min-w-0 rounded-xl border border-line bg-slate-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Processing summary</p>
+                  <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
+                    <SummaryRow label="File" value={draft.fileName || "No file uploaded"} />
+                    <SummaryRow label="Provider" value={draft.extractionProvider || "manual"} />
+                    <SummaryRow label="Status" value={draft.status} />
+                    <SummaryRow label="Warnings" value={String(draft.extractionWarnings.length)} />
+                    <SummaryRow label="Line items" value={String(draft.lineItems.length)} />
+                    <SummaryRow label="Needs review" value={String(uncertainFields.length + lineItemsNeedingReview)} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 min-w-0 rounded-xl border border-line bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Raw extracted text</p>
+                <p className="mt-2 text-xs leading-5 text-muted">This is the OCR text used to populate the structured fields. It is shown here so the operator can verify what the backend extracted.</p>
+                <textarea
+                  className="input mt-3 min-h-44 font-mono text-xs leading-5"
+                  value={draft.extractedText || "No extracted text yet."}
+                  onChange={() => undefined}
+                  readOnly
+                />
+              </div>
+
+              <div className="mt-6 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+                <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
+                  <input
+                    checked={draft.confirmed}
+                    onChange={(event) => setDraft((current) => ({ ...current, confirmed: event.target.checked }))}
+                    className="mt-1 h-4 w-4 rounded border-line text-brand-600"
+                    type="checkbox"
+                  />
+                  <span>
+                    I reviewed this invoice and understand that the fields were extracted and may still need correction before the record is trusted.
+                  </span>
+                </label>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    icon={<Save className="h-4 w-4" />}
+                    onClick={onSave}
+                    disabled={!draft.confirmed || isProcessing || !draft.fileName}
+                  >
+                    Confirm and save
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    icon={<CheckCircle2 className="h-4 w-4" />}
+                    onClick={onConfirm}
+                    disabled={isProcessing}
+                  >
+                    Mark reviewed
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
