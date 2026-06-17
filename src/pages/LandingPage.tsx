@@ -272,6 +272,14 @@ export function LandingPage() {
                 Join Early Pilot
                 <ArrowRight className="h-4 w-4" />
               </Link>
+              <Link
+                to="/demo"
+                onClick={() => trackEvent("cta_view_demo_click", { location: "hero" })}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#D6E4E2] bg-[#F0FAF8] px-5 py-3 text-sm font-bold text-[#0F766E] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#E6FFFB]"
+              >
+                View demo
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
           </div>
 
@@ -440,6 +448,14 @@ export function LandingPage() {
             className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
           >
             Join Early Pilot
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <Link
+            to="/demo"
+            onClick={() => trackEvent("cta_view_demo_click", { location: "pilot" })}
+            className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg border border-[#D6E4E2] bg-[#F0FAF8] px-5 py-3 text-sm font-bold text-[#0F766E] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#E6FFFB]"
+          >
+            View demo
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>

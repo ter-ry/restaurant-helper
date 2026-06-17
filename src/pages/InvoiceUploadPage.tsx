@@ -279,8 +279,8 @@ export function InvoiceUploadPage() {
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
       description="Upload a photographed invoice or PDF, review the extracted fields, correct them, and save structured invoice data locally."
     >
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="surface-panel p-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <Card className="surface-panel min-w-0 p-5 sm:p-6">
           <SectionHeader
             title="Upload and review"
             description="OCR runs on the local Flask backend and sends the file to OCR.space. The result is extracted data that still needs confirmation."
@@ -354,7 +354,7 @@ export function InvoiceUploadPage() {
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-4 md:grid-cols-4">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               label="Confidence"
               value={`${Math.round(((draft.fieldConfidence.supplier + draft.fieldConfidence.invoiceDate + draft.fieldConfidence.invoiceNumber + draft.fieldConfidence.subtotal + draft.fieldConfidence.tax + draft.fieldConfidence.total) / 6) * 100) || 0}%`}
@@ -377,7 +377,7 @@ export function InvoiceUploadPage() {
             />
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <FieldEditor
               label="Supplier name"
               value={draft.supplier}
@@ -447,8 +447,8 @@ export function InvoiceUploadPage() {
 
             <div className="space-y-4">
               {draft.lineItems.map((item, index) => (
-                <div key={item.id} className="rounded-xl border border-line bg-white p-4 shadow-soft">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div key={item.id} className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-soft">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold text-ink">Line item {index + 1}</p>
@@ -457,12 +457,12 @@ export function InvoiceUploadPage() {
                       </div>
                       <p className="mt-1 text-xs leading-5 text-muted">Original description is stored separately from the comparison key that drives price tracking.</p>
                     </div>
-                    <Button type="button" variant="ghost" icon={<Trash2 className="h-4 w-4" />} onClick={() => removeLineItem(index)}>
+                    <Button type="button" variant="ghost" className="w-full sm:w-auto" icon={<Trash2 className="h-4 w-4" />} onClick={() => removeLineItem(index)}>
                       Remove
                     </Button>
                   </div>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <FieldEditor
                       label="Original description"
                       value={item.originalDescription}
@@ -554,7 +554,7 @@ export function InvoiceUploadPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_0.65fr]">
+          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.65fr)]">
             <FieldEditor
               label="Notes"
               value={draft.notes}
@@ -565,7 +565,7 @@ export function InvoiceUploadPage() {
               placeholder="Add notes"
               asTextArea
             />
-            <div className="rounded-xl border border-line bg-slate-50 p-4">
+            <div className="min-w-0 rounded-xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Processing summary</p>
               <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
                 <SummaryRow label="File" value={draft.fileName || "No file uploaded"} />
@@ -578,7 +578,7 @@ export function InvoiceUploadPage() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-xl border border-line bg-slate-50 p-4">
+          <div className="mt-6 min-w-0 rounded-xl border border-line bg-slate-50 p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Raw extracted text</p>
             <p className="mt-2 text-xs leading-5 text-muted">This is the OCR text used to populate the structured fields. It is shown here so the operator can verify what the backend extracted.</p>
             <textarea
@@ -709,8 +709,8 @@ function FieldEditor({
   const flagged = needsReview || confidence < confidenceThreshold;
 
   return (
-    <label className="block">
-      <div className="flex items-center justify-between gap-3">
+    <label className="block min-w-0">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <span className="text-xs font-bold uppercase tracking-wide text-muted">{label}</span>
         <Badge tone={tone}>{confidenceLabel(confidence, needsReview)}</Badge>
       </div>
@@ -718,14 +718,14 @@ function FieldEditor({
       <div className="mt-2">
         {asTextArea ? (
           <textarea
-            className={`input ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
+            className={`input w-full min-w-0 ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
             placeholder={placeholder}
             value={typeof value === "number" ? String(value) : value}
             onChange={(event) => onChange(event.target.value)}
           />
         ) : (
           <input
-            className={`input ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
+            className={`input w-full min-w-0 ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
             placeholder={placeholder}
             type={type}
             value={typeof value === "number" ? String(value) : value}
@@ -749,9 +749,9 @@ function MetricCard({ label, value, helper }: { label: string; value: string; he
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <span className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</span>
-      <span className="max-w-56 text-right text-sm text-ink">{value}</span>
+      <span className="min-w-0 break-words text-sm text-ink sm:max-w-56 sm:text-right">{value}</span>
     </div>
   );
 }

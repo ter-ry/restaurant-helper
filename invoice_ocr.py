@@ -396,7 +396,7 @@ def parse_money(value: str) -> float:
 def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for line in lines:
-        if is_summary_line(line):
+        if is_probable_non_item_line(line):
             continue
         amounts = extract_all_amounts(line)
         if not amounts:
@@ -419,9 +419,42 @@ def is_summary_line(line: str) -> bool:
     return bool(re.search(r"\b(subtotal|tax|hst|gst|vat|total|balance due|amount due|invoice total|grand total)\b", line, re.I))
 
 
+def is_probable_non_item_line(line: str) -> bool:
+    normalized = normalize_space(line)
+    lowered = normalized.lower()
+    if not normalized:
+        return True
+    if is_summary_line(normalized):
+        return True
+
+    metadata_patterns = [
+        r"\b(?:invoice\s*(?:date|no\.?|number|#|id)|inv\s*(?:no\.?|#|id)|bill\s*(?:to|from|no\.?|#|id)|sold\s*to|ship\s*to|ship\s*from|deliver\s*to|remit\s*to|due\s*date|payment\s*terms|terms\s*and\s*conditions|po\s*(?:number|no\.?|#)?|purchase\s*order|account\s*(?:number|no\.?|#)|customer\s*(?:number|no\.?|#)|reference\s*(?:number|no\.?|#))\b",
+        r"\b(?:address|suite|unit|floor|building|apt|apartment|postal|postcode|zip|phone|tel|email|www|http|www\.|thank you|thanks|notes?|deliver(?:y|ies)|shipping|freight|service charge|service fee|discount|promotion|adjustment|credit memo|deposit|balance forward|labor|misc(?:ellaneous)?|handling|setup)\b",
+        r"\bpage\s*\d+(?:\s*(?:of|/)\s*\d+)?\b",
+    ]
+    if any(re.search(pattern, lowered, re.I) for pattern in metadata_patterns):
+        return True
+
+    if re.search(r"\b\d{1,5}\s+[A-Za-z0-9][A-Za-z0-9\s.'-]{1,40}\b", normalized):
+        if re.search(r"\b(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|unit|suite|floor|po box)\b", lowered):
+            return True
+
+    if re.search(r"\b[A-Z]\d[A-Z][ -]?\d[A-Z]\d\b", normalized):
+        return True
+
+    if re.search(r"\b\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\b", normalized):
+        if any(token in lowered for token in ["date", "invoice", "due", "ship", "bill", "order"]):
+            return True
+
+    return False
+
+
 def parse_line_item(line: str, amounts: list[float]) -> dict[str, Any] | None:
+    if is_probable_non_item_line(line):
+        return None
+
     text_part = strip_line_item_noise(line)
-    if len(text_part) < 2:
+    if len(text_part) < 2 or not re.search(r"[A-Za-z]{2,}", text_part):
         return None
 
     quantity, quantity_confidence = parse_quantity(line)
@@ -441,9 +474,14 @@ def parse_line_item(line: str, amounts: list[float]) -> dict[str, Any] | None:
         confidence += 0.18
     if unit and unit != "each":
         confidence += 0.05
-    if len(text_part) > 8:
+    if len(re.findall(r"[A-Za-z]{3,}", text_part)) >= 2:
         confidence += 0.08
+    elif len(text_part) > 8:
+        confidence += 0.04
     confidence = min(confidence, 0.96)
+    if len(amounts) == 1 and quantity_confidence == 0:
+        confidence = min(confidence, 0.68)
+
     needs_review = confidence < 0.82 or not unit_price or not line_total
 
     return {

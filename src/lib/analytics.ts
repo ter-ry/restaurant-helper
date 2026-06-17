@@ -1,6 +1,7 @@
 type AnalyticsEventName =
   | "cta_tell_wastes_time_click"
   | "cta_join_early_pilot_click"
+  | "cta_view_demo_click"
   | "form_started"
   | "form_submitted"
   | "form_submission_error";

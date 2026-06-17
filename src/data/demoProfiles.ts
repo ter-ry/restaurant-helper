@@ -24,7 +24,7 @@ export function isDemoProfileSlug(value: string | undefined): value is DemoProfi
 }
 
 export function buildDemoPath(slug: DemoProfileSlug, segment = "") {
-  return segment ? `/app/demo/${slug}/${segment}` : `/app/demo/${slug}`;
+  return segment ? `/demo/${slug}/${segment}` : `/demo/${slug}`;
 }
 
 function priceStatus(changePercent: number) {

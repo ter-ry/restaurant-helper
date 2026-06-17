@@ -112,6 +112,30 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual(parsed["fields"]["total"]["value"], 145.47)
         self.assertGreaterEqual(len(parsed["lineItems"]), 3)
 
+    def test_parse_conservative_line_items_with_surrounding_noise(self):
+        raw_text = """
+        NORTHSIDE FOODS LTD.
+        Invoice No: NF-3301
+        Invoice Date: 2026-06-15
+        Bill To: Flowtally Kitchen
+        12 King Street West
+        Toronto ON M5H 1A1
+        Due Date: 2026-06-30
+        Please review all items before payment.
+        Tomatoes 4 x 3.50 14.00
+        Lettuce 2 x 2.25 4.50
+        Buns 3 x 6.00 18.00
+        Delivery note: leave at rear door
+        Subtotal 36.50
+        Tax 4.75
+        Total 41.25
+        """
+        parsed = parse_invoice_text(raw_text)
+        self.assertEqual(parsed["fields"]["supplier"]["value"], "NORTHSIDE FOODS LTD.")
+        self.assertEqual(len(parsed["lineItems"]), 3)
+        self.assertEqual({item["itemName"] for item in parsed["lineItems"]}, {"Tomatoes", "Lettuce", "Buns"})
+        self.assertTrue(all("Street" not in item["originalDescription"] for item in parsed["lineItems"]))
+
     def test_extract_invoice_document_uses_ocr_response(self):
         ocr_response = {
             "OCRExitCode": 1,

@@ -79,7 +79,7 @@ export function useDemoProfile() {
 }
 
 export function replaceDemoProfileInPath(pathname: string, slug: DemoProfileSlug) {
-  const demoRouteMatch = pathname.match(/^\/app\/demo\/([^/]+)(.*)$/);
+  const demoRouteMatch = pathname.match(/^\/(?:app\/demo|demo)\/([^/]+)(.*)$/);
 
   if (demoRouteMatch) {
     const suffix = demoRouteMatch[2] ?? "";

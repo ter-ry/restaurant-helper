@@ -129,10 +129,10 @@ export function PilotPage() {
             </button>
             <Link
               className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] transition hover:bg-[#F8FAFC]"
-              onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "pilot_page" })}
-              to="/#contact"
+              onClick={() => trackEvent("cta_view_demo_click", { location: "pilot_page" })}
+              to="/demo"
             >
-              Share admin pain instead
+              View the demo
               <ArrowRight className="h-4 w-4" />
             </Link>
           </form>
