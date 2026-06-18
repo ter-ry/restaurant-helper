@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./.tmp-ui-tests"
+  },
+  "include": ["tests/invoice_line_item_ui.test.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}

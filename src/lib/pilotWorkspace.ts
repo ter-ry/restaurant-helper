@@ -214,7 +214,7 @@ function isPilotWorkspaceState(value: unknown): value is PilotWorkspaceState {
   return Array.isArray(candidate.invoices) && Array.isArray(candidate.reconciliations);
 }
 
-function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorkspaceState {
+export function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorkspaceState {
   return {
     invoices: state.invoices.map(normalizeStoredInvoiceRecord),
     reconciliations: state.reconciliations.map((record) => ({
@@ -224,7 +224,7 @@ function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorkspaceSta
   };
 }
 
-function normalizeStoredInvoiceRecord(record: PilotInvoiceRecord): PilotInvoiceRecord {
+export function normalizeStoredInvoiceRecord(record: PilotInvoiceRecord): PilotInvoiceRecord {
   return {
     ...record,
     supplier: record.supplier?.trim() || "Unknown supplier",
@@ -276,7 +276,7 @@ function saveWorkspace(state: PilotWorkspaceState) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function normalizeInvoiceLineItem(item: InvoiceLineItem | PilotInvoiceLineItem): PilotInvoiceLineItem {
+export function normalizeInvoiceLineItem(item: InvoiceLineItem | PilotInvoiceLineItem): PilotInvoiceLineItem {
   const line = item as PilotInvoiceLineItem;
   const rawSourceLine = normalizeRawLineText(line.rawSourceLine || line.originalDescription);
   const cleanDescription = normalizeRawLineText(item.itemName) || cleanLineItemDescription(rawSourceLine) || "Line item";
