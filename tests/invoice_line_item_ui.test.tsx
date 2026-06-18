@@ -4,8 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 import { InvoiceLineItemCard } from "../src/components/InvoiceLineItemCard";
+import { PilotInvoiceDetailsModal } from "../src/components/PilotInvoiceDetailsModal";
+import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDisplay } from "../src/lib/invoiceHistory";
 import { getLineTotalReviewState, updateLineItemDescription } from "../src/lib/invoiceLineItemView";
-import { normalizeStoredWorkspace } from "../src/lib/pilotWorkspace";
+import { getRecentInvoicePreview, normalizeStoredWorkspace, sortInvoicesNewestFirst, upsertInvoiceRecord } from "../src/lib/pilotWorkspace";
 import type { PilotInvoiceDraft, PilotInvoiceLineItem, PilotReconciliationRecord } from "../src/types";
 
 function createLineItem(overrides: Partial<PilotInvoiceLineItem> = {}): PilotInvoiceLineItem {
@@ -29,6 +31,7 @@ function createLineItem(overrides: Partial<PilotInvoiceLineItem> = {}): PilotInv
 
 function createDraft(item: PilotInvoiceLineItem): PilotInvoiceDraft {
   return {
+    id: undefined,
     supplier: "East Repair Inc.",
     invoiceDate: "2019-02-11",
     invoiceNumber: "US-001",
@@ -45,6 +48,46 @@ function createDraft(item: PilotInvoiceLineItem): PilotInvoiceDraft {
     extractionProvider: "ocr.space",
     confirmed: true,
     lineItems: [item],
+    savedAt: undefined,
+  };
+}
+
+function createInvoiceRecord(overrides: Partial<Parameters<typeof createDraftFromInvoice>[0]> = {}) {
+  const lineItem: PilotInvoiceLineItem = createLineItem({
+    id: "line-1",
+    itemName: "Labor",
+    originalDescription: "Labor 3hrs",
+    rawSourceLine: "Labor 3hrs 5.00 15.00",
+    comparisonKey: "labor",
+    quantity: 3,
+    unit: "hr",
+    unitPrice: 5,
+    lineTotal: 15,
+    confidence: 0.91,
+  });
+
+  return {
+    id: "invoice-1",
+    supplier: "East Repair Inc.",
+    invoiceDate: "2019-02-11",
+    invoiceNumber: "US-001",
+    totalAmount: 154.06,
+    subtotal: 145,
+    tax: 9.06,
+    status: "Ready" as const,
+    notes: "",
+    fileName: "invoice.png",
+    fileType: "image/png",
+    extractedText: "Invoice total 154.06",
+    extractionWarnings: [],
+    fieldConfidence: { supplier: 1, invoiceDate: 1, invoiceNumber: 1, subtotal: 1, tax: 1, total: 1, lineItems: 1 },
+    extractionProvider: "ocr.space",
+    confirmed: true,
+    lineItems: [lineItem],
+    createdAt: "2019-02-11T12:00:00.000Z",
+    updatedAt: "2019-02-11T12:00:00.000Z",
+    savedAt: "2019-02-11T12:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -135,11 +178,108 @@ function testLegacyStorageCompatibility() {
   const normalized = normalizeStoredWorkspace(legacyWorkspace as never);
   assert.equal(normalized.invoices[0].lineItems[0].rawSourceLine, "Labor 3hrs 5.00 15.00");
   assert.equal(normalized.invoices[0].lineItems[0].comparisonKey, "labor");
+  assert.ok(normalized.invoices[0].savedAt);
+}
+
+function testInvoiceHistoryOrderingAndPreview() {
+  const invoices = [
+    createInvoiceRecord({
+      id: "older",
+      invoiceNumber: "OLD-1",
+      createdAt: "2019-02-10T12:00:00.000Z",
+      updatedAt: "2019-02-10T12:00:00.000Z",
+      savedAt: "2019-02-10T12:00:00.000Z",
+    }),
+    createInvoiceRecord({
+      id: "newer",
+      invoiceNumber: "NEW-1",
+      createdAt: "2019-02-09T12:00:00.000Z",
+      updatedAt: "2019-02-09T12:00:00.000Z",
+      savedAt: "2019-02-12T12:00:00.000Z",
+    }),
+  ];
+  const sorted = sortInvoicesNewestFirst(invoices);
+  assert.equal(sorted[0].id, "newer");
+
+  const preview = getRecentInvoicePreview([...invoices, createInvoiceRecord({ id: "third", invoiceNumber: "THIRD-1", savedAt: "2019-02-11T12:00:00.000Z", createdAt: "2019-02-11T12:00:00.000Z", updatedAt: "2019-02-11T12:00:00.000Z" }), createInvoiceRecord({ id: "fourth", invoiceNumber: "FOURTH-1", savedAt: "2019-02-13T12:00:00.000Z", createdAt: "2019-02-13T12:00:00.000Z", updatedAt: "2019-02-13T12:00:00.000Z" }), createInvoiceRecord({ id: "fifth", invoiceNumber: "FIFTH-1", savedAt: "2019-02-14T12:00:00.000Z", createdAt: "2019-02-14T12:00:00.000Z", updatedAt: "2019-02-14T12:00:00.000Z" }), createInvoiceRecord({ id: "sixth", invoiceNumber: "SIXTH-1", savedAt: "2019-02-15T12:00:00.000Z", createdAt: "2019-02-15T12:00:00.000Z", updatedAt: "2019-02-15T12:00:00.000Z" })]);
+  assert.equal(preview.visibleInvoices.length, 5);
+  assert.equal(preview.visibleInvoices[0].id, "sixth");
+  assert.equal(preview.hasMore, true);
+  assert.equal(preview.totalCount, 6);
+}
+
+function testDuplicateSavePrevention() {
+  const existing = [createInvoiceRecord()];
+  const replacement = createInvoiceRecord({
+    invoiceNumber: "US-002",
+    totalAmount: 200,
+    savedAt: "2020-01-01T00:00:00.000Z",
+    updatedAt: "2020-01-01T00:00:00.000Z",
+  });
+  const next = upsertInvoiceRecord(existing, replacement);
+  assert.equal(next.length, 1);
+  assert.equal(next[0].invoiceNumber, "US-002");
+}
+
+function testDraftResetAndSaveMessaging() {
+  const blankDraft: PilotInvoiceDraft = {
+    id: undefined,
+    supplier: "",
+    invoiceDate: "",
+    invoiceNumber: "",
+    subtotal: 0,
+    tax: 0,
+    totalAmount: 0,
+    status: "Needs Review",
+    notes: "",
+    fileName: "",
+    fileType: "",
+    extractedText: "",
+    extractionWarnings: [],
+    fieldConfidence: { supplier: 0, invoiceDate: 0, invoiceNumber: 0, subtotal: 0, tax: 0, total: 0, lineItems: 0 },
+    extractionProvider: "manual",
+    confirmed: false,
+    lineItems: [createLineItem({ itemName: "", originalDescription: "", rawSourceLine: "", comparisonKey: "", quantity: 0, unitPrice: 0, lineTotal: 0, confidence: 0, needsReview: true })],
+    savedAt: undefined,
+  };
+  const blankMetrics = getDraftSummaryDisplay(blankDraft, false);
+  assert.equal(blankMetrics.confidence, "—");
+  assert.equal(blankMetrics.reviewFlags, 0);
+
+  const savedMessage = buildInvoiceSaveConfirmation({ supplier: "East Repair Inc.", invoiceNumber: "US-001" });
+  assert.equal(savedMessage, "Invoice saved successfully: East Repair Inc. / US-001.");
+}
+
+function testReopenModalPreservesValues() {
+  const invoice = createInvoiceRecord();
+  const draft = createDraftFromInvoice(invoice);
+  assert.equal(draft.id, invoice.id);
+  assert.equal(draft.lineItems[0].originalDescription, "Labor 3hrs");
+  assert.equal(draft.lineItems[0].rawSourceLine, "Labor 3hrs 5.00 15.00");
+  assert.equal(draft.lineItems[0].comparisonKey, "labor");
+
+  const html = renderToStaticMarkup(
+    createElement(PilotInvoiceDetailsModal, {
+      open: true,
+      invoice,
+      onClose: () => undefined,
+      onReopenInReview: () => undefined,
+    }),
+  );
+  assert.ok(html.includes("Reopen in review"));
+  assert.ok(html.includes("Saved at"));
+  assert.ok(html.includes("Labor 3hrs"));
+  assert.ok(html.includes("US-001"));
+  assert.ok(html.includes("Original description"));
 }
 
 testLineItemCardSimplification();
 testLineTotalSummary();
 testDescriptionEditRegeneratesKey();
 testLegacyStorageCompatibility();
+testInvoiceHistoryOrderingAndPreview();
+testDuplicateSavePrevention();
+testDraftResetAndSaveMessaging();
+testReopenModalPreservesValues();
 
 console.log("invoice_line_item_ui.test.tsx passed");

@@ -5,13 +5,15 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { DataTable, type Column } from "../components/DataTable";
 import { InvoiceLineItemCard as InvoiceLineItemCardView } from "../components/InvoiceLineItemCard";
+import { PilotInvoiceDetailsModal } from "../components/PilotInvoiceDetailsModal";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
+import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDisplay } from "../lib/invoiceHistory";
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey as normalizeLineItemKey, updateLineItemDescription } from "../lib/invoiceLineItemView";
 import { useDemoProfile } from "../lib/demoProfile";
-import { usePilotWorkspace } from "../lib/pilotWorkspace";
-import type { InvoiceFieldConfidence, PilotInvoiceDraft, PilotInvoiceLineItem, PilotPriceChangeRecord } from "../types";
+import { getRecentInvoicePreview, usePilotWorkspace } from "../lib/pilotWorkspace";
+import type { InvoiceFieldConfidence, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 
 const confidenceThreshold = 0.8;
@@ -36,6 +38,7 @@ function createBlankLineItem(index: number): PilotInvoiceLineItem {
 
 function createBlankDraft(): PilotInvoiceDraft {
   return {
+    id: undefined,
     supplier: "",
     invoiceDate: "",
     invoiceNumber: "",
@@ -154,14 +157,20 @@ export function InvoiceUploadPage() {
   const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary } = usePilotWorkspace();
   const [draft, setDraft] = useState<PilotInvoiceDraft>(() => createBlankDraft());
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [showAllInvoices, setShowAllInvoices] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     handleResetDraft();
   }, [demo.slug]);
+
+  const draftSummary = useMemo(() => getDraftSummaryDisplay(draft, reviewOpen), [draft, reviewOpen]);
+  const hasActiveDraft = draftSummary.hasActiveDraft;
 
   const uncertainFields = useMemo(() => {
     const fields: Array<keyof InvoiceFieldConfidence> = ["supplier", "invoiceDate", "invoiceNumber", "subtotal", "tax", "total", "lineItems"];
@@ -172,6 +181,19 @@ export function InvoiceUploadPage() {
   }, [draft.fieldConfidence]);
 
   const lineItemsNeedingReview = draft.lineItems.filter((item) => item.needsReview || item.confidence < confidenceThreshold).length;
+  const selectedInvoice = useMemo(() => recentInvoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null, [recentInvoices, selectedInvoiceId]);
+  const recentInvoicePreview = useMemo(() => getRecentInvoicePreview(recentInvoices, 5), [recentInvoices]);
+
+  const openInvoice = (invoice: PilotInvoiceRecord) => {
+    setSelectedInvoiceId(invoice.id);
+  };
+
+  const reopenInvoiceForReview = (invoice: PilotInvoiceRecord) => {
+    setDraft(createDraftFromInvoice(invoice));
+    setReviewOpen(true);
+    setStatusMessage(`Reopened ${invoice.supplier || "the invoice"} for review.`);
+    setErrorMessage("");
+  };
 
   const priceChangeColumns: Column<PilotPriceChangeRecord>[] = [
     { header: "Item", accessor: "itemName" },
@@ -189,6 +211,14 @@ export function InvoiceUploadPage() {
     { header: "Date", accessor: (row) => formatMaybeDate(row.invoiceDate) },
     { header: "Total", accessor: (row) => formatMaybeCurrency(row.totalAmount) },
     { header: "Status", accessor: (row) => <Badge tone={row.status === "Ready" ? "success" : "warning"}>{row.status}</Badge> },
+    {
+      header: "Open",
+      accessor: (row) => (
+        <Button type="button" variant="ghost" onClick={() => openInvoice(row)}>
+          Open
+        </Button>
+      ),
+    },
   ];
 
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -198,6 +228,9 @@ export function InvoiceUploadPage() {
     if (!file) {
       return;
     }
+
+    setSelectedInvoiceId(null);
+    setShowAllInvoices(false);
 
     if (!isSupportedInvoiceUpload(file)) {
       setDraft({
@@ -256,13 +289,23 @@ export function InvoiceUploadPage() {
   };
 
   const handleSave = () => {
-    const saved = saveInvoice(draft);
-    setStatusMessage(`Saved ${saved.invoiceNumber || "the invoice"} and updated local price history.`);
-    setErrorMessage("");
-    setReviewOpen(false);
-    setDraft(createBlankDraft());
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+    if (isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const saved = saveInvoice(draft);
+      setStatusMessage(buildInvoiceSaveConfirmation(saved));
+      setErrorMessage("");
+      setReviewOpen(false);
+      setDraft(createBlankDraft());
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -272,6 +315,9 @@ export function InvoiceUploadPage() {
     setErrorMessage("");
     setIsProcessing(false);
     setReviewOpen(false);
+    setIsSaving(false);
+    setSelectedInvoiceId(null);
+    setShowAllInvoices(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -361,13 +407,13 @@ export function InvoiceUploadPage() {
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               label="Confidence"
-              value={`${Math.round(((draft.fieldConfidence.supplier + draft.fieldConfidence.invoiceDate + draft.fieldConfidence.invoiceNumber + draft.fieldConfidence.subtotal + draft.fieldConfidence.tax + draft.fieldConfidence.total) / 6) * 100) || 0}%`}
-              helper="Extracted fields still need confirmation"
+              value={draftSummary.confidence}
+              helper={hasActiveDraft ? "Extracted fields still need confirmation" : "Upload an invoice to see extraction confidence"}
             />
             <MetricCard
               label="Review flags"
-              value={String(uncertainFields.length + lineItemsNeedingReview)}
-              helper="Fields and line items marked for attention"
+              value={String(draftSummary.reviewFlags)}
+              helper={hasActiveDraft ? "Fields and line items marked for attention" : "No active invoice draft"}
             />
             <MetricCard
               label="Recent invoices"
@@ -401,8 +447,22 @@ export function InvoiceUploadPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
-            <SectionHeader title="Recent invoices" description="The latest saved invoices are kept locally in this browser." />
-            <DataTable columns={recentInvoiceColumns} data={recentInvoices.slice(0, 5)} getRowKey={(row) => row.id} />
+            <SectionHeader
+              title="Recent invoices"
+              description="The newest five saved invoices are shown here first. Use the full list to reopen older records."
+              action={
+                recentInvoices.length > 5 ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowAllInvoices((current) => !current)}
+                  >
+                  {showAllInvoices ? "Hide all invoices" : `View all invoices (${recentInvoicePreview.totalCount})`}
+                  </Button>
+                ) : null
+              }
+            />
+            <DataTable columns={recentInvoiceColumns} data={recentInvoicePreview.visibleInvoices} getRowKey={(row) => row.id} />
           </Card>
 
           <Card className="p-5">
@@ -410,6 +470,13 @@ export function InvoiceUploadPage() {
             <DataTable columns={priceChangeColumns} data={priceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
           </Card>
         </div>
+
+        {showAllInvoices && recentInvoicePreview.hasMore ? (
+          <Card className="p-5">
+            <SectionHeader title="All invoices" description="Every saved invoice in this browser, newest first." />
+            <DataTable columns={recentInvoiceColumns} data={recentInvoices} getRowKey={(row) => row.id} />
+          </Card>
+        ) : null}
 
         <Card className="surface-panel p-5">
           <div className="flex items-start gap-4">
@@ -432,6 +499,7 @@ export function InvoiceUploadPage() {
         draft={draft}
         errorMessage={errorMessage}
         isProcessing={isProcessing}
+        isSaving={isSaving}
         onClose={() => setReviewOpen(false)}
         onConfirm={() => setDraft((current) => ({ ...current, confirmed: true }))}
         onSave={handleSave}
@@ -440,6 +508,16 @@ export function InvoiceUploadPage() {
         lineItemsNeedingReview={lineItemsNeedingReview}
         onAddLineItem={addLineItem}
         onRemoveLineItem={removeLineItem}
+      />
+
+      <PilotInvoiceDetailsModal
+        open={Boolean(selectedInvoice)}
+        invoice={selectedInvoice}
+        onClose={() => setSelectedInvoiceId(null)}
+        onReopenInReview={(invoice) => {
+          setSelectedInvoiceId(null);
+          reopenInvoiceForReview(invoice);
+        }}
       />
     </PageLayout>
   );
@@ -677,6 +755,7 @@ function InvoiceReviewModal({
   draft,
   errorMessage,
   isProcessing,
+  isSaving,
   onClose,
   onConfirm,
   onSave,
@@ -690,6 +769,7 @@ function InvoiceReviewModal({
   draft: PilotInvoiceDraft;
   errorMessage: string;
   isProcessing: boolean;
+  isSaving: boolean;
   onClose: () => void;
   onConfirm: () => void;
   onSave: () => void;
@@ -920,9 +1000,9 @@ function InvoiceReviewModal({
                     type="button"
                     icon={<Save className="h-4 w-4" />}
                     onClick={onSave}
-                    disabled={!draft.confirmed || isProcessing || !draft.fileName}
+                    disabled={!draft.confirmed || isProcessing || isSaving || !draft.fileName}
                   >
-                    Confirm and save
+                    {isSaving ? "Saving..." : "Confirm and save"}
                   </Button>
                   <Button
                     type="button"

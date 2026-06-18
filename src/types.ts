@@ -123,6 +123,7 @@ export interface PilotInvoiceLineItem extends InvoiceLineItem {
 }
 
 export interface PilotInvoiceDraft {
+  id?: string;
   supplier: string;
   invoiceDate: string;
   invoiceNumber: string;
@@ -139,6 +140,7 @@ export interface PilotInvoiceDraft {
   extractionProvider: string;
   confirmed: boolean;
   lineItems: PilotInvoiceLineItem[];
+  savedAt?: string;
 }
 
 export interface PilotInvoiceRecord extends PilotInvoiceDraft {

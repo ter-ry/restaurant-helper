@@ -38,6 +38,15 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function toMillis(value: string | undefined) {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
 function clampMoney(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
 }
@@ -139,6 +148,7 @@ function createSeedInvoices(): PilotInvoiceRecord[] {
         })),
         createdAt,
         updatedAt: createdAt,
+        savedAt: createdAt,
       };
     });
 }
@@ -225,6 +235,8 @@ export function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorks
 }
 
 export function normalizeStoredInvoiceRecord(record: PilotInvoiceRecord): PilotInvoiceRecord {
+  const createdAt = record.createdAt || record.updatedAt || `${record.invoiceDate}T12:00:00.000Z`;
+  const savedAt = record.savedAt || record.updatedAt || record.createdAt || createdAt;
   return {
     ...record,
     supplier: record.supplier?.trim() || "Unknown supplier",
@@ -243,6 +255,9 @@ export function normalizeStoredInvoiceRecord(record: PilotInvoiceRecord): PilotI
     extractionProvider: record.extractionProvider || "manual",
     confirmed: Boolean(record.confirmed),
     lineItems: Array.isArray(record.lineItems) ? record.lineItems.map(normalizeInvoiceLineItem) : [],
+    createdAt,
+    updatedAt: record.updatedAt || createdAt,
+    savedAt,
   };
 }
 
@@ -274,6 +289,45 @@ function saveWorkspace(state: PilotWorkspaceState) {
   }
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+export function sortInvoicesNewestFirst(invoices: PilotInvoiceRecord[]) {
+  return [...invoices].sort((a, b) => {
+    const savedDelta = toMillis(b.savedAt) - toMillis(a.savedAt);
+    if (savedDelta !== 0) {
+      return savedDelta;
+    }
+
+    const updatedDelta = toMillis(b.updatedAt) - toMillis(a.updatedAt);
+    if (updatedDelta !== 0) {
+      return updatedDelta;
+    }
+
+    const createdDelta = toMillis(b.createdAt) - toMillis(a.createdAt);
+    if (createdDelta !== 0) {
+      return createdDelta;
+    }
+
+    return b.invoiceDate.localeCompare(a.invoiceDate);
+  });
+}
+
+export function upsertInvoiceRecord(invoices: PilotInvoiceRecord[], record: PilotInvoiceRecord) {
+  const index = invoices.findIndex((invoice) => invoice.id === record.id);
+  if (index === -1) {
+    return [record, ...invoices];
+  }
+
+  return [...invoices.slice(0, index), record, ...invoices.slice(index + 1)];
+}
+
+export function getRecentInvoicePreview(invoices: PilotInvoiceRecord[], limit = 5) {
+  const sorted = sortInvoicesNewestFirst(invoices);
+  return {
+    visibleInvoices: sorted.slice(0, limit),
+    hasMore: sorted.length > limit,
+    totalCount: sorted.length,
+  };
 }
 
 export function normalizeInvoiceLineItem(item: InvoiceLineItem | PilotInvoiceLineItem): PilotInvoiceLineItem {
@@ -414,8 +468,10 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
 }
 
 function deriveInvoiceState(existingInvoices: PilotInvoiceRecord[], draft: PilotInvoiceDraft): PilotInvoiceRecord {
-  const id = `invoice-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  const createdAt = nowIso();
+  const now = nowIso();
+  const existingRecord = draft.id ? existingInvoices.find((invoice) => invoice.id === draft.id) : undefined;
+  const id = existingRecord?.id || draft.id || `invoice-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const createdAt = existingRecord?.createdAt || now;
   const normalizedLineItems: PilotInvoiceLineItem[] = draft.lineItems.map((item, index) => {
     const comparisonKey = item.comparisonKey || normalizeComparisonKey(item.itemName);
     const previous = findPreviousPrice(existingInvoices, draft.supplier, comparisonKey);
@@ -466,7 +522,8 @@ function deriveInvoiceState(existingInvoices: PilotInvoiceRecord[], draft: Pilot
     confirmed: draft.confirmed,
     lineItems: normalizedLineItems,
     createdAt,
-    updatedAt: createdAt,
+    updatedAt: now,
+    savedAt: now,
   };
 }
 
@@ -537,7 +594,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<PilotWorkspaceContextValue>(() => {
     const priceChanges = buildPriceChanges(state.invoices);
-    const recentInvoices = [...state.invoices].sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate) || b.createdAt.localeCompare(a.createdAt));
+    const recentInvoices = sortInvoicesNewestFirst(state.invoices);
     const reviewQueue = recentInvoices.filter((invoice) => invoice.status === "Needs Review");
     const unresolvedReconciliations = [...state.reconciliations]
       .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
@@ -552,15 +609,24 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
       unresolvedReconciliations,
       saveInvoice: (draft) => {
         const created = deriveInvoiceState(state.invoices, draft);
-        setState((current) => ({ ...current, invoices: [created, ...current.invoices] }));
+        const nextInvoices = upsertInvoiceRecord(state.invoices, created);
+        const nextState = { ...state, invoices: nextInvoices };
+        saveWorkspace(nextState);
+        setState(nextState);
         return created;
       },
       saveReconciliation: (draft) => {
         const created = deriveReconciliationState(draft);
-        setState((current) => ({ ...current, reconciliations: [created, ...current.reconciliations] }));
+        const nextState = { ...state, reconciliations: [created, ...state.reconciliations] };
+        saveWorkspace(nextState);
+        setState(nextState);
         return created;
       },
-      resetWorkspace: () => setState(createSeedWorkspace()),
+      resetWorkspace: () => {
+        const nextState = createSeedWorkspace();
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
     };
   }, [state]);
 
