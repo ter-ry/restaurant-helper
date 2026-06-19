@@ -48,6 +48,7 @@ export function InventoryPage() {
   } = usePilotWorkspace();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<InventoryItemStatus | "All">("All");
+  const [mode, setMode] = useState<"create" | "edit">(inventoryItems[0] ? "edit" : "create");
   const [draft, setDraft] = useState<PilotInventoryDraft>(() => createInventoryDraft());
   const [selectedItemId, setSelectedItemId] = useState<string | null>(inventoryItems[0]?.id ?? null);
   const [message, setMessage] = useState("");
@@ -65,17 +66,10 @@ export function InventoryPage() {
   );
 
   useEffect(() => {
-    if (selectedItem) {
+    if (mode === "edit" && selectedItem) {
       setDraft(createInventoryDraft(selectedItem));
-      setSelectedItemId(selectedItem.id);
-      return;
     }
-
-    if (inventoryItems[0]) {
-      setSelectedItemId(inventoryItems[0].id);
-      setDraft(createInventoryDraft(inventoryItems[0]));
-    }
-  }, [inventoryItems, selectedItem]);
+  }, [mode, selectedItem]);
 
   useEffect(() => {
     const invoice = recentInvoices.find((item) => item.id === selectedInvoiceId) ?? recentInvoices[0] ?? null;
@@ -178,9 +172,28 @@ export function InventoryPage() {
       return;
     }
 
+    setMode("edit");
     setSelectedItemId(item.id);
     setDraft(createInventoryDraft(item));
     setMessage(`Editing ${item.name}.`);
+    setErrorMessage("");
+  };
+
+  const beginNewItem = () => {
+    setMode("create");
+    setSelectedItemId(null);
+    setDraft(createInventoryDraft());
+    setMessage("");
+    setErrorMessage("");
+  };
+
+  const resetDraft = () => {
+    if (mode === "edit" && selectedItem) {
+      setDraft(createInventoryDraft(selectedItem));
+    } else {
+      setDraft(createInventoryDraft());
+    }
+    setMessage("");
     setErrorMessage("");
   };
 
@@ -191,9 +204,11 @@ export function InventoryPage() {
     }
 
     const saved = saveInventoryItem(draft);
+    const wasCreate = mode === "create";
+    setMode("edit");
     setSelectedItemId(saved.id);
     setDraft(createInventoryDraft(saved));
-    setMessage(`${saved.name} saved locally.`);
+    setMessage(`${wasCreate ? "Created" : "Updated"} ${saved.name} successfully.`);
     setErrorMessage("");
   };
 
@@ -214,6 +229,7 @@ export function InventoryPage() {
     if (window.confirm(`Delete ${selectedItem.name}? This removes the local record and its history from this browser.`)) {
       deleteInventoryItem(selectedItem.id);
       setDraft(createInventoryDraft());
+      setMode("create");
       setSelectedItemId(null);
       setMessage(`${selectedItem.name} deleted.`);
     }
@@ -330,7 +346,7 @@ export function InventoryPage() {
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setDraft(createInventoryDraft()); setSelectedItemId(null); }}>
+            <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={beginNewItem}>
               New item
             </Button>
             <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => setShowArchived((current) => !current)}>
@@ -374,7 +390,7 @@ export function InventoryPage() {
         <div className="space-y-6">
           <Card className="p-5">
             <SectionHeader
-              title={selectedItem ? `Item details: ${selectedItem.name}` : "Item details"}
+              title={mode === "create" ? "New inventory item" : selectedItem ? `Item details: ${selectedItem.name}` : "Item details"}
               description="Edit one item at a time. Stock remains in browser storage and can be reopened later."
             />
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -411,10 +427,10 @@ export function InventoryPage() {
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleSaveItem}>
-                Save item
+                {mode === "create" ? "Create item" : "Save item"}
               </Button>
-              <Button type="button" variant="secondary" onClick={() => setDraft(createInventoryDraft(selectedItem ?? undefined))}>
-                Reset
+              <Button type="button" variant="secondary" onClick={resetDraft}>
+                {mode === "create" ? "Clear draft" : "Reset"}
               </Button>
               {selectedItem ? (
                 <>

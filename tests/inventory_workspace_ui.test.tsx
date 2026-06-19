@@ -9,10 +9,12 @@ import { InventoryPage } from "../src/pages/InventoryPage";
 import {
   buildInventorySummary,
   createSeedInventoryState,
+  createInventoryDraft,
   deriveInventoryReceiptKey,
   findInventoryItemSuggestions,
   normalizeStoredInventoryState,
   sortInventoryItems,
+  upsertInventoryItem,
 } from "../src/lib/inventoryWorkspace";
 import type { InventoryItem, PilotInventoryState, PilotInvoiceLineItem, PilotInvoiceRecord } from "../src/types";
 
@@ -156,6 +158,36 @@ function testReceiptKeyStability() {
   assert.ok(keyA.includes("HC-1001"));
 }
 
+function testBlankDraftCreatesNewItem() {
+  const items = [createItem({ id: "item-1", name: "House Espresso Beans 5lb" })];
+  const draft = createInventoryDraft();
+  draft.name = "Fresh Limes";
+  draft.category = "Produce";
+  draft.currentQuantity = 12;
+  draft.unit = "case";
+  draft.minQuantity = 2;
+  draft.parLevel = 6;
+  draft.preferredSupplier = "Local Farm";
+  draft.latestPurchasePrice = 18.5;
+
+  const result = upsertInventoryItem(items, draft);
+  assert.equal(result.items.length, 2);
+  assert.equal(result.item.id, result.items[0].id);
+  assert.equal(result.items[0].name, "Fresh Limes");
+  assert.equal(result.items[1].name, "House Espresso Beans 5lb");
+}
+
+function testEditDraftUpdatesExistingItem() {
+  const items = [createItem({ id: "item-1", name: "House Espresso Beans 5lb" })];
+  const draft = createInventoryDraft(items[0]);
+  draft.name = "House Espresso Beans 10lb";
+
+  const result = upsertInventoryItem(items, draft);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.item.id, "item-1");
+  assert.equal(result.items[0].name, "House Espresso Beans 10lb");
+}
+
 function testInventoryPageLayout() {
   const html = renderInventoryPage();
   assert.ok(html.includes("Inventory"));
@@ -170,6 +202,8 @@ function testInventoryPageLayout() {
 testInventorySummaryAndSorting();
 testLegacyNormalizationAndSuggestions();
 testReceiptKeyStability();
+testBlankDraftCreatesNewItem();
+testEditDraftUpdatesExistingItem();
 testInventoryPageLayout();
 
 console.log("inventory_workspace_ui.test.tsx passed");

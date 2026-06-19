@@ -462,19 +462,98 @@ export function InvoiceUploadPage() {
                 ) : null
               }
             />
-            <DataTable columns={recentInvoiceColumns} data={recentInvoicePreview.visibleInvoices} getRowKey={(row) => row.id} />
+            <div className="space-y-3 sm:hidden">
+              {recentInvoicePreview.visibleInvoices.map((invoice) => (
+                <button
+                  key={invoice.id}
+                  type="button"
+                  className="w-full rounded-xl border border-line bg-white p-4 text-left shadow-soft transition hover:bg-slate-50"
+                  onClick={() => openInvoice(invoice)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{invoice.supplier}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">
+                        {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
+                      </p>
+                    </div>
+                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
+                    <span>{formatMaybeCurrency(invoice.totalAmount)}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <DataTable columns={recentInvoiceColumns} data={recentInvoicePreview.visibleInvoices} getRowKey={(row) => row.id} />
+            </div>
           </Card>
 
           <Card className="p-5">
             <SectionHeader title="Recent price changes" description="Only conservative matches from saved invoice history are shown." />
-            <DataTable columns={priceChangeColumns} data={priceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
+            <div className="space-y-3 sm:hidden">
+              {priceChanges.slice(0, 5).map((change) => (
+                <div key={change.id} className="rounded-xl border border-line bg-white p-4 shadow-soft">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{change.itemName}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">{change.supplier} | {formatDate(change.invoiceDate)}</p>
+                    </div>
+                    <Badge tone={change.status === "Increased" ? "danger" : change.status === "Decreased" ? "success" : "neutral"}>{formatPercent(change.changePercent)}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                    <div className="rounded-lg bg-slate-50 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Previous</p>
+                      <p className="mt-1 font-semibold text-ink">{formatCurrency(change.previousPrice)}</p>
+                      <p className="mt-1 text-xs text-muted">{formatDate(change.previousInvoiceDate)}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Current</p>
+                      <p className="mt-1 font-semibold text-ink">{formatCurrency(change.currentPrice)}</p>
+                      <p className="mt-1 text-xs text-muted">{formatDate(change.invoiceDate)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <DataTable columns={priceChangeColumns} data={priceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
+            </div>
           </Card>
         </div>
 
         {showAllInvoices && recentInvoicePreview.hasMore ? (
           <Card className="p-5">
             <SectionHeader title="All invoices" description="Every saved invoice in this browser, newest first." />
-            <DataTable columns={recentInvoiceColumns} data={recentInvoices} getRowKey={(row) => row.id} />
+            <div className="space-y-3 sm:hidden">
+              {recentInvoices.map((invoice) => (
+                <button
+                  key={invoice.id}
+                  type="button"
+                  className="w-full rounded-xl border border-line bg-white p-4 text-left shadow-soft transition hover:bg-slate-50"
+                  onClick={() => openInvoice(invoice)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{invoice.supplier}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">
+                        {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
+                      </p>
+                    </div>
+                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
+                    <span>{formatMaybeCurrency(invoice.totalAmount)}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <DataTable columns={recentInvoiceColumns} data={recentInvoices} getRowKey={(row) => row.id} />
+            </div>
           </Card>
         ) : null}
 
