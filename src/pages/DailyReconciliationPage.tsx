@@ -1,4 +1,4 @@
-import { AlertTriangle, Banknote, CalendarClock, CheckCircle2, FileUp, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
+import { AlertTriangle, Banknote, CheckCircle2, FileUp, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -143,6 +143,7 @@ export function DailyReconciliationPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [showImportHelper, setShowImportHelper] = useState(false);
   const inputRefs = useRef<Partial<Record<ReconciliationSourceKey, HTMLInputElement | null>>>({});
   const saveLockRef = useRef(false);
 
@@ -156,6 +157,7 @@ export function DailyReconciliationPage() {
     setIsSaving(false);
     setShowAllHistory(false);
     setSelectedRecordId(null);
+    setShowImportHelper(false);
     inputRefs.current = {};
   }, [demo.slug]);
 
@@ -285,6 +287,7 @@ export function DailyReconciliationPage() {
     setConfirmed(false);
     setImports({});
     setSelectedRecordId(null);
+    setShowImportHelper(false);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(DRAFT_STORAGE_KEY);
     }
@@ -303,120 +306,142 @@ export function DailyReconciliationPage() {
 
   return (
     <PageLayout
-      title="Daily reconciliation"
+      title="Daily close log"
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Enter the business date, POS total, and daily payment totals. Import reports where helpful, review the difference, then save the close locally."
+      description="Record the day’s POS total and payment totals. Flowtally highlights anything that still needs attention."
     >
-      <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,2.75fr)_minmax(320px,1fr)]">
         <Card className="surface-panel p-6">
           <SectionHeader
-            title="Report imports"
-            description="Each source is uploaded separately. Extracted values are review-only until you apply them to the close."
-            action={<Badge tone="info">Manual confirmation required</Badge>}
+            title="Daily close"
+            description="Enter the day’s totals first. Imports are optional and stay out of the way until you need them."
+            action={
+              <Button type="button" variant="secondary" onClick={() => setShowImportHelper((current) => !current)}>
+                Import report
+              </Button>
+            }
           />
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
+            Flowtally compares the POS total with cash, card, and delivery-channel totals, then keeps unresolved differences visible until they are corrected.
+          </p>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            {SOURCE_CARDS.map((source) => {
-              const imported = imports[source.key];
-              const isBusy = isImporting === source.key;
-              const suggestedAmount = imported ? amountForSource(imported, source.targetField) : 0;
+          {showImportHelper ? (
+            <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-ink">Optional import helper</p>
+                  <p className="mt-1 text-xs leading-5 text-muted">Manual entry is still the default. Use this only when a report is handy.</p>
+                </div>
+                <Button type="button" variant="ghost" onClick={() => setShowImportHelper(false)}>
+                  Close
+                </Button>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {SOURCE_CARDS.map((source) => {
+                  const imported = imports[source.key];
+                  const isBusy = isImporting === source.key;
+                  const suggestedAmount = imported ? amountForSource(imported, source.targetField) : 0;
 
-              return (
-                <div key={source.key} className="rounded-xl border border-line bg-white p-4 shadow-soft">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold text-ink">{source.label}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">{source.helper}</p>
-                    </div>
-                    <Button type="button" variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => inputRefs.current[source.key]?.click()} disabled={isBusy}>
-                      Upload
-                    </Button>
-                  </div>
-                  <input
-                    ref={(node) => {
-                      inputRefs.current[source.key] = node;
-                    }}
-                    accept=".csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      event.target.value = "";
-                      if (file) {
-                        void handleImport(source.key, file);
-                      }
-                    }}
-                    type="file"
-                  />
-
-                  {isBusy ? (
-                    <div className="mt-4 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm text-brand-700">
-                      <span className="inline-flex items-center gap-2 font-semibold">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Processing file
-                      </span>
-                    </div>
-                  ) : null}
-
-                  {imported ? (
-                    <div className="mt-4 space-y-3">
-                      <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested amount</p>
-                          <Badge tone={imported.needsReview ? "warning" : "success"}>{Math.round(imported.overallConfidence * 100)}%</Badge>
+                  return (
+                    <div key={source.key} className="rounded-xl border border-line bg-white p-4 shadow-soft">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold text-ink">{source.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted">{source.helper}</p>
                         </div>
-                        <p className="mt-1 text-lg font-bold text-ink">{formatCurrency(suggestedAmount)}</p>
-                        <p className="mt-1 text-xs text-muted">Source: {imported.fields.suggestedAmountType.value}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <MiniField label="Business date" value={imported.fields.businessDate.value || "Not entered"} />
-                        <MiniField label="Orders" value={String(imported.fields.orderCount.value)} />
-                        <MiniField label="Gross sales" value={formatMaybeNumber(imported.fields.grossSales.value)} />
-                        <MiniField label="Discounts" value={formatMaybeNumber(imported.fields.discounts.value)} />
-                        <MiniField label="Refunds" value={formatMaybeNumber(imported.fields.refunds.value)} />
-                        <MiniField label="Tax" value={formatMaybeNumber(imported.fields.tax.value)} />
-                        <MiniField label="Tips" value={formatMaybeNumber(imported.fields.tips.value)} />
-                        <MiniField label="Fees" value={formatMaybeNumber(imported.fields.fees.value)} />
-                        <MiniField label="Net / payout" value={formatMaybeNumber(imported.fields.netSalesOrPayout.value)} />
-                        <MiniField label="Card batch" value={formatMaybeNumber(imported.fields.cardBatchTotal.value)} />
-                        <MiniField label="POS expected" value={formatMaybeNumber(imported.fields.posExpectedSales.value)} />
-                        <MiniField label="Cash count" value={formatMaybeNumber(imported.fields.cashCount.value)} />
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" onClick={() => applyImport(source.key)} icon={<CheckCircle2 className="h-4 w-4" />}>
-                          Apply to close
-                        </Button>
-                        <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => setImports((current) => ({ ...current, [source.key]: undefined }))}>
-                          Clear
+                        <Button type="button" variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => inputRefs.current[source.key]?.click()} disabled={isBusy}>
+                          Upload
                         </Button>
                       </div>
-                      {imported.warnings.length ? (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                          <p className="font-semibold">Review warnings</p>
-                          <ul className="mt-1 list-disc space-y-1 pl-4">
-                            {imported.warnings.map((warning) => (
-                              <li key={warning}>{warning}</li>
-                            ))}
-                          </ul>
+                      <input
+                        ref={(node) => {
+                          inputRefs.current[source.key] = node;
+                        }}
+                        accept=".csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (file) {
+                            void handleImport(source.key, file);
+                          }
+                        }}
+                        type="file"
+                      />
+
+                      {isBusy ? (
+                        <div className="mt-4 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm text-brand-700">
+                          <span className="inline-flex items-center gap-2 font-semibold">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Processing file
+                          </span>
                         </div>
                       ) : null}
-                      <details className="rounded-lg border border-line bg-slate-50 p-3">
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted">Source text</summary>
-                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-700">{imported.rawText}</pre>
-                      </details>
+
+                      {imported ? (
+                        <div className="mt-4 space-y-3">
+                          <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested amount</p>
+                              <Badge tone={imported.needsReview ? "warning" : "success"}>{Math.round(imported.overallConfidence * 100)}%</Badge>
+                            </div>
+                            <p className="mt-1 text-lg font-bold text-ink">{formatCurrency(suggestedAmount)}</p>
+                            <p className="mt-1 text-xs text-muted">Source: {imported.fields.suggestedAmountType.value}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <MiniField label="Business date" value={imported.fields.businessDate.value || "Not entered"} />
+                            <MiniField label="Orders" value={String(imported.fields.orderCount.value)} />
+                            <MiniField label="Gross sales" value={formatMaybeNumber(imported.fields.grossSales.value)} />
+                            <MiniField label="Discounts" value={formatMaybeNumber(imported.fields.discounts.value)} />
+                            <MiniField label="Refunds" value={formatMaybeNumber(imported.fields.refunds.value)} />
+                            <MiniField label="Tax" value={formatMaybeNumber(imported.fields.tax.value)} />
+                            <MiniField label="Tips" value={formatMaybeNumber(imported.fields.tips.value)} />
+                            <MiniField label="Fees" value={formatMaybeNumber(imported.fields.fees.value)} />
+                            <MiniField label="Net / payout" value={formatMaybeNumber(imported.fields.netSalesOrPayout.value)} />
+                            <MiniField label="Card batch" value={formatMaybeNumber(imported.fields.cardBatchTotal.value)} />
+                            <MiniField label="POS expected" value={formatMaybeNumber(imported.fields.posExpectedSales.value)} />
+                            <MiniField label="Cash count" value={formatMaybeNumber(imported.fields.cashCount.value)} />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" onClick={() => applyImport(source.key)} icon={<CheckCircle2 className="h-4 w-4" />}>
+                              Apply to close
+                            </Button>
+                            <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => setImports((current) => ({ ...current, [source.key]: undefined }))}>
+                              Clear
+                            </Button>
+                          </div>
+                          {imported.warnings.length ? (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                              <p className="font-semibold">Review warnings</p>
+                              <ul className="mt-1 list-disc space-y-1 pl-4">
+                                {imported.warnings.map((warning) => (
+                                  <li key={warning}>{warning}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          <details className="rounded-lg border border-line bg-slate-50 p-3">
+                            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted">Source text</summary>
+                            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-700">{imported.rawText}</pre>
+                          </details>
+                        </div>
+                      ) : (
+                        <p className="mt-4 text-xs leading-5 text-muted">Upload a CSV, PDF, JPG, JPEG, PNG, or WEBP file for this source.</p>
+                      )}
                     </div>
-                  ) : (
-                    <p className="mt-4 text-xs leading-5 text-muted">Upload a CSV, PDF, JPG, JPEG, PNG, or WEBP file for this source.</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 text-xs leading-5 text-muted">Optional pilot helper for report uploads. The daily close can always be entered by hand.</p>
+          )}
 
           {message ? (
             <div className="mt-4 rounded-lg border border-brand-100 bg-white px-4 py-3 text-sm leading-6 text-slate-700" role="status">
               <div className="flex items-center gap-2 font-semibold text-ink">
                 <Sparkles className="h-4 w-4 text-brand-600" />
-                Import state
+                Status
               </div>
               <p className="mt-1">{message}</p>
             </div>
@@ -426,121 +451,137 @@ export function DailyReconciliationPage() {
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800" role="alert">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle className="h-4 w-4" />
-                Import problem
+                Problem
               </div>
               <p className="mt-1">{errorMessage}</p>
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-4 md:grid-cols-4">
-            <Metric label="Status" value={reconciliationSummary.status} helper={reconciliationSummary.explanation} />
-            <Metric label="Expected POS" value={reconciliationSummary.hasExpectedPos ? formatCurrency(draft.expectedPosSales) : "Not entered"} helper={reconciliationSummary.hasExpectedPos ? "Entered manually or imported" : "Required to begin reconciliation"} />
-            <Metric label="Accounted total" value={formatCurrency(reconciliationSummary.accountedTotal)} helper="Cash + card + delivery + adjustments" />
-            <Metric label="Difference" value={formatCurrency(reconciliationSummary.variance)} helper={`Balanced within ${formatCurrency(reconciliationSummary.balancedTolerance)}.`} />
-          </div>
+          <div className="mt-6 space-y-5">
+            <section className="rounded-2xl border border-line bg-white p-5 shadow-soft">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Daily close</p>
+                  <h2 className="mt-1 text-lg font-bold text-ink">Business date and expected POS</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted">Start with the date and the POS total that should have been collected for the day.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Business date">
+                  <input value={draft.date} onChange={(event) => setField("date", event.target.value)} className="input" type="date" inputMode="numeric" />
+                </Field>
+                <Field label="POS expected sales">
+                  <input
+                    value={draft.expectedPosSales}
+                    onChange={(event) => {
+                      updateDraft((current) => ({ ...current, expectedPosSales: Number(event.target.value) || 0, expectedPosEntered: event.target.value.trim().length > 0 }));
+                    }}
+                    className="input"
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    inputMode="decimal"
+                  />
+                </Field>
+              </div>
+            </section>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <Field label="Business date">
-              <input value={draft.date} onChange={(event) => setField("date", event.target.value)} className="input" type="date" inputMode="numeric" />
-            </Field>
-            <Field label="POS expected sales">
-              <input
-                value={draft.expectedPosSales}
-                onChange={(event) => {
-                  updateDraft((current) => ({ ...current, expectedPosSales: Number(event.target.value) || 0, expectedPosEntered: event.target.value.trim().length > 0 }));
-                }}
-                className="input"
-                min="0"
-                step="0.01"
-                type="number"
-                inputMode="decimal"
-              />
-            </Field>
-            <Field label="Cash">
-              <input value={draft.cash} onChange={(event) => setField("cash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-            </Field>
-            <Field label="Card">
-              <input value={draft.card} onChange={(event) => setField("card", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-            </Field>
-            <Field label="Uber Eats">
-              <input value={draft.uberEats} onChange={(event) => setField("uberEats", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-            </Field>
-            <Field label="DoorDash">
-              <input value={draft.doorDash} onChange={(event) => setField("doorDash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-            </Field>
-            <Field label="Skip">
-              <input value={draft.skip} onChange={(event) => setField("skip", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-            </Field>
-            <Field label="Other payment amount">
-              <input value={draft.other} onChange={(event) => setField("other", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-            </Field>
-            <Field label="Other payment source">
-              <input value={draft.otherSourceName} onChange={(event) => setField("otherSourceName", event.target.value)} className="input" placeholder="Gift cards, cash drop, etc." type="text" />
-            </Field>
-          </div>
+            <section className="rounded-2xl border border-line bg-white p-5 shadow-soft">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Payments received</p>
+                <h2 className="mt-1 text-lg font-bold text-ink">Cash, card, and delivery totals</h2>
+                <p className="mt-1 text-sm leading-6 text-muted">Enter the actual totals by payment source. Keep the values visible and editable.</p>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Cash">
+                  <input value={draft.cash} onChange={(event) => setField("cash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Card">
+                  <input value={draft.card} onChange={(event) => setField("card", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Uber Eats">
+                  <input value={draft.uberEats} onChange={(event) => setField("uberEats", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="DoorDash">
+                  <input value={draft.doorDash} onChange={(event) => setField("doorDash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Skip">
+                  <input value={draft.skip} onChange={(event) => setField("skip", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Other payment source">
+                  <input value={draft.otherSourceName} onChange={(event) => setField("otherSourceName", event.target.value)} className="input" placeholder="Gift cards, cash drop, etc." type="text" />
+                </Field>
+                <Field label="Other payment amount">
+                  <input value={draft.other} onChange={(event) => setField("other", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                  <p className="font-semibold text-ink">What this means</p>
+                  <p className="mt-1">Flowtally compares the POS total with cash, card, and delivery totals so unresolved differences stay visible until they are corrected.</p>
+                </div>
+              </div>
+            </section>
 
-          <details className="mt-5 rounded-xl border border-line bg-slate-50 p-4">
-            <summary className="cursor-pointer text-sm font-bold text-ink">Add adjustment</summary>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Use these only when a value legitimately explains the difference. Positive adjustments add to the accounted total. Refunds, discounts, and fees subtract from it.
-            </p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Refunds">
-                <input value={draft.refunds} onChange={(event) => setField("refunds", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-              </Field>
-              <Field label="Discounts">
-                <input value={draft.discounts} onChange={(event) => setField("discounts", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-              </Field>
-              <Field label="Tips">
-                <input value={draft.tips} onChange={(event) => setField("tips", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-              </Field>
-              <Field label="Fees / platform adjustments">
-                <input value={draft.fees} onChange={(event) => setField("fees", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
-              </Field>
-              <Field label="Manual adjustment">
-                <input value={draft.manualAdjustment} onChange={(event) => setField("manualAdjustment", Number(event.target.value) || 0)} className="input" step="0.01" type="number" inputMode="decimal" />
-              </Field>
-              <Field label="Notes">
-                <textarea
-                  value={draft.notes}
-                  onChange={(event) => setField("notes", event.target.value)}
-                  className="input min-h-32"
-                  placeholder="Reason for a variance, missing payout, cash count note, or manager follow-up."
+            <details className="rounded-2xl border border-line bg-slate-50 p-5">
+              <summary className="cursor-pointer text-sm font-bold text-ink">Add adjustment</summary>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                Optional adjustments stay collapsed by default. Use them only when they genuinely explain the difference.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Refunds">
+                  <input value={draft.refunds} onChange={(event) => setField("refunds", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Discounts">
+                  <input value={draft.discounts} onChange={(event) => setField("discounts", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Tips">
+                  <input value={draft.tips} onChange={(event) => setField("tips", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Fees / platform adjustments">
+                  <input value={draft.fees} onChange={(event) => setField("fees", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Manual adjustment">
+                  <input value={draft.manualAdjustment} onChange={(event) => setField("manualAdjustment", Number(event.target.value) || 0)} className="input" step="0.01" type="number" inputMode="decimal" />
+                </Field>
+                <Field label="Notes">
+                  <textarea
+                    value={draft.notes}
+                    onChange={(event) => setField("notes", event.target.value)}
+                    className="input min-h-32"
+                    placeholder="Reason for a variance, missing payout, cash count note, or manager follow-up."
+                  />
+                </Field>
+              </div>
+            </details>
+
+            <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-4">
+              <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
+                <input
+                  checked={confirmed}
+                  onChange={(event) => setConfirmed(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-line text-brand-600"
+                  type="checkbox"
                 />
-              </Field>
-            </div>
-          </details>
-
-          <div className="mt-6 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
-            <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-              <input
-                checked={confirmed}
-                onChange={(event) => setConfirmed(event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-line text-brand-600"
-                type="checkbox"
-              />
-              <span>I reviewed the imported totals and understand that the reconciliation is only saved after confirmation.</span>
-            </label>
-            {reconciliationSummary.requiresNote && !draft.notes.trim() ? (
-              <p className="mt-3 text-sm font-semibold text-amber-800">Add a note before saving this unresolved day.</p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button
-                icon={<Save className="h-4 w-4" />}
-                onClick={handleSave}
-                type="button"
-                disabled={!confirmed || isSaving || reconciliationSummary.status === "Incomplete" || (reconciliationSummary.requiresNote && !draft.notes.trim())}
-              >
-                {isSaving ? "Saving..." : draft.id ? "Update close" : "Confirm and save"}
-              </Button>
-              <Button variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={handleResetDraft} type="button">
-                Clear draft
-              </Button>
+                <span>I reviewed the totals and understand that the reconciliation is only saved after confirmation.</span>
+              </label>
+              {reconciliationSummary.requiresNote && !draft.notes.trim() ? <p className="mt-3 text-sm font-semibold text-amber-800">Add a note before saving this unresolved day.</p> : null}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button
+                  icon={<Save className="h-4 w-4" />}
+                  onClick={handleSave}
+                  type="button"
+                  disabled={!confirmed || isSaving || reconciliationSummary.status === "Incomplete" || (reconciliationSummary.requiresNote && !draft.notes.trim())}
+                >
+                  {isSaving ? "Saving..." : draft.id ? "Update close" : "Confirm and save"}
+                </Button>
+                <Button variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={handleResetDraft} type="button">
+                  Clear draft
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
 
-        <div className="grid gap-4">
+        <div className="space-y-4">
           <Card className="p-5">
             <div className="flex items-start gap-4">
               <div className="rounded-lg bg-ink p-3 text-white">
@@ -552,7 +593,6 @@ export function DailyReconciliationPage() {
               </div>
             </div>
             <div className="mt-4 space-y-3">
-              <SummaryRow label="Business date" value={draft.date || "Not entered"} />
               <SummaryRow label="Expected POS" value={formatCurrency(draft.expectedPosSales)} />
               <SummaryRow label="Accounted total" value={formatCurrency(reconciliationSummary.accountedTotal)} />
               <SummaryRow label="Difference" value={formatCurrency(reconciliationSummary.variance)} />
@@ -561,21 +601,13 @@ export function DailyReconciliationPage() {
           </Card>
 
           <Card className="p-5">
-            <SectionHeader title="Variance breakdown" description="Use this as a triage list, not as proof of the actual cause." />
-            <div className="space-y-2">
-              {reconciliationSummary.breakdown.map((item) => (
-                <div key={item.label} className="flex items-center justify-between gap-4 rounded-lg border border-line bg-white px-3 py-2 text-sm">
-                  <span className="font-medium text-slate-700">{item.label}</span>
-                  <span className={item.value < 0 ? "text-red-700" : "text-ink"}>{formatCurrency(item.value)}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card className="p-5">
             <SectionHeader title="Checklist" description="Practical prompts for unresolved differences." />
             <div className="space-y-2">
-              {(reconciliationSummary.prompts.length ? reconciliationSummary.prompts : ["Balanced - all sales are accounted for."]).map((item) => (
+              {(reconciliationSummary.status === "Incomplete"
+                ? ["Enter the business date and POS total to begin."]
+                : reconciliationSummary.status === "Balanced"
+                  ? ["Balanced - all sales are accounted for."]
+                  : reconciliationSummary.prompts).map((item) => (
                 <div key={item} className="rounded-lg border border-line bg-white px-3 py-2 text-sm leading-6 text-slate-700">
                   {item}
                 </div>
@@ -591,23 +623,6 @@ export function DailyReconciliationPage() {
               <SummaryRow label="Unresolved days" value={String(summary.unresolvedReconciliationCount)} />
               <SummaryRow label="7-day unresolved exposure" value={formatCurrency(summary.weeklyUnresolvedVariance)} />
             </div>
-          </Card>
-
-          <Card className="surface-panel p-5">
-            <div className="flex items-start gap-4">
-              <div className="rounded-lg bg-brand-600 p-3 text-white">
-                <CalendarClock className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Pilot reset</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  Restore the sample reconciliation records if you want to return the browser to a clean pilot state without deleting your other invoice data.
-                </p>
-              </div>
-            </div>
-            <Button className="mt-4" type="button" variant="secondary" onClick={handleRestoreSamples}>
-              Restore sample data
-            </Button>
           </Card>
         </div>
       </div>
@@ -670,6 +685,12 @@ export function DailyReconciliationPage() {
               </Card>
             );
           })}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button type="button" variant="ghost" onClick={handleRestoreSamples}>
+            Restore sample data
+          </Button>
         </div>
       </section>
 

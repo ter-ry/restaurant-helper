@@ -47,11 +47,12 @@ function normalizeBaseUrl(value: string | undefined) {
 }
 
 function resolveApiBaseUrl() {
-  const configured = normalizeBaseUrl(import.meta.env.VITE_OCR_API_BASE_URL);
+  const env = import.meta?.env;
+  const configured = normalizeBaseUrl(env?.VITE_OCR_API_BASE_URL);
   if (configured) {
     return configured;
   }
-  if (import.meta.env.DEV) {
+  if (env?.DEV || typeof window === "undefined") {
     return "http://127.0.0.1:5000";
   }
   throw new Error("VITE_OCR_API_BASE_URL is required in production builds.");

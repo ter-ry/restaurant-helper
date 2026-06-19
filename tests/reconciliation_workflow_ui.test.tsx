@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ReconciliationRecordModal } from "../src/components/ReconciliationRecordModal";
 import {
@@ -15,6 +16,8 @@ import {
   summarizeReconciliationDraft,
   upsertReconciliationRecord,
 } from "../src/lib/reconciliationWorkflow";
+import { PilotWorkspaceProvider } from "../src/lib/pilotWorkspace";
+import { DailyReconciliationPage } from "../src/pages/DailyReconciliationPage";
 import type { PilotReconciliationDraft, PilotReconciliationRecord } from "../src/types";
 
 function createDraft(overrides: Partial<PilotReconciliationDraft> = {}): PilotReconciliationDraft {
@@ -229,6 +232,45 @@ function testSaveConfirmationAndDeleteShape() {
   assert.equal(buildReconciliationSaveConfirmation(record), "2026-06-19 reconciliation saved successfully with $0.00 variance.");
 }
 
+function renderDailyReconciliationPage() {
+  return renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: ["/demo/cafe/daily-reconciliation"] },
+      createElement(
+        Routes,
+        null,
+        createElement(Route, {
+          path: "/demo/:profile/daily-reconciliation",
+          element: createElement(PilotWorkspaceProvider, null, createElement(DailyReconciliationPage, null)),
+        }),
+      ),
+    ),
+  );
+}
+
+function testDailyReconciliationLayout() {
+  const html = renderDailyReconciliationPage();
+  assert.ok(!html.includes("Report imports"));
+  assert.ok(html.includes("Import report"));
+  assert.ok(html.includes("Daily close"));
+  assert.ok(html.includes("Payments received"));
+  assert.ok(html.includes("Add adjustment"));
+  assert.ok(html.includes("Restore sample data"));
+  assert.ok(html.includes("Open"));
+  assert.ok(html.includes("Edit"));
+  assert.ok(html.includes("Delete"));
+  assert.ok(html.includes("Today at a glance"));
+  assert.ok(/Today(?:&#x27;|')s status/.test(html));
+  assert.ok(/Today(?:&#x27;|')s variance/.test(html));
+  assert.ok(html.includes("Unresolved days"));
+  assert.ok(html.includes("7-day unresolved exposure"));
+  assert.ok(html.includes("xl:grid-cols-[minmax(0,2.75fr)_minmax(320px,1fr)]"));
+  assert.ok(html.indexOf("Daily close") < html.indexOf("Live result"));
+  assert.ok(html.indexOf("Live result") < html.indexOf("Recent reconciliation records"));
+  assert.ok(!html.includes("Optional import helper"));
+}
+
 testEquationAndStatuses();
 testIncompleteAndEmptyState();
 testDuplicateDateUpdateAndPersistence();
@@ -236,5 +278,6 @@ testNewestFivePreview();
 testLegacyRecordNormalization();
 testReopenModalAndSaveCopy();
 testSaveConfirmationAndDeleteShape();
+testDailyReconciliationLayout();
 
 console.log("reconciliation_workflow_ui.test.tsx passed");
