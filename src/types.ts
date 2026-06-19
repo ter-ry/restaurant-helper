@@ -264,6 +264,18 @@ export interface InventoryInvoiceReceipt {
   updatedAt: string;
 }
 
+export interface InventoryLineMapping {
+  id: string;
+  supplierKey: string;
+  lineKey: string;
+  inventoryItemId: string;
+  inventoryItemName: string;
+  confirmedInvoiceUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+  confirmedAt: string;
+}
+
 export interface PilotInventoryDraftLine {
   invoiceLineItemId: string;
   inventoryItemId: string;
@@ -291,6 +303,7 @@ export interface PilotInventoryState {
   items: InventoryItem[];
   movements: InventoryMovement[];
   receipts: InventoryInvoiceReceipt[];
+  lineMappings: InventoryLineMapping[];
 }
 
 export interface PilotWorkspaceSummary {

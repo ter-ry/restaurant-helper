@@ -5,14 +5,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { PilotWorkspaceProvider } from "../src/lib/pilotWorkspace";
-import { InventoryPage } from "../src/pages/InventoryPage";
+import { InventoryPage, buildReceiveLines } from "../src/pages/InventoryPageNew";
 import {
+  buildInventoryMappingKey,
   buildInventorySummary,
   createSeedInventoryState,
   createInventoryDraft,
   deriveInventoryReceiptKey,
+  findExactInventoryItemSuggestion,
+  findRememberedInventoryMapping,
   findInventoryItemSuggestions,
   normalizeStoredInventoryState,
+  rememberInventoryMapping,
   sortInventoryItems,
   upsertInventoryItem,
 } from "../src/lib/inventoryWorkspace";
@@ -158,6 +162,51 @@ function testReceiptKeyStability() {
   assert.ok(keyA.includes("HC-1001"));
 }
 
+function testInventoryMappingHelpers() {
+  const items = [
+    createItem({ id: "beans", name: "House Espresso Beans 5lb", itemMatchKey: "house espresso beans 5lb" }),
+    createItem({ id: "cups", name: "Paper Cups", itemMatchKey: "paper cups" }),
+  ];
+  const exact = findExactInventoryItemSuggestion(items, "House Espresso Beans 5lb");
+  assert.equal(exact?.id, "beans");
+
+  const mappings = rememberInventoryMapping([], {
+    supplierKey: "Heritage Coffee Roasters",
+    lineKey: "House Espresso Beans 5lb",
+    inventoryItemId: "beans",
+    inventoryItemName: "House Espresso Beans 5lb",
+    confirmedInvoiceUnit: "case",
+    inventoryUnit: "bag",
+    conversionFactor: 2,
+  });
+  assert.equal(buildInventoryMappingKey("Heritage Coffee Roasters", "House Espresso Beans 5lb"), buildInventoryMappingKey("heritage coffee roasters", "house espresso beans 5lb"));
+  assert.equal(findRememberedInventoryMapping(mappings, "Heritage Coffee Roasters", "House Espresso Beans 5lb")?.inventoryItemId, "beans");
+}
+
+function testReceiveMappingPreview() {
+  const inventoryItems = [createItem({ id: "beans", name: "House Espresso Beans 5lb", itemMatchKey: "house espresso beans 5lb" })];
+  const invoice = createInvoice();
+  const lines = buildReceiveLines(invoice.id, inventoryItems, [], [], [invoice]);
+  assert.equal(lines[0].state, "unmapped");
+  assert.equal(lines[0].matchLabel, "Suggested match");
+  assert.equal(lines[0].selectedItemId, "");
+
+  const remembered = rememberInventoryMapping([], {
+    supplierKey: invoice.supplier,
+    lineKey: invoice.lineItems[0].originalDescription,
+    inventoryItemId: "beans",
+    inventoryItemName: "House Espresso Beans 5lb",
+    confirmedInvoiceUnit: "case",
+    inventoryUnit: "bag",
+    conversionFactor: 2,
+  });
+  const mappedLines = buildReceiveLines(invoice.id, inventoryItems, remembered, [], [invoice]);
+  assert.equal(mappedLines[0].state, "linked");
+  assert.equal(mappedLines[0].matchLabel, "Previously confirmed");
+  assert.equal(mappedLines[0].selectedItemId, "beans");
+  assert.equal(mappedLines[0].conversionFactor, 2);
+}
+
 function testBlankDraftCreatesNewItem() {
   const items = [createItem({ id: "item-1", name: "House Espresso Beans 5lb" })];
   const draft = createInventoryDraft();
@@ -193,15 +242,19 @@ function testInventoryPageLayout() {
   assert.ok(html.includes("Inventory"));
   assert.ok(html.includes("Inventory list"));
   assert.ok(html.includes("Receive from saved invoice"));
-  assert.ok(html.includes("Manual movement"));
-  assert.ok(html.includes("Manual stock count"));
-  assert.ok(html.includes("Movement ledger"));
+  assert.ok(html.includes("Adjust stock"));
+  assert.ok(html.includes("Physical count"));
+  assert.ok(html.includes("History"));
   assert.ok(html.includes("Review invoices"));
+  assert.ok(!html.includes("Focused workflow"));
+  assert.ok(!html.includes("Save changes"));
 }
 
 testInventorySummaryAndSorting();
 testLegacyNormalizationAndSuggestions();
 testReceiptKeyStability();
+testInventoryMappingHelpers();
+testReceiveMappingPreview();
 testBlankDraftCreatesNewItem();
 testEditDraftUpdatesExistingItem();
 testInventoryPageLayout();

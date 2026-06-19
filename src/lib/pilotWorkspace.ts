@@ -7,9 +7,11 @@ import {
   createSeedInventoryState,
   deleteInventoryItem,
   deriveInventoryReceiptKey,
+  findExactInventoryItemSuggestion,
   findInventoryItemSuggestions,
   getInventoryStatusLabel,
   normalizeStoredInventoryState,
+  rememberInventoryMapping,
   sortInventoryItems,
   sortInventoryMovementsNewestFirst,
   sortInventoryReceiptsNewestFirst,
@@ -60,6 +62,7 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   inventoryItems: InventoryItem[];
   inventoryMovements: InventoryMovement[];
   inventoryReceipts: InventoryInvoiceReceipt[];
+  inventoryMappings: PilotInventoryState["lineMappings"];
   inventorySummary: ReturnType<typeof buildInventorySummary>;
   saveInvoice: (draft: PilotInvoiceDraft) => PilotInvoiceRecord;
   saveReconciliation: (draft: PilotReconciliationDraft) => PilotReconciliationRecord;
@@ -67,6 +70,7 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   archiveInventoryItem: (id: string) => void;
   deleteInventoryItem: (id: string) => void;
   recordInventoryReceipt: (invoiceId: string, lines: PilotInventoryDraftLine[]) => { recorded: number; skipped: number };
+  rememberInventoryMappings: (mappings: PilotInventoryState["lineMappings"]) => void;
   recordInventoryMovement: (itemId: string, movementType: "manual addition" | "usage" | "waste" | "breakage" | "correction" | "other", quantityDelta: number, note?: string) => InventoryMovement | null;
   recordInventoryCount: (itemId: string, quantity: number, note?: string) => InventoryMovement | null;
   deleteReconciliation: (id: string) => void;
@@ -662,6 +666,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
     const inventoryItems = sortInventoryItems(state.inventory.items);
     const inventoryMovements = sortInventoryMovementsNewestFirst(state.inventory.movements);
     const inventoryReceipts = sortInventoryReceiptsNewestFirst(state.inventory.receipts);
+    const inventoryMappings = state.inventory.lineMappings;
     const inventorySummary = buildInventorySummary(state.inventory);
 
     return {
@@ -677,6 +682,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
       inventoryItems,
       inventoryMovements,
       inventoryReceipts,
+      inventoryMappings,
       inventorySummary,
       saveInvoice: (draft) => {
         const created = deriveInvoiceState(state.invoices, draft);
@@ -816,6 +822,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         const nextState = {
           ...state,
           inventory: {
+            ...state.inventory,
             items,
             movements,
             receipts,
@@ -824,6 +831,17 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         saveWorkspace(nextState);
         setState(nextState);
         return { recorded, skipped };
+      },
+      rememberInventoryMappings: (mappings) => {
+        const nextState = {
+          ...state,
+          inventory: {
+            ...state.inventory,
+            lineMappings: mappings,
+          },
+        };
+        saveWorkspace(nextState);
+        setState(nextState);
       },
       recordInventoryMovement: (itemId, movementType, quantityDelta, note = "") => {
         const item = state.inventory.items.find((candidate) => candidate.id === itemId);
@@ -900,6 +918,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         const nextState = {
           ...state,
           inventory: {
+            ...state.inventory,
             items: state.inventory.items.map((candidate) =>
               candidate.id === item.id
                 ? {

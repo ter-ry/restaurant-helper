@@ -6,6 +6,7 @@ import type {
   InventoryItemStatus,
   InventoryMovement,
   InventoryMovementType,
+  InventoryLineMapping,
   PilotInventoryDraft,
   PilotInventoryDraftLine,
   PilotInventoryState,
@@ -40,6 +41,10 @@ function clampQuantity(value: number) {
 
 function normalizeName(value: string) {
   return normalizeComparisonKey(value);
+}
+
+function normalizeSupplierKey(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function inventoryStatusForItem(item: InventoryItem): InventoryItemStatus {
@@ -199,6 +204,7 @@ export function createSeedInventoryState(): PilotInventoryState {
     items,
     movements: createSeedMovements(items),
     receipts: createSeedReceipts(items),
+    lineMappings: [],
   };
 }
 
@@ -274,10 +280,25 @@ export function normalizeStoredInventoryState(state: Partial<PilotInventoryState
       }))
     : fallback.receipts;
 
+  const lineMappings = Array.isArray(state?.lineMappings)
+    ? state.lineMappings.map((mapping) => ({
+        id: mapping.id || `inventory-mapping-${nowIso()}`,
+        supplierKey: normalizeSupplierKey(mapping.supplierKey || ""),
+        lineKey: normalizeName(mapping.lineKey || ""),
+        inventoryItemId: mapping.inventoryItemId || "",
+        inventoryItemName: mapping.inventoryItemName || itemMap.get(mapping.inventoryItemId)?.name || "Unknown item",
+        confirmedInvoiceUnit: mapping.confirmedInvoiceUnit || "each",
+        inventoryUnit: mapping.inventoryUnit || itemMap.get(mapping.inventoryItemId)?.unit || "each",
+        conversionFactor: Number.isFinite(mapping.conversionFactor) ? Number(mapping.conversionFactor) : 1,
+        confirmedAt: mapping.confirmedAt || nowIso(),
+      }))
+    : fallback.lineMappings ?? [];
+
   return {
     items,
     movements,
     receipts,
+    lineMappings,
   };
 }
 
@@ -388,6 +409,48 @@ export function createInventoryDraft(item?: InventoryItem): PilotInventoryDraft 
     notes: item.notes,
     active: item.active,
   };
+}
+
+export function buildInventoryMappingKey(supplier: string, lineKey: string) {
+  return `${normalizeSupplierKey(supplier)}::${normalizeName(lineKey)}`;
+}
+
+export function findRememberedInventoryMapping(mappings: InventoryLineMapping[], supplier: string, lineKey: string) {
+  const key = buildInventoryMappingKey(supplier, lineKey);
+  return [...mappings]
+    .filter((mapping) => buildInventoryMappingKey(mapping.supplierKey, mapping.lineKey) === key)
+    .sort((a, b) => toMillis(b.confirmedAt) - toMillis(a.confirmedAt))[0] ?? null;
+}
+
+export function rememberInventoryMapping(
+  mappings: InventoryLineMapping[],
+  mapping: Omit<InventoryLineMapping, "id" | "confirmedAt"> & { confirmedAt?: string },
+) {
+  const normalized: InventoryLineMapping = {
+    id: `inventory-mapping-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    supplierKey: normalizeSupplierKey(mapping.supplierKey),
+    lineKey: normalizeName(mapping.lineKey),
+    inventoryItemId: mapping.inventoryItemId,
+    inventoryItemName: mapping.inventoryItemName,
+    confirmedInvoiceUnit: mapping.confirmedInvoiceUnit || "each",
+    inventoryUnit: mapping.inventoryUnit || "each",
+    conversionFactor: Number.isFinite(mapping.conversionFactor) ? Number(mapping.conversionFactor) : 1,
+    confirmedAt: mapping.confirmedAt || nowIso(),
+  };
+
+  return [
+    normalized,
+    ...mappings.filter((entry) => buildInventoryMappingKey(entry.supplierKey, entry.lineKey) !== buildInventoryMappingKey(normalized.supplierKey, normalized.lineKey)),
+  ];
+}
+
+export function findExactInventoryItemSuggestion(items: InventoryItem[], value: string) {
+  const key = normalizeName(value);
+  if (!key) {
+    return null;
+  }
+
+  return sortInventoryItems(items).find((item) => item.itemMatchKey === key || item.normalizedName === key) ?? null;
 }
 
 export function summarizeInventoryReceiptLines(lines: PilotInventoryDraftLine[]) {
