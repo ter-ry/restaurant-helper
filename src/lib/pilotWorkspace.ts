@@ -19,6 +19,24 @@ import {
   upsertInventoryItem,
 } from "./inventoryWorkspace";
 import {
+  buildCopyOrderText,
+  buildInventoryOperationsSummary,
+  buildReorderCsv,
+  buildReorderSuggestions,
+  cancelCountSession,
+  canConfirmCountSession,
+  confirmCountSession,
+  countSessionProgress,
+  createCountSessionDraft,
+  groupReorderSuggestionsBySupplier,
+  largeAdjustmentSignal,
+  normalizeCountSession,
+  normalizeReorderIntent,
+  setCountSessionMetadata,
+  updateCountSessionLine,
+  upsertReorderIntent,
+} from "./inventoryOperations";
+import {
   deriveReconciliationRecord,
   normalizeStoredReconciliationRecord,
   sortReconciliationsNewestFirst,
@@ -63,6 +81,8 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   inventoryMovements: InventoryMovement[];
   inventoryReceipts: InventoryInvoiceReceipt[];
   inventoryMappings: PilotInventoryState["lineMappings"];
+  inventoryCountSessions: PilotInventoryState["countSessions"];
+  inventoryReorderIntents: PilotInventoryState["reorderIntents"];
   inventorySummary: ReturnType<typeof buildInventorySummary>;
   saveInvoice: (draft: PilotInvoiceDraft) => PilotInvoiceRecord;
   saveReconciliation: (draft: PilotReconciliationDraft) => PilotReconciliationRecord;
@@ -71,6 +91,10 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   deleteInventoryItem: (id: string) => void;
   recordInventoryReceipt: (invoiceId: string, lines: PilotInventoryDraftLine[]) => { recorded: number; skipped: number };
   rememberInventoryMappings: (mappings: PilotInventoryState["lineMappings"]) => void;
+  upsertInventoryCountSession: (session: PilotInventoryState["countSessions"][number]) => void;
+  confirmInventoryCountSession: (sessionId: string) => { confirmed: boolean; changedCount: number };
+  cancelInventoryCountSession: (sessionId: string) => void;
+  upsertInventoryReorderIntent: (intent: PilotInventoryState["reorderIntents"][number]) => void;
   recordInventoryMovement: (itemId: string, movementType: "manual addition" | "usage" | "waste" | "breakage" | "correction" | "other", quantityDelta: number, note?: string) => InventoryMovement | null;
   recordInventoryCount: (itemId: string, quantity: number, note?: string) => InventoryMovement | null;
   deleteReconciliation: (id: string) => void;
@@ -304,7 +328,11 @@ export function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorks
   return {
     invoices: state.invoices.map(normalizeStoredInvoiceRecord),
     reconciliations: state.reconciliations.map(normalizeStoredReconciliationRecord),
-    inventory: normalizeStoredInventoryState(state.inventory),
+    inventory: {
+      ...normalizeStoredInventoryState(state.inventory),
+      countSessions: Array.isArray(state.inventory?.countSessions) ? state.inventory.countSessions.map((session) => normalizeCountSession(session)) : createSeedInventoryState().countSessions,
+      reorderIntents: Array.isArray(state.inventory?.reorderIntents) ? state.inventory.reorderIntents.map((intent) => normalizeReorderIntent(intent)) : createSeedInventoryState().reorderIntents,
+    },
   };
 }
 
@@ -555,6 +583,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
     todayReconciliationVariance: Number(reconciliationStats.todayVariance.toFixed(2)),
     todayReconciliationDate: today,
     ...buildInventorySummary(inventory),
+    ...buildInventoryOperationsSummary(inventory),
   };
 }
 
@@ -667,6 +696,8 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
     const inventoryMovements = sortInventoryMovementsNewestFirst(state.inventory.movements);
     const inventoryReceipts = sortInventoryReceiptsNewestFirst(state.inventory.receipts);
     const inventoryMappings = state.inventory.lineMappings;
+    const inventoryCountSessions = state.inventory.countSessions;
+    const inventoryReorderIntents = state.inventory.reorderIntents;
     const inventorySummary = buildInventorySummary(state.inventory);
 
     return {
@@ -683,6 +714,8 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
       inventoryMovements,
       inventoryReceipts,
       inventoryMappings,
+      inventoryCountSessions,
+      inventoryReorderIntents,
       inventorySummary,
       saveInvoice: (draft) => {
         const created = deriveInvoiceState(state.invoices, draft);
@@ -807,6 +840,8 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
                   ...candidate,
                   currentQuantity: quantityAfter,
                   latestPurchasePrice: sourceLine?.unitPrice ? Number(sourceLine.unitPrice.toFixed(2)) : candidate.latestPurchasePrice,
+                  latestPurchaseUnit: sourceLine?.unit || candidate.latestPurchaseUnit,
+                  latestPurchaseConversionFactor: multiplier || candidate.latestPurchaseConversionFactor || 1,
                   preferredSupplier: invoice.supplier || candidate.preferredSupplier,
                   lastReceivedAt: invoice.invoiceDate || candidate.lastReceivedAt,
                   updatedAt: now,
@@ -840,6 +875,50 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
             lineMappings: mappings,
           },
         };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
+      upsertInventoryCountSession: (session) => {
+        const nextInventory = {
+          ...state.inventory,
+          countSessions: [normalizeCountSession(session), ...state.inventory.countSessions.filter((candidate) => candidate.id !== session.id)],
+        };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
+      confirmInventoryCountSession: (sessionId) => {
+        const result = confirmCountSession(state.inventory, sessionId);
+        if (!result) {
+          return { confirmed: false, changedCount: 0 };
+        }
+
+        const nextInventory = {
+          ...state.inventory,
+          items: result.items,
+          movements: result.movements,
+          countSessions: result.countSessions,
+        };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+        return { confirmed: true, changedCount: result.changedCount };
+      },
+      cancelInventoryCountSession: (sessionId) => {
+        const nextInventory = {
+          ...state.inventory,
+          countSessions: cancelCountSession(state.inventory, sessionId),
+        };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
+      upsertInventoryReorderIntent: (intent) => {
+        const nextInventory = {
+          ...state.inventory,
+          reorderIntents: [normalizeReorderIntent(intent), ...state.inventory.reorderIntents.filter((candidate) => candidate.id !== intent.id)],
+        };
+        const nextState = { ...state, inventory: nextInventory };
         saveWorkspace(nextState);
         setState(nextState);
       },
@@ -905,7 +984,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
           id: `inventory-count-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
           inventoryItemId: item.id,
           inventoryItemName: item.name,
-          movementType: "count adjustment",
+          movementType: "physical count adjustment",
           quantityDelta: Number((countedQuantity - item.currentQuantity).toFixed(2)),
           quantityBefore: item.currentQuantity,
           quantityAfter: countedQuantity,

@@ -112,7 +112,7 @@ export interface ExtractedInvoice {
 export type PilotInvoiceStatus = "Ready" | "Needs Review";
 export type PilotReconciliationStatus = "Balanced" | "Small difference" | "Needs Review" | "Incomplete";
 export type InventoryItemStatus = "In stock" | "Low stock" | "Reorder now" | "Out of stock" | "Count needed";
-export type InventoryMovementType = "invoice receipt" | "manual addition" | "usage" | "waste" | "breakage" | "count adjustment" | "correction" | "other";
+export type InventoryMovementType = "invoice receipt" | "manual addition" | "usage" | "waste" | "breakage" | "count adjustment" | "physical count adjustment" | "correction" | "other";
 
 export interface PilotInvoiceLineItem extends InvoiceLineItem {
   originalDescription: string;
@@ -211,6 +211,8 @@ export interface InventoryItem {
   parLevel: number;
   preferredSupplier: string;
   latestPurchasePrice: number;
+  latestPurchaseUnit: string;
+  latestPurchaseConversionFactor?: number;
   lastReceivedAt: string;
   lastCountedAt: string;
   averageDailyUsage?: number;
@@ -236,6 +238,8 @@ export interface InventoryMovement {
   sourceInvoiceDate?: string;
   sourceInvoiceLineItemId?: string;
   sourceInvoiceLineDescription?: string;
+  sourceCountSessionId?: string;
+  sourceCountSessionName?: string;
   receiptKey?: string;
   note: string;
   createdAt: string;
@@ -276,6 +280,64 @@ export interface InventoryLineMapping {
   confirmedAt: string;
 }
 
+export type InventoryCountSessionStatus = "Draft" | "Ready to review" | "Completed" | "Cancelled";
+export type InventoryCountSessionFilterKind = "all-active" | "category" | "supplier" | "needs-count";
+export type InventoryCountLineStatus = "pending" | "confirmed" | "skipped";
+
+export interface InventoryCountSessionLine {
+  id: string;
+  inventoryItemId: string;
+  itemNameSnapshot: string;
+  stockUnitSnapshot: string;
+  recordedQuantity: number;
+  countedQuantity: number | null;
+  difference: number | null;
+  resultingQuantity: number | null;
+  note: string;
+  confirmationStatus: InventoryCountLineStatus;
+}
+
+export interface InventoryCountSession {
+  id: string;
+  status: InventoryCountSessionStatus;
+  startedAt: string;
+  completedAt?: string;
+  selectedCategory?: string;
+  selectedSupplier?: string;
+  filterKind: InventoryCountSessionFilterKind;
+  itemCount: number;
+  countedBy?: string;
+  notes: string;
+  lines: InventoryCountSessionLine[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InventoryReorderLineStatus = "Needs ordering" | "Ordered" | "Partially received" | "Received";
+
+export interface InventoryReorderIntent {
+  id: string;
+  itemId: string;
+  itemName: string;
+  category: string;
+  supplier: string;
+  currentQuantity: number;
+  unit: string;
+  minimumQuantity: number;
+  parLevel: number;
+  suggestedQuantity: number;
+  adjustedQuantity: number;
+  latestPurchasePrice: number;
+  estimatedCost: number | null;
+  costStatus: "available" | "unavailable";
+  daysRemaining?: number | null;
+  notes: string;
+  status: InventoryReorderLineStatus;
+  markedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PilotInventoryDraftLine {
   invoiceLineItemId: string;
   inventoryItemId: string;
@@ -304,6 +366,8 @@ export interface PilotInventoryState {
   movements: InventoryMovement[];
   receipts: InventoryInvoiceReceipt[];
   lineMappings: InventoryLineMapping[];
+  countSessions: InventoryCountSession[];
+  reorderIntents: InventoryReorderIntent[];
 }
 
 export interface PilotWorkspaceSummary {
@@ -330,6 +394,10 @@ export interface PilotWorkspaceSummary {
   inventoryMovementCount: number;
   inventoryReceiptCount: number;
   inventoryValue: number;
+  inventoryCountSessionDraftCount: number;
+  inventoryItemsToReorderCount: number;
+  inventoryEstimatedReorderCost: number;
+  inventoryRecentLargeAdjustmentCount: number;
 }
 
 export interface ReportCard {

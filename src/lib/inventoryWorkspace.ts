@@ -133,6 +133,8 @@ function createSeedInventoryItems(): InventoryItem[] {
       parLevel,
       preferredSupplier: item.preferredSupplier,
       latestPurchasePrice: clampMoney(item.lastPrice),
+      latestPurchaseUnit: "each",
+      latestPurchaseConversionFactor: 1,
       lastReceivedAt: item.lastPurchasedDate,
       lastCountedAt: item.lastPurchasedDate,
       averageDailyUsage: Number((Math.max(item.changePercent, 1) / 10).toFixed(1)),
@@ -205,6 +207,8 @@ export function createSeedInventoryState(): PilotInventoryState {
     movements: createSeedMovements(items),
     receipts: createSeedReceipts(items),
     lineMappings: [],
+    countSessions: [],
+    reorderIntents: [],
   };
 }
 
@@ -228,6 +232,8 @@ function ensureInventoryItemShape(item: InventoryItem): InventoryItem {
     parLevel: Math.max(parLevel, minQuantity),
     preferredSupplier: item.preferredSupplier.trim(),
     latestPurchasePrice: clampMoney(item.latestPurchasePrice),
+    latestPurchaseUnit: item.latestPurchaseUnit?.trim() || item.unit.trim() || "each",
+    latestPurchaseConversionFactor: typeof item.latestPurchaseConversionFactor === "number" && Number.isFinite(item.latestPurchaseConversionFactor) ? Number(item.latestPurchaseConversionFactor.toFixed(4)) : undefined,
     lastReceivedAt,
     lastCountedAt,
     averageDailyUsage: typeof item.averageDailyUsage === "number" && Number.isFinite(item.averageDailyUsage) ? Number(item.averageDailyUsage.toFixed(2)) : undefined,
@@ -294,11 +300,16 @@ export function normalizeStoredInventoryState(state: Partial<PilotInventoryState
       }))
     : fallback.lineMappings ?? [];
 
+  const countSessions = Array.isArray(state?.countSessions) ? state.countSessions : fallback.countSessions ?? [];
+  const reorderIntents = Array.isArray(state?.reorderIntents) ? state.reorderIntents : fallback.reorderIntents ?? [];
+
   return {
     items,
     movements,
     receipts,
     lineMappings,
+    countSessions,
+    reorderIntents,
   };
 }
 
@@ -353,6 +364,8 @@ export function upsertInventoryItem(items: InventoryItem[], draft: PilotInventor
     parLevel: draft.parLevel,
     preferredSupplier: draft.preferredSupplier,
     latestPurchasePrice: draft.latestPurchasePrice,
+    latestPurchaseUnit: existing?.latestPurchaseUnit || draft.unit,
+    latestPurchaseConversionFactor: existing?.latestPurchaseConversionFactor,
     lastReceivedAt: existing?.lastReceivedAt || createdAt.slice(0, 10),
     lastCountedAt: existing?.lastCountedAt || createdAt.slice(0, 10),
     averageDailyUsage: draft.averageDailyUsage,

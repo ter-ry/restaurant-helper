@@ -159,6 +159,43 @@ export function DashboardPage() {
             icon={<TrendingUp className="h-5 w-5" />}
           />
         </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Items to reorder"
+            value={String(summary.inventoryItemsToReorderCount)}
+            helper={`Estimated cost ${formatCurrency(summary.inventoryEstimatedReorderCost)}`}
+            icon={<TrendingUp className="h-5 w-5" />}
+          />
+          <StatCard
+            label="Draft stock counts"
+            value={String(summary.inventoryCountSessionDraftCount)}
+            helper="Count sessions saved locally"
+            icon={<FileText className="h-5 w-5" />}
+          />
+          <StatCard
+            label="Large adjustments"
+            value={String(summary.inventoryRecentLargeAdjustmentCount)}
+            helper="Recent stock changes needing review"
+            icon={<AlertTriangle className="h-5 w-5" />}
+          />
+          <StatCard
+            label="Out of stock"
+            value={String(summary.inventoryOutOfStockCount)}
+            helper={`${summary.inventoryCountNeededCount} items still need a count`}
+            icon={<Gauge className="h-5 w-5" />}
+          />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(defaultDemoProfileSlug, "inventory")}>
+            Open inventory
+          </Link>
+          <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(defaultDemoProfileSlug, "inventory")}>
+            View reorder list
+          </Link>
+          <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(defaultDemoProfileSlug, "inventory")}>
+            Start stock count
+          </Link>
+        </div>
       </section>
 
       <section className="mt-8">
