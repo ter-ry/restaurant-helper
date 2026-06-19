@@ -110,7 +110,7 @@ export interface ExtractedInvoice {
 }
 
 export type PilotInvoiceStatus = "Ready" | "Needs Review";
-export type PilotReconciliationStatus = "Balanced" | "Needs Review";
+export type PilotReconciliationStatus = "Balanced" | "Small difference" | "Needs Review" | "Incomplete";
 
 export interface PilotInvoiceLineItem extends InvoiceLineItem {
   originalDescription: string;
@@ -150,6 +150,7 @@ export interface PilotInvoiceRecord extends PilotInvoiceDraft {
 }
 
 export interface PilotReconciliationDraft {
+  id?: string;
   date: string;
   uberEats: number;
   doorDash: number;
@@ -158,9 +159,19 @@ export interface PilotReconciliationDraft {
   card: number;
   other: number;
   expectedPosSales: number;
+  expectedPosEntered: boolean;
+  otherSourceName: string;
+  refunds: number;
+  discounts: number;
+  tips: number;
+  fees: number;
+  manualAdjustment: number;
   variance: number;
   status: PilotReconciliationStatus;
   notes: string;
+  confirmed?: boolean;
+  savedAt?: string;
+  origin?: "seed" | "user";
 }
 
 export interface PilotReconciliationRecord extends PilotReconciliationDraft {
@@ -197,9 +208,12 @@ export interface PilotWorkspaceSummary {
   monthlyInvoiceCount: number;
   reconciliationCount: number;
   unresolvedReconciliationCount: number;
-  weeklyVariance: number;
-  monthlyVariance: number;
+  weeklyUnresolvedVariance: number;
+  monthlyUnresolvedVariance: number;
   recentPriceChangeCount: number;
+  todayReconciliationStatus: PilotReconciliationStatus;
+  todayReconciliationVariance: number;
+  todayReconciliationDate: string;
 }
 
 export interface ReportCard {

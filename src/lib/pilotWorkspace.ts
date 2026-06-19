@@ -1,5 +1,11 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { defaultDemoProfileSlug, getDemoProfileView } from "./demoProfile";
+import {
+  deriveReconciliationRecord,
+  normalizeStoredReconciliationRecord,
+  sortReconciliationsNewestFirst,
+  upsertReconciliationRecord,
+} from "./reconciliationWorkflow";
 import type {
   InvoiceLineItem,
   PilotInvoiceDraft,
@@ -8,6 +14,7 @@ import type {
   PilotPriceChangeRecord,
   PilotReconciliationDraft,
   PilotReconciliationRecord,
+  PilotReconciliationStatus,
   PilotWorkspaceSummary,
   PriceStatus,
   Severity,
@@ -29,6 +36,7 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   unresolvedReconciliations: PilotReconciliationRecord[];
   saveInvoice: (draft: PilotInvoiceDraft) => PilotInvoiceRecord;
   saveReconciliation: (draft: PilotReconciliationDraft) => PilotReconciliationRecord;
+  deleteReconciliation: (id: string) => void;
   resetWorkspace: () => void;
 }
 
@@ -154,8 +162,9 @@ function createSeedInvoices(): PilotInvoiceRecord[] {
 }
 
 function createSeedReconciliations(): PilotReconciliationRecord[] {
-  const samples = [
+  const samples: PilotReconciliationRecord[] = [
     {
+      id: "seed-reconciliation-1",
       date: "2026-06-12",
       uberEats: 248.4,
       doorDash: 193.25,
@@ -163,11 +172,25 @@ function createSeedReconciliations(): PilotReconciliationRecord[] {
       cash: 164.0,
       card: 2448.7,
       other: 27.15,
-      expectedPosSales: 3160.0,
-      status: "Balanced" as const,
+      expectedPosSales: 3162.7,
+      expectedPosEntered: true,
+      otherSourceName: "Gift cards",
+      refunds: 0,
+      discounts: 0,
+      tips: 0,
+      fees: 0,
+      manualAdjustment: 0,
+      variance: 0,
+      status: "Balanced",
       notes: "Evening counts matched after the drawer was re-counted.",
+      confirmed: true,
+      origin: "seed",
+      createdAt: "2026-06-12T20:00:00.000Z",
+      updatedAt: "2026-06-12T20:00:00.000Z",
+      savedAt: "2026-06-12T20:00:00.000Z",
     },
     {
+      id: "seed-reconciliation-2",
       date: "2026-06-13",
       uberEats: 274.9,
       doorDash: 216.1,
@@ -175,11 +198,25 @@ function createSeedReconciliations(): PilotReconciliationRecord[] {
       cash: 141.5,
       card: 2588.8,
       other: 19.0,
-      expectedPosSales: 3370.0,
-      status: "Needs Review" as const,
-      notes: "Card batch settled late and the cash drawer was short by one closeout slip.",
+      expectedPosSales: 3325.65,
+      expectedPosEntered: true,
+      otherSourceName: "",
+      refunds: 0,
+      discounts: 0,
+      tips: 0,
+      fees: 0,
+      manualAdjustment: 0,
+      variance: 3.25,
+      status: "Small difference",
+      notes: "Card batch settled late and the drawer was off by a small rounding difference.",
+      confirmed: true,
+      origin: "seed",
+      createdAt: "2026-06-13T20:00:00.000Z",
+      updatedAt: "2026-06-13T20:00:00.000Z",
+      savedAt: "2026-06-13T20:00:00.000Z",
     },
     {
+      id: "seed-reconciliation-3",
       date: "2026-06-14",
       uberEats: 261.75,
       doorDash: 204.0,
@@ -187,25 +224,26 @@ function createSeedReconciliations(): PilotReconciliationRecord[] {
       cash: 158.5,
       card: 2512.2,
       other: 24.5,
-      expectedPosSales: 3240.0,
-      status: "Balanced" as const,
-      notes: "All channels matched after the end-of-day correction.",
+      expectedPosSales: 3260.35,
+      expectedPosEntered: true,
+      otherSourceName: "Cash drop",
+      refunds: 0,
+      discounts: 0,
+      tips: 0,
+      fees: 0,
+      manualAdjustment: 0,
+      variance: -20.0,
+      status: "Needs Review",
+      notes: "Card batch settled late and the cash drawer was short by one closeout slip.",
+      confirmed: true,
+      origin: "seed",
+      createdAt: "2026-06-14T20:00:00.000Z",
+      updatedAt: "2026-06-14T20:00:00.000Z",
+      savedAt: "2026-06-14T20:00:00.000Z",
     },
   ];
 
-  return samples.map((record, index) => {
-    const actualSales = record.uberEats + record.doorDash + record.skip + record.cash + record.card + record.other;
-    const variance = clampMoney(actualSales - record.expectedPosSales);
-    const createdAt = `${record.date}T20:00:00.000Z`;
-
-    return {
-      id: `seed-reconciliation-${index + 1}`,
-      ...record,
-      variance,
-      createdAt,
-      updatedAt: createdAt,
-    };
-  });
+  return samples;
 }
 
 function createSeedWorkspace(): PilotWorkspaceState {
@@ -227,10 +265,7 @@ function isPilotWorkspaceState(value: unknown): value is PilotWorkspaceState {
 export function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorkspaceState {
   return {
     invoices: state.invoices.map(normalizeStoredInvoiceRecord),
-    reconciliations: state.reconciliations.map((record) => ({
-      ...record,
-      notes: record.notes?.trim?.() ?? "",
-    })),
+    reconciliations: state.reconciliations.map(normalizeStoredReconciliationRecord),
   };
 }
 
@@ -411,6 +446,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
   weekAgo.setDate(now.getDate() - 7);
   const monthAgo = new Date(now);
   monthAgo.setDate(now.getDate() - 30);
+  const today = now.toLocaleDateString("en-CA");
 
   const invoiceStats = invoices.reduce(
     (acc, invoice) => {
@@ -436,19 +472,31 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
   const reconciliationStats = reconciliations.reduce(
     (acc, record) => {
       const recordDate = new Date(`${record.date}T12:00:00`);
-      if (record.status === "Needs Review" || Math.abs(record.variance) >= 1) {
+      const unresolved = record.status !== "Balanced";
+      if (unresolved) {
         acc.unresolvedCount += 1;
       }
       acc.totalCount += 1;
-      if (recordDate >= weekAgo) {
-        acc.weeklyVariance += record.variance;
+      if (recordDate >= weekAgo && unresolved) {
+        acc.weeklyVariance += Math.abs(record.variance);
       }
-      if (recordDate >= monthAgo) {
-        acc.monthlyVariance += record.variance;
+      if (recordDate >= monthAgo && unresolved) {
+        acc.monthlyVariance += Math.abs(record.variance);
+      }
+      if (record.date === today) {
+        acc.todayStatus = record.status;
+        acc.todayVariance = record.variance;
       }
       return acc;
     },
-    { totalCount: 0, unresolvedCount: 0, weeklyVariance: 0, monthlyVariance: 0 },
+    {
+      totalCount: 0,
+      unresolvedCount: 0,
+      weeklyVariance: 0,
+      monthlyVariance: 0,
+      todayStatus: "Incomplete" as PilotReconciliationStatus,
+      todayVariance: 0,
+    },
   );
 
   return {
@@ -461,9 +509,12 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
     monthlyInvoiceCount: invoiceStats.monthlyCount,
     reconciliationCount: reconciliationStats.totalCount,
     unresolvedReconciliationCount: reconciliationStats.unresolvedCount,
-    weeklyVariance: Number(reconciliationStats.weeklyVariance.toFixed(2)),
-    monthlyVariance: Number(reconciliationStats.monthlyVariance.toFixed(2)),
+    weeklyUnresolvedVariance: Number(reconciliationStats.weeklyVariance.toFixed(2)),
+    monthlyUnresolvedVariance: Number(reconciliationStats.monthlyVariance.toFixed(2)),
     recentPriceChangeCount: priceChanges.filter((change) => new Date(`${change.invoiceDate}T12:00:00`) >= monthAgo).length,
+    todayReconciliationStatus: reconciliationStats.todayStatus,
+    todayReconciliationVariance: Number(reconciliationStats.todayVariance.toFixed(2)),
+    todayReconciliationDate: today,
   };
 }
 
@@ -549,31 +600,6 @@ function findPreviousPrice(invoices: PilotInvoiceRecord[], supplier: string, com
   return price;
 }
 
-function deriveReconciliationState(draft: PilotReconciliationDraft): PilotReconciliationRecord {
-  const id = `recon-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  const createdAt = nowIso();
-  const actualSales = draft.uberEats + draft.doorDash + draft.skip + draft.cash + draft.card + draft.other;
-  const variance = clampMoney(actualSales - draft.expectedPosSales);
-  const status: PilotReconciliationRecord["status"] = draft.status ?? (Math.abs(variance) < 1 ? "Balanced" : "Needs Review");
-
-  return {
-    id,
-    date: draft.date,
-    uberEats: clampMoney(draft.uberEats),
-    doorDash: clampMoney(draft.doorDash),
-    skip: clampMoney(draft.skip),
-    cash: clampMoney(draft.cash),
-    card: clampMoney(draft.card),
-    other: clampMoney(draft.other),
-    expectedPosSales: clampMoney(draft.expectedPosSales),
-    variance,
-    status,
-    notes: draft.notes.trim(),
-    createdAt,
-    updatedAt: createdAt,
-  };
-}
-
 export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PilotWorkspaceState>(() => loadWorkspace());
 
@@ -596,9 +622,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
     const priceChanges = buildPriceChanges(state.invoices);
     const recentInvoices = sortInvoicesNewestFirst(state.invoices);
     const reviewQueue = recentInvoices.filter((invoice) => invoice.status === "Needs Review");
-    const unresolvedReconciliations = [...state.reconciliations]
-      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
-      .filter((record) => record.status === "Needs Review" || Math.abs(record.variance) >= 1);
+    const unresolvedReconciliations = sortReconciliationsNewestFirst(state.reconciliations).filter((record) => record.status !== "Balanced");
 
     return {
       ...state,
@@ -616,11 +640,16 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         return created;
       },
       saveReconciliation: (draft) => {
-        const created = deriveReconciliationState(draft);
-        const nextState = { ...state, reconciliations: [created, ...state.reconciliations] };
+        const created = deriveReconciliationRecord(state.reconciliations, draft);
+        const nextState = { ...state, reconciliations: upsertReconciliationRecord(state.reconciliations, created) };
         saveWorkspace(nextState);
         setState(nextState);
         return created;
+      },
+      deleteReconciliation: (id) => {
+        const nextState = { ...state, reconciliations: state.reconciliations.filter((record) => record.id !== id) };
+        saveWorkspace(nextState);
+        setState(nextState);
       },
       resetWorkspace: () => {
         const nextState = createSeedWorkspace();

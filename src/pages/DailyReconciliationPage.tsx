@@ -1,16 +1,26 @@
-import { AlertTriangle, Banknote, Calculator, CalendarClock, CheckCircle2, FileUp, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
+import { AlertTriangle, Banknote, CalendarClock, CheckCircle2, FileUp, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
-import { DataTable, type Column } from "../components/DataTable";
 import { PageLayout } from "../components/PageLayout";
+import { ReconciliationRecordModal } from "../components/ReconciliationRecordModal";
 import { SectionHeader } from "../components/SectionHeader";
 import { useDemoProfile } from "../lib/demoProfile";
 import { captureReconciliationDocument, type ReconciliationExtractResult, type ReconciliationSourceKey } from "../lib/reconciliationCapture";
+import {
+  buildReconciliationSaveConfirmation,
+  createBlankReconciliationDraft,
+  createDraftFromReconciliationRecord,
+  getRecentReconciliationPreview,
+  summarizeReconciliationDraft,
+  sortReconciliationsNewestFirst,
+} from "../lib/reconciliationWorkflow";
 import { usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { PilotReconciliationDraft, PilotReconciliationRecord } from "../types";
 import { formatCurrency, formatDate } from "../utils/format";
+
+const DRAFT_STORAGE_KEY = "flowtally.pilot.reconciliation.draft.v1";
 
 const SOURCE_CARDS: Array<{
   key: ReconciliationSourceKey;
@@ -26,42 +36,58 @@ const SOURCE_CARDS: Array<{
   { key: "cash", label: "Cash close record", helper: "Upload an optional cash count or drawer close.", targetField: "cash" },
 ];
 
-function createBlankReconciliation(): PilotReconciliationDraft {
-  return {
-    date: new Date().toISOString().slice(0, 10),
-    uberEats: 0,
-    doorDash: 0,
-    skip: 0,
-    cash: 0,
-    card: 0,
-    other: 0,
-    expectedPosSales: 0,
-    variance: 0,
-    status: "Balanced",
-    notes: "",
-  };
+function localDateString(date = new Date()) {
+  return date.toLocaleDateString("en-CA");
+}
+
+function isDraftBlank(draft: PilotReconciliationDraft) {
+  return (
+    draft.id === undefined &&
+    draft.date.trim() === localDateString() &&
+    draft.expectedPosSales === 0 &&
+    !draft.expectedPosEntered &&
+    draft.uberEats === 0 &&
+    draft.doorDash === 0 &&
+    draft.skip === 0 &&
+    draft.cash === 0 &&
+    draft.card === 0 &&
+    draft.other === 0 &&
+    draft.refunds === 0 &&
+    draft.discounts === 0 &&
+    draft.tips === 0 &&
+    draft.fees === 0 &&
+    draft.manualAdjustment === 0 &&
+    !draft.otherSourceName.trim() &&
+    !draft.notes.trim() &&
+    !draft.confirmed
+  );
 }
 
 function formatMaybeNumber(value: number | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? formatCurrency(value) : "—";
+  return typeof value === "number" && Number.isFinite(value) ? formatCurrency(value) : "Not entered";
 }
 
 function amountForSource(result: ReconciliationExtractResult | undefined, targetField: string) {
   if (!result) {
     return 0;
   }
+
   if (targetField === "uberEats" || targetField === "doorDash" || targetField === "skip") {
     return result.fields.netSalesOrPayout.value || result.fields.grossSales.value || result.fields.suggestedAmount.value || 0;
   }
+
   if (targetField === "expectedPosSales") {
     return result.fields.posExpectedSales.value || result.fields.suggestedAmount.value || 0;
   }
+
   if (targetField === "card") {
     return result.fields.cardBatchTotal.value || result.fields.suggestedAmount.value || 0;
   }
+
   if (targetField === "cash") {
     return result.fields.cashCount.value || result.fields.suggestedAmount.value || 0;
   }
+
   return result.fields.suggestedAmount.value || 0;
 }
 
@@ -69,66 +95,99 @@ function businessDateForSource(result: ReconciliationExtractResult | undefined) 
   return result?.fields.businessDate.value || "";
 }
 
+function loadPersistedDraft() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const stored = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+  if (!stored) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(stored) as Partial<PilotReconciliationDraft>;
+    const draft = {
+      ...createBlankReconciliationDraft(),
+      ...parsed,
+      expectedPosEntered: Boolean(parsed.expectedPosEntered),
+    } satisfies PilotReconciliationDraft;
+    return isDraftBlank(draft) ? null : draft;
+  } catch {
+    return null;
+  }
+}
+
+function persistDraft(draft: PilotReconciliationDraft) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (isDraftBlank(draft)) {
+    window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+}
+
 export function DailyReconciliationPage() {
   const demo = useDemoProfile();
-  const { saveReconciliation, reconciliations } = usePilotWorkspace();
-  const [draft, setDraft] = useState<PilotReconciliationDraft>(createBlankReconciliation());
+  const { saveReconciliation, deleteReconciliation, reconciliations, summary, resetWorkspace } = usePilotWorkspace();
+  const [draft, setDraft] = useState<PilotReconciliationDraft>(() => loadPersistedDraft() ?? createBlankReconciliationDraft());
   const [imports, setImports] = useState<Partial<Record<ReconciliationSourceKey, ReconciliationExtractResult>>>({});
   const [isImporting, setIsImporting] = useState<ReconciliationSourceKey | null>(null);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const inputRefs = useRef<Partial<Record<ReconciliationSourceKey, HTMLInputElement | null>>>({});
+  const saveLockRef = useRef(false);
 
   useEffect(() => {
-    setDraft(createBlankReconciliation());
+    setDraft(loadPersistedDraft() ?? createBlankReconciliationDraft());
     setImports({});
     setIsImporting(null);
     setMessage("");
     setErrorMessage("");
     setConfirmed(false);
+    setIsSaving(false);
+    setShowAllHistory(false);
+    setSelectedRecordId(null);
     inputRefs.current = {};
   }, [demo.slug]);
 
-  const actualSales = useMemo(
-    () => draft.uberEats + draft.doorDash + draft.skip + draft.cash + draft.card + draft.other,
-    [draft.card, draft.cash, draft.doorDash, draft.other, draft.skip, draft.uberEats],
+  useEffect(() => {
+    persistDraft(draft);
+  }, [draft]);
+
+  const reconciliationSummary = useMemo(() => summarizeReconciliationDraft(draft), [draft]);
+  const recentPreview = useMemo(() => getRecentReconciliationPreview(reconciliations, 5), [reconciliations]);
+  const selectedRecord = useMemo(() => reconciliations.find((record) => record.id === selectedRecordId) ?? null, [reconciliations, selectedRecordId]);
+  const visibleHistory = useMemo(
+    () => (showAllHistory ? sortReconciliationsNewestFirst(reconciliations) : recentPreview.visibleRecords),
+    [recentPreview.visibleRecords, reconciliations, showAllHistory],
   );
 
-  const variance = Number((actualSales - draft.expectedPosSales).toFixed(2));
-  const derivedStatus = Math.abs(variance) < 1 ? "Balanced" : "Needs Review";
+  const updateDraft = (updater: (current: PilotReconciliationDraft) => PilotReconciliationDraft) => {
+    setDraft((current) => {
+      const next = updater(current);
+      return { ...next, confirmed: false };
+    });
+    setConfirmed(false);
+  };
 
-  const recentColumns: Column<PilotReconciliationRecord>[] = [
-    { header: "Date", accessor: (row) => formatDate(row.date) },
-    { header: "Uber Eats", accessor: (row) => formatCurrency(row.uberEats) },
-    { header: "DoorDash", accessor: (row) => formatCurrency(row.doorDash) },
-    { header: "Skip", accessor: (row) => formatCurrency(row.skip) },
-    { header: "Cash", accessor: (row) => formatCurrency(row.cash) },
-    { header: "Card", accessor: (row) => formatCurrency(row.card) },
-    { header: "Other", accessor: (row) => formatCurrency(row.other) },
-    { header: "Expected POS", accessor: (row) => formatCurrency(row.expectedPosSales) },
-    { header: "Variance", accessor: (row) => <Badge tone={Math.abs(row.variance) >= 1 ? "danger" : "success"}>{formatCurrency(row.variance)}</Badge> },
-    { header: "Status", accessor: (row) => <Badge tone={row.status === "Balanced" ? "success" : "warning"}>{row.status}</Badge> },
-    { header: "Notes", accessor: "notes", className: "min-w-72" },
-  ];
-
-  const investigationChecklist = [
-    "missing platform order",
-    "refund or cancellation",
-    "promotion recorded differently",
-    "tips or taxes included inconsistently",
-    "card batch mismatch",
-    "cash count difference",
-    "wrong business date",
-    "gross sales confused with net payout",
-  ];
-
-  const importableTypes = ".csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+  const setField = <K extends keyof PilotReconciliationDraft>(field: K, value: PilotReconciliationDraft[K]) => {
+    updateDraft((current) => ({ ...current, [field]: value }));
+  };
 
   const handleImport = async (source: ReconciliationSourceKey, file: File) => {
     if (!file) {
       return;
     }
+
     setIsImporting(source);
     setErrorMessage("");
     setMessage(`Processing ${file.name} for ${SOURCE_CARDS.find((item) => item.key === source)?.label ?? source}...`);
@@ -160,38 +219,93 @@ export function DailyReconciliationPage() {
     const amount = amountForSource(extracted, sourceCard.targetField);
     const businessDate = businessDateForSource(extracted);
 
-    setDraft((current) => ({
+    updateDraft((current) => ({
       ...current,
       date: businessDate || current.date,
+      expectedPosEntered: sourceCard.targetField === "expectedPosSales" ? true : current.expectedPosEntered,
       [sourceCard.targetField]: amount,
     }));
-    setConfirmed(false);
     setMessage(`Applied extracted values from ${extracted.fileName}.`);
   };
 
-  const setField = <K extends keyof PilotReconciliationDraft>(field: K, value: PilotReconciliationDraft[K]) => {
-    setDraft((current) => ({ ...current, [field]: value }));
-    setConfirmed(false);
+  const handleSave = () => {
+    if (isSaving || saveLockRef.current || !confirmed || reconciliationSummary.status === "Incomplete" || (reconciliationSummary.requiresNote && !draft.notes.trim())) {
+      return;
+    }
+
+    saveLockRef.current = true;
+    setIsSaving(true);
+
+    try {
+      const saved = saveReconciliation({
+        ...draft,
+        confirmed,
+        variance: reconciliationSummary.variance,
+        status: reconciliationSummary.status,
+      });
+      setMessage(buildReconciliationSaveConfirmation(saved));
+      setErrorMessage("");
+      setDraft(createBlankReconciliationDraft());
+      setImports({});
+      setConfirmed(false);
+      setShowAllHistory(false);
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+      }
+    } finally {
+      saveLockRef.current = false;
+      setIsSaving(false);
+    }
   };
 
-  const handleSave = () => {
-    const saved = saveReconciliation({
-      ...draft,
-      variance,
-      status: draft.status || derivedStatus,
-    });
-    setMessage(`Saved the ${formatDate(saved.date)} close with ${formatCurrency(saved.variance)} variance.`);
+  const handleEditRecord = (record: PilotReconciliationRecord) => {
+    setSelectedRecordId(null);
+    setDraft(createDraftFromReconciliationRecord(record));
+    setConfirmed(Boolean(record.confirmed));
+    setImports({});
+    setMessage(`Editing ${formatDate(record.date)} reconciliation.`);
     setErrorMessage("");
-    setDraft(createBlankReconciliation());
+  };
+
+  const handleDeleteRecord = (record: PilotReconciliationRecord) => {
+    deleteReconciliation(record.id);
+    if (selectedRecordId === record.id) {
+      setSelectedRecordId(null);
+    }
+    setMessage(`Deleted ${formatDate(record.date)} reconciliation.`);
+    setErrorMessage("");
+  };
+
+  const handleResetDraft = () => {
+    setDraft(createBlankReconciliationDraft());
+    setMessage("");
+    setErrorMessage("");
+    setIsImporting(null);
+    setIsSaving(false);
     setConfirmed(false);
     setImports({});
+    setSelectedRecordId(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    }
+    if (inputRefs.current) {
+      inputRefs.current = {};
+    }
+  };
+
+  const handleRestoreSamples = () => {
+    if (typeof window !== "undefined" && window.confirm("Restore the sample reconciliation data for this pilot browser?")) {
+      resetWorkspace();
+      handleResetDraft();
+      setMessage("Sample reconciliation data restored.");
+    }
   };
 
   return (
     <PageLayout
       title="Daily reconciliation"
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Upload exported delivery, POS, and card reports, review the extracted totals, then confirm and save the close locally."
+      description="Enter the business date, POS total, and daily payment totals. Import reports where helpful, review the difference, then save the close locally."
     >
       <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
         <Card className="surface-panel p-6">
@@ -206,6 +320,7 @@ export function DailyReconciliationPage() {
               const imported = imports[source.key];
               const isBusy = isImporting === source.key;
               const suggestedAmount = imported ? amountForSource(imported, source.targetField) : 0;
+
               return (
                 <div key={source.key} className="rounded-xl border border-line bg-white p-4 shadow-soft">
                   <div className="flex items-start justify-between gap-4">
@@ -213,13 +328,7 @@ export function DailyReconciliationPage() {
                       <p className="text-sm font-bold text-ink">{source.label}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">{source.helper}</p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      icon={<FileUp className="h-4 w-4" />}
-                      onClick={() => inputRefs.current[source.key]?.click()}
-                      disabled={isBusy}
-                    >
+                    <Button type="button" variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => inputRefs.current[source.key]?.click()} disabled={isBusy}>
                       Upload
                     </Button>
                   </div>
@@ -227,7 +336,7 @@ export function DailyReconciliationPage() {
                     ref={(node) => {
                       inputRefs.current[source.key] = node;
                     }}
-                    accept={importableTypes}
+                    accept=".csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
@@ -253,15 +362,13 @@ export function DailyReconciliationPage() {
                       <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested amount</p>
-                          <Badge tone={imported.needsReview ? "warning" : "success"}>
-                            {Math.round(imported.overallConfidence * 100)}%
-                          </Badge>
+                          <Badge tone={imported.needsReview ? "warning" : "success"}>{Math.round(imported.overallConfidence * 100)}%</Badge>
                         </div>
                         <p className="mt-1 text-lg font-bold text-ink">{formatCurrency(suggestedAmount)}</p>
                         <p className="mt-1 text-xs text-muted">Source: {imported.fields.suggestedAmountType.value}</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        <MiniField label="Business date" value={imported.fields.businessDate.value || "—"} />
+                        <MiniField label="Business date" value={imported.fields.businessDate.value || "Not entered"} />
                         <MiniField label="Orders" value={String(imported.fields.orderCount.value)} />
                         <MiniField label="Gross sales" value={formatMaybeNumber(imported.fields.grossSales.value)} />
                         <MiniField label="Discounts" value={formatMaybeNumber(imported.fields.discounts.value)} />
@@ -278,12 +385,7 @@ export function DailyReconciliationPage() {
                         <Button type="button" onClick={() => applyImport(source.key)} icon={<CheckCircle2 className="h-4 w-4" />}>
                           Apply to close
                         </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          icon={<RefreshCw className="h-4 w-4" />}
-                          onClick={() => setImports((current) => ({ ...current, [source.key]: undefined }))}
-                        >
+                        <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => setImports((current) => ({ ...current, [source.key]: undefined }))}>
                           Clear
                         </Button>
                       </div>
@@ -331,67 +433,83 @@ export function DailyReconciliationPage() {
           ) : null}
 
           <div className="mt-5 grid gap-4 md:grid-cols-4">
-            <Metric label="Calculated sales" value={formatCurrency(actualSales)} helper="Sum of the current manual values" />
-            <Metric label="Expected POS" value={formatCurrency(draft.expectedPosSales)} helper="Manual or imported POS total" />
-            <Metric label="Variance" value={formatCurrency(variance)} helper="Auto-calculated against expected POS" />
-            <Metric label="Suggested status" value={derivedStatus} helper="Balanced or Needs Review from variance" />
+            <Metric label="Status" value={reconciliationSummary.status} helper={reconciliationSummary.explanation} />
+            <Metric label="Expected POS" value={reconciliationSummary.hasExpectedPos ? formatCurrency(draft.expectedPosSales) : "Not entered"} helper={reconciliationSummary.hasExpectedPos ? "Entered manually or imported" : "Required to begin reconciliation"} />
+            <Metric label="Accounted total" value={formatCurrency(reconciliationSummary.accountedTotal)} helper="Cash + card + delivery + adjustments" />
+            <Metric label="Difference" value={formatCurrency(reconciliationSummary.variance)} helper={`Balanced within ${formatCurrency(reconciliationSummary.balancedTolerance)}.`} />
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <Field label="Date">
-              <input value={draft.date} onChange={(event) => setField("date", event.target.value)} className="input" type="date" />
+            <Field label="Business date">
+              <input value={draft.date} onChange={(event) => setField("date", event.target.value)} className="input" type="date" inputMode="numeric" />
             </Field>
-            <Field label="Expected POS sales">
+            <Field label="POS expected sales">
               <input
                 value={draft.expectedPosSales}
-                onChange={(event) => setField("expectedPosSales", Number(event.target.value) || 0)}
+                onChange={(event) => {
+                  updateDraft((current) => ({ ...current, expectedPosSales: Number(event.target.value) || 0, expectedPosEntered: event.target.value.trim().length > 0 }));
+                }}
                 className="input"
                 min="0"
                 step="0.01"
                 type="number"
+                inputMode="decimal"
               />
             </Field>
-            <Field label="Uber Eats">
-              <input value={draft.uberEats} onChange={(event) => setField("uberEats", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" />
-            </Field>
-            <Field label="DoorDash">
-              <input value={draft.doorDash} onChange={(event) => setField("doorDash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" />
-            </Field>
-            <Field label="Skip">
-              <input value={draft.skip} onChange={(event) => setField("skip", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" />
-            </Field>
             <Field label="Cash">
-              <input value={draft.cash} onChange={(event) => setField("cash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" />
+              <input value={draft.cash} onChange={(event) => setField("cash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
             </Field>
             <Field label="Card">
-              <input value={draft.card} onChange={(event) => setField("card", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" />
+              <input value={draft.card} onChange={(event) => setField("card", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
             </Field>
-            <Field label="Other">
-              <input value={draft.other} onChange={(event) => setField("other", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" />
+            <Field label="Uber Eats">
+              <input value={draft.uberEats} onChange={(event) => setField("uberEats", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
             </Field>
-            <Field label="Status">
-              <select value={draft.status} onChange={(event) => setField("status", event.target.value as PilotReconciliationDraft["status"])} className="input">
-                <option value="Balanced">Balanced</option>
-                <option value="Needs Review">Needs Review</option>
-              </select>
+            <Field label="DoorDash">
+              <input value={draft.doorDash} onChange={(event) => setField("doorDash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+            </Field>
+            <Field label="Skip">
+              <input value={draft.skip} onChange={(event) => setField("skip", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+            </Field>
+            <Field label="Other payment amount">
+              <input value={draft.other} onChange={(event) => setField("other", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+            </Field>
+            <Field label="Other payment source">
+              <input value={draft.otherSourceName} onChange={(event) => setField("otherSourceName", event.target.value)} className="input" placeholder="Gift cards, cash drop, etc." type="text" />
             </Field>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-            <Field label="Notes">
-              <textarea
-                value={draft.notes}
-                onChange={(event) => setField("notes", event.target.value)}
-                className="input min-h-32"
-                placeholder="Reason for a variance, missing payout, cash count note, or manager follow-up."
-              />
-            </Field>
-            <div className="rounded-lg bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Auto variance</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{formatCurrency(variance)}</p>
-              <p className="mt-1 text-sm text-muted">Actual sales {formatCurrency(actualSales)}</p>
+          <details className="mt-5 rounded-xl border border-line bg-slate-50 p-4">
+            <summary className="cursor-pointer text-sm font-bold text-ink">Add adjustment</summary>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Use these only when a value legitimately explains the difference. Positive adjustments add to the accounted total. Refunds, discounts, and fees subtract from it.
+            </p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Refunds">
+                <input value={draft.refunds} onChange={(event) => setField("refunds", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+              </Field>
+              <Field label="Discounts">
+                <input value={draft.discounts} onChange={(event) => setField("discounts", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+              </Field>
+              <Field label="Tips">
+                <input value={draft.tips} onChange={(event) => setField("tips", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+              </Field>
+              <Field label="Fees / platform adjustments">
+                <input value={draft.fees} onChange={(event) => setField("fees", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+              </Field>
+              <Field label="Manual adjustment">
+                <input value={draft.manualAdjustment} onChange={(event) => setField("manualAdjustment", Number(event.target.value) || 0)} className="input" step="0.01" type="number" inputMode="decimal" />
+              </Field>
+              <Field label="Notes">
+                <textarea
+                  value={draft.notes}
+                  onChange={(event) => setField("notes", event.target.value)}
+                  className="input min-h-32"
+                  placeholder="Reason for a variance, missing payout, cash count note, or manager follow-up."
+                />
+              </Field>
             </div>
-          </div>
+          </details>
 
           <div className="mt-6 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
             <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
@@ -401,26 +519,22 @@ export function DailyReconciliationPage() {
                 className="mt-1 h-4 w-4 rounded border-line text-brand-600"
                 type="checkbox"
               />
-              <span>
-                I reviewed the imported totals and understand that the reconciliation is only saved after confirmation.
-              </span>
+              <span>I reviewed the imported totals and understand that the reconciliation is only saved after confirmation.</span>
             </label>
+            {reconciliationSummary.requiresNote && !draft.notes.trim() ? (
+              <p className="mt-3 text-sm font-semibold text-amber-800">Add a note before saving this unresolved day.</p>
+            ) : null}
             <div className="mt-4 flex flex-wrap gap-3">
               <Button
                 icon={<Save className="h-4 w-4" />}
                 onClick={handleSave}
                 type="button"
-                disabled={!confirmed}
+                disabled={!confirmed || isSaving || reconciliationSummary.status === "Incomplete" || (reconciliationSummary.requiresNote && !draft.notes.trim())}
               >
-                Confirm and save
+                {isSaving ? "Saving..." : draft.id ? "Update close" : "Confirm and save"}
               </Button>
-              <Button
-                variant="secondary"
-                icon={<Calculator className="h-4 w-4" />}
-                onClick={() => setDraft((current) => ({ ...current, variance }))}
-                type="button"
-              >
-                Refresh variance
+              <Button variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={handleResetDraft} type="button">
+                Clear draft
               </Button>
             </div>
           </div>
@@ -433,32 +547,49 @@ export function DailyReconciliationPage() {
                 <Banknote className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Current close</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  The manual totals below remain editable even after imports. Imports only prefill values and never save automatically.
-                </p>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Live result</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">{reconciliationSummary.explanation}</p>
               </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <SummaryRow label="Business date" value={draft.date || "Not entered"} />
+              <SummaryRow label="Expected POS" value={formatCurrency(draft.expectedPosSales)} />
+              <SummaryRow label="Accounted total" value={formatCurrency(reconciliationSummary.accountedTotal)} />
+              <SummaryRow label="Difference" value={formatCurrency(reconciliationSummary.variance)} />
+              <SummaryRow label="Status" value={reconciliationSummary.status} />
             </div>
           </Card>
 
           <Card className="p-5">
-            <SectionHeader
-              title="Variance checklist"
-              description="Use this as a triage list, not as proof of the actual cause."
-            />
+            <SectionHeader title="Variance breakdown" description="Use this as a triage list, not as proof of the actual cause." />
             <div className="space-y-2">
-              {investigationChecklist.map((item) => (
-                <div
-                  key={item}
-                  className={`rounded-lg border px-3 py-2 text-sm leading-6 ${
-                    item.includes("business date") && !draft.date
-                      ? "border-amber-200 bg-amber-50 text-amber-900"
-                      : "border-line bg-white text-slate-700"
-                  }`}
-                >
+              {reconciliationSummary.breakdown.map((item) => (
+                <div key={item.label} className="flex items-center justify-between gap-4 rounded-lg border border-line bg-white px-3 py-2 text-sm">
+                  <span className="font-medium text-slate-700">{item.label}</span>
+                  <span className={item.value < 0 ? "text-red-700" : "text-ink"}>{formatCurrency(item.value)}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <SectionHeader title="Checklist" description="Practical prompts for unresolved differences." />
+            <div className="space-y-2">
+              {(reconciliationSummary.prompts.length ? reconciliationSummary.prompts : ["Balanced - all sales are accounted for."]).map((item) => (
+                <div key={item} className="rounded-lg border border-line bg-white px-3 py-2 text-sm leading-6 text-slate-700">
                   {item}
                 </div>
               ))}
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <SectionHeader title="Today at a glance" description="Owner-friendly status from the current local records." />
+            <div className="space-y-3 text-sm leading-6 text-slate-700">
+              <SummaryRow label="Today's status" value={summary.todayReconciliationStatus} />
+              <SummaryRow label="Today's variance" value={formatCurrency(summary.todayReconciliationVariance)} />
+              <SummaryRow label="Unresolved days" value={String(summary.unresolvedReconciliationCount)} />
+              <SummaryRow label="7-day unresolved exposure" value={formatCurrency(summary.weeklyUnresolvedVariance)} />
             </div>
           </Card>
 
@@ -468,20 +599,87 @@ export function DailyReconciliationPage() {
                 <CalendarClock className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Manual support still allowed</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Pilot reset</p>
                 <p className="mt-2 text-sm leading-6 text-slate-700">
-                  Uploads are optional. You can still enter all numbers by hand if a report is malformed, rotated, or unavailable.
+                  Restore the sample reconciliation records if you want to return the browser to a clean pilot state without deleting your other invoice data.
                 </p>
               </div>
             </div>
-          </Card>
-
-          <Card className="p-5">
-            <SectionHeader title="Recent reconciliation records" description="The latest daily close entries saved in the local pilot store." />
-            <DataTable columns={recentColumns} data={reconciliations.slice(0, 8)} getRowKey={(row) => row.id} />
+            <Button className="mt-4" type="button" variant="secondary" onClick={handleRestoreSamples}>
+              Restore sample data
+            </Button>
           </Card>
         </div>
       </div>
+
+      <section className="mt-8">
+        <SectionHeader
+          title="Recent reconciliation records"
+          description="The newest business dates are shown first. Open a record to review it or edit it from the saved data."
+          action={recentPreview.hasMore ? (
+            <Button type="button" variant="secondary" onClick={() => setShowAllHistory((current) => !current)}>
+              {showAllHistory ? "Show newest five" : `View all records (${recentPreview.totalCount})`}
+            </Button>
+          ) : null}
+        />
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visibleHistory.map((record) => {
+            const summaryForCard = summarizeReconciliationDraft(record);
+            return (
+              <Card key={record.id} className={`p-4 ${record.origin === "seed" ? "border-dashed border-brand-100" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-bold text-ink">{formatDate(record.date)}</p>
+                      <Badge tone={record.origin === "seed" ? "info" : "success"}>{record.origin === "seed" ? "Sample" : "Saved"}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-muted">{summaryForCard.explanation}</p>
+                  </div>
+                  <Badge tone={record.status === "Balanced" ? "success" : record.status === "Small difference" ? "warning" : "danger"}>{record.status}</Badge>
+                </div>
+
+                <div className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
+                  <SummaryRow label="Expected POS" value={formatCurrency(record.expectedPosSales)} />
+                  <SummaryRow label="Accounted total" value={formatCurrency(summaryForCard.accountedTotal)} />
+                  <SummaryRow label="Variance" value={formatCurrency(record.variance)} />
+                  <SummaryRow label="Last updated" value={record.savedAt ? new Date(record.savedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "Not saved"} />
+                </div>
+
+                <p className="mt-3 text-xs leading-5 text-muted">{record.notes || "No notes saved."}</p>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setSelectedRecordId(record.id)}>
+                    Open
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => handleEditRecord(record)}>
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      if (window.confirm(`Delete the ${formatDate(record.date)} reconciliation? This cannot be undone.`)) {
+                        handleDeleteRecord(record);
+                      }
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <ReconciliationRecordModal
+        open={Boolean(selectedRecord)}
+        record={selectedRecord}
+        onClose={() => setSelectedRecordId(null)}
+        onEdit={handleEditRecord}
+        onDelete={handleDeleteRecord}
+      />
     </PageLayout>
   );
 }
@@ -510,6 +708,15 @@ function MiniField({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-line bg-slate-50 px-3 py-2">
       <p className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-1 text-sm font-semibold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</span>
+      <span className="min-w-0 break-words text-sm text-ink sm:max-w-56 sm:text-right">{value}</span>
     </div>
   );
 }
