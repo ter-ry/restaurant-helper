@@ -7,6 +7,7 @@ import "./styles.css";
 import { DailyReconciliationPage } from "./pages/DailyReconciliationPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InvoiceUploadPage } from "./pages/InvoiceUploadPage";
+import { InventoryPage } from "./pages/InventoryPage";
 import { LandingPage } from "./pages/LandingPage";
 import { PilotPage } from "./pages/PilotPage";
 import { PriceChangesPage } from "./pages/PriceChangesPage";
@@ -88,6 +89,7 @@ const demoChildren = [
   { index: true, element: <DashboardPage /> },
   { path: "daily-reconciliation", element: <DailyReconciliationPage /> },
   { path: "invoices", element: <InvoiceUploadPage /> },
+  { path: "inventory", element: <InventoryPage /> },
   { path: "price-tracker", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "monthly-report", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "settings", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
@@ -98,6 +100,7 @@ const routes = [
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   { path: "/pilot/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "invoices")} replace /> },
   { path: "/pilot/daily-reconciliation", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation")} replace /> },
+  { path: "/pilot/inventory", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "inventory")} replace /> },
   { path: "/pilot/price-changes", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "/demo", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "/app", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
@@ -114,6 +117,7 @@ const routes = [
   },
   { path: "/app/daily-reconciliation", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation")} replace /> },
   { path: "/app/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "invoices")} replace /> },
+  { path: "/app/inventory", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "inventory")} replace /> },
   { path: "/app/upload", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "invoices")} replace /> },
   { path: "/app/price-tracker", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "/app/monthly-report", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },

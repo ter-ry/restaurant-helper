@@ -39,7 +39,7 @@ export function getDraftSummaryDisplay(draft: PilotInvoiceDraft, reviewOpen: boo
   const lineItemReviewCount = draft.lineItems.filter((item) => item.needsReview || item.confidence < confidenceThreshold).length;
   const confidence = hasActiveDraft
     ? `${Math.round(((draft.fieldConfidence.supplier + draft.fieldConfidence.invoiceDate + draft.fieldConfidence.invoiceNumber + draft.fieldConfidence.subtotal + draft.fieldConfidence.tax + draft.fieldConfidence.total) / 6) * 100) || 0}%`
-    : "—";
+    : "-";
   const reviewFlags = hasActiveDraft ? uncertainFieldCount + lineItemReviewCount : 0;
   return { hasActiveDraft, confidence, reviewFlags };
 }

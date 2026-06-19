@@ -111,6 +111,8 @@ export interface ExtractedInvoice {
 
 export type PilotInvoiceStatus = "Ready" | "Needs Review";
 export type PilotReconciliationStatus = "Balanced" | "Small difference" | "Needs Review" | "Incomplete";
+export type InventoryItemStatus = "In stock" | "Low stock" | "Reorder now" | "Out of stock" | "Count needed";
+export type InventoryMovementType = "invoice receipt" | "manual addition" | "usage" | "waste" | "breakage" | "count adjustment" | "correction" | "other";
 
 export interface PilotInvoiceLineItem extends InvoiceLineItem {
   originalDescription: string;
@@ -198,6 +200,99 @@ export interface PilotPriceChangeRecord {
   severity: Severity;
 }
 
+export interface InventoryItem {
+  id: string;
+  name: string;
+  normalizedName: string;
+  category: string;
+  currentQuantity: number;
+  unit: string;
+  minQuantity: number;
+  parLevel: number;
+  preferredSupplier: string;
+  latestPurchasePrice: number;
+  lastReceivedAt: string;
+  lastCountedAt: string;
+  averageDailyUsage?: number;
+  supplierMatchKey: string;
+  itemMatchKey: string;
+  active: boolean;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InventoryMovement {
+  id: string;
+  inventoryItemId: string;
+  inventoryItemName: string;
+  movementType: InventoryMovementType;
+  quantityDelta: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  unit: string;
+  sourceInvoiceId?: string;
+  sourceInvoiceNumber?: string;
+  sourceInvoiceDate?: string;
+  sourceInvoiceLineItemId?: string;
+  sourceInvoiceLineDescription?: string;
+  receiptKey?: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InventoryInvoiceReceipt {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  supplier: string;
+  invoiceLineItemId: string;
+  invoiceLineDescription: string;
+  normalizedDescription: string;
+  inventoryItemId: string;
+  inventoryItemName: string;
+  quantity: number;
+  unit: string;
+  conversionFactor: number;
+  unitPrice: number;
+  lineTotal: number;
+  receiptKey: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PilotInventoryDraftLine {
+  invoiceLineItemId: string;
+  inventoryItemId: string;
+  quantity: number;
+  conversionFactor: number;
+  note: string;
+}
+
+export interface PilotInventoryDraft {
+  id?: string;
+  name: string;
+  category: string;
+  currentQuantity: number;
+  unit: string;
+  minQuantity: number;
+  parLevel: number;
+  preferredSupplier: string;
+  latestPurchasePrice: number;
+  averageDailyUsage?: number;
+  notes: string;
+  active: boolean;
+}
+
+export interface PilotInventoryState {
+  items: InventoryItem[];
+  movements: InventoryMovement[];
+  receipts: InventoryInvoiceReceipt[];
+}
+
 export interface PilotWorkspaceSummary {
   invoiceCount: number;
   invoiceSpend: number;
@@ -214,6 +309,14 @@ export interface PilotWorkspaceSummary {
   todayReconciliationStatus: PilotReconciliationStatus;
   todayReconciliationVariance: number;
   todayReconciliationDate: string;
+  inventoryItemCount: number;
+  inventoryLowStockCount: number;
+  inventoryReorderNowCount: number;
+  inventoryOutOfStockCount: number;
+  inventoryCountNeededCount: number;
+  inventoryMovementCount: number;
+  inventoryReceiptCount: number;
+  inventoryValue: number;
 }
 
 export interface ReportCard {

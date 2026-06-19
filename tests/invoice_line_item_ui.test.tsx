@@ -201,7 +201,13 @@ function testInvoiceHistoryOrderingAndPreview() {
   const sorted = sortInvoicesNewestFirst(invoices);
   assert.equal(sorted[0].id, "newer");
 
-  const preview = getRecentInvoicePreview([...invoices, createInvoiceRecord({ id: "third", invoiceNumber: "THIRD-1", savedAt: "2019-02-11T12:00:00.000Z", createdAt: "2019-02-11T12:00:00.000Z", updatedAt: "2019-02-11T12:00:00.000Z" }), createInvoiceRecord({ id: "fourth", invoiceNumber: "FOURTH-1", savedAt: "2019-02-13T12:00:00.000Z", createdAt: "2019-02-13T12:00:00.000Z", updatedAt: "2019-02-13T12:00:00.000Z" }), createInvoiceRecord({ id: "fifth", invoiceNumber: "FIFTH-1", savedAt: "2019-02-14T12:00:00.000Z", createdAt: "2019-02-14T12:00:00.000Z", updatedAt: "2019-02-14T12:00:00.000Z" }), createInvoiceRecord({ id: "sixth", invoiceNumber: "SIXTH-1", savedAt: "2019-02-15T12:00:00.000Z", createdAt: "2019-02-15T12:00:00.000Z", updatedAt: "2019-02-15T12:00:00.000Z" })]);
+  const preview = getRecentInvoicePreview([
+    ...invoices,
+    createInvoiceRecord({ id: "third", invoiceNumber: "THIRD-1", savedAt: "2019-02-11T12:00:00.000Z", createdAt: "2019-02-11T12:00:00.000Z", updatedAt: "2019-02-11T12:00:00.000Z" }),
+    createInvoiceRecord({ id: "fourth", invoiceNumber: "FOURTH-1", savedAt: "2019-02-13T12:00:00.000Z", createdAt: "2019-02-13T12:00:00.000Z", updatedAt: "2019-02-13T12:00:00.000Z" }),
+    createInvoiceRecord({ id: "fifth", invoiceNumber: "FIFTH-1", savedAt: "2019-02-14T12:00:00.000Z", createdAt: "2019-02-14T12:00:00.000Z", updatedAt: "2019-02-14T12:00:00.000Z" }),
+    createInvoiceRecord({ id: "sixth", invoiceNumber: "SIXTH-1", savedAt: "2019-02-15T12:00:00.000Z", createdAt: "2019-02-15T12:00:00.000Z", updatedAt: "2019-02-15T12:00:00.000Z" }),
+  ]);
   assert.equal(preview.visibleInvoices.length, 5);
   assert.equal(preview.visibleInvoices[0].id, "sixth");
   assert.equal(preview.hasMore, true);
@@ -243,7 +249,7 @@ function testDraftResetAndSaveMessaging() {
     savedAt: undefined,
   };
   const blankMetrics = getDraftSummaryDisplay(blankDraft, false);
-  assert.equal(blankMetrics.confidence, "—");
+  assert.equal(blankMetrics.confidence, "-");
   assert.equal(blankMetrics.reviewFlags, 0);
 
   const savedMessage = buildInvoiceSaveConfirmation({ supplier: "East Repair Inc.", invoiceNumber: "US-001" });
@@ -271,6 +277,8 @@ function testReopenModalPreservesValues() {
   assert.ok(html.includes("Labor 3hrs"));
   assert.ok(html.includes("US-001"));
   assert.ok(html.includes("Original description"));
+  assert.ok(html.includes("sm:hidden"));
+  assert.ok(html.includes("Line item 1"));
 }
 
 testLineItemCardSimplification();

@@ -6,6 +6,7 @@ const links = [
   { path: buildDemoPath(defaultDemoProfileSlug), label: "Summary", end: true },
   { path: buildDemoPath(defaultDemoProfileSlug, "invoices"), label: "Invoices" },
   { path: buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation"), label: "Reconciliation" },
+  { path: buildDemoPath(defaultDemoProfileSlug, "inventory"), label: "Inventory" },
 ] as const;
 
 export function MobileNav() {
@@ -36,4 +37,3 @@ export function MobileNav() {
     </div>
   );
 }
-

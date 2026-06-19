@@ -65,7 +65,7 @@ export function PilotInvoiceDetailsModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
-      <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+      <div className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Saved invoice</p>
@@ -116,7 +116,30 @@ export function PilotInvoiceDetailsModal({
                 <h3 className="text-lg font-bold text-ink">Line items</h3>
                 <p className="mt-1 text-sm text-muted">The saved descriptions and values below reflect the stored record, not a fresh OCR pass.</p>
               </div>
-              <DataTable columns={lineItemColumns} data={invoice.lineItems} getRowKey={(row) => row.id} />
+              <div className="space-y-3 sm:hidden">
+                {invoice.lineItems.map((item, index) => (
+                  <div key={item.id} className="rounded-xl border border-line bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-ink">Line item {index + 1}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted">{item.itemName}</p>
+                      </div>
+                      <Badge tone={item.needsReview ? "warning" : "success"}>{formatPercent(item.confidence * 100)}</Badge>
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                      <SummaryRow label="Original description" value={item.originalDescription || "Not saved"} />
+                      <SummaryRow label="Qty" value={String(item.quantity)} />
+                      <SummaryRow label="Unit" value={item.unit} />
+                      <SummaryRow label="Unit price" value={formatCurrency(item.unitPrice)} />
+                      <SummaryRow label="Line total" value={formatCurrency(item.lineTotal)} />
+                      <SummaryRow label="Status" value={item.status} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden sm:block">
+                <DataTable columns={lineItemColumns} data={invoice.lineItems} getRowKey={(row) => row.id} />
+              </div>
             </Card>
 
             <Card className="p-5">
@@ -127,8 +150,8 @@ export function PilotInvoiceDetailsModal({
                   <SummaryRow label="Notes" value={invoice.notes || "None"} />
                 </div>
                 <div className="space-y-3">
-                  <SummaryRow label="Raw OCR text" value={invoice.extractedText ? `${invoice.extractedText.slice(0, 120)}${invoice.extractedText.length > 120 ? "…" : ""}` : "Not stored"} />
-                  <SummaryRow label="Warnings" value={invoice.extractionWarnings.length ? invoice.extractionWarnings.join(" · ") : "None"} />
+                  <SummaryRow label="Raw OCR text" value={invoice.extractedText ? `${invoice.extractedText.slice(0, 120)}${invoice.extractedText.length > 120 ? "..." : ""}` : "Not stored"} />
+                  <SummaryRow label="Warnings" value={invoice.extractionWarnings.length ? invoice.extractionWarnings.join(" | ") : "None"} />
                   <SummaryRow label="Source preservation" value="Original descriptions and raw OCR lines are stored separately." />
                 </div>
               </div>

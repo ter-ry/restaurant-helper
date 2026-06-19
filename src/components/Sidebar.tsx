@@ -1,4 +1,4 @@
-import { CalendarClock, Gauge, FileText } from "lucide-react";
+import { CalendarClock, Gauge, FileText, Package } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { FlowtallyMark } from "./FlowtallyMark";
 import { buildDemoPath, defaultDemoProfileSlug, useDemoProfile } from "../lib/demoProfile";
@@ -7,6 +7,7 @@ const navItems = [
   { path: buildDemoPath(defaultDemoProfileSlug), label: "Owner Summary", icon: Gauge, end: true },
   { path: buildDemoPath(defaultDemoProfileSlug, "invoices"), label: "Invoices", icon: FileText },
   { path: buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation"), label: "Daily Reconciliation", icon: CalendarClock },
+  { path: buildDemoPath(defaultDemoProfileSlug, "inventory"), label: "Inventory", icon: Package },
 ] as const;
 
 export function Sidebar() {
@@ -48,4 +49,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

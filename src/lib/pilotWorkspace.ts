@@ -1,6 +1,22 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { defaultDemoProfileSlug, getDemoProfileView } from "./demoProfile";
 import {
+  archiveInventoryItem,
+  buildInventorySummary,
+  createInventoryDraft,
+  createSeedInventoryState,
+  deleteInventoryItem,
+  deriveInventoryReceiptKey,
+  findInventoryItemSuggestions,
+  getInventoryStatusLabel,
+  normalizeStoredInventoryState,
+  sortInventoryItems,
+  sortInventoryMovementsNewestFirst,
+  sortInventoryReceiptsNewestFirst,
+  summarizeInventoryReceiptLines,
+  upsertInventoryItem,
+} from "./inventoryWorkspace";
+import {
   deriveReconciliationRecord,
   normalizeStoredReconciliationRecord,
   sortReconciliationsNewestFirst,
@@ -8,6 +24,12 @@ import {
 } from "./reconciliationWorkflow";
 import type {
   InvoiceLineItem,
+  InventoryInvoiceReceipt,
+  InventoryItem,
+  InventoryMovement,
+  PilotInventoryDraft,
+  PilotInventoryDraftLine,
+  PilotInventoryState,
   PilotInvoiceDraft,
   PilotInvoiceLineItem,
   PilotInvoiceRecord,
@@ -26,6 +48,7 @@ const PRICE_CHANGE_EPSILON = 0.01;
 interface PilotWorkspaceState {
   invoices: PilotInvoiceRecord[];
   reconciliations: PilotReconciliationRecord[];
+  inventory: PilotInventoryState;
 }
 
 interface PilotWorkspaceContextValue extends PilotWorkspaceState {
@@ -34,8 +57,18 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   recentInvoices: PilotInvoiceRecord[];
   reviewQueue: PilotInvoiceRecord[];
   unresolvedReconciliations: PilotReconciliationRecord[];
+  inventoryItems: InventoryItem[];
+  inventoryMovements: InventoryMovement[];
+  inventoryReceipts: InventoryInvoiceReceipt[];
+  inventorySummary: ReturnType<typeof buildInventorySummary>;
   saveInvoice: (draft: PilotInvoiceDraft) => PilotInvoiceRecord;
   saveReconciliation: (draft: PilotReconciliationDraft) => PilotReconciliationRecord;
+  saveInventoryItem: (draft: PilotInventoryDraft) => InventoryItem;
+  archiveInventoryItem: (id: string) => void;
+  deleteInventoryItem: (id: string) => void;
+  recordInventoryReceipt: (invoiceId: string, lines: PilotInventoryDraftLine[]) => { recorded: number; skipped: number };
+  recordInventoryMovement: (itemId: string, movementType: "manual addition" | "usage" | "waste" | "breakage" | "correction" | "other", quantityDelta: number, note?: string) => InventoryMovement | null;
+  recordInventoryCount: (itemId: string, quantity: number, note?: string) => InventoryMovement | null;
   deleteReconciliation: (id: string) => void;
   resetWorkspace: () => void;
 }
@@ -250,6 +283,7 @@ function createSeedWorkspace(): PilotWorkspaceState {
   return {
     invoices: createSeedInvoices(),
     reconciliations: createSeedReconciliations(),
+    inventory: createSeedInventoryState(),
   };
 }
 
@@ -266,6 +300,7 @@ export function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorks
   return {
     invoices: state.invoices.map(normalizeStoredInvoiceRecord),
     reconciliations: state.reconciliations.map(normalizeStoredReconciliationRecord),
+    inventory: normalizeStoredInventoryState(state.inventory),
   };
 }
 
@@ -439,7 +474,7 @@ function buildPriceChanges(invoices: PilotInvoiceRecord[]): PilotPriceChangeReco
   });
 }
 
-function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReconciliationRecord[]): PilotWorkspaceSummary {
+function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReconciliationRecord[], inventory: PilotInventoryState): PilotWorkspaceSummary {
   const priceChanges = buildPriceChanges(invoices);
   const now = new Date();
   const weekAgo = new Date(now);
@@ -515,6 +550,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
     todayReconciliationStatus: reconciliationStats.todayStatus,
     todayReconciliationVariance: Number(reconciliationStats.todayVariance.toFixed(2)),
     todayReconciliationDate: today,
+    ...buildInventorySummary(inventory),
   };
 }
 
@@ -623,14 +659,25 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
     const recentInvoices = sortInvoicesNewestFirst(state.invoices);
     const reviewQueue = recentInvoices.filter((invoice) => invoice.status === "Needs Review");
     const unresolvedReconciliations = sortReconciliationsNewestFirst(state.reconciliations).filter((record) => record.status !== "Balanced");
+    const inventoryItems = sortInventoryItems(state.inventory.items);
+    const inventoryMovements = sortInventoryMovementsNewestFirst(state.inventory.movements);
+    const inventoryReceipts = sortInventoryReceiptsNewestFirst(state.inventory.receipts);
+    const inventorySummary = buildInventorySummary(state.inventory);
 
     return {
       ...state,
       priceChanges,
-      summary: buildSummary(state.invoices, state.reconciliations),
+      summary: {
+        ...buildSummary(state.invoices, state.reconciliations, state.inventory),
+        ...inventorySummary,
+      },
       recentInvoices,
       reviewQueue,
       unresolvedReconciliations,
+      inventoryItems,
+      inventoryMovements,
+      inventoryReceipts,
+      inventorySummary,
       saveInvoice: (draft) => {
         const created = deriveInvoiceState(state.invoices, draft);
         const nextInvoices = upsertInvoiceRecord(state.invoices, created);
@@ -645,6 +692,231 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         saveWorkspace(nextState);
         setState(nextState);
         return created;
+      },
+      saveInventoryItem: (draft) => {
+        const { item, items } = upsertInventoryItem(state.inventory.items, draft);
+        const nextInventory = {
+          ...state.inventory,
+          items,
+        };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+        return item;
+      },
+      archiveInventoryItem: (id) => {
+        const nextInventory = { ...state.inventory, items: archiveInventoryItem(state.inventory.items, id) };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
+      deleteInventoryItem: (id) => {
+        const nextInventory = { ...state.inventory, items: deleteInventoryItem(state.inventory.items, id) };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
+      recordInventoryReceipt: (invoiceId, lines) => {
+        const invoice = state.invoices.find((record) => record.id === invoiceId);
+        if (!invoice) {
+          return { recorded: 0, skipped: lines.length };
+        }
+
+        const now = new Date().toISOString();
+        let items = [...state.inventory.items];
+        const movements = [...state.inventory.movements];
+        const receipts = [...state.inventory.receipts];
+        let recorded = 0;
+        let skipped = 0;
+
+        for (const line of lines) {
+          const item = items.find((candidate) => candidate.id === line.inventoryItemId);
+          if (!item) {
+            skipped += 1;
+            continue;
+          }
+
+          const sourceLine = invoice.lineItems.find((entry) => entry.id === line.invoiceLineItemId);
+          if (!sourceLine) {
+            skipped += 1;
+            continue;
+          }
+
+          const multiplier = Number(line.conversionFactor) || 1;
+          const receiptKey = deriveInventoryReceiptKey(invoice, sourceLine, item.id, multiplier);
+          if (receipts.some((receipt) => receipt.receiptKey === receiptKey)) {
+            skipped += 1;
+            continue;
+          }
+
+          const sourceDescription = sourceLine?.originalDescription || sourceLine?.itemName || "";
+          const delta = Number((Number(line.quantity) * multiplier).toFixed(2));
+          const quantityBefore = item.currentQuantity;
+          const quantityAfter = Number((quantityBefore + delta).toFixed(2));
+          const receipt: InventoryInvoiceReceipt = {
+            id: `inventory-receipt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            invoiceDate: invoice.invoiceDate,
+            supplier: invoice.supplier,
+            invoiceLineItemId: line.invoiceLineItemId,
+            invoiceLineDescription: sourceDescription,
+            normalizedDescription: sourceLine?.comparisonKey || normalizeComparisonKey(sourceDescription || sourceLine?.itemName || ""),
+            inventoryItemId: item.id,
+            inventoryItemName: item.name,
+            quantity: Number(line.quantity),
+            unit: item.unit,
+            conversionFactor: multiplier,
+            unitPrice: sourceLine?.unitPrice ?? item.latestPurchasePrice,
+            lineTotal: sourceLine?.lineTotal ?? Number((delta * (sourceLine?.unitPrice ?? item.latestPurchasePrice)).toFixed(2)),
+            receiptKey,
+            note: line.note?.trim() || "",
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          const movement: InventoryMovement = {
+            id: `inventory-movement-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+            inventoryItemId: item.id,
+            inventoryItemName: item.name,
+            movementType: "invoice receipt",
+            quantityDelta: delta,
+            quantityBefore,
+            quantityAfter,
+            unit: item.unit,
+            sourceInvoiceId: invoice.id,
+            sourceInvoiceNumber: invoice.invoiceNumber,
+            sourceInvoiceDate: invoice.invoiceDate,
+            sourceInvoiceLineItemId: line.invoiceLineItemId,
+            sourceInvoiceLineDescription: sourceDescription,
+            receiptKey,
+            note: line.note?.trim() || `Received from invoice ${invoice.invoiceNumber}`,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          items = items.map((candidate) =>
+            candidate.id === item.id
+              ? {
+                  ...candidate,
+                  currentQuantity: quantityAfter,
+                  latestPurchasePrice: sourceLine?.unitPrice ? Number(sourceLine.unitPrice.toFixed(2)) : candidate.latestPurchasePrice,
+                  preferredSupplier: invoice.supplier || candidate.preferredSupplier,
+                  lastReceivedAt: invoice.invoiceDate || candidate.lastReceivedAt,
+                  updatedAt: now,
+                }
+              : candidate,
+          );
+
+          receipts.push(receipt);
+          movements.push(movement);
+          recorded += 1;
+        }
+
+        const nextState = {
+          ...state,
+          inventory: {
+            items,
+            movements,
+            receipts,
+          },
+        };
+        saveWorkspace(nextState);
+        setState(nextState);
+        return { recorded, skipped };
+      },
+      recordInventoryMovement: (itemId, movementType, quantityDelta, note = "") => {
+        const item = state.inventory.items.find((candidate) => candidate.id === itemId);
+        if (!item) {
+          return null;
+        }
+
+        const now = new Date().toISOString();
+        const normalizedDelta =
+          movementType === "usage" || movementType === "waste" || movementType === "breakage"
+            ? -Math.abs(Number(quantityDelta) || 0)
+            : movementType === "manual addition"
+              ? Math.abs(Number(quantityDelta) || 0)
+              : Number(quantityDelta) || 0;
+        const quantityAfter = Number((item.currentQuantity + normalizedDelta).toFixed(2));
+        const movement: InventoryMovement = {
+          id: `inventory-movement-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          inventoryItemId: item.id,
+          inventoryItemName: item.name,
+          movementType,
+          quantityDelta: Number(normalizedDelta.toFixed(2)),
+          quantityBefore: item.currentQuantity,
+          quantityAfter,
+          unit: item.unit,
+          note: note.trim() || movementType,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const nextState = {
+          ...state,
+          inventory: {
+            ...state.inventory,
+            items: state.inventory.items.map((candidate) =>
+              candidate.id === item.id
+                ? {
+                    ...candidate,
+                    currentQuantity: quantityAfter,
+                    updatedAt: now,
+                    lastCountedAt: movementType === "correction" || movementType === "manual addition" ? candidate.lastCountedAt : candidate.lastCountedAt,
+                  }
+                : candidate,
+            ),
+            movements: [movement, ...state.inventory.movements],
+            receipts: state.inventory.receipts,
+          },
+        };
+        saveWorkspace(nextState);
+        setState(nextState);
+        return movement;
+      },
+      recordInventoryCount: (itemId, quantity, note = "") => {
+        const item = state.inventory.items.find((candidate) => candidate.id === itemId);
+        if (!item) {
+          return null;
+        }
+
+        const now = new Date().toISOString();
+        const countedQuantity = Number(quantity.toFixed(2));
+        const movement: InventoryMovement = {
+          id: `inventory-count-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          inventoryItemId: item.id,
+          inventoryItemName: item.name,
+          movementType: "count adjustment",
+          quantityDelta: Number((countedQuantity - item.currentQuantity).toFixed(2)),
+          quantityBefore: item.currentQuantity,
+          quantityAfter: countedQuantity,
+          unit: item.unit,
+          note: note.trim() || "Manual count entry",
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const nextState = {
+          ...state,
+          inventory: {
+            items: state.inventory.items.map((candidate) =>
+              candidate.id === item.id
+                ? {
+                    ...candidate,
+                    currentQuantity: countedQuantity,
+                    lastCountedAt: now.slice(0, 10),
+                    updatedAt: now,
+                  }
+                : candidate,
+            ),
+            movements: [movement, ...state.inventory.movements],
+            receipts: state.inventory.receipts,
+          },
+        };
+        saveWorkspace(nextState);
+        setState(nextState);
+        return movement;
       },
       deleteReconciliation: (id) => {
         const nextState = { ...state, reconciliations: state.reconciliations.filter((record) => record.id !== id) };

@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, FileText, TrendingUp } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileText, Gauge, TrendingUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -122,6 +122,44 @@ export function DashboardPage() {
           </Link>
         </Card>
       </div>
+
+      <section className="mt-8">
+        <SectionHeader
+          title="Inventory watch"
+          description="A first-pass stock view built from saved invoices, manual counts, and conservative local movement records."
+          action={
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(defaultDemoProfileSlug, "inventory")}>
+              Open inventory
+            </Link>
+          }
+        />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Inventory items"
+            value={String(summary.inventoryItemCount)}
+            helper={`${summary.inventoryReceiptCount} invoice receipts stored locally`}
+            icon={<FileText className="h-5 w-5" />}
+          />
+          <StatCard
+            label="Low stock"
+            value={String(summary.inventoryLowStockCount)}
+            helper={`${summary.inventoryReorderNowCount} need reorder now`}
+            icon={<AlertTriangle className="h-5 w-5" />}
+          />
+          <StatCard
+            label="Count needed"
+            value={String(summary.inventoryCountNeededCount)}
+            helper={`${summary.inventoryOutOfStockCount} out of stock`}
+            icon={<Gauge className="h-5 w-5" />}
+          />
+          <StatCard
+            label="Inventory value"
+            value={formatCurrency(summary.inventoryValue)}
+            helper={`${summary.inventoryMovementCount} total movements recorded`}
+            icon={<TrendingUp className="h-5 w-5" />}
+          />
+        </div>
+      </section>
 
       <section className="mt-8">
         <SectionHeader
