@@ -27,6 +27,7 @@ import {
   createCountSessionDraft,
   describeCountSessionProgress,
   groupReorderSuggestionsBySupplier,
+  largeAdjustmentSignal,
   normalizeCountSession,
   setCountSessionMetadata,
   updateCountSessionLine,
@@ -45,6 +46,7 @@ type ActivePanel =
   | { kind: "adjust" }
   | { kind: "count" }
   | { kind: "count-session"; sessionId?: string | null }
+  | { kind: "reorder" }
   | { kind: "history"; itemId: string };
 
 type ReceiveLineState = {
@@ -158,6 +160,7 @@ export function InventoryPage() {
     confirmInventoryCountSession,
     cancelInventoryCountSession,
     upsertInventoryReorderIntent,
+    resetWorkspace,
     recentInvoices,
     saveInventoryItem,
     archiveInventoryItem,
@@ -241,6 +244,22 @@ export function InventoryPage() {
     () => inventoryCountSessions.filter((session) => session.status === "Draft" || session.status === "Ready to review").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [inventoryCountSessions],
   );
+  const latestCompletedCountSession = useMemo(
+    () =>
+      [...inventoryCountSessions]
+        .filter((session) => session.status === "Completed")
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null,
+    [inventoryCountSessions],
+  );
+  const latestOrderedReorderIntent = useMemo(
+    () =>
+      [...inventoryReorderIntents]
+        .filter((intent) => intent.status === "Ordered")
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null,
+    [inventoryReorderIntents],
+  );
+  const latestLargeAdjustmentMovement = useMemo(() => inventoryMovements.find((movement) => largeAdjustmentSignal(movement)) ?? null, [inventoryMovements]);
+  const latestReceiptMovement = useMemo(() => inventoryMovements.find((movement) => movement.movementType === "invoice receipt") ?? null, [inventoryMovements]);
 
   useEffect(() => {
     if (activePanel?.kind !== "receive") {
@@ -293,6 +312,19 @@ export function InventoryPage() {
     setMessage("");
     setSelectedCountSessionId(draftCountSessions[0]?.id ?? null);
     setActivePanel({ kind: "count-session", sessionId: draftCountSessions[0]?.id ?? null });
+  };
+
+  const openCountOverviewPanel = () => {
+    setErrorMessage("");
+    setMessage("");
+    setSelectedCountSessionId(null);
+    setActivePanel({ kind: "count-session", sessionId: null });
+  };
+
+  const openReorderPanel = () => {
+    setErrorMessage("");
+    setMessage("");
+    setActivePanel({ kind: "reorder" });
   };
 
   const startCountSession = () => {
@@ -597,11 +629,55 @@ export function InventoryPage() {
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
       description="A first-pass inventory foundation built from saved invoices, manual counts, and a conservative movement ledger."
     >
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Inventory items" value={String(summary.inventoryItemCount)} helper={`${summary.inventoryValue ? formatCurrency(summary.inventoryValue) : "No stock value yet"}`} />
-        <StatCard label="Low stock" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryReorderNowCount} require a reorder now`} />
-        <StatCard label="Count needed" value={String(summary.inventoryCountNeededCount)} helper={`${summary.inventoryOutOfStockCount} out of stock`} />
-        <StatCard label="Receipts saved" value={String(summary.inventoryReceiptCount)} helper={`${summary.inventoryMovementCount} total movements recorded`} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <CompactStatCard label="Tracked" value={String(summary.inventoryItemCount)} helper={summary.inventoryValue ? formatCurrency(summary.inventoryValue) : "No stock value"} />
+        <CompactStatCard label="Low stock" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryReorderNowCount} reorder now`} />
+        <CompactStatCard label="Out of stock" value={String(summary.inventoryOutOfStockCount)} helper={`${summary.inventoryCountNeededCount} need count`} />
+        <CompactStatCard label="Receipts" value={String(summary.inventoryReceiptCount)} helper={`${summary.inventoryMovementCount} movements`} />
+        <CompactStatCard label="Reorder now" value={String(summary.inventoryReorderNowCount)} helper={summary.inventoryEstimatedReorderCost ? `Cost ${formatCurrency(summary.inventoryEstimatedReorderCost)}` : "No order value"} />
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <Card className="p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Count status</p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {draftCountSessions.length ? `Draft count: ${describeCountSessionProgress(draftCountSessions[0])}` : "No draft stock count"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            {latestCompletedCountSession ? `Last completed count ${formatDate(latestCompletedCountSession.updatedAt.slice(0, 10))}` : "No completed count yet"}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={startCountSession}>
+              Start stock count
+            </Button>
+            {draftCountSessions[0] ? (
+              <Button type="button" variant="ghost" onClick={() => openExistingCountSession(draftCountSessions[0].id)}>
+                Resume draft count
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" onClick={openCountOverviewPanel}>
+              View count history
+            </Button>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Reorder status</p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {summary.inventoryItemsToReorderCount ? `${summary.inventoryItemsToReorderCount} items need ordering` : "No reorder action needed"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            {summary.inventoryEstimatedReorderCost ? `Estimated reorder cost ${formatCurrency(summary.inventoryEstimatedReorderCost)}` : "No cost estimate available"}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={openReorderPanel}>
+              View reorder list
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => openItemPanel("create")}>
+              New item
+            </Button>
+          </div>
+        </Card>
       </div>
 
       {message ? (
@@ -618,187 +694,18 @@ export function InventoryPage() {
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-2">
-        <Card className="p-5">
-          <SectionHeader
-            title="Stock count sessions"
-            description="Start a draft count for all active items, a category, a supplier, or just items needing a count."
-            action={
-              <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={startCountSession}>
-                Start stock count
-              </Button>
-            }
-          />
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="block min-w-0">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted">Count scope</span>
-              <select className="input mt-2" value={countSessionFilterKind} onChange={(event) => setCountSessionFilterKind(event.target.value as InventoryCountSessionFilterKind)}>
-                <option value="all-active">All active items</option>
-                <option value="category">One category</option>
-                <option value="supplier">One supplier</option>
-                <option value="needs-count">Items needing a count</option>
-              </select>
-            </label>
-            <label className="block min-w-0">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted">Filter value</span>
-              <input className="input mt-2" value={countSessionFilterValue} onChange={(event) => setCountSessionFilterValue(event.target.value)} placeholder="Category or supplier" />
-            </label>
-            <label className="block min-w-0">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted">Counted by</span>
-              <input className="input mt-2" value={countSessionCountedBy} onChange={(event) => setCountSessionCountedBy(event.target.value)} placeholder="Optional name" />
-            </label>
-            <label className="block min-w-0">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted">Notes</span>
-              <input className="input mt-2" value={countSessionNotes} onChange={(event) => setCountSessionNotes(event.target.value)} placeholder="Optional session notes" />
-            </label>
-          </div>
-          <div className="mt-4 space-y-3">
-            {draftCountSessions.length ? (
-              draftCountSessions.map((session) => {
-                const progress = countSessionProgress(session);
-                return (
-                  <div key={session.id} className="rounded-xl border border-line bg-slate-50 p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-sm font-bold text-ink">{session.countedBy || "Stock count draft"}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted">
-                          {describeCountSessionProgress(session)} | {session.status}
-                        </p>
-                      </div>
-                      <Badge tone={session.status === "Completed" ? "success" : session.status === "Cancelled" ? "warning" : "info"}>{session.status}</Badge>
-                    </div>
-                    <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                      <MiniStat label="Selected items" value={String(session.itemCount)} />
-                      <MiniStat label="Progress" value={`${progress.percent}%`} />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button type="button" variant="secondary" onClick={() => openExistingCountSession(session.id)}>
-                        {session.status === "Completed" ? "Review" : "Resume"}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-sm leading-6 text-muted">No draft count sessions yet.</p>
-            )}
-          </div>
-          <div className="mt-5 rounded-xl border border-line bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Completed history</p>
-            <div className="mt-3 space-y-3">
-              {inventoryCountSessions.filter((session) => session.status === "Completed" || session.status === "Cancelled").slice(0, 4).map((session) => (
-                <div key={session.id} className="rounded-lg border border-line bg-white p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-ink">{session.countedBy || "Count session"}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {session.status} | {describeCountSessionProgress(session)}
-                      </p>
-                    </div>
-                    <Button type="button" variant="secondary" onClick={() => openExistingCountSession(session.id)}>
-                      Review
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <SectionHeader
-            title="Practical reorder list"
-            description="Items needing action, grouped by supplier, with conservative suggested quantities."
-            action={
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => beginReorderExport("copy")}>
-                  Copy order list
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => beginReorderExport("csv")}>
-                  Export CSV
-                </Button>
-              </div>
-            }
-          />
-          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
-            <div className="rounded-lg border border-line bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-700">
-              Suggested quantity uses PAR first, then minimum when PAR is absent. Cost is only shown when the purchase basis is known.
-            </div>
-            <label className="block min-w-0">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted">Supplier filter</span>
-              <select className="input mt-2" value={reorderSupplierFilter} onChange={(event) => setReorderSupplierFilter(event.target.value)}>
-                {reorderSupplierOptions.map((supplier) => (
-                  <option key={supplier} value={supplier}>
-                    {supplier}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="mt-4 space-y-4">
-            {reorderGroups.length ? (
-              reorderGroups.map((group) => (
-                <div key={group.supplier} className="rounded-xl border border-line bg-white p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-ink">{group.supplier}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {group.itemCount} item{group.itemCount === 1 ? "" : "s"} | Estimated order total {group.estimatedOrderTotal ? formatCurrency(group.estimatedOrderTotal) : "Unavailable"}
-                      </p>
-                    </div>
-                    <Badge tone="info">Needs action</Badge>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {group.lines.map((line) => (
-                      <div key={line.id} className="rounded-lg border border-line bg-slate-50 p-3">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-ink">{line.itemName}</p>
-                            <p className="mt-1 text-xs leading-5 text-muted">
-                              {line.stockStatus} | {line.currentQuantity} {line.unit} on hand | PAR {line.parLevel} | Min {line.minimumQuantity}
-                            </p>
-                          </div>
-                          <Badge tone={line.status === "Ordered" ? "success" : "warning"}>{line.status}</Badge>
-                        </div>
-                        <div className="mt-3 grid gap-3 md:grid-cols-3">
-                          <MiniStat label="Suggested qty" value={`${line.suggestedQuantity} ${line.unit}`} />
-                          <MiniStat label="Days remaining" value={line.estimatedDaysRemaining ? `About ${Math.max(0, Math.round(line.estimatedDaysRemaining))} days` : "Usage not configured"} />
-                          <MiniStat label="Estimated cost" value={line.estimatedCost === null ? "Cost unavailable" : formatCurrency(line.estimatedCost)} />
-                        </div>
-                        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.45fr)]">
-                          <label className="block min-w-0">
-                            <span className="text-xs font-bold uppercase tracking-wide text-muted">Order quantity</span>
-                            <input
-                              className="input mt-2"
-                              type="number"
-                              step="0.01"
-                              value={reorderQuantities[line.itemId] ?? line.adjustedQuantity}
-                              onChange={(event) => setReorderQuantities((current) => ({ ...current, [line.itemId]: Number(event.target.value) || 0 }))}
-                            />
-                          </label>
-                          <div className="flex flex-wrap gap-2 self-end">
-                            <Button type="button" variant="secondary" onClick={() => handleMarkReorderOrdered(line.itemId)}>
-                              Mark as ordered
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm leading-6 text-muted">No reorder action is needed right now.</p>
-            )}
-          </div>
-        </Card>
-      </div>
-
-      <Card className="mt-8 p-5">
+      <div className="mt-5">
         <SectionHeader
           title="Inventory list"
           description="Search, filter, and open an item to edit its stock level, supplier preference, or notes."
-          action={<Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(demoSlug, "invoices")}>Review invoices</Link>}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(demoSlug, "invoices")}>Review invoices</Link>
+              <Button type="button" variant="ghost" onClick={() => setShowArchived((current) => !current)}>
+                {showArchived ? "Hide archived" : "Show archived"}
+              </Button>
+            </div>
+          }
         />
         <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
           <label className="block min-w-0">
@@ -832,8 +739,8 @@ export function InventoryPage() {
           <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
             Physical count
           </Button>
-          <Button type="button" variant="ghost" onClick={() => setShowArchived((current) => !current)}>
-            {showArchived ? "Hide archived" : "Show archived"}
+          <Button type="button" variant="secondary" onClick={openReorderPanel}>
+            View reorder list
           </Button>
           <Badge tone="info">{statusCounts.visible} visible</Badge>
         </div>
@@ -865,6 +772,37 @@ export function InventoryPage() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <Card className="mt-8 p-4">
+        <SectionHeader title="Recent activity" description="A quick read on the most recent count, receipt, adjustment, and ordering action." />
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <CompactInfoCard label="Latest count" value={latestCompletedCountSession ? formatDate(latestCompletedCountSession.updatedAt.slice(0, 10)) : "No completed count"} detail={latestCompletedCountSession ? describeCountSessionProgress(latestCompletedCountSession) : "Start a count to track stock checks"} />
+          <CompactInfoCard label="Latest receipt" value={latestReceiptMovement ? formatDate(latestReceiptMovement.createdAt.slice(0, 10)) : "No receipt yet"} detail={latestReceiptMovement ? latestReceiptMovement.sourceInvoiceNumber || latestReceiptMovement.note || "Invoice receipt" : "Receive an invoice to add stock"} />
+          <CompactInfoCard label="Latest adjustment" value={latestLargeAdjustmentMovement ? formatDate(latestLargeAdjustmentMovement.createdAt.slice(0, 10)) : "No large adjustment"} detail={latestLargeAdjustmentMovement ? `${latestLargeAdjustmentMovement.quantityDelta >= 0 ? "+" : ""}${latestLargeAdjustmentMovement.quantityDelta.toFixed(2)} ${latestLargeAdjustmentMovement.unit}` : "Large changes will appear here"} />
+          <CompactInfoCard label="Latest order" value={latestOrderedReorderIntent ? formatDate(latestOrderedReorderIntent.updatedAt.slice(0, 10)) : "No order marked"} detail={latestOrderedReorderIntent ? `${latestOrderedReorderIntent.itemName} · ${latestOrderedReorderIntent.supplier}` : "Mark an item as ordered to log it"} />
+        </div>
+      </Card>
+
+      <Card className="mt-4 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Quiet controls</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">Restore the seeded sample workspace if you want a clean pilot reset.</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              if (window.confirm("Restore the seeded sample inventory, invoices, and reconciliations in this browser?")) {
+                resetWorkspace();
+                setMessage("Sample data restored.");
+              }
+            }}
+          >
+            Restore sample data
+          </Button>
         </div>
       </Card>
 
@@ -1172,13 +1110,9 @@ export function InventoryPage() {
       ) : null}
 
       {activePanel?.kind === "count-session" ? (
-        <ModalShell title="Stock count session" onClose={() => setActivePanel(null)} wide>
+        <ModalShell title={countSession ? "Stock count session" : "Stock count sessions"} onClose={() => setActivePanel(null)} wide>
           {countSession ? (
             <>
-              {(() => {
-                const sessionLocked = countSession.status === "Completed" || countSession.status === "Cancelled";
-                return (
-                  <>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <MiniStat label="Status" value={countSession.status} />
                 <MiniStat label="Progress" value={describeCountSessionProgress(countSession)} />
@@ -1188,10 +1122,10 @@ export function InventoryPage() {
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <Field label="Counted by">
-                  <input className="input" value={countSession.countedBy || ""} onChange={(event) => updateCurrentCountSession((session) => setCountSessionMetadata(session, { countedBy: event.target.value }))} placeholder="Optional name" disabled={sessionLocked} />
+                  <input className="input" value={countSession.countedBy || ""} onChange={(event) => updateCurrentCountSession((session) => setCountSessionMetadata(session, { countedBy: event.target.value }))} placeholder="Optional name" disabled={countSession.status === "Completed" || countSession.status === "Cancelled"} />
                 </Field>
                 <Field label="Notes">
-                  <input className="input" value={countSession.notes} onChange={(event) => updateCurrentCountSession((session) => setCountSessionMetadata(session, { notes: event.target.value }))} placeholder="Optional session notes" disabled={sessionLocked} />
+                  <input className="input" value={countSession.notes} onChange={(event) => updateCurrentCountSession((session) => setCountSessionMetadata(session, { notes: event.target.value }))} placeholder="Optional session notes" disabled={countSession.status === "Completed" || countSession.status === "Cancelled"} />
                 </Field>
               </div>
 
@@ -1222,7 +1156,7 @@ export function InventoryPage() {
                           value={line.countedQuantity ?? ""}
                           onChange={(event) => handleCountSessionFieldUpdate(line.id, event.target.value, line.note)}
                           placeholder="Enter count"
-                          disabled={sessionLocked}
+                          disabled={countSession.status === "Completed" || countSession.status === "Cancelled"}
                         />
                       </label>
                       <MiniStat label="Difference" value={line.difference === null ? "—" : `${line.difference > 0 ? "+" : ""}${line.difference} ${line.stockUnitSnapshot}`} />
@@ -1233,13 +1167,13 @@ export function InventoryPage() {
                           value={line.note}
                           onChange={(event) => handleCountSessionFieldUpdate(line.id, line.countedQuantity === null ? "" : String(line.countedQuantity), event.target.value)}
                           placeholder="Optional note"
-                          disabled={sessionLocked}
+                          disabled={countSession.status === "Completed" || countSession.status === "Cancelled"}
                         />
                       </label>
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button type="button" variant="secondary" onClick={() => handleCountSessionSkip(line.id)} disabled={sessionLocked}>
+                      <Button type="button" variant="secondary" onClick={() => handleCountSessionSkip(line.id)} disabled={countSession.status === "Completed" || countSession.status === "Cancelled"}>
                         Skip
                       </Button>
                     </div>
@@ -1257,28 +1191,199 @@ export function InventoryPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-3">
-                <Button type="button" variant="secondary" onClick={handleCountSessionSaveDraft} disabled={sessionLocked}>
+                <Button type="button" variant="secondary" onClick={handleCountSessionSaveDraft} disabled={countSession.status === "Completed" || countSession.status === "Cancelled"}>
                   Save draft
                 </Button>
-                <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleCountSessionConfirm} disabled={sessionLocked || !canConfirmCountSession(countSession)}>
+                <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleCountSessionConfirm} disabled={countSession.status === "Completed" || countSession.status === "Cancelled" || !canConfirmCountSession(countSession)}>
                   Confirm all adjustments
                 </Button>
-                <Button type="button" variant="ghost" onClick={handleCountSessionCancel} disabled={sessionLocked}>
+                <Button type="button" variant="ghost" onClick={handleCountSessionCancel} disabled={countSession.status === "Completed" || countSession.status === "Cancelled"}>
                   Cancel session
                 </Button>
+                <Button type="button" variant="ghost" onClick={openCountOverviewPanel}>
+                  Back to count list
+                </Button>
               </div>
-                  </>
-                );
-              })()}
             </>
           ) : (
-            <div className="space-y-3">
-              <p className="text-sm leading-6 text-muted">Start a new count session or open one from the list above.</p>
-              <Button type="button" onClick={startCountSession}>
-                Start stock count
-              </Button>
-            </div>
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Count scope</span>
+                  <select className="input mt-2" value={countSessionFilterKind} onChange={(event) => setCountSessionFilterKind(event.target.value as InventoryCountSessionFilterKind)}>
+                    <option value="all-active">All active items</option>
+                    <option value="category">One category</option>
+                    <option value="supplier">One supplier</option>
+                    <option value="needs-count">Items needing a count</option>
+                  </select>
+                </label>
+                <label className="block min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Filter value</span>
+                  <input className="input mt-2" value={countSessionFilterValue} onChange={(event) => setCountSessionFilterValue(event.target.value)} placeholder="Category or supplier" />
+                </label>
+                <label className="block min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Counted by</span>
+                  <input className="input mt-2" value={countSessionCountedBy} onChange={(event) => setCountSessionCountedBy(event.target.value)} placeholder="Optional name" />
+                </label>
+                <label className="block min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Notes</span>
+                  <input className="input mt-2" value={countSessionNotes} onChange={(event) => setCountSessionNotes(event.target.value)} placeholder="Optional session notes" />
+                </label>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-line bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Draft sessions</p>
+                <div className="mt-3 space-y-3">
+                  {draftCountSessions.length ? (
+                    draftCountSessions.map((session) => {
+                      const progress = countSessionProgress(session);
+                      return (
+                        <div key={session.id} className="rounded-lg border border-line bg-white p-3">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-ink">{session.countedBy || "Stock count draft"}</p>
+                              <p className="mt-1 text-xs leading-5 text-muted">
+                                {describeCountSessionProgress(session)} | {session.status}
+                              </p>
+                            </div>
+                            <Badge tone={session.status === "Completed" ? "success" : session.status === "Cancelled" ? "warning" : "info"}>{session.status}</Badge>
+                          </div>
+                          <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                            <MiniStat label="Selected items" value={String(session.itemCount)} />
+                            <MiniStat label="Progress" value={`${progress.percent}%`} />
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button type="button" variant="secondary" onClick={() => openExistingCountSession(session.id)}>
+                              {session.status === "Completed" ? "Review" : "Resume"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm leading-6 text-muted">No draft count sessions yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-line bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Completed history</p>
+                <div className="mt-3 space-y-3">
+                  {inventoryCountSessions.filter((session) => session.status === "Completed" || session.status === "Cancelled").slice(0, 4).map((session) => (
+                    <div key={session.id} className="rounded-lg border border-line bg-white p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-ink">{session.countedBy || "Count session"}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted">
+                            {session.status} | {describeCountSessionProgress(session)}
+                          </p>
+                        </div>
+                        <Button type="button" variant="secondary" onClick={() => openExistingCountSession(session.id)}>
+                          Review
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button type="button" onClick={startCountSession}>
+                  Start stock count
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setActivePanel(null)}>
+                  Close
+                </Button>
+              </div>
+            </>
           )}
+        </ModalShell>
+      ) : null}
+
+      {activePanel?.kind === "reorder" ? (
+        <ModalShell title="Practical reorder list" onClose={() => setActivePanel(null)} wide>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
+            <div className="rounded-lg border border-line bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-700">
+              Suggested quantity uses PAR first, then minimum when PAR is absent. Cost is only shown when the purchase basis is known.
+            </div>
+            <label className="block min-w-0">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted">Supplier filter</span>
+              <select className="input mt-2" value={reorderSupplierFilter} onChange={(event) => setReorderSupplierFilter(event.target.value)}>
+                {reorderSupplierOptions.map((supplier) => (
+                  <option key={supplier} value={supplier}>
+                    {supplier}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={() => beginReorderExport("copy")}>
+              Copy order list
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => beginReorderExport("csv")}>
+              Export CSV
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setActivePanel(null)}>
+              Close
+            </Button>
+          </div>
+          <div className="mt-4 space-y-4">
+            {reorderGroups.length ? (
+              reorderGroups.map((group) => (
+                <div key={group.supplier} className="rounded-xl border border-line bg-white p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-ink">{group.supplier}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">
+                        {group.itemCount} item{group.itemCount === 1 ? "" : "s"} | Estimated order total {group.estimatedOrderTotal ? formatCurrency(group.estimatedOrderTotal) : "Unavailable"}
+                      </p>
+                    </div>
+                    <Badge tone="info">Needs action</Badge>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {group.lines.map((line) => (
+                      <div key={line.id} className="rounded-lg border border-line bg-slate-50 p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-ink">{line.itemName}</p>
+                            <p className="mt-1 text-xs leading-5 text-muted">
+                              {line.stockStatus} | {line.currentQuantity} {line.unit} on hand | PAR {line.parLevel} | Min {line.minimumQuantity}
+                            </p>
+                          </div>
+                          <Badge tone={line.status === "Ordered" ? "success" : "warning"}>{line.status}</Badge>
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-3">
+                          <MiniStat label="Suggested qty" value={`${line.suggestedQuantity} ${line.unit}`} />
+                          <MiniStat label="Days remaining" value={line.estimatedDaysRemaining ? `About ${Math.max(0, Math.round(line.estimatedDaysRemaining))} days` : "Usage not configured"} />
+                          <MiniStat label="Estimated cost" value={line.estimatedCost === null ? "Cost unavailable" : formatCurrency(line.estimatedCost)} />
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.45fr)]">
+                          <label className="block min-w-0">
+                            <span className="text-xs font-bold uppercase tracking-wide text-muted">Order quantity</span>
+                            <input
+                              className="input mt-2"
+                              type="number"
+                              step="0.01"
+                              value={reorderQuantities[line.itemId] ?? line.adjustedQuantity}
+                              onChange={(event) => setReorderQuantities((current) => ({ ...current, [line.itemId]: Number(event.target.value) || 0 }))}
+                            />
+                          </label>
+                          <div className="flex flex-wrap gap-2 self-end">
+                            <Button type="button" variant="secondary" onClick={() => handleMarkReorderOrdered(line.itemId)}>
+                              Mark as ordered
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm leading-6 text-muted">No reorder action is needed right now.</p>
+            )}
+          </div>
         </ModalShell>
       ) : null}
 
@@ -1395,6 +1500,26 @@ function StatCard({ label, value, helper }: { label: string; value: string; help
       <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-2 text-2xl font-bold text-ink">{value}</p>
       <p className="mt-1 text-xs leading-5 text-muted">{helper}</p>
+    </div>
+  );
+}
+
+function CompactStatCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-white p-3">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-1 text-lg font-bold text-ink">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-muted">{helper}</p>
+    </div>
+  );
+}
+
+function CompactInfoCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-white p-3">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-ink">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-muted">{detail}</p>
     </div>
   );
 }

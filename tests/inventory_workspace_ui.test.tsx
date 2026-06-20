@@ -393,12 +393,20 @@ function testEditDraftUpdatesExistingItem() {
 function testInventoryPageLayout() {
   const html = renderInventoryPage();
   assert.ok(html.includes("Inventory"));
+  assert.ok(html.includes("Tracked"));
+  assert.ok(html.includes("Count status"));
+  assert.ok(html.includes("Reorder status"));
+  assert.ok(html.includes("View reorder list"));
+  assert.ok(html.includes("Start stock count"));
   assert.ok(html.includes("Inventory list"));
   assert.ok(html.includes("Receive from saved invoice"));
   assert.ok(html.includes("Adjust stock"));
   assert.ok(html.includes("Physical count"));
-  assert.ok(html.includes("History"));
   assert.ok(html.includes("Review invoices"));
+  assert.ok(html.includes("Restore sample data"));
+  assert.ok(!html.includes("Stock count sessions"));
+  assert.ok(!html.includes("Practical reorder list"));
+  assert.ok(html.indexOf("Inventory list") < html.indexOf("Recent activity"));
   assert.ok(!html.includes("Focused workflow"));
   assert.ok(!html.includes("Save changes"));
 }
