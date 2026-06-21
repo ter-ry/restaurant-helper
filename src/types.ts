@@ -110,6 +110,7 @@ export interface ExtractedInvoice {
 }
 
 export type PilotInvoiceStatus = "Ready" | "Needs Review";
+export type InvoiceInventoryStatus = "Not received" | "Partially received" | "Received" | "No tracked items" | "Skipped";
 export type PilotReconciliationStatus = "Balanced" | "Small difference" | "Needs Review" | "Incomplete";
 export type InventoryItemStatus = "In stock" | "Low stock" | "Reorder now" | "Out of stock" | "Count needed";
 export type InventoryMovementType = "invoice receipt" | "manual addition" | "usage" | "waste" | "breakage" | "count adjustment" | "physical count adjustment" | "correction" | "other";
@@ -146,6 +147,8 @@ export interface PilotInvoiceDraft {
   confirmed: boolean;
   lineItems: PilotInvoiceLineItem[];
   savedAt?: string;
+  inventoryReceiptStatus?: InvoiceInventoryStatus;
+  inventoryReceiptUpdatedAt?: string;
 }
 
 export interface PilotInvoiceRecord extends PilotInvoiceDraft {

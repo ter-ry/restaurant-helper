@@ -33,9 +33,15 @@ import {
   updateCountSessionLine,
   upsertReorderIntent,
 } from "../lib/inventoryOperations";
+import {
+  buildInvoiceReceiveLines,
+  type InvoiceReceiveLineState,
+} from "../lib/invoiceInventory";
 import { usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { InventoryCountSession, InventoryCountSessionFilterKind, InventoryItem, InventoryItemStatus, PilotInventoryDraft, PilotInventoryDraftLine } from "../types";
 import { formatCurrency, formatDate } from "../utils/format";
+
+export { buildInvoiceReceiveLines as buildReceiveLines } from "../lib/invoiceInventory";
 
 const statusOptions: Array<InventoryItemStatus | "All"> = ["All", "In stock", "Low stock", "Reorder now", "Out of stock", "Count needed"];
 
@@ -49,96 +55,8 @@ type ActivePanel =
   | { kind: "reorder" }
   | { kind: "history"; itemId: string };
 
-type ReceiveLineState = {
-  invoiceLineItemId: string;
-  invoiceLineName: string;
-  sourceDescription: string;
-  invoiceQuantity: number;
-  invoiceUnit: string;
-  unitPrice: number;
-  selectedItemId: string;
-  state: "unmapped" | "linked" | "do-not-track" | "already-received";
-  matchLabel: "Previously confirmed" | "Suggested match" | "Not mapped" | "Already received";
-  conversionFactor: number;
-  inventoryUnit: string;
-  note: string;
-  suggestedItemId?: string;
-};
-
 function emptyManualMovement() {
   return { itemId: "", movementType: "manual addition" as const, quantityDelta: 1, note: "" };
-}
-
-export function buildReceiveLines(
-  invoiceId: string,
-  inventoryItems: InventoryItem[],
-  inventoryMappings: ReturnType<typeof usePilotWorkspace>["inventoryMappings"],
-  inventoryReceipts: ReturnType<typeof usePilotWorkspace>["inventoryReceipts"],
-  recentInvoices: ReturnType<typeof usePilotWorkspace>["recentInvoices"],
-): ReceiveLineState[] {
-  const invoice = recentInvoices.find((item) => item.id === invoiceId) ?? null;
-  if (!invoice) {
-    return [];
-  }
-
-  return invoice.lineItems.map((line, index) => {
-    const sourceDescription = line.originalDescription || line.itemName || line.rawSourceLine || `Line ${index + 1}`;
-    const lineKey = line.comparisonKey || sourceDescription;
-    const remembered = findRememberedInventoryMapping(inventoryMappings, invoice.supplier, lineKey);
-    const exactMatch = findExactInventoryItemSuggestion(inventoryItems, lineKey);
-    const alreadyReceived = inventoryReceipts.some((receipt) => receipt.invoiceId === invoice.id && receipt.invoiceLineItemId === line.id);
-
-    if (alreadyReceived) {
-      return {
-        invoiceLineItemId: line.id,
-        invoiceLineName: line.itemName || sourceDescription,
-        sourceDescription,
-        invoiceQuantity: Number.isFinite(line.quantity) && line.quantity > 0 ? line.quantity : 1,
-        invoiceUnit: line.unit || "each",
-        unitPrice: Number.isFinite(line.unitPrice) ? line.unitPrice : 0,
-        selectedItemId: "",
-        state: "already-received",
-        matchLabel: "Already received",
-        conversionFactor: 1,
-        inventoryUnit: line.unit || "each",
-        note: "",
-      };
-    }
-
-    if (remembered) {
-      return {
-        invoiceLineItemId: line.id,
-        invoiceLineName: line.itemName || sourceDescription,
-        sourceDescription,
-        invoiceQuantity: Number.isFinite(line.quantity) && line.quantity > 0 ? line.quantity : 1,
-        invoiceUnit: line.unit || "each",
-        unitPrice: Number.isFinite(line.unitPrice) ? line.unitPrice : 0,
-        selectedItemId: remembered.inventoryItemId,
-        state: "linked",
-        matchLabel: "Previously confirmed",
-        conversionFactor: remembered.conversionFactor || 1,
-        inventoryUnit: remembered.inventoryUnit || line.unit || "each",
-        note: "",
-        suggestedItemId: remembered.inventoryItemId,
-      };
-    }
-
-    return {
-      invoiceLineItemId: line.id,
-      invoiceLineName: line.itemName || sourceDescription,
-      sourceDescription,
-      invoiceQuantity: Number.isFinite(line.quantity) && line.quantity > 0 ? line.quantity : 1,
-      invoiceUnit: line.unit || "each",
-      unitPrice: Number.isFinite(line.unitPrice) ? line.unitPrice : 0,
-      selectedItemId: "",
-      state: "unmapped",
-      matchLabel: exactMatch ? "Suggested match" : "Not mapped",
-      conversionFactor: 1,
-      inventoryUnit: exactMatch?.unit || line.unit || "each",
-      note: "",
-      suggestedItemId: exactMatch?.id,
-    };
-  });
 }
 
 function normalizePanelItem(item?: InventoryItem | null): PilotInventoryDraft {
@@ -185,7 +103,7 @@ export function InventoryPage() {
   const [countQuantity, setCountQuantity] = useState("");
   const [countNote, setCountNote] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(recentInvoices[0]?.id ?? "");
-  const [receiveLines, setReceiveLines] = useState<ReceiveLineState[]>([]);
+  const [receiveLines, setReceiveLines] = useState<InvoiceReceiveLineState[]>([]);
   const [countSessionFilterKind, setCountSessionFilterKind] = useState<InventoryCountSessionFilterKind>("all-active");
   const [countSessionFilterValue, setCountSessionFilterValue] = useState("");
   const [countSessionCountedBy, setCountSessionCountedBy] = useState("");
@@ -268,7 +186,7 @@ export function InventoryPage() {
     if (activePanel?.kind !== "receive") {
       return;
     }
-    setReceiveLines(buildReceiveLines(selectedInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
+    setReceiveLines(buildInvoiceReceiveLines(selectedInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
   }, [activePanel, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices, selectedInvoiceId]);
 
   useEffect(() => {
@@ -286,7 +204,7 @@ export function InventoryPage() {
     receivedInvoiceRouteRef.current = receiveInvoiceId;
     setSelectedInvoiceId(receiveInvoiceId);
     setActivePanel({ kind: "receive" });
-    setReceiveLines(buildReceiveLines(receiveInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
+    setReceiveLines(buildInvoiceReceiveLines(receiveInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
     navigate(location.pathname, { replace: true });
   }, [inventoryItems, inventoryMappings, inventoryReceipts, location.pathname, location.search, navigate, recentInvoices]);
 
@@ -320,7 +238,7 @@ export function InventoryPage() {
     setErrorMessage("");
     setMessage("");
     setActivePanel({ kind: "receive" });
-    setReceiveLines(buildReceiveLines(selectedInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
+    setReceiveLines(buildInvoiceReceiveLines(selectedInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
   };
 
   const closeReceivePanel = () => {
@@ -470,8 +388,21 @@ export function InventoryPage() {
         conversionFactor: line.conversionFactor,
         note: line.note,
       }));
+    const linkedCount = receiveLines.filter((line) => line.state === "linked" && line.selectedItemId).length;
+    const skippedCount = receiveLines.filter((line) => line.state === "do-not-track").length;
+    const alreadyReceivedCount = receiveLines.filter((line) => line.state === "already-received").length;
+    const unresolvedCount = receiveLines.filter((line) => line.state === "unmapped" || (line.state === "linked" && !line.selectedItemId)).length;
+    let inventoryStatus: "Not received" | "Partially received" | "Received" | "No tracked items" | "Skipped" = "Not received";
 
-    const result = recordInventoryReceipt(selectedInvoiceId, mappedLines);
+    if (receiveLines.length === 0 || (skippedCount === receiveLines.length && linkedCount === 0 && alreadyReceivedCount === 0)) {
+      inventoryStatus = "No tracked items";
+    } else if (alreadyReceivedCount === receiveLines.length || (unresolvedCount === 0 && (linkedCount > 0 || alreadyReceivedCount > 0))) {
+      inventoryStatus = "Received";
+    } else if (linkedCount > 0 || skippedCount > 0 || alreadyReceivedCount > 0) {
+      inventoryStatus = "Partially received";
+    }
+
+    const result = recordInventoryReceipt(selectedInvoiceId, mappedLines, inventoryStatus);
     const invoice = recentInvoices.find((entry) => entry.id === selectedInvoiceId);
     if (invoice) {
       let nextMappings = inventoryMappings;
@@ -956,7 +887,7 @@ export function InventoryPage() {
         <ModalShell title="Receive from saved invoice" onClose={closeReceivePanel} wide>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Saved invoice">
-              <select className="input" value={selectedInvoiceId} onChange={(event) => { setSelectedInvoiceId(event.target.value); setReceiveLines(buildReceiveLines(event.target.value, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices)); }}>
+              <select className="input" value={selectedInvoiceId} onChange={(event) => { setSelectedInvoiceId(event.target.value); setReceiveLines(buildInvoiceReceiveLines(event.target.value, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices)); }}>
                 {recentInvoices.map((invoice) => (
                   <option key={invoice.id} value={invoice.id}>
                     {invoice.supplier} / {invoice.invoiceNumber || invoice.id}
@@ -981,7 +912,7 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold text-ink">{line.invoiceLineName}</p>
-                        <Badge tone={line.state === "linked" ? "success" : line.state === "do-not-track" ? "neutral" : line.state === "already-received" ? "warning" : "warning"}>{line.matchLabel}</Badge>
+                        <Badge tone={line.matchLabel === "Previously confirmed" || line.matchLabel === "Auto-matched" ? "success" : line.state === "do-not-track" ? "neutral" : line.state === "already-received" ? "warning" : "warning"}>{line.matchLabel}</Badge>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-muted">
                         {line.sourceDescription} | Qty {line.invoiceQuantity} {line.invoiceUnit} | Unit price {formatCurrency(line.unitPrice)}
@@ -990,7 +921,7 @@ export function InventoryPage() {
                     <div className="flex flex-wrap gap-2">
                       {canLink ? (
                         <>
-                          <Button type="button" variant="secondary" onClick={() => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: "linked", selectedItemId: line.suggestedItemId ?? entry.selectedItemId, matchLabel: entry.matchLabel === "Previously confirmed" ? "Previously confirmed" : line.suggestedItemId ? "Suggested match" : "Not mapped" } : entry)))}>
+                          <Button type="button" variant="secondary" onClick={() => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: "linked", selectedItemId: line.suggestedItemId ?? entry.selectedItemId, matchLabel: entry.matchLabel === "Previously confirmed" ? "Previously confirmed" : entry.matchLabel === "Auto-matched" && line.suggestedItemId === entry.selectedItemId ? "Auto-matched" : line.suggestedItemId ? "Suggested match" : "Not mapped" } : entry)))}>
                             Link existing item
                           </Button>
                           <Button type="button" variant="secondary" onClick={() => {
@@ -1023,7 +954,7 @@ export function InventoryPage() {
                   {line.state === "linked" ? (
                     <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(10rem,0.55fr)_minmax(0,1fr)]">
                       <Field label="Inventory item">
-                        <select className="input" value={line.selectedItemId} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, selectedItemId: event.target.value, matchLabel: line.matchLabel === "Previously confirmed" ? "Previously confirmed" : line.suggestedItemId === event.target.value ? "Suggested match" : "Not mapped" } : entry)))}>
+                        <select className="input" value={line.selectedItemId} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, selectedItemId: event.target.value, matchLabel: line.matchLabel === "Previously confirmed" ? "Previously confirmed" : line.matchLabel === "Auto-matched" && event.target.value === line.suggestedItemId ? "Auto-matched" : line.suggestedItemId === event.target.value ? "Suggested match" : "Not mapped" } : entry)))}>
                           <option value="">Choose item</option>
                           {sortInventoryItems(inventoryItems).map((candidate) => (
                             <option key={candidate.id} value={candidate.id}>

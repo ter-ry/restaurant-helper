@@ -7,15 +7,10 @@ import {
   createSeedInventoryState,
   deleteInventoryItem,
   deriveInventoryReceiptKey,
-  findExactInventoryItemSuggestion,
-  findInventoryItemSuggestions,
-  getInventoryStatusLabel,
   normalizeStoredInventoryState,
-  rememberInventoryMapping,
   sortInventoryItems,
   sortInventoryMovementsNewestFirst,
   sortInventoryReceiptsNewestFirst,
-  summarizeInventoryReceiptLines,
   upsertInventoryItem,
 } from "./inventoryWorkspace";
 import {
@@ -44,6 +39,7 @@ import {
 } from "./reconciliationWorkflow";
 import type {
   InvoiceLineItem,
+  InvoiceInventoryStatus,
   InventoryInvoiceReceipt,
   InventoryItem,
   InventoryMovement,
@@ -90,7 +86,8 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   saveInventoryItem: (draft: PilotInventoryDraft) => InventoryItem;
   archiveInventoryItem: (id: string) => void;
   deleteInventoryItem: (id: string) => void;
-  recordInventoryReceipt: (invoiceId: string, lines: PilotInventoryDraftLine[]) => { recorded: number; skipped: number };
+  recordInventoryReceipt: (invoiceId: string, lines: PilotInventoryDraftLine[], inventoryStatus?: InvoiceInventoryStatus) => { recorded: number; skipped: number };
+  updateInvoiceInventoryStatus: (invoiceId: string, status: InvoiceInventoryStatus) => void;
   rememberInventoryMappings: (mappings: PilotInventoryState["lineMappings"]) => void;
   upsertInventoryCountSession: (session: PilotInventoryState["countSessions"][number]) => void;
   confirmInventoryCountSession: (sessionId: string) => { confirmed: boolean; changedCount: number };
@@ -736,6 +733,15 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         setState(nextState);
         return created;
       },
+      updateInvoiceInventoryStatus: (invoiceId, status) => {
+        const now = nowIso();
+        const nextInvoices = state.invoices.map((invoice) =>
+          invoice.id === invoiceId ? { ...invoice, inventoryReceiptStatus: status, inventoryReceiptUpdatedAt: now, updatedAt: now } : invoice,
+        );
+        const nextState = { ...state, invoices: nextInvoices };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
       saveReconciliation: (draft) => {
         const created = deriveReconciliationRecord(state.reconciliations, draft);
         const nextState = { ...state, reconciliations: upsertReconciliationRecord(state.reconciliations, created) };
@@ -766,7 +772,7 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         saveWorkspace(nextState);
         setState(nextState);
       },
-      recordInventoryReceipt: (invoiceId, lines) => {
+      recordInventoryReceipt: (invoiceId, lines, inventoryStatus) => {
         const invoice = state.invoices.find((record) => record.id === invoiceId);
         if (!invoice) {
           return { recorded: 0, skipped: lines.length };
@@ -865,8 +871,14 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
           recorded += 1;
         }
 
+        const nextInvoices = state.invoices.map((entry) =>
+          entry.id === invoice.id && inventoryStatus
+            ? { ...entry, inventoryReceiptStatus: inventoryStatus, inventoryReceiptUpdatedAt: now, updatedAt: now }
+            : entry,
+        );
         const nextState = {
           ...state,
+          invoices: nextInvoices,
           inventory: {
             ...state.inventory,
             items,

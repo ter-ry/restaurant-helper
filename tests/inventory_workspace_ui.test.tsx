@@ -23,6 +23,7 @@ import {
   upsertReorderIntent,
 } from "../src/lib/inventoryOperations";
 import { InventoryPage, buildReceiveLines } from "../src/pages/InventoryPageNew";
+import { findSafeInventoryItemSuggestion, summarizeInvoiceInventoryStatus } from "../src/lib/invoiceInventory";
 import {
   buildInventoryMappingKey,
   buildInventorySummary,
@@ -338,7 +339,10 @@ function testInventoryOperationsSummaryAndLegacyConversionMemory() {
 
 function testReceiveMappingPreview() {
   const inventoryItems = [createItem({ id: "beans", name: "House Espresso Beans 5lb", itemMatchKey: "house espresso beans 5lb" })];
-  const invoice = createInvoice();
+  const invoice = {
+    ...createInvoice(),
+    lineItems: [createLineItem({ id: "line-suggest", itemName: "House Espresso", originalDescription: "House Espresso", rawSourceLine: "House Espresso 69.50 69.50", comparisonKey: "house espresso", quantity: 1, unit: "each", unitPrice: 69.5, lineTotal: 69.5 })],
+  };
   const lines = buildReceiveLines(invoice.id, inventoryItems, [], [], [invoice]);
   assert.equal(lines[0].state, "unmapped");
   assert.equal(lines[0].matchLabel, "Suggested match");
@@ -358,6 +362,45 @@ function testReceiveMappingPreview() {
   assert.equal(mappedLines[0].matchLabel, "Previously confirmed");
   assert.equal(mappedLines[0].selectedItemId, "beans");
   assert.equal(mappedLines[0].conversionFactor, 2);
+}
+
+function testSafeAutoMatchingAndInvoiceStatus() {
+  const inventoryItems = [
+    createItem({ id: "cups", name: "12 oz Paper Cups", normalizedName: "12 oz paper cups", itemMatchKey: "12 oz paper cups" }),
+    createItem({ id: "lids", name: "Cup Lids", normalizedName: "cup lids", itemMatchKey: "cup lids" }),
+  ];
+  const auto = findSafeInventoryItemSuggestion(inventoryItems, "12oz paper cups");
+  assert.equal(auto?.id, "cups");
+  const unsafe = findSafeInventoryItemSuggestion(inventoryItems, "cup");
+  assert.equal(unsafe, null);
+
+  const invoice = {
+    ...createInvoice(),
+    lineItems: [
+      createLineItem({
+        id: "line-cups",
+        itemName: "12 oz Paper Cups",
+        originalDescription: "12 oz Paper Cups",
+        rawSourceLine: "12 oz Paper Cups 12.00 24.00",
+        comparisonKey: "12 oz paper cups",
+        quantity: 2,
+        unit: "case",
+        unitPrice: 12,
+        lineTotal: 24,
+      }),
+    ],
+  };
+  const receiveLines = buildReceiveLines(invoice.id, inventoryItems, [], [], [invoice]);
+  assert.equal(receiveLines[0].state, "linked");
+  assert.equal(receiveLines[0].matchLabel, "Auto-matched");
+  assert.equal(receiveLines[0].selectedItemId, "cups");
+
+  const statusNotReceived = summarizeInvoiceInventoryStatus(invoice, []);
+  assert.equal(statusNotReceived, "Not received");
+  const statusReceived = summarizeInvoiceInventoryStatus(invoice, [{ id: "r-1", invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate, supplier: invoice.supplier, invoiceLineItemId: invoice.lineItems[0].id, invoiceLineDescription: "House Espresso Beans 5lb", normalizedDescription: "house espresso beans 5lb", inventoryItemId: "beans", inventoryItemName: "House Espresso Beans 5lb", quantity: 1, unit: "bag", conversionFactor: 1, unitPrice: 69.5, lineTotal: 69.5, receiptKey: "key", note: "", createdAt: "2026-05-30T12:00:00.000Z", updatedAt: "2026-05-30T12:00:00.000Z" }]);
+  assert.equal(statusReceived, "Received");
+  const statusSkipped = summarizeInvoiceInventoryStatus({ ...invoice, inventoryReceiptStatus: "Skipped" }, []);
+  assert.equal(statusSkipped, "Skipped");
 }
 
 function testBlankDraftCreatesNewItem() {
@@ -419,6 +462,7 @@ testCountSessionLifecycle();
 testReorderSuggestionsAndExport();
 testInventoryOperationsSummaryAndLegacyConversionMemory();
 testReceiveMappingPreview();
+testSafeAutoMatchingAndInvoiceStatus();
 testBlankDraftCreatesNewItem();
 testEditDraftUpdatesExistingItem();
 testInventoryPageLayout();

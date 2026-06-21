@@ -29,6 +29,7 @@ function testInvoiceUploadPageMobileSections() {
   assert.ok(html.includes("Invoice capture"));
   assert.ok(html.includes("Recent invoices"));
   assert.ok(html.includes("Recent price changes"));
+  assert.ok(html.includes("Inventory"));
   assert.ok(html.includes("sm:hidden"));
   assert.ok(html.includes("hidden sm:block"));
   assert.ok(html.includes("Open"));

@@ -147,6 +147,36 @@ function testParserPreservesOriginalDescription() {
   assert.equal(draft.lineItems[0].comparisonKey, "labor");
 }
 
+function testTableAwareParserKeepsRowsAndStopsAtFooter() {
+  const draft = parseInvoiceDraft(
+    [
+      "Bill To Flowtally Kitchen",
+      "No. Description Quantity Unit Price Amount (USD)",
+      "Ocean Freight - FCL 20 Container container $120000 $120000",
+      "Export Customs Clearance 1shipment $9000 $9000",
+      "Port Handing Fee-Crigin container $15000 $15000",
+      "Bill of Lading Issuance document $35.00 $35.00",
+      "5 Documentation Handing 1job $45.00 $45.00",
+      "Subtotal $2,420.00",
+      "Thank you for your business",
+    ].join("\n"),
+    "shipping-invoice.pdf",
+    "application/pdf",
+  );
+
+  assert.equal(draft.lineItems.length, 5);
+  assert.equal(draft.lineItems[0].itemName, "Ocean Freight - FCL 20 Container");
+  assert.equal(draft.lineItems[0].unit, "container");
+  assert.equal(draft.lineItems[1].itemName, "Export Customs Clearance");
+  assert.equal(draft.lineItems[1].unit, "shipment");
+  assert.equal(draft.lineItems[2].itemName, "Port Handing Fee-Crigin");
+  assert.equal(draft.lineItems[3].itemName, "Bill of Lading Issuance");
+  assert.equal(draft.lineItems[4].itemName, "Documentation Handing");
+  assert.equal(draft.lineItems[4].quantity, 1);
+  assert.equal(draft.lineItems[4].unit, "job");
+  assert.ok(draft.extractionWarnings.length >= 1);
+}
+
 function testLegacyStorageCompatibility() {
   const legacyWorkspace = {
     invoices: [
@@ -285,6 +315,7 @@ function testReopenModalPreservesValues() {
     createElement(PilotInvoiceDetailsModal, {
       open: true,
       invoice,
+      inventoryStatus: "Received",
       onClose: () => undefined,
       onReopenInReview: () => undefined,
       onReceiveIntoInventory: () => undefined,
@@ -293,6 +324,8 @@ function testReopenModalPreservesValues() {
   assert.ok(html.includes("Reopen in review"));
   assert.ok(html.includes("Receive into inventory"));
   assert.ok(html.includes("Saved at"));
+  assert.ok(html.includes("Inventory status"));
+  assert.ok(html.includes("Received"));
   assert.ok(html.includes("Labor 3hrs"));
   assert.ok(html.includes("US-001"));
   assert.ok(html.includes("Original description"));
@@ -307,6 +340,7 @@ testLineTotalSummary();
 testDescriptionEditRegeneratesKey();
 testInvalidDateFormattingIsSafe();
 testParserPreservesOriginalDescription();
+testTableAwareParserKeepsRowsAndStopsAtFooter();
 testLegacyStorageCompatibility();
 testInvoiceHistoryOrderingAndPreview();
 testDuplicateSavePrevention();

@@ -18,12 +18,14 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 export function PilotInvoiceDetailsModal({
   open,
   invoice,
+  inventoryStatus,
   onClose,
   onReopenInReview,
   onReceiveIntoInventory,
 }: {
   open: boolean;
   invoice: PilotInvoiceRecord | null;
+  inventoryStatus: string | null;
   onClose: () => void;
   onReopenInReview: (invoice: PilotInvoiceRecord) => void;
   onReceiveIntoInventory: (invoice: PilotInvoiceRecord) => void;
@@ -91,6 +93,7 @@ export function PilotInvoiceDetailsModal({
                 </div>
                 <div className="space-y-3">
                   <SummaryRow label="Saved status" value={invoice.confirmed ? "Confirmed" : "Needs review"} />
+                  <SummaryRow label="Inventory status" value={inventoryStatus || "Not received"} />
                   <SummaryRow label="Saved at" value={formatDateTime(invoice.savedAt || invoice.updatedAt || invoice.createdAt)} />
                   <SummaryRow label="Created at" value={formatDateTime(invoice.createdAt)} />
                   <SummaryRow label="Updated at" value={formatDateTime(invoice.updatedAt)} />

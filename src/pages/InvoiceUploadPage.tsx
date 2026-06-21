@@ -13,6 +13,7 @@ import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDi
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey as normalizeLineItemKey, updateLineItemDescription } from "../lib/invoiceLineItemView";
 import { useDemoProfile } from "../lib/demoProfile";
+import { summarizeInvoiceInventoryStatus } from "../lib/invoiceInventory";
 import { getRecentInvoicePreview, usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { InvoiceFieldConfidence, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
@@ -162,7 +163,7 @@ function setLineItemValue(
 
 export function InvoiceUploadPage() {
   const demo = useDemoProfile();
-  const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary } = usePilotWorkspace();
+  const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary, inventoryReceipts, updateInvoiceInventoryStatus } = usePilotWorkspace();
   const [draft, setDraft] = useState<PilotInvoiceDraft>(() => createBlankDraft());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -171,6 +172,10 @@ export function InvoiceUploadPage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [showAllInvoices, setShowAllInvoices] = useState(false);
+  const [ocrStage, setOcrStage] = useState("Idle");
+  const [ocrElapsedSeconds, setOcrElapsedSeconds] = useState(0);
+  const [uploadStartedAt, setUploadStartedAt] = useState<number | null>(null);
+  const [savedInvoicePrompt, setSavedInvoicePrompt] = useState<PilotInvoiceRecord | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sourceDocumentUrlRef = useRef<string | null>(null);
   const navigate = useNavigate();
@@ -178,6 +183,27 @@ export function InvoiceUploadPage() {
   useEffect(() => {
     handleResetDraft();
   }, [demo.slug]);
+
+  useEffect(() => {
+    if (!isProcessing || uploadStartedAt === null) {
+      setOcrElapsedSeconds(0);
+      return;
+    }
+
+    const updateElapsed = () => setOcrElapsedSeconds(Math.max(0, Math.floor((Date.now() - uploadStartedAt) / 1000)));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    const stageTimers = [
+      window.setTimeout(() => setOcrStage("Reading document"), 250),
+      window.setTimeout(() => setOcrStage("Extracting fields"), 1500),
+      window.setTimeout(() => setOcrStage("Still working - you can continue waiting or enter manually"), 5000),
+    ];
+
+    return () => {
+      window.clearInterval(timer);
+      stageTimers.forEach((timerId) => window.clearTimeout(timerId));
+    };
+  }, [isProcessing, uploadStartedAt]);
 
   const draftSummary = useMemo(() => getDraftSummaryDisplay(draft, reviewOpen), [draft, reviewOpen]);
   const hasActiveDraft = draftSummary.hasActiveDraft;
@@ -193,12 +219,16 @@ export function InvoiceUploadPage() {
   const lineItemsNeedingReview = draft.lineItems.filter((item) => item.needsReview || item.confidence < confidenceThreshold).length;
   const selectedInvoice = useMemo(() => recentInvoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null, [recentInvoices, selectedInvoiceId]);
   const recentInvoicePreview = useMemo(() => getRecentInvoicePreview(recentInvoices, 5), [recentInvoices]);
+  const getInvoiceInventoryStatus = (invoice: PilotInvoiceRecord) => summarizeInvoiceInventoryStatus(invoice, inventoryReceipts);
+  const selectedInvoiceInventoryStatus = selectedInvoice ? getInvoiceInventoryStatus(selectedInvoice) : null;
 
   const openInvoice = (invoice: PilotInvoiceRecord) => {
+    setSavedInvoicePrompt(null);
     setSelectedInvoiceId(invoice.id);
   };
 
   const reopenInvoiceForReview = (invoice: PilotInvoiceRecord) => {
+    setSavedInvoicePrompt(null);
     setDraft(createDraftFromInvoice(invoice));
     setReviewOpen(true);
     setStatusMessage(`Reopened ${invoice.supplier || "the invoice"} for review.`);
@@ -220,6 +250,13 @@ export function InvoiceUploadPage() {
     { header: "Invoice", accessor: "invoiceNumber" },
     { header: "Date", accessor: (row) => formatMaybeDate(row.invoiceDate) },
     { header: "Total", accessor: (row) => formatMaybeCurrency(row.totalAmount) },
+    {
+      header: "Inventory",
+      accessor: (row) => {
+        const inventoryStatus = getInvoiceInventoryStatus(row);
+        return <Badge tone={inventoryStatus === "Received" ? "success" : inventoryStatus === "Partially received" ? "warning" : inventoryStatus === "Skipped" ? "neutral" : "info"}>{inventoryStatus}</Badge>;
+      },
+    },
     { header: "Status", accessor: (row) => <Badge tone={row.status === "Ready" ? "success" : "warning"}>{row.status}</Badge> },
     {
       header: "Open",
@@ -241,6 +278,10 @@ export function InvoiceUploadPage() {
 
     setSelectedInvoiceId(null);
     setShowAllInvoices(false);
+    setSavedInvoicePrompt(null);
+    setOcrStage("Idle");
+    setOcrElapsedSeconds(0);
+    setUploadStartedAt(null);
 
     if (!isSupportedInvoiceUpload(file)) {
       setDraft({
@@ -257,13 +298,16 @@ export function InvoiceUploadPage() {
     }
 
     setIsProcessing(true);
+    setUploadStartedAt(Date.now());
+    setOcrStage("Uploading");
     setErrorMessage("");
-    setStatusMessage("Sending the file to the OCR service for extraction...");
+    setStatusMessage("Uploading invoice for OCR extraction...");
 
     try {
       sourceDocumentUrlRef.current = URL.createObjectURL(file);
       const extracted = await captureInvoiceDocument(file);
       setDraft(buildDraftFromOcr(extracted, file, sourceDocumentUrlRef.current));
+      setOcrStage("Preparing review");
       setStatusMessage(`Extracted ${file.name}. Please review every highlighted field before saving.`);
       setReviewOpen(true);
     } catch (error) {
@@ -278,11 +322,13 @@ export function InvoiceUploadPage() {
         extractionWarnings: [message, "You can still enter the invoice manually below."],
         notes: message,
       });
+      setOcrStage("Manual fallback");
       setErrorMessage(message);
       setStatusMessage("OCR did not finish cleanly, but manual entry is still available.");
       setReviewOpen(true);
     } finally {
       setIsProcessing(false);
+      setUploadStartedAt(null);
     }
   };
 
@@ -315,6 +361,7 @@ export function InvoiceUploadPage() {
       setErrorMessage("");
       setReviewOpen(false);
       setDraft(createBlankDraft());
+      setSavedInvoicePrompt(saved);
       sourceDocumentUrlRef.current = null;
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -334,6 +381,10 @@ export function InvoiceUploadPage() {
     setIsSaving(false);
     setSelectedInvoiceId(null);
     setShowAllInvoices(false);
+    setOcrStage("Idle");
+    setOcrElapsedSeconds(0);
+    setUploadStartedAt(null);
+    setSavedInvoicePrompt(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -396,7 +447,10 @@ export function InvoiceUploadPage() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Processing invoice
               </div>
-              <p className="mt-1">The file is being uploaded, OCR is running, and the review step will open when it finishes.</p>
+              <p className="mt-1">{ocrStage}.</p>
+              <p className="mt-1 text-xs text-brand-600">
+                Elapsed: {ocrElapsedSeconds}s{ocrElapsedSeconds >= 5 ? " | Still working - you can continue waiting or enter manually" : ""}
+              </p>
             </div>
           ) : null}
 
@@ -459,6 +513,43 @@ export function InvoiceUploadPage() {
               </div>
             </div>
           ) : null}
+
+          {savedInvoicePrompt ? (
+            <div className="mt-5 rounded-xl border border-brand-100 bg-white p-4 shadow-soft">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice saved</p>
+                  <p className="mt-1 text-sm font-semibold text-ink">{savedInvoicePrompt.supplier || "Saved invoice"}</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">
+                    Choose whether to receive tracked items into inventory now or mark this invoice as skipped for the moment.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setSavedInvoicePrompt(null);
+                      navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(savedInvoicePrompt.id)}`);
+                    }}
+                  >
+                    Receive now
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      updateInvoiceInventoryStatus(savedInvoicePrompt.id, "Skipped");
+                      setStatusMessage(`Skipped inventory receiving for ${savedInvoicePrompt.supplier || "the invoice"}.`);
+                      setSavedInvoicePrompt(null);
+                    }}
+                  >
+                    Skip for now
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </Card>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -492,6 +583,7 @@ export function InvoiceUploadPage() {
                       <p className="mt-1 text-xs leading-5 text-muted">
                         {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
                       </p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Inventory: {getInvoiceInventoryStatus(invoice)}</p>
                     </div>
                     <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
                   </div>
@@ -557,6 +649,7 @@ export function InvoiceUploadPage() {
                       <p className="mt-1 text-xs leading-5 text-muted">
                         {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
                       </p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Inventory: {getInvoiceInventoryStatus(invoice)}</p>
                     </div>
                     <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
                   </div>
@@ -608,6 +701,7 @@ export function InvoiceUploadPage() {
       <PilotInvoiceDetailsModal
         open={Boolean(selectedInvoice)}
         invoice={selectedInvoice}
+        inventoryStatus={selectedInvoiceInventoryStatus}
         onClose={() => setSelectedInvoiceId(null)}
         onReopenInReview={(invoice) => {
           setSelectedInvoiceId(null);

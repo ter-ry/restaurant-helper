@@ -31,6 +31,8 @@ export interface InvoiceOcrResult {
 
 const apiBaseUrl = resolveApiBaseUrl();
 const supportedExtensions = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
+const maxImageUploadPixels = 2400;
+const maxImageUploadBytes = 6 * 1024 * 1024;
 
 function normalizeBaseUrl(value: string | undefined) {
   const trimmed = value?.trim();
@@ -53,8 +55,9 @@ function resolveApiBaseUrl() {
 }
 
 export async function captureInvoiceDocument(file: File): Promise<InvoiceOcrResult> {
+  const uploadFile = await prepareUploadFile(file);
   const formData = new FormData();
-  formData.append("file", file, file.name);
+  formData.append("file", uploadFile, uploadFile.name);
 
   const response = await fetch(`${apiBaseUrl}/api/invoices/ocr`, {
     method: "POST",
@@ -67,6 +70,48 @@ export async function captureInvoiceDocument(file: File): Promise<InvoiceOcrResu
   }
 
   return body as InvoiceOcrResult;
+}
+
+async function prepareUploadFile(file: File) {
+  if (!file.type.startsWith("image/") || file.size <= maxImageUploadBytes) {
+    return file;
+  }
+
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined") {
+    return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longestSide = Math.max(bitmap.width, bitmap.height);
+    if (longestSide <= maxImageUploadPixels) {
+      bitmap.close();
+      return file;
+    }
+
+    const scale = maxImageUploadPixels / longestSide;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) {
+      bitmap.close();
+      return file;
+    }
+
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((value) => resolve(value), "image/jpeg", 0.86));
+    if (!blob) {
+      return file;
+    }
+
+    const nextName = file.name.replace(/\.[^.]+$/, ".jpg");
+    return new File([blob], nextName, { type: "image/jpeg", lastModified: file.lastModified });
+  } catch {
+    return file;
+  }
 }
 
 export function isSupportedInvoiceUpload(file: File | string) {

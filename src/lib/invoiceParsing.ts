@@ -53,10 +53,62 @@ function normalizeLineItemDescription(value: string) {
     .replace(/\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b/gi, " ")
     .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?(?!\s*(?:hrs?|hours?|hr|h)\b)/g, " ")
     .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
-    .replace(/[|â€¢Â·]/g, " ")
+    .replace(/[|Ã¢â‚¬Â¢Ã‚Â·]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
+
+const KNOWN_UNITS = new Set([
+  "bag",
+  "bags",
+  "bottle",
+  "bottles",
+  "box",
+  "boxes",
+  "can",
+  "cans",
+  "case",
+  "cases",
+  "carton",
+  "cartons",
+  "container",
+  "containers",
+  "cup",
+  "cups",
+  "document",
+  "documents",
+  "each",
+  "gal",
+  "gallon",
+  "gallons",
+  "hour",
+  "hours",
+  "hr",
+  "hrs",
+  "job",
+  "jobs",
+  "kg",
+  "lb",
+  "lbs",
+  "l",
+  "liter",
+  "liters",
+  "litre",
+  "litres",
+  "ml",
+  "pack",
+  "packs",
+  "piece",
+  "pieces",
+  "pallet",
+  "pallets",
+  "shipment",
+  "shipments",
+  "unit",
+  "units",
+  "wrap",
+  "wraps",
+]);
 
 function guessSupplier(sourceText: string, fileName: string) {
   const lower = sourceText.toLowerCase();
@@ -122,6 +174,21 @@ function guessInvoiceTotal(sourceText: string) {
   return allMatches.length ? Math.max(...allMatches) : 0;
 }
 
+function guessLabeledAmount(sourceText: string, labelPattern: RegExp) {
+  const lines = sourceText.split(/\r?\n/);
+  for (const line of [...lines].reverse()) {
+    if (!labelPattern.test(line)) {
+      continue;
+    }
+
+    const matches = [...line.matchAll(/\$?\s*([0-9][0-9,]*(?:\.\d{2})?)/g)];
+    if (matches.length) {
+      return normalizeCurrency(matches[matches.length - 1][1]);
+    }
+  }
+  return 0;
+}
+
 function guessCategory(itemName: string) {
   const value = itemName.toLowerCase();
   if (/(coffee|espresso|tea|latte|cappuccino)/.test(value)) return "Coffee";
@@ -138,7 +205,7 @@ function extractItemName(line: string) {
     .replace(/(?:qty|quantity|x|@)\s*[\d.,]+/gi, " ")
     .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?/g, " ")
     .replace(/\b(total|subtotal|tax|balance|due|invoice|amount|paid)\b/gi, " ")
-    .replace(/[|•·]/g, " ")
+    .replace(/[|â€¢Â·]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return stripped;
@@ -148,43 +215,127 @@ function extractOriginalItemDescription(line: string) {
   return line
     .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?(?!\s*(?:hrs?|hours?|hr|h)\b)/g, " ")
     .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
-    .replace(/[|â€¢Â·]/g, " ")
+    .replace(/[|Ã¢â‚¬Â¢Ã‚Â·]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function parseLineItems(sourceText: string): PilotInvoiceLineItem[] {
+function looksLikeTableHeader(line: string) {
+  const normalized = normalizeWhitespace(line).toLowerCase();
+  return (
+    (/description/.test(normalized) && /(qty|quantity)/.test(normalized) && /(price|amount|total)/.test(normalized)) ||
+    (/^no\.?\s+description/.test(normalized) && /(qty|quantity)/.test(normalized) && /(amount|total)/.test(normalized))
+  );
+}
+
+function isTableFooter(line: string) {
+  return /^(subtotal|tax|gst|hst|vat|total|amount due|balance due|payment info|payment information|notes?|terms|thank you|grand total)\b/i.test(
+    normalizeWhitespace(line),
+  );
+}
+
+function stripRowNumber(line: string) {
+  return line.replace(/^\s*\d+\s+(?=[A-Za-z])/g, "").trim();
+}
+
+function parseMoneyToken(token: string) {
+  const cleaned = token.replace(/[^0-9.]/g, "");
+  if (!cleaned) {
+    return { value: 0, normalized: false };
+  }
+  if (cleaned.includes(".")) {
+    return { value: Number(cleaned), normalized: false };
+  }
+  if (cleaned.length >= 4 && /000$/.test(cleaned)) {
+    return { value: Number(cleaned) / 100, normalized: true };
+  }
+  return { value: Number(cleaned), normalized: false };
+}
+
+function parseQuantityAndUnit(line: string) {
+  const stripped = stripRowNumber(line)
+    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})/g, " ")
+    .replace(/\$?\s*[0-9]{4,}(?![A-Za-z])/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const fusedMatch = stripped.match(/^(.*?)(?:\s+)?(\d+(?:\.\d+)?)([A-Za-z][A-Za-z/-]*)$/);
+  if (fusedMatch) {
+    const unit = fusedMatch[3].toLowerCase();
+    if (!KNOWN_UNITS.has(unit)) {
+      return {
+        description: stripped,
+        quantity: 1,
+        unit: "each",
+      };
+    }
+    return {
+      description: normalizeWhitespace(fusedMatch[1]),
+      quantity: Number(fusedMatch[2]) || 1,
+      unit,
+    };
+  }
+
+  const unitMatch = stripped.match(/^(.*?)(?:\s+)([A-Za-z][A-Za-z/-]*)$/);
+  if (unitMatch) {
+    const unit = unitMatch[2].toLowerCase();
+    if (!KNOWN_UNITS.has(unit)) {
+      return {
+        description: stripped,
+        quantity: 1,
+        unit: "each",
+      };
+    }
+    return {
+      description: normalizeWhitespace(unitMatch[1]),
+      quantity: 1,
+      unit,
+    };
+  }
+
+  return {
+    description: stripped,
+    quantity: 1,
+    unit: "each",
+  };
+}
+
+function parseLineItems(sourceText: string) {
   const lines = sourceText
     .split(/\r?\n/)
     .map((line) => normalizeWhitespace(line))
     .filter(Boolean)
-    .filter((line) => !/(subtotal|tax|grand total|balance due|amount due|invoice total)/i.test(line));
+    .filter((line) => !isTableFooter(line));
 
+  const headerIndex = lines.findIndex((line) => looksLikeTableHeader(line));
+  const linesToParse = headerIndex >= 0 ? lines.slice(headerIndex + 1).filter((line) => !isTableFooter(line)) : lines;
   const items: PilotInvoiceLineItem[] = [];
+  let normalizedMoneyCount = 0;
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const moneyMatches = [...line.matchAll(/\$?\s*([0-9][0-9,]*(?:\.\d{2})?)/g)].map((match) => normalizeCurrency(match[1]));
+  for (let index = 0; index < linesToParse.length; index += 1) {
+    const line = linesToParse[index];
+    const moneyMatches = [...line.matchAll(/\$?\s*([0-9][0-9,]*(?:\.\d{2})?)/g)].map((match) => match[1]);
     if (!moneyMatches.length) {
       continue;
     }
 
-    const itemName = extractItemName(line);
+    const moneyValues = moneyMatches.map((token) => {
+      const parsed = parseMoneyToken(token);
+      if (parsed.normalized) {
+        normalizedMoneyCount += 1;
+      }
+      return parsed.value;
+    });
+    const rowNormalizedMoney = moneyMatches.some((token) => parseMoneyToken(token).normalized);
+
+    const parsedQuantity = parseQuantityAndUnit(line);
+    const itemName = parsedQuantity.description || extractItemName(line);
     const originalDescription = extractOriginalItemDescription(line) || itemName;
     if (!itemName || itemName.length < 2) {
       continue;
     }
 
-    let quantity = 1;
-    let unitPrice = moneyMatches[moneyMatches.length - 1];
-    let lineTotal = unitPrice;
-
-    if (moneyMatches.length >= 2) {
-      unitPrice = moneyMatches[moneyMatches.length - 2];
-      lineTotal = moneyMatches[moneyMatches.length - 1];
-      const quantityMatch = line.match(/(?:qty|quantity)?\s*(\d+(?:\.\d+)?)\s*(?:x|×|@)/i);
-      quantity = quantityMatch ? Number(quantityMatch[1]) : lineTotal > unitPrice && unitPrice > 0 ? Number((lineTotal / unitPrice).toFixed(2)) : 1;
-    }
+    const unitPrice = moneyValues.length >= 2 ? moneyValues[moneyValues.length - 2] : moneyValues[moneyValues.length - 1];
+    const lineTotal = moneyValues[moneyValues.length - 1];
 
     items.push({
       id: `item-${index + 1}`,
@@ -192,48 +343,60 @@ function parseLineItems(sourceText: string): PilotInvoiceLineItem[] {
       originalDescription,
       rawSourceLine: normalizeWhitespace(line),
       comparisonKey: normalizeLineItemDescription(originalDescription || itemName).toLowerCase(),
-      quantity,
-      unit: "each",
+      quantity: parsedQuantity.quantity,
+      unit: parsedQuantity.unit,
       unitPrice,
       lineTotal,
       category: guessCategory(itemName),
       status: "Needs Review",
-      confidence: 0.6,
-      needsReview: true,
+      confidence: rowNormalizedMoney ? 0.55 : headerIndex >= 0 ? 0.9 : 0.6,
+      needsReview: rowNormalizedMoney || headerIndex === -1,
     });
   }
 
-  return items;
+  return { items, normalizedMoneyCount, headerDetected: headerIndex >= 0 };
 }
 
 export function parseInvoiceDraft(sourceText: string, fileName: string, fileType = ""): PilotInvoiceDraft {
   const normalizedText = normalizeWhitespace(sourceText);
   const text = normalizedText || fileName;
-  const lineItems = parseLineItems(sourceText);
+  const { items: lineItems, normalizedMoneyCount, headerDetected } = parseLineItems(sourceText);
   const totalAmount = guessInvoiceTotal(sourceText);
+  const subtotalAmount = guessLabeledAmount(sourceText, /subtotal/i);
+  const taxAmount = guessLabeledAmount(sourceText, /\b(?:tax|gst|hst|vat)\b/i);
   const hasMeaningfulText = Boolean(normalizedText);
+  const lineTotalSum = lineItems.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
+  const warnings: string[] = [];
+
+  if (normalizedMoneyCount > 0) {
+    warnings.push("Some money values were normalized from OCR digits. Review totals before saving.");
+  }
+
+  if ((subtotalAmount > 0 && Math.abs(subtotalAmount - lineTotalSum) > 0.5) || (totalAmount > 0 && Math.abs(totalAmount - lineTotalSum) > 0.5)) {
+    warnings.push("Line totals do not exactly match the invoice totals. Please review the extracted amounts.");
+  }
 
   return {
     supplier: guessSupplier(text, fileName),
     invoiceDate: guessInvoiceDate(text),
     invoiceNumber: guessInvoiceNumber(text, fileName),
-    subtotal: 0,
-    tax: 0,
+    subtotal: subtotalAmount,
+    tax: taxAmount,
     totalAmount,
-    status: hasMeaningfulText && lineItems.length ? "Ready" : "Needs Review",
+    status: hasMeaningfulText && lineItems.length && warnings.length === 0 ? "Ready" : "Needs Review",
     notes: "",
     fileName,
     fileType,
     extractedText: sourceText.trim(),
-    extractionWarnings: [],
+    extractionWarnings: warnings,
     fieldConfidence: {
       supplier: hasMeaningfulText ? 0.6 : 0,
       invoiceDate: 0.5,
       invoiceNumber: 0.5,
-      subtotal: 0,
-      tax: 0,
+      subtotal: subtotalAmount > 0 ? 0.7 : 0,
+      tax: taxAmount > 0 ? 0.7 : 0,
       total: 0.6,
-      lineItems: lineItems.length ? 0.6 : 0,
+      lineItems: lineItems.length ? (headerDetected && normalizedMoneyCount === 0 ? 0.85 : 0.7) : 0,
     },
     extractionProvider: "heuristic",
     confirmed: false,
