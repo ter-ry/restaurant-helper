@@ -13,10 +13,11 @@ import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDi
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey as normalizeLineItemKey, updateLineItemDescription } from "../lib/invoiceLineItemView";
 import { useDemoProfile } from "../lib/demoProfile";
+import { buildDemoRestaurantInvoiceDraft } from "../lib/invoiceSamples";
 import { summarizeInvoiceInventoryStatus } from "../lib/invoiceInventory";
 import { getRecentInvoicePreview, usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { InvoiceFieldConfidence, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
-import { formatCurrency, formatDate, formatPercent } from "../utils/format";
+import { formatCurrency, formatDate, formatDateTime, formatPercent } from "../utils/format";
 import { buildDemoPath, defaultDemoProfileSlug } from "../lib/demoProfile";
 
 const confidenceThreshold = 0.8;
@@ -178,6 +179,7 @@ export function InvoiceUploadPage() {
   const [savedInvoicePrompt, setSavedInvoicePrompt] = useState<PilotInvoiceRecord | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sourceDocumentUrlRef = useRef<string | null>(null);
+  const saveLockRef = useRef(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -221,6 +223,7 @@ export function InvoiceUploadPage() {
   const recentInvoicePreview = useMemo(() => getRecentInvoicePreview(recentInvoices, 5), [recentInvoices]);
   const getInvoiceInventoryStatus = (invoice: PilotInvoiceRecord) => summarizeInvoiceInventoryStatus(invoice, inventoryReceipts);
   const selectedInvoiceInventoryStatus = selectedInvoice ? getInvoiceInventoryStatus(selectedInvoice) : null;
+  const invoiceModalOpen = reviewOpen || Boolean(savedInvoicePrompt);
 
   const openInvoice = (invoice: PilotInvoiceRecord) => {
     setSavedInvoicePrompt(null);
@@ -348,11 +351,50 @@ export function InvoiceUploadPage() {
     }));
   };
 
+  const loadSampleInvoice = () => {
+    const sample = buildDemoRestaurantInvoiceDraft();
+    setSelectedInvoiceId(null);
+    setShowAllInvoices(false);
+    setSavedInvoicePrompt(null);
+    sourceDocumentUrlRef.current = null;
+    setDraft(sample);
+    setReviewOpen(true);
+    setErrorMessage("");
+    setIsProcessing(false);
+    setStatusMessage("Loaded a demo invoice draft instantly. Review the prefilled values before saving.");
+    setOcrStage("Demo sample");
+    setOcrElapsedSeconds(0);
+    setUploadStartedAt(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCloseReviewModal = () => {
+    setReviewOpen(false);
+    setSavedInvoicePrompt(null);
+  };
+
+  const handleReceiveSavedInvoice = (invoice: PilotInvoiceRecord) => {
+    setSavedInvoicePrompt(null);
+    setReviewOpen(false);
+    setStatusMessage(`Opening inventory receipt flow for ${invoice.supplier || "the saved invoice"}.`);
+    navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(invoice.id)}`);
+  };
+
+  const handleSkipSavedInvoice = (invoice: PilotInvoiceRecord) => {
+    updateInvoiceInventoryStatus(invoice.id, "Skipped");
+    setStatusMessage(`Skipped inventory receiving for ${invoice.supplier || "the invoice"}.`);
+    setReviewOpen(false);
+    setSavedInvoicePrompt(null);
+  };
+
   const handleSave = () => {
-    if (isSaving) {
+    if (isSaving || saveLockRef.current) {
       return;
     }
 
+    saveLockRef.current = true;
     setIsSaving(true);
 
     try {
@@ -368,6 +410,7 @@ export function InvoiceUploadPage() {
       }
     } finally {
       setIsSaving(false);
+      saveLockRef.current = false;
     }
   };
 
@@ -385,6 +428,7 @@ export function InvoiceUploadPage() {
     setOcrElapsedSeconds(0);
     setUploadStartedAt(null);
     setSavedInvoicePrompt(null);
+    saveLockRef.current = false;
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -419,6 +463,15 @@ export function InvoiceUploadPage() {
                   disabled={isProcessing}
                 >
                   Choose file
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Sparkles className="h-4 w-4" />}
+                  onClick={loadSampleInvoice}
+                  disabled={isProcessing || isSaving}
+                >
+                  Load sample restaurant invoice
                 </Button>
                 <Button
                   type="button"
@@ -514,42 +567,6 @@ export function InvoiceUploadPage() {
             </div>
           ) : null}
 
-          {savedInvoicePrompt ? (
-            <div className="mt-5 rounded-xl border border-brand-100 bg-white p-4 shadow-soft">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice saved</p>
-                  <p className="mt-1 text-sm font-semibold text-ink">{savedInvoicePrompt.supplier || "Saved invoice"}</p>
-                  <p className="mt-1 text-sm leading-6 text-muted">
-                    Choose whether to receive tracked items into inventory now or mark this invoice as skipped for the moment.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setSavedInvoicePrompt(null);
-                      navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(savedInvoicePrompt.id)}`);
-                    }}
-                  >
-                    Receive now
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      updateInvoiceInventoryStatus(savedInvoicePrompt.id, "Skipped");
-                      setStatusMessage(`Skipped inventory receiving for ${savedInvoicePrompt.supplier || "the invoice"}.`);
-                      setSavedInvoicePrompt(null);
-                    }}
-                  >
-                    Skip for now
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </Card>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -683,12 +700,12 @@ export function InvoiceUploadPage() {
       </div>
 
       <InvoiceReviewModal
-        open={reviewOpen}
+        open={invoiceModalOpen}
         draft={draft}
         errorMessage={errorMessage}
         isProcessing={isProcessing}
         isSaving={isSaving}
-        onClose={() => setReviewOpen(false)}
+        onClose={handleCloseReviewModal}
         onConfirm={() => setDraft((current) => ({ ...current, confirmed: true }))}
         onSave={handleSave}
         setDraft={setDraft}
@@ -696,6 +713,9 @@ export function InvoiceUploadPage() {
         lineItemsNeedingReview={lineItemsNeedingReview}
         onAddLineItem={addLineItem}
         onRemoveLineItem={removeLineItem}
+        savedInvoice={savedInvoicePrompt}
+        onReceiveSavedInvoice={handleReceiveSavedInvoice}
+        onSkipSavedInvoice={handleSkipSavedInvoice}
       />
 
       <PilotInvoiceDetailsModal
@@ -943,7 +963,7 @@ export function InvoiceLineItemCard({
   );
 }
 
-function InvoiceReviewModal({
+export function InvoiceReviewModal({
   open,
   draft,
   errorMessage,
@@ -957,6 +977,9 @@ function InvoiceReviewModal({
   lineItemsNeedingReview,
   onAddLineItem,
   onRemoveLineItem,
+  savedInvoice,
+  onReceiveSavedInvoice,
+  onSkipSavedInvoice,
 }: {
   open: boolean;
   draft: PilotInvoiceDraft;
@@ -971,6 +994,9 @@ function InvoiceReviewModal({
   lineItemsNeedingReview: number;
   onAddLineItem: () => void;
   onRemoveLineItem: (index: number) => void;
+  savedInvoice?: PilotInvoiceRecord | null;
+  onReceiveSavedInvoice?: (invoice: PilotInvoiceRecord) => void;
+  onSkipSavedInvoice?: (invoice: PilotInvoiceRecord) => void;
 }) {
   useEffect(() => {
     if (!open) {
@@ -994,6 +1020,13 @@ function InvoiceReviewModal({
     };
   }, [onClose, open]);
 
+  const isSavedState = Boolean(savedInvoice);
+  const [selectedLineItemIds, setSelectedLineItemIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedLineItemIds([]);
+  }, [open, isSavedState]);
+
   if (!open) {
     return null;
   }
@@ -1003,6 +1036,106 @@ function InvoiceReviewModal({
       onClose();
     }
   };
+
+  const toggleLineItemSelection = (index: number) => {
+    const id = draft.lineItems[index]?.id;
+    if (!id) {
+      return;
+    }
+
+    setSelectedLineItemIds((current) => (current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id]));
+  };
+
+  const removeSelectedLineItems = () => {
+    const selected = new Set(selectedLineItemIds);
+    if (!selected.size) {
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      confirmed: false,
+      lineItems: current.lineItems.filter((item) => !selected.has(item.id)),
+    }));
+    setSelectedLineItemIds([]);
+  };
+
+  const removeLowConfidenceLineItems = () => {
+    setDraft((current) => ({
+      ...current,
+      confirmed: false,
+      lineItems: current.lineItems.filter((item) => item.confidence >= confidenceThreshold),
+    }));
+    setSelectedLineItemIds([]);
+  };
+
+  const clearAllLineItems = () => {
+    setDraft((current) => ({
+      ...current,
+      confirmed: false,
+      lineItems: [],
+    }));
+    setSelectedLineItemIds([]);
+  };
+
+  if (isSavedState && savedInvoice) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
+        <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+          <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice saved</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-bold text-ink sm:text-xl">{savedInvoice.supplier || "Saved invoice"}</h2>
+                <Badge tone="success">Saved</Badge>
+                <Badge tone="info">{savedInvoice.extractionProvider || "manual"}</Badge>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                The record is stored locally. Choose whether to receive it into inventory now or skip it for the moment.
+              </p>
+            </div>
+            <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
+              Close
+            </Button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="space-y-5 p-4 sm:p-5">
+              <Card className="surface-panel p-5">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <SummaryRow label="Supplier" value={savedInvoice.supplier || "Unknown supplier"} />
+                    <SummaryRow label="Invoice number" value={savedInvoice.invoiceNumber || "Not saved"} />
+                    <SummaryRow label="Invoice date" value={savedInvoice.invoiceDate ? formatDate(savedInvoice.invoiceDate) : "Not saved"} />
+                    <SummaryRow label="Total" value={formatCurrency(savedInvoice.totalAmount)} />
+                  </div>
+                  <div className="space-y-3">
+                    <SummaryRow label="Saved status" value={savedInvoice.confirmed ? "Confirmed" : "Needs review"} />
+                    <SummaryRow label="Saved at" value={savedInvoice.savedAt ? formatDateTime(savedInvoice.savedAt) : "Just now"} />
+                    <SummaryRow label="Source file" value={savedInvoice.fileName || "Not available"} />
+                    <SummaryRow label="Line items" value={String(savedInvoice.lineItems.length)} />
+                  </div>
+                </div>
+              </Card>
+
+              <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+                <p className="text-sm font-semibold text-ink">Next step</p>
+                <p className="mt-1 text-sm leading-6 text-muted">Receiving now will open the saved invoice in the inventory workflow without running OCR again.</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button type="button" variant="secondary" onClick={() => onReceiveSavedInvoice?.(savedInvoice)}>
+                    Receive into inventory
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => onSkipSavedInvoice?.(savedInvoice)}>
+                    Skip for now
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
@@ -1128,17 +1261,50 @@ function InvoiceReviewModal({
                   title="Line items"
                   description="Add, remove, or correct line items before saving. Conservative name matching keeps unrelated products separate."
                   action={
-                    <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={onAddLineItem}>
-                      Add line item
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedLineItemIds.length ? (
+                        <Button type="button" variant="ghost" icon={<Trash2 className="h-4 w-4" />} onClick={removeSelectedLineItems}>
+                          Remove selected ({selectedLineItemIds.length})
+                        </Button>
+                      ) : null}
+                      <Button type="button" variant="ghost" onClick={removeLowConfidenceLineItems}>
+                        Remove low-confidence rows
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={clearAllLineItems}>
+                        Clear all line items
+                      </Button>
+                      <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={onAddLineItem}>
+                        Add line item
+                      </Button>
+                    </div>
                   }
                 />
 
-                <div className="space-y-4">
-                  {draft.lineItems.map((item, index) => (
-                    <InvoiceLineItemCardView key={item.id} item={item} index={index} setDraft={setDraft} onRemove={onRemoveLineItem} />
-                  ))}
-                </div>
+                {draft.lineItems.length ? (
+                  <div className="space-y-4">
+                    {draft.lineItems.map((item, index) => (
+                      <InvoiceLineItemCardView
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        setDraft={setDraft}
+                        onRemove={onRemoveLineItem}
+                        selected={selectedLineItemIds.includes(item.id)}
+                        onToggleSelected={toggleLineItemSelection}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4">
+                    <p className="text-sm font-semibold text-ink">No line items remain.</p>
+                    <p className="mt-1 text-sm leading-6 text-muted">Add a manual row to continue, or load another invoice if the OCR result was too noisy.</p>
+                    <div className="mt-3">
+                      <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={onAddLineItem}>
+                        Add line item
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.65fr)]">

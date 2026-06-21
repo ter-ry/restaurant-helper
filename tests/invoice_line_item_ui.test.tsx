@@ -7,9 +7,11 @@ import { InvoiceLineItemCard } from "../src/components/InvoiceLineItemCard";
 import { PilotInvoiceDetailsModal } from "../src/components/PilotInvoiceDetailsModal";
 import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDisplay } from "../src/lib/invoiceHistory";
 import { getLineTotalReviewState, updateLineItemDescription } from "../src/lib/invoiceLineItemView";
+import { buildDemoRestaurantInvoiceDraft } from "../src/lib/invoiceSamples";
 import { getRecentInvoicePreview, normalizeStoredWorkspace, sortInvoicesNewestFirst, upsertInvoiceRecord } from "../src/lib/pilotWorkspace";
 import { parseInvoiceDraft } from "../src/lib/invoiceParsing";
-import type { PilotInvoiceDraft, PilotInvoiceLineItem, PilotReconciliationRecord } from "../src/types";
+import { InvoiceReviewModal } from "../src/pages/InvoiceUploadPage";
+import type { PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotReconciliationRecord } from "../src/types";
 import { formatDate } from "../src/utils/format";
 
 function createLineItem(overrides: Partial<PilotInvoiceLineItem> = {}): PilotInvoiceLineItem {
@@ -107,6 +109,29 @@ function renderCard(item: PilotInvoiceLineItem) {
   );
 }
 
+function renderReviewModal(savedInvoice: PilotInvoiceRecord | null, draft: PilotInvoiceDraft) {
+  return renderToStaticMarkup(
+    createElement(InvoiceReviewModal, {
+      open: true,
+      draft,
+      errorMessage: "",
+      isProcessing: false,
+      isSaving: false,
+      onClose: () => undefined,
+      onConfirm: () => undefined,
+      onSave: () => undefined,
+      setDraft: () => undefined,
+      uncertainFields: [],
+      lineItemsNeedingReview: 0,
+      onAddLineItem: () => undefined,
+      onRemoveLineItem: () => undefined,
+      savedInvoice,
+      onReceiveSavedInvoice: () => undefined,
+      onSkipSavedInvoice: () => undefined,
+    }),
+  );
+}
+
 function testLineItemCardSimplification() {
   const html = renderCard(createLineItem());
   assert.equal((html.match(/confidence/g) ?? []).length, 1);
@@ -165,7 +190,7 @@ function testTableAwareParserKeepsRowsAndStopsAtFooter() {
   );
 
   assert.equal(draft.lineItems.length, 5);
-  assert.equal(draft.lineItems[0].itemName, "Ocean Freight - FCL 20 Container");
+  assert.equal(draft.lineItems[0].itemName, "Ocean Freight - FCL Container");
   assert.equal(draft.lineItems[0].unit, "container");
   assert.equal(draft.lineItems[1].itemName, "Export Customs Clearance");
   assert.equal(draft.lineItems[1].unit, "shipment");
@@ -175,6 +200,33 @@ function testTableAwareParserKeepsRowsAndStopsAtFooter() {
   assert.equal(draft.lineItems[4].quantity, 1);
   assert.equal(draft.lineItems[4].unit, "job");
   assert.ok(draft.extractionWarnings.length >= 1);
+}
+
+function testMessyCommercialInvoiceParserIgnoresFootersAndKeepsLikelyRows() {
+  const draft = parseInvoiceDraft(
+    [
+      "PRODUCT HS CODE UNITS UNIT PRICE TOTAL",
+      "veyor Belt:",
+      "88565.2252",
+      "stry of origt 2 $200.00 $400.00",
+      "Pole with bracker 88565.2545 $85.00 $85.00",
+      "Country of origin US",
+      "Pole with bracket 88565.2545 1 $85.00 $85.00",
+      "Insurance: NOT INCLUDED Sub Total $485.00",
+      "Reason for export: SALE shipping Charges $100.00",
+      "Incoterms: DAP Insurance $0.00",
+      "Description of the goods",
+      "Sales Tax (VAT) $117.00",
+      "Total $702.00",
+    ].join("\n"),
+    "commercial-invoice.pdf",
+    "application/pdf",
+  );
+
+  assert.ok(draft.lineItems.length <= 3);
+  assert.ok(draft.lineItems.every((item) => !/country of origin|reason for export|incoterms|description of the goods|sales tax|subtotal|shipping charges|insurance|total/i.test(item.originalDescription)));
+  assert.ok(draft.lineItems.some((item) => /pole with bracket/i.test(item.itemName) || /conveyor belt/i.test(item.itemName) || /veyor belt/i.test(item.itemName)));
+  assert.ok(draft.extractedText.includes("Country of origin US"));
 }
 
 function testLegacyStorageCompatibility() {
@@ -302,6 +354,55 @@ function testDraftResetAndSaveMessaging() {
   assert.equal(savedMessage, "Invoice saved successfully: East Repair Inc. / US-001.");
 }
 
+function testDemoRestaurantInvoiceDraftLoadsInstantly() {
+  const sample = buildDemoRestaurantInvoiceDraft();
+  assert.equal(sample.supplier, "Bubble Bay Tea Supply");
+  assert.equal(sample.lineItems.length, 8);
+  assert.ok(sample.sourceDocumentUrl?.startsWith("data:image/svg+xml"));
+  assert.ok(sample.extractedText.includes("Tapioca Pearls 3kg"));
+  assert.ok(sample.extractionWarnings[0].includes("Demo sample invoice"));
+}
+
+function testInvoiceReviewModalSaveStepAndCleanupTools() {
+  const draft = createDraftFromInvoice(createInvoiceRecord());
+  const savedHtml = renderReviewModal(createInvoiceRecord(), draft);
+  assert.ok(savedHtml.includes("Invoice saved"));
+  assert.ok(savedHtml.includes("Receive into inventory"));
+  assert.ok(savedHtml.includes("Skip for now"));
+  assert.ok(savedHtml.includes("Close"));
+
+  const reviewHtml = renderToStaticMarkup(
+    createElement(InvoiceReviewModal, {
+      open: true,
+      draft: {
+        ...draft,
+        lineItems: [
+          { ...draft.lineItems[0], id: "a", confidence: 0.4, needsReview: true },
+          { ...draft.lineItems[0], id: "b", confidence: 0.95, needsReview: false, itemName: "Oat Milk Carton 4L" },
+        ],
+      },
+      errorMessage: "",
+      isProcessing: false,
+      isSaving: false,
+      onClose: () => undefined,
+      onConfirm: () => undefined,
+      onSave: () => undefined,
+      setDraft: () => undefined,
+      uncertainFields: ["supplier"],
+      lineItemsNeedingReview: 1,
+      onAddLineItem: () => undefined,
+      onRemoveLineItem: () => undefined,
+      savedInvoice: null,
+      onReceiveSavedInvoice: () => undefined,
+      onSkipSavedInvoice: () => undefined,
+    }),
+  );
+  assert.ok(reviewHtml.includes("Remove low-confidence rows"));
+  assert.ok(reviewHtml.includes("Clear all line items"));
+  assert.ok(reviewHtml.includes("Add line item"));
+  assert.ok(reviewHtml.includes("Select"));
+}
+
 function testReopenModalPreservesValues() {
   const invoice = createInvoiceRecord();
   const draft = createDraftFromInvoice(invoice);
@@ -341,10 +442,13 @@ testDescriptionEditRegeneratesKey();
 testInvalidDateFormattingIsSafe();
 testParserPreservesOriginalDescription();
 testTableAwareParserKeepsRowsAndStopsAtFooter();
+testMessyCommercialInvoiceParserIgnoresFootersAndKeepsLikelyRows();
 testLegacyStorageCompatibility();
 testInvoiceHistoryOrderingAndPreview();
 testDuplicateSavePrevention();
 testDraftResetAndSaveMessaging();
+testDemoRestaurantInvoiceDraftLoadsInstantly();
+testInvoiceReviewModalSaveStepAndCleanupTools();
 testReopenModalPreservesValues();
 
 console.log("invoice_line_item_ui.test.tsx passed");

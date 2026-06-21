@@ -106,11 +106,15 @@ export function InvoiceLineItemCard({
   index,
   setDraft,
   onRemove,
+  selected = false,
+  onToggleSelected,
 }: {
   item: PilotInvoiceLineItem;
   index: number;
   setDraft: Dispatch<SetStateAction<PilotInvoiceDraft>>;
   onRemove: (index: number) => void;
+  selected?: boolean;
+  onToggleSelected?: (index: number) => void;
 }) {
   const totalState = getLineTotalReviewState(item);
 
@@ -119,6 +123,17 @@ export function InvoiceLineItemCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
+            {onToggleSelected ? (
+              <label className="inline-flex items-center gap-2 rounded-full border border-line bg-slate-50 px-3 py-1 text-xs font-semibold text-muted">
+                <input
+                  checked={selected}
+                  className="h-4 w-4 rounded border-line text-brand-600"
+                  onChange={() => onToggleSelected(index)}
+                  type="checkbox"
+                />
+                Select
+              </label>
+            ) : null}
             <p className="text-sm font-bold text-ink">Line item {index + 1}</p>
             <Badge tone={confidenceTone(item.confidence, item.needsReview)}>{formatLineConfidence(item.confidence)}</Badge>
             <Badge tone={item.status === "Price Increased" ? "danger" : item.status === "Matched" ? "success" : "warning"}>{item.status}</Badge>
