@@ -539,9 +539,9 @@ const cafeProfile = makeProfile({
   ],
   copy: {
     dashboard: {
-      title: "{{restaurantName}} cost-control dashboard",
+      title: "Owner Dashboard",
       eyebrow: "{{restaurantName}} / {{period}}",
-      description: "Sample restaurant data for a {{restaurantType}} in {{city}}. Flowtally turns supplier invoices into spend visibility, price-change alerts, and owner-ready actions.",
+      description: "Cost and operations snapshot for a {{restaurantType}} in {{city}}. Flowtally turns supplier invoices into spend visibility, price-change alerts, inventory actions, and daily close checks.",
     },
     dailyReconciliation: {
       title: "Daily Reconciliation",
@@ -954,9 +954,9 @@ const quickServiceProfile = makeProfile({
   ],
   copy: {
     dashboard: {
-      title: "{{restaurantName}} cost-control dashboard",
+      title: "Owner Dashboard",
       eyebrow: "{{restaurantName}} / {{period}}",
-      description: "Sample restaurant data for a {{restaurantType}} in {{city}}. Flowtally turns supplier invoices into spend visibility, price-change alerts, and owner-ready actions.",
+      description: "Cost and operations snapshot for a {{restaurantType}} in {{city}}. Flowtally turns supplier invoices into spend visibility, price-change alerts, inventory actions, and daily close checks.",
     },
     dailyReconciliation: {
       title: "Daily Reconciliation",
@@ -1369,9 +1369,9 @@ const fullServiceProfile = makeProfile({
   ],
   copy: {
     dashboard: {
-      title: "{{restaurantName}} cost-control dashboard",
+      title: "Owner Dashboard",
       eyebrow: "{{restaurantName}} / {{period}}",
-      description: "Sample restaurant data for a {{restaurantType}} in {{city}}. Flowtally turns supplier invoices into spend visibility, price-change alerts, and owner-ready actions.",
+      description: "Cost and operations snapshot for a {{restaurantType}} in {{city}}. Flowtally turns supplier invoices into spend visibility, price-change alerts, inventory actions, and daily close checks.",
     },
     dailyReconciliation: {
       title: "Daily Reconciliation",

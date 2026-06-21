@@ -5,7 +5,7 @@ import { createBrowserRouter, isRouteErrorResponse, Link, Navigate, RouterProvid
 import { AppShell } from "./components/AppShell";
 import "./styles.css";
 import { DailyReconciliationPage } from "./pages/DailyReconciliationPage";
-import { DashboardPage } from "./pages/DashboardPage";
+import { OwnerDashboardPage } from "./pages/OwnerDashboardPage";
 import { InvoiceUploadPage } from "./pages/InvoiceUploadPage";
 import { InventoryPage } from "./pages/InventoryPageNew";
 import { LandingPage } from "./pages/LandingPage";
@@ -120,7 +120,7 @@ function normalizeRouterBasename(baseUrl: string | undefined) {
 const routerBasename = normalizeRouterBasename(import.meta.env.BASE_URL);
 
 const demoChildren = [
-  { index: true, element: <DashboardPage /> },
+  { index: true, element: <OwnerDashboardPage /> },
   { path: "daily-reconciliation", element: <DailyReconciliationPage /> },
   { path: "invoices", element: <InvoiceUploadPage /> },
   { path: "inventory", element: <InventoryPage /> },
