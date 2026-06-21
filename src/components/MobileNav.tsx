@@ -5,8 +5,8 @@ import { buildDemoPath, defaultDemoProfileSlug, useDemoProfile } from "../lib/de
 const links = [
   { path: buildDemoPath(defaultDemoProfileSlug), label: "Summary", end: true },
   { path: buildDemoPath(defaultDemoProfileSlug, "invoices"), label: "Invoices" },
-  { path: buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation"), label: "Reconciliation" },
   { path: buildDemoPath(defaultDemoProfileSlug, "inventory"), label: "Inventory" },
+  { path: buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation"), label: "Reconciliation" },
 ] as const;
 
 export function MobileNav() {

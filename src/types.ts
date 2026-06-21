@@ -136,6 +136,9 @@ export interface PilotInvoiceDraft {
   notes: string;
   fileName: string;
   fileType: string;
+  sourceDocumentUrl?: string;
+  sourceDocumentName?: string;
+  sourceDocumentType?: string;
   extractedText: string;
   extractionWarnings: string[];
   fieldConfidence: InvoiceFieldConfidence;

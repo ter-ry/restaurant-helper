@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type MouseEvent, type SetStateAction } from "react";
+import { useNavigate } from "react-router-dom";
 import { Badge, type BadgeTone } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -15,6 +16,7 @@ import { useDemoProfile } from "../lib/demoProfile";
 import { getRecentInvoicePreview, usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { InvoiceFieldConfidence, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
+import { buildDemoPath, defaultDemoProfileSlug } from "../lib/demoProfile";
 
 const confidenceThreshold = 0.8;
 
@@ -49,6 +51,9 @@ function createBlankDraft(): PilotInvoiceDraft {
     notes: "",
     fileName: "",
     fileType: "",
+    sourceDocumentUrl: "",
+    sourceDocumentName: "",
+    sourceDocumentType: "",
     extractedText: "",
     extractionWarnings: [],
     fieldConfidence: { supplier: 0, invoiceDate: 0, invoiceNumber: 0, subtotal: 0, tax: 0, total: 0, lineItems: 0 },
@@ -72,13 +77,13 @@ function confidenceLabel(confidence: number, needsReview: boolean) {
   return formatLineConfidence(confidence);
 }
 
-function buildDraftFromOcr(result: Awaited<ReturnType<typeof captureInvoiceDocument>>, file: File): PilotInvoiceDraft {
+function buildDraftFromOcr(result: Awaited<ReturnType<typeof captureInvoiceDocument>>, file: File, sourceDocumentUrl = ""): PilotInvoiceDraft {
   const lineItems: PilotInvoiceLineItem[] = result.lineItems.length > 0 ? result.lineItems.map((item, index) => ({
     id: `line-${index + 1}-${Math.random().toString(16).slice(2, 6)}`,
     itemName: item.itemName || item.originalDescription || `Line item ${index + 1}`,
-    originalDescription: item.itemName || item.originalDescription || `Line item ${index + 1}`,
+    originalDescription: item.originalDescription || item.itemName || `Line item ${index + 1}`,
     rawSourceLine: item.rawSourceLine || item.originalDescription || item.itemName || `Line item ${index + 1}`,
-    comparisonKey: item.comparisonKey || normalizeLineItemKey(item.itemName || item.originalDescription || ""),
+    comparisonKey: item.comparisonKey || normalizeLineItemKey(item.originalDescription || item.itemName || ""),
     quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
     unit: item.unit || "each",
     unitPrice: Number.isFinite(item.unitPrice) ? Number(item.unitPrice.toFixed(2)) : 0,
@@ -102,6 +107,9 @@ function buildDraftFromOcr(result: Awaited<ReturnType<typeof captureInvoiceDocum
     notes: result.warnings.join(" "),
     fileName: file.name,
     fileType: file.type || "application/octet-stream",
+    sourceDocumentUrl,
+    sourceDocumentName: file.name,
+    sourceDocumentType: file.type || "application/octet-stream",
     extractedText: result.rawText,
     extractionWarnings: result.warnings,
     fieldConfidence: {
@@ -164,6 +172,8 @@ export function InvoiceUploadPage() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [showAllInvoices, setShowAllInvoices] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sourceDocumentUrlRef = useRef<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     handleResetDraft();
@@ -251,8 +261,9 @@ export function InvoiceUploadPage() {
     setStatusMessage("Sending the file to the OCR service for extraction...");
 
     try {
+      sourceDocumentUrlRef.current = URL.createObjectURL(file);
       const extracted = await captureInvoiceDocument(file);
-      setDraft(buildDraftFromOcr(extracted, file));
+      setDraft(buildDraftFromOcr(extracted, file, sourceDocumentUrlRef.current));
       setStatusMessage(`Extracted ${file.name}. Please review every highlighted field before saving.`);
       setReviewOpen(true);
     } catch (error) {
@@ -261,6 +272,9 @@ export function InvoiceUploadPage() {
         ...createBlankDraft(),
         fileName: file.name,
         fileType: file.type || "application/octet-stream",
+        sourceDocumentUrl: sourceDocumentUrlRef.current ?? "",
+        sourceDocumentName: file.name,
+        sourceDocumentType: file.type || "application/octet-stream",
         extractionWarnings: [message, "You can still enter the invoice manually below."],
         notes: message,
       });
@@ -301,6 +315,7 @@ export function InvoiceUploadPage() {
       setErrorMessage("");
       setReviewOpen(false);
       setDraft(createBlankDraft());
+      sourceDocumentUrlRef.current = null;
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -311,6 +326,7 @@ export function InvoiceUploadPage() {
 
   function handleResetDraft() {
     setDraft(createBlankDraft());
+    sourceDocumentUrlRef.current = null;
     setStatusMessage("");
     setErrorMessage("");
     setIsProcessing(false);
@@ -596,6 +612,10 @@ export function InvoiceUploadPage() {
         onReopenInReview={(invoice) => {
           setSelectedInvoiceId(null);
           reopenInvoiceForReview(invoice);
+        }}
+        onReceiveIntoInventory={(invoice) => {
+          setSelectedInvoiceId(null);
+          navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(invoice.id)}`);
         }}
       />
     </PageLayout>
@@ -1038,7 +1058,7 @@ function InvoiceReviewModal({
                   placeholder="Add notes"
                   asTextArea
                 />
-                <div className="min-w-0 rounded-xl border border-line bg-slate-50 p-4">
+                  <div className="min-w-0 rounded-xl border border-line bg-slate-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Processing summary</p>
                   <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
                     <SummaryRow label="File" value={draft.fileName || "No file uploaded"} />
@@ -1049,6 +1069,22 @@ function InvoiceReviewModal({
                     <SummaryRow label="Needs review" value={String(uncertainFields.length + lineItemsNeedingReview)} />
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-6 rounded-xl border border-line bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Original document</p>
+                <p className="mt-2 text-xs leading-5 text-muted">Review the uploaded file alongside the extracted fields. The preview stays local in this browser session.</p>
+                {draft.sourceDocumentUrl ? (
+                  <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white">
+                    {draft.sourceDocumentType?.includes("pdf") ? (
+                      <iframe className="h-[60vh] w-full bg-white" src={draft.sourceDocumentUrl} title={`${draft.fileName || "Invoice"} original document`} />
+                    ) : (
+                      <img className="max-h-[60vh] w-full object-contain bg-white" src={draft.sourceDocumentUrl} alt={`${draft.fileName || "Invoice"} original document`} />
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-slate-700">No original document preview is available for this upload.</p>
+                )}
               </div>
 
               <div className="mt-6 min-w-0 rounded-xl border border-line bg-slate-50 p-4">

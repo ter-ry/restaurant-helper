@@ -1,4 +1,5 @@
 import type { PilotReconciliationDraft, PilotReconciliationRecord, PilotReconciliationStatus } from "../types";
+import { dateValueToMillis } from "../utils/format";
 
 const BALANCED_TOLERANCE = 0.5;
 const REVIEW_TOLERANCE = 10;
@@ -9,15 +10,6 @@ function nowIso() {
 
 function clampMoney(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
-}
-
-function toMillis(value: string | undefined) {
-  if (!value) {
-    return Number.NEGATIVE_INFINITY;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }
 
 function localDateString(date = new Date()) {
@@ -250,22 +242,22 @@ export function deriveReconciliationRecord(existingRecords: PilotReconciliationR
 
 export function sortReconciliationsNewestFirst(records: PilotReconciliationRecord[]) {
   return [...records].sort((a, b) => {
-    const dateDelta = b.date.localeCompare(a.date);
+    const dateDelta = dateValueToMillis(b.date) - dateValueToMillis(a.date);
     if (dateDelta !== 0) {
       return dateDelta;
     }
 
-    const savedDelta = toMillis(b.savedAt) - toMillis(a.savedAt);
+    const savedDelta = dateValueToMillis(b.savedAt) - dateValueToMillis(a.savedAt);
     if (savedDelta !== 0) {
       return savedDelta;
     }
 
-    const updatedDelta = toMillis(b.updatedAt) - toMillis(a.updatedAt);
+    const updatedDelta = dateValueToMillis(b.updatedAt) - dateValueToMillis(a.updatedAt);
     if (updatedDelta !== 0) {
       return updatedDelta;
     }
 
-    return toMillis(b.createdAt) - toMillis(a.createdAt);
+    return dateValueToMillis(b.createdAt) - dateValueToMillis(a.createdAt);
   });
 }
 

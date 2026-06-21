@@ -8,7 +8,9 @@ import { PilotInvoiceDetailsModal } from "../src/components/PilotInvoiceDetailsM
 import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDisplay } from "../src/lib/invoiceHistory";
 import { getLineTotalReviewState, updateLineItemDescription } from "../src/lib/invoiceLineItemView";
 import { getRecentInvoicePreview, normalizeStoredWorkspace, sortInvoicesNewestFirst, upsertInvoiceRecord } from "../src/lib/pilotWorkspace";
+import { parseInvoiceDraft } from "../src/lib/invoiceParsing";
 import type { PilotInvoiceDraft, PilotInvoiceLineItem, PilotReconciliationRecord } from "../src/types";
+import { formatDate } from "../src/utils/format";
 
 function createLineItem(overrides: Partial<PilotInvoiceLineItem> = {}): PilotInvoiceLineItem {
   return {
@@ -78,6 +80,9 @@ function createInvoiceRecord(overrides: Partial<Parameters<typeof createDraftFro
     notes: "",
     fileName: "invoice.png",
     fileType: "image/png",
+    sourceDocumentUrl: "blob:invoice-1",
+    sourceDocumentName: "invoice.png",
+    sourceDocumentType: "image/png",
     extractedText: "Invoice total 154.06",
     extractionWarnings: [],
     fieldConfidence: { supplier: 1, invoiceDate: 1, invoiceNumber: 1, subtotal: 1, tax: 1, total: 1, lineItems: 1 },
@@ -128,8 +133,18 @@ function testLineTotalSummary() {
 function testDescriptionEditRegeneratesKey() {
   const updated = updateLineItemDescription(createLineItem(), "Labor 3hrs");
   assert.equal(updated.itemName, "Labor 3hrs");
-  assert.equal(updated.originalDescription, "Labor 3hrs");
+  assert.equal(updated.originalDescription, "Front and rear brake cables");
   assert.equal(updated.comparisonKey, "labor");
+}
+
+function testInvalidDateFormattingIsSafe() {
+  assert.equal(formatDate("not-a-date"), "—");
+}
+
+function testParserPreservesOriginalDescription() {
+  const draft = parseInvoiceDraft("Labor 3hrs $15.00\nGrand Total $15.00", "invoice.pdf", "application/pdf");
+  assert.equal(draft.lineItems[0].originalDescription, "Labor 3hrs");
+  assert.equal(draft.lineItems[0].comparisonKey, "labor");
 }
 
 function testLegacyStorageCompatibility() {
@@ -176,6 +191,7 @@ function testLegacyStorageCompatibility() {
   };
 
   const normalized = normalizeStoredWorkspace(legacyWorkspace as never);
+  assert.equal(normalized.invoices[0].lineItems[0].originalDescription, "Labor 3hrs 5.00 15.00");
   assert.equal(normalized.invoices[0].lineItems[0].rawSourceLine, "Labor 3hrs 5.00 15.00");
   assert.equal(normalized.invoices[0].lineItems[0].comparisonKey, "labor");
   assert.ok(normalized.invoices[0].savedAt);
@@ -263,6 +279,7 @@ function testReopenModalPreservesValues() {
   assert.equal(draft.lineItems[0].originalDescription, "Labor 3hrs");
   assert.equal(draft.lineItems[0].rawSourceLine, "Labor 3hrs 5.00 15.00");
   assert.equal(draft.lineItems[0].comparisonKey, "labor");
+  assert.equal(draft.sourceDocumentUrl, "blob:invoice-1");
 
   const html = renderToStaticMarkup(
     createElement(PilotInvoiceDetailsModal, {
@@ -270,13 +287,17 @@ function testReopenModalPreservesValues() {
       invoice,
       onClose: () => undefined,
       onReopenInReview: () => undefined,
+      onReceiveIntoInventory: () => undefined,
     }),
   );
   assert.ok(html.includes("Reopen in review"));
+  assert.ok(html.includes("Receive into inventory"));
   assert.ok(html.includes("Saved at"));
   assert.ok(html.includes("Labor 3hrs"));
   assert.ok(html.includes("US-001"));
   assert.ok(html.includes("Original description"));
+  assert.ok(html.includes("Original document"));
+  assert.ok(html.includes("blob:invoice-1"));
   assert.ok(html.includes("sm:hidden"));
   assert.ok(html.includes("Line item 1"));
 }
@@ -284,6 +305,8 @@ function testReopenModalPreservesValues() {
 testLineItemCardSimplification();
 testLineTotalSummary();
 testDescriptionEditRegeneratesKey();
+testInvalidDateFormattingIsSafe();
+testParserPreservesOriginalDescription();
 testLegacyStorageCompatibility();
 testInvoiceHistoryOrderingAndPreview();
 testDuplicateSavePrevention();

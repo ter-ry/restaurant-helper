@@ -61,6 +61,7 @@ import type {
   PriceStatus,
   Severity,
 } from "../types";
+import { dateValueToMillis } from "../utils/format";
 
 const STORAGE_KEY = "flowtally.pilot.workspace.v1";
 const PRICE_CHANGE_EPSILON = 0.01;
@@ -107,15 +108,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function toMillis(value: string | undefined) {
-  if (!value) {
-    return Number.NEGATIVE_INFINITY;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
-}
-
 function clampMoney(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
 }
@@ -133,11 +125,21 @@ function cleanLineItemDescription(value: string) {
     .replace(/\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b/gi, " ")
     .replace(/\b\d+(?:\.\d+)?\s*(?:x|X|@)\b/g, " ")
     .replace(/\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b/gi, " ")
-    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?/g, " ")
+    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?(?!\s*(?:hrs?|hours?|hr|h)\b)/g, " ")
     .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
     .replace(/[|·•]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function deriveComparisonKey(value: string) {
+  return normalizeComparisonKey(
+    value
+      .replace(/\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b/gi, " ")
+      .replace(/\b\d+(?:\.\d+)?\s*(?:x|X|@)\b/g, " ")
+      .replace(/\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b/gi, " ")
+      .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?/g, " "),
+  );
 }
 
 function itemKey(supplier: string, itemName: string) {
@@ -200,6 +202,8 @@ function createSeedInvoices(): PilotInvoiceRecord[] {
         notes: invoice.status === "Needs Review" || invoice.status === "Price Changes Found" ? "Review the highlighted items." : "",
         fileName: `${invoice.invoiceNumber}.pdf`,
         fileType: "application/pdf",
+        sourceDocumentName: `${invoice.invoiceNumber}.pdf`,
+        sourceDocumentType: "application/pdf",
         extractedText: `Seeded invoice record for ${invoice.invoiceNumber}`,
         subtotal: invoice.totalAmount,
         tax: 0,
@@ -351,6 +355,9 @@ export function normalizeStoredInvoiceRecord(record: PilotInvoiceRecord): PilotI
     notes: record.notes?.trim() || "",
     fileName: record.fileName || "",
     fileType: record.fileType || "",
+    sourceDocumentUrl: record.sourceDocumentUrl,
+    sourceDocumentName: record.sourceDocumentName || record.fileName || "",
+    sourceDocumentType: record.sourceDocumentType || record.fileType || "",
     extractedText: record.extractedText || "",
     extractionWarnings: Array.isArray(record.extractionWarnings) ? record.extractionWarnings : [],
     fieldConfidence: record.fieldConfidence,
@@ -395,17 +402,17 @@ function saveWorkspace(state: PilotWorkspaceState) {
 
 export function sortInvoicesNewestFirst(invoices: PilotInvoiceRecord[]) {
   return [...invoices].sort((a, b) => {
-    const savedDelta = toMillis(b.savedAt) - toMillis(a.savedAt);
+    const savedDelta = dateValueToMillis(b.savedAt) - dateValueToMillis(a.savedAt);
     if (savedDelta !== 0) {
       return savedDelta;
     }
 
-    const updatedDelta = toMillis(b.updatedAt) - toMillis(a.updatedAt);
+    const updatedDelta = dateValueToMillis(b.updatedAt) - dateValueToMillis(a.updatedAt);
     if (updatedDelta !== 0) {
       return updatedDelta;
     }
 
-    const createdDelta = toMillis(b.createdAt) - toMillis(a.createdAt);
+    const createdDelta = dateValueToMillis(b.createdAt) - dateValueToMillis(a.createdAt);
     if (createdDelta !== 0) {
       return createdDelta;
     }
@@ -434,14 +441,15 @@ export function getRecentInvoicePreview(invoices: PilotInvoiceRecord[], limit = 
 
 export function normalizeInvoiceLineItem(item: InvoiceLineItem | PilotInvoiceLineItem): PilotInvoiceLineItem {
   const line = item as PilotInvoiceLineItem;
-  const rawSourceLine = normalizeRawLineText(line.rawSourceLine || line.originalDescription);
-  const cleanDescription = normalizeRawLineText(item.itemName) || cleanLineItemDescription(rawSourceLine) || "Line item";
+  const rawSourceLine = normalizeRawLineText(line.rawSourceLine || line.originalDescription || item.itemName);
+  const originalDescription = normalizeRawLineText(line.originalDescription || rawSourceLine || item.itemName);
+  const cleanDescription = normalizeRawLineText(item.itemName) || cleanLineItemDescription(originalDescription || rawSourceLine) || originalDescription || "Line item";
   return {
     ...item,
     itemName: cleanDescription,
-    originalDescription: cleanDescription,
+    originalDescription: originalDescription || cleanDescription,
     rawSourceLine,
-    comparisonKey: line.comparisonKey?.trim() || normalizeComparisonKey(cleanDescription),
+    comparisonKey: line.comparisonKey?.trim() || deriveComparisonKey(originalDescription || rawSourceLine || cleanDescription),
     unit: item.unit.trim() || "each",
     category: item.category.trim() || detectCategory(cleanDescription),
     quantity: Number.isFinite(item.quantity) ? Number(item.quantity) : 1,
@@ -457,12 +465,12 @@ export function normalizeInvoiceLineItem(item: InvoiceLineItem | PilotInvoiceLin
 
 function buildPriceChanges(invoices: PilotInvoiceRecord[]): PilotPriceChangeRecord[] {
   const sortedInvoices = [...invoices].sort((a, b) => {
-    const dateDelta = a.invoiceDate.localeCompare(b.invoiceDate);
+    const dateDelta = dateValueToMillis(a.invoiceDate) - dateValueToMillis(b.invoiceDate);
     if (dateDelta !== 0) {
       return dateDelta;
     }
 
-    return a.createdAt.localeCompare(b.createdAt);
+    return dateValueToMillis(a.createdAt) - dateValueToMillis(b.createdAt);
   });
   const lastSeen = new Map<string, { price: number; invoiceDate: string; invoiceId: string }>();
   const changes: PilotPriceChangeRecord[] = [];
@@ -497,7 +505,7 @@ function buildPriceChanges(invoices: PilotInvoiceRecord[]): PilotPriceChangeReco
   }
 
   return changes.sort((a, b) => {
-    const dateDelta = b.invoiceDate.localeCompare(a.invoiceDate);
+    const dateDelta = dateValueToMillis(b.invoiceDate) - dateValueToMillis(a.invoiceDate);
     if (dateDelta !== 0) {
       return dateDelta;
     }
@@ -517,7 +525,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
 
   const invoiceStats = invoices.reduce(
     (acc, invoice) => {
-      const invoiceDate = new Date(`${invoice.invoiceDate}T12:00:00`);
+      const invoiceDate = new Date(dateValueToMillis(invoice.invoiceDate));
       acc.totalSpend += invoice.totalAmount;
       acc.totalCount += 1;
       if (invoice.status === "Needs Review") {
@@ -538,7 +546,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
 
   const reconciliationStats = reconciliations.reduce(
     (acc, record) => {
-      const recordDate = new Date(`${record.date}T12:00:00`);
+      const recordDate = new Date(dateValueToMillis(record.date));
       const unresolved = record.status !== "Balanced";
       if (unresolved) {
         acc.unresolvedCount += 1;
@@ -578,7 +586,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
     unresolvedReconciliationCount: reconciliationStats.unresolvedCount,
     weeklyUnresolvedVariance: Number(reconciliationStats.weeklyVariance.toFixed(2)),
     monthlyUnresolvedVariance: Number(reconciliationStats.monthlyVariance.toFixed(2)),
-    recentPriceChangeCount: priceChanges.filter((change) => new Date(`${change.invoiceDate}T12:00:00`) >= monthAgo).length,
+    recentPriceChangeCount: priceChanges.filter((change) => new Date(dateValueToMillis(change.invoiceDate)) >= monthAgo).length,
     todayReconciliationStatus: reconciliationStats.todayStatus,
     todayReconciliationVariance: Number(reconciliationStats.todayVariance.toFixed(2)),
     todayReconciliationDate: today,
@@ -607,7 +615,7 @@ function deriveInvoiceState(existingInvoices: PilotInvoiceRecord[], draft: Pilot
         id: item.id || `line-${index + 1}`,
         itemName,
         comparisonKey,
-        originalDescription: itemName,
+        originalDescription: rawSourceLine || item.originalDescription || itemName,
         rawSourceLine,
         quantity: item.quantity || 1,
         unitPrice: currentUnitPrice,
@@ -635,6 +643,9 @@ function deriveInvoiceState(existingInvoices: PilotInvoiceRecord[], draft: Pilot
     notes: draft.notes.trim(),
     fileName: draft.fileName,
     fileType: draft.fileType,
+    sourceDocumentUrl: draft.sourceDocumentUrl,
+    sourceDocumentName: draft.sourceDocumentName,
+    sourceDocumentType: draft.sourceDocumentType,
     extractedText: draft.extractedText,
     extractionWarnings: draft.extractionWarnings,
     fieldConfidence: draft.fieldConfidence,
@@ -650,12 +661,12 @@ function deriveInvoiceState(existingInvoices: PilotInvoiceRecord[], draft: Pilot
 function findPreviousPrice(invoices: PilotInvoiceRecord[], supplier: string, comparisonKey: string) {
   const key = itemKey(supplier, comparisonKey);
   const sorted = [...invoices].sort((a, b) => {
-    const dateDelta = a.invoiceDate.localeCompare(b.invoiceDate);
+    const dateDelta = dateValueToMillis(a.invoiceDate) - dateValueToMillis(b.invoiceDate);
     if (dateDelta !== 0) {
       return dateDelta;
     }
 
-    return a.createdAt.localeCompare(b.createdAt);
+    return dateValueToMillis(a.createdAt) - dateValueToMillis(b.createdAt);
   });
 
   let price: number | undefined;

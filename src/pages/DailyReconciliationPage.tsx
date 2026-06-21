@@ -18,7 +18,7 @@ import {
 } from "../lib/reconciliationWorkflow";
 import { usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { PilotReconciliationDraft, PilotReconciliationRecord } from "../types";
-import { formatCurrency, formatDate } from "../utils/format";
+import { formatCurrency, formatDate, formatDateTime } from "../utils/format";
 
 const DRAFT_STORAGE_KEY = "flowtally.pilot.reconciliation.draft.v1";
 
@@ -658,7 +658,7 @@ export function DailyReconciliationPage() {
                   <SummaryRow label="Expected POS" value={formatCurrency(record.expectedPosSales)} />
                   <SummaryRow label="Accounted total" value={formatCurrency(summaryForCard.accountedTotal)} />
                   <SummaryRow label="Variance" value={formatCurrency(record.variance)} />
-                  <SummaryRow label="Last updated" value={record.savedAt ? new Date(record.savedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "Not saved"} />
+                  <SummaryRow label="Last updated" value={formatDateTime(record.savedAt || record.updatedAt || record.createdAt)} />
                 </div>
 
                 <p className="mt-3 text-xs leading-5 text-muted">{record.notes || "No notes saved."}</p>

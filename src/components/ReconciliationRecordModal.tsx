@@ -4,23 +4,7 @@ import { Card } from "./Card";
 import type { MouseEvent } from "react";
 import type { PilotReconciliationRecord } from "../types";
 import { buildReconciliationSaveConfirmation, summarizeReconciliationDraft } from "../lib/reconciliationWorkflow";
-import { formatCurrency, formatDate } from "../utils/format";
-
-function formatDateTime(value?: string) {
-  if (!value) {
-    return "Not saved";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(parsed);
-}
+import { formatCurrency, formatDate, formatDateTime } from "../utils/format";
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (

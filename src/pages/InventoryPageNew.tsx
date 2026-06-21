@@ -1,6 +1,6 @@
 import { Archive, CheckCircle2, Clock3, History, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -193,6 +193,9 @@ export function InventoryPage() {
   const [selectedCountSessionId, setSelectedCountSessionId] = useState<string | null>(null);
   const [reorderSupplierFilter, setReorderSupplierFilter] = useState("All suppliers");
   const [reorderQuantities, setReorderQuantities] = useState<Record<string, number>>({});
+  const location = useLocation();
+  const navigate = useNavigate();
+  const receivedInvoiceRouteRef = useRef<string | null>(null);
 
   const selectedItem = useMemo(() => inventoryItems.find((item) => item.id === selectedItemId) ?? null, [inventoryItems, selectedItemId]);
   const selectedHistoryItemId = activePanel?.kind === "history" ? activePanel.itemId : null;
@@ -269,6 +272,25 @@ export function InventoryPage() {
   }, [activePanel, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices, selectedInvoiceId]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const receiveInvoiceId = params.get("receive");
+    if (!receiveInvoiceId || receivedInvoiceRouteRef.current === receiveInvoiceId) {
+      return;
+    }
+
+    const invoice = recentInvoices.find((entry) => entry.id === receiveInvoiceId);
+    if (!invoice) {
+      return;
+    }
+
+    receivedInvoiceRouteRef.current = receiveInvoiceId;
+    setSelectedInvoiceId(receiveInvoiceId);
+    setActivePanel({ kind: "receive" });
+    setReceiveLines(buildReceiveLines(receiveInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
+    navigate(location.pathname, { replace: true });
+  }, [inventoryItems, inventoryMappings, inventoryReceipts, location.pathname, location.search, navigate, recentInvoices]);
+
+  useEffect(() => {
     if (!activePanel || activePanel.kind !== "item") {
       return;
     }
@@ -299,6 +321,11 @@ export function InventoryPage() {
     setMessage("");
     setActivePanel({ kind: "receive" });
     setReceiveLines(buildReceiveLines(selectedInvoiceId, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices));
+  };
+
+  const closeReceivePanel = () => {
+    receivedInvoiceRouteRef.current = null;
+    setActivePanel(null);
   };
 
   const openAdjustPanel = () => {
@@ -469,7 +496,7 @@ export function InventoryPage() {
 
     setMessage(`Recorded ${result.recorded} invoice receipt line${result.recorded === 1 ? "" : "s"}${result.skipped ? `, skipped ${result.skipped} duplicates` : ""}.`);
     setErrorMessage("");
-    setActivePanel(null);
+    closeReceivePanel();
   };
 
   const handleMovementSave = () => {
@@ -926,7 +953,7 @@ export function InventoryPage() {
       ) : null}
 
       {activePanel?.kind === "receive" ? (
-        <ModalShell title="Receive from saved invoice" onClose={() => setActivePanel(null)} wide>
+        <ModalShell title="Receive from saved invoice" onClose={closeReceivePanel} wide>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Saved invoice">
               <select className="input" value={selectedInvoiceId} onChange={(event) => { setSelectedInvoiceId(event.target.value); setReceiveLines(buildReceiveLines(event.target.value, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices)); }}>
@@ -1040,7 +1067,7 @@ export function InventoryPage() {
             <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleReceiveSave} disabled={receiveLines.some((line) => line.state === "unmapped" || (line.state === "linked" && !line.selectedItemId))}>
               Save stock movements
             </Button>
-            <Button type="button" variant="ghost" onClick={() => setActivePanel(null)}>
+            <Button type="button" variant="ghost" onClick={closeReceivePanel}>
               Cancel
             </Button>
           </div>

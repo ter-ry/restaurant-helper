@@ -4,23 +4,7 @@ import { Card } from "./Card";
 import { DataTable, type Column } from "./DataTable";
 import type { MouseEvent } from "react";
 import type { PilotInvoiceLineItem, PilotInvoiceRecord } from "../types";
-import { formatCurrency, formatDate, formatPercent } from "../utils/format";
-
-function formatDateTime(value?: string) {
-  if (!value) {
-    return "Not saved";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(parsed);
-}
+import { formatCurrency, formatDate, formatDateTime, formatPercent } from "../utils/format";
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
@@ -36,11 +20,13 @@ export function PilotInvoiceDetailsModal({
   invoice,
   onClose,
   onReopenInReview,
+  onReceiveIntoInventory,
 }: {
   open: boolean;
   invoice: PilotInvoiceRecord | null;
   onClose: () => void;
   onReopenInReview: (invoice: PilotInvoiceRecord) => void;
+  onReceiveIntoInventory: (invoice: PilotInvoiceRecord) => void;
 }) {
   if (!open || !invoice) {
     return null;
@@ -82,6 +68,9 @@ export function PilotInvoiceDetailsModal({
             <Button type="button" variant="secondary" onClick={() => onReopenInReview(invoice)}>
               Reopen in review
             </Button>
+            <Button type="button" variant="secondary" onClick={() => onReceiveIntoInventory(invoice)}>
+              Receive into inventory
+            </Button>
             <Button type="button" variant="ghost" onClick={onClose}>
               Close
             </Button>
@@ -109,6 +98,24 @@ export function PilotInvoiceDetailsModal({
                   <SummaryRow label="File type" value={invoice.fileType || "Not available"} />
                 </div>
               </div>
+            </Card>
+
+            <Card className="p-5">
+              <div className="mb-4">
+                <h3 className="text-lg font-bold text-ink">Original document</h3>
+                <p className="mt-1 text-sm text-muted">If this invoice was uploaded in the current session, you can review the original file here.</p>
+              </div>
+              {invoice.sourceDocumentUrl ? (
+                <div className="overflow-hidden rounded-xl border border-line bg-slate-50">
+                  {invoice.sourceDocumentType?.includes("pdf") ? (
+                    <iframe className="h-[70vh] w-full bg-white" src={invoice.sourceDocumentUrl} title={`${invoice.fileName || invoice.invoiceNumber || "Invoice"} original document`} />
+                  ) : (
+                    <img className="max-h-[70vh] w-full bg-white object-contain" src={invoice.sourceDocumentUrl} alt={`${invoice.fileName || invoice.invoiceNumber || "Invoice"} original document`} />
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-slate-700">No original file preview is stored for this record yet.</p>
+              )}
             </Card>
 
             <Card className="p-5">

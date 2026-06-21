@@ -51,7 +51,7 @@ function normalizeLineItemDescription(value: string) {
     .replace(/\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b/gi, " ")
     .replace(/\b\d+(?:\.\d+)?\s*(?:x|X|@)\b/g, " ")
     .replace(/\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b/gi, " ")
-    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?/g, " ")
+    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?(?!\s*(?:hrs?|hours?|hr|h)\b)/g, " ")
     .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
     .replace(/[|â€¢Â·]/g, " ")
     .replace(/\s+/g, " ")
@@ -144,6 +144,15 @@ function extractItemName(line: string) {
   return stripped;
 }
 
+function extractOriginalItemDescription(line: string) {
+  return line
+    .replace(/\$?\s*[0-9][0-9,]*(?:\.\d{2})?(?!\s*(?:hrs?|hours?|hr|h)\b)/g, " ")
+    .replace(/\b(?:subtotal|tax|gst|hst|vat|balance|due|invoice|amount|paid|total)\b/gi, " ")
+    .replace(/[|â€¢Â·]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseLineItems(sourceText: string): PilotInvoiceLineItem[] {
   const lines = sourceText
     .split(/\r?\n/)
@@ -161,6 +170,7 @@ function parseLineItems(sourceText: string): PilotInvoiceLineItem[] {
     }
 
     const itemName = extractItemName(line);
+    const originalDescription = extractOriginalItemDescription(line) || itemName;
     if (!itemName || itemName.length < 2) {
       continue;
     }
@@ -179,9 +189,9 @@ function parseLineItems(sourceText: string): PilotInvoiceLineItem[] {
     items.push({
       id: `item-${index + 1}`,
       itemName,
-      originalDescription: itemName,
+      originalDescription,
       rawSourceLine: normalizeWhitespace(line),
-      comparisonKey: itemName.toLowerCase(),
+      comparisonKey: normalizeLineItemDescription(originalDescription || itemName).toLowerCase(),
       quantity,
       unit: "each",
       unitPrice,

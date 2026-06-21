@@ -18,7 +18,6 @@ export function updateLineItemDescription(item: PilotInvoiceLineItem, descriptio
   return {
     ...item,
     itemName,
-    originalDescription: itemName,
     comparisonKey: normalizeComparisonKey(itemName),
     needsReview: true,
   };
