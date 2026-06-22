@@ -14,11 +14,11 @@ export interface DemoProfileView extends DemoProfileData {
   sampleLabel: string;
   navigation: {
     dashboard: string;
-    dailyReconciliation: string;
-    invoices: string;
-    priceTracker: string;
-    reports: string;
-    settings: string;
+    purchases: string;
+    inventory: string;
+    menuCosting: string;
+    schedule: string;
+    closeReports: string;
   };
 }
 
@@ -42,11 +42,11 @@ function parseCustomizationOverrides(search: string): Partial<DemoCustomization>
 function createDemoNavigation(slug: DemoProfileSlug) {
   return {
     dashboard: buildDemoPath(slug),
-    dailyReconciliation: buildDemoPath(slug, "daily-reconciliation"),
-    invoices: buildDemoPath(slug, "invoices"),
-    priceTracker: buildDemoPath(slug, "price-tracker"),
-    reports: buildDemoPath(slug, "monthly-report"),
-    settings: buildDemoPath(slug, "settings"),
+    purchases: buildDemoPath(slug, "purchases"),
+    inventory: buildDemoPath(slug, "inventory"),
+    menuCosting: buildDemoPath(slug, "menu-costing"),
+    schedule: buildDemoPath(slug, "schedule"),
+    closeReports: buildDemoPath(slug, "close-reports"),
   };
 }
 
