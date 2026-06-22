@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { PilotWorkspaceProvider } from "../src/lib/pilotWorkspace";
+import { PilotWorkspaceProvider, usePilotWorkspace } from "../src/lib/pilotWorkspace";
 import { buildOwnerDashboardModel } from "../src/lib/ownerDashboard";
 import { OwnerDashboardPage } from "../src/pages/OwnerDashboardPage";
 
@@ -254,7 +254,24 @@ function testOwnerDashboardModelAggregatesSafely() {
         comparisonKey: "black tea leaves",
         category: "Tea",
         previousPrice: 100,
-        currentPrice: 100,
+        currentPrice: 92,
+        changePercent: -8,
+        status: "Decreased",
+        severity: "Medium",
+      },
+      {
+        id: "change-3",
+        invoiceId: "invoice-c",
+        invoiceDate: "2026-06-20",
+        previousInvoiceDate: "2026-06-19",
+        supplier: "Cup & Lid Supply",
+        itemName: "Cup Lids",
+        originalDescription: "Cup Lids",
+        rawSourceLine: "Cup Lids",
+        comparisonKey: "cup lids",
+        category: "Packaging",
+        previousPrice: 32,
+        currentPrice: 32,
         changePercent: 0,
         status: "Stable",
         severity: "Low",
@@ -298,7 +315,9 @@ function testOwnerDashboardModelAggregatesSafely() {
   assert.equal(model.supplierSpend[0].supplier, "Tea Time Co");
   assert.equal(model.supplierSpend[0].invoiceCount, 1);
   assert.equal(model.priceIncreaseCount, 1);
-  assert.equal(model.costIncreases[0].itemName, "Tapioca Pearls");
+  assert.equal(model.costChanges[0].itemName, "Tapioca Pearls");
+  assert.equal(model.costChanges.some((change) => change.status === "Decreased"), true);
+  assert.equal(model.costChanges.some((change) => change.status === "Stable"), true);
   assert.equal(model.actionableInvoiceCount, 3);
   assert.ok(model.needsAttention.some((item) => item.title.includes("not received into inventory")));
   assert.ok(model.needsAttention.some((item) => item.title.includes("skipped for now")));
@@ -307,9 +326,10 @@ function testOwnerDashboardModelAggregatesSafely() {
   assert.ok(model.needsAttention.some((item) => item.title.includes("items need reorder")));
   assert.ok(model.needsAttention.some((item) => item.title.includes("unresolved daily closes")));
   assert.ok(model.topItems[0].itemName.includes("Black Tea Leaves"));
-  assert.ok(model.topItems[1].itemName.includes("Tapioca Pearls"));
-  assert.equal(model.topItems[1].totalSpend, 100);
-  assert.equal(model.topItems[1].latestUnitPrice, 35);
+  const tapiocaRow = model.topItems.find((row) => row.itemName.includes("Tapioca Pearls"));
+  assert.ok(tapiocaRow);
+  assert.equal(tapiocaRow?.totalSpend, 100);
+  assert.equal(tapiocaRow?.latestUnitPrice, 35);
 }
 
 function testOwnerDashboardPageRendersOwnerCopy() {
@@ -317,7 +337,7 @@ function testOwnerDashboardPageRendersOwnerCopy() {
   assert.ok(html.includes("Owner Dashboard"));
   assert.ok(html.includes("Start here"));
   assert.ok(html.includes("Spend by supplier"));
-  assert.ok(html.includes("Cost increases to review"));
+  assert.ok(html.includes("Cost changes to review"));
   assert.ok(html.includes("Top purchased items"));
   assert.ok(html.includes("Needs attention"));
   assert.ok(html.includes("Inventory / reorder snapshot"));
@@ -328,7 +348,44 @@ function testOwnerDashboardPageRendersOwnerCopy() {
   assert.ok(html.includes("View daily close"));
 }
 
+function testSeedWorkspaceStory() {
+  let captured: ReturnType<typeof usePilotWorkspace> | null = null;
+
+  function Probe() {
+    captured = usePilotWorkspace();
+    return null;
+  }
+
+  renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: ["/demo/cafe"] },
+      createElement(
+        Routes,
+        null,
+        createElement(Route, {
+          path: "/demo/:profile",
+          element: createElement(PilotWorkspaceProvider, null, createElement(Probe, null)),
+        }),
+      ),
+    ),
+  );
+
+  assert.ok(captured);
+  assert.ok(captured!.recentInvoices.length >= 5);
+  assert.ok(captured!.recentInvoices.some((invoice) => invoice.supplier === "GTA Beverage Supply"));
+  assert.ok(captured!.recentInvoices.some((invoice) => invoice.supplier === "Metro Packaging Co."));
+  assert.ok(captured!.priceChanges.some((change) => change.status === "Increased"));
+  assert.ok(captured!.priceChanges.some((change) => change.status === "Decreased"));
+  assert.ok(captured!.recentInvoices.filter((invoice) => invoice.lineItems.some((line) => line.itemName === "Brown sugar syrup 5L" && line.unitPrice === 31)).length >= 2);
+  assert.ok(captured!.inventoryItems.some((item) => item.currentQuantity <= item.minQuantity));
+  assert.ok(captured!.inventoryMovements.some((movement) => movement.movementType === "invoice receipt"));
+  assert.ok(captured!.inventoryMovements.some((movement) => movement.movementType === "physical count adjustment"));
+  assert.ok(captured!.inventoryMovements.some((movement) => movement.note.includes("Sample sales usage")));
+}
+
 testOwnerDashboardModelAggregatesSafely();
 testOwnerDashboardPageRendersOwnerCopy();
+testSeedWorkspaceStory();
 
 console.log("owner_dashboard_ui.test.tsx passed");

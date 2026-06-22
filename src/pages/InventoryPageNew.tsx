@@ -585,7 +585,7 @@ export function InventoryPage() {
     <PageLayout
       title="Inventory"
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="A first-pass inventory foundation built from saved invoices, manual counts, and a conservative movement ledger."
+      description="A first-pass inventory foundation built from saved invoices, manual counts, and a conservative movement ledger. Current pilot tracks receiving, counts, and manual adjustments. Sales-based automatic deduction can be added later with POS sales reports and recipe mapping."
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <CompactStatCard label="Tracked" value={String(summary.inventoryItemCount)} helper={summary.inventoryValue ? formatCurrency(summary.inventoryValue) : "No stock value"} />

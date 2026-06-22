@@ -1,5 +1,4 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { defaultDemoProfileSlug, getDemoProfileView } from "./demoProfile";
 import {
   archiveInventoryItem,
   buildInventorySummary,
@@ -177,50 +176,157 @@ function normalizeComparisonKey(value: string) {
     .trim();
 }
 
-function mapInvoiceStatus(status: string | undefined) {
-  return status === "Processed" ? "Ready" : "Needs Review";
-}
-
 function createSeedInvoices(): PilotInvoiceRecord[] {
-  const demo = getDemoProfileView(defaultDemoProfileSlug);
-
-  return [...demo.invoices]
-    .sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate))
-    .map((invoice, index) => {
-      const createdAt = `${invoice.invoiceDate}T09:00:00.000Z`;
-
-      return {
-        id: `seed-invoice-${index + 1}`,
-        supplier: invoice.supplier,
-        invoiceDate: invoice.invoiceDate,
-        invoiceNumber: invoice.invoiceNumber,
-        totalAmount: clampMoney(invoice.totalAmount),
-        status: mapInvoiceStatus(invoice.status),
-        notes: invoice.status === "Needs Review" || invoice.status === "Price Changes Found" ? "Review the highlighted items." : "",
-        fileName: `${invoice.invoiceNumber}.pdf`,
-        fileType: "application/pdf",
-        sourceDocumentName: `${invoice.invoiceNumber}.pdf`,
-        sourceDocumentType: "application/pdf",
-        extractedText: `Seeded invoice record for ${invoice.invoiceNumber}`,
-        subtotal: invoice.totalAmount,
-        tax: 0,
-        extractionWarnings: [],
-        fieldConfidence: { supplier: 1, invoiceDate: 1, invoiceNumber: 1, subtotal: 1, tax: 0, total: 1, lineItems: 1 },
-        extractionProvider: "seed",
-        confirmed: true,
-        lineItems: invoice.lineItems.map((item) => normalizeInvoiceLineItem({
-          ...item,
-          originalDescription: item.itemName,
-          rawSourceLine: item.itemName,
-          comparisonKey: normalizeComparisonKey(item.itemName),
-          confidence: 1,
-          needsReview: false,
-        })),
-        createdAt,
-        updatedAt: createdAt,
-        savedAt: createdAt,
-      };
+  const seedLineItem = (
+    id: string,
+    itemName: string,
+    quantity: number,
+    unit: string,
+    unitPrice: number,
+    lineTotal: number,
+    category: string,
+    status: PilotInvoiceLineItem["status"] = "Matched",
+  ): PilotInvoiceLineItem =>
+    normalizeInvoiceLineItem({
+      id,
+      itemName,
+      originalDescription: itemName,
+      rawSourceLine: `${itemName} ${quantity} ${unit} ${unitPrice.toFixed(2)} ${lineTotal.toFixed(2)}`,
+      comparisonKey: normalizeComparisonKey(itemName),
+      quantity,
+      unit,
+      unitPrice,
+      lineTotal,
+      category,
+      status,
+      confidence: 1,
+      needsReview: false,
     });
+
+  const seedInvoices: Array<Pick<PilotInvoiceDraft, "supplier" | "invoiceDate" | "invoiceNumber" | "subtotal" | "tax" | "totalAmount" | "status" | "notes" | "lineItems"> & { createdAt: string }> = [
+    {
+      supplier: "GTA Beverage Supply",
+      invoiceDate: "2026-06-01",
+      invoiceNumber: "GTA-6001",
+      subtotal: 145,
+      tax: 18.85,
+      totalAmount: 163.85,
+      status: "Needs Review",
+      notes: "Review the highlighted items.",
+      createdAt: "2026-06-01T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("gta-1", "Tapioca pearls 3kg bag", 1, "bag", 42, 42, "Tea"),
+        seedLineItem("gta-2", "Brown sugar syrup 5L", 1, "bottle", 29, 29, "Syrup"),
+        seedLineItem("gta-3", "Black tea leaves 1kg", 1, "bag", 36, 36, "Tea"),
+        seedLineItem("gta-4", "Oat milk cartons", 1, "case", 38, 38, "Dairy"),
+      ],
+    },
+    {
+      supplier: "Metro Packaging Co.",
+      invoiceDate: "2026-06-04",
+      invoiceNumber: "MPC-2201",
+      subtotal: 177,
+      tax: 23.01,
+      totalAmount: 200.01,
+      status: "Needs Review",
+      notes: "Review the highlighted items.",
+      createdAt: "2026-06-04T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("mpc-1", "700ml plastic cups", 1, "case", 68, 68, "Packaging"),
+        seedLineItem("mpc-2", "Cup sealing film", 1, "roll", 55, 55, "Packaging"),
+        seedLineItem("mpc-3", "Straws", 1, "box", 22, 22, "Packaging"),
+        seedLineItem("mpc-4", "Cup lids", 1, "case", 32, 32, "Packaging"),
+      ],
+    },
+    {
+      supplier: "GTA Beverage Supply",
+      invoiceDate: "2026-06-08",
+      invoiceNumber: "GTA-6012",
+      subtotal: 155,
+      tax: 20.15,
+      totalAmount: 175.15,
+      status: "Needs Review",
+      notes: "Review the highlighted items.",
+      createdAt: "2026-06-08T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("gta-5", "Tapioca pearls 3kg bag", 1, "bag", 47, 47, "Tea", "Price Increased"),
+        seedLineItem("gta-6", "Brown sugar syrup 5L", 1, "bottle", 31, 31, "Syrup", "Price Increased"),
+        seedLineItem("gta-7", "Black tea leaves 1kg", 1, "bag", 36, 36, "Tea"),
+        seedLineItem("gta-8", "Oat milk cartons", 1, "case", 41, 41, "Dairy", "Price Increased"),
+      ],
+    },
+    {
+      supplier: "Metro Packaging Co.",
+      invoiceDate: "2026-06-11",
+      invoiceNumber: "MPC-2284",
+      subtotal: 180,
+      tax: 23.4,
+      totalAmount: 203.4,
+      status: "Ready",
+      notes: "",
+      createdAt: "2026-06-11T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("mpc-5", "700ml plastic cups", 1, "case", 65, 65, "Packaging", "Price Increased"),
+        seedLineItem("mpc-6", "Cup sealing film", 1, "roll", 58, 58, "Packaging", "Price Increased"),
+        seedLineItem("mpc-7", "Straws", 1, "box", 22, 22, "Packaging"),
+        seedLineItem("mpc-8", "Cup lids", 1, "case", 35, 35, "Packaging", "Price Increased"),
+      ],
+    },
+    {
+      supplier: "GTA Beverage Supply",
+      invoiceDate: "2026-06-15",
+      invoiceNumber: "GTA-6024",
+      subtotal: 151,
+      tax: 19.63,
+      totalAmount: 170.63,
+      status: "Ready",
+      notes: "",
+      createdAt: "2026-06-15T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("gta-9", "Tapioca pearls 3kg bag", 1, "bag", 45, 45, "Tea", "Price Increased"),
+        seedLineItem("gta-10", "Brown sugar syrup 5L", 1, "bottle", 31, 31, "Syrup"),
+        seedLineItem("gta-11", "Black tea leaves 1kg", 1, "bag", 34, 34, "Tea", "Price Increased"),
+        seedLineItem("gta-12", "Oat milk cartons", 1, "case", 41, 41, "Dairy"),
+      ],
+    },
+  ];
+
+  return seedInvoices.map((invoice, index) => {
+    const lineItems = invoice.lineItems.map((item) =>
+      normalizeInvoiceLineItem({
+        ...item,
+        originalDescription: item.itemName,
+        rawSourceLine: `${item.itemName} ${item.quantity} ${item.unit} ${item.unitPrice.toFixed(2)} ${item.lineTotal.toFixed(2)}`,
+        comparisonKey: normalizeComparisonKey(item.itemName),
+        confidence: 1,
+        needsReview: false,
+      }),
+    );
+    return {
+      id: `seed-invoice-${index + 1}`,
+      supplier: invoice.supplier,
+      invoiceDate: invoice.invoiceDate,
+      invoiceNumber: invoice.invoiceNumber,
+      totalAmount: clampMoney(invoice.totalAmount),
+      status: invoice.status,
+      notes: invoice.notes,
+      fileName: `${invoice.invoiceNumber}.pdf`,
+      fileType: "application/pdf",
+      sourceDocumentName: `${invoice.invoiceNumber}.pdf`,
+      sourceDocumentType: "application/pdf",
+      extractedText: `Seeded invoice record for ${invoice.invoiceNumber}`,
+      subtotal: clampMoney(invoice.subtotal),
+      tax: clampMoney(invoice.tax),
+      extractionWarnings: [],
+      fieldConfidence: { supplier: 1, invoiceDate: 1, invoiceNumber: 1, subtotal: 1, tax: 1, total: 1, lineItems: 1 },
+      extractionProvider: "seed",
+      confirmed: true,
+      lineItems,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.createdAt,
+      savedAt: invoice.createdAt,
+    };
+  });
 }
 
 function createSeedReconciliations(): PilotReconciliationRecord[] {

@@ -1,4 +1,3 @@
-import { defaultDemoProfileSlug, getDemoProfileView } from "./demoProfile";
 import { normalizeComparisonKey } from "./invoiceLineItemView";
 import type {
   InventoryInvoiceReceipt,
@@ -17,6 +16,234 @@ import type {
 import { formatCurrency } from "../utils/format";
 
 const LOW_STOCK_DAYS = 14;
+
+type SeedInventorySpec = {
+  id: string;
+  name: string;
+  category: string;
+  currentQuantity: number;
+  receiptQuantity: number;
+  unit: string;
+  minQuantity: number;
+  parLevel: number;
+  preferredSupplier: string;
+  latestPurchasePrice: number;
+  latestPurchaseUnit: string;
+  latestPurchaseConversionFactor: number;
+  lastReceivedAt: string;
+  lastCountedAt: string;
+  averageDailyUsage: number;
+  notes: string;
+  movements: Array<{
+    movementType: InventoryMovementType;
+    quantityDelta: number;
+    note: string;
+    createdAt: string;
+  }>;
+};
+
+const seedInventorySpecs: SeedInventorySpec[] = [
+  {
+    id: "inventory-seed-1",
+    name: "Tapioca pearls 3kg bag",
+    category: "Tea",
+    currentQuantity: 2,
+    receiptQuantity: 4,
+    unit: "bag",
+    minQuantity: 3,
+    parLevel: 6,
+    preferredSupplier: "GTA Beverage Supply",
+    latestPurchasePrice: 45,
+    latestPurchaseUnit: "bag",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-03",
+    lastCountedAt: "2026-06-20",
+    averageDailyUsage: 1.1,
+    notes: "Needs reorder after the lunch rush.",
+    movements: [
+      {
+        movementType: "usage",
+        quantityDelta: -1,
+        note: "Sample sales usage (demo only).",
+        createdAt: "2026-06-04T18:00:00.000Z",
+      },
+      {
+        movementType: "physical count adjustment",
+        quantityDelta: -1,
+        note: "Physical count adjustment after end-of-day count.",
+        createdAt: "2026-06-05T09:00:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "inventory-seed-2",
+    name: "Brown sugar syrup 5L",
+    category: "Syrup",
+    currentQuantity: 4,
+    receiptQuantity: 4,
+    unit: "bottle",
+    minQuantity: 3,
+    parLevel: 7,
+    preferredSupplier: "GTA Beverage Supply",
+    latestPurchasePrice: 31,
+    latestPurchaseUnit: "bottle",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-03",
+    lastCountedAt: "2026-06-19",
+    averageDailyUsage: 0.7,
+    notes: "Price moved up but stock is still manageable.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-3",
+    name: "Black tea leaves 1kg",
+    category: "Tea",
+    currentQuantity: 9,
+    receiptQuantity: 8,
+    unit: "bag",
+    minQuantity: 4,
+    parLevel: 10,
+    preferredSupplier: "GTA Beverage Supply",
+    latestPurchasePrice: 34,
+    latestPurchaseUnit: "bag",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-05",
+    lastCountedAt: "2026-06-19",
+    averageDailyUsage: 0.6,
+    notes: "Stable item with no urgent reorder need.",
+    movements: [
+      {
+        movementType: "manual addition",
+        quantityDelta: 1,
+        note: "Manual adjustment after stockroom review.",
+        createdAt: "2026-06-06T10:30:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "inventory-seed-4",
+    name: "Oat milk cartons",
+    category: "Dairy",
+    currentQuantity: 3,
+    receiptQuantity: 4,
+    unit: "case",
+    minQuantity: 4,
+    parLevel: 8,
+    preferredSupplier: "GTA Beverage Supply",
+    latestPurchasePrice: 41,
+    latestPurchaseUnit: "case",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-03",
+    lastCountedAt: "2026-06-20",
+    averageDailyUsage: 0.9,
+    notes: "Low stock after a busy cold-drink weekend.",
+    movements: [
+      {
+        movementType: "usage",
+        quantityDelta: -1,
+        note: "Sample sales usage (demo only).",
+        createdAt: "2026-06-04T16:30:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "inventory-seed-5",
+    name: "700ml plastic cups",
+    category: "Packaging",
+    currentQuantity: 22,
+    receiptQuantity: 24,
+    unit: "case",
+    minQuantity: 12,
+    parLevel: 24,
+    preferredSupplier: "Metro Packaging Co.",
+    latestPurchasePrice: 65,
+    latestPurchaseUnit: "case",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-04",
+    lastCountedAt: "2026-06-19",
+    averageDailyUsage: 1.2,
+    notes: "Healthy stock after the supplier price dropped.",
+    movements: [
+      {
+        movementType: "correction",
+        quantityDelta: -2,
+        note: "Manual correction after opening count.",
+        createdAt: "2026-06-05T11:15:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "inventory-seed-6",
+    name: "Cup sealing film",
+    category: "Packaging",
+    currentQuantity: 1,
+    receiptQuantity: 2,
+    unit: "roll",
+    minQuantity: 2,
+    parLevel: 5,
+    preferredSupplier: "Metro Packaging Co.",
+    latestPurchasePrice: 58,
+    latestPurchaseUnit: "roll",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-04",
+    lastCountedAt: "2026-06-20",
+    averageDailyUsage: 0.4,
+    notes: "Below minimum and due for reorder.",
+    movements: [
+      {
+        movementType: "physical count adjustment",
+        quantityDelta: -1,
+        note: "Physical count adjustment after closing stock take.",
+        createdAt: "2026-06-06T08:45:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "inventory-seed-7",
+    name: "Straws",
+    category: "Packaging",
+    currentQuantity: 16,
+    receiptQuantity: 14,
+    unit: "box",
+    minQuantity: 8,
+    parLevel: 18,
+    preferredSupplier: "Metro Packaging Co.",
+    latestPurchasePrice: 22,
+    latestPurchaseUnit: "box",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-04",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.3,
+    notes: "Manual count topped the bin back up.",
+    movements: [
+      {
+        movementType: "manual addition",
+        quantityDelta: 2,
+        note: "Manual adjustment after refill.",
+        createdAt: "2026-06-06T09:10:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "inventory-seed-8",
+    name: "Cup lids",
+    category: "Packaging",
+    currentQuantity: 5,
+    receiptQuantity: 5,
+    unit: "case",
+    minQuantity: 4,
+    parLevel: 8,
+    preferredSupplier: "Metro Packaging Co.",
+    latestPurchasePrice: 35,
+    latestPurchaseUnit: "case",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-04",
+    lastCountedAt: "2026-06-19",
+    averageDailyUsage: 0.5,
+    notes: "Stable pricing and steady usage.",
+    movements: [],
+  },
+];
 
 function nowIso() {
   return new Date().toISOString();
@@ -116,32 +343,28 @@ function inventoryStatusRank(status: InventoryItemStatus) {
 }
 
 function createSeedInventoryItems(): InventoryItem[] {
-  const demo = getDemoProfileView(defaultDemoProfileSlug);
-  return demo.trackedItems.slice(0, 10).map((item, index) => {
-    const createdAt = `${item.lastPurchasedDate}T12:00:00.000Z`;
-    const currentQuantity = Number((12 - index).toFixed(2));
-    const minQuantity = index % 3 === 0 ? 4 : 3;
-    const parLevel = minQuantity + 4;
+  return seedInventorySpecs.map((item) => {
+    const createdAt = `${item.lastReceivedAt}T12:00:00.000Z`;
     return {
-      id: `inventory-seed-${index + 1}`,
+      id: item.id,
       name: item.name,
       normalizedName: normalizeName(item.name),
       category: item.category,
-      currentQuantity,
-      unit: "each",
-      minQuantity,
-      parLevel,
+      currentQuantity: item.currentQuantity,
+      unit: item.unit,
+      minQuantity: item.minQuantity,
+      parLevel: item.parLevel,
       preferredSupplier: item.preferredSupplier,
-      latestPurchasePrice: clampMoney(item.lastPrice),
-      latestPurchaseUnit: "each",
-      latestPurchaseConversionFactor: 1,
-      lastReceivedAt: item.lastPurchasedDate,
-      lastCountedAt: item.lastPurchasedDate,
-      averageDailyUsage: Number((Math.max(item.changePercent, 1) / 10).toFixed(1)),
+      latestPurchasePrice: clampMoney(item.latestPurchasePrice),
+      latestPurchaseUnit: item.latestPurchaseUnit,
+      latestPurchaseConversionFactor: item.latestPurchaseConversionFactor,
+      lastReceivedAt: item.lastReceivedAt,
+      lastCountedAt: item.lastCountedAt,
+      averageDailyUsage: item.averageDailyUsage,
       supplierMatchKey: normalizeName(item.preferredSupplier),
       itemMatchKey: normalizeName(item.name),
       active: true,
-      notes: item.severity === "High" ? "Watch this item closely." : "",
+      notes: item.notes,
       createdAt,
       updatedAt: createdAt,
     };
@@ -149,49 +372,74 @@ function createSeedInventoryItems(): InventoryItem[] {
 }
 
 function createSeedMovements(items: InventoryItem[]): InventoryMovement[] {
-  return items.map((item, index) => {
-    const createdAt = item.createdAt;
-    return {
+  return items.flatMap((item, index) => {
+    const spec = seedInventorySpecs.find((candidate) => candidate.id === item.id);
+    const receiptCreatedAt = item.createdAt;
+    let runningQuantity = spec?.receiptQuantity ?? item.currentQuantity;
+    const receiptMovement: InventoryMovement = {
       id: `inventory-movement-seed-${index + 1}`,
       inventoryItemId: item.id,
       inventoryItemName: item.name,
       movementType: "invoice receipt",
-      quantityDelta: item.currentQuantity,
+      quantityDelta: runningQuantity,
       quantityBefore: 0,
-      quantityAfter: item.currentQuantity,
+      quantityAfter: runningQuantity,
       unit: item.unit,
       sourceInvoiceId: `seed-invoice-${index + 1}`,
       sourceInvoiceNumber: `INV-SEED-${index + 1}`,
-      sourceInvoiceDate: createdAt.slice(0, 10),
+      sourceInvoiceDate: item.lastReceivedAt,
       sourceInvoiceLineItemId: `seed-line-${index + 1}`,
       sourceInvoiceLineDescription: item.name,
       receiptKey: `seed-receipt-${index + 1}`,
-      note: "Seeded starting inventory level for the pilot browser.",
-      createdAt,
-      updatedAt: createdAt,
+      note: "Seeded starting inventory receipt.",
+      createdAt: receiptCreatedAt,
+      updatedAt: receiptCreatedAt,
     };
+
+    const adjustments = (spec?.movements ?? []).map((movement, movementIndex) => {
+      const createdAt = movement.createdAt;
+      const quantityBefore = runningQuantity;
+      runningQuantity = Number((runningQuantity + movement.quantityDelta).toFixed(2));
+      return {
+        id: `inventory-movement-seed-${index + 1}-${movementIndex + 1}`,
+        inventoryItemId: item.id,
+        inventoryItemName: item.name,
+        movementType: movement.movementType,
+        quantityDelta: Number(movement.quantityDelta.toFixed(2)),
+        quantityBefore,
+        quantityAfter: runningQuantity,
+        unit: item.unit,
+        note: movement.note,
+        createdAt,
+        updatedAt: createdAt,
+      } satisfies InventoryMovement;
+    });
+
+    return [receiptMovement, ...adjustments];
   });
 }
 
 function createSeedReceipts(items: InventoryItem[]): InventoryInvoiceReceipt[] {
   return items.map((item, index) => {
+    const spec = seedInventorySpecs.find((candidate) => candidate.id === item.id);
     const createdAt = item.createdAt;
+    const quantity = spec?.receiptQuantity ?? item.currentQuantity;
     return {
       id: `inventory-receipt-seed-${index + 1}`,
       invoiceId: `seed-invoice-${index + 1}`,
       invoiceNumber: `INV-SEED-${index + 1}`,
-      invoiceDate: createdAt.slice(0, 10),
+      invoiceDate: item.lastReceivedAt,
       supplier: item.preferredSupplier,
       invoiceLineItemId: `seed-line-${index + 1}`,
       invoiceLineDescription: item.name,
       normalizedDescription: item.itemMatchKey,
       inventoryItemId: item.id,
       inventoryItemName: item.name,
-      quantity: item.currentQuantity,
+      quantity,
       unit: item.unit,
       conversionFactor: 1,
       unitPrice: item.latestPurchasePrice,
-      lineTotal: clampMoney(item.latestPurchasePrice * item.currentQuantity),
+      lineTotal: clampMoney(item.latestPurchasePrice * quantity),
       receiptKey: `seed-receipt-${index + 1}`,
       note: "Seeded starting inventory receipt.",
       createdAt,

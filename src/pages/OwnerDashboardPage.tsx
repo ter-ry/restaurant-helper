@@ -199,24 +199,30 @@ export function OwnerDashboardPage() {
 
       <section className="mt-8">
         <SectionHeader
-          title="Cost increases to review"
-          description="Only meaningful supplier price increases are shown here."
+          title="Cost changes to review"
+          description="Meaningful supplier price moves are shown here, including decreases as useful context."
           action={
             <Link className={actionLinkClass} to={openInvoices}>
               Review price changes
             </Link>
           }
         />
-        {dashboard.costIncreases.length > 0 ? (
+        {dashboard.costChanges.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {dashboard.costIncreases.map((row) => (
+            {dashboard.costChanges.map((row) => {
+              const badgeTone = row.status === "Increased" ? "danger" : row.status === "Decreased" ? "success" : "neutral";
+              const badgeLabel = row.status === "Increased" ? "Price increased" : row.status === "Decreased" ? "Price decreased" : "No change";
+              const changeAmount = formatCurrency(Math.abs(row.deltaAmount));
+              const changePrefix = row.deltaAmount > 0 ? "+" : row.deltaAmount < 0 ? "-" : "";
+
+              return (
               <Card key={`${row.itemName}-${row.invoiceDate}-${row.supplier}`} className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-base font-bold text-ink">{row.itemName}</p>
                     <p className="mt-1 text-sm leading-6 text-muted">{row.supplier}</p>
                   </div>
-                  <Badge tone="danger">{formatPercent(row.changePercent)}</Badge>
+                  <Badge tone={badgeTone}>{badgeLabel}</Badge>
                 </div>
                 <div className="mt-4 grid gap-2 text-sm leading-6 text-slate-700">
                   <p>
@@ -226,6 +232,12 @@ export function OwnerDashboardPage() {
                     Current: <span className="font-semibold text-ink">{formatCurrency(row.currentUnitPrice)}</span>
                   </p>
                   <p>
+                    Change: <span className="font-semibold text-ink">{changePrefix}{changeAmount}</span>
+                  </p>
+                  <p>
+                    Movement: <span className="font-semibold text-ink">{formatPercent(row.changePercent)}</span>
+                  </p>
+                  <p>
                     Invoice date: <span className="font-semibold text-ink">{row.invoiceDate ? formatDate(row.invoiceDate) : "-"}</span>
                   </p>
                   <p>
@@ -233,14 +245,15 @@ export function OwnerDashboardPage() {
                   </p>
                 </div>
               </Card>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <EmptyStateCard
             actionLabel="Open invoices"
             actionHref={openInvoices}
-            description="No supplier price increases detected yet. Load a sample invoice to see the alert view."
-            title="No price increases detected yet"
+            description="Load sample restaurant data to see supplier price changes."
+            title="No supplier price changes detected yet"
           />
         )}
       </section>
@@ -261,6 +274,16 @@ export function OwnerDashboardPage() {
               <Card key={`${row.itemName}-${row.latestInvoiceDate}`} className="p-5">
                 <p className="text-base font-bold text-ink">{row.itemName}</p>
                 <p className="mt-1 text-sm leading-6 text-muted">{row.supplierLabel}</p>
+                <p className="mt-3 text-xs font-bold uppercase tracking-wide text-muted">Recent price movement</p>
+                {row.priceMovement ? (
+                  <div className="mt-2">
+                    <Badge tone={row.priceMovement === "Increased" ? "warning" : row.priceMovement === "Decreased" ? "success" : "neutral"}>
+                      {row.priceMovement === "Increased" ? "Up" : row.priceMovement === "Decreased" ? "Down" : "Unchanged"}
+                    </Badge>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-muted">No prior comparison</p>
+                )}
                 <div className="mt-4 grid gap-2 text-sm leading-6 text-slate-700">
                   <p>
                     Total spend: <span className="font-semibold text-ink">{formatCurrency(row.totalSpend)}</span>

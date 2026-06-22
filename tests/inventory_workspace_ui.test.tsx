@@ -134,6 +134,12 @@ function testInventorySummaryAndSorting() {
   assert.ok(summary.inventoryItemCount > 0);
   assert.ok(summary.inventoryReceiptCount > 0);
   assert.ok(summary.inventoryMovementCount > 0);
+  assert.ok(seed.items.some((item) => item.name.includes("Tapioca pearls") && item.currentQuantity <= item.minQuantity));
+  assert.ok(seed.items.some((item) => item.name.includes("700ml plastic cups") && item.currentQuantity > item.minQuantity));
+  assert.ok(seed.items.some((item) => item.name.includes("Cup sealing film") && item.currentQuantity <= item.minQuantity));
+  assert.ok(seed.movements.some((movement) => movement.movementType === "invoice receipt"));
+  assert.ok(seed.movements.some((movement) => movement.movementType === "physical count adjustment"));
+  assert.ok(seed.movements.some((movement) => movement.note.includes("Sample sales usage")));
 
   const items = sortInventoryItems([createItem({ id: "b", currentQuantity: 0, minQuantity: 0, parLevel: 2 }), createItem({ id: "a", currentQuantity: 8 })]);
   assert.equal(items[0].id, "b");
@@ -447,6 +453,7 @@ function testInventoryPageLayout() {
   assert.ok(html.includes("Physical count"));
   assert.ok(html.includes("Review invoices"));
   assert.ok(html.includes("Restore sample data"));
+  assert.ok(html.includes("Current pilot tracks receiving, counts, and manual adjustments."));
   assert.ok(!html.includes("Stock count sessions"));
   assert.ok(!html.includes("Practical reorder list"));
   assert.ok(html.indexOf("Inventory list") < html.indexOf("Recent activity"));

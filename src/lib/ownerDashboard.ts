@@ -11,6 +11,7 @@ import type {
   PilotPriceChangeRecord,
   PilotReconciliationRecord,
   PilotWorkspaceSummary,
+  PriceStatus,
 } from "../types";
 
 const confidenceThreshold = 0.8;
@@ -49,11 +50,12 @@ export interface OwnerDashboardSupplierSpendRow {
   share: number;
 }
 
-export interface OwnerDashboardCostIncreaseRow {
+export interface OwnerDashboardCostChangeRow {
   itemName: string;
   supplier: string;
   previousUnitPrice: number;
   currentUnitPrice: number;
+  deltaAmount: number;
   changePercent: number;
   invoiceDate: string;
   previousInvoiceDate: string;
@@ -67,6 +69,8 @@ export interface OwnerDashboardItemRow {
   quantity: number;
   latestUnitPrice: number;
   latestInvoiceDate: string;
+  previousUnitPrice: number | null;
+  priceMovement: PriceStatus | null;
 }
 
 export interface OwnerDashboardAttentionRow {
@@ -80,7 +84,7 @@ export interface OwnerDashboardAttentionRow {
 export interface OwnerDashboardModel {
   cards: OwnerDashboardCard[];
   supplierSpend: OwnerDashboardSupplierSpendRow[];
-  costIncreases: OwnerDashboardCostIncreaseRow[];
+  costChanges: OwnerDashboardCostChangeRow[];
   topItems: OwnerDashboardItemRow[];
   reorderSuggestions: ReturnType<typeof buildReorderSuggestions>;
   needsAttention: OwnerDashboardAttentionRow[];
@@ -162,15 +166,32 @@ function buildSupplierSpendRows(invoices: PilotInvoiceRecord[]): OwnerDashboardS
     .sort((a, b) => b.spend - a.spend || b.invoiceCount - a.invoiceCount || safeDateMillis(b.latestInvoiceDate) - safeDateMillis(a.latestInvoiceDate) || a.supplier.localeCompare(b.supplier));
 }
 
-function buildCostIncreaseRows(priceChanges: PilotPriceChangeRecord[]) {
+function buildCostChangeRows(priceChanges: PilotPriceChangeRecord[]) {
   return [...priceChanges]
-    .filter((change) => change.status === "Increased" && Number.isFinite(change.changePercent))
-    .sort((a, b) => b.changePercent - a.changePercent || safeDateMillis(b.invoiceDate) - safeDateMillis(a.invoiceDate))
+    .filter((change) => Number.isFinite(change.previousPrice) && Number.isFinite(change.currentPrice) && Number.isFinite(change.changePercent))
+    .sort((a, b) => {
+      const statusRank = (status: PilotPriceChangeRecord["status"]) => (status === "Increased" ? 0 : status === "Decreased" ? 1 : 2);
+      const rankDelta = statusRank(a.status) - statusRank(b.status);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+
+      if (a.status === "Increased") {
+        return b.changePercent - a.changePercent || safeDateMillis(b.invoiceDate) - safeDateMillis(a.invoiceDate);
+      }
+
+      if (a.status === "Decreased") {
+        return safeDateMillis(b.invoiceDate) - safeDateMillis(a.invoiceDate) || Math.abs(b.changePercent) - Math.abs(a.changePercent);
+      }
+
+      return safeDateMillis(b.invoiceDate) - safeDateMillis(a.invoiceDate);
+    })
     .map((change) => ({
       itemName: change.itemName || "Untitled item",
       supplier: safeSupplierName(change.supplier),
       previousUnitPrice: roundMoney(change.previousPrice),
       currentUnitPrice: roundMoney(change.currentPrice),
+      deltaAmount: roundMoney(change.currentPrice - change.previousPrice),
       changePercent: Number(change.changePercent.toFixed(1)),
       invoiceDate: change.invoiceDate || "",
       previousInvoiceDate: change.previousInvoiceDate || "",
@@ -179,15 +200,18 @@ function buildCostIncreaseRows(priceChanges: PilotPriceChangeRecord[]) {
 }
 
 function buildTopPurchasedItems(invoices: PilotInvoiceRecord[]): OwnerDashboardItemRow[] {
-  const groups = new Map<string, {
+  type ItemGroup = {
     itemName: string;
     suppliers: Set<string>;
     totalSpend: number;
     quantity: number;
     latestUnitPrice: number;
+    previousUnitPrice: number | null;
     latestInvoiceDate: string;
     latestMillis: number;
-  }>();
+  };
+
+  const groups = new Map<string, ItemGroup>();
 
   for (const invoice of invoices) {
     for (const line of invoice.lineItems || []) {
@@ -206,6 +230,7 @@ function buildTopPurchasedItems(invoices: PilotInvoiceRecord[]): OwnerDashboardI
         totalSpend: 0,
         quantity: 0,
         latestUnitPrice: 0,
+        previousUnitPrice: null as number | null,
         latestInvoiceDate: "",
         latestMillis: Number.NEGATIVE_INFINITY,
       };
@@ -217,8 +242,14 @@ function buildTopPurchasedItems(invoices: PilotInvoiceRecord[]): OwnerDashboardI
       }
       const millis = safeDateMillis(invoice.invoiceDate);
       if (millis > current.latestMillis) {
+        if (current.latestMillis > Number.NEGATIVE_INFINITY) {
+          current.previousUnitPrice = current.latestUnitPrice;
+        }
         current.latestMillis = millis;
         current.latestInvoiceDate = invoice.invoiceDate || "";
+        current.latestUnitPrice = unitPrice;
+      } else if (millis === current.latestMillis && unitPrice !== current.latestUnitPrice) {
+        current.previousUnitPrice = current.latestUnitPrice;
         current.latestUnitPrice = unitPrice;
       }
       if ((line.originalDescription?.trim()?.length ?? 0) > current.itemName.length) {
@@ -237,7 +268,16 @@ function buildTopPurchasedItems(invoices: PilotInvoiceRecord[]): OwnerDashboardI
       quantity: Number(row.quantity.toFixed(2)),
       latestUnitPrice: roundMoney(row.latestUnitPrice),
       latestInvoiceDate: row.latestInvoiceDate,
-    }))
+      previousUnitPrice: row.previousUnitPrice === null ? null : roundMoney(row.previousUnitPrice),
+      priceMovement:
+        row.previousUnitPrice === null
+          ? null
+          : row.latestUnitPrice > row.previousUnitPrice
+            ? "Increased"
+            : row.latestUnitPrice < row.previousUnitPrice
+              ? "Decreased"
+              : "Stable",
+    }) satisfies OwnerDashboardItemRow)
     .sort((a, b) => b.totalSpend - a.totalSpend || b.quantity - a.quantity || safeDateMillis(b.latestInvoiceDate) - safeDateMillis(a.latestInvoiceDate) || a.itemName.localeCompare(b.itemName));
 }
 
@@ -380,13 +420,13 @@ export function buildOwnerDashboardModel({
   const monthToDateInvoiceCount = monthSource.length;
 
   const supplierSpend = buildSupplierSpendRows(validInvoices);
-  const costIncreases = buildCostIncreaseRows(priceChanges);
+  const costChanges = buildCostChangeRows(priceChanges);
   const topItems = buildTopPurchasedItems(validInvoices);
   const reorderSuggestions = buildReorderSuggestions(inventoryItems, inventoryReorderIntents);
   const counts = countInvoiceStatuses(invoices, reviewQueue, inventoryReceipts);
   const needsAttention = buildAttentionRows({
     lowConfidenceLineCount: counts.lowConfidenceLineCount,
-    priceIncreaseCount: costIncreases.length,
+    priceIncreaseCount: costChanges.filter((change) => change.status === "Increased").length,
     pendingInventoryInvoiceCount: counts.pendingInventoryInvoiceCount,
     skippedInventoryInvoiceCount: counts.skippedInventoryInvoiceCount,
     actionableInvoiceCount: counts.actionableInvoiceCount,
@@ -395,7 +435,9 @@ export function buildOwnerDashboardModel({
 
   const supplierSpendRows = supplierSpend.length > 0 ? supplierSpend : [];
   const topSupplier = supplierSpendRows[0];
-  const largestIncrease = costIncreases[0];
+  const priceIncreaseCount = costChanges.filter((change) => change.status === "Increased").length;
+  const priceDecreaseCount = costChanges.filter((change) => change.status === "Decreased").length;
+  const stablePriceCount = costChanges.filter((change) => change.status === "Stable").length;
 
   const cards: OwnerDashboardCard[] = [
     {
@@ -413,12 +455,13 @@ export function buildOwnerDashboardModel({
       tone: topSupplier ? "neutral" : "info",
     },
     {
-      label: "Price increases",
-      value: String(costIncreases.length),
-      helper: largestIncrease
-        ? `Largest increase ${largestIncrease.changePercent > 0 ? "+" : ""}${largestIncrease.changePercent.toFixed(1)}%`
-        : "No supplier price increases detected yet.",
-      tone: costIncreases.length > 0 ? "warning" : "success",
+      label: "Cost changes",
+      value: String(costChanges.length),
+      helper:
+        costChanges.length > 0
+          ? `${priceIncreaseCount} up - ${priceDecreaseCount} down - ${stablePriceCount} unchanged`
+          : "No supplier price changes detected yet.",
+      tone: priceIncreaseCount > 0 ? "warning" : "success",
     },
     {
       label: "Invoices needing action",
@@ -448,14 +491,14 @@ export function buildOwnerDashboardModel({
   return {
     cards,
     supplierSpend: supplierSpendRows,
-    costIncreases,
+    costChanges,
     topItems,
     reorderSuggestions,
     needsAttention,
     monthToDateSpend,
     monthToDateInvoiceCount,
     monthSourceLabel,
-    priceIncreaseCount: costIncreases.length,
+    priceIncreaseCount,
     lowConfidenceLineCount: counts.lowConfidenceLineCount,
     actionableInvoiceCount: counts.actionableInvoiceCount,
     pendingInventoryInvoiceCount: counts.pendingInventoryInvoiceCount,
