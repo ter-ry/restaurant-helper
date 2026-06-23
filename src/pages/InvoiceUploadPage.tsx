@@ -14,9 +14,9 @@ import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoice
 import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey as normalizeLineItemKey, updateLineItemDescription } from "../lib/invoiceLineItemView";
 import { useDemoProfile } from "../lib/demoProfile";
 import { buildDemoRestaurantInvoiceDraft } from "../lib/invoiceSamples";
-import { summarizeInvoiceInventoryStatus } from "../lib/invoiceInventory";
+import { buildInvoiceReceiveLines, summarizeInvoiceInventoryStatus } from "../lib/invoiceInventory";
 import { getRecentInvoicePreview, usePilotWorkspace } from "../lib/pilotWorkspace";
-import type { InvoiceFieldConfidence, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
+import type { InvoiceFieldConfidence, InventoryInvoiceReceipt, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
 import { formatCurrency, formatDate, formatDateTime, formatPercent } from "../utils/format";
 import { buildDemoPath, defaultDemoProfileSlug } from "../lib/demoProfile";
 
@@ -162,9 +162,76 @@ function setLineItemValue(
   }));
 }
 
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+}
+
+function startOfNextMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
+}
+
+function buildSupplierSpendRows(invoices: PilotInvoiceRecord[]) {
+  const now = new Date();
+  const currentMonthStart = startOfMonth(now);
+  const nextMonthStart = startOfNextMonth(now);
+  const previousMonthStart = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+
+  const bySupplier = new Map<string, { currentSpend: number; currentCount: number; previousSpend: number }>();
+
+  for (const invoice of invoices) {
+    const invoiceTime = new Date(invoice.invoiceDate).getTime();
+    const current = bySupplier.get(invoice.supplier) ?? { currentSpend: 0, currentCount: 0, previousSpend: 0 };
+
+    if (invoiceTime >= currentMonthStart && invoiceTime < nextMonthStart) {
+      current.currentSpend += invoice.totalAmount;
+      current.currentCount += 1;
+    } else if (invoiceTime >= previousMonthStart && invoiceTime < currentMonthStart) {
+      current.previousSpend += invoice.totalAmount;
+    }
+
+    bySupplier.set(invoice.supplier, current);
+  }
+
+  return [...bySupplier.entries()]
+    .map(([supplier, totals]) => {
+      const changePercent = totals.previousSpend > 0 ? ((totals.currentSpend - totals.previousSpend) / totals.previousSpend) * 100 : 0;
+      return {
+        supplier,
+        monthSpend: totals.currentSpend,
+        invoiceCount: totals.currentCount,
+        trendLabel: totals.previousSpend > 0 ? `${formatPercent(changePercent)} vs prior month` : "No prior month data",
+      };
+    })
+    .sort((a, b) => b.monthSpend - a.monthSpend)
+    .slice(0, 4);
+}
+
+function getInvoiceExportStatus(invoice: PilotInvoiceRecord, inventoryReceipts: InventoryInvoiceReceipt[]) {
+  const inventoryStatus = summarizeInvoiceInventoryStatus(invoice, inventoryReceipts);
+  if (invoice.status !== "Ready") {
+    return "Needs review";
+  }
+  if (inventoryStatus === "Not received") {
+    return "Needs mapping";
+  }
+  return "Ready for CSV";
+}
+
+function buildPurchaseExportSnapshot(recentInvoices: PilotInvoiceRecord[], inventoryReceipts: InventoryInvoiceReceipt[]) {
+  const readyForCsv = recentInvoices.filter((invoice) => getInvoiceExportStatus(invoice, inventoryReceipts) === "Ready for CSV").length;
+  const needsReview = recentInvoices.filter((invoice) => invoice.status !== "Ready").length;
+  const needsMapping = recentInvoices.filter((invoice) => invoice.status === "Ready" && summarizeInvoiceInventoryStatus(invoice, inventoryReceipts) === "Not received").length;
+
+  return {
+    readyForCsv,
+    needsReview,
+    needsMapping,
+  };
+}
+
 export function InvoiceUploadPage() {
   const demo = useDemoProfile();
-  const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary, inventoryReceipts, updateInvoiceInventoryStatus } = usePilotWorkspace();
+  const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary, inventoryItems, inventoryMappings, inventoryReceipts, updateInvoiceInventoryStatus } = usePilotWorkspace();
   const [draft, setDraft] = useState<PilotInvoiceDraft>(() => createBlankDraft());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -221,6 +288,25 @@ export function InvoiceUploadPage() {
   const lineItemsNeedingReview = draft.lineItems.filter((item) => item.needsReview || item.confidence < confidenceThreshold).length;
   const selectedInvoice = useMemo(() => recentInvoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null, [recentInvoices, selectedInvoiceId]);
   const recentInvoicePreview = useMemo(() => getRecentInvoicePreview(recentInvoices, 5), [recentInvoices]);
+  const supplierSpendRows = useMemo(() => buildSupplierSpendRows(recentInvoices), [recentInvoices]);
+  const purchaseExportSnapshot = useMemo(() => buildPurchaseExportSnapshot(recentInvoices, inventoryReceipts), [inventoryReceipts, recentInvoices]);
+  const currentMonthPriceChanges = useMemo(() => {
+    const monthStart = startOfMonth(new Date());
+    return priceChanges.filter((change) => new Date(change.invoiceDate).getTime() >= monthStart);
+  }, [priceChanges]);
+  const activeInventoryInvoice = savedInvoicePrompt ?? selectedInvoice ?? recentInvoices[0] ?? null;
+  const mappedItemCount = useMemo(
+    () =>
+      recentInvoices.reduce((count, invoice) => {
+        const receiveLines = buildInvoiceReceiveLines(invoice.id, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices);
+        return count + receiveLines.filter((line) => line.state !== "unmapped").length;
+      }, 0),
+    [inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices],
+  );
+  const activeReceiveLines = useMemo(
+    () => (activeInventoryInvoice ? buildInvoiceReceiveLines(activeInventoryInvoice.id, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices) : []),
+    [activeInventoryInvoice, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices],
+  );
   const getInvoiceInventoryStatus = (invoice: PilotInvoiceRecord) => summarizeInvoiceInventoryStatus(invoice, inventoryReceipts);
   const selectedInvoiceInventoryStatus = selectedInvoice ? getInvoiceInventoryStatus(selectedInvoice) : null;
   const invoiceModalOpen = reviewOpen || Boolean(savedInvoicePrompt);
@@ -248,19 +334,23 @@ export function InvoiceUploadPage() {
     { header: "Change", accessor: (row) => <Badge tone={row.status === "Increased" ? "danger" : row.status === "Decreased" ? "success" : "neutral"}>{formatPercent(row.changePercent)}</Badge> },
   ];
 
-  const recentInvoiceColumns: Column<(typeof recentInvoices)[number]>[] = [
+  const purchaseHistoryColumns: Column<(typeof recentInvoices)[number]>[] = [
     { header: "Supplier", accessor: "supplier" },
     { header: "Invoice", accessor: "invoiceNumber" },
     { header: "Date", accessor: (row) => formatMaybeDate(row.invoiceDate) },
     { header: "Total", accessor: (row) => formatMaybeCurrency(row.totalAmount) },
     {
-      header: "Inventory",
+      header: "Review",
+      accessor: (row) => <Badge tone={row.status === "Ready" ? "success" : "warning"}>{row.status}</Badge>,
+    },
+    {
+      header: "Receiving",
       accessor: (row) => {
         const inventoryStatus = getInvoiceInventoryStatus(row);
         return <Badge tone={inventoryStatus === "Received" ? "success" : inventoryStatus === "Partially received" ? "warning" : inventoryStatus === "Skipped" ? "neutral" : "info"}>{inventoryStatus}</Badge>;
       },
     },
-    { header: "Status", accessor: (row) => <Badge tone={row.status === "Ready" ? "success" : "warning"}>{row.status}</Badge> },
+    { header: "Export", accessor: (row) => <Badge tone={getInvoiceExportStatus(row, inventoryReceipts) === "Ready for CSV" ? "success" : getInvoiceExportStatus(row, inventoryReceipts) === "Needs mapping" ? "warning" : "neutral"}>{getInvoiceExportStatus(row, inventoryReceipts)}</Badge> },
     {
       header: "Open",
       accessor: (row) => (
@@ -436,23 +526,20 @@ export function InvoiceUploadPage() {
 
   return (
     <PageLayout
-      title="Invoice capture"
+      title="Purchases"
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Upload a photographed invoice or PDF. The focused review step opens in a modal so you can correct the extracted fields and save structured data locally."
+      description="Capture invoices and receipts, track supplier prices, and prepare clean purchase records for inventory and accounting."
     >
       <div className="grid gap-6">
         <Card className="surface-panel min-w-0 p-5 sm:p-6">
-          <SectionHeader
-            title="Upload invoice"
-            description="OCR runs on the local Flask backend and sends the file to OCR.space. The result is extracted data that still needs confirmation."
-            action={<Badge tone="info">Single-restaurant pilot</Badge>}
-          />
-
-          <div className="rounded-xl border border-dashed border-brand-100 bg-brand-50/40 p-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-bold text-ink">Upload invoice image or PDF</p>
-                <p className="mt-1 text-sm leading-6 text-muted">Supports JPG, JPEG, PNG, WEBP, and PDFs. Scanned PDFs are sent to OCR.space for text extraction.</p>
+          <div className="flex flex-col gap-4 border-b border-line pb-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Purchases hub</p>
+                <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Capture invoices, receipts, and supplier spend in one place.</h1>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
+                  This is the working hub for purchase capture, review, item mapping, receiving, price changes, and CSV export readiness.
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -462,25 +549,50 @@ export function InvoiceUploadPage() {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isProcessing}
                 >
-                  Choose file
+                  Upload invoice or receipt
                 </Button>
+                <Button type="button" variant="secondary" icon={<Sparkles className="h-4 w-4" />} onClick={loadSampleInvoice} disabled={isProcessing || isSaving}>
+                  Load sample purchase
+                </Button>
+                <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={handleResetDraft} disabled={isProcessing}>
+                  Clear draft
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <MetricCard label="This month spend" value={formatCurrency(summary.monthlyInvoiceSpend)} helper="Purchase total based on invoice dates" />
+              <MetricCard
+                label="Uploads needing review"
+                value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))}
+                helper="Saved records plus the active draft"
+              />
+              <MetricCard label="Price changes flagged" value={String(currentMonthPriceChanges.length)} helper="Meaningful supplier price movement" />
+              <MetricCard label="Mapped items" value={String(mappedItemCount)} helper="Mapped or received purchase lines across saved purchases" />
+              <MetricCard label="Export-ready purchases" value={String(purchaseExportSnapshot.readyForCsv)} helper="Ready for accountant-ready CSV export" />
+            </div>
+          </div>
+
+          <SectionHeader
+            title="Upload and import"
+            description="Invoice and receipt uploads still use the existing OCR flow. Supported files: JPG, JPEG, PNG, WEBP, and PDF."
+            action={<Badge tone="info">Pilot-safe OCR + manual review</Badge>}
+          />
+
+          <div className="rounded-xl border border-dashed border-brand-100 bg-brand-50/40 p-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-bold text-ink">Upload invoice or receipt image, scanned PDF, or digital PDF</p>
+                <p className="mt-1 text-sm leading-6 text-muted">The file is sent through the existing OCR workflow, then saved as structured purchase data after confirmation.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="secondary"
-                  icon={<Sparkles className="h-4 w-4" />}
-                  onClick={loadSampleInvoice}
-                  disabled={isProcessing || isSaving}
-                >
-                  Load sample restaurant invoice
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  icon={<RefreshCw className="h-4 w-4" />}
-                  onClick={handleResetDraft}
+                  icon={<FileUp className="h-4 w-4" />}
+                  onClick={() => fileInputRef.current?.click()}
                   disabled={isProcessing}
-                >
-                  Clear form
+                  >
+                  Choose file
                 </Button>
               </div>
             </div>
@@ -527,53 +639,119 @@ export function InvoiceUploadPage() {
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label="Confidence"
-              value={draftSummary.confidence}
-              helper={hasActiveDraft ? "Extracted fields still need confirmation" : "Upload an invoice to see extraction confidence"}
-            />
-            <MetricCard
-              label="Review flags"
-              value={String(draftSummary.reviewFlags)}
-              helper={hasActiveDraft ? "Fields and line items marked for attention" : "No active invoice draft"}
-            />
-            <MetricCard
-              label="Recent invoices"
-              value={String(recentInvoices.length)}
-              helper="Stored locally in this browser"
-            />
-            <MetricCard
-              label="Recent changes"
-              value={String(priceChanges.length)}
-              helper="Meaningful prior matches only"
-            />
-          </div>
-
-          {draft.fileName && !reviewOpen ? (
-            <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Review ready</p>
-                  <p className="mt-1 text-sm font-semibold text-ink">{draft.fileName}</p>
-                  <p className="mt-1 text-sm leading-6 text-muted">
-                    {reviewQueue.length} saved invoice records are waiting for owner review. Reopen the focused review step to confirm or correct the extracted fields.
-                  </p>
+          <div className="mt-5 grid gap-4 xl:grid-cols-2">
+            <Card className="min-w-0 border border-line bg-white p-5">
+              <SectionHeader
+                title="Review queue"
+                description="These saved purchases still need a human check before they are treated as fully clean."
+                action={<Badge tone="warning">{reviewQueue.length} items</Badge>}
+              />
+              {reviewQueue.length ? (
+                <div className="space-y-3">
+                  {reviewQueue.slice(0, 4).map((invoice) => (
+                    <button
+                      key={invoice.id}
+                      type="button"
+                      className="w-full rounded-xl border border-line bg-slate-50 p-4 text-left transition hover:bg-slate-100"
+                      onClick={() => reopenInvoiceForReview(invoice)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-ink">{invoice.supplier}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted">
+                            {invoice.invoiceNumber || "No invoice number"} · {formatMaybeDate(invoice.invoiceDate)} · {formatMaybeCurrency(invoice.totalAmount)}
+                          </p>
+                        </div>
+                        <Badge tone="warning">Needs review</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+                        <span>{invoice.lineItems.length} line items</span>
+                        <span>Receiving: {getInvoiceInventoryStatus(invoice)}</span>
+                        <span>Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-                <Button type="button" variant="secondary" onClick={() => setReviewOpen(true)}>
-                  Resume review
-                </Button>
-              </div>
-            </div>
-          ) : null}
+              ) : (
+                <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+                  No saved purchases are waiting for review right now. Upload a new invoice or receipt to start the workflow.
+                </div>
+              )}
+            </Card>
+
+            <Card className="min-w-0 border border-line bg-white p-5">
+              <SectionHeader
+                title="Active review workspace"
+                description="The focused review modal still handles OCR corrections, line items, save confirmation, and inventory handoff."
+                action={
+                  hasActiveDraft ? (
+                    <Button type="button" variant="secondary" onClick={() => setReviewOpen(true)}>
+                      {reviewOpen ? "Review open" : "Open review"}
+                    </Button>
+                  ) : null
+                }
+              />
+              {savedInvoicePrompt ? (
+                <div className="space-y-4 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Saved purchase ready for inventory</p>
+                    <p className="mt-1 text-base font-semibold text-ink">{savedInvoicePrompt.supplier || "Saved invoice"}</p>
+                    <p className="mt-1 text-sm leading-6 text-muted">
+                      {savedInvoicePrompt.invoiceNumber || "No invoice number"} · {formatMaybeDate(savedInvoicePrompt.invoiceDate)} · {formatMaybeCurrency(savedInvoicePrompt.totalAmount)}
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <MetricCard label="Source document" value={savedInvoicePrompt.fileName || "Not stored"} helper="Original file name stays linked locally" />
+                    <MetricCard label="Line items" value={String(savedInvoicePrompt.lineItems.length)} helper="Confirmed purchase lines" />
+                    <MetricCard label="Receiving" value={getInvoiceInventoryStatus(savedInvoicePrompt)} helper="Inventory handoff status" />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" onClick={() => handleReceiveSavedInvoice(savedInvoicePrompt)}>
+                      Map / receive into inventory
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => handleSkipSavedInvoice(savedInvoicePrompt)}>
+                      Skip receiving
+                    </Button>
+                  </div>
+                </div>
+              ) : hasActiveDraft ? (
+                <div className="space-y-4 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Focused review draft</p>
+                    <p className="mt-1 text-base font-semibold text-ink">{draft.fileName || "Untitled draft"}</p>
+                    <p className="mt-1 text-sm leading-6 text-muted">
+                      {draft.supplier || "Supplier not confirmed"} · {draft.invoiceNumber || "No invoice number"} · {formatMaybeDate(draft.invoiceDate)}
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <MetricCard label="Confidence" value={draftSummary.confidence} helper="Extracted fields still need confirmation" />
+                    <MetricCard label="Review flags" value={String(draftSummary.reviewFlags)} helper="Fields and line items marked for attention" />
+                    <MetricCard label="Line items" value={String(draft.lineItems.length)} helper={`${lineItemsNeedingReview} line items need attention`} />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" onClick={() => setReviewOpen(true)}>
+                      Continue review
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={handleResetDraft}>
+                      Clear draft
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+                  Upload a new purchase to open the focused review workflow. The page keeps the saved history below so you can reopen older purchases anytime.
+                </div>
+              )}
+            </Card>
+          </div>
 
         </Card>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
             <SectionHeader
-              title="Recent invoices"
-              description="The newest five saved invoices are shown here first. Use the full list to reopen older records."
+              title="Purchase history"
+              description="Newest saved purchases first. The compact view shows the newest five and never hides the latest save."
               action={
                 recentInvoices.length > 5 ? (
                   <Button
@@ -581,7 +759,7 @@ export function InvoiceUploadPage() {
                     variant="secondary"
                     onClick={() => setShowAllInvoices((current) => !current)}
                   >
-                  {showAllInvoices ? "Hide all invoices" : `View all invoices (${recentInvoicePreview.totalCount})`}
+                    {showAllInvoices ? "Hide all purchases" : `View all invoices (${recentInvoicePreview.totalCount})`}
                   </Button>
                 ) : null
               }
@@ -600,26 +778,32 @@ export function InvoiceUploadPage() {
                       <p className="mt-1 text-xs leading-5 text-muted">
                         {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
                       </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Inventory: {getInvoiceInventoryStatus(invoice)}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Review: {invoice.status}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Receiving: {getInvoiceInventoryStatus(invoice)}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</p>
                     </div>
-                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
+                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{formatMaybeCurrency(invoice.totalAmount)}</Badge>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
-                    <span>{formatMaybeCurrency(invoice.totalAmount)}</span>
+                    <span>{invoice.lineItems.length} line items</span>
                     <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
                   </div>
                 </button>
               ))}
             </div>
             <div className="hidden sm:block">
-              <DataTable columns={recentInvoiceColumns} data={recentInvoicePreview.visibleInvoices} getRowKey={(row) => row.id} />
+              <DataTable columns={purchaseHistoryColumns} data={recentInvoicePreview.visibleInvoices} getRowKey={(row) => row.id} />
             </div>
           </Card>
 
           <Card className="p-5">
-            <SectionHeader title="Recent price changes" description="Only conservative matches from saved invoice history are shown." />
+            <SectionHeader
+              title="Price-change alerts"
+              description="Only conservative matches from saved purchase history are shown."
+              action={<Badge tone="info">{currentMonthPriceChanges.length} this month</Badge>}
+            />
             <div className="space-y-3 sm:hidden">
-              {priceChanges.slice(0, 5).map((change) => (
+              {currentMonthPriceChanges.slice(0, 5).map((change) => (
                 <div key={change.id} className="rounded-xl border border-line bg-white p-4 shadow-soft">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -644,14 +828,128 @@ export function InvoiceUploadPage() {
               ))}
             </div>
             <div className="hidden sm:block">
-              <DataTable columns={priceChangeColumns} data={priceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
+              <DataTable columns={priceChangeColumns} data={currentMonthPriceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
+            </div>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Card className="min-w-0 p-5">
+            <SectionHeader
+              title="Supplier spend"
+              description="Monthly supplier spend and purchase counts, grouped from the saved purchase history."
+            />
+            {supplierSpendRows.length ? (
+              <div className="space-y-3">
+                {supplierSpendRows.map((row) => (
+                  <div key={row.supplier} className="rounded-xl border border-line bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-ink">{row.supplier}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted">{row.invoiceCount} invoices this month</p>
+                      </div>
+                      <Badge tone={row.monthSpend > 0 ? "success" : "neutral"}>{formatCurrency(row.monthSpend)}</Badge>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-muted">{row.trendLabel}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+                No supplier spend has been saved yet. Upload the first receipt or invoice to start the spend history.
+              </div>
+            )}
+          </Card>
+
+          <Card className="min-w-0 p-5">
+            <SectionHeader
+              title="Item mapping and receiving"
+              description="Track which purchase lines are mapped, received, or still waiting to be linked into inventory."
+              action={
+                activeInventoryInvoice ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(activeInventoryInvoice.id)}`)}
+                  >
+                    Map / receive
+                  </Button>
+                ) : null
+              }
+            />
+            {activeInventoryInvoice ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Current purchase</p>
+                  <p className="mt-1 text-sm font-semibold text-ink">{activeInventoryInvoice.supplier}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    {activeInventoryInvoice.invoiceNumber || "No invoice number"} · {formatMaybeDate(activeInventoryInvoice.invoiceDate)}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <MetricCard
+                    label="Mapped"
+                    value={String(activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length)}
+                    helper="Purchase lines already linked to inventory"
+                  />
+                  <MetricCard
+                    label="Unmapped"
+                    value={String(activeReceiveLines.filter((line) => line.state === "unmapped").length)}
+                    helper="Still needs a mapped inventory item"
+                  />
+                </div>
+                <div className="space-y-2">
+                  {activeReceiveLines.slice(0, 4).map((line) => (
+                    <div key={line.invoiceLineItemId} className="rounded-xl border border-line bg-slate-50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted">
+                            {line.sourceDescription || "Original description not available"} · {formatCurrency(line.unitPrice)}
+                          </p>
+                        </div>
+                        <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>
+                          {line.matchLabel}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-muted">
+                        Inventory unit: {line.inventoryUnit} · Conversion: {line.conversionFactor}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+                Upload a purchase to see line-item mapping and receiving status.
+              </div>
+            )}
+          </Card>
+
+          <Card className="min-w-0 p-5">
+            <SectionHeader
+              title="Accounting export readiness"
+              description="CSV export is the current MVP. QuickBooks sync stays future-only."
+            />
+            <div className="space-y-3">
+              <MetricCard label="Ready for CSV" value={String(purchaseExportSnapshot.readyForCsv)} helper="Purchases that are clean enough for accountant export" />
+              <MetricCard label="Needs review" value={String(purchaseExportSnapshot.needsReview)} helper="Saved purchases still waiting on confirmation" />
+              <MetricCard label="Needs mapping" value={String(purchaseExportSnapshot.needsMapping)} helper="Ready purchases with no inventory link yet" />
+            </div>
+            <div className="mt-4 rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+              Accountant-ready CSV is the MVP export path. QuickBooks sync remains a future placeholder.
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "close-reports"))}>
+                Open Close &amp; Reports
+              </Button>
             </div>
           </Card>
         </div>
 
         {showAllInvoices && recentInvoicePreview.hasMore ? (
           <Card className="p-5">
-            <SectionHeader title="All invoices" description="Every saved invoice in this browser, newest first." />
+            <SectionHeader title="All purchases" description="Every saved purchase in this browser, newest first." />
             <div className="space-y-3 sm:hidden">
               {recentInvoices.map((invoice) => (
                 <button
@@ -666,19 +964,21 @@ export function InvoiceUploadPage() {
                       <p className="mt-1 text-xs leading-5 text-muted">
                         {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
                       </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Inventory: {getInvoiceInventoryStatus(invoice)}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Review: {invoice.status}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Receiving: {getInvoiceInventoryStatus(invoice)}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</p>
                     </div>
-                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
+                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{formatMaybeCurrency(invoice.totalAmount)}</Badge>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
-                    <span>{formatMaybeCurrency(invoice.totalAmount)}</span>
+                    <span>{invoice.lineItems.length} line items</span>
                     <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
                   </div>
                 </button>
               ))}
             </div>
             <div className="hidden sm:block">
-              <DataTable columns={recentInvoiceColumns} data={recentInvoices} getRowKey={(row) => row.id} />
+              <DataTable columns={purchaseHistoryColumns} data={recentInvoices} getRowKey={(row) => row.id} />
             </div>
           </Card>
         ) : null}
