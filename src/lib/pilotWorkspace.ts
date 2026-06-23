@@ -92,7 +92,7 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   confirmInventoryCountSession: (sessionId: string) => { confirmed: boolean; changedCount: number };
   cancelInventoryCountSession: (sessionId: string) => void;
   upsertInventoryReorderIntent: (intent: PilotInventoryState["reorderIntents"][number]) => void;
-  recordInventoryMovement: (itemId: string, movementType: "manual addition" | "usage" | "waste" | "breakage" | "correction" | "other", quantityDelta: number, note?: string) => InventoryMovement | null;
+  recordInventoryMovement: (itemId: string, movementType: "manual addition" | "adjustment" | "usage" | "waste" | "spoilage / expired" | "damaged" | "staff meal / comped" | "breakage" | "count adjustment" | "physical count adjustment" | "correction" | "other", quantityDelta: number, note?: string) => InventoryMovement | null;
   recordInventoryCount: (itemId: string, quantity: number, note?: string) => InventoryMovement | null;
   deleteReconciliation: (id: string) => void;
   resetWorkspace: () => void;
