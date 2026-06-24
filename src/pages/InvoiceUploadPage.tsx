@@ -12,6 +12,7 @@ import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDi
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey as normalizeLineItemKey, updateLineItemDescription } from "../lib/invoiceLineItemView";
 import { useDemoProfile } from "../lib/demoProfile";
+import { buildExportReadinessModel } from "../lib/demoReadiness";
 import { buildDemoRestaurantInvoiceDraft } from "../lib/invoiceSamples";
 import { buildInvoiceReceiveLines, summarizeInvoiceInventoryStatus } from "../lib/invoiceInventory";
 import { getRecentInvoicePreview, sortInvoicesNewestFirst, usePilotWorkspace } from "../lib/pilotWorkspace";
@@ -230,7 +231,7 @@ function buildPurchaseExportSnapshot(recentInvoices: PilotInvoiceRecord[], inven
 
 export function InvoiceUploadPage() {
   const demo = useDemoProfile();
-  const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary, inventoryItems, inventoryMappings, inventoryReceipts, updateInvoiceInventoryStatus } = usePilotWorkspace();
+  const { saveInvoice, recentInvoices, reviewQueue, priceChanges, summary, inventoryItems, inventoryMappings, inventoryReceipts, reconciliations, updateInvoiceInventoryStatus } = usePilotWorkspace();
   const [draft, setDraft] = useState<PilotInvoiceDraft>(() => createBlankDraft());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -292,6 +293,16 @@ export function InvoiceUploadPage() {
   const purchaseHistoryInvoices = useMemo(() => sortInvoicesNewestFirst(recentInvoices), [recentInvoices]);
   const supplierSpendRows = useMemo(() => buildSupplierSpendRows(recentInvoices), [recentInvoices]);
   const purchaseExportSnapshot = useMemo(() => buildPurchaseExportSnapshot(recentInvoices, inventoryReceipts), [inventoryReceipts, recentInvoices]);
+  const exportReadiness = useMemo(
+    () =>
+      buildExportReadinessModel({
+        invoices: recentInvoices,
+        inventoryReceipts,
+        reconciliations,
+        summary,
+      }),
+    [inventoryReceipts, recentInvoices, reconciliations, summary],
+  );
   const currentMonthPriceChanges = useMemo(() => {
     const monthStart = startOfMonth(new Date());
     return priceChanges.filter((change) => new Date(change.invoiceDate).getTime() >= monthStart);
@@ -800,10 +811,14 @@ export function InvoiceUploadPage() {
             <SectionHeader title="Accounting export readiness" />
             <div className="flex flex-wrap gap-2">
               <Badge tone={purchaseExportSnapshot.readyForCsv > 0 ? "success" : "neutral"}>Ready for CSV: {purchaseExportSnapshot.readyForCsv}</Badge>
-              <Badge tone={purchaseExportSnapshot.needsReview > 0 ? "warning" : "neutral"}>Needs review: {purchaseExportSnapshot.needsReview}</Badge>
+              <Badge tone={purchaseExportSnapshot.needsReview > 0 ? "warning" : "neutral"}>Needs invoice review: {purchaseExportSnapshot.needsReview}</Badge>
               <Badge tone={purchaseExportSnapshot.needsMapping > 0 ? "warning" : "neutral"}>Needs mapping: {purchaseExportSnapshot.needsMapping}</Badge>
+              <Badge tone={exportReadiness.dailyCloseSummary === "Ready" ? "success" : "warning"}>{exportReadiness.dailyCloseSummary}</Badge>
               <Badge tone="info">QuickBooks future-only</Badge>
             </div>
+            <p className="mt-3 text-sm leading-6 text-slate-700">
+              {exportReadiness.blockers.length > 0 ? `Blockers: ${exportReadiness.blockers.join(" · ")}.` : "Purchase CSV and summary exports are ready once the review queue is clear."}
+            </p>
             <div className="mt-4">
               <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "close-reports"))}>Open Close &amp; Reports</Button>
             </div>

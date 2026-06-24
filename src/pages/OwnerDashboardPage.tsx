@@ -5,11 +5,14 @@ import {
   FileText,
   Gauge,
   Package,
+  Sparkles,
+  X,
   TrendingUp,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
+import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
@@ -18,40 +21,11 @@ import { buildDemoPath, defaultDemoProfileSlug, useDemoProfile } from "../lib/de
 import type { DemoProfileSlug } from "../data/demoProfiles";
 import { buildOwnerDashboardModel } from "../lib/ownerDashboard";
 import { usePilotWorkspace } from "../lib/pilotWorkspace";
+import { buildDemoWalkthroughSteps, buildExportReadinessModel, getDemoCommandCenterSnapshot } from "../lib/demoReadiness";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 
 const actionLinkClass =
   "inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50";
-
-type CommandCenterSnapshot = {
-  menu: {
-    costedItems: number;
-    marginRisks: number;
-    squareReady: number;
-    recipeLinks: number;
-  };
-  schedule: {
-    staffCount: number;
-    openShifts: number;
-    conflicts: number;
-    draftStatus: string;
-  };
-};
-
-const commandCenterSnapshots: Record<DemoProfileSlug, CommandCenterSnapshot> = {
-  cafe: {
-    menu: { costedItems: 10, marginRisks: 3, squareReady: 7, recipeLinks: 9 },
-    schedule: { staffCount: 8, openShifts: 1, conflicts: 2, draftStatus: "Draft" },
-  },
-  "quick-service": {
-    menu: { costedItems: 14, marginRisks: 4, squareReady: 9, recipeLinks: 12 },
-    schedule: { staffCount: 11, openShifts: 2, conflicts: 1, draftStatus: "Draft" },
-  },
-  "full-service": {
-    menu: { costedItems: 18, marginRisks: 5, squareReady: 12, recipeLinks: 15 },
-    schedule: { staffCount: 15, openShifts: 2, conflicts: 3, draftStatus: "Draft" },
-  },
-};
 
 type CommandCenterAlert = {
   title: string;
@@ -75,6 +49,13 @@ type CommandCenterActivity = {
   detail: string;
   when: string;
   to: string;
+};
+
+type WalkthroughStep = {
+  title: string;
+  detail: string;
+  to: string;
+  ctaLabel: string;
 };
 
 function dateMillis(value: string | undefined | null) {
@@ -125,6 +106,7 @@ function toneForStatus(status: string): "neutral" | "success" | "warning" | "dan
 export function OwnerDashboardPage() {
   const demo = useDemoProfile();
   const profileSlug = (demo.slug || defaultDemoProfileSlug) as DemoProfileSlug;
+  const [demoFlowOpen, setDemoFlowOpen] = useState(false);
   const {
     recentInvoices,
     reviewQueue,
@@ -164,13 +146,24 @@ export function OwnerDashboardPage() {
     ],
   );
 
-  const commandCenter = commandCenterSnapshots[profileSlug];
+  const commandCenter = getDemoCommandCenterSnapshot(profileSlug);
   const purchasesRoute = buildDemoPath(profileSlug, "purchases");
   const inventoryRoute = buildDemoPath(profileSlug, "inventory");
   const menuCostingRoute = buildDemoPath(profileSlug, "menu-costing");
   const scheduleRoute = buildDemoPath(profileSlug, "schedule");
   const closeReportsRoute = buildDemoPath(profileSlug, "close-reports");
-  const exportReady = summary.invoiceReviewQueueCount === 0 && summary.unresolvedReconciliationCount === 0;
+  const walkthroughSteps = buildDemoWalkthroughSteps(profileSlug);
+  const exportReadiness = useMemo(
+    () =>
+      buildExportReadinessModel({
+        invoices: recentInvoices,
+        inventoryReceipts,
+        reconciliations,
+        summary,
+      }),
+    [inventoryReceipts, recentInvoices, reconciliations, summary],
+  );
+  const exportReady = exportReadiness.monthlyOwnerReport === "Ready";
   const heroDate = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" }).format(new Date());
 
   const attentionAlerts = useMemo<CommandCenterAlert[]>(() => {
@@ -495,6 +488,9 @@ export function OwnerDashboardPage() {
             <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>
               Upload purchase
             </Link>
+            <Button type="button" variant="secondary" onClick={() => setDemoFlowOpen(true)} icon={<Sparkles className="h-4 w-4" />}>
+              View demo flow
+            </Button>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
@@ -632,6 +628,15 @@ export function OwnerDashboardPage() {
             <Badge tone="neutral">3 blockers</Badge>
             <Badge tone="info">QuickBooks future-only</Badge>
           </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <TinyMetric label="Purchase CSV" value={exportReadiness.purchaseCsv} helper="Reviewed invoices only" />
+            <TinyMetric label="Supplier spend" value={exportReadiness.supplierSpendSummary} helper="Ready when purchases are reviewed" />
+            <TinyMetric label="Inventory summary" value={exportReadiness.inventoryMovementSummary} helper="Receipts and movements are captured locally" />
+            <TinyMetric label="Daily close" value={exportReadiness.dailyCloseSummary} helper={summary.todayReconciliationStatus === "Incomplete" ? "Needs entry" : formatCurrency(summary.todayReconciliationVariance)} />
+          </div>
+          <div className="mt-4 rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
+            Blockers: {exportReadiness.blockers.join(" · ")}. Monthly owner report stays compact, and QuickBooks remains future-only.
+          </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={closeReportsRoute}>
               Open Close &amp; Reports
@@ -642,7 +647,93 @@ export function OwnerDashboardPage() {
           </div>
         </Card>
       </section>
+      <DemoFlowDrawer open={demoFlowOpen} steps={walkthroughSteps} onClose={() => setDemoFlowOpen(false)} />
     </PageLayout>
+  );
+}
+
+function TinyMetric({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-slate-50 p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-2 text-lg font-bold text-ink">{value}</p>
+      <p className="mt-1 text-xs text-muted">{helper}</p>
+    </div>
+  );
+}
+
+function DemoFlowDrawer({
+  open,
+  steps,
+  onClose,
+}: {
+  open: boolean;
+  steps: WalkthroughStep[];
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
+      <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Demo flow</p>
+            <h2 className="mt-1 text-lg font-bold text-ink sm:text-xl">Walk through the restaurant story</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">Purchases - Inventory - Menu & Costing - Close - Export.</p>
+          </div>
+          <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
+            Close
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="space-y-2">
+            {steps.map((step, index) => (
+              <div key={step.title} className="rounded-2xl border border-line bg-white p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Step {index + 1}</p>
+                    <p className="mt-1 text-base font-bold text-ink">{step.title}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">{step.detail}</p>
+                  </div>
+                  <Link className={actionLinkClass} to={step.to} onClick={onClose}>
+                    {step.ctaLabel}
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
