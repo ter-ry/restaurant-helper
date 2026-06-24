@@ -45,6 +45,7 @@ const statusOptions: Array<InventoryItemStatus | "All"> = ["All", "In stock", "L
 type ActivePanel =
   | null
   | { kind: "item"; mode: "create" | "edit"; itemId?: string; fromReceiveLineId?: string | null }
+  | { kind: "receive-queue" }
   | { kind: "receive" }
   | { kind: "adjust" }
   | { kind: "count" }
@@ -133,8 +134,7 @@ function buildReceiveQueue(
           ...line,
         }));
     })
-    .sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime())
-    .slice(0, 8);
+    .sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
 }
 
 function buildRecentNonReceiptMovements(movements: InventoryMovement[]) {
@@ -262,7 +262,6 @@ export function InventoryPage() {
   );
   const activeItems = useMemo(() => sortInventoryItems(inventoryItems).filter((item) => item.active), [inventoryItems]);
   const receiveQueue = useMemo(() => buildReceiveQueue(recentInvoices, inventoryItems, inventoryMappings, inventoryReceipts), [inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices]);
-  const recentNonReceiptMovements = useMemo(() => buildRecentNonReceiptMovements(inventoryMovements), [inventoryMovements]);
   const recentMovementsFeed = useMemo(() => sortInventoryMovementsNewestFirst(inventoryMovements).slice(0, 8), [inventoryMovements]);
   const activeCountSessions = useMemo(() => inventoryCountSessions.filter((session) => session.status === "Draft" || session.status === "Ready to review"), [inventoryCountSessions]);
   const countSessionsSummary = useMemo(
@@ -389,10 +388,10 @@ export function InventoryPage() {
     setActivePanel({ kind: "reorder" });
   };
 
-  const openActivityPanel = () => {
+  const openReceiveQueuePanel = () => {
     setErrorMessage("");
     setMessage("");
-    setActivePanel({ kind: "activity" });
+    setActivePanel({ kind: "receive-queue" });
   };
 
   const startCountSession = () => {
@@ -712,41 +711,37 @@ export function InventoryPage() {
     >
       <Card className="surface-panel p-5 sm:p-6">
         <div className="flex flex-col gap-4 border-b border-line pb-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-ink">Keep the daily stock list visible first, then open receiving, counts, adjustments, or reorder tools only when needed.</p>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-                This page stays focused on stock, receiving, waste, and reorder decisions.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => openReceivePanel()}>
-                Receive pending
-              </Button>
-              <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
-                Start count
-              </Button>
-              <Button type="button" variant="secondary" icon={<Trash2 className="h-4 w-4" />} onClick={openWastePanel}>
-                Log waste
-              </Button>
-              <Button type="button" variant="secondary" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
-                Open reorder list
-              </Button>
-            </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Inventory</p>
+            <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Stock levels and receiving.</h1>
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CompactStatCard label="Low stock" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryOutOfStockCount} out of stock`} />
-            <CompactStatCard label="Reorder now" value={String(summary.inventoryReorderNowCount)} helper={summary.inventoryItemsToReorderCount ? `Across ${summary.inventoryItemsToReorderCount} items` : "No urgent order"} />
-            <CompactStatCard label="Pending receive" value={String(pendingReceiveInvoices.length)} helper={`${summary.inventoryReceiptCount} receipt${summary.inventoryReceiptCount === 1 ? "" : "s"} stored`} />
-            <CompactStatCard label="Count status" value={String(countSessionsSummary.draft + countSessionsSummary.ready)} helper={`${countSessionsSummary.completed} completed`} />
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="warning">Low stock {summary.inventoryLowStockCount}</Badge>
+            <Badge tone="info">Reorder {summary.inventoryReorderNowCount}</Badge>
+            <Badge tone="info">Pending receive {pendingReceiveInvoices.length}</Badge>
+            <Badge tone={countSessionsSummary.draft || countSessionsSummary.ready ? "warning" : "neutral"}>
+              Count {countSessionsSummary.draft || countSessionsSummary.ready ? "Not finished" : "Not started"}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" icon={<ShoppingCart className="h-4 w-4" />} onClick={openReceiveQueuePanel}>
+              Receive queue
+            </Button>
+            <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
+              Start count
+            </Button>
+            <Button type="button" variant="secondary" icon={<Trash2 className="h-4 w-4" />} onClick={openWastePanel}>
+              Log waste
+            </Button>
+            <Button type="button" variant="secondary" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
+              Reorder list
+            </Button>
           </div>
         </div>
 
         <div className="mt-5">
           <SectionHeader
             title="Inventory list"
-            description="Your main working stock list. Open an item to adjust it or review history."
             action={
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="ghost" onClick={() => setShowArchived((current) => !current)}>
@@ -779,15 +774,6 @@ export function InventoryPage() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge tone="info">{statusCounts.visible} visible</Badge>
-            <Button type="button" variant="secondary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => openReceivePanel()}>
-              Receive pending
-            </Button>
-            <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
-              Start count
-            </Button>
-            <Button type="button" variant="secondary" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
-              Reorder list
-            </Button>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {filteredItems.map((item) => {
@@ -818,6 +804,7 @@ export function InventoryPage() {
           </div>
         </div>
 
+        {/*
         <div className="mt-5 grid gap-4 xl:grid-cols-2">
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
@@ -1001,7 +988,61 @@ export function InventoryPage() {
           </div>
         </Card>
 
+        </Card>
+        </div>
+        */}
       </Card>
+
+      {activePanel?.kind === "receive-queue" ? (
+        <ModalShell title="Receive queue" onClose={() => setActivePanel(null)} wide>
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="info">{receiveQueue.length} pending lines</Badge>
+            <Badge tone="neutral">{pendingReceiveInvoices.length} invoices with pending receiving</Badge>
+          </div>
+          <div className="mt-4 space-y-3">
+            {receiveQueue.length ? (
+              receiveQueue.map((line) => (
+                <div key={`${line.invoiceId}-${line.invoiceLineItemId}`} className="rounded-xl border border-line bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{line.supplier}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">
+                        {line.invoiceNumber || "No invoice number"} · {formatDate(line.invoiceDate)}
+                      </p>
+                      <p className="mt-1 truncate text-xs leading-5 text-muted">{line.invoiceLineName}</p>
+                    </div>
+                    <Badge tone={line.matchLabel === "Previously confirmed" || line.matchLabel === "Auto-matched" ? "success" : line.state === "unmapped" ? "warning" : "info"}>{line.matchLabel}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+                    <span>{line.invoiceQuantity} {line.invoiceUnit}</span>
+                    <span>{formatCurrency(line.unitPrice)}</span>
+                    <span>{(line.invoiceQuantity * line.conversionFactor).toFixed(2)} {line.inventoryUnit}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        openReceivePanel(line.invoiceId);
+                        setActivePanel({ kind: "receive" });
+                      }}
+                    >
+                      Open receive flow
+                    </Button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm leading-6 text-muted">No purchase lines need receiving right now.</p>
+            )}
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Button type="button" variant="ghost" onClick={() => setActivePanel(null)}>
+              Close
+            </Button>
+          </div>
+        </ModalShell>
+      ) : null}
 
       {activePanel?.kind === "item" ? (
         <ModalShell title={itemPanelTitle} onClose={() => setActivePanel(null)}>
