@@ -1,10 +1,9 @@
 import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, Save, Sparkles, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type MouseEvent, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge, type BadgeTone } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
-import { DataTable, type Column } from "../components/DataTable";
 import { InvoiceLineItemCard as InvoiceLineItemCardView } from "../components/InvoiceLineItemCard";
 import { PilotInvoiceDetailsModal } from "../components/PilotInvoiceDetailsModal";
 import { PageLayout } from "../components/PageLayout";
@@ -15,7 +14,7 @@ import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey a
 import { useDemoProfile } from "../lib/demoProfile";
 import { buildDemoRestaurantInvoiceDraft } from "../lib/invoiceSamples";
 import { buildInvoiceReceiveLines, summarizeInvoiceInventoryStatus } from "../lib/invoiceInventory";
-import { getRecentInvoicePreview, usePilotWorkspace } from "../lib/pilotWorkspace";
+import { getRecentInvoicePreview, sortInvoicesNewestFirst, usePilotWorkspace } from "../lib/pilotWorkspace";
 import type { InvoiceFieldConfidence, InventoryInvoiceReceipt, PilotInvoiceDraft, PilotInvoiceLineItem, PilotInvoiceRecord, PilotPriceChangeRecord } from "../types";
 import { formatCurrency, formatDate, formatDateTime, formatPercent } from "../utils/format";
 import { buildDemoPath, defaultDemoProfileSlug } from "../lib/demoProfile";
@@ -239,7 +238,9 @@ export function InvoiceUploadPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
-  const [showAllInvoices, setShowAllInvoices] = useState(false);
+  const [purchaseHistoryModalOpen, setPurchaseHistoryModalOpen] = useState(false);
+  const [priceChangesModalOpen, setPriceChangesModalOpen] = useState(false);
+  const [mappingModalOpen, setMappingModalOpen] = useState(false);
   const [ocrStage, setOcrStage] = useState("Idle");
   const [ocrElapsedSeconds, setOcrElapsedSeconds] = useState(0);
   const [uploadStartedAt, setUploadStartedAt] = useState<number | null>(null);
@@ -288,12 +289,17 @@ export function InvoiceUploadPage() {
   const lineItemsNeedingReview = draft.lineItems.filter((item) => item.needsReview || item.confidence < confidenceThreshold).length;
   const selectedInvoice = useMemo(() => recentInvoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null, [recentInvoices, selectedInvoiceId]);
   const recentInvoicePreview = useMemo(() => getRecentInvoicePreview(recentInvoices, 5), [recentInvoices]);
+  const purchaseHistoryInvoices = useMemo(() => sortInvoicesNewestFirst(recentInvoices), [recentInvoices]);
   const supplierSpendRows = useMemo(() => buildSupplierSpendRows(recentInvoices), [recentInvoices]);
   const purchaseExportSnapshot = useMemo(() => buildPurchaseExportSnapshot(recentInvoices, inventoryReceipts), [inventoryReceipts, recentInvoices]);
   const currentMonthPriceChanges = useMemo(() => {
     const monthStart = startOfMonth(new Date());
     return priceChanges.filter((change) => new Date(change.invoiceDate).getTime() >= monthStart);
   }, [priceChanges]);
+  const sortedCurrentMonthPriceChanges = useMemo(
+    () => [...currentMonthPriceChanges].sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()),
+    [currentMonthPriceChanges],
+  );
   const activeInventoryInvoice = savedInvoicePrompt ?? selectedInvoice ?? recentInvoices[0] ?? null;
   const mappedItemCount = useMemo(
     () =>
@@ -325,43 +331,6 @@ export function InvoiceUploadPage() {
     setErrorMessage("");
   };
 
-  const priceChangeColumns: Column<PilotPriceChangeRecord>[] = [
-    { header: "Item", accessor: "itemName" },
-    { header: "Supplier", accessor: "supplier" },
-    { header: "Previous date", accessor: (row) => formatDate(row.previousInvoiceDate) },
-    { header: "Current date", accessor: (row) => formatDate(row.invoiceDate) },
-    { header: "Previous", accessor: (row) => formatCurrency(row.previousPrice) },
-    { header: "Current", accessor: (row) => formatCurrency(row.currentPrice) },
-    { header: "Change", accessor: (row) => <Badge tone={row.status === "Increased" ? "danger" : row.status === "Decreased" ? "success" : "neutral"}>{formatPercent(row.changePercent)}</Badge> },
-  ];
-
-  const purchaseHistoryColumns: Column<(typeof recentInvoices)[number]>[] = [
-    { header: "Supplier", accessor: "supplier" },
-    { header: "Invoice", accessor: "invoiceNumber" },
-    { header: "Date", accessor: (row) => formatMaybeDate(row.invoiceDate) },
-    { header: "Total", accessor: (row) => formatMaybeCurrency(row.totalAmount) },
-    {
-      header: "Review",
-      accessor: (row) => <Badge tone={row.status === "Ready" ? "success" : "warning"}>{row.status}</Badge>,
-    },
-    {
-      header: "Receiving",
-      accessor: (row) => {
-        const inventoryStatus = getInvoiceInventoryStatus(row);
-        return <Badge tone={inventoryStatus === "Received" ? "success" : inventoryStatus === "Partially received" ? "warning" : inventoryStatus === "Skipped" ? "neutral" : "info"}>{inventoryStatus}</Badge>;
-      },
-    },
-    { header: "Export", accessor: (row) => <Badge tone={getInvoiceExportStatus(row, inventoryReceipts) === "Ready for CSV" ? "success" : getInvoiceExportStatus(row, inventoryReceipts) === "Needs mapping" ? "warning" : "neutral"}>{getInvoiceExportStatus(row, inventoryReceipts)}</Badge> },
-    {
-      header: "Open",
-      accessor: (row) => (
-        <Button type="button" variant="ghost" onClick={() => openInvoice(row)}>
-          Open
-        </Button>
-      ),
-    },
-  ];
-
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -371,7 +340,6 @@ export function InvoiceUploadPage() {
     }
 
     setSelectedInvoiceId(null);
-    setShowAllInvoices(false);
     setSavedInvoicePrompt(null);
     setOcrStage("Idle");
     setOcrElapsedSeconds(0);
@@ -445,7 +413,6 @@ export function InvoiceUploadPage() {
   const loadSampleInvoice = () => {
     const sample = buildDemoRestaurantInvoiceDraft();
     setSelectedInvoiceId(null);
-    setShowAllInvoices(false);
     setSavedInvoicePrompt(null);
     sourceDocumentUrlRef.current = null;
     setDraft(sample);
@@ -514,7 +481,9 @@ export function InvoiceUploadPage() {
     setReviewOpen(false);
     setIsSaving(false);
     setSelectedInvoiceId(null);
-    setShowAllInvoices(false);
+    setPurchaseHistoryModalOpen(false);
+    setPriceChangesModalOpen(false);
+    setMappingModalOpen(false);
     setOcrStage("Idle");
     setOcrElapsedSeconds(0);
     setUploadStartedAt(null);
@@ -726,241 +695,120 @@ export function InvoiceUploadPage() {
 
         </Card>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
             <SectionHeader
               title="Purchase history"
-              description="Newest saved purchases first. The compact view shows the newest five and never hides the latest save."
-              action={
-                recentInvoices.length > 5 ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setShowAllInvoices((current) => !current)}
-                  >
-                    {showAllInvoices ? "Hide all purchases" : `View all invoices (${recentInvoicePreview.totalCount})`}
-                  </Button>
-                ) : null
-              }
+              action={recentInvoices.length > 3 ? <Button type="button" variant="secondary" onClick={() => setPurchaseHistoryModalOpen(true)}>View all purchases</Button> : null}
             />
-            <div className="space-y-3 sm:hidden">
-              {recentInvoicePreview.visibleInvoices.map((invoice) => (
-                <button
-                  key={invoice.id}
-                  type="button"
-                  className="w-full rounded-xl border border-line bg-white p-4 text-left shadow-soft transition hover:bg-slate-50"
-                  onClick={() => openInvoice(invoice)}
-                >
+            <div className="space-y-2">
+              {recentInvoicePreview.visibleInvoices.slice(0, 4).map((invoice) => (
+                <button key={invoice.id} type="button" className="w-full rounded-xl border border-line bg-white p-3 text-left transition hover:bg-slate-50" onClick={() => openInvoice(invoice)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-ink">{invoice.supplier}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Review: {invoice.status}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Receiving: {getInvoiceInventoryStatus(invoice)}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</p>
+                      <p className="mt-0.5 text-xs leading-5 text-muted">{invoice.invoiceNumber || "No invoice number"} · {formatMaybeDate(invoice.invoiceDate)} · {formatMaybeCurrency(invoice.totalAmount)}</p>
                     </div>
-                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{formatMaybeCurrency(invoice.totalAmount)}</Badge>
+                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
-                    <span>{invoice.lineItems.length} line items</span>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <span>Receiving: {getInvoiceInventoryStatus(invoice)}</span>
+                    <span>Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</span>
+                    <span>{invoice.lineItems.length} items</span>
                   </div>
                 </button>
               ))}
-            </div>
-            <div className="hidden sm:block">
-              <DataTable columns={purchaseHistoryColumns} data={recentInvoicePreview.visibleInvoices} getRowKey={(row) => row.id} />
             </div>
           </Card>
 
           <Card className="p-5">
             <SectionHeader
               title="Price-change alerts"
-              description="Only conservative matches from saved purchase history are shown."
-              action={<Badge tone="info">{currentMonthPriceChanges.length} this month</Badge>}
+              action={currentMonthPriceChanges.length > 3 ? <Button type="button" variant="secondary" onClick={() => setPriceChangesModalOpen(true)}>View all price changes</Button> : null}
             />
-            <div className="space-y-3 sm:hidden">
-              {currentMonthPriceChanges.slice(0, 5).map((change) => (
-                <div key={change.id} className="rounded-xl border border-line bg-white p-4 shadow-soft">
+            <div className="space-y-2">
+              {sortedCurrentMonthPriceChanges.slice(0, 3).map((change) => (
+                <div key={change.id} className="rounded-xl border border-line bg-white p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-ink">{change.itemName}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">{change.supplier} | {formatDate(change.invoiceDate)}</p>
+                      <p className="mt-0.5 text-xs leading-5 text-muted">{change.supplier} · {formatDate(change.invoiceDate)}</p>
                     </div>
                     <Badge tone={change.status === "Increased" ? "danger" : change.status === "Decreased" ? "success" : "neutral"}>{formatPercent(change.changePercent)}</Badge>
                   </div>
-                  <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                    <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Previous</p>
-                      <p className="mt-1 font-semibold text-ink">{formatCurrency(change.previousPrice)}</p>
-                      <p className="mt-1 text-xs text-muted">{formatDate(change.previousInvoiceDate)}</p>
-                    </div>
-                    <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Current</p>
-                      <p className="mt-1 font-semibold text-ink">{formatCurrency(change.currentPrice)}</p>
-                      <p className="mt-1 text-xs text-muted">{formatDate(change.invoiceDate)}</p>
-                    </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+                    <span>Prev {formatCurrency(change.previousPrice)}</span>
+                    <span>Now {formatCurrency(change.currentPrice)}</span>
+                    <span>{formatDate(change.previousInvoiceDate)} → {formatDate(change.invoiceDate)}</span>
                   </div>
                 </div>
               ))}
-            </div>
-            <div className="hidden sm:block">
-              <DataTable columns={priceChangeColumns} data={currentMonthPriceChanges.slice(0, 5)} getRowKey={(row) => row.id} />
             </div>
           </Card>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-3">
-          <Card className="min-w-0 p-5">
-            <SectionHeader
-              title="Supplier spend"
-              description="Monthly supplier spend and purchase counts, grouped from the saved purchase history."
-            />
+          <Card className="p-5">
+            <SectionHeader title="Supplier spend" />
             {supplierSpendRows.length ? (
-              <div className="space-y-3">
-                {supplierSpendRows.map((row) => (
-                  <div key={row.supplier} className="rounded-xl border border-line bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-ink">{row.supplier}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted">{row.invoiceCount} invoices this month</p>
-                      </div>
-                      <Badge tone={row.monthSpend > 0 ? "success" : "neutral"}>{formatCurrency(row.monthSpend)}</Badge>
-                    </div>
-                    <p className="mt-3 text-xs leading-5 text-muted">{row.trendLabel}</p>
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-3 rounded-xl border border-line bg-slate-50 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-ink">{supplierSpendRows[0].supplier}</p>
+                    <p className="mt-0.5 text-xs leading-5 text-muted">{supplierSpendRows[0].invoiceCount} invoices this month</p>
                   </div>
-                ))}
+                  <Badge tone={supplierSpendRows[0].monthSpend > 0 ? "success" : "neutral"}>{formatCurrency(supplierSpendRows[0].monthSpend)}</Badge>
+                </div>
+                <p className="text-xs leading-5 text-muted">{supplierSpendRows[0].trendLabel}</p>
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
-                No supplier spend has been saved yet. Upload the first receipt or invoice to start the spend history.
-              </div>
+              <p className="text-sm leading-6 text-muted">No supplier spend yet.</p>
             )}
           </Card>
 
-          <Card className="min-w-0 p-5">
-            <SectionHeader
-              title="Item mapping and receiving"
-              description="Track which purchase lines are mapped, received, or still waiting to be linked into inventory."
-              action={
-                activeInventoryInvoice ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(activeInventoryInvoice.id)}`)}
-                  >
-                    Map / receive
-                  </Button>
-                ) : null
-              }
-            />
+          <Card className="p-5">
+            <SectionHeader title="Item mapping and receiving" action={activeInventoryInvoice ? <Button type="button" variant="secondary" onClick={() => setMappingModalOpen(true)}>View all mappings</Button> : null} />
             {activeInventoryInvoice ? (
               <div className="space-y-3">
-                <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Current purchase</p>
-                  <p className="mt-1 text-sm font-semibold text-ink">{activeInventoryInvoice.supplier}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted">
-                    {activeInventoryInvoice.invoiceNumber || "No invoice number"} · {formatMaybeDate(activeInventoryInvoice.invoiceDate)}
-                  </p>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <MetricCard
-                    label="Mapped"
-                    value={String(activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length)}
-                    helper="Purchase lines already linked to inventory"
-                  />
-                  <MetricCard
-                    label="Unmapped"
-                    value={String(activeReceiveLines.filter((line) => line.state === "unmapped").length)}
-                    helper="Still needs a mapped inventory item"
-                  />
+                <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  <span>Mapped: {activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length}</span>
+                  <span>Unmapped: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
+                  <span>Received: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
+                  <span>Not received: {activeReceiveLines.filter((line) => line.state !== "already-received").length}</span>
                 </div>
                 <div className="space-y-2">
-                  {activeReceiveLines.slice(0, 4).map((line) => (
+                  {activeReceiveLines.slice(0, 3).map((line) => (
                     <div key={line.invoiceLineItemId} className="rounded-xl border border-line bg-slate-50 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
-                          <p className="mt-1 text-xs leading-5 text-muted">
-                            {line.sourceDescription || "Original description not available"} · {formatCurrency(line.unitPrice)}
-                          </p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted">{line.sourceDescription || "Original description not available"} · {formatCurrency(line.unitPrice)}</p>
                         </div>
-                        <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>
-                          {line.matchLabel}
-                        </Badge>
+                        <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-muted">
-                        Inventory unit: {line.inventoryUnit} · Conversion: {line.conversionFactor}
-                      </p>
                     </div>
                   ))}
                 </div>
+                <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "inventory") + "?receive=" + encodeURIComponent(activeInventoryInvoice.id))}>Map / receive</Button>
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
-                Upload a purchase to see line-item mapping and receiving status.
-              </div>
+              <p className="text-sm leading-6 text-muted">Upload a purchase to see receiving status.</p>
             )}
           </Card>
 
-          <Card className="min-w-0 p-5">
-            <SectionHeader
-              title="Accounting export readiness"
-              description="CSV export is the current MVP. QuickBooks sync stays future-only."
-            />
-            <div className="space-y-3">
-              <MetricCard label="Ready for CSV" value={String(purchaseExportSnapshot.readyForCsv)} helper="Purchases that are clean enough for accountant export" />
-              <MetricCard label="Needs review" value={String(purchaseExportSnapshot.needsReview)} helper="Saved purchases still waiting on confirmation" />
-              <MetricCard label="Needs mapping" value={String(purchaseExportSnapshot.needsMapping)} helper="Ready purchases with no inventory link yet" />
+          <Card className="p-5">
+            <SectionHeader title="Accounting export readiness" />
+            <div className="flex flex-wrap gap-2">
+              <Badge tone={purchaseExportSnapshot.readyForCsv > 0 ? "success" : "neutral"}>Ready for CSV: {purchaseExportSnapshot.readyForCsv}</Badge>
+              <Badge tone={purchaseExportSnapshot.needsReview > 0 ? "warning" : "neutral"}>Needs review: {purchaseExportSnapshot.needsReview}</Badge>
+              <Badge tone={purchaseExportSnapshot.needsMapping > 0 ? "warning" : "neutral"}>Needs mapping: {purchaseExportSnapshot.needsMapping}</Badge>
+              <Badge tone="info">QuickBooks future-only</Badge>
             </div>
-            <div className="mt-4 rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
-              Accountant-ready CSV is the MVP export path. QuickBooks sync remains a future placeholder.
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "close-reports"))}>
-                Open Close &amp; Reports
-              </Button>
+            <div className="mt-4">
+              <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "close-reports"))}>Open Close &amp; Reports</Button>
             </div>
           </Card>
         </div>
-
-        {showAllInvoices && recentInvoicePreview.hasMore ? (
-          <Card className="p-5">
-            <SectionHeader title="All purchases" description="Every saved purchase in this browser, newest first." />
-            <div className="space-y-3 sm:hidden">
-              {recentInvoices.map((invoice) => (
-                <button
-                  key={invoice.id}
-                  type="button"
-                  className="w-full rounded-xl border border-line bg-white p-4 text-left shadow-soft transition hover:bg-slate-50"
-                  onClick={() => openInvoice(invoice)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-ink">{invoice.supplier}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {invoice.invoiceNumber || "No invoice number"} | {formatMaybeDate(invoice.invoiceDate)}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Review: {invoice.status}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Receiving: {getInvoiceInventoryStatus(invoice)}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted">Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</p>
-                    </div>
-                    <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{formatMaybeCurrency(invoice.totalAmount)}</Badge>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
-                    <span>{invoice.lineItems.length} line items</span>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="hidden sm:block">
-              <DataTable columns={purchaseHistoryColumns} data={recentInvoices} getRowKey={(row) => row.id} />
-            </div>
-          </Card>
-        ) : null}
 
         <Card className="surface-panel p-5">
           <div className="flex items-start gap-4">
@@ -969,14 +817,117 @@ export function InvoiceUploadPage() {
             </div>
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Local storage</p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">
-                Saved invoices are stored in this browser only. Refreshing the page should keep the data, and clearing browser storage will remove it.
-              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-700">Saved invoices are stored in this browser only. Refreshing the page should keep the data, and clearing browser storage will remove it.</p>
               <p className="mt-3 text-sm text-muted">{summary.invoiceCount} invoices stored locally.</p>
             </div>
           </div>
         </Card>
       </div>
+
+      <ListOverlayModal
+        open={purchaseHistoryModalOpen}
+        title="All purchases"
+        description="Newest saved purchases first. Open a row to inspect or reopen it."
+        onClose={() => setPurchaseHistoryModalOpen(false)}
+      >
+        <div className="space-y-2">
+          {purchaseHistoryInvoices.map((invoice) => (
+            <button
+              key={invoice.id}
+              type="button"
+              className="w-full rounded-xl border border-line bg-white p-3 text-left transition hover:bg-slate-50"
+              onClick={() => {
+                setPurchaseHistoryModalOpen(false);
+                openInvoice(invoice);
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-ink">{invoice.supplier}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-muted">
+                    {invoice.invoiceNumber || "No invoice number"} · {formatMaybeDate(invoice.invoiceDate)} · {formatMaybeCurrency(invoice.totalAmount)}
+                  </p>
+                </div>
+                <Badge tone={invoice.status === "Ready" ? "success" : "warning"}>{invoice.status}</Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                <span>Receiving: {getInvoiceInventoryStatus(invoice)}</span>
+                <span>Export: {getInvoiceExportStatus(invoice, inventoryReceipts)}</span>
+                <span>{invoice.lineItems.length} items</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </ListOverlayModal>
+
+      <ListOverlayModal
+        open={priceChangesModalOpen}
+        title="All price changes"
+        description="Newest detected price changes first."
+        onClose={() => setPriceChangesModalOpen(false)}
+      >
+        <div className="space-y-2">
+          {currentMonthPriceChanges.length ? (
+            sortedCurrentMonthPriceChanges.map((change) => (
+              <div key={change.id} className="rounded-xl border border-line bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink">{change.itemName}</p>
+                    <p className="mt-0.5 text-xs leading-5 text-muted">
+                      {change.supplier} · {formatDate(change.invoiceDate)}
+                    </p>
+                  </div>
+                  <Badge tone={change.status === "Increased" ? "danger" : change.status === "Decreased" ? "success" : "neutral"}>{formatPercent(change.changePercent)}</Badge>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+                  <span>Prev {formatCurrency(change.previousPrice)}</span>
+                  <span>Now {formatCurrency(change.currentPrice)}</span>
+                  <span>
+                    {formatDate(change.previousInvoiceDate)} → {formatDate(change.invoiceDate)}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">No price changes detected this month yet.</div>
+          )}
+        </div>
+      </ListOverlayModal>
+
+      <ListOverlayModal
+        open={mappingModalOpen}
+        title="All mapping and receiving"
+        description="These lines can be mapped or received into inventory."
+        onClose={() => setMappingModalOpen(false)}
+      >
+        {activeInventoryInvoice ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              <span>Mapped: {activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length}</span>
+              <span>Unmapped: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
+              <span>Received: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
+              <span>Not received: {activeReceiveLines.filter((line) => line.state !== "already-received").length}</span>
+            </div>
+            <div className="space-y-2">
+              {activeReceiveLines.map((line) => (
+                <div key={line.invoiceLineItemId} className="rounded-xl border border-line bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
+                      <p className="mt-0.5 text-xs leading-5 text-muted">
+                        {line.sourceDescription || "Original description not available"} · {formatCurrency(line.unitPrice)}
+                      </p>
+                    </div>
+                    <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">Upload or open a purchase to view mapping status.</div>
+        )}
+      </ListOverlayModal>
 
       <InvoiceReviewModal
         open={invoiceModalOpen}
@@ -1012,6 +963,41 @@ export function InvoiceUploadPage() {
         }}
       />
     </PageLayout>
+  );
+}
+
+function ListOverlayModal({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-3 sm:items-center sm:p-6" role="dialog" aria-modal="true">
+      <div className="w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line p-4 sm:p-5">
+          <div>
+            <h2 className="text-lg font-bold text-ink">{title}</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">{description}</p>
+          </div>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto p-4 sm:p-5">{children}</div>
+      </div>
+    </div>
   );
 }
 
