@@ -1,19 +1,15 @@
 import {
   AlertTriangle,
-  ArrowRight,
   CalendarClock,
   CalendarDays,
-  CheckCircle2,
   FileText,
   Gauge,
   Package,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
-import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
@@ -486,145 +482,128 @@ export function OwnerDashboardPage() {
 
   return (
     <PageLayout title="Dashboard" description="Back-office control between POS and QuickBooks.">
-      <Card className="p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">
-              {demo.customization.restaurantName} - {weekLabel()}
-            </p>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink">Back-office control between POS and QuickBooks.</h2>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Today is {heroDate}. Keep purchases, inventory, menu costing, schedule, and close work flowing through one practical owner command center.
-            </p>
+      <Card className="p-5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="info">{demo.customization.restaurantName}</Badge>
+              <Badge tone="neutral">{weekLabel()}</Badge>
+            </div>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Back-office control between POS and QuickBooks.</h2>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link className={actionLinkClass} to={purchasesRoute}>
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>
               Upload purchase
-            </Link>
-            <Link className={actionLinkClass} to={inventoryRoute}>
-              Start stock count
-            </Link>
-            <Link className={actionLinkClass} to={closeReportsRoute}>
-              Enter daily close
-            </Link>
-            <Link className={actionLinkClass} to={scheduleRoute}>
-              Generate schedule
-            </Link>
-            <Link className={actionLinkClass} to={closeReportsRoute}>
-              Export CSV
             </Link>
           </div>
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+          <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to={inventoryRoute}>
+            Start stock count
+          </Link>
+          <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to={closeReportsRoute}>
+            Enter daily close
+          </Link>
+          <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to={closeReportsRoute}>
+            Export CSV
+          </Link>
+        </div>
       </Card>
 
-      <section className="mt-8">
-        <SectionHeader title="Needs attention today" description="The fastest owner actions to clear before the next shift." />
+      <section className="mt-7">
+        <SectionHeader title="Needs attention today" description="Open these before the next shift." />
         {attentionAlerts.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {attentionAlerts.map((alert) => (
-              <Card key={alert.title} className="p-5">
-                <div className="flex items-start justify-between gap-3">
+          <Card className="p-4 sm:p-5">
+            <div className="space-y-3">
+              {attentionAlerts.slice(0, 5).map((alert) => (
+                <div key={alert.title} className="flex flex-col gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <Badge tone={alert.tone}>{alert.title}</Badge>
-                    <p className="mt-3 text-sm leading-6 text-slate-700">{alert.detail}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={alert.tone}>{alert.title}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">{alert.detail}</p>
                   </div>
+                  <Link className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={alert.to}>
+                    {alert.ctaLabel}
+                  </Link>
                 </div>
-                <Link className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={alert.to}>
-                  {alert.ctaLabel}
-                </Link>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <Card className="p-6">
-            <p className="text-sm font-semibold text-ink">No urgent items right now.</p>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Upload a purchase, enter a close, or load the sample restaurant data to surface owner actions.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link className={actionLinkClass} to={purchasesRoute}>
-                Upload purchase
-              </Link>
-              <Button type="button" variant="secondary" icon={<Sparkles className="h-4 w-4" />} onClick={resetWorkspace}>
-                Load sample restaurant data
-              </Button>
+              ))}
             </div>
+          </Card>
+        ) : (
+          <Card className="p-5">
+            <p className="text-sm font-semibold text-ink">No urgent items right now.</p>
+            <p className="mt-1 text-sm leading-6 text-muted">Upload a purchase or enter a close to surface owner actions.</p>
           </Card>
         )}
       </section>
 
-      <section className="mt-8">
-        <SectionHeader
-          title="Today's key numbers"
-          description="Compact operational signals from purchases, inventory, menu costing, schedule, and close."
-        />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <section className="mt-7">
+        <SectionHeader title="Today's key numbers" description="The smallest set that still tells the owner what needs action." />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Purchases this week" value={String(summary.weeklyInvoiceCount)} helper={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend) : "No purchases yet"} icon={<FileText className="h-5 w-5" />} />
           <StatCard label="Invoices needing review" value={String(summary.invoiceReviewQueueCount)} helper={summary.invoiceReviewQueueCount > 0 ? "Confirm OCR and mapping" : "Queue is clear"} icon={<AlertTriangle className="h-5 w-5" />} />
           <StatCard label="Low-stock items" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryReorderNowCount} need reorder now`} icon={<Package className="h-5 w-5" />} />
           <StatCard label="Reorder suggestions" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? "Order before stockouts" : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
-          <StatCard label="Closes needing review" value={String(summary.unresolvedReconciliationCount)} helper={summary.todayReconciliationStatus === "Incomplete" ? "Close not entered yet" : `${summary.todayReconciliationStatus} today`} icon={<CalendarClock className="h-5 w-5" />} />
-          <StatCard label="Schedule conflicts" value={String(scheduleSnapshot.conflicts)} helper={`${scheduleSnapshot.openShifts} open shifts`} icon={<CalendarDays className="h-5 w-5" />} />
         </div>
       </section>
 
-      <section className="mt-8">
-        <SectionHeader title="Today's workflow" description="The connected loop from purchase to inventory to close." />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {workflowSteps.map((step) => (
-            <Card key={step.title} className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">{step.title}</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{step.detail}</p>
+      <section className="mt-7">
+        <SectionHeader title="Today's workflow" description="One connected loop from purchase to export." />
+        <Card className="p-4 sm:p-5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            {workflowSteps.map((step, index) => (
+              <div key={step.title} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-line bg-slate-50 px-3 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-bold text-ink shadow-sm">{index + 1}</span>
+                  <p className="text-sm font-semibold text-ink">{step.title}</p>
                 </div>
                 <Badge tone={step.tone}>{step.status}</Badge>
               </div>
-              <Link className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={step.to}>
-                <span>Open section</span>
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Card>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Card>
       </section>
 
-      <section className="mt-8">
-        <SectionHeader title="Section summary" description="Compact panels for the six visible areas. Each one links out to the real workflow." />
-        <div className="grid gap-4 xl:grid-cols-2">
-          {modulePanels.map((panel) => (
-            <Card key={panel.title} className="p-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">{panel.eyebrow}</p>
-                  <h3 className="mt-2 text-lg font-bold text-ink">{panel.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{panel.summary}</p>
-                </div>
-                <Link className="shrink-0 rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={panel.to}>
-                  {panel.actionLabel}
-                </Link>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {panel.metrics.map((metric) => (
-                  <div key={metric.label} className="rounded-xl border border-line bg-slate-50 p-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
-                    <p className="mt-2 text-lg font-bold text-ink">{metric.value}</p>
+      <section className="mt-7">
+        <SectionHeader title="Section summary" />
+        <Card className="p-4 sm:p-5">
+          <div className="divide-y divide-line">
+            {modulePanels.map((panel) => (
+              <div key={panel.title} className="py-4 first:pt-0 last:pb-0">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="mt-1 text-base font-bold text-ink">{panel.title}</h3>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {panel.metrics.slice(0, 3).map((metric) => (
+                        <span key={metric.label} className="inline-flex items-center rounded-full border border-line bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                          {metric.label}: {metric.value}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                  <Link className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={panel.to}>
+                    {panel.actionLabel}
+                  </Link>
+                </div>
               </div>
-            </Card>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Card>
       </section>
 
-      <section className="mt-8">
-        <SectionHeader title="Recent activity" description="A quick feed of the latest saved records and operational events." />
+      <section className="mt-7">
+        <SectionHeader title="Recent activity" description="Latest 5 saved events." />
         {activityFeed.length > 0 ? (
-          <Card className="p-6">
-            <div className="space-y-3">
-              {activityFeed.map((item) => (
-                <div key={`${item.kind}-${item.title}-${item.when}`} className="flex flex-col gap-3 rounded-xl border border-line bg-slate-50 p-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
+          <Card className="p-4 sm:p-5">
+            <div className="space-y-2">
+              {activityFeed.slice(0, 5).map((item) => (
+                <Link
+                  key={`${item.kind}-${item.title}-${item.when}`}
+                  className="flex flex-col gap-3 rounded-xl border border-line bg-slate-50 p-3 transition hover:bg-slate-100 sm:flex-row sm:items-center sm:justify-between"
+                  to={item.to}
+                >
+                  <div className="flex min-w-0 items-start gap-3">
                     <div className="mt-0.5 rounded-full bg-white p-2 text-ink shadow-sm">{iconForActivity(item.kind)}</div>
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-ink">{item.title}</p>
@@ -632,81 +611,34 @@ export function OwnerDashboardPage() {
                       <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">{formatWhen(item.when)}</p>
                     </div>
                   </div>
-                  <Link className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={item.to}>
-                    Open
-                  </Link>
-                </div>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">Open</span>
+                </Link>
               ))}
             </div>
           </Card>
         ) : (
-          <Card className="p-6">
+          <Card className="p-5">
             <p className="text-sm font-semibold text-ink">No activity yet.</p>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Upload a purchase or enter the first close to start the command center feed.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link className={actionLinkClass} to={purchasesRoute}>
-                Upload purchase
-              </Link>
-              <Link className={actionLinkClass} to={closeReportsRoute}>
-                Enter daily close
-              </Link>
-            </div>
+            <p className="mt-1 text-sm leading-6 text-muted">Upload a purchase or enter the first close to start the feed.</p>
           </Card>
         )}
       </section>
 
-      <section className="mt-8">
-        <SectionHeader title="Accounting readiness" description="The owner should be able to see whether a clean export is ready before opening Close & Reports." />
-        <Card className="p-6">
-          <div className="grid gap-4 xl:grid-cols-[1fr_0.7fr]">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={exportReady ? "success" : "warning"}>{exportReady ? "Accounting-ready CSV available" : "Export still needs review"}</Badge>
-                <Badge tone="info">QuickBooks sync is future only</Badge>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-700">
-                Close & Reports is the place to finish the daily variance check, review the month, and generate the CSV that the accountant can import.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-line bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Review queue</p>
-                  <p className="mt-2 text-2xl font-bold text-ink">{summary.invoiceReviewQueueCount}</p>
-                </div>
-                <div className="rounded-xl border border-line bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Daily close</p>
-                  <p className="mt-2 text-2xl font-bold text-ink">{summary.unresolvedReconciliationCount}</p>
-                </div>
-                <div className="rounded-xl border border-line bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory holds</p>
-                  <p className="mt-2 text-2xl font-bold text-ink">{summary.inventoryItemsToReorderCount}</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-sm font-bold text-ink">Export readiness checklist</p>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${summary.invoiceReviewQueueCount === 0 ? "text-brand-700" : "text-amber-600"}`} />
-                  Invoice review queue is {summary.invoiceReviewQueueCount === 0 ? "clear" : "still open"}.
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${summary.unresolvedReconciliationCount === 0 ? "text-brand-700" : "text-amber-600"}`} />
-                  Daily close variance is {summary.unresolvedReconciliationCount === 0 ? "clear" : "still unresolved"}.
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${exportReady ? "text-brand-700" : "text-amber-600"}`} />
-                  Monthly CSV export is {exportReady ? "ready to generate" : "not ready yet"}.
-                </li>
-              </ul>
-              <Link className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={closeReportsRoute}>
-                Open Close & Reports
-              </Link>
-              <p className="mt-3 text-xs leading-5 text-muted">
-                QuickBooks sync remains future only until the export workflow is proven in the pilot.
-              </p>
-            </div>
+      <section className="mt-7">
+        <SectionHeader title="Accounting readiness" description="CSV first. QuickBooks stays future-only." />
+        <Card className="p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={exportReady ? "success" : "warning"}>{exportReady ? "Ready" : "Not ready"}</Badge>
+            <Badge tone="neutral">3 blockers</Badge>
+            <Badge tone="info">QuickBooks future-only</Badge>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={closeReportsRoute}>
+              Open Close &amp; Reports
+            </Link>
+            <button type="button" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" onClick={resetWorkspace}>
+              Reset demo
+            </button>
           </div>
         </Card>
       </section>
