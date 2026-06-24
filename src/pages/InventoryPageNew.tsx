@@ -50,6 +50,7 @@ type ActivePanel =
   | { kind: "count" }
   | { kind: "count-session"; sessionId?: string | null }
   | { kind: "reorder" }
+  | { kind: "activity" }
   | { kind: "history"; itemId: string };
 
 type ManualMovementDraft = {
@@ -351,10 +352,18 @@ export function InventoryPage() {
     setActivePanel(null);
   };
 
-  const openAdjustPanel = (movementType: Exclude<InventoryMovementType, "invoice receipt"> = "adjustment") => {
+  const openAdjustPanel = (movementType: Exclude<InventoryMovementType, "invoice receipt"> = "adjustment", item?: InventoryItem | null) => {
     setErrorMessage("");
     setMessage("");
-    setManualMovement((current) => ({ ...current, movementType, quantityDelta: movementType === "manual addition" || movementType === "adjustment" ? 1 : -1 }));
+    setManualMovement((current) => ({
+      ...current,
+      itemId: item?.id ?? current.itemId,
+      movementType,
+      quantityDelta: movementType === "manual addition" || movementType === "adjustment" ? 1 : -1,
+    }));
+    if (item) {
+      setSelectedItemId(item.id);
+    }
     setActivePanel({ kind: "adjust" });
   };
 
@@ -378,6 +387,12 @@ export function InventoryPage() {
     setErrorMessage("");
     setMessage("");
     setActivePanel({ kind: "reorder" });
+  };
+
+  const openActivityPanel = () => {
+    setErrorMessage("");
+    setMessage("");
+    setActivePanel({ kind: "activity" });
   };
 
   const startCountSession = () => {
@@ -680,8 +695,8 @@ export function InventoryPage() {
       <Button type="button" variant="secondary" onClick={() => openItemPanel("edit", item)}>
         Open
       </Button>
-      <Button type="button" variant="secondary" onClick={() => openItemPanel("edit", item)}>
-        Edit
+      <Button type="button" variant="secondary" icon={<RefreshCw className="h-4 w-4" />} onClick={() => openAdjustPanel("adjustment", item)}>
+        Adjust
       </Button>
       <Button type="button" variant="ghost" icon={<History className="h-4 w-4" />} onClick={() => openHistoryPanel(item.id)}>
         History
@@ -692,49 +707,114 @@ export function InventoryPage() {
   return (
     <PageLayout
       title="Inventory"
-      eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Receive purchases, count stock, log waste, and know what to reorder."
+      eyebrow="Back-office core"
+      description="Stock levels, receiving, waste, and reorder."
     >
       <Card className="surface-panel p-5 sm:p-6">
         <div className="flex flex-col gap-4 border-b border-line pb-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Operational stock hub</p>
-              <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Receive, count, correct, and reorder from one working page.</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-                Purchases feed inventory receiving. Inventory tracks stock, waste, counts, movements, and reorder actions. Everything stays local to this pilot browser.
+              <p className="text-sm font-semibold text-ink">Keep the daily stock list visible first, then open receiving, counts, adjustments, or reorder tools only when needed.</p>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
+                This page stays focused on stock, receiving, waste, and reorder decisions.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="secondary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => openReceivePanel()}>
-                Receive
+                Receive pending
               </Button>
               <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
-                Count
-              </Button>
-              <Button type="button" variant="secondary" icon={<RefreshCw className="h-4 w-4" />} onClick={() => openAdjustPanel("adjustment")}>
-                Adjust
+                Start count
               </Button>
               <Button type="button" variant="secondary" icon={<Trash2 className="h-4 w-4" />} onClick={openWastePanel}>
-                Waste
+                Log waste
               </Button>
               <Button type="button" variant="secondary" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
-                Reorder
+                Open reorder list
               </Button>
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <CompactStatCard label="Active items" value={String(activeItems.length)} helper={summary.inventoryValue ? formatCurrency(summary.inventoryValue) : "No stock value"} />
-            <CompactStatCard label="Low stock" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryReorderNowCount} reorder now`} />
-            <CompactStatCard label="Days risk" value={String(lowStockRiskItems.length)} helper="Estimated days remaining under 14" />
-            <CompactStatCard label="Count sessions" value={String(activeCountSessions.length)} helper={`${countSessionsSummary.completed} completed`} />
-            <CompactStatCard label="Pending receives" value={String(pendingReceiveInvoices.length)} helper={`${summary.inventoryReceiptCount} receipts stored`} />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <CompactStatCard label="Low stock" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryOutOfStockCount} out of stock`} />
+            <CompactStatCard label="Reorder now" value={String(summary.inventoryReorderNowCount)} helper={summary.inventoryItemsToReorderCount ? `Across ${summary.inventoryItemsToReorderCount} items` : "No urgent order"} />
+            <CompactStatCard label="Pending receive" value={String(pendingReceiveInvoices.length)} helper={`${summary.inventoryReceiptCount} receipt${summary.inventoryReceiptCount === 1 ? "" : "s"} stored`} />
+            <CompactStatCard label="Count status" value={String(countSessionsSummary.draft + countSessionsSummary.ready)} helper={`${countSessionsSummary.completed} completed`} />
           </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <CompactStatCard label="Reorder suggestions" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryEstimatedReorderCost ? `Est. ${formatCurrency(summary.inventoryEstimatedReorderCost)}` : "No order value"} />
-            <CompactStatCard label="Recent adjustments" value={String(recentNonReceiptMovements.length)} helper="Waste, spoilage, damage, and corrections" />
-            <CompactStatCard label="Below par" value={String(belowParItems.length)} helper={`${summary.inventoryOutOfStockCount} out of stock`} />
+        </div>
+
+        <div className="mt-5">
+          <SectionHeader
+            title="Inventory list"
+            description="Your main working stock list. Open an item to adjust it or review history."
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="ghost" onClick={() => setShowArchived((current) => !current)}>
+                  {showArchived ? "Hide archived" : "Show archived"}
+                </Button>
+                <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => openItemPanel("create")}>
+                  New item
+                </Button>
+              </div>
+            }
+          />
+          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
+            <label className="block min-w-0">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted">Search</span>
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2">
+                <Search className="h-4 w-4 text-muted" />
+                <input className="w-full min-w-0 bg-transparent text-sm outline-none" placeholder="Item, supplier, category" value={search} onChange={(event) => setSearch(event.target.value)} />
+              </div>
+            </label>
+            <label className="block min-w-0">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted">Status</span>
+              <select className="input mt-2" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as InventoryItemStatus | "All")}>
+                {statusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone="info">{statusCounts.visible} visible</Badge>
+            <Button type="button" variant="secondary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => openReceivePanel()}>
+              Receive pending
+            </Button>
+            <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
+              Start count
+            </Button>
+            <Button type="button" variant="secondary" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
+              Reorder list
+            </Button>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {filteredItems.map((item) => {
+              const status = describeInventoryStatus(item);
+              return (
+                <div key={item.id} className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-slate-50 ${selectedItemId === item.id ? "border-brand-200 bg-brand-50/40" : "border-line bg-white"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{item.name}</p>
+                      <p className="mt-1 text-xs text-muted">
+                        {item.category} · {item.preferredSupplier || "No preferred supplier"}
+                      </p>
+                    </div>
+                    <Badge tone={item.active ? "success" : "warning"}>{item.active ? status.status : "Archived"}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-3">
+                    <MiniStat label="On hand" value={`${item.currentQuantity} ${item.unit}`} />
+                    <MiniStat label="PAR / min" value={`${item.parLevel} / ${item.minQuantity} ${item.unit}`} />
+                    <MiniStat label="Days remaining" value={status.daysRemaining ? `${Math.max(0, Math.round(status.daysRemaining ?? 0))} days` : "Usage not configured"} />
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-muted">
+                    {item.lastReceivedAt ? `Last received ${formatDate(item.lastReceivedAt)}` : "No receipt recorded yet"} · {item.lastCountedAt ? `Counted ${formatDate(item.lastCountedAt)}` : "No count saved yet"}
+                  </p>
+                  {lineItemButtons(item)}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -742,70 +822,55 @@ export function InventoryPage() {
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
               title="Receive queue"
-              description="Purchase lines waiting to be linked into inventory. Open the saved invoice and receive from the existing mapping flow."
+              description="Purchase lines waiting to be linked into inventory."
               action={<Badge tone="info">{receiveQueue.length} lines</Badge>}
             />
             {receiveQueue.length ? (
               <div className="space-y-3">
-                {receiveQueue.map((line) => (
-                  <div key={`${line.invoiceId}-${line.invoiceLineItemId}`} className="rounded-xl border border-line bg-slate-50 p-4">
+                <p className="text-sm leading-6 text-muted">
+                  {receiveQueue.length} purchase line{receiveQueue.length === 1 ? "" : "s"} waiting to be received.
+                </p>
+                {receiveQueue.slice(0, 3).map((line) => (
+                  <div key={`${line.invoiceId}-${line.invoiceLineItemId}`} className="rounded-xl border border-line bg-slate-50 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-ink">{line.supplier}</p>
                         <p className="mt-1 text-xs leading-5 text-muted">
-                          {line.invoiceNumber || "No invoice number"} · {formatDate(line.invoiceDate)} · {line.invoiceQuantity} {line.invoiceUnit}
+                          {line.invoiceNumber || "No invoice number"} ? {formatDate(line.invoiceDate)}
                         </p>
-                        <p className="mt-1 text-xs leading-5 text-muted">{line.invoiceLineName}</p>
+                        <p className="mt-1 truncate text-xs leading-5 text-muted">{line.invoiceLineName}</p>
                       </div>
                       <Badge tone={line.matchLabel === "Previously confirmed" || line.matchLabel === "Auto-matched" ? "success" : line.state === "unmapped" ? "warning" : "info"}>{line.matchLabel}</Badge>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-                      <span>Purchase status: {line.invoiceStatus}</span>
-                      <span>Unit price: {formatCurrency(line.unitPrice)}</span>
-                      <span>Receive qty: {(line.invoiceQuantity * line.conversionFactor).toFixed(2)} {line.inventoryUnit}</span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => openReceivePanel(line.invoiceId)}
-                      >
-                        Receive
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => {
-                          const targetId = line.selectedItemId || selectedItemId || inventoryItems[0]?.id;
-                          if (targetId) {
-                            openHistoryPanel(targetId);
-                          }
-                        }}
-                      >
-                        View item
-                      </Button>
+                      <span>{line.invoiceQuantity} {line.invoiceUnit}</span>
+                      <span>{formatCurrency(line.unitPrice)}</span>
+                      <span>{(line.invoiceQuantity * line.conversionFactor).toFixed(2)} {line.inventoryUnit}</span>
                     </div>
                   </div>
                 ))}
+                <Button type="button" variant="secondary" onClick={() => openReceivePanel()}>
+                  Open receive queue
+                </Button>
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
-                No purchase lines need receiving right now. Open Purchases to capture a new invoice or receipt.
+                No purchase lines need receiving right now.
               </div>
             )}
           </Card>
 
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
-              title="Count sessions"
-              description="Start a fresh count, resume a draft, or review recent count history."
+              title="Stock count"
+              description="Start a count, resume a draft, or review recent count activity."
               action={<Badge tone="info">{draftCountSessions.length + activeCountSessions.length} open or draft</Badge>}
             />
             <div className="space-y-3">
               <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Current status</p>
                 <p className="mt-1 text-sm font-semibold text-ink">
-                  {draftCountSessions.length ? `Draft count: ${describeCountSessionProgress(draftCountSessions[0])}` : "No draft stock count"}
+                  {draftCountSessions.length ? `Draft count: ${describeCountSessionProgress(draftCountSessions[0])}` : "Stock count: Not started"}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-muted">
                   {latestCompletedCountSession ? `Last completed count ${formatDate(latestCompletedCountSession.updatedAt.slice(0, 10))}` : "No completed count yet"}
@@ -816,7 +881,7 @@ export function InventoryPage() {
                   </Button>
                   {draftCountSessions[0] ? (
                     <Button type="button" variant="ghost" onClick={() => openExistingCountSession(draftCountSessions[0].id)}>
-                      Resume draft count
+                      Resume draft
                     </Button>
                   ) : null}
                   <Button type="button" variant="ghost" onClick={openCountOverviewPanel}>
@@ -824,11 +889,10 @@ export function InventoryPage() {
                   </Button>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <CompactInfoCard label="Draft sessions" value={String(countSessionsSummary.draft)} detail="Started but not reviewed" />
-                <CompactInfoCard label="Ready to review" value={String(countSessionsSummary.ready)} detail="Can be confirmed now" />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <CompactInfoCard label="Draft" value={String(countSessionsSummary.draft)} detail="Started but not reviewed" />
+                <CompactInfoCard label="Ready" value={String(countSessionsSummary.ready)} detail="Can be confirmed now" />
                 <CompactInfoCard label="Completed" value={String(countSessionsSummary.completed)} detail="Saved count sessions" />
-                <CompactInfoCard label="Cancelled" value={String(countSessionsSummary.cancelled)} detail="Stopped before confirmation" />
               </div>
             </div>
           </Card>
@@ -837,41 +901,32 @@ export function InventoryPage() {
         <div className="mt-5 grid gap-4 xl:grid-cols-2">
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
-              title="Adjustments and waste"
-              description="Treat waste, spoilage, damaged stock, and comped staff items as first-class stock actions."
+              title="Waste & adjustments"
+              description="Log waste, spoilage, damaged stock, and corrections."
               action={<Badge tone="warning">{recentNonReceiptMovements.length} recent</Badge>}
             />
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="secondary" onClick={() => openAdjustPanel("adjustment")}>
-                Adjustment
+                Add adjustment
               </Button>
               <Button type="button" variant="secondary" onClick={() => openWastePanel()}>
-                Waste
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => openAdjustPanel("spoilage / expired")}>
-                Spoilage / expired
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => openAdjustPanel("damaged")}>
-                Damaged
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => openAdjustPanel("staff meal / comped")}>
-                Staff meal / comped
+                Log waste
               </Button>
             </div>
             <div className="mt-4 space-y-3">
               {recentNonReceiptMovements.length ? (
-                recentNonReceiptMovements.slice(0, 4).map((movement) => (
+                recentNonReceiptMovements.slice(0, 3).map((movement) => (
                   <div key={movement.id} className="rounded-xl border border-line bg-slate-50 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-ink">{movementLabel(movement.movementType)}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted">
-                          {movement.inventoryItemName} · {movement.sourceInvoiceNumber ? `Invoice ${movement.sourceInvoiceNumber}` : movement.sourceCountSessionName || "Manual entry"}
+                        <p className="mt-1 truncate text-xs leading-5 text-muted">
+                          {movement.inventoryItemName} ? {movement.sourceInvoiceNumber ? `Invoice ${movement.sourceInvoiceNumber}` : movement.sourceCountSessionName || "Manual entry"}
                         </p>
                       </div>
                       <Badge tone={movementTone(movement.movementType)}>{movement.quantityDelta >= 0 ? "+" : ""}{movement.quantityDelta.toFixed(2)} {movement.unit}</Badge>
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-muted">{formatDate(movement.createdAt.slice(0, 10))} · {movement.note || "No note saved"}</p>
+                    <p className="mt-2 text-xs leading-5 text-muted">{formatDate(movement.createdAt.slice(0, 10))}</p>
                   </div>
                 ))
               ) : (
@@ -885,7 +940,7 @@ export function InventoryPage() {
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
               title="Reorder suggestions"
-              description="PAR and minimum-based reorder signals with quick export and order-marking actions."
+              description="Compact reorder rows with the actions you need."
               action={<Badge tone="info">{summary.inventoryItemsToReorderCount} need ordering</Badge>}
             />
             <div className="flex flex-wrap gap-2">
@@ -897,22 +952,20 @@ export function InventoryPage() {
               </Button>
             </div>
             <div className="mt-4 space-y-3">
-              {reorderSuggestions.slice(0, 4).map((line) => (
+              {reorderSuggestions.slice(0, 3).map((line) => (
                 <div key={line.id} className="rounded-xl border border-line bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-ink">{line.itemName}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">
-                        {line.supplier} · {line.currentQuantity} {line.unit} on hand · PAR {line.parLevel} · Min {line.minimumQuantity}
+                        {line.supplier} ? {line.currentQuantity} {line.unit} on hand ? order {line.adjustedQuantity} {line.unit}
                       </p>
                     </div>
                     <Badge tone={line.status === "Ordered" ? "success" : "warning"}>{line.status}</Badge>
                   </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <CompactInfoCard label="Suggested qty" value={`${line.suggestedQuantity} ${line.unit}`} detail="PAR/min threshold" />
-                    <CompactInfoCard label="Days remaining" value={line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days` : "Usage not configured"} detail="Estimate only" />
-                    <CompactInfoCard label="Estimated cost" value={line.estimatedCost === null ? "Unavailable" : formatCurrency(line.estimatedCost)} detail="Based on latest price" />
-                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted">
+                    PAR {line.parLevel} ? Min {line.minimumQuantity} ? {line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}{line.estimatedCost === null ? "" : ` ? ${formatCurrency(line.estimatedCost)}`}
+                  </p>
                 </div>
               ))}
               {!reorderSuggestions.length ? <p className="text-sm leading-6 text-muted">No reorder action is needed right now.</p> : null}
@@ -920,160 +973,34 @@ export function InventoryPage() {
           </Card>
         </div>
 
-      </Card>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <CompactStatCard label="Tracked" value={String(summary.inventoryItemCount)} helper={summary.inventoryValue ? formatCurrency(summary.inventoryValue) : "No stock value"} />
-        <CompactStatCard label="Low stock" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryReorderNowCount} reorder now`} />
-        <CompactStatCard label="Out of stock" value={String(summary.inventoryOutOfStockCount)} helper={`${summary.inventoryCountNeededCount} need count`} />
-        <CompactStatCard label="Receipts" value={String(summary.inventoryReceiptCount)} helper={`${summary.inventoryMovementCount} movements`} />
-      </div>
-
-      {message ? (
-        <div className="mt-5 rounded-lg border border-brand-100 bg-white px-4 py-3 text-sm leading-6 text-slate-700" role="status">
-          <p className="font-semibold text-ink">Status</p>
-          <p className="mt-1">{message}</p>
-        </div>
-      ) : null}
-
-      {errorMessage ? (
-        <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800" role="alert">
-          <p className="font-semibold">Problem</p>
-          <p className="mt-1">{errorMessage}</p>
-        </div>
-      ) : null}
-
-      <div className="mt-5">
-        <SectionHeader
-          title="Inventory list"
-          description="Search, filter, and open an item to edit its stock level, supplier preference, or notes."
-          action={
-            <div className="flex flex-wrap gap-2">
-              <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={buildDemoPath(demoSlug, "invoices")}>Review invoices</Link>
-              <Button type="button" variant="ghost" onClick={() => setShowArchived((current) => !current)}>
-                {showArchived ? "Hide archived" : "Show archived"}
-              </Button>
-            </div>
-          }
-        />
-        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
-          <label className="block min-w-0">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Search</span>
-            <div className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2">
-              <Search className="h-4 w-4 text-muted" />
-              <input className="w-full min-w-0 bg-transparent text-sm outline-none" placeholder="Item, supplier, category" value={search} onChange={(event) => setSearch(event.target.value)} />
-            </div>
-          </label>
-          <label className="block min-w-0">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Status</span>
-            <select className="input mt-2" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as InventoryItemStatus | "All")}>
-              {statusOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => openItemPanel("create")}>
-            New item
-          </Button>
-          <Button type="button" variant="secondary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => openReceivePanel()}>
-            Receive from saved invoice
-          </Button>
-          <Button type="button" variant="secondary" icon={<RefreshCw className="h-4 w-4" />} onClick={() => openAdjustPanel()}>
-            Adjust stock
-          </Button>
-          <Button type="button" variant="secondary" icon={<Clock3 className="h-4 w-4" />} onClick={openCountPanel}>
-            Physical count
-          </Button>
-          <Button type="button" variant="secondary" onClick={openReorderPanel}>
-            View reorder list
-          </Button>
-          <Badge tone="info">{statusCounts.visible} visible</Badge>
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {filteredItems.map((item) => {
-            const status = describeInventoryStatus(item);
-            return (
-              <div key={item.id} className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-slate-50 ${selectedItemId === item.id ? "border-brand-200 bg-brand-50/40" : "border-line bg-white"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-ink">{item.name}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      {item.category} | {item.preferredSupplier || "No preferred supplier"}
-                    </p>
+        <Card className="mt-5 p-4">
+          <SectionHeader
+            title="Recent activity"
+            description="Latest movements only. Open the full activity view for more detail."
+            action={<Button type="button" variant="ghost" onClick={openActivityPanel}>View all</Button>}
+          />
+          <div className="mt-4 space-y-3">
+            {recentMovementsFeed.length ? (
+              recentMovementsFeed.slice(0, 4).map((movement) => (
+                <div key={movement.id} className="rounded-xl border border-line bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-ink">{movement.inventoryItemName}</p>
+                      <p className="mt-1 truncate text-xs leading-5 text-muted">
+                        {movementLabel(movement.movementType)} ? {movement.sourceInvoiceNumber || movement.sourceCountSessionName || "Manual entry"}
+                      </p>
+                    </div>
+                    <Badge tone={movementTone(movement.movementType)}>{movement.quantityDelta >= 0 ? "+" : ""}{movement.quantityDelta.toFixed(2)} {movement.unit}</Badge>
                   </div>
-                  <Badge tone={item.active ? "success" : "warning"}>{item.active ? status.status : "Archived"}</Badge>
+                  <p className="mt-2 text-xs leading-5 text-muted">{formatDate(movement.createdAt.slice(0, 10))} ? {movement.note || "No note saved"}</p>
                 </div>
-                <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                  <MiniStat label="On hand" value={`${item.currentQuantity} ${item.unit}`} />
-                  <MiniStat label="Par" value={`${item.parLevel} ${item.unit}`} />
-                  <MiniStat label="Min" value={`${item.minQuantity} ${item.unit}`} />
-                  <MiniStat label="Reorder threshold" value={`${Math.max(item.minQuantity, item.parLevel)} ${item.unit}`} />
-                  <MiniStat label="Usage / day" value={item.averageDailyUsage ? `${item.averageDailyUsage.toFixed(2)} ${item.unit}` : "Usage not configured"} />
-                  <MiniStat label="Days remaining" value={describeInventoryStatus(item).daysRemaining ? `${Math.max(0, Math.round(describeInventoryStatus(item).daysRemaining ?? 0))} days` : "Usage not configured"} />
-                </div>
-                <p className="mt-3 text-xs leading-5 text-muted">
-                  {item.lastReceivedAt ? `Last received ${formatDate(item.lastReceivedAt)}` : "No receipt recorded yet"} | {item.lastCountedAt ? `Counted ${formatDate(item.lastCountedAt)}` : "No count saved yet"} | Status {status.status}
-                </p>
-                {lineItemButtons(item)}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <Card className="mt-8 p-4">
-        <SectionHeader title="Movement history" description="The latest inventory movements, including receipts, counts, waste, corrections, and reorder-related activity." />
-        <div className="mt-4 space-y-3">
-          {recentMovementsFeed.length ? (
-            recentMovementsFeed.map((movement) => (
-              <div key={movement.id} className="rounded-xl border border-line bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-ink">{movement.inventoryItemName}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted">
-                      {movementLabel(movement.movementType)} · {movement.sourceInvoiceNumber || movement.sourceCountSessionName || "Manual entry"}
-                    </p>
-                  </div>
-                  <Badge tone={movementTone(movement.movementType)}>{movement.quantityDelta >= 0 ? "+" : ""}{movement.quantityDelta.toFixed(2)} {movement.unit}</Badge>
-                </div>
-                <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
-                  <CompactInfoCard label="Source" value={movement.sourceInvoiceNumber || movement.sourceCountSessionName || "Manual"} detail={movement.sourceInvoiceDate ? formatDate(movement.sourceInvoiceDate) : "No source date"} />
-                  <CompactInfoCard label="Before" value={`${movement.quantityBefore.toFixed(2)} ${movement.unit}`} detail="Before movement" />
-                  <CompactInfoCard label="After" value={`${movement.quantityAfter.toFixed(2)} ${movement.unit}`} detail="After movement" />
-                  <CompactInfoCard label="Note" value={movement.note || "No note saved"} detail={formatDate(movement.createdAt.slice(0, 10))} />
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm leading-6 text-muted">No movement history yet.</p>
-          )}
-        </div>
-      </Card>
-
-      <Card className="mt-4 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Quiet controls</p>
-            <p className="mt-1 text-sm leading-6 text-slate-700">Restore the seeded sample workspace if you want a clean pilot reset.</p>
+              ))
+            ) : (
+              <p className="text-sm leading-6 text-muted">No movement history yet.</p>
+            )}
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              if (window.confirm("Restore the seeded sample inventory, invoices, and reconciliations in this browser?")) {
-                resetWorkspace();
-                setMessage("Sample data restored.");
-              }
-            }}
-          >
-            Restore sample data
-          </Button>
-        </div>
+        </Card>
+
       </Card>
 
       {activePanel?.kind === "item" ? (
@@ -1690,6 +1617,38 @@ export function InventoryPage() {
             ) : (
               <p className="text-sm leading-6 text-muted">No reorder action is needed right now.</p>
             )}
+          </div>
+        </ModalShell>
+      ) : null}
+
+      {activePanel?.kind === "activity" ? (
+        <ModalShell title="Recent inventory activity" onClose={() => setActivePanel(null)}>
+          <div className="space-y-3">
+            {recentMovementsFeed.length ? (
+              recentMovementsFeed.map((movement) => (
+                <div key={movement.id} className="rounded-xl border border-line bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-ink">{movement.inventoryItemName}</p>
+                      <p className="mt-1 truncate text-xs leading-5 text-muted">
+                        {movementLabel(movement.movementType)} · {movement.sourceInvoiceNumber || movement.sourceCountSessionName || "Manual entry"}
+                      </p>
+                    </div>
+                    <Badge tone={movementTone(movement.movementType)}>{movement.quantityDelta >= 0 ? "+" : ""}{movement.quantityDelta.toFixed(2)} {movement.unit}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted">
+                    {formatDate(movement.createdAt.slice(0, 10))} · {movement.note || "No note saved"}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm leading-6 text-muted">No movement history yet.</p>
+            )}
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Button type="button" variant="ghost" onClick={() => setActivePanel(null)}>
+              Close
+            </Button>
           </div>
         </ModalShell>
       ) : null}
