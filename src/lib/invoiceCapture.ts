@@ -51,10 +51,14 @@ function resolveApiBaseUrl() {
   if (env?.DEV || typeof window === "undefined") {
     return "http://127.0.0.1:5000";
   }
-  throw new Error("VITE_OCR_API_BASE_URL is required in production builds.");
+  return "";
 }
 
 export async function captureInvoiceDocument(file: File): Promise<InvoiceOcrResult> {
+  if (!apiBaseUrl) {
+    throw new Error("OCR backend is not configured for this build. Set VITE_OCR_API_BASE_URL to enable invoice extraction.");
+  }
+
   const uploadFile = await prepareUploadFile(file);
   const formData = new FormData();
   formData.append("file", uploadFile, uploadFile.name);

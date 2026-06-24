@@ -38,6 +38,16 @@ function HashScroll() {
   return null;
 }
 
+function RouteScrollToTop() {
+  const location = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
 function AnalyticsRouteTracker() {
   const location = useLocation();
 
@@ -56,6 +66,7 @@ function PageWithHashScroll({ children }: { children: React.ReactNode }) {
   return (
     <>
       <AnalyticsRouteTracker />
+      <RouteScrollToTop />
       <HashScroll />
       {children}
     </>

@@ -55,10 +55,14 @@ function resolveApiBaseUrl() {
   if (env?.DEV || typeof window === "undefined") {
     return "http://127.0.0.1:5000";
   }
-  throw new Error("VITE_OCR_API_BASE_URL is required in production builds.");
+  return "";
 }
 
 export async function captureReconciliationDocument(file: File, source: ReconciliationSourceKey): Promise<ReconciliationExtractResult> {
+  if (!apiBaseUrl) {
+    throw new Error("OCR backend is not configured for this build. Set VITE_OCR_API_BASE_URL to enable reconciliation import.");
+  }
+
   const formData = new FormData();
   formData.append("file", file, file.name);
   formData.append("source", source);
