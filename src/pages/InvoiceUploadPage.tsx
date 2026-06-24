@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, Save, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type MouseEvent, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge, type BadgeTone } from "../components/Badge";
@@ -310,6 +310,7 @@ export function InvoiceUploadPage() {
   const getInvoiceInventoryStatus = (invoice: PilotInvoiceRecord) => summarizeInvoiceInventoryStatus(invoice, inventoryReceipts);
   const selectedInvoiceInventoryStatus = selectedInvoice ? getInvoiceInventoryStatus(selectedInvoice) : null;
   const invoiceModalOpen = reviewOpen || Boolean(savedInvoicePrompt);
+  const ocrUnavailable = errorMessage.startsWith("OCR backend is not configured");
 
   const openInvoice = (invoice: PilotInvoiceRecord) => {
     setSavedInvoicePrompt(null);
@@ -527,72 +528,41 @@ export function InvoiceUploadPage() {
   return (
     <PageLayout
       title="Purchases"
-      eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Capture invoices and receipts, track supplier prices, and prepare clean purchase records for inventory and accounting."
+      eyebrow="Pilot workspace"
+      description="Invoices, receipts, supplier prices."
     >
       <div className="grid gap-6">
         <Card className="surface-panel min-w-0 p-5 sm:p-6">
-          <div className="flex flex-col gap-4 border-b border-line pb-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Purchases hub</p>
-                <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Capture invoices, receipts, and supplier spend in one place.</h1>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-                  This is the working hub for purchase capture, review, item mapping, receiving, price changes, and CSV export readiness.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  icon={<FileUp className="h-4 w-4" />}
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isProcessing}
-                >
-                  Upload invoice or receipt
-                </Button>
-                <Button type="button" variant="secondary" icon={<Sparkles className="h-4 w-4" />} onClick={loadSampleInvoice} disabled={isProcessing || isSaving}>
-                  Load sample purchase
-                </Button>
-                <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={handleResetDraft} disabled={isProcessing}>
-                  Clear draft
-                </Button>
-              </div>
+          <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Purchases</p>
+              <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Invoices, receipts, supplier prices.</h1>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricCard label="This month spend" value={formatCurrency(summary.monthlyInvoiceSpend)} helper="Purchase total based on invoice dates" />
-              <MetricCard
-                label="Uploads needing review"
-                value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))}
-                helper="Saved records plus the active draft"
-              />
-              <MetricCard label="Price changes flagged" value={String(currentMonthPriceChanges.length)} helper="Meaningful supplier price movement" />
-              <MetricCard label="Mapped items" value={String(mappedItemCount)} helper="Mapped or received purchase lines across saved purchases" />
-              <MetricCard label="Export-ready purchases" value={String(purchaseExportSnapshot.readyForCsv)} helper="Ready for accountant-ready CSV export" />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <MetricCard label="Needs review" value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))} helper="Open items" />
+              <MetricCard label="Ready to receive" value={String(mappedItemCount)} helper="Mapped purchase lines" />
+              <MetricCard label="Ready for export" value={String(purchaseExportSnapshot.readyForCsv)} helper="CSV-ready records" />
             </div>
           </div>
 
           <SectionHeader
             title="Upload and import"
-            description="Invoice and receipt uploads still use the existing OCR flow. Supported files: JPG, JPEG, PNG, WEBP, and PDF."
-            action={<Badge tone="info">Pilot-safe OCR + manual review</Badge>}
+            description="Choose a file to start OCR, or load the sample purchase."
+            action={<Badge tone="info">OCR + manual review</Badge>}
           />
 
-          <div className="rounded-xl border border-dashed border-brand-100 bg-brand-50/40 p-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-bold text-ink">Upload invoice or receipt image, scanned PDF, or digital PDF</p>
-                <p className="mt-1 text-sm leading-6 text-muted">The file is sent through the existing OCR workflow, then saved as structured purchase data after confirmation.</p>
+          <div className="rounded-xl border border-line bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink">Upload invoice or receipt</p>
+                <p className="mt-1 text-sm leading-6 text-muted">Supported files: JPG, JPEG, PNG, WEBP, and PDF.</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  icon={<FileUp className="h-4 w-4" />}
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isProcessing}
-                  >
+                <Button type="button" icon={<FileUp className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()} disabled={isProcessing}>
                   Choose file
+                </Button>
+                <Button type="button" variant="ghost" icon={<Sparkles className="h-4 w-4" />} onClick={loadSampleInvoice} disabled={isProcessing || isSaving}>
+                  Load sample purchase
                 </Button>
               </div>
             </div>
@@ -603,7 +573,7 @@ export function InvoiceUploadPage() {
               onChange={handleFileUpload}
               type="file"
             />
-            <p className="mt-3 text-xs leading-5 text-muted">Do not upload files you are not comfortable sending to a third-party OCR provider. API keys stay on the backend, not in the browser.</p>
+            <p className="mt-3 text-xs leading-5 text-muted">API keys stay on the backend, not in the browser.</p>
           </div>
 
           {isProcessing ? (
@@ -620,10 +590,13 @@ export function InvoiceUploadPage() {
           ) : null}
 
           {errorMessage ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800" role="alert">
+            <div
+              className={`mt-4 rounded-lg px-4 py-3 text-sm leading-6 ${ocrUnavailable ? "border border-line bg-slate-50 text-slate-700" : "border border-red-200 bg-red-50 text-red-800"}`}
+              role="alert"
+            >
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle className="h-4 w-4" />
-                OCR or upload problem
+                {ocrUnavailable ? "OCR unavailable in this environment" : "OCR or upload problem"}
               </div>
               <p className="mt-1">{errorMessage}</p>
             </div>
@@ -640,6 +613,8 @@ export function InvoiceUploadPage() {
           ) : null}
 
           <div className="mt-5 grid gap-4 xl:grid-cols-2">
+            {savedInvoicePrompt || hasActiveDraft ? (
+            <>
             <Card className="min-w-0 border border-line bg-white p-5">
               <SectionHeader
                 title="Review queue"
@@ -743,6 +718,10 @@ export function InvoiceUploadPage() {
                 </div>
               )}
             </Card>
+            </>
+            ) : (
+              <p className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">Select a purchase to review extracted fields.</p>
+            )}
           </div>
 
         </Card>
