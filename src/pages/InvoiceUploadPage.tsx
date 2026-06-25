@@ -698,6 +698,41 @@ export function InvoiceUploadPage() {
                 </div>
               )}
             </Card>
+
+            <Card className="min-w-0 border border-line bg-white p-5">
+              <SectionHeader
+                title="Item mapping and receiving"
+                description="Map invoice lines to inventory items while the purchase is still open."
+                action={activeInventoryInvoice ? <Button type="button" variant="secondary" onClick={() => setMappingModalOpen(true)}>View all mappings</Button> : null}
+              />
+              {activeInventoryInvoice ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <span>Mapped: {activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length}</span>
+                    <span>Unmapped: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
+                    <span>Received: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
+                    <span>Not received: {activeReceiveLines.filter((line) => line.state !== "already-received").length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {activeReceiveLines.slice(0, 3).map((line) => (
+                      <div key={line.invoiceLineItemId} className="rounded-xl border border-line bg-slate-50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-muted">{line.sourceDescription || "Original description not available"} Â· {formatCurrency(line.unitPrice)}</p>
+                          </div>
+                          <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "inventory") + "?receive=" + encodeURIComponent(activeInventoryInvoice.id))}>Map / receive</Button>
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-muted">Upload a purchase to see receiving status.</p>
+              )}
+            </Card>
+
             </>
             ) : (
               <p className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">Select a purchase to review extracted fields.</p>
@@ -758,7 +793,7 @@ export function InvoiceUploadPage() {
           </Card>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 xl:grid-cols-2">
           <Card className="p-5">
             <SectionHeader title="Supplier spend" />
             {supplierSpendRows.length ? (
@@ -776,37 +811,6 @@ export function InvoiceUploadPage() {
               <p className="text-sm leading-6 text-muted">No supplier spend yet.</p>
             )}
           </Card>
-
-          <Card className="p-5">
-            <SectionHeader title="Item mapping and receiving" action={activeInventoryInvoice ? <Button type="button" variant="secondary" onClick={() => setMappingModalOpen(true)}>View all mappings</Button> : null} />
-            {activeInventoryInvoice ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  <span>Mapped: {activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length}</span>
-                  <span>Unmapped: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
-                  <span>Received: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
-                  <span>Not received: {activeReceiveLines.filter((line) => line.state !== "already-received").length}</span>
-                </div>
-                <div className="space-y-2">
-                  {activeReceiveLines.slice(0, 3).map((line) => (
-                    <div key={line.invoiceLineItemId} className="rounded-xl border border-line bg-slate-50 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted">{line.sourceDescription || "Original description not available"} · {formatCurrency(line.unitPrice)}</p>
-                        </div>
-                        <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "inventory") + "?receive=" + encodeURIComponent(activeInventoryInvoice.id))}>Map / receive</Button>
-              </div>
-            ) : (
-              <p className="text-sm leading-6 text-muted">Upload a purchase to see receiving status.</p>
-            )}
-          </Card>
-
           <Card className="p-5">
             <SectionHeader title="Accounting export readiness" />
             <div className="flex flex-wrap gap-2">

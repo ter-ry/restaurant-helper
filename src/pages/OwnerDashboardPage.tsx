@@ -27,14 +27,6 @@ import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 const actionLinkClass =
   "inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50";
 
-type CommandCenterAlert = {
-  title: string;
-  detail: string;
-  ctaLabel: string;
-  to: string;
-  tone: "neutral" | "success" | "warning" | "danger" | "info";
-};
-
 type CommandCenterWorkflowStep = {
   title: string;
   detail: string;
@@ -91,10 +83,10 @@ function iconForActivity(kind: CommandCenterActivity["kind"]) {
 }
 
 function toneForStatus(status: string): "neutral" | "success" | "warning" | "danger" | "info" {
-  if (status === "Ready" || status === "Balanced" || status === "Done" || status === "Clear") {
+  if (status === "Ready" || status === "Balanced" || status === "Done" || status === "Clear" || status === "Updated") {
     return "success";
   }
-  if (status === "Blocked" || status === "Needs review" || status === "Attention" || status === "Not ready") {
+  if (status === "Blocked" || status === "Needs review" || status === "Attention" || status === "Not ready" || status === "Incomplete" || status === "Alert") {
     return "warning";
   }
   if (status === "Overdue" || status === "Issue") {
@@ -107,6 +99,7 @@ export function OwnerDashboardPage() {
   const demo = useDemoProfile();
   const profileSlug = (demo.slug || defaultDemoProfileSlug) as DemoProfileSlug;
   const [demoFlowOpen, setDemoFlowOpen] = useState(false);
+  const walkthroughStorageKey = `flowtally.demoFlow.${profileSlug}`;
   const {
     recentInvoices,
     reviewQueue,
@@ -121,6 +114,17 @@ export function OwnerDashboardPage() {
     summary,
     resetWorkspace,
   } = usePilotWorkspace();
+  const walkthroughSteps = useMemo(() => buildDemoWalkthroughSteps(profileSlug), [profileSlug]);
+  const [walkthroughProgress, setWalkthroughProgress] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storedValue = Number(window.localStorage.getItem(walkthroughStorageKey));
+    setWalkthroughProgress(Number.isFinite(storedValue) ? Math.max(0, Math.min(storedValue, walkthroughSteps.length)) : 0);
+  }, [walkthroughStorageKey, walkthroughSteps.length]);
 
   const dashboard = useMemo(
     () =>
@@ -149,10 +153,8 @@ export function OwnerDashboardPage() {
   const commandCenter = getDemoCommandCenterSnapshot(profileSlug);
   const purchasesRoute = buildDemoPath(profileSlug, "purchases");
   const inventoryRoute = buildDemoPath(profileSlug, "inventory");
-  const menuCostingRoute = buildDemoPath(profileSlug, "menu-costing");
   const scheduleRoute = buildDemoPath(profileSlug, "schedule");
   const closeReportsRoute = buildDemoPath(profileSlug, "close-reports");
-  const walkthroughSteps = buildDemoWalkthroughSteps(profileSlug);
   const exportReadiness = useMemo(
     () =>
       buildExportReadinessModel({
@@ -165,122 +167,79 @@ export function OwnerDashboardPage() {
   );
   const exportReady = exportReadiness.monthlyOwnerReport === "Ready";
   const heroDate = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" }).format(new Date());
+  const currentWalkthroughIndex = Math.min(walkthroughProgress, Math.max(0, walkthroughSteps.length - 1));
+  const heroFlowLabel = walkthroughProgress > 0 ? "Resume walkthrough" : "View demo flow";
 
-  const attentionAlerts = useMemo<CommandCenterAlert[]>(() => {
-    const alerts: CommandCenterAlert[] = [];
-
-    if (summary.invoiceReviewQueueCount > 0) {
-      alerts.push({
-        title: `${summary.invoiceReviewQueueCount} invoices need review`,
-        detail: "Confirm OCR fields, item mapping, and save the purchases before the history is considered final.",
-        ctaLabel: "Open purchases",
-        to: purchasesRoute,
-        tone: "warning",
-      });
+  const saveWalkthroughProgress = (nextProgress: number) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(walkthroughStorageKey, String(nextProgress));
     }
+    setWalkthroughProgress(nextProgress);
+  };
 
-    if (dashboard.priceIncreaseCount > 0) {
-      alerts.push({
-        title: `${dashboard.priceIncreaseCount} price changes to check`,
-        detail: "Review the biggest supplier shifts before the next order lands.",
-        ctaLabel: "Review purchases",
-        to: purchasesRoute,
-        tone: "danger",
-      });
-    }
+  const advanceWalkthroughProgress = (stepIndex: number) => {
+    setWalkthroughProgress((current) => {
+      const nextProgress = Math.min(walkthroughSteps.length, Math.max(current, stepIndex + 1));
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(walkthroughStorageKey, String(nextProgress));
+      }
+      return nextProgress;
+    });
+  };
 
-    if (summary.inventoryItemsToReorderCount > 0 || summary.inventoryLowStockCount > 0) {
-      alerts.push({
-        title: `${summary.inventoryItemsToReorderCount} inventory items need attention`,
-        detail: "Low-stock items and reorder suggestions are already available in Inventory.",
-        ctaLabel: "Open inventory",
-        to: inventoryRoute,
-        tone: "warning",
-      });
-    }
-
-    if (commandCenter.schedule.conflicts > 0 || commandCenter.schedule.openShifts > 0) {
-      alerts.push({
-        title: `${commandCenter.schedule.conflicts} schedule conflicts and ${commandCenter.schedule.openShifts} open shifts`,
-        detail: "Keep staffing simple: review the draft schedule before the next service period.",
-        ctaLabel: "Open schedule",
-        to: scheduleRoute,
-        tone: "warning",
-      });
-    }
-
-    if (!exportReady || summary.unresolvedReconciliationCount > 0) {
-      alerts.push({
-        title: `${summary.unresolvedReconciliationCount} closes still need review`,
-        detail: exportReady
-          ? "The accounting-ready CSV is available in Close & Reports."
-          : "Finish the daily close review before marking the export ready.",
-        ctaLabel: "Open close & reports",
-        to: closeReportsRoute,
-        tone: exportReady ? "info" : "danger",
-      });
-    }
-
-    return alerts.slice(0, 5);
-  }, [
-    closeReportsRoute,
-    commandCenter.schedule.conflicts,
-    commandCenter.schedule.openShifts,
-    dashboard.priceIncreaseCount,
-    exportReady,
-    inventoryRoute,
-    purchasesRoute,
-    scheduleRoute,
-    summary.inventoryItemsToReorderCount,
-    summary.inventoryLowStockCount,
-    summary.invoiceReviewQueueCount,
-    summary.unresolvedReconciliationCount,
-  ]);
+  const restartWalkthrough = () => {
+    saveWalkthroughProgress(0);
+  };
 
   const workflowSteps = useMemo<CommandCenterWorkflowStep[]>(() => {
+    const hasInvoices = recentInvoices.length > 0;
+    const needsReview = summary.invoiceReviewQueueCount > 0;
+    const hasInventoryReceipts = summary.inventoryReceiptCount > 0;
+    const needsReorder = summary.inventoryItemsToReorderCount > 0;
+    const closeStatus = summary.todayReconciliationStatus;
+    const closeNeedsReview = closeStatus === "Needs Review";
+    const closeDone = closeStatus === "Balanced";
+
     return [
       {
-        title: "Purchase uploaded",
-        detail: recentInvoices.length > 0 ? `${recentInvoices[0].supplier} is the latest saved record.` : "Upload the first invoice or receipt.",
-        status: recentInvoices.length > 0 ? "Done" : "Next",
-        tone: recentInvoices.length > 0 ? "success" : "info",
+        title: "Invoice",
+        detail: hasInvoices ? `${recentInvoices[0].supplier} is the latest saved purchase.` : "Upload the first invoice or receipt.",
+        status: hasInvoices ? "Done" : "Not ready",
+        tone: hasInvoices ? "success" : "warning",
         to: purchasesRoute,
       },
       {
-        title: "Review / map",
-        detail: summary.invoiceReviewQueueCount > 0 ? `${summary.invoiceReviewQueueCount} invoices still need confirmation.` : "Purchase review queue is clear.",
-        status: summary.invoiceReviewQueueCount > 0 ? "Needs review" : "Clear",
-        tone: summary.invoiceReviewQueueCount > 0 ? "warning" : "success",
+        title: "Review",
+        detail: needsReview ? `${summary.invoiceReviewQueueCount} invoices still need confirmation.` : "Purchase review queue is clear.",
+        status: needsReview ? "Needs review" : "Done",
+        tone: needsReview ? "warning" : "success",
         to: purchasesRoute,
       },
       {
-        title: "Receive inventory",
-        detail: summary.inventoryReceiptCount > 0 ? `${summary.inventoryReceiptCount} receipts are stored locally.` : "Receive items from the latest purchase.",
-        status: summary.inventoryReceiptCount > 0 ? "Tracked" : "Pending",
-        tone: summary.inventoryReceiptCount > 0 ? "success" : "info",
+        title: "Inventory",
+        detail: hasInventoryReceipts ? `${summary.inventoryReceiptCount} receipts are stored locally.` : "Receive items from the latest purchase.",
+        status: hasInventoryReceipts ? "Updated" : "Incomplete",
+        tone: hasInventoryReceipts ? "success" : "warning",
         to: inventoryRoute,
       },
       {
-        title: "Reorder / check stock",
-        detail: summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryItemsToReorderCount} items need ordering.` : "No reorder action needed right now.",
-        status: summary.inventoryItemsToReorderCount > 0 ? "Attention" : "Clear",
-        tone: summary.inventoryItemsToReorderCount > 0 ? "warning" : "success",
+        title: "Reorder",
+        detail: needsReorder ? `${summary.inventoryItemsToReorderCount} items need ordering.` : "No reorder action needed right now.",
+        status: needsReorder ? "Alert" : "Done",
+        tone: needsReorder ? "warning" : "success",
         to: inventoryRoute,
       },
       {
-        title: "Close day",
-        detail:
-          summary.todayReconciliationStatus === "Incomplete"
-            ? "Enter the day's totals and compare to POS."
-            : `Today is ${summary.todayReconciliationStatus.toLowerCase()} with variance ${formatCurrency(summary.todayReconciliationVariance)}.`,
-        status: summary.todayReconciliationStatus,
-        tone: toneForStatus(summary.todayReconciliationStatus),
+        title: "Close",
+        detail: closeStatus === "Incomplete" ? "Enter the day's totals and compare to POS." : `Today is ${closeStatus.toLowerCase()} with variance ${formatCurrency(summary.todayReconciliationVariance)}.`,
+        status: closeStatus === "Incomplete" ? "Incomplete" : closeNeedsReview ? "Needs review" : closeDone ? "Done" : closeStatus,
+        tone: closeStatus === "Incomplete" ? "warning" : closeNeedsReview ? "warning" : closeDone ? "success" : toneForStatus(closeStatus),
         to: closeReportsRoute,
       },
       {
-        title: "Export report",
+        title: "Export",
         detail: exportReady ? "Accounting-ready CSV can be prepared now." : "Finish review and close before exporting.",
-        status: exportReady ? "Ready" : "Not ready",
+        status: exportReady ? "Done" : "Not ready",
         tone: exportReady ? "success" : "warning",
         to: closeReportsRoute,
       },
@@ -400,77 +359,44 @@ export function OwnerDashboardPage() {
     summary.todayReconciliationVariance,
   ]);
 
-  const menuSnapshot = commandCenter.menu;
-  const scheduleSnapshot = commandCenter.schedule;
-
-  const modulePanels = [
+  const topSupplier = dashboard.supplierSpend[0];
+  const topIncrease = dashboard.costChanges.find((change) => change.status === "Increased");
+  const topDecrease = dashboard.costChanges.find((change) => change.status === "Decreased");
+  const lowStockItem = dashboard.reorderSuggestions[0];
+  const fastestUsageItem = [...inventoryItems]
+    .filter((item) => typeof item.averageDailyUsage === "number" && item.averageDailyUsage > 0)
+    .sort((a, b) => (b.averageDailyUsage ?? 0) - (a.averageDailyUsage ?? 0) || a.name.localeCompare(b.name))[0];
+  const changedPriceChips = dashboard.costChanges.slice(0, 3);
+  const insightCards = [
     {
-      title: "Purchases",
-      eyebrow: "Supplier spend / review queue",
-      summary:
-        dashboard.supplierSpend.length > 0
-          ? `Top supplier: ${dashboard.supplierSpend[0].supplier}.`
-          : "Use purchases to capture invoices, receipts, and price changes.",
-      metrics: [
-        { label: "This week", value: String(summary.weeklyInvoiceCount) },
-        { label: "Need review", value: String(summary.invoiceReviewQueueCount) },
-        { label: "Price changes", value: String(dashboard.priceIncreaseCount) },
-      ],
-      actionLabel: "Open purchases",
-      to: purchasesRoute,
+      title: "Largest supplier spend",
+      value: topSupplier ? topSupplier.supplier : "No supplier yet",
+      detail: topSupplier ? `${formatCurrency(topSupplier.spend)} across ${topSupplier.invoiceCount} invoices` : "Upload a purchase to see supplier spend.",
+      tone: topSupplier ? "neutral" : "info",
     },
     {
-      title: "Inventory",
-      eyebrow: "Receive / count / adjust / waste / reorder",
-      summary:
-        dashboard.reorderSuggestions.length > 0
-          ? `Top reorder: ${dashboard.reorderSuggestions[0].itemName}.`
-          : "Inventory receives purchase flow updates and keeps reorder triggers visible.",
-      metrics: [
-        { label: "Low stock", value: String(summary.inventoryLowStockCount) },
-        { label: "Reorder now", value: String(summary.inventoryItemsToReorderCount) },
-        { label: "Count drafts", value: String(summary.inventoryCountSessionDraftCount) },
-      ],
-      actionLabel: "Open inventory",
-      to: inventoryRoute,
+      title: "Top price increase",
+      value: topIncrease ? `${topIncrease.itemName} ${formatPercent(topIncrease.changePercent)}` : "No increases yet",
+      detail: topIncrease ? `${topIncrease.supplier} · ${formatCurrency(topIncrease.previousUnitPrice)} → ${formatCurrency(topIncrease.currentUnitPrice)}` : "Price increases will appear here once purchases are saved.",
+      tone: topIncrease ? "warning" : "success",
     },
     {
-      title: "Menu & Costing",
-      eyebrow: "Recipe -> cost -> margin",
-      summary: "Demo-real costing stays lightweight: menu item, recipe ingredients, current cost, estimated item cost, and margin.",
-      metrics: [
-        { label: "Costed items", value: String(menuSnapshot.costedItems) },
-        { label: "Margin risks", value: String(menuSnapshot.marginRisks) },
-        { label: "Square-ready", value: String(menuSnapshot.squareReady) },
-      ],
-      actionLabel: "Open menu & costing",
-      to: menuCostingRoute,
+      title: "Biggest price decrease",
+      value: topDecrease ? `${topDecrease.itemName} ${formatPercent(topDecrease.changePercent)}` : "No decreases yet",
+      detail: topDecrease ? `${topDecrease.supplier} · ${formatCurrency(topDecrease.previousUnitPrice)} → ${formatCurrency(topDecrease.currentUnitPrice)}` : "Price decreases will appear here once they are detected.",
+      tone: topDecrease ? "success" : "info",
     },
     {
-      title: "Schedule",
-      eyebrow: "Availability / weekly roster",
-      summary: "Simple staffing overview with availability, preferences, generated shifts, and conflict warnings.",
-      metrics: [
-        { label: "Staff", value: String(scheduleSnapshot.staffCount) },
-        { label: "Open shifts", value: String(scheduleSnapshot.openShifts) },
-        { label: "Conflicts", value: String(scheduleSnapshot.conflicts) },
-      ],
-      actionLabel: "Open schedule",
-      to: scheduleRoute,
+      title: "Inventory running low",
+      value: lowStockItem ? lowStockItem.itemName : "Inventory healthy",
+      detail: lowStockItem
+        ? `${Math.max(0, Math.round(lowStockItem.estimatedDaysRemaining ?? 0))} days left · ${fastestUsageItem ? `Fastest mover: ${fastestUsageItem.name}` : "Usage not configured"}`
+        : fastestUsageItem
+          ? `Fastest mover: ${fastestUsageItem.name} at ${fastestUsageItem.averageDailyUsage?.toFixed(1)} / day`
+          : "No reorder pressure right now.",
+      tone: lowStockItem ? "warning" : "success",
     },
-    {
-      title: "Close & Reports",
-      eyebrow: "Daily close / exports",
-      summary: exportReady ? "Accounting-ready CSV can be prepared now. QuickBooks sync stays future-only." : "Finish the close review before export is marked ready.",
-      metrics: [
-        { label: "Closes to review", value: String(summary.unresolvedReconciliationCount) },
-        { label: "Today", value: summary.todayReconciliationStatus },
-        { label: "Export", value: exportReady ? "Ready" : "Pending" },
-      ],
-      actionLabel: "Open close & reports",
-      to: closeReportsRoute,
-    },
-  ];
+  ] as const;
 
 
   return (
@@ -489,7 +415,7 @@ export function OwnerDashboardPage() {
               Upload purchase
             </Link>
             <Button type="button" variant="secondary" onClick={() => setDemoFlowOpen(true)} icon={<Sparkles className="h-4 w-4" />}>
-              View demo flow
+              {heroFlowLabel}
             </Button>
           </div>
         </div>
@@ -507,81 +433,66 @@ export function OwnerDashboardPage() {
       </Card>
 
       <section className="mt-7">
-        <SectionHeader title="Needs attention today" description="Open these before the next shift." />
-        {attentionAlerts.length > 0 ? (
-          <Card className="p-4 sm:p-5">
-            <div className="space-y-3">
-              {attentionAlerts.slice(0, 5).map((alert) => (
-                <div key={alert.title} className="flex flex-col gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={alert.tone}>{alert.title}</Badge>
-                    </div>
-                    <p className="mt-1 text-sm leading-6 text-slate-700">{alert.detail}</p>
-                  </div>
-                  <Link className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={alert.to}>
-                    {alert.ctaLabel}
-                  </Link>
-                </div>
-              ))}
-            </div>
-          </Card>
-        ) : (
-          <Card className="p-5">
-            <p className="text-sm font-semibold text-ink">No urgent items right now.</p>
-            <p className="mt-1 text-sm leading-6 text-muted">Upload a purchase or enter a close to surface owner actions.</p>
-          </Card>
-        )}
-      </section>
-
-      <section className="mt-7">
-        <SectionHeader title="Today's key numbers" description="The smallest set that still tells the owner what needs action." />
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <SectionHeader title="Numbers to know" />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <StatCard label="Purchases this week" value={String(summary.weeklyInvoiceCount)} helper={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend) : "No purchases yet"} icon={<FileText className="h-5 w-5" />} />
-          <StatCard label="Invoices needing review" value={String(summary.invoiceReviewQueueCount)} helper={summary.invoiceReviewQueueCount > 0 ? "Confirm OCR and mapping" : "Queue is clear"} icon={<AlertTriangle className="h-5 w-5" />} />
-          <StatCard label="Low-stock items" value={String(summary.inventoryLowStockCount)} helper={`${summary.inventoryReorderNowCount} need reorder now`} icon={<Package className="h-5 w-5" />} />
-          <StatCard label="Reorder suggestions" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? "Order before stockouts" : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
+          <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Week to date on saved purchases" icon={<TrendingUp className="h-5 w-5" />} />
+          <StatCard label="Average invoice value" value={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend / summary.weeklyInvoiceCount) : "-"} helper="Week to date" icon={<Gauge className="h-5 w-5" />} />
+          <StatCard label="Inventory value" value={formatCurrency(summary.inventoryValue)} helper={summary.inventoryItemCount > 0 ? `${summary.inventoryItemCount} items tracked` : "No inventory yet"} icon={<Package className="h-5 w-5" />} />
+          <StatCard label="Supplier price increases" value={String(dashboard.priceIncreaseCount)} helper={dashboard.priceIncreaseCount > 0 ? "Check the biggest changes" : "No supplier price increases"} icon={<AlertTriangle className="h-5 w-5" />} />
+          <StatCard label="Items needing reorder" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryReorderNowCount} need reorder now` : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
         </div>
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Today's workflow" description="One connected loop from purchase to export." />
+        <SectionHeader title="This week's changes" />
         <Card className="p-4 sm:p-5">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            {workflowSteps.map((step, index) => (
-              <div key={step.title} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-line bg-slate-50 px-3 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-bold text-ink shadow-sm">{index + 1}</span>
-                  <p className="text-sm font-semibold text-ink">{step.title}</p>
-                </div>
-                <Badge tone={step.tone}>{step.status}</Badge>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {insightCards.map((card) => (
+              <div key={card.title} className="rounded-2xl border border-line bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">{card.title}</p>
+                <p className="mt-2 text-base font-bold text-ink">{card.value}</p>
+                <p className="mt-1 text-sm leading-6 text-slate-700">{card.detail}</p>
               </div>
             ))}
+          </div>
+          <div className="mt-4 rounded-2xl border border-line bg-white p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Products that changed price</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {changedPriceChips.length > 0 ? (
+                changedPriceChips.map((change) => (
+                  <Badge key={`${change.itemName}-${change.invoiceDate}`} tone={change.status === "Increased" ? "warning" : change.status === "Decreased" ? "success" : "neutral"}>
+                    {change.itemName} {formatPercent(change.changePercent)}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-sm text-muted">No price changes yet.</span>
+              )}
+            </div>
           </div>
         </Card>
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Section summary" />
+        <SectionHeader title="Today's workflow" />
         <Card className="p-4 sm:p-5">
-          <div className="divide-y divide-line">
-            {modulePanels.map((panel) => (
-              <div key={panel.title} className="py-4 first:pt-0 last:pb-0">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:justify-between">
+            {workflowSteps.map((step, index) => (
+              <div key={step.title} className="relative flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border border-line bg-slate-50 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-ink shadow-sm">{index + 1}</span>
                   <div className="min-w-0">
-                    <h3 className="mt-1 text-base font-bold text-ink">{panel.title}</h3>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {panel.metrics.slice(0, 3).map((metric) => (
-                        <span key={metric.label} className="inline-flex items-center rounded-full border border-line bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {metric.label}: {metric.value}
-                        </span>
-                      ))}
-                    </div>
+                    <p className="text-sm font-semibold text-ink">{step.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-muted">{step.detail}</p>
                   </div>
-                  <Link className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to={panel.to}>
-                    {panel.actionLabel}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <Badge tone={step.tone}>{step.status}</Badge>
+                  <Link className="text-xs font-semibold uppercase tracking-wide text-brand-700 hover:text-brand-800" to={step.to}>
+                    Open
                   </Link>
                 </div>
+                {index < workflowSteps.length - 1 ? <div className="hidden xl:block absolute right-[-14px] top-1/2 -translate-y-1/2 text-slate-300">→</div> : null}
               </div>
             ))}
           </div>
@@ -589,7 +500,7 @@ export function OwnerDashboardPage() {
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Recent activity" description="Latest 5 saved events." />
+        <SectionHeader title="Recent activity" />
         {activityFeed.length > 0 ? (
           <Card className="p-4 sm:p-5">
             <div className="space-y-2">
@@ -621,7 +532,7 @@ export function OwnerDashboardPage() {
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Accounting readiness" description="CSV first. QuickBooks stays future-only." />
+        <SectionHeader title="Export readiness" />
         <Card className="p-5">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={exportReady ? "success" : "warning"}>{exportReady ? "Ready" : "Not ready"}</Badge>
@@ -647,7 +558,15 @@ export function OwnerDashboardPage() {
           </div>
         </Card>
       </section>
-      <DemoFlowDrawer open={demoFlowOpen} steps={walkthroughSteps} onClose={() => setDemoFlowOpen(false)} />
+      <DemoFlowDrawer
+        open={demoFlowOpen}
+        steps={walkthroughSteps}
+        activeStepIndex={currentWalkthroughIndex}
+        progress={walkthroughProgress}
+        onAdvanceStep={advanceWalkthroughProgress}
+        onRestart={restartWalkthrough}
+        onClose={() => setDemoFlowOpen(false)}
+      />
     </PageLayout>
   );
 }
@@ -665,10 +584,18 @@ function TinyMetric({ label, value, helper }: { label: string; value: string; he
 function DemoFlowDrawer({
   open,
   steps,
+  activeStepIndex,
+  progress,
+  onAdvanceStep,
+  onRestart,
   onClose,
 }: {
   open: boolean;
   steps: WalkthroughStep[];
+  activeStepIndex: number;
+  progress: number;
+  onAdvanceStep: (stepIndex: number) => void;
+  onRestart: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -705,26 +632,57 @@ function DemoFlowDrawer({
     <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
       <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Demo flow</p>
             <h2 className="mt-1 text-lg font-bold text-ink sm:text-xl">Walk through the restaurant story</h2>
-            <p className="mt-1 text-sm leading-6 text-muted">Purchases - Inventory - Menu & Costing - Close - Export.</p>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              Step {Math.min(progress + 1, steps.length)} of {steps.length}. Resume where you left off or jump directly to a page.
+            </p>
           </div>
-          <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
+              Close
+            </Button>
+            <Link
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              to={steps[Math.min(activeStepIndex, steps.length - 1)]?.to ?? "#"}
+              onClick={() => onAdvanceStep(activeStepIndex)}
+            >
+              {progress > 0 ? "Resume walkthrough" : "Start walkthrough"}
+            </Link>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" onClick={onRestart}>
+              Start over
+            </button>
+            <span className="text-sm text-muted">Current step is highlighted below.</span>
+          </div>
           <div className="space-y-2">
             {steps.map((step, index) => (
-              <div key={step.title} className="rounded-2xl border border-line bg-white p-4">
+              <div
+                key={step.title}
+                className={`rounded-2xl border p-4 ${
+                  index === activeStepIndex
+                    ? "border-brand-200 bg-brand-50 shadow-sm"
+                    : index < activeStepIndex
+                      ? "border-brand-100 bg-white"
+                      : "border-line bg-white"
+                }`}
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Step {index + 1}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Step {index + 1}</p>
+                      {index === activeStepIndex ? <Badge tone="info">Current step</Badge> : null}
+                      {index < activeStepIndex ? <Badge tone="success">Completed</Badge> : null}
+                      {index > activeStepIndex ? <Badge tone="neutral">Next</Badge> : null}
+                    </div>
                     <p className="mt-1 text-base font-bold text-ink">{step.title}</p>
                     <p className="mt-1 text-sm leading-6 text-slate-700">{step.detail}</p>
                   </div>
-                  <Link className={actionLinkClass} to={step.to} onClick={onClose}>
+                  <Link className={actionLinkClass} to={step.to} onClick={() => onAdvanceStep(index)}>
                     {step.ctaLabel}
                   </Link>
                 </div>

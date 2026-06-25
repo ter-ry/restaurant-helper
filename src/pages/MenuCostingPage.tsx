@@ -528,7 +528,9 @@ export function MenuCostingPage() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Badge tone="info">Costed items {metrics.menuItems}</Badge>
-            <Badge tone={metrics.riskItems > 0 ? "warning" : "success"}>Margin risks {metrics.riskItems}</Badge>
+            <button type="button" className="inline-flex" onClick={reviewMarginRisks} aria-label="Open margin risks">
+              <Badge tone={metrics.riskItems > 0 ? "warning" : "success"}>Margin risks {metrics.riskItems}</Badge>
+            </button>
             <Badge tone={metrics.squareReady > 0 ? "success" : "neutral"}>Square-ready demo {metrics.squareReady}</Badge>
           </div>
         </Card>
