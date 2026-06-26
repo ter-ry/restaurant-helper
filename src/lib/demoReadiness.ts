@@ -97,13 +97,13 @@ export function buildDemoWalkthroughSteps(profileSlug: DemoProfileSlug = default
 
   return [
     {
-      title: "Capture a purchase",
+      title: "Invoice captured",
       detail: "Upload or load a sample invoice or receipt.",
       to: route("purchases"),
       ctaLabel: "Open purchases",
     },
     {
-      title: "Review line items",
+      title: "Review and save",
       detail: "Confirm supplier, totals, and extracted items.",
       to: route("purchases"),
       ctaLabel: "Review items",
@@ -133,8 +133,8 @@ export function buildDemoWalkthroughSteps(profileSlug: DemoProfileSlug = default
       ctaLabel: "Open close & reports",
     },
     {
-      title: "Prepare export",
-      detail: "Review the accountant-ready CSV and report status.",
+      title: "Prepare bookkeeping export",
+      detail: "Review the accountant-ready CSV and monthly handoff status.",
       to: route("close-reports"),
       ctaLabel: "Open export",
     },

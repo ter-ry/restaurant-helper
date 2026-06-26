@@ -11,7 +11,7 @@ export type InvoiceReceiveLineState = {
   unitPrice: number;
   selectedItemId: string;
   state: "unmapped" | "linked" | "do-not-track" | "already-received";
-  matchLabel: "Previously confirmed" | "Auto-matched" | "Suggested match" | "Not mapped" | "Already received";
+  matchLabel: "Previously mapped" | "Suggested match" | "Needs confirmation" | "Not mapped" | "Already received";
   conversionFactor: number;
   inventoryUnit: string;
   note: string;
@@ -273,7 +273,7 @@ export function buildInvoiceReceiveLines(
         unitPrice: Number.isFinite(line.unitPrice) ? line.unitPrice : 0,
         selectedItemId: remembered.inventoryItemId,
         state: "linked",
-        matchLabel: "Previously confirmed",
+        matchLabel: "Previously mapped",
         conversionFactor: remembered.conversionFactor || 1,
         inventoryUnit: remembered.inventoryUnit || line.unit || "each",
         note: "",
@@ -291,7 +291,7 @@ export function buildInvoiceReceiveLines(
         unitPrice: Number.isFinite(line.unitPrice) ? line.unitPrice : 0,
         selectedItemId: safeMatch.id,
         state: "linked",
-        matchLabel: "Auto-matched",
+        matchLabel: "Suggested match",
         conversionFactor: 1,
         inventoryUnit: safeMatch.unit || line.unit || "each",
         note: "",
@@ -308,7 +308,7 @@ export function buildInvoiceReceiveLines(
       unitPrice: Number.isFinite(line.unitPrice) ? line.unitPrice : 0,
       selectedItemId: "",
       state: "unmapped",
-      matchLabel: suggestedMatches.length ? "Suggested match" : "Not mapped",
+      matchLabel: suggestedMatches.length ? "Needs confirmation" : "Not mapped",
       conversionFactor: 1,
       inventoryUnit: suggestedMatches[0]?.unit || line.unit || "each",
       note: "",

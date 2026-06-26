@@ -167,6 +167,40 @@ export function OwnerDashboardPage() {
   );
   const exportReady = exportReadiness.monthlyOwnerReport === "Ready";
   const heroDate = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" }).format(new Date());
+  const weekComparison = useMemo(() => {
+    const now = new Date();
+    const currentWeekStart = new Date(now);
+    currentWeekStart.setDate(now.getDate() - 7);
+    const previousWeekStart = new Date(now);
+    previousWeekStart.setDate(now.getDate() - 14);
+
+    const totals = recentInvoices.reduce(
+      (acc, invoice) => {
+        const millis = new Date(invoice.invoiceDate || "").getTime();
+        if (!Number.isFinite(millis)) {
+          return acc;
+        }
+        if (millis >= currentWeekStart.getTime()) {
+          acc.current += Number.isFinite(invoice.totalAmount) ? invoice.totalAmount : 0;
+        } else if (millis >= previousWeekStart.getTime()) {
+          acc.previous += Number.isFinite(invoice.totalAmount) ? invoice.totalAmount : 0;
+        }
+        return acc;
+      },
+      { current: 0, previous: 0 },
+    );
+
+    if (totals.previous <= 0) {
+      return null;
+    }
+
+    const deltaPercent = ((totals.current - totals.previous) / totals.previous) * 100;
+    return {
+      current: totals.current,
+      previous: totals.previous,
+      deltaPercent: Number(deltaPercent.toFixed(1)),
+    };
+  }, [recentInvoices]);
   const currentWalkthroughIndex = Math.min(walkthroughProgress, Math.max(0, walkthroughSteps.length - 1));
   const heroFlowLabel = walkthroughProgress > 0 ? "Resume walkthrough" : "View demo flow";
 
@@ -209,21 +243,21 @@ export function OwnerDashboardPage() {
         to: purchasesRoute,
       },
       {
-        title: "Review",
-        detail: needsReview ? `${summary.invoiceReviewQueueCount} invoices still need confirmation.` : "Purchase review queue is clear.",
+        title: "Review + match",
+        detail: needsReview ? `${summary.invoiceReviewQueueCount} invoices still need confirmation.` : "Matched items are ready for the inventory update.",
         status: needsReview ? "Needs review" : "Done",
         tone: needsReview ? "warning" : "success",
         to: purchasesRoute,
       },
       {
         title: "Inventory",
-        detail: hasInventoryReceipts ? `${summary.inventoryReceiptCount} receipts are stored locally.` : "Receive items from the latest purchase.",
+        detail: hasInventoryReceipts ? `${summary.inventoryReceiptCount} receipts are stored locally.` : "Inventory updates once confirmed matches are saved.",
         status: hasInventoryReceipts ? "Updated" : "Incomplete",
         tone: hasInventoryReceipts ? "success" : "warning",
         to: inventoryRoute,
       },
       {
-        title: "Reorder",
+        title: "Reorder check",
         detail: needsReorder ? `${summary.inventoryItemsToReorderCount} items need ordering.` : "No reorder action needed right now.",
         status: needsReorder ? "Alert" : "Done",
         tone: needsReorder ? "warning" : "success",
@@ -236,17 +270,9 @@ export function OwnerDashboardPage() {
         tone: closeStatus === "Incomplete" ? "warning" : closeNeedsReview ? "warning" : closeDone ? "success" : toneForStatus(closeStatus),
         to: closeReportsRoute,
       },
-      {
-        title: "Export",
-        detail: exportReady ? "Accounting-ready CSV can be prepared now." : "Finish review and close before exporting.",
-        status: exportReady ? "Done" : "Not ready",
-        tone: exportReady ? "success" : "warning",
-        to: closeReportsRoute,
-      },
     ];
   }, [
     closeReportsRoute,
-    exportReady,
     inventoryRoute,
     purchasesRoute,
     recentInvoices,
@@ -427,7 +453,7 @@ export function OwnerDashboardPage() {
             Enter daily close
           </Link>
           <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to={closeReportsRoute}>
-            Export CSV
+            Open export
           </Link>
         </div>
       </Card>
@@ -437,7 +463,12 @@ export function OwnerDashboardPage() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <StatCard label="Purchases this week" value={String(summary.weeklyInvoiceCount)} helper={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend) : "No purchases yet"} icon={<FileText className="h-5 w-5" />} />
           <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Week to date on saved purchases" icon={<TrendingUp className="h-5 w-5" />} />
-          <StatCard label="Average invoice value" value={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend / summary.weeklyInvoiceCount) : "-"} helper="Week to date" icon={<Gauge className="h-5 w-5" />} />
+          <StatCard
+            label="Spend vs last week"
+            value={weekComparison ? `${weekComparison.deltaPercent > 0 ? "+" : ""}${formatPercent(weekComparison.deltaPercent)}` : "-"}
+            helper={weekComparison ? `Last 7 days ${formatCurrency(weekComparison.current)} vs prior ${formatCurrency(weekComparison.previous)}` : "Need two weeks of invoices"}
+            icon={<Gauge className="h-5 w-5" />}
+          />
           <StatCard label="Inventory value" value={formatCurrency(summary.inventoryValue)} helper={summary.inventoryItemCount > 0 ? `${summary.inventoryItemCount} items tracked` : "No inventory yet"} icon={<Package className="h-5 w-5" />} />
           <StatCard label="Supplier price increases" value={String(dashboard.priceIncreaseCount)} helper={dashboard.priceIncreaseCount > 0 ? "Check the biggest changes" : "No supplier price increases"} icon={<AlertTriangle className="h-5 w-5" />} />
           <StatCard label="Items needing reorder" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryReorderNowCount} need reorder now` : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
@@ -486,13 +517,13 @@ export function OwnerDashboardPage() {
                     <p className="mt-1 text-xs leading-5 text-muted">{step.detail}</p>
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="mt-auto flex items-center justify-between gap-2">
                   <Badge tone={step.tone}>{step.status}</Badge>
                   <Link className="text-xs font-semibold uppercase tracking-wide text-brand-700 hover:text-brand-800" to={step.to}>
                     Open
                   </Link>
                 </div>
-                {index < workflowSteps.length - 1 ? <div className="hidden xl:block absolute right-[-14px] top-1/2 -translate-y-1/2 text-slate-300">→</div> : null}
+                {index < workflowSteps.length - 1 ? <div className="hidden xl:block absolute right-[-14px] top-1/2 -translate-y-1/2 text-slate-300">-&gt;</div> : null}
               </div>
             ))}
           </div>
@@ -532,21 +563,21 @@ export function OwnerDashboardPage() {
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Export readiness" />
+        <SectionHeader title="Bookkeeping-ready export" />
         <Card className="p-5">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={exportReady ? "success" : "warning"}>{exportReady ? "Ready" : "Not ready"}</Badge>
-            <Badge tone="neutral">3 blockers</Badge>
+            <Badge tone="neutral">{exportReadiness.blockers.length} blockers</Badge>
             <Badge tone="info">QuickBooks future-only</Badge>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <TinyMetric label="Purchase CSV" value={exportReadiness.purchaseCsv} helper="Reviewed invoices only" />
+            <TinyMetric label="Purchase CSV" value={exportReadiness.purchaseCsv} helper="Bookkeeping-ready records only" />
             <TinyMetric label="Supplier spend" value={exportReadiness.supplierSpendSummary} helper="Ready when purchases are reviewed" />
             <TinyMetric label="Inventory summary" value={exportReadiness.inventoryMovementSummary} helper="Receipts and movements are captured locally" />
             <TinyMetric label="Daily close" value={exportReadiness.dailyCloseSummary} helper={summary.todayReconciliationStatus === "Incomplete" ? "Needs entry" : formatCurrency(summary.todayReconciliationVariance)} />
           </div>
           <div className="mt-4 rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
-            Blockers: {exportReadiness.blockers.join(" · ")}. Monthly owner report stays compact, and QuickBooks remains future-only.
+            Weekly and monthly handoff stays compact. Blockers: {exportReadiness.blockers.join(" | ")}. QuickBooks remains future-only.
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={closeReportsRoute}>

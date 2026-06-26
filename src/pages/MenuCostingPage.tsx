@@ -55,6 +55,7 @@ type ResolvedMenuItem = MenuItemDraft & {
   estimatedGrossProfit: number;
   estimatedMargin: number;
   riskReasons: string[];
+  dataIssues: string[];
   marginTone: MarginTone;
 };
 
@@ -295,23 +296,25 @@ function resolveMenuItem(item: MenuItemDraft, inventoryItems: InventoryItem[], p
   if (margin < 50) {
     riskReasons.push("Thin margin");
   }
+
+  const dataIssues: string[] = [];
   if (item.recipeStatus !== "Complete") {
-    riskReasons.push("Recipe incomplete");
+    dataIssues.push("Recipe incomplete");
   }
   if (item.mappingStatus !== "Mapped") {
-    riskReasons.push("POS mapping missing");
+    dataIssues.push("POS mapping missing");
   }
   if (ingredients.some((ingredient) => !ingredient.inventoryItem)) {
-    riskReasons.push("Demo cost in recipe");
+    dataIssues.push("Demo cost in recipe");
   }
   if (ingredients.some((ingredient) => ingredient.recentPriceChange && ingredient.recentPriceChange.changePercent > 5)) {
-    riskReasons.push("Ingredient price increased");
+    dataIssues.push("Ingredient price increased");
   }
 
   let marginTone: MarginTone = "success";
-  if (riskReasons.some((reason) => reason === "Thin margin")) {
+  if (riskReasons.length > 0) {
     marginTone = "danger";
-  } else if (riskReasons.length > 0) {
+  } else if (dataIssues.length > 0) {
     marginTone = "warning";
   }
 
@@ -323,6 +326,7 @@ function resolveMenuItem(item: MenuItemDraft, inventoryItems: InventoryItem[], p
     estimatedGrossProfit: grossProfit,
     estimatedMargin: margin,
     riskReasons,
+    dataIssues,
     marginTone,
   };
 }
@@ -403,12 +407,14 @@ export function MenuCostingPage() {
         ? resolvedMenuItems.reduce((sum, item) => sum + item.estimatedMargin, 0) / resolvedMenuItems.length
         : 0;
     const riskItems = resolvedMenuItems.filter((item) => item.riskReasons.length > 0).length;
+    const dataIssueItems = resolvedMenuItems.filter((item) => item.dataIssues.length > 0).length;
     const squareReady = resolvedMenuItems.filter((item) => item.recipeStatus === "Complete" && item.mappingStatus === "Mapped").length;
     return {
       menuItems: resolvedMenuItems.length,
       recipeComplete,
       averageMargin: Number(averageMargin.toFixed(1)),
       riskItems,
+      dataIssueItems,
       squareReady,
     };
   }, [resolvedMenuItems]);
@@ -531,6 +537,7 @@ export function MenuCostingPage() {
             <button type="button" className="inline-flex" onClick={reviewMarginRisks} aria-label="Open margin risks">
               <Badge tone={metrics.riskItems > 0 ? "warning" : "success"}>Margin risks {metrics.riskItems}</Badge>
             </button>
+            <Badge tone={metrics.dataIssueItems > 0 ? "warning" : "neutral"}>Data gaps {metrics.dataIssueItems}</Badge>
             <Badge tone={metrics.squareReady > 0 ? "success" : "neutral"}>Square-ready demo {metrics.squareReady}</Badge>
           </div>
         </Card>
@@ -554,7 +561,8 @@ export function MenuCostingPage() {
                       <Badge tone={toneForMargin(item.estimatedMargin)}>{formatPercent(item.estimatedMargin)} margin</Badge>
                       <Badge tone={item.recipeStatus === "Complete" ? "success" : "warning"}>{item.recipeStatus}</Badge>
                       <Badge tone={item.mappingStatus === "Mapped" ? "success" : "warning"}>{item.mappingStatus}</Badge>
-                      {item.riskReasons.length > 0 ? <Badge tone="warning">Risk</Badge> : null}
+                      {item.riskReasons.length > 0 ? <Badge tone="danger">Margin risk</Badge> : null}
+                      {item.dataIssues.length > 0 ? <Badge tone="warning">Needs data</Badge> : null}
                     </div>
                     <p className="mt-1 text-sm text-muted">{item.category}</p>
                   </div>
@@ -591,10 +599,11 @@ export function MenuCostingPage() {
                         {item.category} | {formatPercent(item.estimatedMargin)} margin | {formatCurrency(item.sellingPrice)}
                       </p>
                     </div>
-                    <Badge tone={toneForRisk(item.riskReasons.length)}>Risk</Badge>
-                  </div>
-                </button>
-              ))}
+                  {item.riskReasons.length > 0 ? <Badge tone={toneForRisk(item.riskReasons.length)}>Margin risk</Badge> : null}
+                  {item.dataIssues.length > 0 ? <Badge tone="warning">Needs data</Badge> : null}
+                </div>
+              </button>
+            ))}
             </div>
           ) : (
             <div className="mt-4 rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
@@ -800,8 +809,9 @@ export function MenuCostingPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold text-ink">{item.name}</p>
-                        <Badge tone={toneForRisk(item.riskReasons.length)}>Risk</Badge>
-                      </div>
+                      {item.riskReasons.length > 0 ? <Badge tone={toneForRisk(item.riskReasons.length)}>Margin risk</Badge> : null}
+                      {item.dataIssues.length > 0 ? <Badge tone="warning">Needs data</Badge> : null}
+                    </div>
                       <p className="mt-1 text-sm text-muted">
                         {item.category} | {formatPercent(item.estimatedMargin)} margin | {formatCurrency(item.sellingPrice)} selling price
                       </p>
@@ -810,7 +820,12 @@ export function MenuCostingPage() {
                       Open recipe
                     </Button>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.riskReasons.join(" | ")}</p>
+                  {item.dataIssues.length > 0 ? (
+                    <p className="mt-2 text-sm leading-6 text-slate-700">Data gaps: {item.dataIssues.join(" | ")}</p>
+                  ) : null}
+                  {item.riskReasons.length > 0 ? (
+                    <p className="mt-2 text-sm leading-6 text-slate-700">Margin risk: {item.riskReasons.join(" | ")}</p>
+                  ) : null}
                 </div>
               ))
             ) : (

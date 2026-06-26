@@ -519,7 +519,7 @@ export function InvoiceUploadPage() {
               <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Invoices, receipts, supplier prices.</h1>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <MetricCard label="Needs review" value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))} helper="Open items" />
+              <MetricCard label="Needs confirmation" value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))} helper="Open items" />
               <MetricCard label="Ready to receive" value={String(mappedItemCount)} helper="Mapped purchase lines" />
               <MetricCard label="Ready for export" value={String(purchaseExportSnapshot.readyForCsv)} helper="CSV-ready records" />
             </div>
@@ -598,7 +598,7 @@ export function InvoiceUploadPage() {
             <Card className="min-w-0 border border-line bg-white p-5">
               <SectionHeader
                 title="Review queue"
-                description="These saved purchases still need a human check before they are treated as fully clean."
+                description="These saved purchases still need confirmation before they are treated as final."
                 action={<Badge tone="warning">{reviewQueue.length} items</Badge>}
               />
               {reviewQueue.length ? (
@@ -617,7 +617,7 @@ export function InvoiceUploadPage() {
                             {invoice.invoiceNumber || "No invoice number"} · {formatMaybeDate(invoice.invoiceDate)} · {formatMaybeCurrency(invoice.totalAmount)}
                           </p>
                         </div>
-                        <Badge tone="warning">Needs review</Badge>
+                        <Badge tone="warning">Needs confirmation</Badge>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
                         <span>{invoice.lineItems.length} line items</span>
@@ -637,7 +637,7 @@ export function InvoiceUploadPage() {
             <Card className="min-w-0 border border-line bg-white p-5">
               <SectionHeader
                 title="Active review workspace"
-                description="The focused review modal still handles OCR corrections, line items, save confirmation, and inventory handoff."
+                description="The focused review modal still handles OCR checks, line items, save confirmation, and inventory handoff."
                 action={
                   hasActiveDraft ? (
                     <Button type="button" variant="secondary" onClick={() => setReviewOpen(true)}>
@@ -821,7 +821,7 @@ export function InvoiceUploadPage() {
               <Badge tone="info">QuickBooks future-only</Badge>
             </div>
             <p className="mt-3 text-sm leading-6 text-slate-700">
-              {exportReadiness.blockers.length > 0 ? `Blockers: ${exportReadiness.blockers.join(" · ")}.` : "Purchase CSV and summary exports are ready once the review queue is clear."}
+              {exportReadiness.blockers.length > 0 ? `Blockers: ${exportReadiness.blockers.join(" | ")}.` : "Purchase CSV and summary exports are ready once the review queue is clear."}
             </p>
             <div className="mt-4">
               <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "close-reports"))}>Open Close &amp; Reports</Button>
@@ -1394,7 +1394,7 @@ export function InvoiceReviewModal({
                     <SummaryRow label="Total" value={formatCurrency(savedInvoice.totalAmount)} />
                   </div>
                   <div className="space-y-3">
-                    <SummaryRow label="Saved status" value={savedInvoice.confirmed ? "Confirmed" : "Needs review"} />
+                    <SummaryRow label="Saved status" value={savedInvoice.confirmed ? "Confirmed" : "Needs confirmation"} />
                     <SummaryRow label="Saved at" value={savedInvoice.savedAt ? formatDateTime(savedInvoice.savedAt) : "Just now"} />
                     <SummaryRow label="Source file" value={savedInvoice.fileName || "Not available"} />
                     <SummaryRow label="Line items" value={String(savedInvoice.lineItems.length)} />
@@ -1429,7 +1429,7 @@ export function InvoiceReviewModal({
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Focused review step</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-bold text-ink sm:text-xl">Review extracted invoice</h2>
-              <Badge tone={draft.confirmed ? "success" : "warning"}>{draft.confirmed ? "Confirmed" : "Needs review"}</Badge>
+              <Badge tone={draft.confirmed ? "success" : "warning"}>{draft.confirmed ? "Confirmed" : "Needs confirmation"}</Badge>
               <Badge tone="info">{draft.extractionProvider || "manual"}</Badge>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted">
@@ -1610,7 +1610,7 @@ export function InvoiceReviewModal({
                     <SummaryRow label="Status" value={draft.status} />
                     <SummaryRow label="Warnings" value={String(draft.extractionWarnings.length)} />
                     <SummaryRow label="Line items" value={String(draft.lineItems.length)} />
-                    <SummaryRow label="Needs review" value={String(uncertainFields.length + lineItemsNeedingReview)} />
+                    <SummaryRow label="Needs confirmation" value={String(uncertainFields.length + lineItemsNeedingReview)} />
                   </div>
                 </div>
               </div>
@@ -1661,7 +1661,7 @@ export function InvoiceReviewModal({
                     onClick={onSave}
                     disabled={!draft.confirmed || isProcessing || isSaving || !draft.fileName}
                   >
-                    {isSaving ? "Saving..." : "Confirm and save"}
+                    {isSaving ? "Saving..." : "Save purchase"}
                   </Button>
                   <Button
                     type="button"

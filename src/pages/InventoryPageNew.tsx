@@ -109,6 +109,14 @@ function movementTone(type: InventoryMovementType) {
   return "neutral" as const;
 }
 
+function reorderStatusLabel(status: string) {
+  return status === "Ordered" ? "Saved for reorder" : "Needs ordering";
+}
+
+function reorderStatusTone(status: string) {
+  return status === "Ordered" ? ("success" as const) : ("warning" as const);
+}
+
 function buildReceiveQueue(
   recentInvoices: ReturnType<typeof usePilotWorkspace>["recentInvoices"],
   inventoryItems: InventoryItem[],
@@ -480,7 +488,7 @@ export function InventoryPage() {
                 ...line,
                 selectedItemId: saved.id,
                 state: "linked",
-                matchLabel: "Previously confirmed",
+                matchLabel: "Previously mapped",
                 inventoryUnit: saved.unit,
                 conversionFactor: line.conversionFactor || 1,
               }
@@ -660,7 +668,7 @@ export function InventoryPage() {
     setSelectedCountSessionId(null);
   };
 
-  const handleMarkReorderOrdered = (itemId: string) => {
+  const handleSaveForReorder = (itemId: string) => {
     const suggestion = reorderSuggestions.find((line) => line.itemId === itemId);
     if (!suggestion) return;
     const adjustedQuantity = reorderQuantities[itemId] ?? suggestion.adjustedQuantity;
@@ -681,12 +689,12 @@ export function InventoryPage() {
       costStatus: suggestion.costStatus,
       daysRemaining: suggestion.estimatedDaysRemaining ?? undefined,
       notes: suggestion.note,
-      status: "Ordered",
+      status: "Needs ordering",
       markedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    setMessage(`${suggestion.itemName} marked as ordered.`);
+    setMessage(`${suggestion.itemName} saved for reorder.`);
   };
 
   const lineItemButtons = (item: InventoryItem) => (
@@ -827,7 +835,7 @@ export function InventoryPage() {
                         </p>
                         <p className="mt-1 truncate text-xs leading-5 text-muted">{line.invoiceLineName}</p>
                       </div>
-                      <Badge tone={line.matchLabel === "Previously confirmed" || line.matchLabel === "Auto-matched" ? "success" : line.state === "unmapped" ? "warning" : "info"}>{line.matchLabel}</Badge>
+                      <Badge tone={line.matchLabel === "Previously mapped" || line.matchLabel === "Suggested match" ? "success" : line.state === "unmapped" ? "warning" : "info"}>{line.matchLabel}</Badge>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
                       <span>{line.invoiceQuantity} {line.invoiceUnit}</span>
@@ -948,7 +956,7 @@ export function InventoryPage() {
                         {line.supplier} ? {line.currentQuantity} {line.unit} on hand ? order {line.adjustedQuantity} {line.unit}
                       </p>
                     </div>
-                    <Badge tone={line.status === "Ordered" ? "success" : "warning"}>{line.status}</Badge>
+                    <Badge tone={reorderStatusTone(line.status)}>{reorderStatusLabel(line.status)}</Badge>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted">
                     PAR {line.parLevel} ? Min {line.minimumQuantity} ? {line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}{line.estimatedCost === null ? "" : ` ? ${formatCurrency(line.estimatedCost)}`}
@@ -1011,7 +1019,7 @@ export function InventoryPage() {
                       </p>
                       <p className="mt-1 truncate text-xs leading-5 text-muted">{line.invoiceLineName}</p>
                     </div>
-                    <Badge tone={line.matchLabel === "Previously confirmed" || line.matchLabel === "Auto-matched" ? "success" : line.state === "unmapped" ? "warning" : "info"}>{line.matchLabel}</Badge>
+                      <Badge tone={line.matchLabel === "Previously mapped" || line.matchLabel === "Suggested match" ? "success" : line.state === "unmapped" ? "warning" : "info"}>{line.matchLabel}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
                     <span>{line.invoiceQuantity} {line.invoiceUnit}</span>
@@ -1214,7 +1222,7 @@ export function InventoryPage() {
             </Field>
             <Field label="Workflow note">
               <div className="rounded-lg border border-dashed border-line bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                First-time mappings stay manual. Previously confirmed mappings are suggested but never auto-received.
+                First-time matches stay manual. Previously mapped items are suggested, but the user still confirms them before receiving.
               </div>
             </Field>
           </div>
@@ -1229,7 +1237,7 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold text-ink">{line.invoiceLineName}</p>
-                        <Badge tone={line.matchLabel === "Previously confirmed" || line.matchLabel === "Auto-matched" ? "success" : line.state === "do-not-track" ? "neutral" : line.state === "already-received" ? "warning" : "warning"}>{line.matchLabel}</Badge>
+                        <Badge tone={line.matchLabel === "Previously mapped" || line.matchLabel === "Suggested match" ? "success" : line.state === "do-not-track" ? "neutral" : line.state === "already-received" ? "warning" : "warning"}>{line.matchLabel}</Badge>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-muted">
                         {line.sourceDescription} | Qty {line.invoiceQuantity} {line.invoiceUnit} | Unit price {formatCurrency(line.unitPrice)}
@@ -1238,8 +1246,8 @@ export function InventoryPage() {
                     <div className="flex flex-wrap gap-2">
                       {canLink ? (
                         <>
-                          <Button type="button" variant="secondary" onClick={() => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: "linked", selectedItemId: line.suggestedItemId ?? entry.selectedItemId, matchLabel: entry.matchLabel === "Previously confirmed" ? "Previously confirmed" : entry.matchLabel === "Auto-matched" && line.suggestedItemId === entry.selectedItemId ? "Auto-matched" : line.suggestedItemId ? "Suggested match" : "Not mapped" } : entry)))}>
-                            Link existing item
+                          <Button type="button" variant="secondary" onClick={() => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: "linked", selectedItemId: line.suggestedItemId ?? entry.selectedItemId, matchLabel: entry.matchLabel === "Previously mapped" ? "Previously mapped" : line.suggestedItemId ? "Suggested match" : "Needs confirmation" } : entry)))}>
+                            Confirm match
                           </Button>
                           <Button type="button" variant="secondary" onClick={() => {
                             const source = recentInvoices.find((invoice) => invoice.id === selectedInvoiceId);
@@ -1271,7 +1279,7 @@ export function InventoryPage() {
                   {line.state === "linked" ? (
                     <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(10rem,0.55fr)_minmax(0,1fr)]">
                       <Field label="Inventory item">
-                        <select className="input" value={line.selectedItemId} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, selectedItemId: event.target.value, matchLabel: line.matchLabel === "Previously confirmed" ? "Previously confirmed" : line.matchLabel === "Auto-matched" && event.target.value === line.suggestedItemId ? "Auto-matched" : line.suggestedItemId === event.target.value ? "Suggested match" : "Not mapped" } : entry)))}>
+                        <select className="input" value={line.selectedItemId} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, selectedItemId: event.target.value, matchLabel: line.matchLabel === "Previously mapped" ? "Previously mapped" : line.suggestedItemId === event.target.value ? "Suggested match" : event.target.value ? "Needs confirmation" : "Not mapped" } : entry)))}>
                           <option value="">Choose item</option>
                           {sortInventoryItems(inventoryItems).map((candidate) => (
                             <option key={candidate.id} value={candidate.id}>
@@ -1626,7 +1634,7 @@ export function InventoryPage() {
                               {line.stockStatus} | {line.currentQuantity} {line.unit} on hand | PAR {line.parLevel} | Min {line.minimumQuantity}
                             </p>
                           </div>
-                          <Badge tone={line.status === "Ordered" ? "success" : "warning"}>{line.status}</Badge>
+                          <Badge tone={reorderStatusTone(line.status)}>{reorderStatusLabel(line.status)}</Badge>
                         </div>
                         <div className="mt-3 grid gap-3 md:grid-cols-3">
                           <MiniStat label="Suggested qty" value={`${line.suggestedQuantity} ${line.unit}`} />
@@ -1645,8 +1653,8 @@ export function InventoryPage() {
                             />
                           </label>
                           <div className="flex flex-wrap gap-2 self-end">
-                            <Button type="button" variant="secondary" onClick={() => handleMarkReorderOrdered(line.itemId)}>
-                              Mark as ordered
+                            <Button type="button" variant="secondary" onClick={() => handleSaveForReorder(line.itemId)}>
+                              Save for reorder
                             </Button>
                           </div>
                         </div>
