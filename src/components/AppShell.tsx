@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 
 export function AppShell() {
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50 overflow-x-hidden">
       <Sidebar />
       <div className="min-w-0 flex-1">
         <MobileNav />

@@ -305,10 +305,10 @@ function resolveMenuItem(item: MenuItemDraft, inventoryItems: InventoryItem[], p
     dataIssues.push("POS mapping missing");
   }
   if (ingredients.some((ingredient) => !ingredient.inventoryItem)) {
-    dataIssues.push("Demo cost in recipe");
+    dataIssues.push("Missing data");
   }
   if (ingredients.some((ingredient) => ingredient.recentPriceChange && ingredient.recentPriceChange.changePercent > 5)) {
-    dataIssues.push("Ingredient price increased");
+    dataIssues.push("Supplier price increased");
   }
 
   let marginTone: MarginTone = "success";
@@ -537,7 +537,7 @@ export function MenuCostingPage() {
             <button type="button" className="inline-flex" onClick={reviewMarginRisks} aria-label="Open margin risks">
               <Badge tone={metrics.riskItems > 0 ? "warning" : "success"}>Margin risks {metrics.riskItems}</Badge>
             </button>
-            <Badge tone={metrics.dataIssueItems > 0 ? "warning" : "neutral"}>Data gaps {metrics.dataIssueItems}</Badge>
+            <Badge tone={metrics.dataIssueItems > 0 ? "warning" : "neutral"}>Missing data {metrics.dataIssueItems}</Badge>
             <Badge tone={metrics.squareReady > 0 ? "success" : "neutral"}>Square-ready demo {metrics.squareReady}</Badge>
           </div>
         </Card>
@@ -562,7 +562,7 @@ export function MenuCostingPage() {
                       <Badge tone={item.recipeStatus === "Complete" ? "success" : "warning"}>{item.recipeStatus}</Badge>
                       <Badge tone={item.mappingStatus === "Mapped" ? "success" : "warning"}>{item.mappingStatus}</Badge>
                       {item.riskReasons.length > 0 ? <Badge tone="danger">Margin risk</Badge> : null}
-                      {item.dataIssues.length > 0 ? <Badge tone="warning">Needs data</Badge> : null}
+                      {item.dataIssues.length > 0 ? <Badge tone="warning">Missing data</Badge> : null}
                     </div>
                     <p className="mt-1 text-sm text-muted">{item.category}</p>
                   </div>
@@ -600,7 +600,7 @@ export function MenuCostingPage() {
                       </p>
                     </div>
                   {item.riskReasons.length > 0 ? <Badge tone={toneForRisk(item.riskReasons.length)}>Margin risk</Badge> : null}
-                  {item.dataIssues.length > 0 ? <Badge tone="warning">Needs data</Badge> : null}
+                  {item.dataIssues.length > 0 ? <Badge tone="warning">Missing data</Badge> : null}
                 </div>
               </button>
             ))}
@@ -810,7 +810,7 @@ export function MenuCostingPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold text-ink">{item.name}</p>
                       {item.riskReasons.length > 0 ? <Badge tone={toneForRisk(item.riskReasons.length)}>Margin risk</Badge> : null}
-                      {item.dataIssues.length > 0 ? <Badge tone="warning">Needs data</Badge> : null}
+                      {item.dataIssues.length > 0 ? <Badge tone="warning">Missing data</Badge> : null}
                     </div>
                       <p className="mt-1 text-sm text-muted">
                         {item.category} | {formatPercent(item.estimatedMargin)} margin | {formatCurrency(item.sellingPrice)} selling price
@@ -821,7 +821,7 @@ export function MenuCostingPage() {
                     </Button>
                   </div>
                   {item.dataIssues.length > 0 ? (
-                    <p className="mt-2 text-sm leading-6 text-slate-700">Data gaps: {item.dataIssues.join(" | ")}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">Missing data: {item.dataIssues.join(" | ")}</p>
                   ) : null}
                   {item.riskReasons.length > 0 ? (
                     <p className="mt-2 text-sm leading-6 text-slate-700">Margin risk: {item.riskReasons.join(" | ")}</p>

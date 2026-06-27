@@ -520,7 +520,7 @@ export function InvoiceUploadPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <MetricCard label="Needs confirmation" value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))} helper="Open items" />
-              <MetricCard label="Ready to receive" value={String(mappedItemCount)} helper="Mapped purchase lines" />
+              <MetricCard label="Ready for inventory" value={String(mappedItemCount)} helper="Mapped purchase lines" />
               <MetricCard label="Ready for export" value={String(purchaseExportSnapshot.readyForCsv)} helper="CSV-ready records" />
             </div>
           </div>
@@ -637,7 +637,7 @@ export function InvoiceUploadPage() {
             <Card className="min-w-0 border border-line bg-white p-5">
               <SectionHeader
                 title="Active review workspace"
-                description="The focused review modal still handles OCR checks, line items, save confirmation, and inventory handoff."
+                description="Review OCR fields, confirm line items, and save the purchase."
                 action={
                   hasActiveDraft ? (
                     <Button type="button" variant="secondary" onClick={() => setReviewOpen(true)}>
@@ -701,8 +701,8 @@ export function InvoiceUploadPage() {
 
             <Card className="min-w-0 border border-line bg-white p-5">
               <SectionHeader
-                title="Item mapping and receiving"
-                description="Map invoice lines to inventory items while the purchase is still open."
+                title="Match items to inventory"
+                description="Map invoice lines before the purchase is saved."
                 action={activeInventoryInvoice ? <Button type="button" variant="secondary" onClick={() => setMappingModalOpen(true)}>View all mappings</Button> : null}
               />
               {activeInventoryInvoice ? (
@@ -719,7 +719,7 @@ export function InvoiceUploadPage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
-                            <p className="mt-0.5 text-xs leading-5 text-muted">{line.sourceDescription || "Original description not available"} Â· {formatCurrency(line.unitPrice)}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-muted">{line.sourceDescription || "Original description not available"} - {formatCurrency(line.unitPrice)}</p>
                           </div>
                           <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
                         </div>

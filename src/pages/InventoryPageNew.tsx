@@ -166,6 +166,7 @@ export function InventoryPage() {
     confirmInventoryCountSession,
     cancelInventoryCountSession,
     upsertInventoryReorderIntent,
+    deleteInventoryReorderIntent,
     resetWorkspace,
     recentInvoices,
     saveInventoryItem,
@@ -202,6 +203,7 @@ export function InventoryPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const receivedInvoiceRouteRef = useRef<string | null>(null);
+  const openReorderFromState = (location.state as { openPanel?: string } | null)?.openPanel === "reorder";
 
   const selectedItem = useMemo(() => inventoryItems.find((item) => item.id === selectedItemId) ?? null, [inventoryItems, selectedItemId]);
   const selectedHistoryItemId = activePanel?.kind === "history" ? activePanel.itemId : null;
@@ -251,6 +253,10 @@ export function InventoryPage() {
   );
   const historyMovements = selectedHistoryItemMovements(selectedHistoryItemId, inventoryMovements);
   const reorderSuggestions = useMemo(() => buildReorderSuggestions(inventoryItems, inventoryReorderIntents), [inventoryItems, inventoryReorderIntents]);
+  const plannedReorderIds = useMemo(
+    () => new Set(inventoryReorderIntents.filter((intent) => intent.status === "Ordered").map((intent) => intent.itemId)),
+    [inventoryReorderIntents],
+  );
   const reorderGroups = useMemo(
     () => groupReorderSuggestionsBySupplier(reorderSuggestions.filter((line) => reorderSupplierFilter === "All suppliers" || line.supplier === reorderSupplierFilter)),
     [reorderSuggestions, reorderSupplierFilter],
@@ -359,6 +365,12 @@ export function InventoryPage() {
     setActivePanel(null);
   };
 
+  useEffect(() => {
+    if (openReorderFromState) {
+      setActivePanel({ kind: "reorder" });
+    }
+  }, [openReorderFromState]);
+
   const openAdjustPanel = (movementType: Exclude<InventoryMovementType, "invoice receipt"> = "adjustment", item?: InventoryItem | null) => {
     setErrorMessage("");
     setMessage("");
@@ -436,7 +448,7 @@ export function InventoryPage() {
         .map((group) => buildCopyOrderText(group.supplier, group.lines.map((line) => ({ itemName: line.itemName, adjustedQuantity: line.adjustedQuantity, unit: line.unit }))))
         .join("\n\n");
       navigator.clipboard?.writeText(text);
-      setMessage("Copied reorder list to clipboard.");
+      setMessage("Copied draft order list to clipboard.");
       return;
     }
 
@@ -460,7 +472,7 @@ export function InventoryPage() {
     anchor.download = "flowtally-reorder-list.csv";
     anchor.click();
     URL.revokeObjectURL(url);
-    setMessage("Exported reorder list as CSV.");
+    setMessage("Exported draft order CSV.");
   };
 
   const openHistoryPanel = (itemId: string) => {
@@ -689,12 +701,19 @@ export function InventoryPage() {
       costStatus: suggestion.costStatus,
       daysRemaining: suggestion.estimatedDaysRemaining ?? undefined,
       notes: suggestion.note,
-      status: "Needs ordering",
+      status: "Ordered",
       markedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    setMessage(`${suggestion.itemName} saved for reorder.`);
+    setMessage(`${suggestion.itemName} added to the reorder plan.`);
+  };
+
+  const handleRemoveFromReorderPlan = (itemId: string) => {
+    const suggestion = reorderSuggestions.find((line) => line.itemId === itemId);
+    if (!suggestion) return;
+    deleteInventoryReorderIntent(itemId);
+    setMessage(`${suggestion.itemName} removed from the reorder plan.`);
   };
 
   const lineItemButtons = (item: InventoryItem) => (
@@ -714,7 +733,7 @@ export function InventoryPage() {
   return (
     <PageLayout
       title="Inventory"
-      eyebrow="Back-office core"
+      eyebrow="Restaurant operations"
       description="Stock levels, receiving, waste, and reorder."
     >
       <Card className="surface-panel p-5 sm:p-6">
@@ -726,6 +745,7 @@ export function InventoryPage() {
           <div className="flex flex-wrap gap-2">
             <Badge tone="warning">Low stock {summary.inventoryLowStockCount}</Badge>
             <Badge tone="info">Reorder {summary.inventoryReorderNowCount}</Badge>
+            <Badge tone="info">Plan {inventoryReorderIntents.filter((intent) => intent.status === "Ordered").length}</Badge>
             <Badge tone="info">Pending receive {pendingReceiveInvoices.length}</Badge>
             <Badge tone={countSessionsSummary.draft || countSessionsSummary.ready ? "warning" : "neutral"}>
               Count {countSessionsSummary.draft || countSessionsSummary.ready ? "Not finished" : "Not started"}
@@ -934,13 +954,13 @@ export function InventoryPage() {
 
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
-              title="Reorder suggestions"
-              description="Compact reorder rows with the actions you need."
+              title="Reorder plan"
+              description="Grouped by supplier in the plan drawer. Order draft only."
               action={<Badge tone="info">{summary.inventoryItemsToReorderCount} need ordering</Badge>}
             />
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="secondary" onClick={openReorderPanel}>
-                Open reorder list
+                Open reorder plan
               </Button>
               <Button type="button" variant="ghost" onClick={() => openItemPanel("create")}>
                 New item
@@ -953,13 +973,13 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-ink">{line.itemName}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">
-                        {line.supplier} ? {line.currentQuantity} {line.unit} on hand ? order {line.adjustedQuantity} {line.unit}
+                        {line.supplier} · {line.currentQuantity} {line.unit} on hand · order {line.adjustedQuantity} {line.unit}
                       </p>
                     </div>
                     <Badge tone={reorderStatusTone(line.status)}>{reorderStatusLabel(line.status)}</Badge>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted">
-                    PAR {line.parLevel} ? Min {line.minimumQuantity} ? {line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}{line.estimatedCost === null ? "" : ` ? ${formatCurrency(line.estimatedCost)}`}
+                    PAR {line.parLevel} · Min {line.minimumQuantity} · {line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}{line.estimatedCost === null ? "" : ` · ${formatCurrency(line.estimatedCost)}`}
                   </p>
                 </div>
               ))}
@@ -1584,10 +1604,10 @@ export function InventoryPage() {
       ) : null}
 
       {activePanel?.kind === "reorder" ? (
-        <ModalShell title="Practical reorder list" onClose={() => setActivePanel(null)} wide>
+        <ModalShell title="Reorder plan" onClose={() => setActivePanel(null)} wide>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
             <div className="rounded-lg border border-line bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-700">
-              Suggested quantity uses PAR first, then minimum when PAR is absent. Cost is only shown when the purchase basis is known.
+              Suggested quantity uses PAR first, then minimum when PAR is absent. Cost is only shown when the purchase basis is known. Supplier sending is future-only and no message is sent.
             </div>
             <label className="block min-w-0">
               <span className="text-xs font-bold uppercase tracking-wide text-muted">Supplier filter</span>
@@ -1602,10 +1622,10 @@ export function InventoryPage() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onClick={() => beginReorderExport("copy")}>
-              Copy order list
+              Copy draft
             </Button>
             <Button type="button" variant="secondary" onClick={() => beginReorderExport("csv")}>
-              Export CSV
+              Export draft CSV
             </Button>
             <Button type="button" variant="ghost" onClick={() => setActivePanel(null)}>
               Close
@@ -1619,7 +1639,7 @@ export function InventoryPage() {
                     <div>
                       <p className="text-sm font-bold text-ink">{group.supplier}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">
-                        {group.itemCount} item{group.itemCount === 1 ? "" : "s"} | Estimated order total {group.estimatedOrderTotal ? formatCurrency(group.estimatedOrderTotal) : "Unavailable"}
+                        {group.itemCount} item{group.itemCount === 1 ? "" : "s"} · Estimated order total {group.estimatedOrderTotal ? formatCurrency(group.estimatedOrderTotal) : "Unavailable"}
                       </p>
                     </div>
                     <Badge tone="info">Needs action</Badge>
@@ -1631,16 +1651,19 @@ export function InventoryPage() {
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-ink">{line.itemName}</p>
                             <p className="mt-1 text-xs leading-5 text-muted">
-                              {line.stockStatus} | {line.currentQuantity} {line.unit} on hand | PAR {line.parLevel} | Min {line.minimumQuantity}
+                              {line.stockStatus} · {line.currentQuantity} {line.unit} on hand · PAR {line.parLevel} · Min {line.minimumQuantity}
                             </p>
                           </div>
                           <Badge tone={reorderStatusTone(line.status)}>{reorderStatusLabel(line.status)}</Badge>
                         </div>
                         <div className="mt-3 grid gap-3 md:grid-cols-3">
                           <MiniStat label="Suggested qty" value={`${line.suggestedQuantity} ${line.unit}`} />
-                          <MiniStat label="Days remaining" value={line.estimatedDaysRemaining ? `About ${Math.max(0, Math.round(line.estimatedDaysRemaining))} days` : "Usage not configured"} />
+                          <MiniStat label="Latest price" value={line.latestPurchasePrice ? formatCurrency(line.latestPurchasePrice) : "No price yet"} />
                           <MiniStat label="Estimated cost" value={line.estimatedCost === null ? "Cost unavailable" : formatCurrency(line.estimatedCost)} />
                         </div>
+                        <p className="mt-2 text-xs leading-5 text-muted">
+                          {line.estimatedDaysRemaining ? `About ${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}
+                        </p>
                         <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.45fr)]">
                           <label className="block min-w-0">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Order quantity</span>
@@ -1653,9 +1676,15 @@ export function InventoryPage() {
                             />
                           </label>
                           <div className="flex flex-wrap gap-2 self-end">
-                            <Button type="button" variant="secondary" onClick={() => handleSaveForReorder(line.itemId)}>
-                              Save for reorder
-                            </Button>
+                            {plannedReorderIds.has(line.itemId) ? (
+                              <Button type="button" variant="secondary" onClick={() => handleRemoveFromReorderPlan(line.itemId)}>
+                                Remove from plan
+                              </Button>
+                            ) : (
+                              <Button type="button" variant="secondary" onClick={() => handleSaveForReorder(line.itemId)}>
+                                Add to reorder plan
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </div>

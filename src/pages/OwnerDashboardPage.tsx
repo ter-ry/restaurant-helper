@@ -243,7 +243,7 @@ export function OwnerDashboardPage() {
         to: purchasesRoute,
       },
       {
-        title: "Review + match",
+        title: "Review items",
         detail: needsReview ? `${summary.invoiceReviewQueueCount} invoices still need confirmation.` : "Matched items are ready for the inventory update.",
         status: needsReview ? "Needs review" : "Done",
         tone: needsReview ? "warning" : "success",
@@ -257,8 +257,8 @@ export function OwnerDashboardPage() {
         to: inventoryRoute,
       },
       {
-        title: "Reorder check",
-        detail: needsReorder ? `${summary.inventoryItemsToReorderCount} items need ordering.` : "No reorder action needed right now.",
+        title: "Reorder plan",
+        detail: needsReorder ? `${summary.inventoryItemsToReorderCount} items need ordering.` : "No reorder plan needed right now.",
         status: needsReorder ? "Alert" : "Done",
         tone: needsReorder ? "warning" : "success",
         to: inventoryRoute,
@@ -389,6 +389,8 @@ export function OwnerDashboardPage() {
   const topIncrease = dashboard.costChanges.find((change) => change.status === "Increased");
   const topDecrease = dashboard.costChanges.find((change) => change.status === "Decreased");
   const lowStockItem = dashboard.reorderSuggestions[0];
+  const plannedReorderCount = inventoryReorderIntents.filter((intent) => intent.status === "Ordered").length;
+  const topReorderSupplier = dashboard.reorderSuggestions[0]?.supplier ?? "No reorder supplier yet";
   const fastestUsageItem = [...inventoryItems]
     .filter((item) => typeof item.averageDailyUsage === "number" && item.averageDailyUsage > 0)
     .sort((a, b) => (b.averageDailyUsage ?? 0) - (a.averageDailyUsage ?? 0) || a.name.localeCompare(b.name))[0];
@@ -426,19 +428,19 @@ export function OwnerDashboardPage() {
 
 
   return (
-    <PageLayout title="Dashboard" description="Back-office control between POS and QuickBooks.">
-      <Card className="p-5 sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="info">{demo.customization.restaurantName}</Badge>
-              <Badge tone="neutral">{weekLabel()}</Badge>
+      <PageLayout title="Dashboard" description="Purchasing, inventory, supplier prices, and reordering.">
+        <Card className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="info">{demo.customization.restaurantName}</Badge>
+                <Badge tone="neutral">{weekLabel()}</Badge>
+              </div>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Works alongside your POS and accounting software.</h2>
             </div>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Back-office control between POS and QuickBooks.</h2>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>
-              Upload purchase
+            <div className="flex flex-wrap gap-2">
+              <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>
+                Upload purchase
             </Link>
             <Button type="button" variant="secondary" onClick={() => setDemoFlowOpen(true)} icon={<Sparkles className="h-4 w-4" />}>
               {heroFlowLabel}
@@ -453,7 +455,7 @@ export function OwnerDashboardPage() {
             Enter daily close
           </Link>
           <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to={closeReportsRoute}>
-            Open export
+            Open bookkeeping export
           </Link>
         </div>
       </Card>
@@ -473,6 +475,28 @@ export function OwnerDashboardPage() {
           <StatCard label="Supplier price increases" value={String(dashboard.priceIncreaseCount)} helper={dashboard.priceIncreaseCount > 0 ? "Check the biggest changes" : "No supplier price increases"} icon={<AlertTriangle className="h-5 w-5" />} />
           <StatCard label="Items needing reorder" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryReorderNowCount} need reorder now` : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
         </div>
+      </section>
+
+      <section className="mt-7">
+        <SectionHeader title="Reorder plan" />
+        <Card className="p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={summary.inventoryItemsToReorderCount > 0 ? "warning" : "success"}>{summary.inventoryItemsToReorderCount} items need reorder</Badge>
+            <Badge tone={plannedReorderCount > 0 ? "info" : "neutral"}>{plannedReorderCount} added to reorder plan</Badge>
+            <Badge tone="neutral">Top supplier: {topReorderSupplier}</Badge>
+            <Badge tone="info">Supplier sending is future-only</Badge>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted">Build the order draft here, group items by supplier, and keep it local until you are ready to hand it off.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              to={inventoryRoute}
+              state={{ openPanel: "reorder" }}
+            >
+              Open reorder plan
+            </Link>
+          </div>
+        </Card>
       </section>
 
       <section className="mt-7">

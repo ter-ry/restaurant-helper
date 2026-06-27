@@ -32,7 +32,7 @@ export function Sidebar() {
         <FlowtallyMark className="h-10 w-10 shrink-0" />
         <span>
           <span className="block text-sm font-bold">Flowtally</span>
-          <span className="block text-xs text-muted">{demo.customization.restaurantName} back office core</span>
+          <span className="block text-xs text-muted">{demo.customization.restaurantName} restaurant operations</span>
         </span>
       </NavLink>
       <nav className="mt-8 space-y-6">
@@ -63,7 +63,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-8 rounded-lg border border-line bg-slate-50 p-4">
-        <p className="text-sm font-bold text-ink">Back Office Core</p>
+        <p className="text-sm font-bold text-ink">Restaurant operations</p>
         <p className="mt-1 text-xs leading-5 text-muted">Single-restaurant demo data stored locally in this browser.</p>
       </div>
     </aside>

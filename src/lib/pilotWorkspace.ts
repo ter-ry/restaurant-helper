@@ -92,6 +92,7 @@ interface PilotWorkspaceContextValue extends PilotWorkspaceState {
   confirmInventoryCountSession: (sessionId: string) => { confirmed: boolean; changedCount: number };
   cancelInventoryCountSession: (sessionId: string) => void;
   upsertInventoryReorderIntent: (intent: PilotInventoryState["reorderIntents"][number]) => void;
+  deleteInventoryReorderIntent: (intentId: string) => void;
   recordInventoryMovement: (itemId: string, movementType: "manual addition" | "adjustment" | "usage" | "waste" | "spoilage / expired" | "damaged" | "staff meal / comped" | "breakage" | "count adjustment" | "physical count adjustment" | "correction" | "other", quantityDelta: number, note?: string) => InventoryMovement | null;
   recordInventoryCount: (itemId: string, quantity: number, note?: string) => InventoryMovement | null;
   deleteReconciliation: (id: string) => void;
@@ -204,6 +205,40 @@ function createSeedInvoices(): PilotInvoiceRecord[] {
     });
 
   const seedInvoices: Array<Pick<PilotInvoiceDraft, "supplier" | "invoiceDate" | "invoiceNumber" | "subtotal" | "tax" | "totalAmount" | "status" | "notes" | "lineItems"> & { createdAt: string }> = [
+    {
+      supplier: "GTA Beverage Supply",
+      invoiceDate: "2026-05-26",
+      invoiceNumber: "GTA-5908",
+      subtotal: 138.2,
+      tax: 17.97,
+      totalAmount: 156.17,
+      status: "Ready",
+      notes: "Earlier week tea and syrup top-up for baseline comparisons.",
+      createdAt: "2026-05-26T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("gta-prev-1", "Tapioca Pearls 3kg Bag", 1, "bag", 41, 41, "Tea / beverage base"),
+        seedLineItem("gta-prev-2", "Brown Sugar Syrup 5L", 1, "bottle", 27.2, 27.2, "Syrups / toppings"),
+        seedLineItem("gta-prev-3", "Black Tea Leaves 1kg", 1, "bag", 34, 34, "Tea / beverage base"),
+        seedLineItem("gta-prev-4", "Oat Milk Cartons", 1, "case", 36, 36, "Dairy"),
+      ],
+    },
+    {
+      supplier: "Metro Packaging",
+      invoiceDate: "2026-05-29",
+      invoiceNumber: "MPC-2114",
+      subtotal: 149.4,
+      tax: 19.42,
+      totalAmount: 168.82,
+      status: "Ready",
+      notes: "Previous week packaging restock before the weekend rush.",
+      createdAt: "2026-05-29T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("mpc-prev-1", "700ml plastic cups", 1, "case", 60, 60, "Packaging"),
+        seedLineItem("mpc-prev-2", "Cup sealing film", 1, "roll", 48, 48, "Packaging"),
+        seedLineItem("mpc-prev-3", "Straws", 1, "box", 19.2, 19.2, "Packaging"),
+        seedLineItem("mpc-prev-4", "Cup lids", 1, "case", 22.2, 22.2, "Packaging"),
+      ],
+    },
     {
       supplier: "GTA Beverage Supply",
       invoiceDate: "2026-06-01",
@@ -1045,6 +1080,15 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         const nextInventory = {
           ...state.inventory,
           reorderIntents: [normalizeReorderIntent(intent), ...state.inventory.reorderIntents.filter((candidate) => candidate.id !== intent.id)],
+        };
+        const nextState = { ...state, inventory: nextInventory };
+        saveWorkspace(nextState);
+        setState(nextState);
+      },
+      deleteInventoryReorderIntent: (intentId) => {
+        const nextInventory = {
+          ...state.inventory,
+          reorderIntents: state.inventory.reorderIntents.filter((candidate) => candidate.id !== intentId),
         };
         const nextState = { ...state, inventory: nextInventory };
         saveWorkspace(nextState);
