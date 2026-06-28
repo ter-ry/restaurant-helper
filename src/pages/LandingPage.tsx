@@ -1,66 +1,127 @@
 import {
   ArrowRight,
+  ArrowUpDown,
+  BadgeDollarSign,
   BarChart3,
-  BookOpenCheck,
-  Calculator,
   CheckCircle2,
-  ClipboardList,
+  Download,
   Handshake,
   Mail,
   MessageSquareText,
+  Package,
   ReceiptText,
-  Truck,
+  RotateCcw,
+  ScanText,
 } from "lucide-react";
-import type { CSSProperties, FormEvent, ReactNode } from "react";
+import type { CSSProperties, ComponentType, FormEvent, ReactNode } from "react";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { trackEvent } from "../lib/analytics";
 import { FlowtallyMark } from "../components/FlowtallyMark";
+import { trackEvent } from "../lib/analytics";
 import { isFormEndpointConfigured, submitForm } from "../lib/formSubmission";
 
 const navLinks = [
-  ["Problem", "#problem"],
-  ["What It Organizes", "#workflows"],
-  ["Pilot", "#pilot"],
+  ["Overview", "#hero"],
+  ["How it fits", "#tools"],
+  ["Features", "#features"],
+  ["Compare", "#compare"],
+  ["Early Pilot", "#pilot"],
   ["Contact", "#contact"],
 ];
 
-const problemCards = [
-  "End-of-day records take too long to clean up",
-  "Delivery payouts, fees, and refunds are hard to follow",
-  "Supplier invoices, spending notes, and receipts pile up",
-  "Bookkeeping handoff gets messy",
-  "Records are split across POS, paper, Excel, receipts, and apps",
-];
+const heroBadges = ["Independent restaurants", "Purchasing + inventory", "Local Toronto support"];
 
-const focusAreas = [
+const toolRows = [
   {
-    title: "Invoices, Expenses & Spending",
-    text: "Organize supplier invoices, expense notes, receipts, and spending categories without relying on scattered notes or messy spreadsheets.",
+    title: "Invoice capture",
+    text: "Capture invoices and receipts without retyping.",
     Icon: ReceiptText,
   },
   {
-    title: "Daily Close & Reconciliation",
-    text: "Keep daily records organized across POS totals, cash/card/delivery payments, refunds, discounts, voids, and closing notes.",
-    Icon: ClipboardList,
+    title: "Inventory and stock",
+    text: "See what is in stock and what changed.",
+    Icon: Package,
   },
   {
-    title: "Delivery Payout & Fee Checks",
-    text: "Review delivery app payouts, commissions, promotions, refunds, and expected sales so each channel is easier to understand.",
-    Icon: Truck,
+    title: "Reorder signals",
+    text: "Know what to buy before it becomes urgent.",
+    Icon: RotateCcw,
   },
 ];
 
-const previewMetrics = [
-  ["Sales recorded", "$4,640", "Ready"],
-  ["Delivery fees", "$186", "Check"],
-  ["New invoices", "2", "Review"],
+const featureCards = [
+  {
+    title: "Invoice Capture",
+    text: "Upload invoices and turn them into usable purchase records.",
+    Icon: ScanText,
+  },
+  {
+    title: "Inventory",
+    text: "Track stock, receiving, waste, and low-stock items together.",
+    Icon: Package,
+  },
+  {
+    title: "Supplier Prices",
+    text: "Spot price changes before the next order goes out.",
+    Icon: BadgeDollarSign,
+  },
+  {
+    title: "Stock Movement",
+    text: "Link counts and adjustments back to what was purchased.",
+    Icon: ArrowUpDown,
+  },
+  {
+    title: "Reordering",
+    text: "Keep buy-now items and thresholds visible at a glance.",
+    Icon: RotateCcw,
+  },
+  {
+    title: "Export Ready",
+    text: "Keep purchase records organized for clean CSV export.",
+    Icon: Download,
+  },
 ];
 
-const previewTasks = [
-  ["Daily close", "Cash counted, card total matched, 1 refund note", "Done"],
-  ["Supplier invoice", "Coffee beans changed from $82 to $91", "Price note"],
-  ["Payout check", "DoorDash payout is $42 below expected sales", "Review"],
+const compareColumns = [
+  {
+    title: "Spreadsheets",
+    accent: false,
+    bullets: ["Fast to start, harder to keep tidy", "Manual updates and version drift", "No clear workflow for purchasing or stock"],
+  },
+  {
+    title: "Enterprise software",
+    accent: false,
+    bullets: ["Usually broader than a small restaurant needs", "More setup and more training", "Can feel heavy for day-to-day use"],
+  },
+  {
+    title: "Flowtally",
+    accent: true,
+    bullets: [
+      "Built for independent restaurants",
+      "Fast setup and easy to learn",
+      "Purchasing and inventory focused",
+      "Affordable monthly pricing",
+      "Toronto support",
+    ],
+  },
+];
+
+const pilotSteps = [
+  {
+    title: "Share your workflow",
+    text: "Tell us how purchasing and inventory work today.",
+    Icon: MessageSquareText,
+  },
+  {
+    title: "We shape the pilot",
+    text: "We tailor the demo to the way your restaurant already runs.",
+    Icon: Handshake,
+  },
+  {
+    title: "Walk the flow",
+    text: "See how one purchase becomes inventory, reorder, and export-ready records.",
+    Icon: Mail,
+  },
 ];
 
 const seededValue = (index: number, salt: number) => {
@@ -68,7 +129,7 @@ const seededValue = (index: number, salt: number) => {
   return value - Math.floor(value);
 };
 
-const particles = Array.from({ length: 56 }, (_, index) => {
+const particles = Array.from({ length: 40 }, (_, index) => {
   const x = Math.round(seededValue(index, 1) * 100);
   const y = Math.round(seededValue(index, 2) * 100);
   const size = Number((0.9 + seededValue(index, 3) * 0.9).toFixed(2));
@@ -81,23 +142,10 @@ const particles = Array.from({ length: 56 }, (_, index) => {
   return { x, y, size, delay, duration, driftX, driftY, opacity };
 });
 
-const pilotSteps = [
-  {
-    title: "Share what wastes time",
-    text: "Tell us which admin or money-visibility task feels repetitive, messy, or easy to miss.",
-    Icon: Calculator,
-  },
-  {
-    title: "The workflow is mapped",
-    text: "The records involved are mapped across POS reports, invoices, delivery apps, notes, and spreadsheets.",
-    Icon: BarChart3,
-  },
-  {
-    title: "The first version is shaped",
-    text: "If the workflow looks useful, it can guide the early Flowtally pilot.",
-    Icon: Mail,
-  },
-];
+type SubmissionState = {
+  type: "idle" | "success" | "notice" | "error";
+  message: string;
+};
 
 function SectionHeading({
   eyebrow,
@@ -133,11 +181,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const inputClass =
   "min-h-11 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]";
 
-type SubmissionState = {
-  type: "idle" | "success" | "notice" | "error";
-  message: string;
-};
-
 function FloatingParticles() {
   return (
     <div className="floating-particles pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
@@ -159,6 +202,74 @@ function FloatingParticles() {
           }
         />
       ))}
+    </div>
+  );
+}
+
+function WorkflowRow({ title, text, Icon }: { title: string; text: string; Icon: ComponentType<{ className?: string }> }) {
+  return (
+    <div className="rounded-2xl border border-[#E2E8F0] bg-white/86 p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F8FAFC] text-[#0F766E]">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-[#0F172A]">{title}</p>
+          <p className="mt-1 text-sm leading-6 text-[#64748B]">{text}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({ title, text, Icon }: { title: string; text: string; Icon: ComponentType<{ className?: string }> }) {
+  return (
+    <div className="surface-card reveal rounded-2xl border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
+      <div className="flex items-center justify-between gap-3">
+        <Icon className="h-6 w-6 text-[#0D9488]" />
+        <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
+          Feature
+        </span>
+      </div>
+      <h3 className="mt-5 text-base font-semibold text-[#0F172A]">{title}</h3>
+      <p className="mt-3 text-sm leading-6 text-[#64748B]">{text}</p>
+    </div>
+  );
+}
+
+function ComparisonColumn({
+  title,
+  bullets,
+  accent,
+}: {
+  title: string;
+  bullets: string[];
+  accent: boolean;
+}) {
+  return (
+    <div
+      className={`reveal rounded-2xl border p-5 ${
+        accent
+          ? "surface-accent border-[#0F172A] text-[#F8FAFC] shadow-[0_20px_56px_rgba(15,23,42,0.18)]"
+          : "surface-card text-[#0F172A]"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className={`text-base font-semibold ${accent ? "text-[#F8FAFC]" : "text-[#0F172A]"}`}>{title}</h3>
+        {accent ? (
+          <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#E2E8F0]">
+            Recommended
+          </span>
+        ) : null}
+      </div>
+      <ul className={`mt-4 space-y-3 text-sm leading-6 ${accent ? "text-slate-200" : "text-[#64748B]"}`}>
+        {bullets.map((bullet) => (
+          <li key={bullet} className="flex gap-2">
+            <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${accent ? "text-[#99F6E4]" : "text-[#0D9488]"}`} />
+            <span>{bullet}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -207,6 +318,7 @@ export function LandingPage() {
     <main className="relative min-h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A]">
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_16%_12%,rgba(96,115,135,0.14),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(31,37,45,0.08),transparent_36%),linear-gradient(135deg,#F8FAFC_0%,#F1F5F9_42%,#E2E8F0_100%)]" />
       <FloatingParticles />
+
       <header className="sticky top-0 z-20 border-b border-[#E2E8F0]/85 bg-[#F8FAFC]/88 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
           <a href="#" className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
@@ -220,54 +332,36 @@ export function LandingPage() {
               </a>
             ))}
           </nav>
-          <a
-            href="#contact"
-            onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "header" })}
-            className="premium-button inline-flex min-h-10 items-center justify-center rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
-          >
-            <span className="sm:hidden">Share</span>
-            <span className="hidden sm:inline">Tell us what wastes time</span>
-          </a>
         </div>
       </header>
 
-      <section className="relative z-10 overflow-hidden border-b border-[#E2E8F0] bg-gradient-to-br from-[#F8FAFC]/90 via-[#F1F5F9]/80 to-[#E2E8F0]/82">
-        <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-[72px] md:py-[80px] lg:min-h-[720px] lg:grid-cols-[minmax(0,1fr)_minmax(480px,0.9fr)] lg:gap-12 lg:px-8 xl:min-h-[760px]">
+      <section id="hero" className="relative z-10 overflow-hidden border-b border-[#E2E8F0] bg-gradient-to-br from-[#F8FAFC]/90 via-[#F1F5F9]/82 to-[#E2E8F0]/84">
+        <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-[72px] md:py-[84px] lg:min-h-[680px] lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] lg:gap-12 lg:px-8">
           <div className="reveal min-w-0">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/84 px-3 py-1 text-sm font-bold text-[#334155] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4 text-[#0D9488]" />
-              Local pilot conversations open
+              For independent restaurants
             </p>
-            <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.02] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.2vw,4rem)]">
-              <span className="block">Save time on admin.</span>
-              <span className="block">See where money is going.</span>
+            <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.04] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.3vw,4.25rem)]">
+              Restaurant purchasing and inventory, without the spreadsheet mess.
             </h1>
-            <div className="mt-6 grid max-w-3xl gap-3">
-              <p className="heading-balance text-lg font-semibold leading-7 text-[#334155] md:text-xl">
-                Flowtally helps restaurants organize invoices, delivery payouts, daily records, and spending information
-                without changing their POS.
-              </p>
-            </div>
-            <div className="mt-5 flex max-w-2xl flex-wrap gap-2">
-              {["Less manual admin", "Clearer spending records", "Cleaner handoff"].map((value) => (
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#475569] md:text-xl">
+              Keep purchases, stock, supplier prices, and reorders in one simple place.
+            </p>
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              {heroBadges.map((value) => (
                 <span key={value} className="surface-card rounded-full border px-3 py-2 text-sm font-bold text-[#334155]">
                   {value}
                 </span>
               ))}
             </div>
+
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a
-                href="#contact"
-                onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "hero" })}
-                className="premium-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
-              >
-                <MessageSquareText className="h-4 w-4" />
-                Tell us what wastes time
-              </a>
               <Link
                 to="/pilot"
                 onClick={() => trackEvent("cta_join_early_pilot_click", { location: "hero" })}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#F8FAFC]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
               >
                 Join Early Pilot
                 <ArrowRight className="h-4 w-4" />
@@ -275,7 +369,7 @@ export function LandingPage() {
               <Link
                 to="/demo"
                 onClick={() => trackEvent("cta_view_demo_click", { location: "hero" })}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#D6E4E2] bg-[#F0FAF8] px-5 py-3 text-sm font-bold text-[#0F766E] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#E6FFFB]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] shadow-sm transition hover:-translate-y-0.5 hover:border-[#CBD5E1] hover:bg-[#F8FAFC]"
               >
                 View demo
                 <ArrowRight className="h-4 w-4" />
@@ -284,262 +378,213 @@ export function LandingPage() {
           </div>
 
           <div className="reveal relative min-w-0">
-            <div className="surface-panel relative mx-auto w-full max-w-[620px] rounded-lg border p-4 backdrop-blur md:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
+            <div className="surface-panel relative mx-auto w-full max-w-[520px] rounded-[28px] border p-5 backdrop-blur md:p-6">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Concept preview &mdash; demo data</p>
-                  <p className="mt-1 text-lg font-bold text-[#0F172A]">Flowtally</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">What it keeps tidy</p>
+                  <p className="mt-1 text-lg font-bold text-[#0F172A]">Simple day-to-day workflow</p>
                 </div>
-                <div className="inline-flex rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-1 text-xs font-bold text-[#64748B]">
-                  <span className="rounded-md bg-white px-3 py-1 text-[#0F172A] shadow-sm">Today</span>
-                  <span className="px-3 py-1">Week</span>
-                </div>
+                <span className="rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
+                  Today
+                </span>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                {previewMetrics.map(([label, value, status]) => (
-                  <div key={label} className="surface-card rounded-lg border p-4 shadow-none">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">{label}</p>
-                      <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[10px] font-bold text-[#64748B]">{status}</span>
-                    </div>
-                    <p className="mt-3 text-xl font-semibold text-[#0F172A]">{value}</p>
-                  </div>
+              <div className="mt-5 grid gap-3">
+                {toolRows.map(({ title, text, Icon }) => (
+                  <WorkflowRow key={title} title={title} text={text} Icon={Icon} />
                 ))}
               </div>
 
-              <div className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/86 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-bold text-[#0F172A]">Review queue</p>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1 text-xs font-bold text-[#334155]">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-[#0D9488]" />
-                    3 tasks
-                  </span>
+              <div className="mt-4 rounded-[24px] border border-[#0F172A]/10 bg-white p-4 shadow-[0_16px_42px_rgba(31,41,55,0.08)]">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0F172A] text-white">
+                    <BarChart3 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#0F172A]">Keep the middle of the operation organized.</p>
+                    <p className="mt-1 text-sm leading-6 text-[#64748B]">Less retyping. Fewer missed items.</p>
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-3">
-                  {previewTasks.slice(0, 2).map(([label, text, status]) => (
-                    <div key={label} className="grid gap-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                      <div>
-                        <p className="text-sm font-bold text-[#0F172A]">{label}</p>
-                        <p className="mt-1 text-sm leading-6 text-[#64748B]">{text}</p>
-                      </div>
-                      <span className="w-fit rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-bold text-[#64748B]">{status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="surface-card rounded-lg border p-4 backdrop-blur">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Bookkeeper handoff</p>
-                <p className="mt-2 text-sm font-semibold text-[#0F172A]">4 records ready to summarize</p>
-                <p className="mt-1 text-xs leading-5 text-[#64748B]">Draft report can be prepared.</p>
-              </div>
-
-              <div className="surface-accent rounded-lg border p-4 text-[#F8FAFC]">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#cbd5e1]">Payout alert</p>
-                <p className="mt-2 text-sm font-semibold">DoorDash is $42 below expected sales.</p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="problem" className="surface-section relative overflow-hidden px-5 py-16 lg:px-8">
+      <section id="tools" className="surface-section relative overflow-hidden border-b border-[#E2E8F0] px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto max-w-7xl">
-          <SectionHeading
-            title="Restaurant admin gets messy when every record lives somewhere different."
-            headingClassName="max-w-4xl"
-          >
-            POS reports, supplier invoices, delivery apps, paper notes, spreadsheets, and accountant requests all tell
-            part of the money story. Flowtally helps bring the work into one clearer flow.
+          <SectionHeading eyebrow="How it fits" title="Works with the tools you already use.">
+            Replace spreadsheets, notebooks, and scattered purchasing admin while keeping your existing POS and accounting software.
           </SectionHeading>
-          <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {problemCards.map((problem) => (
-            <div key={problem} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
-              <BookOpenCheck className="h-5 w-5 text-[#0D9488]" />
-              <p className="mt-4 text-sm font-semibold leading-6 text-[#0F172A]">{problem}</p>
+
+          <div className="mt-8 mx-auto max-w-3xl">
+            <div className="rounded-[28px] border border-[#E2E8F0] bg-white/80 p-5 shadow-[0_18px_50px_rgba(31,41,55,0.09)] md:p-6">
+              <div className="mx-auto flex max-w-xl flex-col items-center gap-4 text-center">
+                <div className="surface-card w-full rounded-[24px] border p-4 md:max-w-[280px]">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">POS</p>
+                  <p className="mt-2 text-base font-semibold text-[#0F172A]">Sales stay in your POS.</p>
+                </div>
+
+                <div className="flex items-center justify-center text-2xl font-bold text-[#94A3B8]">&darr;</div>
+
+                <div className="surface-accent w-full rounded-[28px] border p-5 md:max-w-[420px]">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#cbd5e1]">Flowtally</p>
+                  <p className="mt-2 text-2xl font-semibold text-[#F8FAFC]">Purchasing, inventory, prices, reorders.</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-200">
+                    The messy middle stays organized.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center text-2xl font-bold text-[#94A3B8]">&darr;</div>
+
+                <div className="surface-card w-full rounded-[24px] border p-4 md:max-w-[280px]">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">Accounting</p>
+                  <p className="mt-2 text-base font-semibold text-[#0F172A]">Clean records go to accounting.</p>
+                </div>
+              </div>
             </div>
-          ))}
           </div>
-          <a
-            href="#contact"
-            onClick={() => trackEvent("cta_tell_wastes_time_click", { location: "problem" })}
-            className="premium-button mt-8 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
-          >
-            Tell us what wastes the most time
-            <ArrowRight className="h-4 w-4" />
-          </a>
         </div>
       </section>
 
-      <section id="workflows" className="relative overflow-hidden border-y border-[#E2E8F0] bg-white/78 py-16">
-        <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
-          <SectionHeading eyebrow="What it helps organize" title="One system for the records around the money.">
-            Flowtally is being shaped around the weekly admin work restaurant owners already deal with - the work that
-            takes time, creates mistakes, or makes it harder to see where money is going.
+      <section id="features" className="relative overflow-hidden px-5 py-16 lg:px-8">
+        <div className="relative z-10 mx-auto max-w-7xl">
+          <SectionHeading eyebrow="Features" title="Purchasing and inventory, without the admin drag.">
+            Built for the restaurant work that usually lives in spreadsheets, notes, texts, and memory.
           </SectionHeading>
-          <div className="mt-8 grid gap-4 lg:grid-cols-3">
-            {focusAreas.map(({ title, text, Icon }) => (
-              <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.10)]">
-                <div className="flex items-center justify-between gap-3">
-                  <Icon className="h-6 w-6 text-[#0D9488]" />
-                  <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Module</span>
-                </div>
-                <h3 className="mt-5 text-base font-semibold text-[#0F172A]">{title}</h3>
-                <p className="mt-3 text-sm leading-6 text-[#64748B]">{text}</p>
-              </div>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {featureCards.map(({ title, text, Icon }) => (
+              <FeatureCard key={title} title={title} text={text} Icon={Icon} />
             ))}
           </div>
-          <div className="surface-panel reveal mt-4 rounded-lg border p-5">
-            <p className="text-sm font-semibold text-[#0F172A]">Bookkeeper-ready reports</p>
-            <p className="mt-2 text-sm leading-6 text-[#64748B]">
-              Turn cleaned records into simple weekly or monthly reports for owners, managers, or bookkeepers.
-            </p>
-          </div>
         </div>
       </section>
 
-      <section className="relative overflow-hidden px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1fr]">
-          <SectionHeading eyebrow="Positioning" title="Not another POS system.">
-            Flowtally is not trying to replace Square, Clover, TouchBistro, Lightspeed, Toast, accounting software, or
-            inventory tools. It is not generic AI software or just an invoice tracker. It is being built for the messy
-            admin work around the tools restaurants already use.
+      <section id="compare" className="surface-section relative overflow-hidden border-y border-[#E2E8F0] px-5 py-16 lg:px-8">
+        <div className="relative z-10 mx-auto max-w-7xl">
+          <SectionHeading eyebrow="Compare" title="Why not keep using spreadsheets?">
+            Choose the lightest tool that actually keeps purchasing and inventory under control.
           </SectionHeading>
-          <div className="surface-accent reveal grid overflow-hidden rounded-lg border md:grid-cols-2">
-            <div className="border-b border-white/10 bg-white/5 p-6 md:border-b-0 md:border-r">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#cbd5e1]">Your current tools</p>
-              <p className="mt-4 text-lg font-semibold leading-7 text-[#F8FAFC]">
-                POS reports, Excel sheets, paper notes, supplier invoices, delivery apps, bookkeeper messages
-              </p>
-            </div>
-            <div className="bg-gradient-to-br from-[#F8FAFC] to-[#F1F5F9] p-6">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">Flowtally</p>
-              <p className="mt-4 text-lg font-semibold leading-7 text-[#0F172A]">
-                Organized records, payout checks, spending visibility, cleaner handoff, bookkeeper-ready reports
-              </p>
-            </div>
+
+          <div className="mt-8 grid gap-4 lg:grid-cols-3">
+            {compareColumns.map(({ title, bullets, accent }) => (
+              <ComparisonColumn key={title} title={title} bullets={bullets} accent={accent} />
+            ))}
           </div>
         </div>
       </section>
 
       <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#E2E8F0] py-16">
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.9fr_1fr] lg:px-8">
-          <SectionHeading eyebrow="How it starts" title="Help shape the first version.">
-            Flowtally is speaking with independent restaurants, cafes, bakeries, takeout shops, bubble tea shops, food
-            trucks, and small food businesses in Toronto/GTA. The goal is to find the admin task that wastes the most
-            time, then shape a focused first version around that workflow. No private numbers are needed.
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.92fr_1fr] lg:px-8">
+          <SectionHeading eyebrow="Early Pilot" title="A focused pilot built around a real restaurant workflow.">
+            We're speaking with independent restaurants across Toronto and the GTA that want a cleaner way to handle purchasing and inventory.
           </SectionHeading>
           <div className="grid gap-4 sm:grid-cols-3">
             {pilotSteps.map(({ title, text, Icon }) => (
-              <div key={title} className="surface-card reveal rounded-lg border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.08)]">
+              <div key={title} className="surface-card reveal rounded-2xl border p-5 transition duration-300 hover:-translate-y-1 hover:border-[#94a3b8] hover:shadow-[0_18px_45px_rgba(31,41,55,0.08)]">
                 <Icon className="h-5 w-5 text-[#0D9488]" />
                 <p className="mt-4 text-sm font-semibold leading-6 text-[#0F172A]">{title}</p>
                 <p className="mt-2 text-sm leading-6 text-[#64748B]">{text}</p>
               </div>
             ))}
           </div>
-          <Link
-            to="/pilot"
-            onClick={() => trackEvent("cta_join_early_pilot_click", { location: "pilot" })}
-            className="premium-button inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
-          >
-            Join Early Pilot
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Link
-            to="/demo"
-            onClick={() => trackEvent("cta_view_demo_click", { location: "pilot" })}
-            className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-lg border border-[#D6E4E2] bg-[#F0FAF8] px-5 py-3 text-sm font-bold text-[#0F766E] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#E6FFFB]"
-          >
-            View demo
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link
+              to="/pilot"
+              onClick={() => trackEvent("cta_join_early_pilot_click", { location: "pilot" })}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
+            >
+              Join Early Pilot
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              to="/demo"
+              onClick={() => trackEvent("cta_view_demo_click", { location: "pilot" })}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] shadow-sm transition hover:-translate-y-0.5 hover:border-[#CBD5E1] hover:bg-[#F8FAFC]"
+            >
+              View demo
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </section>
 
       <section id="contact" className="relative overflow-hidden px-5 py-16 lg:px-8">
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.7fr_1fr]">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.72fr_1fr]">
           <div>
-            <SectionHeading eyebrow="Contact" title="Share what wastes the most time">
-              Please do not submit private financial data. Only the workflow and pain points are needed. Even 2-3
-              sentences is enough.
+            <SectionHeading eyebrow="Contact" title="Tell us what still feels messy">
+              Please do not submit private financial data. A few sentences about the workflow is enough.
             </SectionHeading>
-            <div className="surface-panel reveal mt-6 rounded-lg border p-5">
+            <div className="surface-panel reveal mt-6 rounded-2xl border p-5">
               <p className="text-sm font-semibold leading-6 text-[#334155]">
                 Built in Toronto and currently speaking with independent restaurants across the GTA.
               </p>
             </div>
           </div>
 
-          <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-lg border p-5 md:p-6">
-          {!isFormEndpointConfigured && import.meta.env.DEV ? (
-            <div className="mb-4 rounded-lg border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
-              <p className="font-bold text-[#3f3210]">Owner setup note</p>
+          <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-2xl border p-5 md:p-6">
+            {!isFormEndpointConfigured && import.meta.env.DEV ? (
+              <div className="mb-4 rounded-2xl border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
+                <p className="font-bold text-[#3f3210]">Owner setup note</p>
+                <p className="mt-1">
+                  No form endpoint is configured for this local build. Add a Formspree URL to VITE_FORM_ENDPOINT before outreach.
+                </p>
+              </div>
+            ) : null}
+            <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
+            <div className="grid gap-4">
+              <Field label="What purchasing or inventory task slows you down most?">
+                <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Invoices, supplier prices, reorders, stock movement..." required />
+              </Field>
+              <p className="-mt-2 text-xs font-semibold text-[#64748B]">No private numbers needed.</p>
+              <Field label="Email or Instagram handle">
+                <input className={inputClass} name="contact" type="text" placeholder="name@example.com or @handle" required />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Restaurant or business name (optional)">
+                  <input className={inputClass} name="businessName" type="text" placeholder="Business name" />
+                </Field>
+                <Field label="Open to a short chat? (optional)">
+                  <select className={inputClass} name="chatOpen" defaultValue="">
+                    <option value="">Select answer</option>
+                    <option>Yes</option>
+                    <option>No</option>
+                  </select>
+                </Field>
+              </div>
+            </div>
+
+            <div id="privacy-notice" className="mt-5 rounded-2xl border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
+              <p className="font-bold text-[#0F172A]">Privacy note</p>
               <p className="mt-1">
-                No form endpoint is configured for this local build. Add a Formspree URL to VITE_FORM_ENDPOINT before outreach.
+                Flowtally collects the workflow pain point and contact info submitted in this form. It is used only to respond about Flowtally pilot feedback.
               </p>
             </div>
-          ) : null}
-          <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
-          <div className="grid gap-4">
-            <Field label="What admin task takes the most time?">
-              <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Closing, invoices, delivery apps, bookkeeping handoff..." required />
-            </Field>
-            <p className="-mt-2 text-xs font-semibold text-[#64748B]">No private numbers needed.</p>
-            <Field label="Email or Instagram handle">
-              <input className={inputClass} name="contact" type="text" placeholder="name@example.com or @handle" required />
-            </Field>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Restaurant or business name (optional)">
-                <input className={inputClass} name="businessName" type="text" placeholder="Business name" />
-              </Field>
-              <Field label="Open to a short chat? (optional)">
-                <select className={inputClass} name="chatOpen" defaultValue="">
-                  <option value="">Select answer</option>
-                  <option>Yes</option>
-                  <option>No</option>
-                </select>
-              </Field>
-            </div>
-          </div>
 
-          <div id="privacy-notice" className="mt-5 rounded-lg border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
-            <p className="font-bold text-[#0F172A]">Privacy note</p>
-            <p className="mt-1">
-              Flowtally collects the admin pain point and contact info submitted in this form. It is used only to
-              respond about Flowtally pilot feedback. No private financial numbers are required, and contact info is
-              not sold.
-            </p>
-          </div>
+            {submission.type !== "idle" ? (
+              <p
+                className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold ${
+                  submission.type === "success"
+                    ? "border-[#99F6E4] bg-[#E6FFFA] text-[#0F766E]"
+                    : submission.type === "notice"
+                      ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
+                      : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
+                }`}
+                role="status"
+              >
+                {submission.message}
+              </p>
+            ) : null}
 
-          {submission.type !== "idle" ? (
-            <p
-              className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
-                submission.type === "success"
-                  ? "border-[#99F6E4] bg-[#E6FFFA] text-[#0F766E]"
-                  : submission.type === "notice"
-                    ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
-                    : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
-              }`}
-              role="status"
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
             >
-              {submission.message}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
-          >
-            {isSubmitting ? "Sending..." : "Send feedback"}
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </form>
+              {isSubmitting ? "Sending..." : "Send feedback"}
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </form>
         </div>
       </section>
 
@@ -557,7 +602,9 @@ export function LandingPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-4 text-sm font-semibold text-[#F8FAFC]">
-            <a className="hover:text-[#cbd5e1]" href="#privacy-notice">Privacy notice</a>
+            <a className="hover:text-[#cbd5e1]" href="#privacy-notice">
+              Privacy notice
+            </a>
             <a className="inline-flex items-center gap-2 hover:text-[#cbd5e1]" href="#contact">
               <Mail className="h-4 w-4" />
               Contact
@@ -568,4 +615,3 @@ export function LandingPage() {
     </main>
   );
 }
-

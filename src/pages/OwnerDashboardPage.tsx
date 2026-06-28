@@ -99,6 +99,7 @@ export function OwnerDashboardPage() {
   const demo = useDemoProfile();
   const profileSlug = (demo.slug || defaultDemoProfileSlug) as DemoProfileSlug;
   const [demoFlowOpen, setDemoFlowOpen] = useState(false);
+  const [reorderPlanOpen, setReorderPlanOpen] = useState(false);
   const walkthroughStorageKey = `flowtally.demoFlow.${profileSlug}`;
   const {
     recentInvoices,
@@ -168,21 +169,25 @@ export function OwnerDashboardPage() {
   const exportReady = exportReadiness.monthlyOwnerReport === "Ready";
   const heroDate = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" }).format(new Date());
   const weekComparison = useMemo(() => {
-    const now = new Date();
-    const currentWeekStart = new Date(now);
-    currentWeekStart.setDate(now.getDate() - 7);
-    const previousWeekStart = new Date(now);
-    previousWeekStart.setDate(now.getDate() - 14);
+    const invoiceDates = recentInvoices.map((invoice) => dateMillis(invoice.invoiceDate)).filter((millis) => millis > 0);
+    const referenceMillis = invoiceDates.length > 0 ? Math.max(...invoiceDates) : Date.now();
+    const referenceDate = new Date(referenceMillis);
+    const currentWeekStart = new Date(referenceDate);
+    currentWeekStart.setDate(referenceDate.getDate() - 7);
+    const previousWeekStart = new Date(referenceDate);
+    previousWeekStart.setDate(referenceDate.getDate() - 14);
+    const referenceEnd = new Date(referenceDate);
+    referenceEnd.setDate(referenceDate.getDate() + 1);
 
     const totals = recentInvoices.reduce(
       (acc, invoice) => {
-        const millis = new Date(invoice.invoiceDate || "").getTime();
-        if (!Number.isFinite(millis)) {
+        const millis = dateMillis(invoice.invoiceDate);
+        if (!Number.isFinite(millis) || millis <= 0) {
           return acc;
         }
-        if (millis >= currentWeekStart.getTime()) {
+        if (millis >= currentWeekStart.getTime() && millis < referenceEnd.getTime()) {
           acc.current += Number.isFinite(invoice.totalAmount) ? invoice.totalAmount : 0;
-        } else if (millis >= previousWeekStart.getTime()) {
+        } else if (millis >= previousWeekStart.getTime() && millis < currentWeekStart.getTime()) {
           acc.previous += Number.isFinite(invoice.totalAmount) ? invoice.totalAmount : 0;
         }
         return acc;
@@ -196,8 +201,8 @@ export function OwnerDashboardPage() {
 
     const deltaPercent = ((totals.current - totals.previous) / totals.previous) * 100;
     return {
-      current: totals.current,
-      previous: totals.previous,
+      current: Number(totals.current.toFixed(2)),
+      previous: Number(totals.previous.toFixed(2)),
       deltaPercent: Number(deltaPercent.toFixed(1)),
     };
   }, [recentInvoices]);
@@ -405,20 +410,20 @@ export function OwnerDashboardPage() {
     {
       title: "Top price increase",
       value: topIncrease ? `${topIncrease.itemName} ${formatPercent(topIncrease.changePercent)}` : "No increases yet",
-      detail: topIncrease ? `${topIncrease.supplier} · ${formatCurrency(topIncrease.previousUnitPrice)} → ${formatCurrency(topIncrease.currentUnitPrice)}` : "Price increases will appear here once purchases are saved.",
+      detail: topIncrease ? `${topIncrease.supplier} - ${formatCurrency(topIncrease.previousUnitPrice)} -> ${formatCurrency(topIncrease.currentUnitPrice)}` : "Price increases will appear here once purchases are saved.",
       tone: topIncrease ? "warning" : "success",
     },
     {
       title: "Biggest price decrease",
       value: topDecrease ? `${topDecrease.itemName} ${formatPercent(topDecrease.changePercent)}` : "No decreases yet",
-      detail: topDecrease ? `${topDecrease.supplier} · ${formatCurrency(topDecrease.previousUnitPrice)} → ${formatCurrency(topDecrease.currentUnitPrice)}` : "Price decreases will appear here once they are detected.",
+      detail: topDecrease ? `${topDecrease.supplier} - ${formatCurrency(topDecrease.previousUnitPrice)} -> ${formatCurrency(topDecrease.currentUnitPrice)}` : "Price decreases will appear here once they are detected.",
       tone: topDecrease ? "success" : "info",
     },
     {
       title: "Inventory running low",
       value: lowStockItem ? lowStockItem.itemName : "Inventory healthy",
       detail: lowStockItem
-        ? `${Math.max(0, Math.round(lowStockItem.estimatedDaysRemaining ?? 0))} days left · ${fastestUsageItem ? `Fastest mover: ${fastestUsageItem.name}` : "Usage not configured"}`
+        ? `${Math.max(0, Math.round(lowStockItem.estimatedDaysRemaining ?? 0))} days left - ${fastestUsageItem ? `Fastest mover: ${fastestUsageItem.name}` : "Usage not configured"}`
         : fastestUsageItem
           ? `Fastest mover: ${fastestUsageItem.name} at ${fastestUsageItem.averageDailyUsage?.toFixed(1)} / day`
           : "No reorder pressure right now.",
@@ -478,23 +483,27 @@ export function OwnerDashboardPage() {
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Reorder plan" />
-        <Card className="p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={summary.inventoryItemsToReorderCount > 0 ? "warning" : "success"}>{summary.inventoryItemsToReorderCount} items need reorder</Badge>
-            <Badge tone={plannedReorderCount > 0 ? "info" : "neutral"}>{plannedReorderCount} added to reorder plan</Badge>
-            <Badge tone="neutral">Top supplier: {topReorderSupplier}</Badge>
-            <Badge tone="info">Supplier sending is future-only</Badge>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-muted">Build the order draft here, group items by supplier, and keep it local until you are ready to hand it off.</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-              to={inventoryRoute}
-              state={{ openPanel: "reorder" }}
-            >
-              Open reorder plan
-            </Link>
+        <SectionHeader title="Today's workflow" />
+        <Card className="p-4 sm:p-5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:justify-between">
+            {workflowSteps.map((step, index) => (
+              <div key={step.title} className="relative flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border border-line bg-slate-50 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-ink shadow-sm">{index + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink">{step.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-muted">{step.detail}</p>
+                  </div>
+                </div>
+                <div className="mt-auto flex items-center justify-between gap-2">
+                  <Badge tone={step.tone}>{step.status}</Badge>
+                  <Link className="text-xs font-semibold uppercase tracking-wide text-brand-700 hover:text-brand-800" to={step.to}>
+                    Open
+                  </Link>
+                </div>
+                {index < workflowSteps.length - 1 ? <div className="hidden xl:block absolute right-[-14px] top-1/2 -translate-y-1/2 text-slate-300">-&gt;</div> : null}
+              </div>
+            ))}
           </div>
         </Card>
       </section>
@@ -529,27 +538,17 @@ export function OwnerDashboardPage() {
       </section>
 
       <section className="mt-7">
-        <SectionHeader title="Today's workflow" />
-        <Card className="p-4 sm:p-5">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:justify-between">
-            {workflowSteps.map((step, index) => (
-              <div key={step.title} className="relative flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border border-line bg-slate-50 px-4 py-4">
-                <div className="flex items-start gap-3">
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-ink shadow-sm">{index + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink">{step.title}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted">{step.detail}</p>
-                  </div>
-                </div>
-                <div className="mt-auto flex items-center justify-between gap-2">
-                  <Badge tone={step.tone}>{step.status}</Badge>
-                  <Link className="text-xs font-semibold uppercase tracking-wide text-brand-700 hover:text-brand-800" to={step.to}>
-                    Open
-                  </Link>
-                </div>
-                {index < workflowSteps.length - 1 ? <div className="hidden xl:block absolute right-[-14px] top-1/2 -translate-y-1/2 text-slate-300">-&gt;</div> : null}
-              </div>
-            ))}
+        <SectionHeader title="Reorder plan" />
+        <Card className="p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={summary.inventoryItemsToReorderCount > 0 ? "warning" : "success"}>{summary.inventoryItemsToReorderCount} items need reorder</Badge>
+            <Badge tone={plannedReorderCount > 0 ? "info" : "neutral"}>{plannedReorderCount} added to reorder plan</Badge>
+            <Badge tone="neutral">Top supplier: {topReorderSupplier}</Badge>
+            <Badge tone="info">Supplier sending is future-only</Badge>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted">Review the order draft, group items by supplier, and keep it local until you are ready to hand it off.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" onClick={() => setReorderPlanOpen(true)}>Open reorder plan</Button>
           </div>
         </Card>
       </section>
@@ -613,6 +612,14 @@ export function OwnerDashboardPage() {
           </div>
         </Card>
       </section>
+      {reorderPlanOpen ? (
+        <DashboardReorderPlanModal
+          suggestions={dashboard.reorderSuggestions}
+          plannedCount={plannedReorderCount}
+          inventoryRoute={inventoryRoute}
+          onClose={() => setReorderPlanOpen(false)}
+        />
+      ) : null}
       <DemoFlowDrawer
         open={demoFlowOpen}
         steps={walkthroughSteps}
@@ -623,6 +630,108 @@ export function OwnerDashboardPage() {
         onClose={() => setDemoFlowOpen(false)}
       />
     </PageLayout>
+  );
+}
+
+
+type DashboardReorderSuggestion = {
+  itemName: string;
+  supplier: string;
+  unit: string;
+  adjustedQuantity: number;
+  suggestedQuantity: number;
+  estimatedCost: number | null;
+  estimatedDaysRemaining: number | null;
+  stockStatus: string;
+  status: string;
+};
+
+function DashboardReorderPlanModal({
+  suggestions,
+  plannedCount,
+  inventoryRoute,
+  onClose,
+}: {
+  suggestions: DashboardReorderSuggestion[];
+  plannedCount: number;
+  inventoryRoute: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  const visibleSuggestions = suggestions.slice(0, 6);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
+      <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Reorder plan</p>
+            <h2 className="mt-1 text-lg font-bold text-ink sm:text-xl">Items that need ordering</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">Dashboard preview only. Use Inventory for full reorder edits.</p>
+          </div>
+          <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
+            Close
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Badge tone={suggestions.length > 0 ? "warning" : "success"}>{suggestions.length} reorder lines</Badge>
+            <Badge tone={plannedCount > 0 ? "info" : "neutral"}>{plannedCount} planned</Badge>
+          </div>
+          {visibleSuggestions.length > 0 ? (
+            <div className="space-y-2">
+              {visibleSuggestions.map((line) => (
+                <div key={`${line.supplier}-${line.itemName}`} className="rounded-2xl border border-line bg-white p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-ink">{line.itemName}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">{line.supplier} - {line.stockStatus}</p>
+                    </div>
+                    <Badge tone={line.status === "Ordered" ? "success" : "warning"}>{line.status}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+                    <span>Order {line.adjustedQuantity || line.suggestedQuantity} {line.unit}</span>
+                    <span>{line.estimatedCost === null ? "Cost pending" : `Est. ${formatCurrency(line.estimatedCost)}`}</span>
+                    <span>{line.estimatedDaysRemaining === null ? "Usage unknown" : `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left`}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-line bg-white p-5 text-sm leading-6 text-muted">No reorder action is needed right now.</div>
+          )}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={inventoryRoute} onClick={onClose}>
+              Open Inventory
+            </Link>
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Stay on Dashboard
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

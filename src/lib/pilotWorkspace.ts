@@ -654,10 +654,16 @@ function buildPriceChanges(invoices: PilotInvoiceRecord[]): PilotPriceChangeReco
 function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReconciliationRecord[], inventory: PilotInventoryState): PilotWorkspaceSummary {
   const priceChanges = buildPriceChanges(invoices);
   const now = new Date();
-  const weekAgo = new Date(now);
-  weekAgo.setDate(now.getDate() - 7);
-  const monthAgo = new Date(now);
-  monthAgo.setDate(now.getDate() - 30);
+  const latestInvoiceMillis = invoices.reduce((latest, invoice) => Math.max(latest, dateValueToMillis(invoice.invoiceDate)), 0);
+  const invoiceWindowDate = latestInvoiceMillis > 0 ? new Date(latestInvoiceMillis) : now;
+  const invoiceWeekAgo = new Date(invoiceWindowDate);
+  invoiceWeekAgo.setDate(invoiceWindowDate.getDate() - 7);
+  const invoiceMonthAgo = new Date(invoiceWindowDate);
+  invoiceMonthAgo.setDate(invoiceWindowDate.getDate() - 30);
+  const reconciliationWeekAgo = new Date(now);
+  reconciliationWeekAgo.setDate(now.getDate() - 7);
+  const reconciliationMonthAgo = new Date(now);
+  reconciliationMonthAgo.setDate(now.getDate() - 30);
   const today = now.toLocaleDateString("en-CA");
 
   const invoiceStats = invoices.reduce(
@@ -668,11 +674,11 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
       if (invoice.status === "Needs Review") {
         acc.reviewQueueCount += 1;
       }
-      if (invoiceDate >= weekAgo) {
+      if (invoiceDate >= invoiceWeekAgo) {
         acc.weeklySpend += invoice.totalAmount;
         acc.weeklyCount += 1;
       }
-      if (invoiceDate >= monthAgo) {
+      if (invoiceDate >= invoiceMonthAgo) {
         acc.monthlySpend += invoice.totalAmount;
         acc.monthlyCount += 1;
       }
@@ -689,10 +695,10 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
         acc.unresolvedCount += 1;
       }
       acc.totalCount += 1;
-      if (recordDate >= weekAgo && unresolved) {
+      if (recordDate >= reconciliationWeekAgo && unresolved) {
         acc.weeklyVariance += Math.abs(record.variance);
       }
-      if (recordDate >= monthAgo && unresolved) {
+      if (recordDate >= reconciliationMonthAgo && unresolved) {
         acc.monthlyVariance += Math.abs(record.variance);
       }
       if (record.date === today) {
@@ -723,7 +729,7 @@ function buildSummary(invoices: PilotInvoiceRecord[], reconciliations: PilotReco
     unresolvedReconciliationCount: reconciliationStats.unresolvedCount,
     weeklyUnresolvedVariance: Number(reconciliationStats.weeklyVariance.toFixed(2)),
     monthlyUnresolvedVariance: Number(reconciliationStats.monthlyVariance.toFixed(2)),
-    recentPriceChangeCount: priceChanges.filter((change) => new Date(dateValueToMillis(change.invoiceDate)) >= monthAgo).length,
+    recentPriceChangeCount: priceChanges.filter((change) => new Date(dateValueToMillis(change.invoiceDate)) >= invoiceMonthAgo).length,
     todayReconciliationStatus: reconciliationStats.todayStatus,
     todayReconciliationVariance: Number(reconciliationStats.todayVariance.toFixed(2)),
     todayReconciliationDate: today,

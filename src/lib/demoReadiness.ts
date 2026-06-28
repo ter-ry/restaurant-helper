@@ -62,7 +62,21 @@ function countMappedButUnreceivedInvoices(invoices: PilotInvoiceRecord[], invent
 }
 
 function isDailyCloseBlocked(summary: PilotWorkspaceSummary, reconciliations: PilotReconciliationRecord[]) {
-  return summary.todayReconciliationStatus === "Incomplete" || summary.unresolvedReconciliationCount > 0 || reconciliations.some((record) => record.status !== "Balanced");
+  if (summary.todayReconciliationStatus === "Balanced") {
+    return false;
+  }
+
+  const latestClose = [...reconciliations].sort((a, b) => {
+    const aDate = new Date(a.savedAt || a.updatedAt || a.createdAt || a.date).getTime();
+    const bDate = new Date(b.savedAt || b.updatedAt || b.createdAt || b.date).getTime();
+    return (Number.isFinite(bDate) ? bDate : 0) - (Number.isFinite(aDate) ? aDate : 0);
+  })[0];
+
+  if (latestClose?.status === "Balanced") {
+    return false;
+  }
+
+  return summary.todayReconciliationStatus === "Incomplete" || latestClose?.status === "Needs Review" || summary.unresolvedReconciliationCount > 0;
 }
 
 function statusFromBlockers(hasReviewQueue: boolean, hasMappingGap: boolean, hasCloseGap: boolean): ExportReadinessStatus {

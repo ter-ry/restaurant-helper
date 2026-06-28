@@ -27,7 +27,7 @@ export function Sidebar() {
   const demo = useDemoProfile();
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-line bg-white p-5 lg:block">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-line bg-white p-5 lg:block">
       <NavLink to="/" className="flex items-center gap-3 rounded-lg text-ink">
         <FlowtallyMark className="h-10 w-10 shrink-0" />
         <span>

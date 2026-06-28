@@ -1,4 +1,4 @@
-﻿import { Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -224,7 +224,7 @@ const seedMenuItems: MenuItemDraft[] = [
     squarePosItem: "Breakfast Sandwich - draft Square item",
     packagingCost: 0.08,
     ingredients: [
-      seedIngredient("Breakfast sandwich bun", 1, "each", 0.18, "Breakfast Sandwich Buns", 1, "Draft item"),
+      seedIngredient("Breakfast sandwich bun", 1, "each", 0.18, "Breakfast Sandwich Buns", 24, "Draft item"),
       seedIngredient("Egg", 2, "each", 0.15, undefined, undefined, "Draft item"),
       seedIngredient("Cheese slice", 1, "each", 0.12, undefined, undefined, "Draft item"),
       seedIngredient("Butter", 8, "g", 0.03, undefined, undefined, "Draft item"),
@@ -293,7 +293,7 @@ function resolveMenuItem(item: MenuItemDraft, inventoryItems: InventoryItem[], p
   const margin = item.sellingPrice > 0 ? Number(((grossProfit / item.sellingPrice) * 100).toFixed(1)) : 0;
 
   const riskReasons: string[] = [];
-  if (margin < 50) {
+  if (margin < 45) {
     riskReasons.push("Thin margin");
   }
 
@@ -329,6 +329,23 @@ function resolveMenuItem(item: MenuItemDraft, inventoryItems: InventoryItem[], p
     dataIssues,
     marginTone,
   };
+}
+
+function compactMenuBadges(item: ResolvedMenuItem): Array<{ label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> {
+  const setupMissing = item.recipeStatus !== "Complete" || item.mappingStatus === "Missing" || (item.ingredients as ResolvedIngredient[]).some((ingredient) => !ingredient.inventoryItem);
+  const badges: Array<{ label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = [
+    setupMissing ? { label: "Needs setup", tone: "warning" } : { label: "Complete", tone: "success" },
+  ];
+
+  if (item.riskReasons.length > 0) {
+    badges.push({ label: "Margin risk", tone: "danger" });
+  }
+
+  if (item.mappingStatus === "Demo only") {
+    badges.push({ label: "Demo only", tone: "info" });
+  }
+
+  return badges;
 }
 
 function marginStatusLabel(margin: number) {
@@ -558,11 +575,9 @@ export function MenuCostingPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-bold text-ink">{item.name}</h3>
-                      <Badge tone={toneForMargin(item.estimatedMargin)}>{formatPercent(item.estimatedMargin)} margin</Badge>
-                      <Badge tone={item.recipeStatus === "Complete" ? "success" : "warning"}>{item.recipeStatus}</Badge>
-                      <Badge tone={item.mappingStatus === "Mapped" ? "success" : "warning"}>{item.mappingStatus}</Badge>
-                      {item.riskReasons.length > 0 ? <Badge tone="danger">Margin risk</Badge> : null}
-                      {item.dataIssues.length > 0 ? <Badge tone="warning">Missing data</Badge> : null}
+                      {compactMenuBadges(item).map((badge) => (
+                        <Badge key={`${item.id}-${badge.label}`} tone={badge.tone}>{badge.label}</Badge>
+                      ))}
                     </div>
                     <p className="mt-1 text-sm text-muted">{item.category}</p>
                   </div>
@@ -574,6 +589,7 @@ export function MenuCostingPage() {
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
                   <span>Ingredient cost {formatCurrency(item.estimatedIngredientCost)}</span>
                   <span>Gross profit {formatCurrency(item.estimatedGrossProfit)}</span>
+                  <span>{formatPercent(item.estimatedMargin)} margin</span>
                   <span>Open recipe</span>
                 </div>
               </button>

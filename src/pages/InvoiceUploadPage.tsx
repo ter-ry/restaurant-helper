@@ -811,20 +811,19 @@ export function InvoiceUploadPage() {
               <p className="text-sm leading-6 text-muted">No supplier spend yet.</p>
             )}
           </Card>
-          <Card className="p-5">
-            <SectionHeader title="Accounting export readiness" />
-            <div className="flex flex-wrap gap-2">
-              <Badge tone={purchaseExportSnapshot.readyForCsv > 0 ? "success" : "neutral"}>Ready for CSV: {purchaseExportSnapshot.readyForCsv}</Badge>
-              <Badge tone={purchaseExportSnapshot.needsReview > 0 ? "warning" : "neutral"}>Needs invoice review: {purchaseExportSnapshot.needsReview}</Badge>
-              <Badge tone={purchaseExportSnapshot.needsMapping > 0 ? "warning" : "neutral"}>Needs mapping: {purchaseExportSnapshot.needsMapping}</Badge>
-              <Badge tone={exportReadiness.dailyCloseSummary === "Ready" ? "success" : "warning"}>{exportReadiness.dailyCloseSummary}</Badge>
-              <Badge tone="info">QuickBooks future-only</Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-700">
-              {exportReadiness.blockers.length > 0 ? `Blockers: ${exportReadiness.blockers.join(" | ")}.` : "Purchase CSV and summary exports are ready once the review queue is clear."}
-            </p>
-            <div className="mt-4">
+          <Card className="p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <SectionHeader title="Bookkeeping handoff" />
+                <p className="mt-1 text-sm leading-6 text-muted">Final CSV export lives in Close &amp; Reports.</p>
+              </div>
               <Button type="button" variant="secondary" onClick={() => navigate(buildDemoPath(defaultDemoProfileSlug, "close-reports"))}>Open Close &amp; Reports</Button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge tone={purchaseExportSnapshot.readyForCsv > 0 ? "success" : "neutral"}>CSV ready {purchaseExportSnapshot.readyForCsv}</Badge>
+              <Badge tone={purchaseExportSnapshot.needsReview > 0 ? "warning" : "neutral"}>Needs review {purchaseExportSnapshot.needsReview}</Badge>
+              <Badge tone={purchaseExportSnapshot.needsMapping > 0 ? "warning" : "neutral"}>Needs mapping {purchaseExportSnapshot.needsMapping}</Badge>
+              <Badge tone="info">QuickBooks future-only</Badge>
             </div>
           </Card>
         </div>
