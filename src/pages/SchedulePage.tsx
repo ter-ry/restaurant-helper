@@ -44,7 +44,7 @@ export function SchedulePage() {
     <PageLayout
       title="Schedule"
       eyebrow="Back Office Core / staffing"
-      description="Staff availability, weekly schedules, and conflict warnings."
+      description="Are there staffing conflicts or coverage issues this week?"
     >
       <Card className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

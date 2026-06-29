@@ -65,11 +65,11 @@ export function PilotPage() {
               Flowtally early pilot
             </p>
             <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#0F172A] md:text-5xl">
-              Join the early Flowtally pilot list.
+              Join the Flowtally early pilot list.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-[#64748B]">
-              Flowtally is being shaped with feedback from local restaurants and small food businesses in Toronto/GTA.
-              Join the list for updates when a focused prototype is ready to review.
+              Flowtally is being shaped with growing independent restaurants that manage staff, recurring suppliers,
+              invoice review, inventory, and reordering every week.
             </p>
           </div>
 
@@ -94,7 +94,7 @@ export function PilotPage() {
               />
             </label>
             <label className="mt-4 grid gap-2 text-sm font-semibold text-[#0F172A]">
-              Restaurant or business name
+              Restaurant name
               <input
                 className="min-h-11 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]"
                 name="businessName"

@@ -243,35 +243,35 @@ export function OwnerDashboardPage() {
       {
         title: "Invoice",
         detail: hasInvoices ? `${recentInvoices[0].supplier} is the latest saved purchase.` : "Upload the first invoice or receipt.",
-        status: hasInvoices ? "Done" : "Not ready",
+        status: hasInvoices ? "Completed" : "Needs confirmation",
         tone: hasInvoices ? "success" : "warning",
         to: purchasesRoute,
       },
       {
         title: "Review items",
         detail: needsReview ? `${summary.invoiceReviewQueueCount} invoices still need confirmation.` : "Matched items are ready for the inventory update.",
-        status: needsReview ? "Needs review" : "Done",
+        status: needsReview ? "Needs review" : "Completed",
         tone: needsReview ? "warning" : "success",
         to: purchasesRoute,
       },
       {
         title: "Inventory",
-        detail: hasInventoryReceipts ? `${summary.inventoryReceiptCount} receipts are stored locally.` : "Inventory updates once confirmed matches are saved.",
-        status: hasInventoryReceipts ? "Updated" : "Incomplete",
+        detail: hasInventoryReceipts ? `${summary.inventoryReceiptCount} receiving records are stored locally.` : "Inventory updates after item matches are confirmed.",
+        status: hasInventoryReceipts ? "Completed" : "Needs confirmation",
         tone: hasInventoryReceipts ? "success" : "warning",
         to: inventoryRoute,
       },
       {
         title: "Reorder plan",
         detail: needsReorder ? `${summary.inventoryItemsToReorderCount} items need ordering.` : "No reorder plan needed right now.",
-        status: needsReorder ? "Alert" : "Done",
+        status: needsReorder ? "Needs review" : "Ready",
         tone: needsReorder ? "warning" : "success",
         to: inventoryRoute,
       },
       {
         title: "Close",
         detail: closeStatus === "Incomplete" ? "Enter the day's totals and compare to POS." : `Today is ${closeStatus.toLowerCase()} with variance ${formatCurrency(summary.todayReconciliationVariance)}.`,
-        status: closeStatus === "Incomplete" ? "Incomplete" : closeNeedsReview ? "Needs review" : closeDone ? "Done" : closeStatus,
+        status: closeStatus === "Incomplete" ? "Needs confirmation" : closeNeedsReview ? "Needs review" : closeDone ? "Completed" : closeStatus,
         tone: closeStatus === "Incomplete" ? "warning" : closeNeedsReview ? "warning" : closeDone ? "success" : toneForStatus(closeStatus),
         to: closeReportsRoute,
       },
@@ -433,7 +433,7 @@ export function OwnerDashboardPage() {
 
 
   return (
-      <PageLayout title="Dashboard" description="Purchasing, inventory, supplier prices, and reordering.">
+      <PageLayout title="Dashboard" description="What the owner needs to know about purchasing, inventory, reorder, and close today.">
         <Card className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
@@ -441,7 +441,7 @@ export function OwnerDashboardPage() {
                 <Badge tone="info">{demo.customization.restaurantName}</Badge>
                 <Badge tone="neutral">{weekLabel()}</Badge>
               </div>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Works alongside your POS and accounting software.</h2>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">A one-week view of purchasing, stock, reorders, and bookkeeping readiness.</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>
@@ -469,11 +469,11 @@ export function OwnerDashboardPage() {
         <SectionHeader title="Numbers to know" />
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <StatCard label="Purchases this week" value={String(summary.weeklyInvoiceCount)} helper={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend) : "No purchases yet"} icon={<FileText className="h-5 w-5" />} />
-          <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Week to date on saved purchases" icon={<TrendingUp className="h-5 w-5" />} />
+          <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Latest invoice week in the demo" icon={<TrendingUp className="h-5 w-5" />} />
           <StatCard
             label="Spend vs last week"
             value={weekComparison ? `${weekComparison.deltaPercent > 0 ? "+" : ""}${formatPercent(weekComparison.deltaPercent)}` : "-"}
-            helper={weekComparison ? `Last 7 days ${formatCurrency(weekComparison.current)} vs prior ${formatCurrency(weekComparison.previous)}` : "Need two weeks of invoices"}
+            helper={weekComparison ? `Latest week ${formatCurrency(weekComparison.current)} vs prior ${formatCurrency(weekComparison.previous)}` : "Need two weeks of invoices"}
             icon={<Gauge className="h-5 w-5" />}
           />
           <StatCard label="Inventory value" value={formatCurrency(summary.inventoryValue)} helper={summary.inventoryItemCount > 0 ? `${summary.inventoryItemCount} items tracked` : "No inventory yet"} icon={<Package className="h-5 w-5" />} />
@@ -544,9 +544,9 @@ export function OwnerDashboardPage() {
             <Badge tone={summary.inventoryItemsToReorderCount > 0 ? "warning" : "success"}>{summary.inventoryItemsToReorderCount} items need reorder</Badge>
             <Badge tone={plannedReorderCount > 0 ? "info" : "neutral"}>{plannedReorderCount} added to reorder plan</Badge>
             <Badge tone="neutral">Top supplier: {topReorderSupplier}</Badge>
-            <Badge tone="info">Supplier sending is future-only</Badge>
+            <Badge tone="info">Supplier sending is future integration</Badge>
           </div>
-          <p className="mt-3 text-sm leading-6 text-muted">Review the order draft, group items by supplier, and keep it local until you are ready to hand it off.</p>
+          <p className="mt-3 text-sm leading-6 text-muted">Review the order draft, group items by supplier, and keep it local. No supplier message is sent from the demo.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button type="button" onClick={() => setReorderPlanOpen(true)}>Open reorder plan</Button>
           </div>
@@ -600,7 +600,7 @@ export function OwnerDashboardPage() {
             <TinyMetric label="Daily close" value={exportReadiness.dailyCloseSummary} helper={summary.todayReconciliationStatus === "Incomplete" ? "Needs entry" : formatCurrency(summary.todayReconciliationVariance)} />
           </div>
           <div className="mt-4 rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
-            Weekly and monthly handoff stays compact. Blockers: {exportReadiness.blockers.join(" | ")}. QuickBooks remains future-only.
+            Weekly and monthly handoff stays compact. Blockers: {exportReadiness.blockers.join(" | ") || "None"}. Accounting sync remains future-only.
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={closeReportsRoute}>
@@ -688,7 +688,7 @@ function DashboardReorderPlanModal({
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Reorder plan</p>
             <h2 className="mt-1 text-lg font-bold text-ink sm:text-xl">Items that need ordering</h2>
-            <p className="mt-1 text-sm leading-6 text-muted">Dashboard preview only. Use Inventory for full reorder edits.</p>
+            <p className="mt-1 text-sm leading-6 text-muted">Dashboard preview only. Use Inventory for full reorder edits. No supplier message is sent.</p>
           </div>
           <Button type="button" variant="ghost" icon={<X className="h-4 w-4" />} onClick={onClose}>
             Close

@@ -509,25 +509,25 @@ export function InvoiceUploadPage() {
     <PageLayout
       title="Purchases"
       eyebrow="Pilot workspace"
-      description="Invoices, receipts, supplier prices."
+      description="Review incoming invoices, confirm item matches, and save clean purchase records."
     >
       <div className="grid gap-6">
         <Card className="surface-panel min-w-0 p-5 sm:p-6">
           <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Purchases</p>
-              <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Invoices, receipts, supplier prices.</h1>
+              <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Review purchases before they update inventory.</h1>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <MetricCard label="Needs confirmation" value={String(reviewQueue.length + (hasActiveDraft ? 1 : 0))} helper="Open items" />
-              <MetricCard label="Ready for inventory" value={String(mappedItemCount)} helper="Mapped purchase lines" />
-              <MetricCard label="Ready for export" value={String(purchaseExportSnapshot.readyForCsv)} helper="CSV-ready records" />
+              <MetricCard label="Ready for inventory" value={String(mappedItemCount)} helper="Lines ready to receive" />
+              <MetricCard label="CSV ready" value={String(purchaseExportSnapshot.readyForCsv)} helper="Reviewed purchase records" />
             </div>
           </div>
 
           <SectionHeader
             title="Upload and import"
-            description="Choose a file to start OCR, or load the sample purchase."
+            description="Upload a supplier invoice or receipt, then review extracted fields before saving."
             action={<Badge tone="info">OCR + manual review</Badge>}
           />
 
@@ -657,7 +657,7 @@ export function InvoiceUploadPage() {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-3">
                     <MetricCard label="Source document" value={savedInvoicePrompt.fileName || "Not stored"} helper="Original file name stays linked locally" />
-                    <MetricCard label="Line items" value={String(savedInvoicePrompt.lineItems.length)} helper="Confirmed purchase lines" />
+                    <MetricCard label="Line items" value={String(savedInvoicePrompt.lineItems.length)} helper="Reviewed purchase lines" />
                     <MetricCard label="Receiving" value={getInvoiceInventoryStatus(savedInvoicePrompt)} helper="Inventory handoff status" />
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -708,10 +708,9 @@ export function InvoiceUploadPage() {
               {activeInventoryInvoice ? (
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                    <span>Mapped: {activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length}</span>
-                    <span>Unmapped: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
-                    <span>Received: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
-                    <span>Not received: {activeReceiveLines.filter((line) => line.state !== "already-received").length}</span>
+                    <span>Ready: {activeReceiveLines.filter((line) => line.state === "linked").length}</span>
+                    <span>Needs confirmation: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
+                    <span>Completed: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
                   </div>
                   <div className="space-y-2">
                     {activeReceiveLines.slice(0, 3).map((line) => (
@@ -721,7 +720,9 @@ export function InvoiceUploadPage() {
                             <p className="truncate text-sm font-bold text-ink">{line.invoiceLineName}</p>
                             <p className="mt-0.5 text-xs leading-5 text-muted">{line.sourceDescription || "Original description not available"} - {formatCurrency(line.unitPrice)}</p>
                           </div>
-                          <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
+                          <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>
+                            {line.state === "already-received" ? "Completed" : line.state === "linked" ? "Ready" : line.state === "do-not-track" ? "Completed" : "Needs confirmation"}
+                          </Badge>
                         </div>
                       </div>
                     ))}
@@ -921,10 +922,9 @@ export function InvoiceUploadPage() {
         {activeInventoryInvoice ? (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              <span>Mapped: {activeReceiveLines.filter((line) => line.state === "linked" || line.state === "already-received").length}</span>
-              <span>Unmapped: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
-              <span>Received: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
-              <span>Not received: {activeReceiveLines.filter((line) => line.state !== "already-received").length}</span>
+              <span>Ready: {activeReceiveLines.filter((line) => line.state === "linked").length}</span>
+              <span>Needs confirmation: {activeReceiveLines.filter((line) => line.state === "unmapped").length}</span>
+              <span>Completed: {activeReceiveLines.filter((line) => line.state === "already-received").length}</span>
             </div>
             <div className="space-y-2">
               {activeReceiveLines.map((line) => (
@@ -936,7 +936,9 @@ export function InvoiceUploadPage() {
                         {line.sourceDescription || "Original description not available"} · {formatCurrency(line.unitPrice)}
                       </p>
                     </div>
-                    <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>{line.matchLabel}</Badge>
+                    <Badge tone={line.state === "linked" || line.state === "already-received" ? "success" : line.state === "do-not-track" ? "neutral" : "warning"}>
+                      {line.state === "already-received" ? "Completed" : line.state === "linked" ? "Ready" : line.state === "do-not-track" ? "Completed" : "Needs confirmation"}
+                    </Badge>
                   </div>
                 </div>
               ))}

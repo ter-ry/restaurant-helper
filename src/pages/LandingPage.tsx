@@ -29,22 +29,22 @@ const navLinks = [
   ["Contact", "#contact"],
 ];
 
-const heroBadges = ["Independent restaurants", "Purchasing + inventory", "Local Toronto support"];
+const heroBadges = ["Growing independent restaurants", "Team workflows", "Multiple suppliers"];
 
 const toolRows = [
   {
     title: "Invoice capture",
-    text: "Capture invoices and receipts without retyping.",
+    text: "Capture recurring supplier invoices without retyping.",
     Icon: ReceiptText,
   },
   {
     title: "Inventory and stock",
-    text: "See what is in stock and what changed.",
+    text: "Keep receiving, stock counts, and waste visible.",
     Icon: Package,
   },
   {
     title: "Reorder signals",
-    text: "Know what to buy before it becomes urgent.",
+    text: "See what managers need to reorder this week.",
     Icon: RotateCcw,
   },
 ];
@@ -52,17 +52,17 @@ const toolRows = [
 const featureCards = [
   {
     title: "Invoice Capture",
-    text: "Upload invoices and turn them into usable purchase records.",
+    text: "Turn supplier invoices and receipts into usable purchase records.",
     Icon: ScanText,
   },
   {
     title: "Inventory",
-    text: "Track stock, receiving, waste, and low-stock items together.",
+    text: "Track receiving, counts, adjustments, waste, and low stock together.",
     Icon: Package,
   },
   {
     title: "Supplier Prices",
-    text: "Spot price changes before the next order goes out.",
+    text: "Spot supplier price changes before the next order goes out.",
     Icon: BadgeDollarSign,
   },
   {
@@ -72,12 +72,12 @@ const featureCards = [
   },
   {
     title: "Reordering",
-    text: "Keep buy-now items and thresholds visible at a glance.",
+    text: "Turn low stock and PAR levels into a clear reorder list.",
     Icon: RotateCcw,
   },
   {
     title: "Export Ready",
-    text: "Keep purchase records organized for clean CSV export.",
+    text: "Keep reviewed records organized for accountant-ready CSV export.",
     Icon: Download,
   },
 ];
@@ -86,18 +86,18 @@ const compareColumns = [
   {
     title: "Spreadsheets",
     accent: false,
-    bullets: ["Fast to start, harder to keep tidy", "Manual updates and version drift", "No clear workflow for purchasing or stock"],
+    bullets: ["Fast to start, harder for teams to keep tidy", "Manual updates and version drift", "No clear workflow for recurring purchases or stock"],
   },
   {
     title: "Enterprise software",
     accent: false,
-    bullets: ["Usually broader than a small restaurant needs", "More setup and more training", "Can feel heavy for day-to-day use"],
+    bullets: ["Usually broader than an independent restaurant needs", "More setup and more training", "Can feel heavy for manager day-to-day use"],
   },
   {
     title: "Flowtally",
     accent: true,
     bullets: [
-      "Built for independent restaurants",
+      "Built for growing independent restaurants",
       "Fast setup and easy to learn",
       "Purchasing and inventory focused",
       "Affordable monthly pricing",
@@ -109,12 +109,12 @@ const compareColumns = [
 const pilotSteps = [
   {
     title: "Share your workflow",
-    text: "Tell us how purchasing and inventory work today.",
+    text: "Tell us how your team handles invoices, ordering, and stock today.",
     Icon: MessageSquareText,
   },
   {
     title: "We shape the pilot",
-    text: "We tailor the demo to the way your restaurant already runs.",
+    text: "We shape the demo around your suppliers, invoices, and manager workflow.",
     Icon: Handshake,
   },
   {
@@ -340,13 +340,13 @@ export function LandingPage() {
           <div className="reveal min-w-0">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/84 px-3 py-1 text-sm font-bold text-[#334155] shadow-sm backdrop-blur">
               <Handshake className="h-4 w-4 text-[#0D9488]" />
-              For independent restaurants
+              For growing independent restaurants
             </p>
             <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.04] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.3vw,4.25rem)]">
-              Restaurant purchasing and inventory, without the spreadsheet mess.
+              Purchasing and inventory control without spreadsheet chaos.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-[#475569] md:text-xl">
-              Keep purchases, stock, supplier prices, and reorders in one simple place.
+              Flowtally helps busy restaurant teams manage recurring invoices, supplier prices, stock, and reordering without changing POS or accounting.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-2">
@@ -381,8 +381,8 @@ export function LandingPage() {
             <div className="surface-panel relative mx-auto w-full max-w-[520px] rounded-[28px] border p-5 backdrop-blur md:p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">What it keeps tidy</p>
-                  <p className="mt-1 text-lg font-bold text-[#0F172A]">Simple day-to-day workflow</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">What managers stop chasing</p>
+                  <p className="mt-1 text-lg font-bold text-[#0F172A]">Purchasing, stock, and reorder admin</p>
                 </div>
                 <span className="rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
                   Today
@@ -401,8 +401,8 @@ export function LandingPage() {
                     <BarChart3 className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-[#0F172A]">Keep the middle of the operation organized.</p>
-                    <p className="mt-1 text-sm leading-6 text-[#64748B]">Less retyping. Fewer missed items.</p>
+                    <p className="text-sm font-semibold text-[#0F172A]">One week of purchasing stays connected.</p>
+                    <p className="mt-1 text-sm leading-6 text-[#64748B]">Less retyping. Fewer missed orders.</p>
                   </div>
                 </div>
               </div>
@@ -414,7 +414,7 @@ export function LandingPage() {
       <section id="tools" className="surface-section relative overflow-hidden border-b border-[#E2E8F0] px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto max-w-7xl">
           <SectionHeading eyebrow="How it fits" title="Works with the tools you already use.">
-            Replace spreadsheets, notebooks, and scattered purchasing admin while keeping your existing POS and accounting software.
+            Flowtally replaces spreadsheet chaos, notebooks, and scattered supplier admin while your POS and accounting software stay in place.
           </SectionHeading>
 
           <div className="mt-8 mx-auto max-w-3xl">
@@ -429,9 +429,9 @@ export function LandingPage() {
 
                 <div className="surface-accent w-full rounded-[28px] border p-5 md:max-w-[420px]">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#cbd5e1]">Flowtally</p>
-                  <p className="mt-2 text-2xl font-semibold text-[#F8FAFC]">Purchasing, inventory, prices, reorders.</p>
+                  <p className="mt-2 text-2xl font-semibold text-[#F8FAFC]">Invoices, stock, prices, reorders.</p>
                   <p className="mt-3 text-sm leading-6 text-slate-200">
-                    The messy middle stays organized.
+                    Manager work becomes a shared, reviewable workflow.
                   </p>
                 </div>
 
@@ -449,8 +449,8 @@ export function LandingPage() {
 
       <section id="features" className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto max-w-7xl">
-          <SectionHeading eyebrow="Features" title="Purchasing and inventory, without the admin drag.">
-            Built for the restaurant work that usually lives in spreadsheets, notes, texts, and memory.
+          <SectionHeading eyebrow="Features" title="Built for recurring restaurant purchasing work.">
+            For teams juggling suppliers, invoices, stock movement, and reorders every week.
           </SectionHeading>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {featureCards.map(({ title, text, Icon }) => (
@@ -463,7 +463,7 @@ export function LandingPage() {
       <section id="compare" className="surface-section relative overflow-hidden border-y border-[#E2E8F0] px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto max-w-7xl">
           <SectionHeading eyebrow="Compare" title="Why not keep using spreadsheets?">
-            Choose the lightest tool that actually keeps purchasing and inventory under control.
+            Growing restaurants need more structure than Excel, without the weight of enterprise systems.
           </SectionHeading>
 
           <div className="mt-8 grid gap-4 lg:grid-cols-3">
@@ -477,7 +477,7 @@ export function LandingPage() {
       <section id="pilot" className="surface-section relative overflow-hidden border-y border-[#E2E8F0] py-16">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 lg:grid-cols-[0.92fr_1fr] lg:px-8">
           <SectionHeading eyebrow="Early Pilot" title="A focused pilot built around a real restaurant workflow.">
-            We're speaking with independent restaurants across Toronto and the GTA that want a cleaner way to handle purchasing and inventory.
+            We're speaking with growing independent restaurants across Toronto and the GTA that want a cleaner way to handle purchasing and inventory.
           </SectionHeading>
           <div className="grid gap-4 sm:grid-cols-3">
             {pilotSteps.map(({ title, text, Icon }) => (
@@ -517,7 +517,7 @@ export function LandingPage() {
             </SectionHeading>
             <div className="surface-panel reveal mt-6 rounded-2xl border p-5">
               <p className="text-sm font-semibold leading-6 text-[#334155]">
-                Built in Toronto and currently speaking with independent restaurants across the GTA.
+                Built in Toronto and currently speaking with growing independent restaurants across the GTA.
               </p>
             </div>
           </div>

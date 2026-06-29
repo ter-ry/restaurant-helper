@@ -527,14 +527,14 @@ export function MenuCostingPage() {
     <PageLayout
       title="Menu & Costing"
       eyebrow="Back Office Core / Demo-real workspace"
-      description="Recipes, item cost, margin."
+      description="Which menu items have real margin concerns or missing setup."
     >
       <div className="grid gap-6">
         <Card className="surface-panel p-5 sm:p-6">
           <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Menu & Costing</p>
-              <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Recipes, item cost, margin.</h1>
+              <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Menu margins and recipe setup.</h1>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" onClick={createMenuItem}>
@@ -544,7 +544,7 @@ export function MenuCostingPage() {
                 Review margin risks
               </Button>
               <Button type="button" variant="secondary" onClick={mapPosItem}>
-                POS mapping demo
+                POS mapping preview
               </Button>
             </div>
           </div>
@@ -555,7 +555,7 @@ export function MenuCostingPage() {
               <Badge tone={metrics.riskItems > 0 ? "warning" : "success"}>Margin risks {metrics.riskItems}</Badge>
             </button>
             <Badge tone={metrics.dataIssueItems > 0 ? "warning" : "neutral"}>Missing data {metrics.dataIssueItems}</Badge>
-            <Badge tone={metrics.squareReady > 0 ? "success" : "neutral"}>Square-ready demo {metrics.squareReady}</Badge>
+            <Badge tone={metrics.squareReady > 0 ? "success" : "neutral"}>POS mapping preview {metrics.squareReady}</Badge>
           </div>
         </Card>
 
@@ -643,7 +643,7 @@ export function MenuCostingPage() {
                   <Badge tone={detailMenuItem.marginTone}>{formatPercent(detailMenuItem.estimatedMargin)} margin</Badge>
                   <Badge tone={detailMenuItem.estimatedMargin < 50 ? "danger" : "success"}>{detailMenuItem.estimatedMargin < 50 ? "Margin pressure" : "Healthy margin"}</Badge>
                   <Badge tone={detailMenuItem.mappingStatus === "Mapped" ? "success" : "warning"}>
-                    {detailMenuItem.mappingStatus === "Mapped" ? "Square-ready demo" : "Future Square connection"}
+                    {detailMenuItem.mappingStatus === "Mapped" ? "Mapped demo item" : "Future POS connection"}
                   </Badge>
                 </div>
 
@@ -780,7 +780,7 @@ export function MenuCostingPage() {
               </Card>
 
               <Card className="p-5">
-                <SectionHeader title="Square-ready mapping demo" />
+                <SectionHeader title="POS mapping preview" />
                 <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="info">Demo / future connection</Badge>

@@ -82,7 +82,7 @@ export function CloseReportsPage() {
     <PageLayout
       title="Close & Reports"
       eyebrow="Back Office Core / export home"
-      description="Daily close, report readiness, and accountant-ready CSV previews."
+      description="Is the close balanced, and are records ready for bookkeeping?"
     >
       <Card className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -92,9 +92,9 @@ export function CloseReportsPage() {
               <Badge tone={exportReadiness.monthlyOwnerReport === "Ready" ? "success" : "warning"}>{exportReadiness.monthlyOwnerReport}</Badge>
               <Badge tone="info">QuickBooks future-only</Badge>
             </div>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Daily close, export readiness, and reporting live here.</h2>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Daily close and bookkeeping readiness live here.</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
-              {demo.customization.restaurantName} keeps the accounting story simple: capture clean purchase records, resolve the daily close, and hand the accountant a believable CSV set.
+              {demo.customization.restaurantName} keeps the accounting handoff simple: capture clean purchase records, resolve the daily close, and hand the accountant a clean CSV set.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -193,7 +193,7 @@ export function CloseReportsPage() {
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Accounting export</p>
             <p className="mt-2 text-sm leading-6 text-slate-700">
-              The MVP is a clean CSV preview and report status. QuickBooks sync stays future only, and no live accounting integration is claimed.
+              The MVP is a clean CSV preview and report status. QuickBooks sync stays future-only, and no live accounting integration is claimed.
             </p>
           </div>
           <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="../reports">

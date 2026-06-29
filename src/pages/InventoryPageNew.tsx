@@ -683,7 +683,7 @@ export function InventoryPage() {
   const handleSaveForReorder = (itemId: string) => {
     const suggestion = reorderSuggestions.find((line) => line.itemId === itemId);
     if (!suggestion) return;
-    const adjustedQuantity = reorderQuantities[itemId] ?? suggestion.adjustedQuantity;
+    const adjustedQuantity = reorderQuantities[itemId] - suggestion.adjustedQuantity;
     upsertInventoryReorderIntent({
       id: suggestion.itemId,
       itemId: suggestion.itemId,
@@ -734,19 +734,19 @@ export function InventoryPage() {
     <PageLayout
       title="Inventory"
       eyebrow="Restaurant operations"
-      description="Stock levels, receiving, waste, and reorder."
+      description="What stock changed, what needs receiving, and what needs reordering."
     >
       <Card className="surface-panel p-5 sm:p-6">
         <div className="flex flex-col gap-4 border-b border-line pb-5">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Inventory</p>
-            <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Stock levels and receiving.</h1>
+            <h1 className="mt-2 text-2xl font-bold text-ink sm:text-3xl">Stock changes, receiving, and reorder needs.</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge tone="warning">Low stock {summary.inventoryLowStockCount}</Badge>
-            <Badge tone="info">Reorder {summary.inventoryReorderNowCount}</Badge>
+            <Badge tone="info">Needs reorder {summary.inventoryReorderNowCount}</Badge>
             <Badge tone="info">Plan {inventoryReorderIntents.filter((intent) => intent.status === "Ordered").length}</Badge>
-            <Badge tone="info">Pending receive {pendingReceiveInvoices.length}</Badge>
+            <Badge tone="info">Needs receiving {pendingReceiveInvoices.length}</Badge>
             <Badge tone={countSessionsSummary.draft || countSessionsSummary.ready ? "warning" : "neutral"}>
               Count {countSessionsSummary.draft || countSessionsSummary.ready ? "Not finished" : "Not started"}
             </Badge>
@@ -837,7 +837,7 @@ export function InventoryPage() {
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
               title="Receive queue"
-              description="Purchase lines waiting to be linked into inventory."
+              description="Purchase lines waiting for confirmation before they update stock."
               action={<Badge tone="info">{receiveQueue.length} lines</Badge>}
             />
             {receiveQueue.length ? (
@@ -955,7 +955,7 @@ export function InventoryPage() {
           <Card className="min-w-0 border border-line bg-white p-5">
             <SectionHeader
               title="Reorder plan"
-              description="Grouped by supplier in the plan drawer. Order draft only."
+              description="Grouped by supplier in the plan drawer. Draft only; no supplier message is sent."
               action={<Badge tone="info">{summary.inventoryItemsToReorderCount} need ordering</Badge>}
             />
             <div className="flex flex-wrap gap-2">
@@ -1607,7 +1607,7 @@ export function InventoryPage() {
         <ModalShell title="Reorder plan" onClose={() => setActivePanel(null)} wide>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
             <div className="rounded-lg border border-line bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-700">
-              Suggested quantity uses PAR first, then minimum when PAR is absent. Cost is only shown when the purchase basis is known. Supplier sending is future-only and no message is sent.
+              Suggested quantity uses PAR first, then minimum when PAR is absent. Cost is only shown when the purchase basis is known. Supplier sending is a future integration, and no message is sent.
             </div>
             <label className="block min-w-0">
               <span className="text-xs font-bold uppercase tracking-wide text-muted">Supplier filter</span>
@@ -1671,7 +1671,7 @@ export function InventoryPage() {
                               className="input mt-2"
                               type="number"
                               step="0.01"
-                              value={reorderQuantities[line.itemId] ?? line.adjustedQuantity}
+                              value={reorderQuantities[line.itemId] - line.adjustedQuantity}
                               onChange={(event) => setReorderQuantities((current) => ({ ...current, [line.itemId]: Number(event.target.value) || 0 }))}
                             />
                           </label>
