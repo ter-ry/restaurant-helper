@@ -274,6 +274,22 @@ function createSeedInvoices(): PilotInvoiceRecord[] {
       ],
     },
     {
+      supplier: "Ontario Produce Co.",
+      invoiceDate: "2026-06-06",
+      invoiceNumber: "OPC-3314",
+      subtotal: 70.8,
+      tax: 9.2,
+      totalAmount: 80,
+      status: "Ready",
+      notes: "Dry goods and prep staples keep the week-over-week comparison realistic.",
+      createdAt: "2026-06-06T09:00:00.000Z",
+      lineItems: [
+        seedLineItem("opc-1", "Jasmine Rice 20kg", 1, "bag", 36, 36, "Dry goods"),
+        seedLineItem("opc-2", "Wheat Noodles 10kg", 1, "case", 21, 21, "Dry goods"),
+        seedLineItem("opc-3", "Teriyaki Sauce 4L", 1, "jug", 13.8, 13.8, "Sauces / condiments"),
+      ],
+    },
+    {
       supplier: "Fresh Dairy Toronto",
       invoiceDate: "2026-06-08",
       invoiceNumber: "FDT-7102",

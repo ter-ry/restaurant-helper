@@ -54,24 +54,27 @@ export function SchedulePage() {
               <Badge tone={commandCenter.schedule.conflicts > 0 ? "warning" : "success"}>{commandCenter.schedule.conflicts} conflict{commandCenter.schedule.conflicts === 1 ? "" : "s"}</Badge>
               <Badge tone={commandCenter.schedule.openShifts > 0 ? "warning" : "success"}>{commandCenter.schedule.openShifts} open shift{commandCenter.schedule.openShifts === 1 ? "" : "s"}</Badge>
             </div>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">A lightweight weekly roster for the bubble tea café.</h2>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">A lightweight weekly roster for the restaurant team.</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
-              Keep availability, preferences, and one simple weekly schedule visible without pulling payroll or clock-in into the demo.
+              Keep availability, preferences, and one simple weekly schedule visible. Payroll and clock-in are intentionally not part of this demo.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" icon={<Wand2 className="h-4 w-4" />}>
-              Generate week
+            <Button type="button" variant="secondary" icon={<Wand2 className="h-4 w-4" />}>
+              Generate week preview
             </Button>
             <Button type="button" variant="secondary" icon={<Download className="h-4 w-4" />}>
-              Export / share
+              Export / share preview
             </Button>
           </div>
         </div>
+        <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
+          Demo preview only: these controls show the intended workflow and do not create payroll, time-clock, or compliance records.
+        </p>
       </Card>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Staff" value={String(commandCenter.schedule.staffCount)} helper="Small team, one café" />
+        <MetricCard label="Staff" value={String(commandCenter.schedule.staffCount)} helper="One restaurant team" />
         <MetricCard label="Open shifts" value={String(commandCenter.schedule.openShifts)} helper="Keep the week covered" />
         <MetricCard label="Conflicts" value={String(commandCenter.schedule.conflicts)} helper="Availability mismatch" />
         <MetricCard label="Draft status" value={commandCenter.schedule.draftStatus} helper="Editable locally" />
@@ -98,7 +101,7 @@ export function SchedulePage() {
         </Card>
 
         <Card className="p-5">
-          <SectionHeader title="Generated weekly schedule" description="The roster stays simple and easy to edit." />
+          <SectionHeader title="Generated weekly schedule preview" description="The roster stays simple and easy to edit." />
           <div className="mt-4 space-y-2">
             {weeklyShifts.map((shift) => (
               <div key={shift.day} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-white px-3 py-3">

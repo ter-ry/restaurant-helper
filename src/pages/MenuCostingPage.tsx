@@ -118,40 +118,6 @@ const seedMenuItems: MenuItemDraft[] = [
     ],
   },
   {
-    id: "brown-sugar-boba",
-    name: "Brown Sugar Boba",
-    category: "Signature drinks",
-    sellingPrice: 8.45,
-    recipeStatus: "Complete",
-    mappingStatus: "Mapped",
-    squarePosItem: "Brown Sugar Boba - 20 oz",
-    packagingCost: 0.12,
-    ingredients: [
-      seedIngredient("Tapioca pearls", 80, "g", 0.02, "Tapioca pearls 3kg bag", 3000, "Recent purchase price"),
-      seedIngredient("Brown sugar syrup", 35, "ml", 0.008, "Brown sugar syrup 5L", 5000, "Recent purchase price"),
-      seedIngredient("Oat milk", 250, "ml", 0.006, "Oat milk cartons", 12000, "Recent purchase price"),
-      seedIngredient("Cup", 1, "each", 0.26, "700ml plastic cups", 250, "Packaging item"),
-      seedIngredient("Straw", 1, "each", 0.04, "Straws", 500, "Packaging item"),
-    ],
-  },
-  {
-    id: "taro-milk-tea",
-    name: "Taro Milk Tea",
-    category: "Signature drinks",
-    sellingPrice: 8.95,
-    recipeStatus: "Needs review",
-    mappingStatus: "Demo only",
-    squarePosItem: "Taro Milk Tea - future Square item",
-    packagingCost: 0.12,
-    ingredients: [
-      seedIngredient("Tapioca pearls", 80, "g", 0.02, "Tapioca pearls 3kg bag", 3000, "Recent purchase price"),
-      seedIngredient("Oat milk", 250, "ml", 0.006, "Oat milk cartons", 12000, "Recent purchase price"),
-      seedIngredient("Taro powder", 35, "g", 0.12, undefined, undefined, "Fallback demo cost"),
-      seedIngredient("Cup", 1, "each", 0.26, "700ml plastic cups", 250, "Packaging item"),
-      seedIngredient("Straw", 1, "each", 0.04, "Straws", 500, "Packaging item"),
-    ],
-  },
-  {
     id: "oat-latte",
     name: "Iced Oat Latte",
     category: "Espresso / iced drinks",
@@ -167,58 +133,73 @@ const seedMenuItems: MenuItemDraft[] = [
     ],
   },
   {
-    id: "black-tea",
-    name: "Fresh Black Tea",
-    category: "Tea",
-    sellingPrice: 3.75,
+    id: "chicken-rice-bowl",
+    name: "Chicken Rice Bowl",
+    category: "Lunch bowls",
+    sellingPrice: 14.95,
     recipeStatus: "Complete",
     mappingStatus: "Mapped",
-    squarePosItem: "Fresh Black Tea - 16 oz",
-    packagingCost: 0.08,
+    squarePosItem: "Chicken Rice Bowl",
+    packagingCost: 0.42,
     ingredients: [
-      seedIngredient("Black tea leaves", 6, "g", 0.04, "Black tea leaves 1kg", 1000, "Recent purchase price"),
-      seedIngredient("Cup", 1, "each", 0.26, "700ml plastic cups", 250, "Packaging item"),
-      seedIngredient("Straw", 1, "each", 0.04, "Straws", 500, "Packaging item"),
+      seedIngredient("Jasmine rice", 140, "g", 0.004, "Jasmine Rice 20kg", 20000, "Recent purchase price"),
+      seedIngredient("Chicken thigh", 160, "g", 0.012, "Chicken Thigh 10kg", 10000, "Recent purchase price"),
+      seedIngredient("Teriyaki sauce", 45, "ml", 0.01, "Teriyaki Sauce 4L", 4000, "Recent purchase price"),
+      seedIngredient("Canola oil", 10, "ml", 0.004, "Canola Oil 16L", 16000, "Recent purchase price"),
+      seedIngredient("Kosher salt", 2, "g", 0.002, "Kosher Salt 1kg", 1000, "Recent purchase price"),
     ],
   },
   {
-    id: "citrus-green-tea",
-    name: "Lemon Green Tea",
-    category: "Tea",
-    sellingPrice: 6.95,
+    id: "spicy-noodle-bowl",
+    name: "Spicy Noodle Bowl",
+    category: "Noodles / pasta",
+    sellingPrice: 13.5,
     recipeStatus: "Complete",
-    mappingStatus: "Demo only",
-    squarePosItem: "Lemon Green Tea - future Square item",
-    packagingCost: 0.09,
+    mappingStatus: "Mapped",
+    squarePosItem: "Spicy Noodle Bowl",
+    packagingCost: 0.38,
     ingredients: [
-      seedIngredient("Green tea leaves", 6, "g", 0.05, undefined, undefined, "Fallback demo cost"),
-      seedIngredient("Lemon syrup", 35, "ml", 0.04, undefined, undefined, "Fallback demo cost"),
-      seedIngredient("Cup", 1, "each", 0.26, "700ml plastic cups", 250, "Packaging item"),
-      seedIngredient("Straw", 1, "each", 0.04, "Straws", 500, "Packaging item"),
+      seedIngredient("Wheat noodles", 180, "g", 0.006, "Wheat Noodles 10kg", 10000, "Recent purchase price"),
+      seedIngredient("Chili oil", 20, "ml", 0.02, "Chili Oil 2L", 2000, "Recent purchase price"),
+      seedIngredient("Peanut sauce", 45, "ml", 0.018, "Peanut Sauce 4L", 4000, "Recent purchase price"),
+      seedIngredient("Green onion", 18, "g", 0.012, undefined, undefined, "Fallback demo cost"),
     ],
   },
   {
-    id: "matcha-cloud-latte",
-    name: "Strawberry Matcha",
-    category: "Signature drinks",
-    sellingPrice: 8.95,
+    id: "tomato-cream-pasta",
+    name: "Tomato Cream Pasta",
+    category: "Noodles / pasta",
+    sellingPrice: 15.95,
     recipeStatus: "Needs review",
-    mappingStatus: "Missing",
-    squarePosItem: "Strawberry Matcha - not mapped",
-    packagingCost: 0.12,
+    mappingStatus: "Demo only",
+    squarePosItem: "Tomato Cream Pasta - Square preview",
+    packagingCost: 0.34,
     ingredients: [
-      seedIngredient("Oat milk", 250, "ml", 0.006, "Oat milk cartons", 12000, "Recent purchase price"),
-      seedIngredient("Matcha powder", 25, "g", 0.18, undefined, undefined, "Fallback demo cost"),
-      seedIngredient("Strawberry puree", 20, "g", 0.08, undefined, undefined, "Fallback demo cost"),
-      seedIngredient("Cup", 1, "each", 0.26, "700ml plastic cups", 250, "Packaging item"),
-      seedIngredient("Straw", 1, "each", 0.04, "Straws", 500, "Packaging item"),
+      seedIngredient("Pasta", 170, "g", 0.006, "Penne Pasta 10kg", 10000, "Recent purchase price"),
+      seedIngredient("Tomato sauce", 120, "ml", 0.009, "Tomato Sauce 6x2.84L", 17040, "Recent purchase price"),
+      seedIngredient("Whipping cream", 60, "ml", 0.012, "Whipping Cream", 1000, "Recent purchase price"),
+      seedIngredient("Parmesan", 24, "g", 0.04, undefined, undefined, "Needs supplier match"),
+      seedIngredient("Black pepper", 1, "g", 0.002, "Black Pepper 500g", 500, "Recent purchase price"),
     ],
   },
   {
-    id: "seasonal-strawberry-matcha",
+    id: "butter-croissant",
+    name: "Butter Croissant",
+    category: "Bakery / snack",
+    sellingPrice: 4.95,
+    recipeStatus: "Complete",
+    mappingStatus: "Mapped",
+    squarePosItem: "Butter Croissant",
+    packagingCost: 0.1,
+    ingredients: [
+      seedIngredient("Croissant", 1, "each", 1.2, "Croissants", 12, "Recent purchase price"),
+    ],
+  },
+  {
+    id: "breakfast-sandwich",
     name: "Breakfast Sandwich",
     category: "Food / bakery",
-    sellingPrice: 7.85,
+    sellingPrice: 8.95,
     recipeStatus: "Draft",
     mappingStatus: "Missing",
     squarePosItem: "Breakfast Sandwich - draft Square item",
@@ -228,6 +209,23 @@ const seedMenuItems: MenuItemDraft[] = [
       seedIngredient("Egg", 2, "each", 0.15, undefined, undefined, "Draft item"),
       seedIngredient("Cheese slice", 1, "each", 0.12, undefined, undefined, "Draft item"),
       seedIngredient("Butter", 8, "g", 0.03, undefined, undefined, "Draft item"),
+    ],
+  },
+  {
+    id: "strawberry-matcha",
+    name: "Strawberry Matcha",
+    category: "Signature drinks",
+    sellingPrice: 8.95,
+    recipeStatus: "Needs review",
+    mappingStatus: "Missing",
+    squarePosItem: "Strawberry Matcha - not mapped",
+    packagingCost: 0.12,
+    ingredients: [
+      seedIngredient("Oat milk", 250, "ml", 0.006, "Oat milk cartons", 12000, "Recent purchase price"),
+      seedIngredient("Matcha powder", 18, "g", 0.16, undefined, undefined, "Needs supplier match"),
+      seedIngredient("Strawberry puree", 35, "g", 0.035, undefined, undefined, "Needs supplier match"),
+      seedIngredient("Cup", 1, "each", 0.26, "700ml plastic cups", 250, "Packaging item"),
+      seedIngredient("Straw", 1, "each", 0.04, "Straws", 500, "Packaging item"),
     ],
   },
 ];
@@ -408,10 +406,10 @@ export function MenuCostingPage() {
   const selectedResolvedMenuItem: ResolvedMenuItem | undefined = resolvedMenuItems.find((item) => item.id === selectedMenuItemId) ?? resolvedMenuItems[0];
 
   const allItems = useMemo(() => [...resolvedMenuItems].sort((a, b) => {
-    if (a.id === "seasonal-strawberry-matcha") {
+    if (a.id === "breakfast-sandwich") {
       return -1;
     }
-    if (b.id === "seasonal-strawberry-matcha") {
+    if (b.id === "breakfast-sandwich") {
       return 1;
     }
     return b.estimatedMargin - a.estimatedMargin;
@@ -497,7 +495,7 @@ export function MenuCostingPage() {
   };
 
   const createMenuItem = () => {
-    const draftId = "seasonal-strawberry-matcha";
+    const draftId = "breakfast-sandwich";
     setSelectedMenuItemId(draftId);
     setActivePanel({ kind: "detail", itemId: draftId });
   };

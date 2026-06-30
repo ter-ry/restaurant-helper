@@ -761,8 +761,8 @@ export function InventoryPage() {
             <Button type="button" variant="secondary" icon={<Trash2 className="h-4 w-4" />} onClick={openWastePanel}>
               Log waste
             </Button>
-            <Button type="button" variant="secondary" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
-              Reorder list
+            <Button type="button" icon={<Archive className="h-4 w-4" />} onClick={openReorderPanel}>
+              Reorder list ({reorderSuggestions.length})
             </Button>
           </div>
         </div>
@@ -1248,9 +1248,19 @@ export function InventoryPage() {
           </div>
 
           <div className="mt-5 space-y-4">
+            <div className="rounded-xl border border-line bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Match progress</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-700">
+                <Badge tone="success">Ready {receiveLines.filter((line) => line.state === "linked").length}</Badge>
+                <Badge tone="warning">Needs confirmation {receiveLines.filter((line) => line.state === "unmapped" || (line.state === "linked" && !line.selectedItemId)).length}</Badge>
+                <Badge tone="neutral">Skipped {receiveLines.filter((line) => line.state === "do-not-track").length}</Badge>
+                <Badge tone="success">Completed {receiveLines.filter((line) => line.state === "already-received").length}</Badge>
+              </div>
+            </div>
             {receiveLines.map((line) => {
               const item = inventoryItems.find((candidate) => candidate.id === line.selectedItemId) ?? null;
               const canLink = line.state !== "already-received";
+              const canChooseItem = line.state !== "already-received" && line.state !== "do-not-track";
               return (
                 <div key={line.invoiceLineItemId} className="rounded-xl border border-line bg-white p-4 shadow-soft">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1267,7 +1277,7 @@ export function InventoryPage() {
                       {canLink ? (
                         <>
                           <Button type="button" variant="secondary" onClick={() => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: "linked", selectedItemId: line.suggestedItemId ?? entry.selectedItemId, matchLabel: entry.matchLabel === "Previously mapped" ? "Previously mapped" : line.suggestedItemId ? "Suggested match" : "Needs confirmation" } : entry)))}>
-                            Confirm match
+                            Use suggested match
                           </Button>
                           <Button type="button" variant="secondary" onClick={() => {
                             const source = recentInvoices.find((invoice) => invoice.id === selectedInvoiceId);
@@ -1284,9 +1294,9 @@ export function InventoryPage() {
                               parLevel: 0,
                             });
                             setItemMode("create");
-                            setItemPanelTitle("New inventory item");
+                            setItemPanelTitle("Create inventory item from invoice line");
                           }}>
-                            Create new inventory item
+                            Create new item
                           </Button>
                           <Button type="button" variant="ghost" onClick={() => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: "do-not-track", selectedItemId: "", matchLabel: "Not mapped" } : entry)))}>
                             Do not track
@@ -1296,10 +1306,10 @@ export function InventoryPage() {
                     </div>
                   </div>
 
-                  {line.state === "linked" ? (
+                  {canChooseItem ? (
                     <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(10rem,0.55fr)_minmax(0,1fr)]">
                       <Field label="Inventory item">
-                        <select className="input" value={line.selectedItemId} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, selectedItemId: event.target.value, matchLabel: line.matchLabel === "Previously mapped" ? "Previously mapped" : line.suggestedItemId === event.target.value ? "Suggested match" : event.target.value ? "Needs confirmation" : "Not mapped" } : entry)))}>
+                        <select className="input" value={line.selectedItemId} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, state: event.target.value ? "linked" : "unmapped", selectedItemId: event.target.value, matchLabel: line.matchLabel === "Previously mapped" ? "Previously mapped" : line.suggestedItemId === event.target.value ? "Suggested match" : event.target.value ? "Needs confirmation" : "Not mapped" } : entry)))}>
                           <option value="">Choose item</option>
                           {sortInventoryItems(inventoryItems).map((candidate) => (
                             <option key={candidate.id} value={candidate.id}>

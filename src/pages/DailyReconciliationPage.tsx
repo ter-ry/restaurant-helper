@@ -31,7 +31,7 @@ const SOURCE_CARDS: Array<{
   { key: "uber_eats", label: "Uber Eats", helper: "Upload the daily report or payout export.", targetField: "uberEats" },
   { key: "doordash", label: "DoorDash", helper: "Upload the daily report or settlement export.", targetField: "doorDash" },
   { key: "skip", label: "Skip", helper: "Upload the daily report or payout export.", targetField: "skip" },
-  { key: "pos", label: "POS sales report", helper: "Upload the end-of-day POS close report.", targetField: "expectedPosSales" },
+  { key: "pos", label: "POS sales report", helper: "Upload a POS close report, or enter the total manually.", targetField: "expectedPosSales" },
   { key: "card", label: "Card processor", helper: "Upload the batch or settlement report.", targetField: "card" },
   { key: "cash", label: "Cash close record", helper: "Upload an optional cash count or drawer close.", targetField: "cash" },
 ];
@@ -308,13 +308,13 @@ export function DailyReconciliationPage() {
     <PageLayout
       title="Daily close log"
       eyebrow={`${demo.customization.restaurantName} / Pilot workspace`}
-      description="Record the day’s POS total and payment totals. Flowtally highlights anything that still needs attention."
+      description="Enter POS and payment totals manually. Flowtally calculates the variance from the values entered here."
     >
       <div className="grid gap-6 xl:grid-cols-[minmax(0,2.75fr)_minmax(320px,1fr)]">
         <Card className="surface-panel p-6">
           <SectionHeader
             title="Daily close"
-            description="Enter the day’s totals first. Imports are optional and stay out of the way until you need them."
+            description="Enter the day's totals first. Imports are optional and stay out of the way until you need them."
             action={
               <Button type="button" variant="secondary" onClick={() => setShowImportHelper((current) => !current)}>
                 Import report
@@ -322,7 +322,7 @@ export function DailyReconciliationPage() {
             }
           />
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
-            Flowtally compares the POS total with cash, card, and delivery-channel totals, then keeps unresolved differences visible until they are corrected.
+            POS sync is not live in this demo. Enter POS, cash, card, and delivery totals manually; Flowtally calculates the variance and keeps unresolved differences visible.
           </p>
 
           {showImportHelper ? (
@@ -463,7 +463,7 @@ export function DailyReconciliationPage() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Daily close</p>
                   <h2 className="mt-1 text-lg font-bold text-ink">Business date and expected POS</h2>
-                  <p className="mt-1 text-sm leading-6 text-muted">Start with the date and the POS total that should have been collected for the day.</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">Start with the date and the POS total from the close report or register summary.</p>
                 </div>
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -516,7 +516,7 @@ export function DailyReconciliationPage() {
                 </Field>
                 <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                   <p className="font-semibold text-ink">What this means</p>
-                  <p className="mt-1">Flowtally compares the POS total with cash, card, and delivery totals so unresolved differences stay visible until they are corrected.</p>
+                  <p className="mt-1">Flowtally compares the manually entered POS total with cash, card, and delivery totals so unresolved differences stay visible.</p>
                 </div>
               </div>
             </section>

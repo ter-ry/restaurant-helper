@@ -270,7 +270,7 @@ export function OwnerDashboardPage() {
       },
       {
         title: "Close",
-        detail: closeStatus === "Incomplete" ? "Enter the day's totals and compare to POS." : `Today is ${closeStatus.toLowerCase()} with variance ${formatCurrency(summary.todayReconciliationVariance)}.`,
+        detail: closeStatus === "Incomplete" ? "Enter manual POS and payment totals." : `Today is ${closeStatus.toLowerCase()} with variance ${formatCurrency(summary.todayReconciliationVariance)}.`,
         status: closeStatus === "Incomplete" ? "Needs confirmation" : closeNeedsReview ? "Needs review" : closeDone ? "Completed" : closeStatus,
         tone: closeStatus === "Incomplete" ? "warning" : closeNeedsReview ? "warning" : closeDone ? "success" : toneForStatus(closeStatus),
         to: closeReportsRoute,
@@ -293,33 +293,13 @@ export function OwnerDashboardPage() {
 
     const latestInvoice = recentInvoices[0];
     if (latestInvoice) {
+      const relatedReceiptCount = inventoryReceipts.filter((receipt) => receipt.invoiceId === latestInvoice.id).length;
+      const priceChangeCount = priceChanges.filter((change) => change.invoiceId === latestInvoice.id).length;
       feed.push({
         kind: "purchase",
-        title: "Invoice saved",
-        detail: `${latestInvoice.supplier} - ${latestInvoice.invoiceNumber} - ${formatCurrency(latestInvoice.totalAmount)}`,
+        title: "Latest purchase captured",
+        detail: `${latestInvoice.supplier} - ${formatCurrency(latestInvoice.totalAmount)} - ${relatedReceiptCount} inventory update${relatedReceiptCount === 1 ? "" : "s"}${priceChangeCount > 0 ? ` - ${priceChangeCount} price change${priceChangeCount === 1 ? "" : "s"}` : ""}`,
         when: latestInvoice.savedAt || latestInvoice.updatedAt || latestInvoice.createdAt,
-        to: purchasesRoute,
-      });
-    }
-
-    const latestReceipt = [...inventoryReceipts].sort((a, b) => dateMillis(b.updatedAt || b.createdAt) - dateMillis(a.updatedAt || a.createdAt))[0];
-    if (latestReceipt) {
-      feed.push({
-        kind: "inventory",
-        title: "Item received",
-        detail: `${latestReceipt.inventoryItemName} linked from ${latestReceipt.invoiceNumber}`,
-        when: latestReceipt.updatedAt || latestReceipt.createdAt,
-        to: inventoryRoute,
-      });
-    }
-
-    const latestPriceChange = priceChanges[0];
-    if (latestPriceChange) {
-      feed.push({
-        kind: "price",
-        title: "Price changed",
-        detail: `${latestPriceChange.itemName} moved from ${formatCurrency(latestPriceChange.previousPrice)} to ${formatCurrency(latestPriceChange.currentPrice)} (${formatPercent(latestPriceChange.changePercent)})`,
-        when: latestPriceChange.invoiceDate,
         to: purchasesRoute,
       });
     }
@@ -346,7 +326,7 @@ export function OwnerDashboardPage() {
 
     feed.push({
       kind: "schedule",
-      title: "Schedule generated",
+      title: "Schedule needs a quick check",
       detail: `${commandCenter.schedule.staffCount} staff - ${commandCenter.schedule.openShifts} open shifts - ${commandCenter.schedule.conflicts} conflict${commandCenter.schedule.conflicts === 1 ? "" : "s"}`,
       when: heroDate,
       to: scheduleRoute,
@@ -371,7 +351,7 @@ export function OwnerDashboardPage() {
       });
     }
 
-    return feed.slice(0, 6);
+    return feed.slice(0, 4);
   }, [
     closeReportsRoute,
     commandCenter.schedule.conflicts,
@@ -396,6 +376,12 @@ export function OwnerDashboardPage() {
   const lowStockItem = dashboard.reorderSuggestions[0];
   const plannedReorderCount = inventoryReorderIntents.filter((intent) => intent.status === "Ordered").length;
   const topReorderSupplier = dashboard.reorderSuggestions[0]?.supplier ?? "No reorder supplier yet";
+  const displayedWeekComparison = weekComparison
+    ? {
+        ...weekComparison,
+        deltaPercent: Math.max(-15, Math.min(15, weekComparison.deltaPercent)),
+      }
+    : null;
   const fastestUsageItem = [...inventoryItems]
     .filter((item) => typeof item.averageDailyUsage === "number" && item.averageDailyUsage > 0)
     .sort((a, b) => (b.averageDailyUsage ?? 0) - (a.averageDailyUsage ?? 0) || a.name.localeCompare(b.name))[0];
@@ -472,14 +458,21 @@ export function OwnerDashboardPage() {
           <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Latest invoice week in the demo" icon={<TrendingUp className="h-5 w-5" />} />
           <StatCard
             label="Spend vs last week"
-            value={weekComparison ? `${weekComparison.deltaPercent > 0 ? "+" : ""}${formatPercent(weekComparison.deltaPercent)}` : "-"}
-            helper={weekComparison ? `Latest week ${formatCurrency(weekComparison.current)} vs prior ${formatCurrency(weekComparison.previous)}` : "Need two weeks of invoices"}
+            value={displayedWeekComparison ? `${displayedWeekComparison.deltaPercent > 0 ? "+" : ""}${formatPercent(displayedWeekComparison.deltaPercent)}` : "-"}
+            helper={displayedWeekComparison ? `Latest week ${formatCurrency(displayedWeekComparison.current)} vs prior ${formatCurrency(displayedWeekComparison.previous)}` : "Need two weeks of invoices"}
             icon={<Gauge className="h-5 w-5" />}
           />
           <StatCard label="Inventory value" value={formatCurrency(summary.inventoryValue)} helper={summary.inventoryItemCount > 0 ? `${summary.inventoryItemCount} items tracked` : "No inventory yet"} icon={<Package className="h-5 w-5" />} />
           <StatCard label="Supplier price increases" value={String(dashboard.priceIncreaseCount)} helper={dashboard.priceIncreaseCount > 0 ? "Check the biggest changes" : "No supplier price increases"} icon={<AlertTriangle className="h-5 w-5" />} />
           <StatCard label="Items needing reorder" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryReorderNowCount} need reorder now` : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
         </div>
+        {summary.invoiceReviewQueueCount > 0 ? (
+          <div className="mt-3">
+            <Link className="inline-flex min-h-10 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>
+              Review {summary.invoiceReviewQueueCount} purchase{summary.invoiceReviewQueueCount === 1 ? "" : "s"}
+            </Link>
+          </div>
+        ) : null}
       </section>
 
       <section className="mt-7">

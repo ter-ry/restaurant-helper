@@ -94,7 +94,7 @@ export function CloseReportsPage() {
             </div>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Daily close and bookkeeping readiness live here.</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
-              {demo.customization.restaurantName} keeps the accounting handoff simple: capture clean purchase records, resolve the daily close, and hand the accountant a clean CSV set.
+              {demo.customization.restaurantName} keeps the accounting handoff simple: capture clean purchase records, enter the daily close manually, and hand the accountant a clean CSV set.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -193,7 +193,7 @@ export function CloseReportsPage() {
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Accounting export</p>
             <p className="mt-2 text-sm leading-6 text-slate-700">
-              The MVP is a clean CSV preview and report status. QuickBooks sync stays future-only, and no live accounting integration is claimed.
+              The MVP is a clean CSV preview and report status. Daily close totals are entered manually; QuickBooks sync stays future-only.
             </p>
           </div>
           <Link className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="../reports">

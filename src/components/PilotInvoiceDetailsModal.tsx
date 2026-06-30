@@ -63,12 +63,12 @@ export function PilotInvoiceDetailsModal({
               <Badge tone={invoice.confirmed ? "success" : "warning"}>{invoice.confirmed ? "Saved" : "Needs review"}</Badge>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Reopen this saved record to confirm the stored values. OCR is not rerun when viewing an already saved invoice.
+              View the saved purchase details or edit the stored values. OCR is not rerun when viewing an already saved invoice.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onClick={() => onReopenInReview(invoice)}>
-              Reopen in review
+              Edit saved purchase
             </Button>
             <Button type="button" variant="secondary" onClick={() => onReceiveIntoInventory(invoice)}>
               Receive into inventory

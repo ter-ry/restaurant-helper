@@ -91,7 +91,7 @@ const compareColumns = [
   {
     title: "Enterprise software",
     accent: false,
-    bullets: ["Usually broader than an independent restaurant needs", "More setup and more training", "Can feel heavy for manager day-to-day use"],
+    bullets: ["Usually broader than an independent restaurant needs", "Higher monthly cost", "More setup and more training", "Can feel heavy for manager day-to-day use"],
   },
   {
     title: "Flowtally",
@@ -338,8 +338,8 @@ export function LandingPage() {
       <section id="hero" className="relative z-10 overflow-hidden border-b border-[#E2E8F0] bg-gradient-to-br from-[#F8FAFC]/90 via-[#F1F5F9]/82 to-[#E2E8F0]/84">
         <div className="hero-grid relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 py-[72px] md:py-[84px] lg:min-h-[680px] lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] lg:gap-12 lg:px-8">
           <div className="reveal min-w-0">
-            <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/84 px-3 py-1 text-sm font-bold text-[#334155] shadow-sm backdrop-blur">
-              <Handshake className="h-4 w-4 text-[#0D9488]" />
+            <p className="inline-flex items-center gap-2 rounded-full border border-[#99F6E4] bg-[#ECFDF5]/92 px-3 py-1 text-sm font-bold text-[#0F766E] shadow-sm backdrop-blur">
+              <Handshake className="h-4 w-4 text-[#0F766E]" />
               For growing independent restaurants
             </p>
             <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.04] tracking-normal text-[#0F172A] [overflow-wrap:anywhere] md:text-5xl lg:text-[clamp(3rem,4.3vw,4.25rem)]">

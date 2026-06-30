@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, Save, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, FileUp, Loader2, Plus, Save, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge, type BadgeTone } from "../components/Badge";
@@ -338,7 +338,7 @@ export function InvoiceUploadPage() {
     setSavedInvoicePrompt(null);
     setDraft(createDraftFromInvoice(invoice));
     setReviewOpen(true);
-    setStatusMessage(`Reopened ${invoice.supplier || "the invoice"} for review.`);
+    setStatusMessage(`Editing saved purchase from ${invoice.supplier || "this supplier"}.`);
     setErrorMessage("");
   };
 
@@ -956,7 +956,6 @@ export function InvoiceUploadPage() {
         isProcessing={isProcessing}
         isSaving={isSaving}
         onClose={handleCloseReviewModal}
-        onConfirm={() => setDraft((current) => ({ ...current, confirmed: true }))}
         onSave={handleSave}
         setDraft={setDraft}
         uncertainFields={uncertainFields}
@@ -1255,7 +1254,6 @@ export function InvoiceReviewModal({
   isProcessing,
   isSaving,
   onClose,
-  onConfirm,
   onSave,
   setDraft,
   uncertainFields,
@@ -1272,7 +1270,6 @@ export function InvoiceReviewModal({
   isProcessing: boolean;
   isSaving: boolean;
   onClose: () => void;
-  onConfirm: () => void;
   onSave: () => void;
   setDraft: Dispatch<SetStateAction<PilotInvoiceDraft>>;
   uncertainFields: string[];
@@ -1652,7 +1649,7 @@ export function InvoiceReviewModal({
                     type="checkbox"
                   />
                   <span>
-                    I reviewed this invoice and understand that the fields were extracted and may still need correction before the record is trusted.
+                    I reviewed the extracted fields and item matches. Saving will complete this purchase record.
                   </span>
                 </label>
                 <div className="mt-4 flex flex-wrap gap-3">
@@ -1663,15 +1660,6 @@ export function InvoiceReviewModal({
                     disabled={!draft.confirmed || isProcessing || isSaving || !draft.fileName}
                   >
                     {isSaving ? "Saving..." : "Save purchase"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    icon={<CheckCircle2 className="h-4 w-4" />}
-                    onClick={onConfirm}
-                    disabled={isProcessing}
-                  >
-                    Mark reviewed
                   </Button>
                 </div>
               </div>
