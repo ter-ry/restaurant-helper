@@ -8,7 +8,7 @@ type AnalyticsEventName =
 
 type AnalyticsProperties = Record<string, string | number | boolean | undefined>;
 
-const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim();
+const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim() || "G-CB7FFQ95VQ";
 const plausibleDomain = import.meta.env.VITE_PLAUSIBLE_DOMAIN?.trim();
 
 let analyticsInitialized = false;
@@ -47,14 +47,12 @@ export function initAnalytics() {
     appendScript("https://plausible.io/js/script.manual.js", { "data-domain": plausibleDomain });
   }
 
-  if (gaMeasurementId) {
-    window.dataLayer = window.dataLayer || [];
-    window.gtag = function gtag(...args: GtagCommand) {
+  window.dataLayer = window.dataLayer || [];
+  window.gtag =
+    window.gtag ||
+    function gtag(...args: GtagCommand) {
       window.dataLayer?.push(args);
     };
-    window.gtag("js", new Date());
-    appendScript(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaMeasurementId)}`);
-  }
 }
 
 export function trackPageView(path: string) {
@@ -65,7 +63,8 @@ export function trackPageView(path: string) {
   const url = `${window.location.origin}${path}`;
   window.plausible?.("pageview", { u: url });
   if (gaMeasurementId) {
-    window.gtag?.("config", gaMeasurementId, {
+    window.gtag?.("event", "page_view", {
+      send_to: gaMeasurementId,
       page_location: url,
       page_path: path,
     });
