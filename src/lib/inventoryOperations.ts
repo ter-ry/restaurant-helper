@@ -366,7 +366,7 @@ export function buildReorderSuggestions(items: InventoryItem[], intents: Invento
         latestPurchaseConversionFactor: item.latestPurchaseConversionFactor,
       };
     })
-    .filter((line) => line.suggestedQuantity > 0 || line.status !== "Needs ordering");
+    .filter((line) => line.stockStatus === "Out of stock" || line.stockStatus === "Reorder now" || line.status !== "Needs ordering");
 }
 
 function calculateEstimatedCost(item: InventoryItem, suggestedQuantity: number) {

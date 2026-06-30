@@ -481,9 +481,15 @@ function isPilotWorkspaceState(value: unknown): value is PilotWorkspaceState {
   return Array.isArray(candidate.invoices) && Array.isArray(candidate.reconciliations);
 }
 
+function isLegacyNonRestaurantInvoice(record: PilotInvoiceRecord) {
+  const haystack = `${record.supplier} ${record.invoiceNumber} ${record.notes} ${record.lineItems.map((item) => `${item.itemName} ${item.originalDescription}`).join(" ")}`.toLowerCase();
+  return /\b(?:east repair|bike|bicycle|repair|labor|labour)\b/.test(haystack);
+}
+
 export function normalizeStoredWorkspace(state: PilotWorkspaceState): PilotWorkspaceState {
+  const invoices = state.invoices.map(normalizeStoredInvoiceRecord).filter((record) => !isLegacyNonRestaurantInvoice(record));
   return {
-    invoices: state.invoices.map(normalizeStoredInvoiceRecord),
+    invoices,
     reconciliations: state.reconciliations.map(normalizeStoredReconciliationRecord),
     inventory: {
       ...normalizeStoredInventoryState(state.inventory),
@@ -1033,9 +1039,17 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
           recorded += 1;
         }
 
+        const nextInvoiceStatus = recorded > 0 ? "Ready" : invoice.status;
         const nextInvoices = state.invoices.map((entry) =>
           entry.id === invoice.id && inventoryStatus
-            ? { ...entry, inventoryReceiptStatus: inventoryStatus, inventoryReceiptUpdatedAt: now, updatedAt: now }
+            ? {
+                ...entry,
+                status: nextInvoiceStatus,
+                confirmed: true,
+                inventoryReceiptStatus: inventoryStatus,
+                inventoryReceiptUpdatedAt: now,
+                updatedAt: now,
+              }
             : entry,
         );
         const nextState = {

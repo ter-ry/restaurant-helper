@@ -79,11 +79,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-2",
     name: "Brown sugar syrup 5L",
     category: "Syrups / toppings",
-    currentQuantity: 4,
+    currentQuantity: 6,
     receiptQuantity: 4,
     unit: "bottle",
     minQuantity: 3,
-    parLevel: 7,
+    parLevel: 8,
     preferredSupplier: "GTA Beverage Supply",
     latestPurchasePrice: 31,
     latestPurchaseUnit: "bottle",
@@ -98,11 +98,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-3",
     name: "Black tea leaves 1kg",
     category: "Tea / beverage base",
-    currentQuantity: 9,
+    currentQuantity: 12,
     receiptQuantity: 8,
     unit: "bag",
     minQuantity: 4,
-    parLevel: 10,
+    parLevel: 14,
     preferredSupplier: "GTA Beverage Supply",
     latestPurchasePrice: 34,
     latestPurchaseUnit: "bag",
@@ -150,7 +150,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-5",
     name: "700ml plastic cups",
     category: "Packaging",
-    currentQuantity: 22,
+    currentQuantity: 28,
     receiptQuantity: 24,
     unit: "case",
     minQuantity: 12,
@@ -202,7 +202,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-7",
     name: "Straws",
     category: "Packaging",
-    currentQuantity: 16,
+    currentQuantity: 20,
     receiptQuantity: 14,
     unit: "box",
     minQuantity: 8,
@@ -228,7 +228,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-8",
     name: "Cup lids",
     category: "Packaging",
-    currentQuantity: 5,
+    currentQuantity: 6,
     receiptQuantity: 5,
     unit: "case",
     minQuantity: 4,
@@ -247,11 +247,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-9",
     name: "Croissants",
     category: "Food / bakery",
-    currentQuantity: 6,
+    currentQuantity: 12,
     receiptQuantity: 6,
     unit: "tray",
     minQuantity: 4,
-    parLevel: 8,
+    parLevel: 14,
     preferredSupplier: "Local Bakery Supply",
     latestPurchasePrice: 28.4,
     latestPurchaseUnit: "tray",
@@ -273,7 +273,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-10",
     name: "Breakfast Sandwich Buns",
     category: "Food / bakery",
-    currentQuantity: 8,
+    currentQuantity: 9,
     receiptQuantity: 8,
     unit: "bag",
     minQuantity: 6,
@@ -330,11 +330,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-13",
     name: "Wheat Noodles 10kg",
     category: "Dry goods",
-    currentQuantity: 2,
+    currentQuantity: 8,
     receiptQuantity: 2,
     unit: "case",
     minQuantity: 1,
-    parLevel: 3,
+    parLevel: 6,
     preferredSupplier: "Ontario Produce Co.",
     latestPurchasePrice: 68,
     latestPurchaseUnit: "case",
@@ -349,11 +349,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-14",
     name: "Penne Pasta 10kg",
     category: "Dry goods",
-    currentQuantity: 1,
+    currentQuantity: 7,
     receiptQuantity: 2,
     unit: "case",
-    minQuantity: 1,
-    parLevel: 3,
+    minQuantity: 2,
+    parLevel: 6,
     preferredSupplier: "Ontario Produce Co.",
     latestPurchasePrice: 64,
     latestPurchaseUnit: "case",
@@ -368,11 +368,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-15",
     name: "Teriyaki Sauce 4L",
     category: "Sauces / condiments",
-    currentQuantity: 2,
+    currentQuantity: 5,
     receiptQuantity: 2,
     unit: "jug",
     minQuantity: 1,
-    parLevel: 3,
+    parLevel: 4,
     preferredSupplier: "Ontario Produce Co.",
     latestPurchasePrice: 34,
     latestPurchaseUnit: "jug",
@@ -387,11 +387,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-16",
     name: "Canola Oil 16L",
     category: "Oils / staples",
-    currentQuantity: 1,
+    currentQuantity: 4,
     receiptQuantity: 2,
     unit: "jug",
     minQuantity: 1,
-    parLevel: 2,
+    parLevel: 3,
     preferredSupplier: "Ontario Produce Co.",
     latestPurchasePrice: 52,
     latestPurchaseUnit: "jug",
@@ -406,11 +406,11 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-17",
     name: "Kosher Salt 1kg",
     category: "Dry goods",
-    currentQuantity: 4,
+    currentQuantity: 6,
     receiptQuantity: 4,
     unit: "box",
     minQuantity: 2,
-    parLevel: 4,
+    parLevel: 5,
     preferredSupplier: "Ontario Produce Co.",
     latestPurchasePrice: 6,
     latestPurchaseUnit: "box",
@@ -425,7 +425,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-18",
     name: "Black Pepper 500g",
     category: "Dry goods",
-    currentQuantity: 2,
+    currentQuantity: 3,
     receiptQuantity: 2,
     unit: "tin",
     minQuantity: 1,
@@ -444,7 +444,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-19",
     name: "Chili Oil 2L",
     category: "Sauces / condiments",
-    currentQuantity: 1,
+    currentQuantity: 3,
     receiptQuantity: 2,
     unit: "jug",
     minQuantity: 1,
@@ -463,7 +463,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-20",
     name: "Peanut Sauce 4L",
     category: "Sauces / condiments",
-    currentQuantity: 2,
+    currentQuantity: 4,
     receiptQuantity: 2,
     unit: "jug",
     minQuantity: 1,
@@ -482,7 +482,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-21",
     name: "Tomato Sauce 6x2.84L",
     category: "Sauces / condiments",
-    currentQuantity: 1,
+    currentQuantity: 3,
     receiptQuantity: 2,
     unit: "case",
     minQuantity: 1,
@@ -501,7 +501,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     id: "inventory-seed-22",
     name: "Granulated Sugar 10kg",
     category: "Dry goods",
-    currentQuantity: 3,
+    currentQuantity: 6,
     receiptQuantity: 4,
     unit: "bag",
     minQuantity: 2,
@@ -514,6 +514,120 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     lastCountedAt: "2026-06-18",
     averageDailyUsage: 0.18,
     notes: "Shared staple for prep, drinks, and bakery.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-23",
+    name: "Eggs",
+    category: "Grocery / prep",
+    currentQuantity: 12,
+    receiptQuantity: 3,
+    unit: "flat",
+    minQuantity: 1,
+    parLevel: 8,
+    preferredSupplier: "No Frills Grocery",
+    latestPurchasePrice: 18.4,
+    latestPurchaseUnit: "flat",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-15",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.35,
+    notes: "Breakfast sandwich and prep staple.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-24",
+    name: "Cheese Slices",
+    category: "Grocery / prep",
+    currentQuantity: 7,
+    receiptQuantity: 2,
+    unit: "box",
+    minQuantity: 1,
+    parLevel: 5,
+    preferredSupplier: "No Frills Grocery",
+    latestPurchasePrice: 15.8,
+    latestPurchaseUnit: "box",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-15",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.2,
+    notes: "Breakfast sandwich ingredient.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-25",
+    name: "Butter Blocks",
+    category: "Grocery / prep",
+    currentQuantity: 4,
+    receiptQuantity: 2,
+    unit: "block",
+    minQuantity: 1,
+    parLevel: 3,
+    preferredSupplier: "Local Bakery Supply",
+    latestPurchasePrice: 13.4,
+    latestPurchaseUnit: "block",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-11",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.22,
+    notes: "Used by breakfast sandwiches and bakery prep.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-26",
+    name: "Whipping Cream",
+    category: "Dairy",
+    currentQuantity: 5,
+    receiptQuantity: 4,
+    unit: "carton",
+    minQuantity: 2,
+    parLevel: 4,
+    preferredSupplier: "Fresh Dairy Toronto",
+    latestPurchasePrice: 8.4,
+    latestPurchaseUnit: "carton",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-08",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.3,
+    notes: "Pasta sauce and drink topping dairy.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-27",
+    name: "Whole Milk 4L",
+    category: "Dairy",
+    currentQuantity: 6,
+    receiptQuantity: 4,
+    unit: "case",
+    minQuantity: 2,
+    parLevel: 5,
+    preferredSupplier: "Fresh Dairy Toronto",
+    latestPurchasePrice: 7.2,
+    latestPurchaseUnit: "case",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-08",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.25,
+    notes: "Backup dairy for prep and beverage service.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-28",
+    name: "Seasonal Vegetables 5kg",
+    category: "Produce",
+    currentQuantity: 5,
+    receiptQuantity: 3,
+    unit: "case",
+    minQuantity: 1,
+    parLevel: 4,
+    preferredSupplier: "Ontario Produce Co.",
+    latestPurchasePrice: 27,
+    latestPurchaseUnit: "case",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-06",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.28,
+    notes: "Vegetable prep for rice bowls and noodle bowls.",
     movements: [],
   },
 ];
@@ -547,6 +661,11 @@ function normalizeSupplierKey(value: string) {
   return value.trim().toLowerCase();
 }
 
+function isLegacyNonRestaurantInventoryItem(item: Pick<InventoryItem, "name" | "category" | "preferredSupplier" | "notes">) {
+  const haystack = `${item.name} ${item.category} ${item.preferredSupplier} ${item.notes}`.toLowerCase();
+  return /\b(?:bike|bicycle|repair|labor|labour)\b/.test(haystack);
+}
+
 function inventoryStatusForItem(item: InventoryItem): InventoryItemStatus {
   const now = Date.now();
   const lastCountedAt = Date.parse(item.lastCountedAt || "");
@@ -572,7 +691,7 @@ export function getInventoryStatusTone(status: InventoryItemStatus) {
     case "Out of stock":
       return "critical" as const;
     case "Reorder now":
-      return "danger" as const;
+      return "orange" as const;
     case "Low stock":
       return "warning" as const;
     case "Count needed":
@@ -591,6 +710,16 @@ export function sortInventoryItems(items: InventoryItem[]) {
     const activeDelta = Number(b.active) - Number(a.active);
     if (activeDelta !== 0) {
       return activeDelta;
+    }
+
+    const seedDelta = Number(a.id.startsWith("inventory-seed-")) - Number(b.id.startsWith("inventory-seed-"));
+    if (seedDelta !== 0) {
+      return seedDelta;
+    }
+
+    const updatedDelta = toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt);
+    if (updatedDelta !== 0) {
+      return updatedDelta;
     }
 
     const statusOrder = inventoryStatusRank(inventoryStatusForItem(a)) - inventoryStatusRank(inventoryStatusForItem(b));
@@ -771,11 +900,18 @@ function ensureInventoryItemShape(item: InventoryItem): InventoryItem {
 
 export function normalizeStoredInventoryState(state: Partial<PilotInventoryState> | undefined): PilotInventoryState {
   const fallback = createSeedInventoryState();
-  const items = Array.isArray(state?.items) ? state.items.map((item) => ensureInventoryItemShape(item)) : fallback.items;
+  const storedItems = Array.isArray(state?.items)
+    ? state.items.map((item) => ensureInventoryItemShape(item)).filter((item) => !isLegacyNonRestaurantInventoryItem(item))
+    : fallback.items;
+  const storedItemIds = new Set(storedItems.map((item) => item.id));
+  const items = [
+    ...storedItems,
+    ...fallback.items.filter((item) => !storedItemIds.has(item.id)),
+  ];
   const itemMap = new Map(items.map((item) => [item.id, item] as const));
 
   const movements = Array.isArray(state?.movements)
-    ? state.movements.map((movement) => ({
+    ? state.movements.filter((movement) => itemMap.has(movement.inventoryItemId)).map((movement) => ({
         ...movement,
         inventoryItemName: movement.inventoryItemName || itemMap.get(movement.inventoryItemId)?.name || "Unknown item",
         movementType: movement.movementType as InventoryMovementType,
@@ -790,7 +926,7 @@ export function normalizeStoredInventoryState(state: Partial<PilotInventoryState
     : fallback.movements;
 
   const receipts = Array.isArray(state?.receipts)
-    ? state.receipts.map((receipt) => ({
+    ? state.receipts.filter((receipt) => itemMap.has(receipt.inventoryItemId)).map((receipt) => ({
         ...receipt,
         invoiceNumber: receipt.invoiceNumber || "",
         invoiceDate: receipt.invoiceDate || "",
@@ -810,7 +946,7 @@ export function normalizeStoredInventoryState(state: Partial<PilotInventoryState
     : fallback.receipts;
 
   const lineMappings = Array.isArray(state?.lineMappings)
-    ? state.lineMappings.map((mapping) => ({
+    ? state.lineMappings.filter((mapping) => itemMap.has(mapping.inventoryItemId)).map((mapping) => ({
         id: mapping.id || `inventory-mapping-${nowIso()}`,
         supplierKey: normalizeSupplierKey(mapping.supplierKey || ""),
         lineKey: normalizeName(mapping.lineKey || ""),

@@ -1,4 +1,4 @@
-import { Archive, Clock3, History, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2, X } from "lucide-react";
+﻿import { Archive, Clock3, History, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -10,6 +10,7 @@ import { buildDemoPath, useDemoProfile } from "../lib/demoProfile";
 import {
   createInventoryDraft,
   describeInventoryStatus,
+  getInventoryStatusTone,
   rememberInventoryMapping,
   sortInventoryItems,
   sortInventoryMovementsNewestFirst,
@@ -67,6 +68,40 @@ function emptyManualMovement(): ManualMovementDraft {
 
 function normalizePanelItem(item?: InventoryItem | null): PilotInventoryDraft {
   return createInventoryDraft(item ?? undefined);
+}
+
+function buildInventoryPreviewItem(draft: PilotInventoryDraft, base?: InventoryItem | null): InventoryItem {
+  const now = new Date().toISOString();
+  const name = draft.name.trim() || base?.name || "New item";
+  const category = draft.category.trim() || base?.category || "Other";
+  const unit = draft.unit.trim() || base?.unit || "each";
+  const preferredSupplier = draft.preferredSupplier.trim() || base?.preferredSupplier || "";
+  const currentQuantity = Number.isFinite(draft.currentQuantity) ? draft.currentQuantity : base?.currentQuantity ?? 0;
+  const minQuantity = Number.isFinite(draft.minQuantity) ? draft.minQuantity : base?.minQuantity ?? 0;
+  const parLevel = Number.isFinite(draft.parLevel) ? draft.parLevel : Math.max(minQuantity, base?.parLevel ?? 0);
+  return {
+    id: base?.id || "inventory-draft-preview",
+    name,
+    normalizedName: base?.normalizedName || name.toLowerCase(),
+    category,
+    currentQuantity,
+    unit,
+    minQuantity,
+    parLevel,
+    preferredSupplier,
+    latestPurchasePrice: Number.isFinite(draft.latestPurchasePrice) ? draft.latestPurchasePrice : base?.latestPurchasePrice ?? 0,
+    latestPurchaseUnit: base?.latestPurchaseUnit || unit,
+    latestPurchaseConversionFactor: base?.latestPurchaseConversionFactor ?? 1,
+    lastReceivedAt: base?.lastReceivedAt || now.slice(0, 10),
+    lastCountedAt: base?.lastCountedAt || now.slice(0, 10),
+    averageDailyUsage: draft.averageDailyUsage ?? base?.averageDailyUsage,
+    supplierMatchKey: base?.supplierMatchKey || preferredSupplier.toLowerCase(),
+    itemMatchKey: base?.itemMatchKey || name.toLowerCase(),
+    active: draft.active,
+    notes: draft.notes.trim(),
+    createdAt: base?.createdAt || now,
+    updatedAt: now,
+  };
 }
 
 function movementLabel(type: InventoryMovementType) {
@@ -208,6 +243,10 @@ export function InventoryPage() {
   const selectedItem = useMemo(() => inventoryItems.find((item) => item.id === selectedItemId) ?? null, [inventoryItems, selectedItemId]);
   const selectedHistoryItemId = activePanel?.kind === "history" ? activePanel.itemId : null;
   const selectedHistoryItem = useMemo(() => inventoryItems.find((item) => item.id === selectedHistoryItemId) ?? null, [inventoryItems, selectedHistoryItemId]);
+  const itemPreview = useMemo(
+    () => (activePanel?.kind === "item" ? buildInventoryPreviewItem(itemDraft, selectedItem) : null),
+    [activePanel?.kind, itemDraft, selectedItem],
+  );
 
   const filteredItems = useMemo(() => {
     return sortInventoryItems(inventoryItems).filter((item) => {
@@ -760,7 +799,7 @@ export function InventoryPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge tone="warning">Low stock {summary.inventoryLowStockCount}</Badge>
-            <Badge tone="info">Needs reorder {summary.inventoryReorderNowCount}</Badge>
+            <Badge tone="orange">Reorder list {reorderSuggestions.length}</Badge>
             <Badge tone="info">Plan {inventoryReorderIntents.filter((intent) => intent.status === "Ordered").length}</Badge>
             <Badge tone="info">Needs receiving {pendingReceiveInvoices.length}</Badge>
             <Badge tone={countSessionsSummary.draft || countSessionsSummary.ready ? "warning" : "neutral"}>
@@ -828,10 +867,10 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-ink">{item.name}</p>
                       <p className="mt-1 text-xs text-muted">
-                        {item.category} · {item.preferredSupplier || "No preferred supplier"}
+                        {item.category} Â· {item.preferredSupplier || "No preferred supplier"}
                       </p>
                     </div>
-                    <Badge tone={item.active ? "success" : "warning"}>{item.active ? status.status : "Archived"}</Badge>
+                    <Badge tone={item.active ? getInventoryStatusTone(status.status) : "warning"}>{item.active ? status.status : "Archived"}</Badge>
                   </div>
                   <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-3">
                     <MiniStat label="On hand" value={`${item.currentQuantity} ${item.unit}`} />
@@ -839,7 +878,7 @@ export function InventoryPage() {
                     <MiniStat label="Days remaining" value={status.daysRemaining ? `${Math.max(0, Math.round(status.daysRemaining ?? 0))} days` : "Usage not configured"} />
                   </div>
                   <p className="mt-3 text-xs leading-5 text-muted">
-                    {item.lastReceivedAt ? `Last received ${formatDate(item.lastReceivedAt)}` : "No receipt recorded yet"} · {item.lastCountedAt ? `Counted ${formatDate(item.lastCountedAt)}` : "No count saved yet"}
+                    {item.lastReceivedAt ? `Last received ${formatDate(item.lastReceivedAt)}` : "No receipt recorded yet"} Â· {item.lastCountedAt ? `Counted ${formatDate(item.lastCountedAt)}` : "No count saved yet"}
                   </p>
                   {lineItemButtons(item)}
                 </div>
@@ -989,13 +1028,13 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-ink">{line.itemName}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">
-                        {line.supplier} · {line.currentQuantity} {line.unit} on hand · order {line.adjustedQuantity} {line.unit}
+                        {line.supplier} Â· {line.currentQuantity} {line.unit} on hand Â· order {line.adjustedQuantity} {line.unit}
                       </p>
                     </div>
                     <Badge tone={reorderStatusTone(line.status)}>{reorderStatusLabel(line.status)}</Badge>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted">
-                    PAR {line.parLevel} · Min {line.minimumQuantity} · {line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}{line.estimatedCost === null ? "" : ` · ${formatCurrency(line.estimatedCost)}`}
+                    PAR {line.parLevel} Â· Min {line.minimumQuantity} Â· {line.estimatedDaysRemaining ? `${Math.max(0, Math.round(line.estimatedDaysRemaining))} days left` : "Usage not configured"}{line.estimatedCost === null ? "" : ` Â· ${formatCurrency(line.estimatedCost)}`}
                   </p>
                 </div>
               ))}
@@ -1051,7 +1090,7 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-ink">{line.supplier}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">
-                        {line.invoiceNumber || "No invoice number"} · {formatDate(line.invoiceDate)}
+                        {line.invoiceNumber || "No invoice number"} Â· {formatDate(line.invoiceDate)}
                       </p>
                       <p className="mt-1 truncate text-xs leading-5 text-muted">{line.invoiceLineName}</p>
                     </div>
@@ -1090,29 +1129,29 @@ export function InventoryPage() {
 
       {activePanel?.kind === "item" ? (
         <ModalShell title={itemPanelTitle} onClose={closeItemPanel}>
-          {selectedItem ? (
+          {itemPreview ? (
             <div className="mb-5 rounded-xl border border-line bg-slate-50 p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Item detail</p>
-                  <h3 className="mt-1 text-lg font-bold text-ink">{selectedItem.name}</h3>
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Live preview</p>
+                  <h3 className="mt-1 text-lg font-bold text-ink">{itemPreview.name}</h3>
                   <p className="mt-1 text-sm leading-6 text-slate-700">
-                    {selectedItem.category} | {selectedItem.active ? "Active" : "Archived"} | {selectedItem.preferredSupplier || "No preferred supplier"}
+                    {itemPreview.category} | {itemPreview.active ? "Active" : "Archived"} | {itemPreview.preferredSupplier || "No preferred supplier"}
                   </p>
                 </div>
-                <Badge tone={selectedItem.active ? "success" : "warning"}>{describeInventoryStatus(selectedItem).status}</Badge>
+                <Badge tone={itemPreview.active ? getInventoryStatusTone(describeInventoryStatus(itemPreview).status) : "warning"}>{describeInventoryStatus(itemPreview).status}</Badge>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <MiniStat label="Current quantity" value={`${selectedItem.currentQuantity} ${selectedItem.unit}`} />
-                <MiniStat label="PAR / min" value={`${selectedItem.parLevel} / ${selectedItem.minQuantity} ${selectedItem.unit}`} />
-                <MiniStat label="Days remaining" value={describeInventoryStatus(selectedItem).daysRemaining ? `About ${Math.max(0, Math.round(describeInventoryStatus(selectedItem).daysRemaining ?? 0))} days` : "Usage not configured"} />
-                <MiniStat label="Latest price" value={formatCurrency(selectedItem.latestPurchasePrice)} />
+                <MiniStat label="Current quantity" value={`${itemPreview.currentQuantity} ${itemPreview.unit}`} />
+                <MiniStat label="PAR / min" value={`${itemPreview.parLevel} / ${itemPreview.minQuantity} ${itemPreview.unit}`} />
+                <MiniStat label="Days remaining" value={describeInventoryStatus(itemPreview).daysRemaining ? `About ${Math.max(0, Math.round(describeInventoryStatus(itemPreview).daysRemaining ?? 0))} days` : "Usage not configured"} />
+                <MiniStat label="Latest price" value={formatCurrency(itemPreview.latestPurchasePrice)} />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <MiniStat label="Last received" value={selectedItem.lastReceivedAt} />
-                <MiniStat label="Last counted" value={selectedItem.lastCountedAt} />
-                <MiniStat label="Average daily usage" value={selectedItem.averageDailyUsage ? `${selectedItem.averageDailyUsage} / day` : "Usage not configured"} />
-                <MiniStat label="Purchase basis" value={selectedItem.latestPurchaseConversionFactor ? `1 ${selectedItem.latestPurchaseUnit} = ${selectedItem.latestPurchaseConversionFactor} ${selectedItem.unit}` : "Cost unavailable — confirm purchase unit"} />
+                <MiniStat label="Last received" value={itemPreview.lastReceivedAt} />
+                <MiniStat label="Last counted" value={itemPreview.lastCountedAt} />
+                <MiniStat label="Average daily usage" value={itemPreview.averageDailyUsage ? `${itemPreview.averageDailyUsage} / day` : "Usage not configured"} />
+                <MiniStat label="Purchase basis" value={itemPreview.latestPurchaseConversionFactor ? `1 ${itemPreview.latestPurchaseUnit} = ${itemPreview.latestPurchaseConversionFactor} ${itemPreview.unit}` : "Cost unavailable — confirm purchase unit"} />
               </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-xl border border-line bg-white p-4">
@@ -1123,7 +1162,7 @@ export function InventoryPage() {
                         <div key={receipt.id} className="rounded-lg border border-line bg-slate-50 p-3">
                           <p className="text-sm font-semibold text-ink">{receipt.supplier}</p>
                           <p className="mt-1 text-xs leading-5 text-muted">
-                            {receipt.invoiceNumber || "No invoice number"} · {formatDate(receipt.invoiceDate)} · {receipt.quantity} {receipt.unit}
+                            {receipt.invoiceNumber || "No invoice number"} Â· {formatDate(receipt.invoiceDate)} Â· {receipt.quantity} {receipt.unit}
                           </p>
                           <p className="mt-1 text-xs leading-5 text-muted">{receipt.invoiceLineDescription}</p>
                         </div>
@@ -1141,7 +1180,7 @@ export function InventoryPage() {
                         <div key={session.id} className="rounded-lg border border-line bg-slate-50 p-3">
                           <p className="text-sm font-semibold text-ink">{session.countedBy || session.id}</p>
                           <p className="mt-1 text-xs leading-5 text-muted">
-                            {session.status} · {describeCountSessionProgress(session)}
+                            {session.status} Â· {describeCountSessionProgress(session)}
                           </p>
                         </div>
                       ))
@@ -1353,7 +1392,7 @@ export function InventoryPage() {
                   <div className="mt-4 rounded-lg border border-dashed border-line bg-slate-50 px-3 py-3 text-sm text-slate-700">
                     <p className="font-semibold text-ink">Effective stock addition</p>
                     <p className="mt-1">
-                      {line.invoiceQuantity} {line.invoiceUnit} × {line.conversionFactor} = {(line.invoiceQuantity * line.conversionFactor).toFixed(2)} {line.inventoryUnit}
+                      {line.invoiceQuantity} {line.invoiceUnit} Ã— {line.conversionFactor} = {(line.invoiceQuantity * line.conversionFactor).toFixed(2)} {line.inventoryUnit}
                     </p>
                     {item ? <p className="mt-1 text-xs text-muted">Receiving into {item.name}</p> : null}
                   </div>
@@ -1497,7 +1536,7 @@ export function InventoryPage() {
                           disabled={countSession.status === "Completed" || countSession.status === "Cancelled"}
                         />
                       </label>
-                      <MiniStat label="Difference" value={line.difference === null ? "—" : `${line.difference > 0 ? "+" : ""}${line.difference} ${line.stockUnitSnapshot}`} />
+                      <MiniStat label="Difference" value={line.difference === null ? "â€”" : `${line.difference > 0 ? "+" : ""}${line.difference} ${line.stockUnitSnapshot}`} />
                       <label className="block min-w-0">
                         <span className="text-xs font-bold uppercase tracking-wide text-muted">Note</span>
                         <input
@@ -1674,7 +1713,7 @@ export function InventoryPage() {
                     <div>
                       <p className="text-sm font-bold text-ink">{group.supplier}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">
-                        {group.itemCount} item{group.itemCount === 1 ? "" : "s"} · Estimated order total {group.estimatedOrderTotal ? formatCurrency(group.estimatedOrderTotal) : "Unavailable"}
+                        {group.itemCount} item{group.itemCount === 1 ? "" : "s"} Â· Estimated order total {group.estimatedOrderTotal ? formatCurrency(group.estimatedOrderTotal) : "Unavailable"}
                       </p>
                     </div>
                     <Badge tone="info">Needs action</Badge>
@@ -1686,7 +1725,7 @@ export function InventoryPage() {
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-ink">{line.itemName}</p>
                             <p className="mt-1 text-xs leading-5 text-muted">
-                              {line.stockStatus} · {line.currentQuantity} {line.unit} on hand · PAR {line.parLevel} · Min {line.minimumQuantity}
+                              {line.stockStatus} Â· {line.currentQuantity} {line.unit} on hand Â· PAR {line.parLevel} Â· Min {line.minimumQuantity}
                             </p>
                           </div>
                           <Badge tone={reorderStatusTone(line.status)}>{reorderStatusLabel(line.status)}</Badge>
@@ -1744,13 +1783,13 @@ export function InventoryPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-ink">{movement.inventoryItemName}</p>
                       <p className="mt-1 truncate text-xs leading-5 text-muted">
-                        {movementLabel(movement.movementType)} · {movement.sourceInvoiceNumber || movement.sourceCountSessionName || "Manual entry"}
+                        {movementLabel(movement.movementType)} Â· {movement.sourceInvoiceNumber || movement.sourceCountSessionName || "Manual entry"}
                       </p>
                     </div>
                     <Badge tone={movementTone(movement.movementType)}>{movement.quantityDelta >= 0 ? "+" : ""}{movement.quantityDelta.toFixed(2)} {movement.unit}</Badge>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted">
-                    {formatDate(movement.createdAt.slice(0, 10))} · {movement.note || "No note saved"}
+                    {formatDate(movement.createdAt.slice(0, 10))} Â· {movement.note || "No note saved"}
                   </p>
                 </div>
               ))
