@@ -20,14 +20,12 @@ export function PilotInvoiceDetailsModal({
   invoice,
   inventoryStatus,
   onClose,
-  onReopenInReview,
   onReceiveIntoInventory,
 }: {
   open: boolean;
   invoice: PilotInvoiceRecord | null;
   inventoryStatus: string | null;
   onClose: () => void;
-  onReopenInReview: (invoice: PilotInvoiceRecord) => void;
   onReceiveIntoInventory: (invoice: PilotInvoiceRecord) => void;
 }) {
   if (!open || !invoice) {
@@ -50,6 +48,7 @@ export function PilotInvoiceDetailsModal({
       onClose();
     }
   };
+  const canReceiveIntoInventory = inventoryStatus !== "Received" && inventoryStatus !== "No tracked items" && inventoryStatus !== "Skipped";
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true">
@@ -63,16 +62,15 @@ export function PilotInvoiceDetailsModal({
               <Badge tone={invoice.confirmed ? "success" : "warning"}>{invoice.confirmed ? "Saved" : "Needs review"}</Badge>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted">
-              View the saved purchase details or edit the stored values. OCR is not rerun when viewing an already saved invoice.
+              This is a saved purchase record. OCR is not rerun from this view.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={() => onReopenInReview(invoice)}>
-              Edit saved purchase
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => onReceiveIntoInventory(invoice)}>
-              Receive into inventory
-            </Button>
+            {canReceiveIntoInventory ? (
+              <Button type="button" variant="secondary" onClick={() => onReceiveIntoInventory(invoice)}>
+                Receive into inventory
+              </Button>
+            ) : null}
             <Button type="button" variant="ghost" onClick={onClose}>
               Close
             </Button>

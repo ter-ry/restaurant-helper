@@ -454,17 +454,18 @@ export function OwnerDashboardPage() {
       <section className="mt-7">
         <SectionHeader title="Numbers to know" />
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <StatCard label="Purchases this week" value={String(summary.weeklyInvoiceCount)} helper={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend) : "No purchases yet"} icon={<FileText className="h-5 w-5" />} />
-          <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Latest invoice week in the demo" icon={<TrendingUp className="h-5 w-5" />} />
+          <StatCard label="Purchases this week" value={String(summary.weeklyInvoiceCount)} helper={summary.weeklyInvoiceCount > 0 ? formatCurrency(summary.weeklyInvoiceSpend) : "No purchases yet"} icon={<FileText className="h-5 w-5" />} to={purchasesRoute} />
+          <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Latest invoice week in the demo" icon={<TrendingUp className="h-5 w-5" />} to={purchasesRoute} />
           <StatCard
             label="Spend vs last week"
-            value={displayedWeekComparison ? `${displayedWeekComparison.deltaPercent > 0 ? "+" : ""}${formatPercent(displayedWeekComparison.deltaPercent)}` : "-"}
+            value={displayedWeekComparison ? formatPercent(displayedWeekComparison.deltaPercent) : "-"}
             helper={displayedWeekComparison ? `Latest week ${formatCurrency(displayedWeekComparison.current)} vs prior ${formatCurrency(displayedWeekComparison.previous)}` : "Need two weeks of invoices"}
             icon={<Gauge className="h-5 w-5" />}
+            to={purchasesRoute}
           />
-          <StatCard label="Inventory value" value={formatCurrency(summary.inventoryValue)} helper={summary.inventoryItemCount > 0 ? `${summary.inventoryItemCount} items tracked` : "No inventory yet"} icon={<Package className="h-5 w-5" />} />
-          <StatCard label="Supplier price increases" value={String(dashboard.priceIncreaseCount)} helper={dashboard.priceIncreaseCount > 0 ? "Check the biggest changes" : "No supplier price increases"} icon={<AlertTriangle className="h-5 w-5" />} />
-          <StatCard label="Items needing reorder" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryReorderNowCount} need reorder now` : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} />
+          <StatCard label="Inventory value" value={formatCurrency(summary.inventoryValue)} helper={summary.inventoryItemCount > 0 ? `${summary.inventoryItemCount} items tracked` : "No inventory yet"} icon={<Package className="h-5 w-5" />} to={inventoryRoute} />
+          <StatCard label="Supplier price increases" value={String(dashboard.priceIncreaseCount)} helper={dashboard.priceIncreaseCount > 0 ? "Check the biggest changes" : "No supplier price increases"} icon={<AlertTriangle className="h-5 w-5" />} to={purchasesRoute} />
+          <StatCard label="Items needing reorder" value={String(summary.inventoryItemsToReorderCount)} helper={summary.inventoryItemsToReorderCount > 0 ? `${summary.inventoryReorderNowCount} need reorder now` : "No reorder action"} icon={<TrendingUp className="h-5 w-5" />} to={inventoryRoute} state={{ openPanel: "reorder" }} />
         </div>
         {summary.invoiceReviewQueueCount > 0 ? (
           <div className="mt-3">

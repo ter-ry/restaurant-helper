@@ -298,7 +298,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 2,
     parLevel: 4,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 36,
+    latestPurchasePrice: 58,
     latestPurchaseUnit: "bag",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -317,7 +317,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 3,
     preferredSupplier: "Ontario Meat & Poultry",
-    latestPurchasePrice: 82,
+    latestPurchasePrice: 145,
     latestPurchaseUnit: "case",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -336,7 +336,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 3,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 42,
+    latestPurchasePrice: 68,
     latestPurchaseUnit: "case",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -355,7 +355,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 3,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 39,
+    latestPurchasePrice: 64,
     latestPurchaseUnit: "case",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -374,7 +374,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 3,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 24,
+    latestPurchasePrice: 34,
     latestPurchaseUnit: "jug",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -393,7 +393,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 2,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 47,
+    latestPurchasePrice: 52,
     latestPurchaseUnit: "jug",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -450,7 +450,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 2,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 28,
+    latestPurchasePrice: 34,
     latestPurchaseUnit: "jug",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -469,7 +469,7 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 3,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 32,
+    latestPurchasePrice: 42,
     latestPurchaseUnit: "jug",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
@@ -488,13 +488,32 @@ const seedInventorySpecs: SeedInventorySpec[] = [
     minQuantity: 1,
     parLevel: 2,
     preferredSupplier: "Ontario Produce Co.",
-    latestPurchasePrice: 44,
+    latestPurchasePrice: 58,
     latestPurchaseUnit: "case",
     latestPurchaseConversionFactor: 1,
     lastReceivedAt: "2026-06-06",
     lastCountedAt: "2026-06-18",
     averageDailyUsage: 0.08,
     notes: "Pasta sauce base for the lunch menu.",
+    movements: [],
+  },
+  {
+    id: "inventory-seed-22",
+    name: "Granulated Sugar 10kg",
+    category: "Dry goods",
+    currentQuantity: 3,
+    receiptQuantity: 4,
+    unit: "bag",
+    minQuantity: 2,
+    parLevel: 5,
+    preferredSupplier: "Ontario Produce Co.",
+    latestPurchasePrice: 19,
+    latestPurchaseUnit: "bag",
+    latestPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-06-06",
+    lastCountedAt: "2026-06-18",
+    averageDailyUsage: 0.18,
+    notes: "Shared staple for prep, drinks, and bakery.",
     movements: [],
   },
 ];
@@ -551,11 +570,13 @@ function inventoryStatusForItem(item: InventoryItem): InventoryItemStatus {
 export function getInventoryStatusTone(status: InventoryItemStatus) {
   switch (status) {
     case "Out of stock":
+      return "critical" as const;
     case "Reorder now":
       return "danger" as const;
     case "Low stock":
-    case "Count needed":
       return "warning" as const;
+    case "Count needed":
+      return "info" as const;
     default:
       return "success" as const;
   }

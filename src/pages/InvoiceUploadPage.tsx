@@ -445,6 +445,13 @@ export function InvoiceUploadPage() {
   };
 
   const handleReceiveSavedInvoice = (invoice: PilotInvoiceRecord) => {
+    const inventoryStatus = summarizeInvoiceInventoryStatus(invoice, inventoryReceipts);
+    if (inventoryStatus === "Received" || inventoryStatus === "No tracked items" || inventoryStatus === "Skipped") {
+      setStatusMessage(`${invoice.supplier || "This purchase"} is already marked ${inventoryStatus.toLowerCase()}.`);
+      setSavedInvoicePrompt(null);
+      setReviewOpen(false);
+      return;
+    }
     setSavedInvoicePrompt(null);
     setReviewOpen(false);
     setStatusMessage(`Opening inventory receipt flow for ${invoice.supplier || "the saved invoice"}.`);
@@ -972,10 +979,6 @@ export function InvoiceUploadPage() {
         invoice={selectedInvoice}
         inventoryStatus={selectedInvoiceInventoryStatus}
         onClose={() => setSelectedInvoiceId(null)}
-        onReopenInReview={(invoice) => {
-          setSelectedInvoiceId(null);
-          reopenInvoiceForReview(invoice);
-        }}
         onReceiveIntoInventory={(invoice) => {
           setSelectedInvoiceId(null);
           navigate(`${buildDemoPath(defaultDemoProfileSlug, "inventory")}?receive=${encodeURIComponent(invoice.id)}`);

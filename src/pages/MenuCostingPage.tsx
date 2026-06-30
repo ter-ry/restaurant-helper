@@ -60,6 +60,7 @@ type ResolvedMenuItem = MenuItemDraft & {
 };
 
 type ActiveMenuPanel = null | { kind: "detail"; itemId: string } | { kind: "risks" };
+type MenuSortKey = "margin" | "grossProfit" | "sellingPrice" | "ingredientCost" | "name";
 
 const editableFieldClass =
   "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-muted focus:border-brand-300 focus:ring-2 focus:ring-brand-100";
@@ -146,6 +147,7 @@ const seedMenuItems: MenuItemDraft[] = [
       seedIngredient("Chicken thigh", 160, "g", 0.012, "Chicken Thigh 10kg", 10000, "Recent purchase price"),
       seedIngredient("Teriyaki sauce", 45, "ml", 0.01, "Teriyaki Sauce 4L", 4000, "Recent purchase price"),
       seedIngredient("Canola oil", 10, "ml", 0.004, "Canola Oil 16L", 16000, "Recent purchase price"),
+      seedIngredient("Seasonal vegetables", 90, "g", 0.016, undefined, undefined, "Prep cost estimate"),
       seedIngredient("Kosher salt", 2, "g", 0.002, "Kosher Salt 1kg", 1000, "Recent purchase price"),
     ],
   },
@@ -162,6 +164,7 @@ const seedMenuItems: MenuItemDraft[] = [
       seedIngredient("Wheat noodles", 180, "g", 0.006, "Wheat Noodles 10kg", 10000, "Recent purchase price"),
       seedIngredient("Chili oil", 20, "ml", 0.02, "Chili Oil 2L", 2000, "Recent purchase price"),
       seedIngredient("Peanut sauce", 45, "ml", 0.018, "Peanut Sauce 4L", 4000, "Recent purchase price"),
+      seedIngredient("Braised tofu", 95, "g", 0.014, undefined, undefined, "Prep cost estimate"),
       seedIngredient("Green onion", 18, "g", 0.012, undefined, undefined, "Fallback demo cost"),
     ],
   },
@@ -179,6 +182,7 @@ const seedMenuItems: MenuItemDraft[] = [
       seedIngredient("Tomato sauce", 120, "ml", 0.009, "Tomato Sauce 6x2.84L", 17040, "Recent purchase price"),
       seedIngredient("Whipping cream", 60, "ml", 0.012, "Whipping Cream", 1000, "Recent purchase price"),
       seedIngredient("Parmesan", 24, "g", 0.04, undefined, undefined, "Needs supplier match"),
+      seedIngredient("Garlic bread garnish", 1, "each", 0.72, undefined, undefined, "Prep cost estimate"),
       seedIngredient("Black pepper", 1, "g", 0.002, "Black Pepper 500g", 500, "Recent purchase price"),
     ],
   },
@@ -397,6 +401,9 @@ export function MenuCostingPage() {
   const [menuItems, setMenuItems] = useState<MenuItemDraft[]>(() => seedMenuItems.map(cloneItem));
   const [selectedMenuItemId, setSelectedMenuItemId] = useState(seedMenuItems[0].id);
   const [activePanel, setActivePanel] = useState<ActiveMenuPanel>(null);
+  const [menuSearch, setMenuSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All categories");
+  const [sortKey, setSortKey] = useState<MenuSortKey>("margin");
 
   const resolvedMenuItems: ResolvedMenuItem[] = useMemo(
     () => menuItems.map((item) => resolveMenuItem(item, inventoryItems, priceChanges)),
@@ -405,15 +412,36 @@ export function MenuCostingPage() {
 
   const selectedResolvedMenuItem: ResolvedMenuItem | undefined = resolvedMenuItems.find((item) => item.id === selectedMenuItemId) ?? resolvedMenuItems[0];
 
-  const allItems = useMemo(() => [...resolvedMenuItems].sort((a, b) => {
-    if (a.id === "breakfast-sandwich") {
-      return -1;
-    }
-    if (b.id === "breakfast-sandwich") {
-      return 1;
-    }
-    return b.estimatedMargin - a.estimatedMargin;
-  }), [resolvedMenuItems]);
+  const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(resolvedMenuItems.map((item) => item.category))).sort()], [resolvedMenuItems]);
+
+  const allItems = useMemo(() => {
+    const query = menuSearch.trim().toLowerCase();
+    return [...resolvedMenuItems]
+      .filter((item) => {
+        if (categoryFilter !== "All categories" && item.category !== categoryFilter) {
+          return false;
+        }
+        if (!query) {
+          return true;
+        }
+        return `${item.name} ${item.category} ${item.squarePosItem}`.toLowerCase().includes(query);
+      })
+      .sort((a, b) => {
+        switch (sortKey) {
+          case "grossProfit":
+            return b.estimatedGrossProfit - a.estimatedGrossProfit || a.name.localeCompare(b.name);
+          case "sellingPrice":
+            return b.sellingPrice - a.sellingPrice || a.name.localeCompare(b.name);
+          case "ingredientCost":
+            return b.estimatedIngredientCost - a.estimatedIngredientCost || a.name.localeCompare(b.name);
+          case "name":
+            return a.name.localeCompare(b.name);
+          case "margin":
+          default:
+            return b.estimatedMargin - a.estimatedMargin || a.name.localeCompare(b.name);
+        }
+      });
+  }, [categoryFilter, menuSearch, resolvedMenuItems, sortKey]);
 
   const metrics = useMemo(() => {
     const recipeComplete = resolvedMenuItems.filter((item) => item.recipeStatus === "Complete").length;
@@ -558,9 +586,33 @@ export function MenuCostingPage() {
         </Card>
 
         <Card className="p-5">
-          <SectionHeader title="Menu item list" action={<Badge tone="neutral">{resolvedMenuItems.length} demo items</Badge>} />
+          <SectionHeader title="Menu item list" action={<Badge tone="neutral">{allItems.length} shown</Badge>} />
+          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)_minmax(12rem,0.35fr)]">
+            <label className="space-y-1">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted">Search</span>
+              <input className={editableFieldClass} value={menuSearch} onChange={(event) => setMenuSearch(event.target.value)} placeholder="Search menu items" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted">Category</span>
+              <select className={editableFieldClass} value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                {categoryOptions.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted">Sort by</span>
+              <select className={editableFieldClass} value={sortKey} onChange={(event) => setSortKey(event.target.value as MenuSortKey)}>
+                <option value="margin">Margin %</option>
+                <option value="grossProfit">Gross profit</option>
+                <option value="sellingPrice">Selling price</option>
+                <option value="ingredientCost">Ingredient cost</option>
+                <option value="name">Name</option>
+              </select>
+            </label>
+          </div>
           <div className="mt-4 space-y-2">
-            {allItems.map((item) => (
+            {allItems.length ? allItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -584,14 +636,18 @@ export function MenuCostingPage() {
                     <p className="mt-1 text-xs leading-5 text-muted">selling</p>
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-                  <span>Ingredient cost {formatCurrency(item.estimatedIngredientCost)}</span>
-                  <span>Gross profit {formatCurrency(item.estimatedGrossProfit)}</span>
-                  <span>{formatPercent(item.estimatedMargin)} margin</span>
-                  <span>Open recipe</span>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <MenuMetricChip label="Selling" value={formatCurrency(item.sellingPrice)} tone="neutral" />
+                  <MenuMetricChip label="Ingredient cost" value={formatCurrency(item.estimatedIngredientCost)} tone="info" />
+                  <MenuMetricChip label="Gross profit" value={formatCurrency(item.estimatedGrossProfit)} tone={item.estimatedGrossProfit > 0 ? "success" : "danger"} />
+                  <MenuMetricChip label="Margin" value={formatPercent(item.estimatedMargin)} tone={toneForMargin(item.estimatedMargin)} />
                 </div>
               </button>
-            ))}
+            )) : (
+              <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+                No demo menu items match that filter.
+              </div>
+            )}
           </div>
         </Card>
 
@@ -913,5 +969,22 @@ function SummaryChip({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-1 text-sm font-semibold text-ink">{value}</p>
     </div>
+  );
+}
+
+function MenuMetricChip({ label, value, tone }: { label: string; value: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }) {
+  const toneClass = {
+    neutral: "border-line bg-slate-50 text-slate-700",
+    success: "border-brand-100 bg-brand-50 text-brand-800",
+    warning: "border-amber-100 bg-amber-50 text-amber-800",
+    danger: "border-red-100 bg-red-50 text-red-800",
+    info: "border-slate-200 bg-white text-slate-700",
+  }[tone];
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+      <span className="text-[10px] uppercase tracking-wide opacity-70">{label}</span>
+      <span>{value}</span>
+    </span>
   );
 }

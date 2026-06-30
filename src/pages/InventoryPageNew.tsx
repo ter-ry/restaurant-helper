@@ -329,6 +329,9 @@ export function InventoryPage() {
       return;
     }
     if (activePanel.mode === "create") {
+      if (activePanel.fromReceiveLineId) {
+        return;
+      }
       setItemDraft(createInventoryDraft());
       setItemPanelTitle("New inventory item");
       setItemMode("create");
@@ -348,6 +351,14 @@ export function InventoryPage() {
     setItemMode(mode);
     setItemPanelTitle(mode === "create" ? "New inventory item" : "Edit inventory item");
     setItemDraft(normalizePanelItem(item));
+  };
+
+  const closeItemPanel = () => {
+    if (activePanel?.kind === "item" && activePanel.fromReceiveLineId) {
+      setActivePanel({ kind: "receive" });
+      return;
+    }
+    setActivePanel(null);
   };
 
   const openReceivePanel = (invoiceId = selectedInvoiceId) => {
@@ -491,7 +502,6 @@ export function InventoryPage() {
     setMessage(`${itemMode === "create" ? "Created" : "Updated"} ${saved.name} successfully.`);
     setErrorMessage("");
     setSelectedItemId(saved.id);
-    setActivePanel(null);
     if (activePanel?.kind === "item" && activePanel.fromReceiveLineId) {
       setReceiveLines((current) =>
         current.map((line) =>
@@ -508,6 +518,8 @@ export function InventoryPage() {
         ),
       );
       setActivePanel({ kind: "receive" });
+    } else {
+      setActivePanel(null);
     }
   };
 
@@ -567,7 +579,11 @@ export function InventoryPage() {
       }
     }
 
-    setMessage(`Recorded ${result.recorded} invoice receipt line${result.recorded === 1 ? "" : "s"}${result.skipped ? `, skipped ${result.skipped} duplicates` : ""}.`);
+    setMessage(
+      result.recorded > 0
+        ? `Recorded ${result.recorded} invoice receipt line${result.recorded === 1 ? "" : "s"} and updated inventory.`
+        : "This purchase was already received. No duplicate stock movement was created.",
+    );
     setErrorMessage("");
     closeReceivePanel();
   };
@@ -1073,7 +1089,7 @@ export function InventoryPage() {
       ) : null}
 
       {activePanel?.kind === "item" ? (
-        <ModalShell title={itemPanelTitle} onClose={() => setActivePanel(null)}>
+        <ModalShell title={itemPanelTitle} onClose={closeItemPanel}>
           {selectedItem ? (
             <div className="mb-5 rounded-xl border border-line bg-slate-50 p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1173,9 +1189,11 @@ export function InventoryPage() {
             <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleSaveItem}>
               {itemMode === "create" ? "Create item" : "Save changes"}
             </Button>
-            <Button type="button" variant="secondary" onClick={() => openItemPanel(itemMode, selectedItem ?? undefined)}>
-              Reset
-            </Button>
+            {activePanel.fromReceiveLineId ? null : (
+              <Button type="button" variant="secondary" onClick={() => openItemPanel(itemMode, selectedItem ?? undefined)}>
+                Reset
+              </Button>
+            )}
             {selectedItem ? (
               <>
                 <Button type="button" variant="ghost" icon={<Archive className="h-4 w-4" />} onClick={handleArchive}>
@@ -1230,6 +1248,11 @@ export function InventoryPage() {
 
       {activePanel?.kind === "receive" ? (
         <ModalShell title="Receive from saved invoice" onClose={closeReceivePanel} wide>
+          {receiveLines.length > 0 && receiveLines.every((line) => line.state === "already-received") ? (
+            <div className="mb-5 rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm leading-6 text-brand-800">
+              This purchase has already been received into inventory. The lines below are view-only so duplicate stock movements are not created.
+            </div>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Saved invoice">
               <select className="input" value={selectedInvoiceId} onChange={(event) => { setSelectedInvoiceId(event.target.value); setReceiveLines(buildInvoiceReceiveLines(event.target.value, inventoryItems, inventoryMappings, inventoryReceipts, recentInvoices)); }}>
@@ -1350,9 +1373,11 @@ export function InventoryPage() {
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleReceiveSave} disabled={receiveLines.some((line) => line.state === "unmapped" || (line.state === "linked" && !line.selectedItemId))}>
-              Save stock movements
-            </Button>
+            {receiveLines.length > 0 && receiveLines.every((line) => line.state === "already-received") ? null : (
+              <Button type="button" icon={<Save className="h-4 w-4" />} onClick={handleReceiveSave} disabled={receiveLines.some((line) => line.state === "unmapped" || (line.state === "linked" && !line.selectedItemId))}>
+                Save stock movements
+              </Button>
+            )}
             <Button type="button" variant="ghost" onClick={closeReceivePanel}>
               Cancel
             </Button>
