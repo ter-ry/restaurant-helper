@@ -61,12 +61,14 @@ export function trackPageView(path: string) {
   }
 
   const url = `${window.location.origin}${path}`;
+  const pageTitle = document.title;
   window.plausible?.("pageview", { u: url });
   if (gaMeasurementId) {
     window.gtag?.("event", "page_view", {
       send_to: gaMeasurementId,
       page_location: url,
       page_path: path,
+      page_title: pageTitle,
     });
   }
   window.posthog?.capture?.("$pageview", { path, url });
@@ -102,5 +104,5 @@ declare global {
 
 type GtagCommand =
   | ["js", Date]
-  | ["config", string, { page_location?: string; page_path?: string; send_page_view?: boolean }]
+  | ["config", string, { page_location?: string; page_path?: string; page_title?: string; send_page_view?: boolean }]
   | ["event", string, AnalyticsProperties];

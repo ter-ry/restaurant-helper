@@ -56,10 +56,21 @@ function AnalyticsRouteTracker() {
   }, []);
 
   useEffect(() => {
-    trackPageView(`${location.pathname}${location.search}${location.hash}`);
-  }, [location.pathname, location.search, location.hash]);
+    trackPageView(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
 
   return null;
+}
+
+function TrackedNavigate({ to }: { to: string }) {
+  const location = useLocation();
+
+  useEffect(() => {
+    initAnalytics();
+    trackPageView(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
+
+  return <Navigate to={to} replace />;
 }
 
 function PageWithHashScroll({ children }: { children: React.ReactNode }) {
@@ -154,9 +165,9 @@ const routes = [
   { path: "/pilot/daily-reconciliation", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation")} replace /> },
   { path: "/pilot/inventory", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "inventory")} replace /> },
   { path: "/pilot/price-changes", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/demo", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/app", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/app/demo", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
+  { path: "/demo", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
+  { path: "/app", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
+  { path: "/app/demo", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
   {
     path: "/demo/:profile",
     element: <DemoShell />,
