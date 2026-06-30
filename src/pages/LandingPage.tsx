@@ -13,12 +13,11 @@ import {
   RotateCcw,
   ScanText,
 } from "lucide-react";
-import type { CSSProperties, ComponentType, FormEvent, ReactNode } from "react";
-import { useRef, useState } from "react";
+import type { CSSProperties, ComponentType, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { FlowtallyMark } from "../components/FlowtallyMark";
 import { trackEvent } from "../lib/analytics";
-import { isFormEndpointConfigured, submitForm } from "../lib/formSubmission";
+import { buildMailtoLink, PUBLIC_CONTACT_EMAIL } from "../lib/contactLinks";
 
 const navLinks = [
   ["Overview", "#hero"],
@@ -142,11 +141,6 @@ const particles = Array.from({ length: 40 }, (_, index) => {
   return { x, y, size, delay, duration, driftX, driftY, opacity };
 });
 
-type SubmissionState = {
-  type: "idle" | "success" | "notice" | "error";
-  message: string;
-};
-
 function SectionHeading({
   eyebrow,
   title,
@@ -168,18 +162,6 @@ function SectionHeading({
     </div>
   );
 }
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="grid gap-2 text-sm font-semibold text-ink">
-      {label}
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "min-h-11 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]";
 
 function FloatingParticles() {
   return (
@@ -275,44 +257,21 @@ function ComparisonColumn({
 }
 
 export function LandingPage() {
-  const [submission, setSubmission] = useState<SubmissionState>({ type: "idle", message: "" });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const formStartedRef = useRef(false);
-
-  const handleFormStarted = () => {
-    if (formStartedRef.current) {
-      return;
-    }
-
-    formStartedRef.current = true;
-    trackEvent("form_started", { form: "feedback" });
-  };
-
-  const handleFeedbackSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    setIsSubmitting(true);
-    setSubmission({ type: "idle", message: "" });
-
-    try {
-      const result = await submitForm(form, "feedback");
-      setSubmission({ type: result.mode === "demo" ? "notice" : "success", message: result.message });
-      trackEvent("form_submitted", { form: "feedback", mode: result.mode });
-      if (result.mode === "endpoint") {
-        form.reset();
-        formStartedRef.current = false;
-      }
-    } catch (error) {
-      console.error("[Flowtally form] Feedback form submission failed", error);
-      setSubmission({
-        type: "error",
-        message: "Sorry, the form could not be sent. Please send the same note by Instagram DM, then try again later.",
-      });
-      trackEvent("form_submission_error", { form: "feedback" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const landingEmailHref = buildMailtoLink(
+    PUBLIC_CONTACT_EMAIL,
+    "Flowtally demo / pilot",
+    [
+      "Hi Terry,",
+      "",
+      "I'm interested in Flowtally and would like a walkthrough.",
+      "",
+      "Restaurant or business name:",
+      "What feels messy today:",
+      "Best email or phone number to reply to:",
+      "",
+      "Thanks,",
+    ].join("\n"),
+  );
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A]">
@@ -375,6 +334,19 @@ export function LandingPage() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
+            <p className="mt-4 text-sm leading-6 text-[#475569]">
+              Questions or want a walkthrough?{" "}
+              <a
+                className="font-semibold text-[#0F766E] underline decoration-[#99F6E4] decoration-2 underline-offset-4 transition hover:text-[#0F172A]"
+                href={landingEmailHref}
+                onClick={() => trackEvent("contact_email_click", { location: "hero" })}
+              >
+                Email us
+              </a>{" "}
+              at <a className="font-semibold text-[#0F172A]" href={landingEmailHref} onClick={() => trackEvent("contact_email_click", { location: "hero_link" })}>
+                {PUBLIC_CONTACT_EMAIL}
+              </a>.
+            </p>
           </div>
 
           <div className="reveal relative min-w-0">
@@ -506,85 +478,60 @@ export function LandingPage() {
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
+          <p className="text-sm leading-6 text-[#64748B]">
+            Questions or want a walkthrough?{" "}
+            <a
+              className="font-semibold text-[#0F766E] underline decoration-[#99F6E4] decoration-2 underline-offset-4 transition hover:text-[#0F172A]"
+              href={landingEmailHref}
+              onClick={() => trackEvent("contact_email_click", { location: "pilot_section" })}
+            >
+              Email hello@flowtally.ca
+            </a>
+            .
+          </p>
         </div>
       </section>
 
       <section id="contact" className="relative overflow-hidden px-5 py-16 lg:px-8">
         <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.72fr_1fr]">
           <div>
-            <SectionHeading eyebrow="Contact" title="Tell us what still feels messy">
-              Please do not submit private financial data. A few sentences about the workflow is enough.
+            <SectionHeading eyebrow="Contact" title="Questions or want a walkthrough?">
+              Email us directly and we’ll reply with a simple next step.
             </SectionHeading>
             <div className="surface-panel reveal mt-6 rounded-2xl border p-5">
-              <p className="text-sm font-semibold leading-6 text-[#334155]">
-                Built in Toronto and currently speaking with growing independent restaurants across the GTA.
+              <p className="text-sm font-semibold leading-6 text-[#334155]">Built in Toronto and currently speaking with growing independent restaurants across the GTA.</p>
+              <p className="mt-2 text-sm leading-6 text-[#64748B]">
+                Flowtally helps restaurants manage purchasing, inventory, supplier prices, and daily close control between POS and accounting.
               </p>
             </div>
           </div>
-
-          <form onFocusCapture={handleFormStarted} onSubmit={handleFeedbackSubmit} className="surface-panel reveal rounded-2xl border p-5 md:p-6">
-            {!isFormEndpointConfigured && import.meta.env.DEV ? (
-              <div className="mb-4 rounded-2xl border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
-                <p className="font-bold text-[#3f3210]">Owner setup note</p>
-                <p className="mt-1">
-                  No form endpoint is configured for this local build. Add a Formspree URL to VITE_FORM_ENDPOINT before outreach.
-                </p>
+          <div className="surface-panel reveal rounded-2xl border p-5 md:p-6">
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#64748B]">Email</p>
+                  <p className="mt-2 text-lg font-semibold text-[#0F172A]">hello@flowtally.ca</p>
+                  <p className="mt-2 text-sm leading-6 text-[#64748B]">
+                    Tell us your restaurant name and what feels messy today. We’ll reply with the best next step for a walkthrough or pilot.
+                  </p>
+                </div>
+                <a
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
+                  href={landingEmailHref}
+                  onClick={() => trackEvent("contact_email_click", { location: "contact_section" })}
+                >
+                  Email us
+                  <Mail className="h-4 w-4" />
+                </a>
               </div>
-            ) : null}
-            <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
-            <div className="grid gap-4">
-              <Field label="What purchasing or inventory task slows you down most?">
-                <textarea className={`${inputClass} min-h-28 resize-y`} name="biggestPain" placeholder="Invoices, supplier prices, reorders, stock movement..." required />
-              </Field>
-              <p className="-mt-2 text-xs font-semibold text-[#64748B]">No private numbers needed.</p>
-              <Field label="Email or Instagram handle">
-                <input className={inputClass} name="contact" type="text" placeholder="name@example.com or @handle" required />
-              </Field>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Restaurant or business name (optional)">
-                  <input className={inputClass} name="businessName" type="text" placeholder="Business name" />
-                </Field>
-                <Field label="Open to a short chat? (optional)">
-                  <select className={inputClass} name="chatOpen" defaultValue="">
-                    <option value="">Select answer</option>
-                    <option>Yes</option>
-                    <option>No</option>
-                  </select>
-                </Field>
+
+              <div id="privacy-notice" className="rounded-2xl border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
+                <p className="font-bold text-[#0F172A]">Privacy note</p>
+                <p className="mt-1">We only use your email to reply about Flowtally pilot questions or walkthroughs.</p>
+                <p className="mt-1">Restaurant name, role, and one workflow pain point is enough.</p>
               </div>
             </div>
-
-            <div id="privacy-notice" className="mt-5 rounded-2xl border border-[#E2E8F0] bg-white/72 p-4 text-sm leading-6 text-[#64748B]">
-              <p className="font-bold text-[#0F172A]">Privacy note</p>
-              <p className="mt-1">
-                Flowtally collects the workflow pain point and contact info submitted in this form. It is used only to respond about Flowtally pilot feedback.
-              </p>
-            </div>
-
-            {submission.type !== "idle" ? (
-              <p
-                className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold ${
-                  submission.type === "success"
-                    ? "border-[#99F6E4] bg-[#E6FFFA] text-[#0F766E]"
-                    : submission.type === "notice"
-                      ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
-                      : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
-                }`}
-                role="status"
-              >
-                {submission.message}
-              </p>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E] disabled:cursor-not-allowed disabled:opacity-65 sm:w-auto"
-            >
-              {isSubmitting ? "Sending..." : "Send feedback"}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </form>
+          </div>
         </div>
       </section>
 
@@ -595,19 +542,19 @@ export function LandingPage() {
             <p className="mt-1 text-sm text-slate-300">Built in Toronto, Canada</p>
             <p className="mt-1 text-sm text-slate-300">flowtally.ca</p>
             <p className="mt-1 text-sm text-slate-300">
-              Instagram:{" "}
-              <a className="font-semibold text-[#F8FAFC] hover:text-[#cbd5e1]" href="https://instagram.com/flowtally.ca" rel="noreferrer" target="_blank">
-                @flowtally.ca
+              <a className="font-semibold text-[#F8FAFC] hover:text-[#cbd5e1]" href={landingEmailHref} onClick={() => trackEvent("contact_email_click", { location: "footer" })}>
+                hello@flowtally.ca
               </a>
             </p>
+            <p className="mt-1 text-sm text-slate-300">Restaurant purchasing, inventory, and daily close control.</p>
           </div>
           <div className="flex flex-wrap gap-4 text-sm font-semibold text-[#F8FAFC]">
             <a className="hover:text-[#cbd5e1]" href="#privacy-notice">
               Privacy notice
             </a>
-            <a className="inline-flex items-center gap-2 hover:text-[#cbd5e1]" href="#contact">
+            <a className="inline-flex items-center gap-2 hover:text-[#cbd5e1]" href={landingEmailHref} onClick={() => trackEvent("contact_email_click", { location: "footer_link" })}>
               <Mail className="h-4 w-4" />
-              Contact
+              Email us
             </a>
           </div>
         </div>

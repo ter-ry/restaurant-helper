@@ -1,8 +1,26 @@
-import { ArrowRight, FileText, Send } from "lucide-react";
+import { ArrowRight, FileText, Mail, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "./Card";
+import { buildMailtoLink, PUBLIC_CONTACT_EMAIL } from "../lib/contactLinks";
+import { trackEvent } from "../lib/analytics";
 
 export function PilotCtaPanel() {
+  const demoEmailHref = buildMailtoLink(
+    PUBLIC_CONTACT_EMAIL,
+    "Flowtally demo walkthrough",
+    [
+      "Hi Terry,",
+      "",
+      "I'd like to see the Flowtally demo.",
+      "",
+      "Restaurant or business name:",
+      "What feels messy today:",
+      "Best email or phone number to reply to:",
+      "",
+      "Thanks,",
+    ].join("\n"),
+  );
+
   return (
     <Card className="overflow-hidden border-slate-300 bg-ink text-white">
       <div className="grid gap-6 p-6 md:grid-cols-[1fr_auto] md:items-center">
@@ -17,7 +35,15 @@ export function PilotCtaPanel() {
             <span className="rounded-full bg-white/10 px-3 py-1">View demo</span>
             <span className="rounded-full bg-white/10 px-3 py-1">Send 2-3 sample invoices</span>
             <span className="rounded-full bg-white/10 px-3 py-1">Get a sample cost report</span>
+            <span className="rounded-full bg-white/10 px-3 py-1">Email us</span>
           </div>
+          <p className="mt-4 text-sm leading-6 text-slate-300">
+            Questions or want a walkthrough?{" "}
+            <a className="font-semibold text-white underline decoration-brand-100 underline-offset-4" href={demoEmailHref} onClick={() => trackEvent("demo_email_click", { location: "demo_panel" })}>
+              hello@flowtally.ca
+            </a>
+            .
+          </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row md:flex-col">
           <Link
@@ -34,14 +60,15 @@ export function PilotCtaPanel() {
             <FileText className="h-4 w-4 text-brand-100" />
             View demo
           </Link>
-          <Link
-            to="/#contact"
+          <a
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm font-bold text-white transition hover:border-brand-100 hover:bg-white/10"
+            href={demoEmailHref}
+            onClick={() => trackEvent("demo_email_click", { location: "demo_panel_button" })}
           >
-            <FileText className="h-4 w-4 text-brand-100" />
-            Ask about reports
+            <Mail className="h-4 w-4 text-brand-100" />
+            Email us
             <ArrowRight className="h-4 w-4" />
-          </Link>
+          </a>
         </div>
       </div>
     </Card>

@@ -1,54 +1,24 @@
 import { ArrowLeft, ArrowRight, Mail, Store } from "lucide-react";
-import type { FormEvent } from "react";
-import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { trackEvent } from "../lib/analytics";
-import { isFormEndpointConfigured, submitForm } from "../lib/formSubmission";
-
-type SubmissionState = {
-  type: "idle" | "success" | "notice" | "error";
-  message: string;
-};
+import { buildMailtoLink, PUBLIC_CONTACT_EMAIL } from "../lib/contactLinks";
 
 export function PilotPage() {
-  const [submission, setSubmission] = useState<SubmissionState>({ type: "idle", message: "" });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const formStartedRef = useRef(false);
-
-  const handleFormStarted = () => {
-    if (formStartedRef.current) {
-      return;
-    }
-
-    formStartedRef.current = true;
-    trackEvent("form_started", { form: "pilot" });
-  };
-
-  const handlePilotSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    setIsSubmitting(true);
-    setSubmission({ type: "idle", message: "" });
-
-    try {
-      const result = await submitForm(form, "pilot");
-      setSubmission({ type: result.mode === "demo" ? "notice" : "success", message: result.message });
-      trackEvent("form_submitted", { form: "pilot", mode: result.mode });
-      if (result.mode === "endpoint") {
-        form.reset();
-        formStartedRef.current = false;
-      }
-    } catch (error) {
-      console.error("[Flowtally form] Pilot form submission failed", error);
-      setSubmission({
-        type: "error",
-        message: "Sorry, the form could not be sent. Please send us an Instagram DM, then try again later.",
-      });
-      trackEvent("form_submission_error", { form: "pilot" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const pilotEmailHref = buildMailtoLink(
+    PUBLIC_CONTACT_EMAIL,
+    "Flowtally demo / pilot",
+    [
+      "Hi Terry,",
+      "",
+      "I'm interested in the Flowtally pilot.",
+      "",
+      "Restaurant or business name:",
+      "What feels messy today:",
+      "Best email or phone number to reply to:",
+      "",
+      "Thanks,",
+    ].join("\n"),
+  );
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(96,115,135,0.14),transparent_30%),linear-gradient(135deg,#F8FAFC_0%,#F1F5F9_44%,#E2E8F0_100%)] px-5 py-8 text-[#0F172A] lg:px-8">
@@ -71,71 +41,53 @@ export function PilotPage() {
               Flowtally is being shaped with growing independent restaurants that manage staff, recurring suppliers,
               invoice review, inventory, and reordering every week.
             </p>
+            <p className="mt-5 text-sm leading-6 text-[#475569]">
+              Questions or want a walkthrough?{" "}
+              <a
+                className="font-semibold text-[#0F766E] underline decoration-[#99F6E4] decoration-2 underline-offset-4 transition hover:text-[#0F172A]"
+                href={pilotEmailHref}
+                onClick={() => trackEvent("pilot_email_click", { location: "hero" })}
+              >
+                Email hello@flowtally.ca
+              </a>
+              .
+            </p>
           </div>
 
-          <form onFocusCapture={handleFormStarted} onSubmit={handlePilotSubmit} className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
-            {!isFormEndpointConfigured && import.meta.env.DEV ? (
-              <div className="mb-4 rounded-lg border border-[#d6c189] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#5f4a14]" role="note">
-                <p className="font-bold text-[#3f3210]">Owner setup note</p>
-                <p className="mt-1">
-                  No form endpoint is configured for this local build. Add a Formspree URL to VITE_FORM_ENDPOINT before outreach.
-                </p>
-              </div>
-            ) : null}
-            <input className="hidden" name="_gotcha" tabIndex={-1} autoComplete="off" />
-            <label className="grid gap-2 text-sm font-semibold text-[#0F172A]">
-              Email
-              <input
-                className="min-h-11 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]"
-                name="email"
-                placeholder="name@example.com"
-                required
-                type="email"
-              />
-            </label>
-            <label className="mt-4 grid gap-2 text-sm font-semibold text-[#0F172A]">
-              Restaurant name
-              <input
-                className="min-h-11 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0D9488] focus:ring-4 focus:ring-[#DDF7F3]"
-                name="businessName"
-                placeholder="Optional"
-                type="text"
-              />
-            </label>
-            <p className="mt-4 text-sm leading-6 text-[#64748B]">
-              No private numbers needed. This list is only for pilot updates and prototype feedback.
+          <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/92 p-5 shadow-[0_24px_70px_rgba(31,41,55,0.12)] md:p-6">
+            <p className="text-sm leading-6 text-[#64748B]">
+              Send a short note and we’ll reply by email. No forms to figure out, no private numbers needed.
             </p>
-            {submission.type !== "idle" ? (
-              <p
-                className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${
-                  submission.type === "success"
-                    ? "border-[#99F6E4] bg-[#E6FFFA] text-[#0F766E]"
-                    : submission.type === "notice"
-                      ? "border-[#d6c189] bg-[#fff8df] text-[#5f4a14]"
-                      : "border-[#e2b8b8] bg-[#fff5f5] text-[#7a2f2f]"
-                }`}
-                role="status"
+            <div className="mt-5 flex flex-col gap-3">
+              <a
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
+                href={pilotEmailHref}
+                onClick={() => trackEvent("pilot_email_click", { location: "pilot_page" })}
               >
-                {submission.message}
-              </p>
-            ) : null}
-            <button
-              className="premium-button mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E] disabled:cursor-not-allowed disabled:opacity-65"
-              disabled={isSubmitting}
-              type="submit"
-            >
-              {isSubmitting ? "Joining..." : "Join Early Pilot"}
-              <Mail className="h-4 w-4" />
-            </button>
-            <Link
-              className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] transition hover:bg-[#F8FAFC]"
-              onClick={() => trackEvent("cta_view_demo_click", { location: "pilot_page" })}
-              to="/demo"
-            >
-              View the demo
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </form>
+                Join Early Pilot
+                <Mail className="h-4 w-4" />
+              </a>
+              <Link
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] transition hover:bg-[#F8FAFC]"
+                onClick={() => trackEvent("cta_view_demo_click", { location: "pilot_page" })}
+                to="/demo"
+              >
+                View the demo
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-[#64748B]">
+              Prefer email? Write to{" "}
+              <a
+                className="font-semibold text-[#0F766E] underline decoration-[#99F6E4] decoration-2 underline-offset-4 transition hover:text-[#0F172A]"
+                href={pilotEmailHref}
+                onClick={() => trackEvent("pilot_email_click", { location: "pilot_page_link" })}
+              >
+                hello@flowtally.ca
+              </a>
+              .
+            </p>
+          </div>
         </section>
       </div>
     </main>

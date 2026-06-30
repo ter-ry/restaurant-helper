@@ -62,7 +62,7 @@ export async function submitForm(form: HTMLFormElement, formType: "feedback" | "
     return {
       mode: "demo",
       message:
-        "This preview form is not connected yet, so your note was not saved. Please send the same note by Instagram DM to the account that shared this link.",
+        "This preview form is not connected yet, so your note was not saved. Please email hello@flowtally.ca instead.",
     };
   }
 
