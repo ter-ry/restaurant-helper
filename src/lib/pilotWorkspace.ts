@@ -1053,10 +1053,11 @@ export function PilotWorkspaceProvider({ children }: { children: ReactNode }) {
         return { recorded, skipped };
       },
       rememberInventoryMappings: (mappings) => {
+        const latestState = loadWorkspace();
         const nextState = {
-          ...state,
+          ...latestState,
           inventory: {
-            ...state.inventory,
+            ...latestState.inventory,
             lineMappings: mappings,
           },
         };

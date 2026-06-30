@@ -376,12 +376,6 @@ export function OwnerDashboardPage() {
   const lowStockItem = dashboard.reorderSuggestions[0];
   const plannedReorderCount = inventoryReorderIntents.filter((intent) => intent.status === "Ordered").length;
   const topReorderSupplier = dashboard.reorderSuggestions[0]?.supplier ?? "No reorder supplier yet";
-  const displayedWeekComparison = weekComparison
-    ? {
-        ...weekComparison,
-        deltaPercent: Math.max(-15, Math.min(15, weekComparison.deltaPercent)),
-      }
-    : null;
   const fastestUsageItem = [...inventoryItems]
     .filter((item) => typeof item.averageDailyUsage === "number" && item.averageDailyUsage > 0)
     .sort((a, b) => (b.averageDailyUsage ?? 0) - (a.averageDailyUsage ?? 0) || a.name.localeCompare(b.name))[0];
@@ -458,8 +452,8 @@ export function OwnerDashboardPage() {
           <StatCard label="Total purchasing spend" value={formatCurrency(summary.weeklyInvoiceSpend)} helper="Latest invoice week in the demo" icon={<TrendingUp className="h-5 w-5" />} to={purchasesRoute} />
           <StatCard
             label="Spend vs last week"
-            value={displayedWeekComparison ? formatPercent(displayedWeekComparison.deltaPercent) : "-"}
-            helper={displayedWeekComparison ? `Latest week ${formatCurrency(displayedWeekComparison.current)} vs prior ${formatCurrency(displayedWeekComparison.previous)}` : "Need two weeks of invoices"}
+            value={weekComparison ? formatPercent(weekComparison.deltaPercent) : "-"}
+            helper={weekComparison ? `Latest week ${formatCurrency(weekComparison.current)} vs prior ${formatCurrency(weekComparison.previous)}` : "Need two weeks of invoices"}
             icon={<Gauge className="h-5 w-5" />}
             to={purchasesRoute}
           />
