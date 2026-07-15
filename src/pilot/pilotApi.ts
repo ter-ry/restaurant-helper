@@ -139,3 +139,362 @@ export async function logoutOfPilot() {
 export async function fetchCurrentOrganization() {
   return requestJson<PilotOrganizationBundle>("/api/organizations/current");
 }
+
+export async function switchPilotLocation(locationId: number) {
+  const csrfToken = await getPilotCsrfToken();
+  return requestJson<{ currentLocation: PilotLocation }>("/api/locations/current", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify({ locationId }),
+  });
+}
+
+export interface PilotSupplier {
+  id: number;
+  organizationId: number;
+  name: string;
+  normalizedName: string;
+  categoryFocus: string;
+  notes: string;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotInventoryItem {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  supplierId: number | null;
+  name: string;
+  normalizedName: string;
+  category: string;
+  stockUnit: string;
+  currentOnHand: number;
+  minQuantity: number;
+  parLevel: number;
+  preferredSupplierName: string;
+  latestPurchasePrice: number;
+  lastPurchaseUnit: string;
+  lastPurchaseConversionFactor: number;
+  lastReceivedAt: string | null;
+  lastCountedAt: string | null;
+  averageDailyUsage: number | null;
+  estimatedCostMethod: string;
+  active: boolean;
+  notes: string;
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotSupplierItemMapping {
+  id: number;
+  organizationId: number;
+  supplierId: number;
+  inventoryItemId: number;
+  supplierItemName: string;
+  normalizedSupplierItemName: string;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+  lastSeenAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotInvoiceLine {
+  id: number;
+  invoiceId: number;
+  inventoryItemId: number | null;
+  supplierItemMappingId: number | null;
+  lineIndex: number;
+  description: string;
+  normalizedDescription: string;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  confidence: number;
+  needsReview: boolean;
+  previousUnitPrice: number | null;
+  priceChangePercent: number | null;
+  note: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotPurchaseInvoice {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  supplierId: number;
+  supplier: PilotSupplier | null;
+  invoiceNumber: string;
+  invoiceDate: string;
+  subtotal: number;
+  tax: number;
+  totalAmount: number;
+  notes: string;
+  status: string;
+  sourceFileName: string;
+  sourceFileType: string;
+  sourceFileKey: string;
+  extractedText: string;
+  extractionStatus: string;
+  receivedAt: string | null;
+  receivedByUserId: number | null;
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  postedAt: string | null;
+  lineItems: PilotInvoiceLine[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotInventoryMovement {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  inventoryItemId: number;
+  inventoryItemName: string;
+  quantityDelta: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  unit: string;
+  sourceType: string;
+  sourceRecordId: string;
+  sourceLineId: string;
+  reason: string;
+  actorUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotCountSessionLine {
+  id: number;
+  sessionId: number;
+  inventoryItemId: number;
+  lineIndex: number;
+  itemNameSnapshot: string;
+  stockUnitSnapshot: string;
+  expectedQuantity: number;
+  countedQuantity: number | null;
+  variance: number | null;
+  resultingQuantity: number | null;
+  note: string;
+  status: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotCountSession {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  countedBy: string;
+  notes: string;
+  itemCount: number;
+  createdByUserId: number | null;
+  finalizedByUserId: number | null;
+  lines: PilotCountSessionLine[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotReorderSuggestion {
+  id: number;
+  inventoryItemId: number;
+  inventoryItemName: string;
+  category: string;
+  supplier: string;
+  currentQuantity: number;
+  unit: string;
+  minimumQuantity: number;
+  parLevel: number;
+  suggestedQuantity: number;
+  adjustedQuantity: number;
+  latestPurchasePrice: number;
+  estimatedCost: number | null;
+  stockStatus: string;
+  status: string;
+  daysRemaining: number | null;
+}
+
+export interface PilotDashboardResponse {
+  summary: Record<string, number>;
+  recentInvoices: PilotPurchaseInvoice[];
+  recentMovements: PilotInventoryMovement[];
+  recentPriceChanges: Array<Record<string, unknown>>;
+  pendingDraftInvoices: PilotPurchaseInvoice[];
+  pendingDraftCountSessions: PilotCountSession[];
+  supplierSpend: Array<Record<string, unknown>>;
+  reorderSuggestions: PilotReorderSuggestion[];
+  workflow: Record<string, string>;
+}
+
+export interface PilotPurchasesResponse {
+  invoices: PilotPurchaseInvoice[];
+  suppliers: PilotSupplier[];
+  purchaseLines: PilotInvoiceLine[];
+  priceChanges: Array<Record<string, unknown>>;
+  summary: Record<string, number>;
+  exportReadiness: {
+    readyForCsv: number;
+    needsReview: number;
+    needsMapping: number;
+    quickBooksFutureOnly: boolean;
+  };
+}
+
+export interface PilotInventoryResponse {
+  items: PilotInventoryItem[];
+  movements: PilotInventoryMovement[];
+  countSessions: PilotCountSession[];
+  reorderPlan: {
+    suggestions: PilotReorderSuggestion[];
+    groupedBySupplier: Array<{
+      supplier: string;
+      lines: PilotReorderSuggestion[];
+      itemCount: number;
+      estimatedOrderTotal: number;
+    }>;
+  };
+  summary: Record<string, number>;
+}
+
+async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const csrfToken = await getPilotCsrfToken();
+  return requestJson<T>(path, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      "X-CSRFToken": csrfToken,
+    },
+  });
+}
+
+export async function fetchPilotDashboard() {
+  return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
+}
+
+export async function fetchPilotPurchases() {
+  return requestJson<PilotPurchasesResponse>("/api/pilot/purchases");
+}
+
+export async function fetchPilotPurchaseInvoice(invoiceId: number) {
+  return requestJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}`);
+}
+
+export async function createPilotPurchaseInvoice(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotPurchaseInvoice>("/api/pilot/purchases/invoices", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotPurchaseInvoice(invoiceId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function receivePilotPurchaseInvoice(invoiceId: number) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/receive`, {
+    method: "POST",
+  });
+}
+
+export async function fetchPilotInventory() {
+  return requestJson<PilotInventoryResponse>("/api/pilot/inventory");
+}
+
+export async function createPilotInventoryItem(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotInventoryItem>("/api/pilot/inventory/items", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotInventoryItem(itemId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotInventoryItem>(`/api/pilot/inventory/items/${itemId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createPilotInventoryAdjustment(itemId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotInventoryMovement>(`/api/pilot/inventory/items/${itemId}/adjustments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPilotCountSessions() {
+  return requestJson<{ countSessions: PilotCountSession[] }>("/api/pilot/inventory/count-sessions");
+}
+
+export async function createPilotCountSession(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotCountSession>("/api/pilot/inventory/count-sessions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPilotCountSession(sessionId: number) {
+  return requestJson<PilotCountSession>(`/api/pilot/inventory/count-sessions/${sessionId}`);
+}
+
+export async function updatePilotCountSession(sessionId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotCountSession>(`/api/pilot/inventory/count-sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function finalizePilotCountSession(sessionId: number) {
+  return requestCsrfJson<PilotCountSession>(`/api/pilot/inventory/count-sessions/${sessionId}/finalize`, {
+    method: "POST",
+  });
+}
+
+export async function fetchPilotReorderPlan() {
+  return requestJson<{ suggestions: PilotReorderSuggestion[]; groupedBySupplier: PilotInventoryResponse["reorderPlan"]["groupedBySupplier"] }>("/api/pilot/reorder-plan");
+}
+
+export async function markPilotReorderOrdered(itemId: number) {
+  return requestCsrfJson<Record<string, unknown>>(`/api/pilot/reorder-plan/${itemId}/ordered`, {
+    method: "POST",
+  });
+}

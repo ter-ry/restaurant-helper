@@ -1,6 +1,5 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { usePilotSession } from "./PilotSessionProvider";
-import { PilotHomePage } from "./PilotHomePage";
 
 export function PilotAppGate() {
   const { status } = usePilotSession();
@@ -21,5 +20,5 @@ export function PilotAppGate() {
     return <Navigate to="/" replace />;
   }
 
-  return <PilotHomePage />;
+  return <Outlet />;
 }

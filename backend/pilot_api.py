@@ -1,0 +1,1101 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+import re
+from typing import Any
+
+from flask import Blueprint, jsonify, request, session
+from flask_login import current_user, login_required
+
+from .extensions import db
+from .models import (
+    InventoryItem,
+    InventoryMovement,
+    OrganizationMembership,
+    PurchaseInvoice,
+    PurchaseInvoiceLine,
+    ReorderIntent,
+    RestaurantLocation,
+    StockCountSession,
+    StockCountSessionLine,
+    Supplier,
+    SupplierItemMapping,
+)
+from .utils import (
+    decimal_to_float,
+    get_current_location,
+    get_current_membership,
+    get_current_organization_bundle,
+    json_error,
+    serialize_count_session,
+    serialize_inventory_item,
+    serialize_inventory_movement,
+    serialize_location,
+    serialize_purchase_invoice,
+    serialize_purchase_invoice_line,
+    serialize_reorder_intent,
+    serialize_supplier,
+)
+from .validation import RequestValidationError
+
+bp = Blueprint("pilot_api", __name__)
+
+MONEY = Decimal("0.01")
+QTY = Decimal("0.0001")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _start_of_week(now: datetime | None = None) -> datetime:
+    current = now or _now()
+    start = current - timedelta(days=current.weekday())
+    return datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+
+
+def _aware_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _normalize_name(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.strip().lower())).strip()
+
+
+def _to_decimal(value: Any, *, field: str, required: bool = True, places: str = "0.01") -> Decimal:
+    if value in (None, ""):
+        if required:
+            raise RequestValidationError("Validation failed.", {field: "This field is required."})
+        return Decimal("0")
+    try:
+        return Decimal(str(value)).quantize(Decimal(places))
+    except (InvalidOperation, ValueError):
+        raise RequestValidationError("Validation failed.", {field: "Enter a valid number."}) from None
+
+
+def _to_quantity(value: Any, *, field: str, required: bool = True) -> Decimal:
+    return _to_decimal(value, field=field, required=required, places="0.0001")
+
+
+def _to_int(value: Any, *, field: str, required: bool = True) -> int:
+    if value in (None, ""):
+        if required:
+            raise RequestValidationError("Validation failed.", {field: "This field is required."})
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise RequestValidationError("Validation failed.", {field: "Enter a valid whole number."}) from None
+
+
+def _parse_date(value: Any, *, field: str) -> date:
+    if not value:
+      raise RequestValidationError("Validation failed.", {field: "This field is required."})
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise RequestValidationError("Validation failed.", {field: "Enter a valid date (YYYY-MM-DD)."}) from None
+
+
+def _json_body() -> dict[str, Any]:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise RequestValidationError("Request body must be JSON.", {"body": "Expected a JSON object."})
+    return payload
+
+
+def _current_context():
+    organization, membership, locations = get_current_organization_bundle()
+    location = get_current_location()
+    if organization is None or membership is None or location is None:
+        return None, None, None, None
+    return organization, membership, locations, location
+
+
+def _require_context():
+    organization, membership, locations, location = _current_context()
+    if organization is None or membership is None or location is None:
+        return None
+    return organization, membership, locations, location
+
+
+def _check_location_access(location_id: int, locations: list[RestaurantLocation]) -> RestaurantLocation | None:
+    return next((candidate for candidate in locations if candidate.id == location_id), None)
+
+
+def _status_for_item(item: InventoryItem) -> dict[str, Any]:
+    avg_usage = decimal_to_float(item.average_daily_usage)
+    current = decimal_to_float(item.current_on_hand) or 0
+    min_quantity = decimal_to_float(item.min_quantity) or 0
+    par_level = decimal_to_float(item.par_level) or 0
+    days_remaining = None
+    if avg_usage and avg_usage > 0:
+        days_remaining = round(current / avg_usage, 1)
+
+    if current <= 0:
+        status = "Out of stock"
+    elif current <= min_quantity or (days_remaining is not None and days_remaining <= 3):
+        status = "Reorder now"
+    elif current < par_level or (days_remaining is not None and days_remaining <= 10):
+        status = "Low stock"
+    else:
+        status = "In stock"
+
+    return {"status": status, "daysRemaining": days_remaining}
+
+
+def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
+    status_data = _status_for_item(item)
+    status = status_data["status"]
+    if status not in {"Out of stock", "Reorder now", "Low stock"}:
+        return None
+
+    target = decimal_to_float(item.par_level) or decimal_to_float(item.min_quantity) or 0
+    current = decimal_to_float(item.current_on_hand) or 0
+    suggested = max(0, round(target - current, 4))
+    estimated_cost = None
+    if item.last_purchase_conversion_factor and item.last_purchase_conversion_factor > 0:
+        estimated_cost = round((Decimal(str(suggested)) / item.last_purchase_conversion_factor * item.latest_purchase_price).quantize(MONEY), 2)
+
+    return {
+        "id": item.id,
+        "inventoryItemId": item.id,
+        "inventoryItemName": item.name,
+        "category": item.category,
+        "supplier": item.preferred_supplier_name or (item.supplier.name if item.supplier else "Unknown supplier"),
+        "currentQuantity": current,
+        "unit": item.stock_unit,
+        "minimumQuantity": decimal_to_float(item.min_quantity) or 0,
+        "parLevel": decimal_to_float(item.par_level) or 0,
+        "suggestedQuantity": suggested,
+        "adjustedQuantity": suggested,
+        "latestPurchasePrice": decimal_to_float(item.latest_purchase_price) or 0,
+        "estimatedCost": estimated_cost,
+        "stockStatus": status,
+        "status": "Needs ordering",
+        "daysRemaining": status_data["daysRemaining"],
+    }
+
+
+def _inventory_summary(location_id: int):
+    items = InventoryItem.query.filter_by(location_id=location_id, active=True).all()
+    statuses = [_status_for_item(item)["status"] for item in items]
+    low = sum(1 for status in statuses if status == "Low stock")
+    reorder = sum(1 for status in statuses if status == "Reorder now")
+    out = sum(1 for status in statuses if status == "Out of stock")
+    count_needed = sum(1 for item in items if item.last_counted_at is None or (_now() - _aware_datetime(item.last_counted_at)).days > 14)
+    value = sum((decimal_to_float(item.current_on_hand) or 0) * (decimal_to_float(item.latest_purchase_price) or 0) for item in items)
+    return {
+        "inventoryItemCount": len(items),
+        "inventoryLowStockCount": low,
+        "inventoryReorderNowCount": reorder,
+        "inventoryOutOfStockCount": out,
+        "inventoryCountNeededCount": count_needed,
+        "inventoryMovementCount": InventoryMovement.query.filter_by(location_id=location_id).count(),
+        "inventoryReceiptCount": PurchaseInvoice.query.filter_by(location_id=location_id, status="Completed").count(),
+        "inventoryValue": round(value, 2),
+    }
+
+
+def _price_changes_for_location(location_id: int):
+    invoices = PurchaseInvoice.query.filter_by(location_id=location_id).order_by(PurchaseInvoice.invoice_date.asc(), PurchaseInvoice.created_at.asc()).all()
+    seen: dict[tuple[str, str], Decimal] = {}
+    changes: list[dict[str, Any]] = []
+    for invoice in invoices:
+        for line in invoice.lines:
+            item_key = _normalize_name(line.description)
+            key = (invoice.supplier.normalized_name, item_key)
+            previous = seen.get(key)
+            if previous is not None and previous > 0:
+                current = Decimal(line.unit_price).quantize(MONEY)
+                change = ((current - previous) / previous) * 100
+                if abs(change) >= 0.01:
+                    changes.append(
+                        {
+                            "id": f"pc-{invoice.id}-{line.id}",
+                            "invoiceId": invoice.id,
+                            "invoiceDate": invoice.invoice_date.isoformat(),
+                            "previousInvoiceDate": invoice.invoice_date.isoformat(),
+                            "supplier": invoice.supplier.name,
+                            "itemName": line.description,
+                            "originalDescription": line.description,
+                            "rawSourceLine": line.description,
+                            "comparisonKey": line.normalized_description,
+                            "category": line.inventory_item.category if line.inventory_item else "Other",
+                            "previousPrice": float(previous),
+                            "currentPrice": float(current),
+                            "changePercent": round(float(change), 1),
+                            "status": "Increased" if change > 0 else "Decreased" if change < 0 else "Stable",
+                            "severity": "High" if abs(change) >= 10 else "Medium" if abs(change) >= 5 else "Low",
+                        }
+                    )
+            seen[key] = Decimal(line.unit_price).quantize(MONEY)
+    return list(reversed(changes[-25:]))
+
+
+def _dashboard_snapshot(location_id: int):
+    start = _start_of_week()
+    invoices = PurchaseInvoice.query.filter_by(location_id=location_id).all()
+    recent_invoices = sorted(invoices, key=lambda invoice: (invoice.invoice_date, invoice.created_at), reverse=True)[:5]
+    draft_invoices = [invoice for invoice in invoices if invoice.status == "Draft"]
+    movements = InventoryMovement.query.filter_by(location_id=location_id).order_by(InventoryMovement.created_at.desc()).limit(6).all()
+    count_sessions = StockCountSession.query.filter_by(location_id=location_id).order_by(StockCountSession.updated_at.desc()).all()
+    inventory_items = InventoryItem.query.filter_by(location_id=location_id, active=True).all()
+    recent_price_changes = _price_changes_for_location(location_id)
+    inventory_summary = _inventory_summary(location_id)
+    week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
+    week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
+    purchase_workflow = {
+        "invoiceReviewQueueCount": len(draft_invoices),
+        "inventoryReceiptCount": inventory_summary["inventoryReceiptCount"],
+        "inventoryItemsToReorderCount": inventory_summary["inventoryReorderNowCount"] + inventory_summary["inventoryOutOfStockCount"],
+        "todayReconciliationStatus": "Incomplete",
+        "todayReconciliationVariance": 0,
+    }
+    top_supplier_totals: dict[str, dict[str, Any]] = {}
+    for invoice in invoices:
+        key = invoice.supplier.name
+        bucket = top_supplier_totals.setdefault(key, {"supplier": key, "spend": 0.0, "invoiceCount": 0})
+        bucket["spend"] += float(invoice.total_amount)
+        bucket["invoiceCount"] += 1
+    top_supplier = sorted(top_supplier_totals.values(), key=lambda entry: entry["spend"], reverse=True)[:3]
+    top_reorder = [_reorder_suggestion_for_item(item) for item in inventory_items]
+    top_reorder = [entry for entry in top_reorder if entry is not None]
+    top_reorder.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["suggestedQuantity"]), reverse=False)
+    return {
+        "summary": {
+            "weeklyInvoiceCount": len(week_invoices),
+            "weeklyInvoiceSpend": week_spend,
+            "monthlyInvoiceCount": len(invoices),
+            "monthlyInvoiceSpend": round(sum(float(invoice.total_amount) for invoice in invoices), 2),
+            "invoiceReviewQueueCount": len(draft_invoices),
+            **inventory_summary,
+            "recentPriceChangeCount": len(recent_price_changes),
+        },
+        "recentInvoices": [serialize_purchase_invoice(invoice) for invoice in recent_invoices],
+        "recentMovements": [serialize_inventory_movement(movement) for movement in movements],
+        "recentPriceChanges": recent_price_changes[:6],
+        "pendingDraftInvoices": [serialize_purchase_invoice(invoice) for invoice in draft_invoices[:5]],
+        "pendingDraftCountSessions": [serialize_count_session(session_record) for session_record in count_sessions if session_record.status == "Draft"][:5],
+        "supplierSpend": top_supplier,
+        "reorderSuggestions": top_reorder[:12],
+        "workflow": {
+            "purchase": "Done" if any(invoice.status == "Completed" for invoice in invoices) else "Needs review",
+            "review": "Needs review" if draft_invoices else "Done",
+            "inventory": "Updated" if inventory_summary["inventoryReceiptCount"] > 0 else "Not ready",
+            "reorder": "Alert" if inventory_summary["inventoryReorderNowCount"] or inventory_summary["inventoryOutOfStockCount"] else "Done",
+            "close": "Not ready",
+            "export": "Not ready",
+        },
+    }
+
+
+def _get_supplier_by_name(organization_id: int, name: str) -> Supplier:
+    normalized = _normalize_name(name)
+    supplier = Supplier.query.filter_by(organization_id=organization_id, normalized_name=normalized).first()
+    if supplier is None:
+        supplier = Supplier(organization_id=organization_id, name=name.strip(), normalized_name=normalized, category_focus="Other", notes="")
+        db.session.add(supplier)
+        db.session.flush()
+    return supplier
+
+
+def _validate_invoice_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    errors: dict[str, str] = {}
+    supplier_name = str(payload.get("supplierName") or payload.get("supplier") or "").strip()
+    if not supplier_name:
+        errors["supplierName"] = "Supplier is required."
+    invoice_number = str(payload.get("invoiceNumber") or "").strip()
+    if not invoice_number:
+        errors["invoiceNumber"] = "Invoice number is required."
+    invoice_date_value = payload.get("invoiceDate")
+    if not invoice_date_value:
+        errors["invoiceDate"] = "Invoice date is required."
+    total_amount = payload.get("totalAmount")
+    if total_amount in (None, ""):
+        errors["totalAmount"] = "Total is required."
+    lines = payload.get("lineItems")
+    if not isinstance(lines, list) or not lines:
+        errors["lineItems"] = "Add at least one invoice line."
+    if errors:
+        raise RequestValidationError("Invoice validation failed.", errors)
+    return payload
+
+
+def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[str, Any], *, existing: PurchaseInvoice | None = None):
+    supplier = _get_supplier_by_name(organization_id, str(payload.get("supplierName") or payload.get("supplier") or ""))
+    invoice = existing or PurchaseInvoice(
+        organization_id=organization_id,
+        location_id=location_id,
+        supplier_id=supplier.id,
+        invoice_number=str(payload.get("invoiceNumber") or "").strip(),
+        invoice_date=_parse_date(payload.get("invoiceDate"), field="invoiceDate"),
+    )
+    invoice.supplier_id = supplier.id
+    invoice.invoice_number = str(payload.get("invoiceNumber") or "").strip()
+    invoice.invoice_date = _parse_date(payload.get("invoiceDate"), field="invoiceDate")
+    invoice.subtotal = _to_decimal(payload.get("subtotal", 0), field="subtotal", required=False)
+    invoice.tax = _to_decimal(payload.get("tax", 0), field="tax", required=False)
+    invoice.total_amount = _to_decimal(payload.get("totalAmount"), field="totalAmount")
+    invoice.notes = str(payload.get("notes") or "").strip()
+    invoice.status = str(payload.get("status") or "Draft")
+    invoice.source_file_name = str(payload.get("sourceFileName") or payload.get("fileName") or "").strip()
+    invoice.source_file_type = str(payload.get("sourceFileType") or payload.get("fileType") or "").strip()
+    invoice.source_file_key = str(payload.get("sourceFileKey") or "").strip()
+    invoice.extracted_text = str(payload.get("extractedText") or "").strip()
+    invoice.extraction_status = str(payload.get("extractionStatus") or "manual").strip()
+    return invoice, supplier
+
+
+def _replace_invoice_lines(invoice: PurchaseInvoice, organization_id: int, payload_lines: list[dict[str, Any]]):
+    line_map: list[PurchaseInvoiceLine] = []
+    for index, line_payload in enumerate(payload_lines):
+        description = str(line_payload.get("description") or line_payload.get("itemName") or "").strip()
+        if not description:
+            raise RequestValidationError("Invoice validation failed.", {f"lineItems[{index}].description": "Description is required."})
+        mapped_item_id = line_payload.get("inventoryItemId")
+        inventory_item = None
+        if mapped_item_id:
+            inventory_item = InventoryItem.query.filter_by(id=int(mapped_item_id), organization_id=organization_id, location_id=invoice.location_id).first()
+            if inventory_item is None:
+                raise RequestValidationError("Invoice validation failed.", {f"lineItems[{index}].inventoryItemId": "That inventory item is not available for this location."})
+
+        quantity = _to_quantity(line_payload.get("quantity", 0), field=f"lineItems[{index}].quantity", required=False)
+        unit_price = _to_decimal(line_payload.get("unitPrice", 0), field=f"lineItems[{index}].unitPrice", required=False)
+        line_total = _to_decimal(line_payload.get("lineTotal", quantity * unit_price), field=f"lineItems[{index}].lineTotal", required=False)
+        confidence = _to_decimal(line_payload.get("confidence", 0), field=f"lineItems[{index}].confidence", required=False, places="0.0001")
+        conversion_factor = _to_quantity(line_payload.get("conversionFactor", 1), field=f"lineItems[{index}].conversionFactor", required=False)
+        previous_price = line_payload.get("previousUnitPrice")
+        price_change_percent = line_payload.get("priceChangePercent")
+        line_map.append(
+            PurchaseInvoiceLine(
+                invoice=invoice,
+                inventory_item_id=inventory_item.id if inventory_item else None,
+                line_index=index,
+                description=description,
+                normalized_description=_normalize_name(str(line_payload.get("normalizedDescription") or description)),
+                purchase_unit=str(line_payload.get("purchaseUnit") or "each").strip(),
+                inventory_unit=str(line_payload.get("inventoryUnit") or (inventory_item.stock_unit if inventory_item else "each")).strip(),
+                conversion_factor=conversion_factor,
+                quantity=quantity,
+                unit_price=unit_price,
+                line_total=line_total,
+                confidence=confidence,
+                needs_review=bool(line_payload.get("needsReview", True)),
+                previous_unit_price=_to_decimal(previous_price, field=f"lineItems[{index}].previousUnitPrice", required=False) if previous_price not in (None, "") else None,
+                price_change_percent=_to_decimal(price_change_percent, field=f"lineItems[{index}].priceChangePercent", required=False, places="0.01") if price_change_percent not in (None, "") else None,
+                note=str(line_payload.get("note") or "").strip(),
+            )
+        )
+    invoice.lines = line_map
+
+
+def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
+    if invoice.status == "Completed":
+        raise RequestValidationError("Invoice already received.", {"invoice": "This invoice has already been received."})
+
+    mapped_lines = [line for line in invoice.lines if line.inventory_item_id]
+    if not mapped_lines:
+        raise RequestValidationError("Invoice receipt failed.", {"lineItems": "Map at least one line to inventory before receiving."})
+
+    unmapped = [line.description for line in invoice.lines if not line.inventory_item_id]
+    if unmapped:
+        raise RequestValidationError("Invoice receipt failed.", {"lineItems": f"Map all invoice lines before receiving. Unmapped: {', '.join(unmapped[:3])}{'...' if len(unmapped) > 3 else ''}"})
+
+    now = _now()
+    for line in invoice.lines:
+        item = line.inventory_item
+        if item is None:
+            continue
+        quantity_delta = (Decimal(line.quantity) * Decimal(line.conversion_factor)).quantize(QTY)
+        before = Decimal(item.current_on_hand)
+        after = (before + quantity_delta).quantize(QTY)
+        if after < 0:
+            raise RequestValidationError("Inventory receipt failed.", {"inventory": f"Receiving {line.description} would make {item.name} negative."})
+
+        existing = InventoryMovement.query.filter_by(
+            organization_id=invoice.organization_id,
+            location_id=invoice.location_id,
+            source_type="invoice receipt",
+            source_record_id=str(invoice.id),
+            source_line_id=str(line.id),
+        ).first()
+        if existing is not None:
+            raise RequestValidationError("Invoice already received.", {"invoice": "This invoice has already been received."})
+
+        movement = InventoryMovement(
+            organization_id=invoice.organization_id,
+            location_id=invoice.location_id,
+            inventory_item_id=item.id,
+            quantity_delta=quantity_delta,
+            quantity_before=before,
+            quantity_after=after,
+            unit=item.stock_unit,
+            source_type="invoice receipt",
+            source_record_id=str(invoice.id),
+            source_line_id=str(line.id),
+            reason=f"Invoice {invoice.invoice_number} received",
+            actor_user_id=actor_id,
+        )
+        item.current_on_hand = after
+        item.latest_purchase_price = line.unit_price
+        item.last_purchase_unit = line.purchase_unit
+        item.last_purchase_conversion_factor = line.conversion_factor
+        item.preferred_supplier_name = invoice.supplier.name
+        item.last_received_at = now
+        item.updated_by_user_id = actor_id
+        item.updated_at = now
+
+        mapping = SupplierItemMapping.query.filter_by(
+            organization_id=invoice.organization_id,
+            supplier_id=invoice.supplier_id,
+            inventory_item_id=item.id,
+            normalized_supplier_item_name=_normalize_name(line.description),
+        ).first()
+        if mapping is None:
+            mapping = SupplierItemMapping(
+                organization_id=invoice.organization_id,
+                supplier_id=invoice.supplier_id,
+                inventory_item_id=item.id,
+                supplier_item_name=line.description,
+                normalized_supplier_item_name=_normalize_name(line.description),
+                purchase_unit=line.purchase_unit,
+                inventory_unit=item.stock_unit,
+                conversion_factor=line.conversion_factor,
+                last_seen_at=invoice.invoice_date,
+                created_by_user_id=actor_id,
+                updated_by_user_id=actor_id,
+            )
+            db.session.add(mapping)
+        else:
+            mapping.purchase_unit = line.purchase_unit
+            mapping.inventory_unit = item.stock_unit
+            mapping.conversion_factor = line.conversion_factor
+            mapping.last_seen_at = now
+            mapping.updated_by_user_id = actor_id
+
+        if line.previous_unit_price and line.previous_unit_price > 0:
+            line.price_change_percent = (((line.unit_price - line.previous_unit_price) / line.previous_unit_price) * 100).quantize(Decimal("0.1"))
+        else:
+            line.price_change_percent = None
+        line.previous_unit_price = line.previous_unit_price
+        line.needs_review = False
+
+        db.session.add(movement)
+
+    invoice.status = "Completed"
+    invoice.received_at = now
+    invoice.received_by_user_id = actor_id
+    invoice.updated_by_user_id = actor_id
+    invoice.posted_at = now
+
+
+@bp.get("/api/pilot/bootstrap")
+@login_required
+def bootstrap():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, locations, location = context
+    return (
+        jsonify(
+            {
+                "user": {
+                    "id": current_user.id,
+                    "email": current_user.email,
+                },
+                "membershipRole": membership.role,
+                "organization": {
+                    "id": organization.id,
+                    "name": organization.name,
+                },
+                "locations": [serialize_location(entry) for entry in locations],
+                "currentLocation": serialize_location(location),
+            }
+        ),
+        200,
+    )
+
+
+@bp.post("/api/locations/current")
+@login_required
+def set_current_location():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    _, _, locations, _ = context
+    payload = _json_body()
+    location_id = _to_int(payload.get("locationId"), field="locationId")
+    location = _check_location_access(location_id, locations)
+    if location is None:
+        return json_error("That location is not available to the current account.", 403)
+    session["pilot_current_location_id"] = location.id
+    return jsonify({"currentLocation": serialize_location(location)}), 200
+
+
+@bp.get("/api/pilot/dashboard")
+@login_required
+def dashboard():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    _, _, _, location = context
+    return jsonify(_dashboard_snapshot(location.id)), 200
+
+
+@bp.get("/api/pilot/purchases")
+@login_required
+def purchases():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    _, _, _, location = context
+    invoices = PurchaseInvoice.query.filter_by(location_id=location.id).order_by(PurchaseInvoice.invoice_date.desc(), PurchaseInvoice.created_at.desc()).all()
+    suppliers = Supplier.query.filter_by(organization_id=location.organization_id, is_active=True).order_by(Supplier.name.asc()).all()
+    purchase_lines = [line for invoice in invoices for line in invoice.lines]
+    price_changes = [change for change in _price_changes_for_location(location.id) if change["status"] in {"Increased", "Decreased"}]
+    ready_for_csv = sum(1 for invoice in invoices if invoice.status == "Completed")
+    needs_review = sum(1 for invoice in invoices if invoice.status == "Draft")
+    needs_mapping = sum(1 for invoice in invoices if invoice.status == "Ready" and any(not line.inventory_item_id for line in invoice.lines))
+    return (
+        jsonify(
+            {
+                "invoices": [serialize_purchase_invoice(invoice) for invoice in invoices],
+                "suppliers": [serialize_supplier(supplier) for supplier in suppliers],
+                "purchaseLines": [serialize_purchase_invoice_line(line) for line in purchase_lines],
+                "priceChanges": price_changes,
+                "summary": {
+                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if invoice.invoice_date >= (_now().date().replace(day=1))), 2),
+                    "uploadsNeedingReview": needs_review,
+                    "priceChangesFlagged": len(price_changes),
+                    "mappedItems": sum(1 for line in purchase_lines if line.inventory_item_id),
+                    "exportReady": ready_for_csv,
+                    "needsMapping": needs_mapping,
+                },
+                "exportReadiness": {
+                    "readyForCsv": ready_for_csv,
+                    "needsReview": needs_review,
+                    "needsMapping": needs_mapping,
+                    "quickBooksFutureOnly": True,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@bp.get("/api/pilot/purchases/invoices/<int:invoice_id>")
+@login_required
+def purchase_invoice_detail(invoice_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
+    if invoice is None:
+        return json_error("Purchase invoice not found.", 404)
+    return jsonify(serialize_purchase_invoice(invoice)), 200
+
+
+@bp.post("/api/pilot/purchases/invoices")
+@login_required
+def create_purchase_invoice():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    payload = _validate_invoice_payload(_json_body())
+    invoice, supplier = _invoice_from_payload(organization.id, location.id, payload)
+    invoice.created_by_user_id = current_user.id
+    invoice.updated_by_user_id = current_user.id
+    invoice.extraction_status = str(payload.get("extractionStatus") or "manual")
+    _replace_invoice_lines(invoice, organization.id, list(payload.get("lineItems") or []))
+    db.session.add(invoice)
+    db.session.flush()
+    for line in invoice.lines:
+        if line.inventory_item_id is None:
+            continue
+        mapping = SupplierItemMapping.query.filter_by(
+            organization_id=organization.id,
+            supplier_id=supplier.id,
+            inventory_item_id=line.inventory_item_id,
+            normalized_supplier_item_name=_normalize_name(line.description),
+        ).first()
+        if mapping:
+            line.supplier_item_mapping = mapping
+    db.session.commit()
+    return jsonify(serialize_purchase_invoice(invoice)), 201
+
+
+@bp.patch("/api/pilot/purchases/invoices/<int:invoice_id>")
+@login_required
+def update_purchase_invoice(invoice_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
+    if invoice is None:
+        return json_error("Purchase invoice not found.", 404)
+    if invoice.status == "Completed":
+        return json_error("Completed invoices are read-only.", 409)
+    body = _json_body()
+    payload = _validate_invoice_payload({**body, "supplierName": body.get("supplierName") or body.get("supplier")})
+    invoice, _ = _invoice_from_payload(organization.id, location.id, payload, existing=invoice)
+    invoice.updated_by_user_id = current_user.id
+    _replace_invoice_lines(invoice, organization.id, list(payload.get("lineItems") or []))
+    for line in invoice.lines:
+        if line.inventory_item_id is None:
+            continue
+        mapping = SupplierItemMapping.query.filter_by(
+            organization_id=organization.id,
+            supplier_id=invoice.supplier_id,
+            inventory_item_id=line.inventory_item_id,
+            normalized_supplier_item_name=_normalize_name(line.description),
+        ).first()
+        if mapping:
+            line.supplier_item_mapping = mapping
+    db.session.commit()
+    return jsonify(serialize_purchase_invoice(invoice)), 200
+
+
+@bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/receive")
+@login_required
+def receive_purchase_invoice(invoice_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
+    if invoice is None:
+        return json_error("Purchase invoice not found.", 404)
+    try:
+        _record_receipt(invoice, current_user.id)
+        db.session.commit()
+    except RequestValidationError as exc:
+        db.session.rollback()
+        if exc.message == "Invoice already received.":
+            return json_error(exc.message, 409, errors=exc.errors)
+        return json_error(exc.message, 400, errors=exc.errors)
+    return jsonify(serialize_purchase_invoice(invoice)), 200
+
+
+@bp.get("/api/pilot/inventory")
+@login_required
+def inventory():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(InventoryItem.updated_at.desc(), InventoryItem.created_at.desc()).all()
+    movements = InventoryMovement.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(InventoryMovement.created_at.desc()).limit(50).all()
+    count_sessions = StockCountSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(StockCountSession.updated_at.desc()).all()
+    reorder_intents = ReorderIntent.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+    reorder_suggestions = [entry for entry in (_reorder_suggestion_for_item(item) for item in items) if entry]
+    for suggestion in reorder_suggestions:
+        intent = next((entry for entry in reorder_intents if entry.inventory_item_id == suggestion["inventoryItemId"]), None)
+        if intent:
+            suggestion["status"] = intent.status
+            suggestion["adjustedQuantity"] = float(intent.adjusted_quantity)
+            suggestion["estimatedCost"] = decimal_to_float(intent.estimated_cost)
+    reorder_suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
+    return (
+        jsonify(
+            {
+                "items": [serialize_inventory_item(item) for item in items],
+                "movements": [serialize_inventory_movement(movement) for movement in movements],
+                "countSessions": [serialize_count_session(session_record) for session_record in count_sessions],
+                "reorderPlan": {
+                    "suggestions": reorder_suggestions,
+                    "groupedBySupplier": _group_reorder_by_supplier(reorder_suggestions),
+                },
+                "summary": _inventory_summary(location.id),
+            }
+        ),
+        200,
+    )
+
+
+def _group_reorder_by_supplier(suggestions: list[dict[str, Any]]):
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for suggestion in suggestions:
+        groups.setdefault(suggestion["supplier"] or "Unknown supplier", []).append(suggestion)
+    return [
+        {
+            "supplier": supplier,
+            "lines": lines,
+            "itemCount": len(lines),
+            "estimatedOrderTotal": round(sum(float(line["estimatedCost"] or 0) for line in lines), 2),
+        }
+        for supplier, lines in sorted(groups.items(), key=lambda entry: entry[0].lower())
+    ]
+
+
+@bp.post("/api/pilot/inventory/items")
+@login_required
+def create_inventory_item():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    payload = _json_body()
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return json_error("Validation failed.", 400, errors={"name": "Name is required."})
+    normalized = _normalize_name(name)
+    existing = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+    if existing:
+        return json_error("An inventory item with that name already exists.", 409)
+    supplier_name = str(payload.get("preferredSupplierName") or payload.get("preferredSupplier") or "").strip()
+    supplier = _get_supplier_by_name(organization.id, supplier_name) if supplier_name else None
+    item = InventoryItem(
+        organization_id=organization.id,
+        location_id=location.id,
+        supplier_id=supplier.id if supplier else None,
+        name=name,
+        normalized_name=normalized,
+        category=str(payload.get("category") or "Other").strip() or "Other",
+        stock_unit=str(payload.get("stockUnit") or payload.get("unit") or "each").strip() or "each",
+        current_on_hand=_to_quantity(payload.get("currentOnHand", 0), field="currentOnHand", required=False),
+        min_quantity=_to_quantity(payload.get("minQuantity", 0), field="minQuantity", required=False),
+        par_level=_to_quantity(payload.get("parLevel", 0), field="parLevel", required=False),
+        preferred_supplier_name=supplier_name,
+        latest_purchase_price=_to_decimal(payload.get("latestPurchasePrice", 0), field="latestPurchasePrice", required=False),
+        last_purchase_unit=str(payload.get("lastPurchaseUnit") or payload.get("stockUnit") or payload.get("unit") or "each"),
+        last_purchase_conversion_factor=_to_quantity(payload.get("lastPurchaseConversionFactor", 1), field="lastPurchaseConversionFactor", required=False),
+        average_daily_usage=_to_quantity(payload.get("averageDailyUsage"), field="averageDailyUsage", required=False) if payload.get("averageDailyUsage") not in (None, "") else None,
+        active=bool(payload.get("active", True)),
+        notes=str(payload.get("notes") or "").strip(),
+        created_by_user_id=current_user.id,
+        updated_by_user_id=current_user.id,
+    )
+    db.session.add(item)
+    db.session.commit()
+    return jsonify(serialize_inventory_item(item)), 201
+
+
+@bp.patch("/api/pilot/inventory/items/<int:item_id>")
+@login_required
+def update_inventory_item(item_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+    payload = _json_body()
+    if "name" in payload:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            return json_error("Validation failed.", 400, errors={"name": "Name is required."})
+        item.name = name
+        item.normalized_name = _normalize_name(name)
+    if "category" in payload:
+        item.category = str(payload.get("category") or "Other").strip() or "Other"
+    if "stockUnit" in payload or "unit" in payload:
+        item.stock_unit = str(payload.get("stockUnit") or payload.get("unit") or "each").strip() or "each"
+    if "currentOnHand" in payload:
+        item.current_on_hand = _to_quantity(payload.get("currentOnHand"), field="currentOnHand")
+    if "minQuantity" in payload:
+        item.min_quantity = _to_quantity(payload.get("minQuantity"), field="minQuantity")
+    if "parLevel" in payload:
+        item.par_level = _to_quantity(payload.get("parLevel"), field="parLevel")
+    if "preferredSupplierName" in payload or "preferredSupplier" in payload:
+        item.preferred_supplier_name = str(payload.get("preferredSupplierName") or payload.get("preferredSupplier") or "").strip()
+        if item.preferred_supplier_name:
+            supplier = _get_supplier_by_name(organization.id, item.preferred_supplier_name)
+            item.supplier_id = supplier.id
+    if "latestPurchasePrice" in payload:
+        item.latest_purchase_price = _to_decimal(payload.get("latestPurchasePrice"), field="latestPurchasePrice")
+    if "averageDailyUsage" in payload:
+        item.average_daily_usage = _to_quantity(payload.get("averageDailyUsage"), field="averageDailyUsage", required=False)
+    if "notes" in payload:
+        item.notes = str(payload.get("notes") or "").strip()
+    if "active" in payload:
+        item.active = bool(payload.get("active"))
+    item.updated_by_user_id = current_user.id
+    db.session.commit()
+    return jsonify(serialize_inventory_item(item)), 200
+
+
+@bp.post("/api/pilot/inventory/items/<int:item_id>/adjustments")
+@login_required
+def create_inventory_adjustment(item_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+    payload = _json_body()
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return json_error("Validation failed.", 400, errors={"reason": "Reason is required."})
+    movement_type = str(payload.get("movementType") or "manual decrease").strip()
+    delta = _to_quantity(payload.get("quantityDelta"), field="quantityDelta")
+    if movement_type in {"manual decrease", "waste", "spoilage / expired", "damaged", "staff meal / comped", "breakage"}:
+        delta = -abs(delta)
+    elif movement_type in {"manual increase", "manual addition", "adjustment", "correction"}:
+        delta = abs(delta)
+    before = Decimal(item.current_on_hand)
+    after = (before + delta).quantize(QTY)
+    if after < 0:
+        return json_error("Adjustment would make inventory negative.", 400, errors={"quantityDelta": "Quantity cannot reduce stock below zero."})
+    movement = InventoryMovement(
+        organization_id=organization.id,
+        location_id=location.id,
+        inventory_item_id=item.id,
+        quantity_delta=delta,
+        quantity_before=before,
+        quantity_after=after,
+        unit=item.stock_unit,
+        source_type=movement_type,
+        source_record_id=str(payload.get("sourceRecordId") or "manual"),
+        source_line_id=str(payload.get("sourceLineId") or "manual"),
+        reason=reason,
+        actor_user_id=current_user.id,
+    )
+    item.current_on_hand = after
+    item.updated_by_user_id = current_user.id
+    item.updated_at = _now()
+    db.session.add(movement)
+    db.session.commit()
+    return jsonify(serialize_inventory_movement(movement)), 201
+
+
+def _build_count_session_for_location(location: RestaurantLocation, organization_id: int):
+    items = InventoryItem.query.filter_by(organization_id=organization_id, location_id=location.id, active=True).order_by(InventoryItem.name.asc()).all()
+    return items
+
+
+@bp.get("/api/pilot/inventory/count-sessions")
+@login_required
+def list_count_sessions():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    sessions = StockCountSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(StockCountSession.updated_at.desc()).all()
+    return jsonify({"countSessions": [serialize_count_session(entry) for entry in sessions]}), 200
+
+
+@bp.post("/api/pilot/inventory/count-sessions")
+@login_required
+def create_count_session():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    payload = _json_body()
+    item_ids = payload.get("itemIds")
+    if not isinstance(item_ids, list) or not item_ids:
+        item_ids = [item.id for item in _build_count_session_for_location(location, organization.id)]
+    candidate_items = InventoryItem.query.filter(InventoryItem.id.in_([int(item_id) for item_id in item_ids]), InventoryItem.organization_id == organization.id, InventoryItem.location_id == location.id).order_by(InventoryItem.name.asc()).all()
+    if not candidate_items:
+        return json_error("No inventory items available for this count session.", 400)
+    session_record = StockCountSession(
+        organization_id=organization.id,
+        location_id=location.id,
+        status="Draft",
+        started_at=_now(),
+        counted_by=str(payload.get("countedBy") or "").strip(),
+        notes=str(payload.get("notes") or "").strip(),
+        item_count=len(candidate_items),
+        created_by_user_id=current_user.id,
+        updated_at=_now(),
+    )
+    db.session.add(session_record)
+    db.session.flush()
+    lines = []
+    for index, item in enumerate(candidate_items):
+        lines.append(
+            StockCountSessionLine(
+                session_id=session_record.id,
+                inventory_item_id=item.id,
+                line_index=index,
+                item_name_snapshot=item.name,
+                stock_unit_snapshot=item.stock_unit,
+                expected_quantity=item.current_on_hand,
+                counted_quantity=None,
+                variance=None,
+                resulting_quantity=None,
+                note="",
+                status="pending",
+            )
+        )
+    db.session.add_all(lines)
+    db.session.commit()
+    return jsonify(serialize_count_session(session_record)), 201
+
+
+@bp.get("/api/pilot/inventory/count-sessions/<int:session_id>")
+@login_required
+def get_count_session(session_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
+    if session_record is None:
+        return json_error("Stock count session not found.", 404)
+    return jsonify(serialize_count_session(session_record)), 200
+
+
+@bp.patch("/api/pilot/inventory/count-sessions/<int:session_id>")
+@login_required
+def update_count_session(session_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
+    if session_record is None:
+        return json_error("Stock count session not found.", 404)
+    if session_record.status == "Completed":
+        return json_error("Completed stock counts are read-only.", 409)
+    payload = _json_body()
+    if "countedBy" in payload:
+        session_record.counted_by = str(payload.get("countedBy") or "").strip()
+    if "notes" in payload:
+        session_record.notes = str(payload.get("notes") or "").strip()
+    if "lines" in payload and isinstance(payload.get("lines"), list):
+        line_payloads = payload.get("lines")
+        lines_by_id = {line.id: line for line in session_record.lines}
+        for index, line_payload in enumerate(line_payloads):
+            line = lines_by_id.get(int(line_payload.get("id"))) if line_payload.get("id") else None
+            if line is None:
+                continue
+            if "countedQuantity" in line_payload:
+                counted = line_payload.get("countedQuantity")
+                line.counted_quantity = _to_quantity(counted, field=f"lines[{index}].countedQuantity", required=False) if counted not in (None, "") else None
+                line.variance = None if line.counted_quantity is None else (Decimal(line.counted_quantity) - Decimal(line.expected_quantity)).quantize(QTY)
+                line.resulting_quantity = line.counted_quantity
+                line.status = "confirmed" if line.counted_quantity is not None else "pending"
+            if "note" in line_payload:
+                line.note = str(line_payload.get("note") or "").strip()
+    session_record.updated_at = _now()
+    db.session.commit()
+    return jsonify(serialize_count_session(session_record)), 200
+
+
+@bp.post("/api/pilot/inventory/count-sessions/<int:session_id>/finalize")
+@login_required
+def finalize_count_session(session_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
+    if session_record is None:
+        return json_error("Stock count session not found.", 404)
+    if session_record.status == "Completed":
+        return json_error("This stock count has already been finalized.", 409)
+    incomplete = [line for line in session_record.lines if line.counted_quantity is None]
+    if incomplete:
+        return json_error("Finalize requires a counted quantity for every line.", 400, errors={"lines": "Fill in every line before finalizing."})
+    now = _now()
+    for line in session_record.lines:
+        item = line.inventory_item
+        if item is None or line.counted_quantity is None:
+            continue
+        after = Decimal(line.counted_quantity).quantize(QTY)
+        before = Decimal(item.current_on_hand)
+        delta = (after - before).quantize(QTY)
+        if after < 0:
+            return json_error("Stock count would make inventory negative.", 400, errors={"countedQuantity": f"{line.item_name_snapshot} cannot be negative."})
+        movement = InventoryMovement(
+            organization_id=organization.id,
+            location_id=location.id,
+            inventory_item_id=item.id,
+            quantity_delta=delta,
+            quantity_before=before,
+            quantity_after=after,
+            unit=item.stock_unit,
+            source_type="stock count reconciliation",
+            source_record_id=str(session_record.id),
+            source_line_id=str(line.id),
+            reason=line.note or f"Stock count {session_record.id}",
+            actor_user_id=current_user.id,
+        )
+        item.current_on_hand = after
+        item.last_counted_at = now
+        item.updated_by_user_id = current_user.id
+        item.updated_at = now
+        db.session.add(movement)
+    session_record.status = "Completed"
+    session_record.completed_at = now
+    session_record.updated_at = now
+    session_record.finalized_by_user_id = current_user.id
+    db.session.commit()
+    return jsonify(serialize_count_session(session_record)), 200
+
+
+@bp.post("/api/pilot/reorder-plan/<int:item_id>/ordered")
+@login_required
+def mark_reorder_item_ordered(item_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+    suggestion = _reorder_suggestion_for_item(item)
+    if suggestion is None:
+        return json_error("That item does not need ordering.", 400)
+    intent = ReorderIntent.query.filter_by(organization_id=organization.id, location_id=location.id, inventory_item_id=item.id).first()
+    if intent is None:
+        intent = ReorderIntent(
+            organization_id=organization.id,
+            location_id=location.id,
+            inventory_item_id=item.id,
+            suggested_quantity=Decimal(str(suggestion["suggestedQuantity"])),
+            adjusted_quantity=Decimal(str(suggestion["adjustedQuantity"])),
+            estimated_cost=Decimal(str(suggestion["estimatedCost"])) if suggestion["estimatedCost"] is not None else None,
+            status="Ordered",
+            ordered_at=_now(),
+            notes="",
+            actor_user_id=current_user.id,
+        )
+        db.session.add(intent)
+    else:
+        intent.status = "Ordered"
+        intent.ordered_at = _now()
+        intent.updated_at = _now()
+        intent.actor_user_id = current_user.id
+    db.session.commit()
+    return jsonify(serialize_reorder_intent(intent)), 200
+
+
+@bp.get("/api/pilot/reorder-plan")
+@login_required
+def reorder_plan():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, active=True).order_by(InventoryItem.name.asc()).all()
+    intents = ReorderIntent.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+    intent_by_item = {intent.inventory_item_id: intent for intent in intents}
+    suggestions = []
+    for item in items:
+        suggestion = _reorder_suggestion_for_item(item)
+        if suggestion is None:
+            continue
+        intent = intent_by_item.get(item.id)
+        if intent is not None:
+            suggestion["status"] = intent.status
+            suggestion["adjustedQuantity"] = float(intent.adjusted_quantity)
+            suggestion["estimatedCost"] = decimal_to_float(intent.estimated_cost)
+        suggestions.append(suggestion)
+    suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
+    groups = _group_reorder_by_supplier(suggestions)
+    return jsonify({"suggestions": suggestions, "groupedBySupplier": groups}), 200

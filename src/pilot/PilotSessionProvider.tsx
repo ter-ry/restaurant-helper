@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchCurrentOrganization, fetchPilotSession, loginToPilot, logoutOfPilot, PilotApiError, type PilotLocation, type PilotOrganization, type PilotUser } from "./pilotApi";
+import { fetchCurrentOrganization, fetchPilotSession, loginToPilot, logoutOfPilot, PilotApiError, switchPilotLocation, type PilotLocation, type PilotOrganization, type PilotUser } from "./pilotApi";
 import { pilotAppEnabled } from "./pilotConfig";
 
 type SessionStatus = "disabled" | "loading" | "signedOut" | "signedIn";
@@ -15,6 +15,7 @@ interface PilotSessionValue {
   csrfToken: string | null;
   refreshSession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  switchLocation: (locationId: number) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -110,6 +111,31 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const switchLocation = async (locationId: number) => {
+    if (!pilotAppEnabled) {
+      return;
+    }
+
+    setStatus("loading");
+    setError(null);
+
+    try {
+      await switchPilotLocation(locationId);
+      const current = await loadCurrentSession();
+      setUser(current.user);
+      setOrganization(current.organization);
+      setLocations(current.locations);
+      setCurrentLocation(current.currentLocation);
+      setMembershipRole(current.membershipRole);
+      setCsrfToken(current.csrfToken);
+      setStatus("signedIn");
+    } catch (err) {
+      setStatus("signedIn");
+      setError(err instanceof Error ? err.message : "Could not switch locations.");
+      throw err;
+    }
+  };
+
   const signOut = async () => {
     if (!pilotAppEnabled) {
       setStatus("disabled");
@@ -144,9 +170,10 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       csrfToken,
       refreshSession,
       signIn,
+      switchLocation,
       signOut,
     }),
-    [csrfToken, currentLocation, error, locations, membershipRole, organization, status, user],
+    [csrfToken, currentLocation, error, locations, membershipRole, organization, refreshSession, signIn, signOut, status, switchLocation, user],
   );
 
   return <PilotSessionContext.Provider value={value}>{children}</PilotSessionContext.Provider>;

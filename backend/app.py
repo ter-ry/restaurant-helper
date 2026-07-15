@@ -7,6 +7,7 @@ from .auth import bp as auth_bp
 from .config import choose_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
+from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
 from .seed import seed_pilot_data
 from .validation import RequestValidationError
@@ -97,6 +98,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(organizations_bp)
+    app.register_blueprint(pilot_api_bp)
 
     @app.cli.group("seed")
     def seed_group() -> None:

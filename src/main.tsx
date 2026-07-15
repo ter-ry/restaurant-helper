@@ -20,6 +20,12 @@ import { initAnalytics, trackPageView } from "./lib/analytics";
 import { PilotSessionProvider } from "./pilot/PilotSessionProvider";
 import { PilotAppGate } from "./pilot/PilotAppGate";
 import { PilotLoginPage } from "./pilot/PilotLoginPage";
+import { PilotWorkspaceLayout } from "./pilot/PilotWorkspaceLayout";
+import { PilotDashboardPage } from "./pilot/PilotDashboardPage";
+import { PilotPurchasesPage } from "./pilot/PilotPurchasesPage";
+import { PilotInventoryPage } from "./pilot/PilotInventoryPage";
+import { PilotStockCountsPage } from "./pilot/PilotStockCountsPage";
+import { PilotReorderPlanPage } from "./pilot/PilotReorderPlanPage";
 import { pilotAppEnabled } from "./pilot/pilotConfig";
 
 function HashScroll() {
@@ -164,7 +170,23 @@ const demoChildren = [
 const pilotAppRoutes = pilotAppEnabled
   ? [
       { path: "/app/login", element: <PilotLoginPage /> },
-      { path: "/app", element: <PilotAppGate /> },
+      {
+        path: "/app",
+        element: <PilotAppGate />,
+        children: [
+          {
+            element: <PilotWorkspaceLayout />,
+            children: [
+              { index: true, element: <Navigate to="dashboard" replace /> },
+              { path: "dashboard", element: <PilotDashboardPage /> },
+              { path: "purchases", element: <PilotPurchasesPage /> },
+              { path: "inventory", element: <PilotInventoryPage /> },
+              { path: "stock-counts", element: <PilotStockCountsPage /> },
+              { path: "reorder-plan", element: <PilotReorderPlanPage /> },
+            ],
+          },
+        ],
+      },
     ]
   : [];
 
