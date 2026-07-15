@@ -164,6 +164,12 @@ export interface PilotSupplier {
   updatedAt: string | null;
 }
 
+export interface PilotSupplierSummary extends PilotSupplier {
+  inventoryItemCount: number;
+  purchaseInvoiceCount: number;
+  latestInvoiceDate: string | null;
+}
+
 export interface PilotInventoryItem {
   id: number;
   organizationId: number;
@@ -360,6 +366,7 @@ export interface PilotInventoryResponse {
   items: PilotInventoryItem[];
   movements: PilotInventoryMovement[];
   countSessions: PilotCountSession[];
+  suppliers?: PilotSupplierSummary[];
   reorderPlan: {
     suggestions: PilotReorderSuggestion[];
     groupedBySupplier: Array<{
@@ -423,6 +430,30 @@ export async function receivePilotPurchaseInvoice(invoiceId: number) {
 
 export async function fetchPilotInventory() {
   return requestJson<PilotInventoryResponse>("/api/pilot/inventory");
+}
+
+export async function fetchPilotSuppliers() {
+  return requestJson<{ suppliers: PilotSupplierSummary[] }>("/api/pilot/suppliers");
+}
+
+export async function createPilotSupplier(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotSupplierSummary>("/api/pilot/suppliers", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotSupplier(supplierId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotSupplierSummary>(`/api/pilot/suppliers/${supplierId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function createPilotInventoryItem(payload: Record<string, unknown>) {

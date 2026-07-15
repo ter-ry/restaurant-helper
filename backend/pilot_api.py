@@ -306,6 +306,24 @@ def _get_supplier_by_name(organization_id: int, name: str) -> Supplier:
     return supplier
 
 
+def _require_management_role(membership: OrganizationMembership):
+    if membership.role not in {"owner", "manager"}:
+        return json_error("You do not have permission to do that.", 403, errors={"permission": "Owner or manager access is required."})
+    return None
+
+
+def _serialize_supplier_with_counts(supplier: Supplier, *, inventory_item_count: int = 0, purchase_invoice_count: int = 0, latest_invoice_date: date | None = None) -> dict[str, Any]:
+    payload = serialize_supplier(supplier)
+    payload.update(
+        {
+            "inventoryItemCount": inventory_item_count,
+            "purchaseInvoiceCount": purchase_invoice_count,
+            "latestInvoiceDate": latest_invoice_date.isoformat() if latest_invoice_date else None,
+        }
+    )
+    return payload
+
+
 def _validate_invoice_payload(payload: dict[str, Any]) -> dict[str, Any]:
     errors: dict[str, str] = {}
     supplier_name = str(payload.get("supplierName") or payload.get("supplier") or "").strip()
@@ -588,6 +606,118 @@ def purchases():
         ),
         200,
     )
+
+
+@bp.get("/api/pilot/suppliers")
+@login_required
+def suppliers():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    supplier_rows = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.is_active.desc(), Supplier.name.asc()).all()
+    inventory_items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+    invoices = PurchaseInvoice.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+    item_counts: dict[int, int] = {}
+    invoice_counts: dict[int, int] = {}
+    latest_invoice_dates: dict[int, date] = {}
+    for item in inventory_items:
+        if item.supplier_id is None:
+            continue
+        item_counts[item.supplier_id] = item_counts.get(item.supplier_id, 0) + 1
+    for invoice in invoices:
+        supplier_id = invoice.supplier_id
+        if supplier_id is None:
+            continue
+        invoice_counts[supplier_id] = invoice_counts.get(supplier_id, 0) + 1
+        previous = latest_invoice_dates.get(supplier_id)
+        if previous is None or invoice.invoice_date > previous:
+            latest_invoice_dates[supplier_id] = invoice.invoice_date
+    return (
+        jsonify(
+            {
+                "suppliers": [
+                    _serialize_supplier_with_counts(
+                        supplier,
+                        inventory_item_count=item_counts.get(supplier.id, 0),
+                        purchase_invoice_count=invoice_counts.get(supplier.id, 0),
+                        latest_invoice_date=latest_invoice_dates.get(supplier.id),
+                    )
+                    for supplier in supplier_rows
+                ]
+            }
+        ),
+        200,
+    )
+
+
+@bp.post("/api/pilot/suppliers")
+@login_required
+def create_supplier():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, _ = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
+    payload = _json_body()
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return json_error("Validation failed.", 400, errors={"name": "Supplier name is required."})
+    normalized = _normalize_name(name)
+    existing = Supplier.query.filter_by(organization_id=organization.id, normalized_name=normalized).first()
+    if existing is not None:
+        return json_error("A supplier with that name already exists.", 409)
+    supplier = Supplier(
+        organization_id=organization.id,
+        name=name,
+        normalized_name=normalized,
+        category_focus=str(payload.get("categoryFocus") or "Other").strip() or "Other",
+        notes=str(payload.get("notes") or "").strip(),
+        is_active=bool(payload.get("isActive", True)),
+    )
+    db.session.add(supplier)
+    db.session.commit()
+    return jsonify(_serialize_supplier_with_counts(supplier)), 201
+
+
+@bp.patch("/api/pilot/suppliers/<int:supplier_id>")
+@login_required
+def update_supplier(supplier_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, _ = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
+    supplier = Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first()
+    if supplier is None:
+        return json_error("Supplier not found.", 404)
+    payload = _json_body()
+    if "name" in payload:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            return json_error("Validation failed.", 400, errors={"name": "Supplier name is required."})
+        normalized = _normalize_name(name)
+        duplicate = Supplier.query.filter(
+            Supplier.organization_id == organization.id,
+            Supplier.normalized_name == normalized,
+            Supplier.id != supplier.id,
+        ).first()
+        if duplicate is not None:
+            return json_error("A supplier with that name already exists.", 409)
+        supplier.name = name
+        supplier.normalized_name = normalized
+    if "categoryFocus" in payload:
+        supplier.category_focus = str(payload.get("categoryFocus") or "Other").strip() or "Other"
+    if "notes" in payload:
+        supplier.notes = str(payload.get("notes") or "").strip()
+    if "isActive" in payload:
+        supplier.is_active = bool(payload.get("isActive"))
+    db.session.commit()
+    return jsonify(_serialize_supplier_with_counts(supplier)), 200
 
 
 @bp.get("/api/pilot/purchases/invoices/<int:invoice_id>")

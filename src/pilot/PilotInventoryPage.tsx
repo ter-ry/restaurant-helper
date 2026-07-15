@@ -8,9 +8,13 @@ import {
   createPilotInventoryAdjustment,
   createPilotInventoryItem,
   fetchPilotInventory,
+  fetchPilotSuppliers,
+  createPilotSupplier,
+  updatePilotSupplier,
   type PilotCountSession,
   type PilotInventoryItem,
   type PilotInventoryResponse,
+  type PilotSupplierSummary,
   updatePilotInventoryItem,
 } from "./pilotApi";
 import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
@@ -30,7 +34,15 @@ interface InventoryDraft {
   active: boolean;
 }
 
-function blankDraft(): InventoryDraft {
+interface SupplierDraft {
+  id: number | null;
+  name: string;
+  categoryFocus: string;
+  notes: string;
+  isActive: boolean;
+}
+
+function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
   return {
     id: null,
     name: "",
@@ -44,6 +56,17 @@ function blankDraft(): InventoryDraft {
     averageDailyUsage: 0,
     notes: "",
     active: true,
+  };
+}
+
+function blankSupplierDraft(suppliers: PilotSupplierSummary[] = []): SupplierDraft {
+  const activeSupplier = suppliers.find((supplier) => supplier.isActive) ?? suppliers[0];
+  return {
+    id: null,
+    name: "",
+    categoryFocus: activeSupplier?.categoryFocus ?? "Other",
+    notes: "",
+    isActive: true,
   };
 }
 
@@ -80,10 +103,14 @@ function adjustmentTone(quantity: number) {
 
 export function PilotInventoryPage() {
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
+  const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<InventoryDraft>(blankDraft());
+  const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
+  const [supplierDraft, setSupplierDraft] = useState<SupplierDraft>(blankSupplierDraft());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [supplierSaving, setSupplierSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [adjustmentDelta, setAdjustmentDelta] = useState(0);
   const [adjustmentReason, setAdjustmentReason] = useState("Periodic review");
@@ -96,14 +123,28 @@ export function PilotInventoryPage() {
     setError(null);
 
     try {
-      const response = await fetchPilotInventory();
+      const [response, supplierResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers()]);
       setData(response);
+      setSuppliers(supplierResponse.suppliers);
       if (selectedId === null && response.items[0]) {
         setSelectedId(response.items[0].id);
         setDraft(draftFromItem(response.items[0]));
       }
       if (!selectedId && !response.items.length) {
-        setDraft(blankDraft());
+        setDraft(blankDraft(supplierResponse.suppliers));
+      }
+      if (selectedSupplierId === null && supplierResponse.suppliers[0]) {
+        setSelectedSupplierId(supplierResponse.suppliers[0].id);
+        setSupplierDraft({
+          id: supplierResponse.suppliers[0].id,
+          name: supplierResponse.suppliers[0].name,
+          categoryFocus: supplierResponse.suppliers[0].categoryFocus,
+          notes: supplierResponse.suppliers[0].notes,
+          isActive: supplierResponse.suppliers[0].isActive,
+        });
+      }
+      if (!selectedSupplierId && !supplierResponse.suppliers.length) {
+        setSupplierDraft(blankSupplierDraft());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load inventory.");
@@ -118,6 +159,7 @@ export function PilotInventoryPage() {
   }, []);
 
   const selectedItem = useMemo(() => data?.items.find((item) => item.id === selectedId) ?? null, [data?.items, selectedId]);
+  const selectedSupplier = useMemo(() => suppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null, [selectedSupplierId, suppliers]);
   const filteredItems = useMemo(
     () => (data?.items ?? []).filter((item) => `${item.name} ${item.category} ${item.preferredSupplierName}`.toLowerCase().includes(search.toLowerCase())),
     [data?.items, search],
@@ -128,6 +170,18 @@ export function PilotInventoryPage() {
       setDraft(draftFromItem(selectedItem));
     }
   }, [selectedItem]);
+
+  useEffect(() => {
+    if (selectedSupplier) {
+      setSupplierDraft({
+        id: selectedSupplier.id,
+        name: selectedSupplier.name,
+        categoryFocus: selectedSupplier.categoryFocus,
+        notes: selectedSupplier.notes,
+        isActive: selectedSupplier.isActive,
+      });
+    }
+  }, [selectedSupplier]);
 
   const saveItem = async () => {
     setSaving(true);
@@ -158,6 +212,37 @@ export function PilotInventoryPage() {
       setError(err instanceof Error ? err.message : "Could not save inventory item.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveSupplier = async () => {
+    setSupplierSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const payload = {
+        name: supplierDraft.name,
+        categoryFocus: supplierDraft.categoryFocus,
+        notes: supplierDraft.notes,
+        isActive: supplierDraft.isActive,
+      };
+      const saved = supplierDraft.id ? await updatePilotSupplier(supplierDraft.id, payload) : await createPilotSupplier(payload);
+      setSelectedSupplierId(saved.id);
+      setSupplierDraft({
+        id: saved.id,
+        name: saved.name,
+        categoryFocus: saved.categoryFocus,
+        notes: saved.notes,
+        isActive: saved.isActive,
+      });
+      setMessage(`Supplier ${saved.name} saved.`);
+      await load();
+      setSelectedSupplierId(saved.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save supplier.");
+    } finally {
+      setSupplierSaving(false);
     }
   };
 
@@ -233,6 +318,102 @@ export function PilotInventoryPage() {
               <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
             </div>
           ))}
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <SectionHeader title="Suppliers" description="Keep supplier names, focus areas, and active status consistent across invoices and inventory items." />
+
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <Badge tone="neutral">{suppliers.filter((supplier) => supplier.isActive).length} active</Badge>
+              <Badge tone="neutral">{suppliers.filter((supplier) => !supplier.isActive).length} inactive</Badge>
+            </div>
+            {suppliers.map((supplier) => (
+              <button
+                key={supplier.id}
+                type="button"
+                onClick={() => {
+                  setSelectedSupplierId(supplier.id);
+                  setSupplierDraft({
+                    id: supplier.id,
+                    name: supplier.name,
+                    categoryFocus: supplier.categoryFocus,
+                    notes: supplier.notes,
+                    isActive: supplier.isActive,
+                  });
+                }}
+                className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
+                  selectedSupplierId === supplier.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-ink">{supplier.name}</p>
+                    <p className="text-sm text-muted">{supplier.categoryFocus || "Other"}</p>
+                  </div>
+                  <Badge tone={supplier.isActive ? "success" : "neutral"}>{supplier.isActive ? "Active" : "Inactive"}</Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-3 text-sm text-muted">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Items</p>
+                    <p className="mt-1 text-ink">{formatNumber(supplier.inventoryItemCount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoices</p>
+                    <p className="mt-1 text-ink">{formatNumber(supplier.purchaseInvoiceCount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Last invoice</p>
+                    <p className="mt-1 text-ink">{supplier.latestInvoiceDate ? supplier.latestInvoiceDate : "—"}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+            {!suppliers.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No suppliers yet. Create the first supplier to keep purchasing organized.</p> : null}
+          </div>
+
+          <div className="rounded-2xl border border-line bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">{supplierDraft.id ? `Edit ${supplierDraft.name || "supplier"}` : "New supplier"}</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Supplier name</span>
+                <input className="input mt-1" value={supplierDraft.name} onChange={(event) => setSupplierDraft((current) => ({ ...current, name: event.target.value }))} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Category focus</span>
+                <input className="input mt-1" value={supplierDraft.categoryFocus} onChange={(event) => setSupplierDraft((current) => ({ ...current, categoryFocus: event.target.value }))} />
+              </label>
+            </div>
+            <label className="mt-4 block">
+              <span className="text-sm font-semibold text-ink">Notes</span>
+              <textarea className="input mt-1" value={supplierDraft.notes} onChange={(event) => setSupplierDraft((current) => ({ ...current, notes: event.target.value }))} />
+            </label>
+            <label className="mt-4 block">
+              <span className="text-sm font-semibold text-ink">Status</span>
+              <select className="input mt-1" value={supplierDraft.isActive ? "true" : "false"} onChange={(event) => setSupplierDraft((current) => ({ ...current, isActive: event.target.value === "true" }))}>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </label>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button disabled={supplierSaving} type="button" onClick={() => void saveSupplier()}>
+                {supplierDraft.id ? "Update supplier" : "Create supplier"}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={supplierSaving}
+                type="button"
+                onClick={() => {
+                  setSelectedSupplierId(null);
+                  setSupplierDraft(blankSupplierDraft(suppliers));
+                }}
+              >
+                New supplier
+              </Button>
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -317,7 +498,18 @@ export function PilotInventoryPage() {
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Preferred supplier</span>
-              <input className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />
+              {suppliers.length ? (
+                <select className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}>
+                  <option value="">Unassigned</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.name}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />
+              )}
             </label>
           </div>
 

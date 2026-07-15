@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.extensions import db
-from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession
+from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession, Supplier
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
@@ -47,6 +47,12 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert inventory_body["summary"]["inventoryItemCount"] >= 18
     assert inventory_body["summary"]["inventoryReorderNowCount"] == 4
     assert inventory_body["reorderPlan"]["suggestions"]
+
+    suppliers = client.get("/api/pilot/suppliers")
+    assert suppliers.status_code == 200
+    supplier_body = suppliers.get_json()
+    assert len(supplier_body["suppliers"]) >= 6
+    assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
 
 
 def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
@@ -136,3 +142,49 @@ def test_reorder_plan_mark_ordered(app, client):
 
     with app.app_context():
         assert ReorderIntent.query.filter_by(inventory_item_id=item_id, status="Ordered").count() == 1
+
+
+def test_supplier_management_create_update_and_deactivate(app, client):
+    login(client)
+
+    create_response = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={
+            "name": "Toronto Greens Market",
+            "categoryFocus": "Produce",
+            "notes": "Weekend produce vendor",
+            "isActive": True,
+        },
+    )
+    assert create_response.status_code == 201
+    supplier = create_response.get_json()
+    assert supplier["name"] == "Toronto Greens Market"
+    assert supplier["isActive"] is True
+
+    update_response = client.patch(
+        f"/api/pilot/suppliers/{supplier['id']}",
+        headers=csrf_headers(client),
+        json={
+            "name": "Toronto Greens Market Co",
+            "categoryFocus": "Produce",
+            "notes": "Updated vendor notes",
+            "isActive": False,
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.get_json()
+    assert updated["name"] == "Toronto Greens Market Co"
+    assert updated["isActive"] is False
+
+    duplicate_response = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={"name": "Toronto Greens Market Co"},
+    )
+    assert duplicate_response.status_code == 409
+
+    with app.app_context():
+        stored = Supplier.query.filter_by(name="Toronto Greens Market Co").first()
+        assert stored is not None
+        assert stored.is_active is False
