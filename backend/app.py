@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+from flask import Flask, Response, jsonify, request
+from flask_wtf.csrf import CSRFError
+
+from .auth import bp as auth_bp
+from .config import choose_config
+from .extensions import csrf, db, limiter, login_manager, migrate
+from .models import User
+from .organizations import bp as organizations_bp
+from .seed import seed_pilot_data
+from .validation import RequestValidationError
+from .utils import json_error
+
+
+def create_app(test_config: dict | None = None) -> Flask:
+    app = Flask(__name__)
+    app.config.from_mapping(choose_config().build())
+    if test_config:
+        app.config.update(test_config)
+
+    db.init_app(app)
+    migrate.init_app(app, db)
+    login_manager.init_app(app)
+    csrf.init_app(app)
+    limiter.init_app(app)
+
+    login_manager.login_view = "auth.login"
+    login_manager.session_protection = "strong"
+
+    @login_manager.user_loader
+    def load_user(user_id: str) -> User | None:
+        if not user_id:
+            return None
+        return User.query.filter_by(id=int(user_id)).first()
+
+    @login_manager.unauthorized_handler
+    def unauthorized() -> tuple[object, int]:
+        return json_error("Authentication required.", 401)
+
+    @app.after_request
+    def add_cors_headers(response: Response) -> Response:
+        if request.path.startswith("/api/"):
+            origin = request.headers.get("Origin", "")
+            allowed_origins = set(app.config.get("ALLOWED_ORIGINS", []))
+            if origin in allowed_origins:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Vary"] = "Origin"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRFToken, X-CSRF-Token")
+            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        return response
+
+    @app.errorhandler(400)
+    def handle_bad_request(error: Exception) -> tuple[object, int]:
+        return json_error("Bad request.", 400)
+
+    @app.errorhandler(RequestValidationError)
+    def handle_validation_error(error: RequestValidationError) -> tuple[object, int]:
+        return json_error(error.message, 400, errors=error.errors)
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(error: CSRFError) -> tuple[object, int]:
+        return json_error(error.description or "CSRF validation failed.", 400)
+
+    @app.errorhandler(404)
+    def handle_not_found(error: Exception) -> tuple[object, int]:
+        if request.path.startswith("/api/"):
+            return json_error("Not found.", 404)
+        return json_error("Not found.", 404)
+
+    @app.errorhandler(405)
+    def handle_method_not_allowed(error: Exception) -> tuple[object, int]:
+        return json_error("Method not allowed.", 405)
+
+    @app.errorhandler(413)
+    def handle_payload_too_large(error: Exception) -> tuple[object, int]:
+        return json_error("Uploaded file is too large.", 413)
+
+    @app.route("/api/<path:_path>", methods=["OPTIONS"])
+    @app.route("/api", methods=["OPTIONS"])
+    def api_options(_path: str = "") -> Response:
+        return Response(status=204)
+
+    @app.get("/api/health")
+    def health() -> tuple[dict[str, object], int]:
+        return (
+            {
+                "status": "ok",
+                "service": "flowtally-pilot-backend",
+                "databaseUrlConfigured": bool(app.config.get("SQLALCHEMY_DATABASE_URI")),
+                "sessionCookieName": app.config.get("SESSION_COOKIE_NAME"),
+                "csrfEnabled": bool(app.config.get("WTF_CSRF_ENABLED", True)),
+            },
+            200,
+        )
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(organizations_bp)
+
+    @app.cli.group("seed")
+    def seed_group() -> None:
+        """Seed local pilot data."""
+
+    @seed_group.command("pilot")
+    def seed_pilot_command() -> None:
+        result = seed_pilot_data(reset=False)
+        print(
+            "Seeded pilot data: "
+            f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"
+        )
+
+    @seed_group.command("reset-pilot")
+    def reset_pilot_command() -> None:
+        result = seed_pilot_data(reset=True)
+        print(
+            "Reset and seeded pilot data: "
+            f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"
+        )
+
+    @app.cli.command("init-db")
+    def init_db_command() -> None:
+        db.create_all()
+        print("Database tables created.")
+
+    return app

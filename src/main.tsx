@@ -17,6 +17,10 @@ import { SchedulePage } from "./pages/SchedulePage";
 import { PilotWorkspaceProvider } from "./lib/pilotWorkspace";
 import { buildDemoPath, defaultDemoProfileSlug, isDemoProfileSlug } from "./data/demoProfiles";
 import { initAnalytics, trackPageView } from "./lib/analytics";
+import { PilotSessionProvider } from "./pilot/PilotSessionProvider";
+import { PilotAppGate } from "./pilot/PilotAppGate";
+import { PilotLoginPage } from "./pilot/PilotLoginPage";
+import { pilotAppEnabled } from "./pilot/pilotConfig";
 
 function HashScroll() {
   const location = useLocation();
@@ -157,6 +161,13 @@ const demoChildren = [
   { path: "settings", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
 ];
 
+const pilotAppRoutes = pilotAppEnabled
+  ? [
+      { path: "/app/login", element: <PilotLoginPage /> },
+      { path: "/app", element: <PilotAppGate /> },
+    ]
+  : [];
+
 const routes = [
   { path: "/", element: <PageWithHashScroll><LandingPage /></PageWithHashScroll> },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
@@ -166,32 +177,13 @@ const routes = [
   { path: "/pilot/inventory", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "inventory")} replace /> },
   { path: "/pilot/price-changes", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "/demo", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
-  { path: "/app", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
-  { path: "/app/demo", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
   {
     path: "/demo/:profile",
     element: <DemoShell />,
     errorElement: <DemoRouteErrorBoundary />,
     children: demoChildren,
   },
-  {
-    path: "/app/demo/:profile",
-    element: <DemoShell />,
-    errorElement: <DemoRouteErrorBoundary />,
-    children: demoChildren,
-  },
-  { path: "/app/daily-reconciliation", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation")} replace /> },
-  { path: "/app/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
-  { path: "/app/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
-  { path: "/app/inventory", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "inventory")} replace /> },
-  { path: "/app/upload", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "invoices")} replace /> },
-  { path: "/app/price-tracker", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/app/monthly-report", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "reports")} replace /> },
-  { path: "/app/suppliers", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/app/items", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/app/price-changes", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
-  { path: "/app/reports", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "reports")} replace /> },
-  { path: "/app/settings", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
+  ...pilotAppRoutes,
 ];
 
 const router = createBrowserRouter(routes, routerBasename ? { basename: routerBasename } : undefined);
@@ -199,7 +191,9 @@ const router = createBrowserRouter(routes, routerBasename ? { basename: routerBa
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <PilotWorkspaceProvider>
-      <RouterProvider router={router} />
+      <PilotSessionProvider>
+        <RouterProvider router={router} />
+      </PilotSessionProvider>
     </PilotWorkspaceProvider>
   </React.StrictMode>,
 );

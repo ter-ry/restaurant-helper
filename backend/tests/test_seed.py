@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from backend.extensions import db
+from backend.models import Organization, RestaurantLocation, User
+from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_OWNER_EMAIL, LOCAL_ORGANIZATION_NAME, LOCAL_LOCATION_NAME, seed_pilot_data
+
+
+def test_seed_is_idempotent(app):
+    with app.app_context():
+        first = seed_pilot_data(reset=False)
+        second = seed_pilot_data(reset=False)
+
+        assert first.organization_id == second.organization_id
+        assert first.location_id == second.location_id
+        assert User.query.filter(User.email.in_([LOCAL_OWNER_EMAIL, LOCAL_MANAGER_EMAIL])).count() == 2
+        assert Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).count() == 1
+        assert RestaurantLocation.query.filter_by(name=LOCAL_LOCATION_NAME).count() == 1
+
+
+def test_seed_reset_rebuilds_pilot_tenant(app):
+    with app.app_context():
+        db.session.add(Organization(name="Temporary Org"))
+        db.session.commit()
+
+        result = seed_pilot_data(reset=True)
+
+        assert result.organization_id > 0
+        assert User.query.filter(User.email.in_([LOCAL_OWNER_EMAIL, LOCAL_MANAGER_EMAIL])).count() == 2
+        assert Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).count() == 1
+        assert RestaurantLocation.query.filter_by(name=LOCAL_LOCATION_NAME).count() == 1

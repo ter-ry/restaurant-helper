@@ -9,5 +9,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 data/*.sqlite
 data/*.sqlite-*
+backend/instance/
+.pytest_cache/
 __pycache__/
 *.pyc
