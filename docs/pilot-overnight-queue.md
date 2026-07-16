@@ -14,13 +14,13 @@ Authoritative execution queue for `codex/overnight-pilot`.
 - Current status: COMPLETE
 - Commit hashes: 9114e04, e6fb394
 - Verification results: backend tests passed (27/27), frontend build passed; inventory detail/history, conversion fields, base-unit protection, and tenant isolation verified.
-- Genuine blockers: backend test runner unavailable in this environment because `pytest` is not installed on PATH.
+- Genuine blockers: none
 
 ## Milestone 3: Full stock-count completion
 - Acceptance criteria: start/save/resume counts, search/filter lines, zero quantities, progress and uncounted-item display, expected/counted/variance values, later-movement warnings, review before finalization, transactional and idempotent finalization, reconciliation movements, finalized history/details, mobile entry, unsaved-change protection, rollback/concurrency/isolation tests.
-- Current status: IN PROGRESS
-- Commit hashes: adb3224
-- Verification results: frontend build passed after adding count-line search/filter and unsaved-change warnings. Backend suite could not be run in this environment because `pytest` is not installed on PATH.
+- Current status: COMPLETE
+- Commit hashes: adb3224, c69864e
+- Verification results: frontend build passed after adding count-line search/filter and unsaved-change warnings. Backend suite passed (`27 passed in 31.20s`).
 - Genuine blockers: none
 
 ## Milestone 4: Full reorder-plan lifecycle
