@@ -172,7 +172,7 @@ export function PilotPurchasesPage() {
     return hints;
   }, [data?.purchaseLines]);
 
-  const load = async () => {
+  const load = async (preferredInvoiceId: number | null = requestedInvoiceId) => {
     setLoading(true);
     setError(null);
 
@@ -180,7 +180,7 @@ export function PilotPurchasesPage() {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
       setData(purchases);
       setInventoryItems(inventory.items);
-      const requestedInvoice = requestedInvoiceId ? purchases.invoices.find((invoice) => invoice.id === requestedInvoiceId) ?? null : null;
+      const requestedInvoice = preferredInvoiceId ? purchases.invoices.find((invoice) => invoice.id === preferredInvoiceId) ?? null : null;
       const currentInvoice = requestedInvoice ?? (selectedId !== null ? purchases.invoices.find((invoice) => invoice.id === selectedId) ?? null : purchases.invoices[0] ?? null);
       if (currentInvoice) {
         setSelectedId(currentInvoice.id);
@@ -282,8 +282,7 @@ export function PilotPurchasesPage() {
       setSelectedId(saved.id);
       setDraft(invoiceToDraft(saved));
       setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
-      await load();
-      setSelectedId(saved.id);
+      await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the purchase.");
     } finally {
@@ -308,8 +307,7 @@ export function PilotPurchasesPage() {
       setSelectedId(received.id);
       setDraft(invoiceToDraft(received));
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
-      await load();
-      setSelectedId(received.id);
+      await load(received.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not receive the purchase.");
     } finally {

@@ -147,6 +147,10 @@ def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
     assert receive.status_code == 200
     assert receive.get_json()["status"] == "Completed"
 
+    refreshed_purchases = client.get("/api/pilot/purchases").get_json()
+    refreshed_invoice = next(entry for entry in refreshed_purchases["invoices"] if entry["id"] == invoice["id"])
+    assert refreshed_invoice["status"] == "Completed"
+
     duplicate = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
     assert duplicate.status_code == 409
 
