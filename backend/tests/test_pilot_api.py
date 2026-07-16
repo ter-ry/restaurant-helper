@@ -3,8 +3,8 @@ from __future__ import annotations
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping
-from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
+from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
+from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
 def login(client):
@@ -12,6 +12,16 @@ def login(client):
     response = client.post(
         "/api/auth/login",
         json={"email": LOCAL_OWNER_EMAIL, "password": LOCAL_OWNER_PASSWORD},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 200
+
+
+def login_manager(client):
+    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    response = client.post(
+        "/api/auth/login",
+        json={"email": LOCAL_MANAGER_EMAIL, "password": LOCAL_MANAGER_PASSWORD},
         headers={"X-CSRFToken": csrf},
     )
     assert response.status_code == 200
@@ -55,6 +65,42 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     supplier_body = suppliers.get_json()
     assert len(supplier_body["suppliers"]) >= 6
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
+
+
+def test_pilot_mutations_require_auth_csrf_and_active_users(app, client):
+    anonymous_dashboard = client.get("/api/pilot/dashboard")
+    assert anonymous_dashboard.status_code == 401
+
+    login_manager(client)
+    inventory = client.get("/api/pilot/inventory").get_json()
+    item = inventory["items"][0]
+
+    missing_csrf = client.post(
+        f"/api/pilot/inventory/items/{item['id']}/adjustments",
+        json={
+            "reason": "Missing token",
+            "quantityDelta": 1,
+            "movementType": "manual increase",
+            "sourceRecordId": "csrf-test",
+            "sourceLineId": "csrf-test-line",
+        },
+    )
+    assert missing_csrf.status_code in {400, 403}
+
+    with app.app_context():
+        manager = User.query.filter_by(email=LOCAL_MANAGER_EMAIL).first()
+        assert manager is not None
+        manager.is_active = False
+        db.session.commit()
+
+    fresh_client = app.test_client()
+    csrf = fresh_client.get("/api/auth/csrf").get_json()["csrfToken"]
+    inactive_login = fresh_client.post(
+        "/api/auth/login",
+        json={"email": LOCAL_MANAGER_EMAIL, "password": LOCAL_MANAGER_PASSWORD},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert inactive_login.status_code in {400, 401}
 
 
 def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
