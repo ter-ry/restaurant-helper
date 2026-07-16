@@ -145,6 +145,22 @@ def test_mapped_invoice_save_syncs_supplier_mapping_and_receipt_uses_conversion(
     received = receive.get_json()
     assert received["status"] == "Completed"
 
+    update_after_receive = client.patch(
+        f"/api/pilot/purchases/invoices/{invoice['id']}",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-07-15",
+            "subtotal": 24,
+            "tax": 3.12,
+            "totalAmount": 27.12,
+            "status": "Draft",
+            "lineItems": [],
+        },
+    )
+    assert update_after_receive.status_code == 409
+
     duplicate = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
     assert duplicate.status_code == 409
 
