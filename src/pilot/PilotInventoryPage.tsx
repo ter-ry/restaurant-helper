@@ -32,6 +32,8 @@ interface InventoryDraft {
   parLevel: number;
   preferredSupplierName: string;
   latestPurchasePrice: number;
+  lastPurchaseUnit: string;
+  lastPurchaseConversionFactor: number;
   averageDailyUsage: number;
   notes: string;
   active: boolean;
@@ -60,6 +62,8 @@ function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
     parLevel: 0,
     preferredSupplierName: "",
     latestPurchasePrice: 0,
+    lastPurchaseUnit: "each",
+    lastPurchaseConversionFactor: 1,
     averageDailyUsage: 0,
     notes: "",
     active: true,
@@ -92,6 +96,8 @@ function draftFromItem(item: PilotInventoryItem): InventoryDraft {
     parLevel: item.parLevel,
     preferredSupplierName: item.preferredSupplierName,
     latestPurchasePrice: item.latestPurchasePrice,
+    lastPurchaseUnit: item.lastPurchaseUnit,
+    lastPurchaseConversionFactor: item.lastPurchaseConversionFactor,
     averageDailyUsage: item.averageDailyUsage ?? 0,
     notes: item.notes,
     active: item.active,
@@ -258,6 +264,8 @@ export function PilotInventoryPage() {
         parLevel: draft.parLevel,
         preferredSupplierName: draft.preferredSupplierName,
         latestPurchasePrice: draft.latestPurchasePrice,
+        lastPurchaseUnit: draft.lastPurchaseUnit,
+        lastPurchaseConversionFactor: draft.lastPurchaseConversionFactor,
         averageDailyUsage: draft.averageDailyUsage,
         notes: draft.notes,
         active: draft.active,
@@ -679,6 +687,14 @@ export function PilotInventoryPage() {
               <span className="text-sm font-semibold text-ink">Latest price</span>
               <input className="input mt-1" type="number" step="0.01" value={draft.latestPurchasePrice} onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))} />
             </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Last purchase unit</span>
+              <input className="input mt-1" value={draft.lastPurchaseUnit} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Purchase conversion</span>
+              <input className="input mt-1" type="number" step="0.0001" value={draft.lastPurchaseConversionFactor} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) }))} />
+            </label>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -728,6 +744,14 @@ export function PilotInventoryPage() {
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</p>
                     <p className="mt-1 text-ink">{formatMoney(draft.latestPurchasePrice)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase</p>
+                    <p className="mt-1 text-ink">{draft.lastPurchaseUnit || "each"} · x{formatNumber(draft.lastPurchaseConversionFactor)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimated value</p>
+                    <p className="mt-1 text-ink">{formatMoney((draft.currentOnHand || 0) * (draft.latestPurchasePrice || 0))}</p>
                   </div>
                 </div>
                 <p className="text-xs text-muted">Base unit changes are blocked once an item has invoice or movement history.</p>

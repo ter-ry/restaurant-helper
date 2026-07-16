@@ -920,6 +920,8 @@ def test_manager_can_create_update_and_adjust_inventory_item(app, client):
             "parLevel": 6,
             "preferredSupplierName": "Harbour Dry Goods",
             "latestPurchasePrice": 3.5,
+            "lastPurchaseUnit": "case",
+            "lastPurchaseConversionFactor": 4,
         },
     )
     assert create_response.status_code == 201
@@ -932,11 +934,13 @@ def test_manager_can_create_update_and_adjust_inventory_item(app, client):
         json={
             "parLevel": 8,
             "notes": "Updated by manager",
+            "active": False,
         },
     )
     assert update_response.status_code == 200
     updated = update_response.get_json()
     assert updated["parLevel"] == 8
+    assert updated["active"] is False
 
     adjustment_response = client.post(
         f"/api/pilot/inventory/items/{item['id']}/adjustments",
@@ -956,3 +960,67 @@ def test_manager_can_create_update_and_adjust_inventory_item(app, client):
         stored = InventoryItem.query.filter_by(name=unique_name).first()
         assert stored is not None
         assert float(stored.current_on_hand) == 6
+        assert stored.last_purchase_unit == "case"
+        assert float(stored.last_purchase_conversion_factor) == 4
+
+
+def test_inventory_items_are_isolated_by_membership(app, client):
+    login_manager(client)
+
+    original_inventory = client.get("/api/pilot/inventory").get_json()
+    original_names = [entry["name"] for entry in original_inventory["items"]]
+    assert "Cream" in original_names
+
+    with app.app_context():
+        other_org = Organization(name=f"Other Inventory Org {uuid4().hex[:8]}")
+        db.session.add(other_org)
+        db.session.flush()
+        other_location = RestaurantLocation(
+            organization=other_org,
+            name="Other Inventory Location",
+            address_line1="99 Test Ave",
+            address_line2="",
+            city="Toronto",
+            region="ON",
+            postal_code="M5V 2T6",
+            country="Canada",
+            timezone="America/Toronto",
+        )
+        db.session.add(other_location)
+        manager_user = User.query.filter_by(email=LOCAL_MANAGER_EMAIL).first()
+        assert manager_user is not None
+        other_membership = OrganizationMembership(user=manager_user, organization=other_org, role="manager")
+        db.session.add(other_membership)
+        db.session.add(
+            InventoryItem(
+                organization=other_org,
+                location=other_location,
+                name="Isolated Inventory Item",
+                normalized_name="isolated inventory item",
+                category="Other",
+                stock_unit="each",
+                current_on_hand=1,
+                min_quantity=0,
+                par_level=1,
+                preferred_supplier_name="",
+                latest_purchase_price=1,
+                last_purchase_unit="each",
+                last_purchase_conversion_factor=1,
+                active=True,
+                notes="",
+            )
+        )
+        db.session.commit()
+        other_membership_id = other_membership.id
+
+    with client.session_transaction() as session:
+        session["pilot_current_membership_id"] = other_membership_id
+
+    isolated_inventory = client.get("/api/pilot/inventory")
+    assert isolated_inventory.status_code == 200
+    isolated_names = [entry["name"] for entry in isolated_inventory.get_json()["items"]]
+    assert "Isolated Inventory Item" in isolated_names
+    assert "Cream" not in isolated_names
+
+    detail = client.get(f"/api/pilot/inventory/items/{isolated_inventory.get_json()['items'][0]['id']}")
+    assert detail.status_code == 200
