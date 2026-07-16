@@ -1466,7 +1466,14 @@ def create_or_open_reorder_plan():
     organization, _, _, location = context
     existing_draft = ReorderPlan.query.filter_by(organization_id=organization.id, location_id=location.id, status="Draft").order_by(ReorderPlan.updated_at.desc()).first()
     plan = _create_reorder_plan_from_current(organization.id, location.id, user_id=current_user.id)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        existing = ReorderPlan.query.filter_by(organization_id=organization.id, location_id=location.id, status="Draft").order_by(ReorderPlan.updated_at.desc()).first()
+        if existing is None:
+            return json_error("Could not start the reorder plan.", 500)
+        plan = existing
     return jsonify(serialize_reorder_plan(plan)), 200 if existing_draft is not None else 201
 
 

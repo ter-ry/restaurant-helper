@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 
 from flask_login import UserMixin
-from sqlalchemy import CheckConstraint, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db
@@ -294,6 +294,16 @@ class StockCountSessionLine(TimestampMixin, db.Model):
 
 class ReorderPlan(TimestampMixin, db.Model):
     __tablename__ = "reorder_plans"
+    __table_args__ = (
+        Index(
+            "uq_reorder_plans_draft_org_location",
+            "organization_id",
+            "location_id",
+            unique=True,
+            sqlite_where=text("status = 'Draft'"),
+            postgresql_where=text("status = 'Draft'"),
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)

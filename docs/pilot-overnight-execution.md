@@ -27,10 +27,12 @@
 ## Completed Work
 - Draft purchase, inventory, stock count, and reorder-plan groundwork already exists.
 - Dashboard can reopen draft purchases, stock counts, and reorder plans.
+- Stock counts now have explicit draft-save concurrency checks, duplicate-finalize safety, inactive-user rejection, inactive item rejection, and a clearer movement-conflict review panel.
+- Reorder plans now have a backend draft guard to prevent duplicate active drafts and reuse the existing draft on repeat opens.
 
 ## Current Status
 - Branch: `codex/overnight-pilot`
-- Test/build status: latest known green before new changes.
+- Test/build status: backend tests passing (23/23), frontend build passing.
 
 ## Important Decisions
 - Keep public `/demo` and `/pilot` behavior unchanged.

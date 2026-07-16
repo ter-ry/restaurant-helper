@@ -583,6 +583,10 @@ def test_reorder_plan_draft_lifecycle_preserves_snapshots(app, client):
     first_line = plan["lines"][0]
     original_unit_cost = first_line["estimatedUnitCost"]
 
+    duplicate_open = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert duplicate_open.status_code == 200
+    assert duplicate_open.get_json()["id"] == original_plan_id
+
     update_response = client.patch(
         f"/api/pilot/reorder-plans/{original_plan_id}",
         headers=csrf_headers(client),
