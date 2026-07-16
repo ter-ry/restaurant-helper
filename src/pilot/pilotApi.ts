@@ -224,6 +224,13 @@ export interface PilotInventoryItem {
   updatedAt: string | null;
 }
 
+export interface PilotInventoryItemDetail {
+  item: PilotInventoryItem;
+  purchaseHistory: PilotInvoiceLine[];
+  movementHistory: PilotInventoryMovement[];
+  supplierMappings: PilotSupplierItemMapping[];
+}
+
 export interface PilotSupplierItemMapping {
   id: number;
   organizationId: number;
@@ -529,6 +536,10 @@ export async function correctPilotPurchaseInvoice(invoiceId: number, payload: Re
 
 export async function fetchPilotInventory() {
   return requestJson<PilotInventoryResponse>("/api/pilot/inventory");
+}
+
+export async function fetchPilotInventoryItem(itemId: number) {
+  return requestJson<PilotInventoryItemDetail>(`/api/pilot/inventory/items/${itemId}`);
 }
 
 export async function fetchPilotSuppliers() {

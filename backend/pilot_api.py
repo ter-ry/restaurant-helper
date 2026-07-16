@@ -44,6 +44,7 @@ from .utils import (
     serialize_reorder_plan_line,
     serialize_reorder_intent,
     serialize_supplier,
+    serialize_supplier_item_mapping,
 )
 from .validation import RequestValidationError
 
@@ -1154,6 +1155,76 @@ def _group_reorder_by_supplier(suggestions: list[dict[str, Any]]):
     ]
 
 
+def _inventory_item_has_history(item: InventoryItem, organization_id: int, location_id: int) -> bool:
+    has_invoice_history = (
+        PurchaseInvoiceLine.query.join(PurchaseInvoice, PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id)
+        .filter(
+            PurchaseInvoice.organization_id == organization_id,
+            PurchaseInvoice.location_id == location_id,
+            PurchaseInvoiceLine.inventory_item_id == item.id,
+        )
+        .first()
+        is not None
+    )
+    if has_invoice_history:
+        return True
+
+    has_movement_history = InventoryMovement.query.filter_by(
+        organization_id=organization_id,
+        location_id=location_id,
+        inventory_item_id=item.id,
+    ).first()
+    return has_movement_history is not None
+
+
+@bp.get("/api/pilot/inventory/items/<int:item_id>")
+@login_required
+def inventory_item_detail(item_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+
+    purchase_history = (
+        PurchaseInvoiceLine.query.join(PurchaseInvoice, PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id)
+        .filter(
+            PurchaseInvoice.organization_id == organization.id,
+            PurchaseInvoice.location_id == location.id,
+            PurchaseInvoiceLine.inventory_item_id == item.id,
+        )
+        .order_by(PurchaseInvoice.invoice_date.desc(), PurchaseInvoice.created_at.desc(), PurchaseInvoiceLine.line_index.desc())
+        .limit(12)
+        .all()
+    )
+    movement_history = (
+        InventoryMovement.query.filter_by(organization_id=organization.id, location_id=location.id, inventory_item_id=item.id)
+        .order_by(InventoryMovement.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    supplier_mappings = (
+        SupplierItemMapping.query.filter_by(organization_id=organization.id, inventory_item_id=item.id)
+        .order_by(SupplierItemMapping.updated_at.desc(), SupplierItemMapping.created_at.desc())
+        .limit(10)
+        .all()
+    )
+
+    return (
+        jsonify(
+            {
+                "item": serialize_inventory_item(item),
+                "purchaseHistory": [serialize_purchase_invoice_line(line) for line in purchase_history],
+                "movementHistory": [serialize_inventory_movement(movement) for movement in movement_history],
+                "supplierMappings": [serialize_supplier_item_mapping(mapping) for mapping in supplier_mappings],
+            }
+        ),
+        200,
+    )
+
+
 @bp.post("/api/pilot/inventory/items")
 @login_required
 def create_inventory_item():
@@ -1223,7 +1294,14 @@ def update_inventory_item(item_id: int):
     if "category" in payload:
         item.category = str(payload.get("category") or "Other").strip() or "Other"
     if "stockUnit" in payload or "unit" in payload:
-        item.stock_unit = str(payload.get("stockUnit") or payload.get("unit") or "each").strip() or "each"
+        new_stock_unit = str(payload.get("stockUnit") or payload.get("unit") or "each").strip() or "each"
+        if new_stock_unit != item.stock_unit and _inventory_item_has_history(item, organization.id, location.id):
+            return json_error(
+                "Changing the base unit is blocked after inventory history exists.",
+                409,
+                errors={"stockUnit": "Create a new item instead of changing the base unit on a used item."},
+            )
+        item.stock_unit = new_stock_unit
     if "currentOnHand" in payload:
         item.current_on_hand = _to_quantity(payload.get("currentOnHand"), field="currentOnHand")
     if "minQuantity" in payload:

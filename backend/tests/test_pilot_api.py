@@ -347,6 +347,19 @@ def test_mapped_invoice_save_syncs_supplier_mapping_and_receipt_uses_conversion(
     duplicate = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
     assert duplicate.status_code == 409
 
+    detail_response = client.get(f"/api/pilot/inventory/items/{cream.id}")
+    assert detail_response.status_code == 200
+    detail = detail_response.get_json()
+    assert detail["purchaseHistory"]
+    assert detail["movementHistory"]
+
+    base_unit_blocked = client.patch(
+        f"/api/pilot/inventory/items/{cream.id}",
+        headers=csrf_headers(client),
+        json={"stockUnit": "box"},
+    )
+    assert base_unit_blocked.status_code == 409
+
     with app.app_context():
         cream_after = InventoryItem.query.filter_by(name="Cream").first()
         assert cream_after is not None
