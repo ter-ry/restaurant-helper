@@ -32,9 +32,9 @@ Authoritative execution queue for `codex/overnight-pilot`.
 
 ## Milestone 5: Permissions and frontend-state audit
 - Acceptance criteria: audit every `/api/pilot/*` endpoint and `/app` route for authentication, active users, CSRF, organization membership, location authorization, owner/manager permissions, cross-tenant and cross-location protection, expired sessions, duplicate submissions, loading states, empty states, network/server errors, validation errors, form-value retention, success feedback, mobile usability, accessibility; fix verified issues rather than only documenting them.
-- Current status: NOT STARTED
-- Commit hashes: none yet
-- Verification results: none yet
+- Current status: COMPLETE
+- Commit hashes: 72eb2ef
+- Verification results: backend tests passed (`28 passed in 28.29s`), frontend build passed, all `/api/pilot/*` routes verified as login-protected in audit coverage, session/network errors now surface in the private workspace shell, dashboard loading state now renders instead of zero-filled metrics.
 - Genuine blockers: none
 
 ## Milestone 6: End-to-end integration and integrity
