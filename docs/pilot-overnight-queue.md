@@ -39,7 +39,7 @@ Authoritative execution queue for `codex/overnight-pilot`.
 
 ## Milestone 6: End-to-end integration and integrity
 - Acceptance criteria: create supplier, create inventory item and conversion, create/map invoice, receive it, verify inventory movements, apply manual adjustment, save/finalize stock count, generate/complete reorder plan, correct completed invoice, verify dashboard updates, verify balances equal movement-ledger totals, verify another organization and location cannot access records; complete fresh migration, seed-idempotence, and public-demo regression checks.
-- Current status: NOT STARTED
-- Commit hashes: none yet
-- Verification results: none yet
+- Current status: COMPLETE
+- Commit hashes: 0169b3e
+- Verification results: backend tests passed (`30 passed in 16.78s`), frontend build passed, fresh-database migration/seed smoke test passed, end-to-end workflow coverage added for supplier, inventory item, invoice receive/correct, manual adjustment, stock count, reorder plan, dashboard updates, ledger integrity, and tenant isolation.
 - Genuine blockers: none
