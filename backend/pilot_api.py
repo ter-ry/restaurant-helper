@@ -620,7 +620,10 @@ def correct_purchase_invoice(invoice_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
     if invoice is None:
         return json_error("Purchase invoice not found.", 404)
@@ -1077,7 +1080,10 @@ def create_inventory_item():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
     payload = _json_body()
     name = str(payload.get("name") or "").strip()
     if not name:
@@ -1120,7 +1126,10 @@ def update_inventory_item(item_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
     item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
     if item is None:
         return json_error("Inventory item not found.", 404)
@@ -1165,7 +1174,10 @@ def create_inventory_adjustment(item_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
     item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
     if item is None:
         return json_error("Inventory item not found.", 404)

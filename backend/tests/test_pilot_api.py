@@ -782,3 +782,57 @@ def test_supplier_management_create_update_and_deactivate(app, client):
         stored = Supplier.query.filter_by(name="Toronto Greens Market Co").first()
         assert stored is not None
         assert stored.is_active is False
+
+
+def test_manager_can_create_update_and_adjust_inventory_item(app, client):
+    login_manager(client)
+
+    unique_name = f"Manager Test Item {uuid4().hex[:8]}"
+    create_response = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": unique_name,
+            "category": "Dry goods",
+            "stockUnit": "kg",
+            "currentOnHand": 4,
+            "minQuantity": 2,
+            "parLevel": 6,
+            "preferredSupplierName": "Harbour Dry Goods",
+            "latestPurchasePrice": 3.5,
+        },
+    )
+    assert create_response.status_code == 201
+    item = create_response.get_json()
+    assert item["name"] == unique_name
+
+    update_response = client.patch(
+        f"/api/pilot/inventory/items/{item['id']}",
+        headers=csrf_headers(client),
+        json={
+            "parLevel": 8,
+            "notes": "Updated by manager",
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.get_json()
+    assert updated["parLevel"] == 8
+
+    adjustment_response = client.post(
+        f"/api/pilot/inventory/items/{item['id']}/adjustments",
+        headers=csrf_headers(client),
+        json={
+            "reason": "Manager count",
+            "quantityDelta": 2,
+            "movementType": "manual increase",
+            "sourceRecordId": "manager-item-test",
+            "sourceLineId": "manager-item-test-line",
+            "note": "Manager verification",
+        },
+    )
+    assert adjustment_response.status_code == 201
+
+    with app.app_context():
+        stored = InventoryItem.query.filter_by(name=unique_name).first()
+        assert stored is not None
+        assert float(stored.current_on_hand) == 6

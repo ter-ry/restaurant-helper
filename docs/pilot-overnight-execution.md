@@ -30,10 +30,11 @@
 - Stock counts now have explicit draft-save concurrency checks, duplicate-finalize safety, inactive-user rejection, inactive item rejection, and a clearer movement-conflict review panel.
 - Reorder plans now have a backend draft guard to prevent duplicate active drafts and reuse the existing draft on repeat opens.
 - Received invoices can now be corrected through an auditable reversal flow that restores inventory quantities, records correction movements, marks the invoice corrected, and keeps the invoice view-only afterward.
+- Inventory-item creation, editing, adjustments, and receipt corrections are now limited to owner/manager access so the pilot keeps mutation rights aligned with management roles.
 
 ## Current Status
 - Branch: `codex/overnight-pilot`
-- Test/build status: backend tests passing (24/24), frontend build passing.
+- Test/build status: backend tests passing (25/25), frontend build passing.
 
 ## Important Decisions
 - Keep public `/demo` and `/pilot` behavior unchanged.
