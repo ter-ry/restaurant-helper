@@ -19,6 +19,7 @@ export function PilotDashboardPage() {
   const [data, setData] = useState<PilotDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const dashboardLoading = loading && !data;
 
   const load = async () => {
     setLoading(true);
@@ -40,14 +41,44 @@ export function PilotDashboardPage() {
 
   const topMetrics = useMemo(
     () => [
-      { label: "Purchases this week", value: formatMoney(data?.summary.weeklyInvoiceSpend), helper: `${formatNumber(data?.summary.weeklyInvoiceCount)} invoices`, to: "/app/purchases" },
-      { label: "Total purchasing spend", value: formatMoney(data?.summary.monthlyInvoiceSpend), helper: `${formatNumber(data?.summary.monthlyInvoiceCount)} invoices this month`, to: "/app/purchases" },
-      { label: "Inventory value", value: formatMoney(data?.summary.inventoryValue), helper: `${formatNumber(data?.summary.inventoryItemCount)} items tracked`, to: "/app/inventory" },
-      { label: "Items needing reorder", value: formatNumber(data?.summary.inventoryReorderNowCount), helper: `${formatNumber(data?.summary.inventoryLowStockCount)} low stock`, to: "/app/reorder-plan" },
-      { label: "Invoices needing review", value: formatNumber(data?.summary.invoiceReviewQueueCount), helper: `${formatNumber(data?.summary.inventoryCountNeededCount)} count checks due`, to: "/app/purchases" },
-      { label: "Price changes this week", value: formatNumber(data?.summary.recentPriceChangeCount), helper: "supplier updates captured", to: "/app/purchases" },
+      {
+        label: "Purchases this week",
+        value: dashboardLoading ? "—" : formatMoney(data?.summary.weeklyInvoiceSpend),
+        helper: dashboardLoading ? "Loading weekly spend" : `${formatNumber(data?.summary.weeklyInvoiceCount)} invoices`,
+        to: "/app/purchases",
+      },
+      {
+        label: "Total purchasing spend",
+        value: dashboardLoading ? "—" : formatMoney(data?.summary.monthlyInvoiceSpend),
+        helper: dashboardLoading ? "Loading month-to-date spend" : `${formatNumber(data?.summary.monthlyInvoiceCount)} invoices this month`,
+        to: "/app/purchases",
+      },
+      {
+        label: "Inventory value",
+        value: dashboardLoading ? "—" : formatMoney(data?.summary.inventoryValue),
+        helper: dashboardLoading ? "Loading inventory totals" : `${formatNumber(data?.summary.inventoryItemCount)} items tracked`,
+        to: "/app/inventory",
+      },
+      {
+        label: "Items needing reorder",
+        value: dashboardLoading ? "—" : formatNumber(data?.summary.inventoryReorderNowCount),
+        helper: dashboardLoading ? "Loading reorder status" : `${formatNumber(data?.summary.inventoryLowStockCount)} low stock`,
+        to: "/app/reorder-plan",
+      },
+      {
+        label: "Invoices needing review",
+        value: dashboardLoading ? "—" : formatNumber(data?.summary.invoiceReviewQueueCount),
+        helper: dashboardLoading ? "Loading review queue" : `${formatNumber(data?.summary.inventoryCountNeededCount)} count checks due`,
+        to: "/app/purchases",
+      },
+      {
+        label: "Price changes this week",
+        value: dashboardLoading ? "—" : formatNumber(data?.summary.recentPriceChangeCount),
+        helper: dashboardLoading ? "Loading price changes" : "supplier updates captured",
+        to: "/app/purchases",
+      },
     ],
-    [data?.summary],
+    [dashboardLoading, data?.summary],
   );
 
   const summary = (data?.summary ?? {}) as Record<string, number>;
@@ -115,8 +146,13 @@ export function PilotDashboardPage() {
         {error ? (
           <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{error}</div>
         ) : null}
+        {dashboardLoading ? (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted" aria-busy="true">
+            Loading dashboard data...
+          </div>
+        ) : null}
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy={dashboardLoading}>
           {topMetrics.map((metric) => (
             <button key={metric.label} type="button" className="group rounded-2xl border border-line bg-white p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft" onClick={() => navigate(metric.to)}>
               <p className="text-xs font-bold uppercase tracking-wide text-muted group-hover:text-brand-700">{metric.label}</p>

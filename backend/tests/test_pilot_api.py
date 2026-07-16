@@ -97,8 +97,22 @@ def test_pilot_dashboard_lists_live_drafts(client):
 
 
 def test_pilot_mutations_require_auth_csrf_and_active_users(app, client):
-    anonymous_dashboard = client.get("/api/pilot/dashboard")
-    assert anonymous_dashboard.status_code == 401
+    protected_endpoints = [
+        ("GET", "/api/pilot/dashboard"),
+        ("GET", "/api/pilot/purchases"),
+        ("GET", "/api/pilot/inventory"),
+        ("GET", "/api/pilot/suppliers"),
+        ("GET", "/api/pilot/reorder-plan"),
+        ("GET", "/api/pilot/reorder-plans"),
+        ("GET", "/api/pilot/inventory/count-sessions"),
+        ("POST", "/api/pilot/purchases/invoices"),
+        ("POST", "/api/pilot/inventory/items"),
+        ("POST", "/api/pilot/inventory/count-sessions"),
+        ("POST", "/api/pilot/reorder-plans"),
+    ]
+    for method, path in protected_endpoints:
+        response = getattr(client, method.lower())(path)
+        assert response.status_code in ({401} if method == "GET" else {400, 401})
 
     login_manager(client)
     inventory = client.get("/api/pilot/inventory").get_json()

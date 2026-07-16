@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Building2, ChevronDown, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Building2, ChevronDown, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
 import { usePilotSession } from "./PilotSessionProvider";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
@@ -52,7 +52,7 @@ function NavItem({
 }
 
 export function PilotWorkspaceLayout() {
-  const { user, organization, currentLocation, locations, signOut, switchLocation, refreshSession } = usePilotSession();
+  const { error, user, organization, currentLocation, locations, signOut, switchLocation, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -201,6 +201,26 @@ export function PilotWorkspaceLayout() {
           </header>
 
           <main className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+            {error ? (
+              <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert" aria-live="polite">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Session issue</p>
+                      <p className="mt-1">{error}</p>
+                    </div>
+                  </div>
+                  <button
+                    className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                    type="button"
+                    onClick={() => void refreshSession()}
+                  >
+                    Retry session
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <Outlet />
           </main>
         </div>
