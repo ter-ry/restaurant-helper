@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
+from backend.models import InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
 from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
@@ -747,6 +747,10 @@ def test_supplier_management_create_update_and_deactivate(app, client):
         json={
             "name": "Toronto Greens Market",
             "categoryFocus": "Produce",
+            "contactName": "Ava Chen",
+            "contactPhone": "416-555-0199",
+            "contactEmail": "orders@torontogreens.ca",
+            "orderingNotes": "Call before 3pm for same-day delivery.",
             "notes": "Weekend produce vendor",
             "isActive": True,
         },
@@ -755,6 +759,8 @@ def test_supplier_management_create_update_and_deactivate(app, client):
     supplier = create_response.get_json()
     assert supplier["name"] == "Toronto Greens Market"
     assert supplier["isActive"] is True
+    assert supplier["contactName"] == "Ava Chen"
+    assert supplier["contactEmail"] == "orders@torontogreens.ca"
 
     update_response = client.patch(
         f"/api/pilot/suppliers/{supplier['id']}",
@@ -762,6 +768,10 @@ def test_supplier_management_create_update_and_deactivate(app, client):
         json={
             "name": "Toronto Greens Market Co",
             "categoryFocus": "Produce",
+            "contactName": "Ava Chen",
+            "contactPhone": "416-555-0101",
+            "contactEmail": "purchasing@torontogreens.ca",
+            "orderingNotes": "Leave at back door.",
             "notes": "Updated vendor notes",
             "isActive": False,
         },
@@ -770,6 +780,15 @@ def test_supplier_management_create_update_and_deactivate(app, client):
     updated = update_response.get_json()
     assert updated["name"] == "Toronto Greens Market Co"
     assert updated["isActive"] is False
+    assert updated["contactPhone"] == "416-555-0101"
+    assert updated["orderingNotes"] == "Leave at back door."
+
+    bad_email_response = client.patch(
+        f"/api/pilot/suppliers/{supplier['id']}",
+        headers=csrf_headers(client),
+        json={"contactEmail": "not-an-email"},
+    )
+    assert bad_email_response.status_code == 400
 
     duplicate_response = client.post(
         "/api/pilot/suppliers",
@@ -782,6 +801,94 @@ def test_supplier_management_create_update_and_deactivate(app, client):
         stored = Supplier.query.filter_by(name="Toronto Greens Market Co").first()
         assert stored is not None
         assert stored.is_active is False
+
+
+def test_supplier_list_exposes_history_and_manager_access_is_required(app, client):
+    login_manager(client)
+
+    created_response = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={
+            "name": f"Manager Supply {uuid4().hex[:8]}",
+            "categoryFocus": "Dry goods",
+            "contactName": "Manager Contact",
+            "contactPhone": "416-555-0180",
+            "contactEmail": "manager@supply.example",
+            "orderingNotes": "Place order before noon.",
+            "notes": "Created by manager",
+            "isActive": True,
+        },
+    )
+    assert created_response.status_code == 201
+    created_supplier = created_response.get_json()
+
+    updated_response = client.patch(
+        f"/api/pilot/suppliers/{created_supplier['id']}",
+        headers=csrf_headers(client),
+        json={
+            "contactPhone": "416-555-0181",
+            "orderingNotes": "Leave at front desk.",
+        },
+    )
+    assert updated_response.status_code == 200
+    assert updated_response.get_json()["contactPhone"] == "416-555-0181"
+
+    supplier_response = client.get("/api/pilot/suppliers")
+    assert supplier_response.status_code == 200
+    suppliers = supplier_response.get_json()["suppliers"]
+    harbour = next(entry for entry in suppliers if entry["name"] == "Harbour Dry Goods")
+    assert harbour["purchaseInvoiceCount"] >= 1
+    assert harbour["supplierItemMappingCount"] >= 1
+    assert harbour["historicalReferenceCount"] >= harbour["purchaseInvoiceCount"]
+    assert harbour["recentInvoices"]
+    assert harbour["recentMappings"]
+
+    with app.app_context():
+        other_org = Organization(name=f"Other Supplier Org {uuid4().hex[:8]}")
+        db.session.add(other_org)
+        db.session.flush()
+        other_location = RestaurantLocation(
+            organization=other_org,
+            name="Other Location",
+            address_line1="1 Test St",
+            address_line2="",
+            city="Toronto",
+            region="ON",
+            postal_code="M5V 2T6",
+            country="Canada",
+            timezone="America/Toronto",
+        )
+        db.session.add(other_location)
+        manager_user = User.query.filter_by(email=LOCAL_MANAGER_EMAIL).first()
+        assert manager_user is not None
+        other_membership = OrganizationMembership(user=manager_user, organization=other_org, role="manager")
+        db.session.add(other_membership)
+        db.session.add(
+            Supplier(
+                organization=other_org,
+                name="Isolated Supplier",
+                normalized_name="isolated supplier",
+                category_focus="Other",
+                contact_name="Other Contact",
+                contact_phone="",
+                contact_email="other@example.com",
+                ordering_notes="",
+                notes="",
+                is_active=True,
+            )
+        )
+        db.session.commit()
+        other_membership_id = other_membership.id
+
+    with client.session_transaction() as session:
+        session["pilot_current_membership_id"] = other_membership_id
+
+    isolated_suppliers = client.get("/api/pilot/suppliers")
+    assert isolated_suppliers.status_code == 200
+    isolated_names = [entry["name"] for entry in isolated_suppliers.get_json()["suppliers"]]
+    assert "Isolated Supplier" in isolated_names
+    assert "Harbour Dry Goods" not in isolated_names
 
 
 def test_manager_can_create_update_and_adjust_inventory_item(app, client):

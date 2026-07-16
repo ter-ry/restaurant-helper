@@ -39,12 +39,12 @@ class SeedResult:
 
 
 SUPPLIER_SEED = [
-    {"name": "Oak Valley Meat Co", "category_focus": "Chicken, protein, proteins"},
-    {"name": "Metro Packaging Co", "category_focus": "Cups, lids, straws, napkins"},
-    {"name": "GTA Beverage Supply", "category_focus": "Tea, tapioca, milk, drink base"},
-    {"name": "Fresh Dairy Toronto", "category_focus": "Cream, milk, eggs"},
-    {"name": "Northern Produce Market", "category_focus": "Lettuce, produce, vegetables"},
-    {"name": "Harbour Dry Goods", "category_focus": "Rice, noodles, pasta, sugar, oil"},
+    {"name": "Oak Valley Meat Co", "category_focus": "Chicken, protein, proteins", "contact_name": "Mina Patel", "contact_phone": "416-555-0188", "contact_email": "orders@oakvalleymeat.ca", "ordering_notes": "Order by 2pm for next-day delivery."},
+    {"name": "Metro Packaging Co", "category_focus": "Cups, lids, straws, napkins", "contact_name": "Jordan Lee", "contact_phone": "416-555-0144", "contact_email": "toronto@metropackaging.ca", "ordering_notes": "Case pack sizes only."},
+    {"name": "GTA Beverage Supply", "category_focus": "Tea, tapioca, milk, drink base", "contact_name": "Sofia Chen", "contact_phone": "416-555-0192", "contact_email": "hello@gtabeverage.ca", "ordering_notes": "Weekly delivery every Tuesday."},
+    {"name": "Fresh Dairy Toronto", "category_focus": "Cream, milk, eggs", "contact_name": "Noah Brown", "contact_phone": "416-555-0136", "contact_email": "orders@freshdairyto.ca", "ordering_notes": "Cooler delivery; confirm after 4pm."},
+    {"name": "Northern Produce Market", "category_focus": "Lettuce, produce, vegetables", "contact_name": "Ari Singh", "contact_phone": "416-555-0167", "contact_email": "produce@northernmarket.ca", "ordering_notes": "Harvest pricing changes daily."},
+    {"name": "Harbour Dry Goods", "category_focus": "Rice, noodles, pasta, sugar, oil", "contact_name": "Lena Gomez", "contact_phone": "416-555-0119", "contact_email": "orders@harbourdrygoods.ca", "ordering_notes": "Use replacement items when stock is tight."},
 ]
 
 INVENTORY_SEED = [
@@ -259,12 +259,20 @@ def _get_or_create_supplier(organization: Organization, spec: dict[str, str]) ->
             name=spec["name"],
             normalized_name=normalized,
             category_focus=spec["category_focus"],
+            contact_name=spec.get("contact_name", ""),
+            contact_phone=spec.get("contact_phone", ""),
+            contact_email=spec.get("contact_email", ""),
+            ordering_notes=spec.get("ordering_notes", ""),
             notes="",
         )
         db.session.add(supplier)
     else:
         supplier.name = spec["name"]
         supplier.category_focus = spec["category_focus"]
+        supplier.contact_name = spec.get("contact_name", "")
+        supplier.contact_phone = spec.get("contact_phone", "")
+        supplier.contact_email = spec.get("contact_email", "")
+        supplier.ordering_notes = spec.get("ordering_notes", "")
     return supplier
 
 

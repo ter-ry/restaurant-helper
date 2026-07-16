@@ -91,6 +91,10 @@ class Supplier(TimestampMixin, db.Model):
     name = db.Column(db.String(255), nullable=False)
     normalized_name = db.Column(db.String(255), nullable=False)
     category_focus = db.Column(db.String(120), nullable=False, default="Other")
+    contact_name = db.Column(db.String(255), nullable=False, default="")
+    contact_phone = db.Column(db.String(60), nullable=False, default="")
+    contact_email = db.Column(db.String(254), nullable=False, default="")
+    ordering_notes = db.Column(db.Text, nullable=False, default="")
     notes = db.Column(db.Text, nullable=False, default="")
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 

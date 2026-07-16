@@ -29,6 +29,7 @@ from .models import (
 )
 from .utils import (
     decimal_to_float,
+    isoformat,
     get_current_location,
     get_current_membership,
     get_current_organization_bundle,
@@ -320,13 +321,40 @@ def _require_management_role(membership: OrganizationMembership):
     return None
 
 
-def _serialize_supplier_with_counts(supplier: Supplier, *, inventory_item_count: int = 0, purchase_invoice_count: int = 0, latest_invoice_date: date | None = None) -> dict[str, Any]:
+def _validate_supplier_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    errors: dict[str, str] = {}
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        errors["name"] = "Supplier name is required."
+    contact_email = str(payload.get("contactEmail") or "").strip()
+    if contact_email and ("@" not in contact_email or "." not in contact_email.rsplit("@", 1)[-1]):
+        errors["contactEmail"] = "Enter a valid email address."
+    if errors:
+        raise RequestValidationError("Supplier validation failed.", errors)
+    return payload
+
+
+def _serialize_supplier_with_counts(
+    supplier: Supplier,
+    *,
+    inventory_item_count: int = 0,
+    purchase_invoice_count: int = 0,
+    supplier_item_mapping_count: int = 0,
+    latest_invoice_date: date | None = None,
+    historical_reference_count: int = 0,
+    recent_invoices: list[dict[str, Any]] | None = None,
+    recent_mappings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     payload = serialize_supplier(supplier)
     payload.update(
         {
             "inventoryItemCount": inventory_item_count,
             "purchaseInvoiceCount": purchase_invoice_count,
+            "supplierItemMappingCount": supplier_item_mapping_count,
             "latestInvoiceDate": latest_invoice_date.isoformat() if latest_invoice_date else None,
+            "historicalReferenceCount": historical_reference_count,
+            "recentInvoices": recent_invoices or [],
+            "recentMappings": recent_mappings or [],
         }
     )
     return payload
@@ -817,17 +845,24 @@ def suppliers():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_management_role(membership)
+    if permission_error is not None:
+        return permission_error
     supplier_rows = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.is_active.desc(), Supplier.name.asc()).all()
     inventory_items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
     invoices = PurchaseInvoice.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+    mappings = SupplierItemMapping.query.filter_by(organization_id=organization.id).all()
     item_counts: dict[int, int] = {}
     invoice_counts: dict[int, int] = {}
+    mapping_counts: dict[int, int] = {}
     latest_invoice_dates: dict[int, date] = {}
     for item in inventory_items:
         if item.supplier_id is None:
             continue
         item_counts[item.supplier_id] = item_counts.get(item.supplier_id, 0) + 1
+    for mapping in mappings:
+        mapping_counts[mapping.supplier_id] = mapping_counts.get(mapping.supplier_id, 0) + 1
     for invoice in invoices:
         supplier_id = invoice.supplier_id
         if supplier_id is None:
@@ -836,6 +871,12 @@ def suppliers():
         previous = latest_invoice_dates.get(supplier_id)
         if previous is None or invoice.invoice_date > previous:
             latest_invoice_dates[supplier_id] = invoice.invoice_date
+    invoices_by_supplier: dict[int, list[PurchaseInvoice]] = {}
+    for invoice in sorted(invoices, key=lambda entry: (entry.invoice_date, entry.created_at), reverse=True):
+        invoices_by_supplier.setdefault(invoice.supplier_id, []).append(invoice)
+    mappings_by_supplier: dict[int, list[SupplierItemMapping]] = {}
+    for mapping in sorted(mappings, key=lambda entry: (entry.updated_at or entry.created_at, entry.created_at), reverse=True):
+        mappings_by_supplier.setdefault(mapping.supplier_id, []).append(mapping)
     return (
         jsonify(
             {
@@ -844,7 +885,31 @@ def suppliers():
                         supplier,
                         inventory_item_count=item_counts.get(supplier.id, 0),
                         purchase_invoice_count=invoice_counts.get(supplier.id, 0),
+                        supplier_item_mapping_count=mapping_counts.get(supplier.id, 0),
                         latest_invoice_date=latest_invoice_dates.get(supplier.id),
+                        historical_reference_count=item_counts.get(supplier.id, 0) + invoice_counts.get(supplier.id, 0) + mapping_counts.get(supplier.id, 0),
+                        recent_invoices=[
+                            {
+                                "id": invoice.id,
+                                "invoiceNumber": invoice.invoice_number,
+                                "invoiceDate": invoice.invoice_date.isoformat(),
+                                "status": invoice.status,
+                                "totalAmount": decimal_to_float(invoice.total_amount) or 0,
+                            }
+                            for invoice in invoices_by_supplier.get(supplier.id, [])[:3]
+                        ],
+                        recent_mappings=[
+                            {
+                                "id": mapping.id,
+                                "supplierItemName": mapping.supplier_item_name,
+                                "inventoryItemName": mapping.inventory_item.name if mapping.inventory_item else "",
+                                "purchaseUnit": mapping.purchase_unit,
+                                "inventoryUnit": mapping.inventory_unit,
+                                "conversionFactor": decimal_to_float(mapping.conversion_factor) or 1,
+                                "lastSeenAt": isoformat(mapping.last_seen_at),
+                            }
+                            for mapping in mappings_by_supplier.get(supplier.id, [])[:3]
+                        ],
                     )
                     for supplier in supplier_rows
                 ]
@@ -864,10 +929,8 @@ def create_supplier():
     permission_error = _require_management_role(membership)
     if permission_error is not None:
         return permission_error
-    payload = _json_body()
+    payload = _validate_supplier_payload(_json_body())
     name = str(payload.get("name") or "").strip()
-    if not name:
-        return json_error("Validation failed.", 400, errors={"name": "Supplier name is required."})
     normalized = _normalize_name(name)
     existing = Supplier.query.filter_by(organization_id=organization.id, normalized_name=normalized).first()
     if existing is not None:
@@ -877,6 +940,10 @@ def create_supplier():
         name=name,
         normalized_name=normalized,
         category_focus=str(payload.get("categoryFocus") or "Other").strip() or "Other",
+        contact_name=str(payload.get("contactName") or "").strip(),
+        contact_phone=str(payload.get("contactPhone") or "").strip(),
+        contact_email=str(payload.get("contactEmail") or "").strip(),
+        ordering_notes=str(payload.get("orderingNotes") or "").strip(),
         notes=str(payload.get("notes") or "").strip(),
         is_active=bool(payload.get("isActive", True)),
     )
@@ -900,6 +967,8 @@ def update_supplier(supplier_id: int):
         return json_error("Supplier not found.", 404)
     payload = _json_body()
     if "name" in payload:
+        _validate_supplier_payload(payload)
+    if "name" in payload:
         name = str(payload.get("name") or "").strip()
         if not name:
             return json_error("Validation failed.", 400, errors={"name": "Supplier name is required."})
@@ -915,6 +984,17 @@ def update_supplier(supplier_id: int):
         supplier.normalized_name = normalized
     if "categoryFocus" in payload:
         supplier.category_focus = str(payload.get("categoryFocus") or "Other").strip() or "Other"
+    if "contactName" in payload:
+        supplier.contact_name = str(payload.get("contactName") or "").strip()
+    if "contactPhone" in payload:
+        supplier.contact_phone = str(payload.get("contactPhone") or "").strip()
+    if "contactEmail" in payload:
+        contact_email = str(payload.get("contactEmail") or "").strip()
+        if contact_email and ("@" not in contact_email or "." not in contact_email.rsplit("@", 1)[-1]):
+            return json_error("Validation failed.", 400, errors={"contactEmail": "Enter a valid email address."})
+        supplier.contact_email = contact_email
+    if "orderingNotes" in payload:
+        supplier.ordering_notes = str(payload.get("orderingNotes") or "").strip()
     if "notes" in payload:
         supplier.notes = str(payload.get("notes") or "").strip()
     if "isActive" in payload:

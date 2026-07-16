@@ -158,16 +158,42 @@ export interface PilotSupplier {
   name: string;
   normalizedName: string;
   categoryFocus: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  orderingNotes: string;
   notes: string;
   isActive: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }
 
+export interface PilotSupplierRecentInvoice {
+  id: number;
+  invoiceNumber: string;
+  invoiceDate: string;
+  status: string;
+  totalAmount: number;
+}
+
+export interface PilotSupplierRecentMapping {
+  id: number;
+  supplierItemName: string;
+  inventoryItemName: string;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+  lastSeenAt: string | null;
+}
+
 export interface PilotSupplierSummary extends PilotSupplier {
   inventoryItemCount: number;
   purchaseInvoiceCount: number;
+  supplierItemMappingCount: number;
   latestInvoiceDate: string | null;
+  historicalReferenceCount: number;
+  recentInvoices: PilotSupplierRecentInvoice[];
+  recentMappings: PilotSupplierRecentMapping[];
 }
 
 export interface PilotInventoryItem {
