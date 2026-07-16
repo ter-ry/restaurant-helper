@@ -464,7 +464,7 @@ def _sync_supplier_item_mappings(invoice: PurchaseInvoice, actor_id: int):
 
 
 def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
-    if invoice.status == "Completed":
+    if invoice.status in {"Completed", "Corrected"}:
         raise RequestValidationError("Invoice already received.", {"invoice": "This invoice has already been received."})
 
     mapped_lines = [line for line in invoice.lines if line.inventory_item_id]
@@ -562,6 +562,156 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
     invoice.received_by_user_id = actor_id
     invoice.updated_by_user_id = actor_id
     invoice.posted_at = now
+
+
+def _latest_completed_receipt_line_for_item(organization_id: int, location_id: int, item_id: int, *, excluded_invoice_id: int | None = None):
+    query = (
+        PurchaseInvoiceLine.query.join(PurchaseInvoice, PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id)
+        .filter(
+            PurchaseInvoice.organization_id == organization_id,
+            PurchaseInvoice.location_id == location_id,
+            PurchaseInvoice.status == "Completed",
+            PurchaseInvoiceLine.inventory_item_id == item_id,
+        )
+    )
+    if excluded_invoice_id is not None:
+        query = query.filter(PurchaseInvoice.id != excluded_invoice_id)
+    return query.order_by(
+        PurchaseInvoice.invoice_date.desc(),
+        PurchaseInvoice.created_at.desc(),
+        PurchaseInvoice.id.desc(),
+        PurchaseInvoiceLine.line_index.desc(),
+    ).first()
+
+
+def _refresh_inventory_snapshot_from_recent_receipt(
+    organization_id: int,
+    location_id: int,
+    item: InventoryItem,
+    *,
+    excluded_invoice_id: int | None = None,
+    actor_id: int | None = None,
+):
+    latest_line = _latest_completed_receipt_line_for_item(organization_id, location_id, item.id, excluded_invoice_id=excluded_invoice_id)
+    now = _now()
+    if actor_id is not None:
+        item.updated_by_user_id = actor_id
+    item.updated_at = now
+    if latest_line is None:
+        item.latest_purchase_price = Decimal("0")
+        item.last_purchase_unit = item.stock_unit
+        item.last_purchase_conversion_factor = Decimal("1")
+        item.preferred_supplier_name = ""
+        item.supplier_id = None
+        item.last_received_at = None
+        return
+
+    item.latest_purchase_price = latest_line.unit_price
+    item.last_purchase_unit = latest_line.purchase_unit
+    item.last_purchase_conversion_factor = latest_line.conversion_factor
+    item.preferred_supplier_name = latest_line.invoice.supplier.name if latest_line.invoice and latest_line.invoice.supplier else ""
+    item.supplier_id = latest_line.invoice.supplier_id if latest_line.invoice else None
+    item.last_received_at = latest_line.invoice.received_at or latest_line.invoice.posted_at or now
+
+
+@bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/correct")
+@login_required
+def correct_purchase_invoice(invoice_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
+    if invoice is None:
+        return json_error("Purchase invoice not found.", 404)
+    if invoice.status == "Corrected":
+        return json_error("This invoice has already been corrected.", 409)
+    if invoice.status != "Completed":
+        return json_error("Only completed invoices can be corrected.", 409)
+
+    payload = _json_body()
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return json_error("Validation failed.", 400, errors={"reason": "Enter a correction reason."})
+
+    existing_correction = InventoryMovement.query.filter_by(
+        organization_id=invoice.organization_id,
+        location_id=invoice.location_id,
+        source_type="invoice correction",
+        source_record_id=str(invoice.id),
+    ).first()
+    if existing_correction is not None:
+        return json_error("This invoice has already been corrected.", 409)
+
+    now = _now()
+    affected_items: set[int] = set()
+
+    try:
+        for line in invoice.lines:
+            item = InventoryItem.query.filter_by(id=line.inventory_item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first() if line.inventory_item_id else None
+            if item is None:
+                continue
+
+            receipt_movement = InventoryMovement.query.filter_by(
+                organization_id=invoice.organization_id,
+                location_id=invoice.location_id,
+                source_type="invoice receipt",
+                source_record_id=str(invoice.id),
+                source_line_id=str(line.id),
+            ).first()
+            if receipt_movement is None:
+                return json_error("This invoice cannot be corrected because its receipt movements are missing.", 409)
+
+            correction_delta = Decimal(receipt_movement.quantity_delta) * Decimal("-1")
+            before = Decimal(item.current_on_hand)
+            after = (before + correction_delta).quantize(QTY)
+            if after < 0:
+                return json_error(
+                    "This invoice cannot be corrected because stock has already moved.",
+                    409,
+                    errors={"inventory": f"Correction would make {item.name} negative."},
+                )
+
+            movement = InventoryMovement(
+                organization_id=invoice.organization_id,
+                location_id=invoice.location_id,
+                inventory_item_id=item.id,
+                quantity_delta=correction_delta,
+                quantity_before=before,
+                quantity_after=after,
+                unit=item.stock_unit,
+                source_type="invoice correction",
+                source_record_id=str(invoice.id),
+                source_line_id=str(line.id),
+                reason=f"Correction for invoice {invoice.invoice_number}: {reason}",
+                actor_user_id=current_user.id,
+            )
+            item.current_on_hand = after
+            affected_items.add(item.id)
+            db.session.add(movement)
+
+        invoice.status = "Corrected"
+        invoice.updated_by_user_id = current_user.id
+        invoice.posted_at = now
+
+        for item_id in affected_items:
+            item = InventoryItem.query.filter_by(id=item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first()
+            if item is None:
+                continue
+            _refresh_inventory_snapshot_from_recent_receipt(
+                invoice.organization_id,
+                invoice.location_id,
+                item,
+                excluded_invoice_id=invoice.id,
+                actor_id=current_user.id,
+            )
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    return jsonify(serialize_purchase_invoice(invoice)), 200
 
 
 @bp.get("/api/pilot/bootstrap")
@@ -824,7 +974,7 @@ def update_purchase_invoice(invoice_id: int):
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
     if invoice is None:
         return json_error("Purchase invoice not found.", 404)
-    if invoice.status == "Completed":
+    if invoice.status in {"Completed", "Corrected"}:
         return json_error("Completed invoices are read-only.", 409)
     body = _json_body()
     payload = _validate_invoice_payload({**body, "supplierName": body.get("supplierName") or body.get("supplier")})
@@ -857,6 +1007,8 @@ def receive_purchase_invoice(invoice_id: int):
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
     if invoice is None:
         return json_error("Purchase invoice not found.", 404)
+    if invoice.status == "Corrected":
+        return json_error("This invoice has already been corrected.", 409)
     try:
         _record_receipt(invoice, current_user.id)
         db.session.commit()

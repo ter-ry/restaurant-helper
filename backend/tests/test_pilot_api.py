@@ -164,6 +164,107 @@ def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
         assert InventoryMovement.query.filter_by(source_record_id=str(invoice["id"])).count() >= 3
 
 
+def test_received_invoice_correction_reverses_inventory_and_blocks_repeat(app, client):
+    login(client)
+
+    with app.app_context():
+        cream = InventoryItem.query.filter_by(name="Cream").first()
+        assert cream is not None
+        before = float(cream.current_on_hand)
+        cream_stock_unit = cream.stock_unit
+
+    supplier_name = f"Correction Dairy {uuid4().hex[:8]}"
+    invoice_number = f"CR-{uuid4().hex[:8].upper()}"
+    create_response = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-07-15",
+            "subtotal": 24,
+            "tax": 3.12,
+            "totalAmount": 27.12,
+            "notes": "Correction test invoice",
+            "status": "Draft",
+            "sourceFileName": "correction-test.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "",
+            "lineItems": [
+                {
+                    "description": "Cream",
+                    "inventoryItemId": cream.id,
+                    "purchaseUnit": "case",
+                    "inventoryUnit": cream_stock_unit,
+                    "conversionFactor": 2,
+                    "quantity": 2,
+                    "unitPrice": 12,
+                    "lineTotal": 24,
+                    "confidence": 0.94,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice = create_response.get_json()
+
+    receive = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert receive.status_code == 200
+    assert receive.get_json()["status"] == "Completed"
+
+    correction = client.post(
+        f"/api/pilot/purchases/invoices/{invoice['id']}/correct",
+        headers=csrf_headers(client),
+        json={"reason": "Wrong carton delivered"},
+    )
+    assert correction.status_code == 200
+    corrected = correction.get_json()
+    assert corrected["status"] == "Corrected"
+
+    duplicate_correction = client.post(
+        f"/api/pilot/purchases/invoices/{invoice['id']}/correct",
+        headers=csrf_headers(client),
+        json={"reason": "Second correction"},
+    )
+    assert duplicate_correction.status_code == 409
+
+    duplicate_receive = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert duplicate_receive.status_code == 409
+
+    update_after_correction = client.patch(
+        f"/api/pilot/purchases/invoices/{invoice['id']}",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-07-15",
+            "subtotal": 24,
+            "tax": 3.12,
+            "totalAmount": 27.12,
+            "status": "Draft",
+            "lineItems": [],
+        },
+    )
+    assert update_after_correction.status_code == 409
+
+    with app.app_context():
+        cream_after = InventoryItem.query.filter_by(name="Cream").first()
+        assert cream_after is not None
+        assert float(cream_after.current_on_hand) == before
+        correction_movements = InventoryMovement.query.filter_by(
+            organization_id=invoice["organizationId"],
+            location_id=invoice["locationId"],
+            source_type="invoice correction",
+            source_record_id=str(invoice["id"]),
+        ).count()
+        assert correction_movements == 1
+        stored_invoice = PurchaseInvoice.query.filter_by(id=invoice["id"]).first()
+        assert stored_invoice is not None and stored_invoice.status == "Corrected"
+
+
 def test_mapped_invoice_save_syncs_supplier_mapping_and_receipt_uses_conversion(app, client):
     login(client)
 

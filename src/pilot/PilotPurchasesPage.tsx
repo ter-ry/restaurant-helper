@@ -7,6 +7,7 @@ import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotPurchaseInvoice,
+  correctPilotPurchaseInvoice,
   fetchPilotInventory,
   fetchPilotPurchases,
   fetchPilotPurchaseInvoice,
@@ -146,6 +147,7 @@ export function PilotPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
+  const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const requestedInvoiceId = useMemo(() => {
@@ -209,14 +211,16 @@ export function PilotPurchasesPage() {
   useEffect(() => {
     if (selectedInvoice) {
       setDraft(invoiceToDraft(selectedInvoice));
+      setCorrectionNote("");
     }
   }, [selectedInvoice]);
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
   const priceChanges = (data?.priceChanges ?? []).slice(0, 3);
+  const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
-  const readyToReceive = draft.status !== "Completed" && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
+  const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
     const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
@@ -315,10 +319,35 @@ export function PilotPurchasesPage() {
     }
   };
 
+  const correctInvoice = async () => {
+    if (!draft.id || draft.status !== "Completed") {
+      return;
+    }
+    setSaving(true);
+    setReceiveMessage(null);
+    setError(null);
+
+    try {
+      const corrected = await correctPilotPurchaseInvoice(draft.id, {
+        reason: correctionNote.trim() || "Inventory correction",
+      });
+      setSelectedId(corrected.id);
+      setDraft(invoiceToDraft(corrected));
+      setCorrectionNote("");
+      setReceiveMessage(`Invoice ${corrected.invoiceNumber} corrected and inventory movements were reversed.`);
+      await load(corrected.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not record the correction.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openInvoice = async (invoiceId: number) => {
     setSelectedId(invoiceId);
     setReceiveMessage(null);
     setError(null);
+    setCorrectionNote("");
     const invoice = await fetchPilotPurchaseInvoice(invoiceId);
     setDraft(invoiceToDraft(invoice));
   };
@@ -375,12 +404,13 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
-              onClick={() => {
-                setSelectedId(null);
-                setReceiveMessage(null);
-                setDraft(buildBlankDraft(data ?? undefined));
-              }}
-            >
+            onClick={() => {
+              setSelectedId(null);
+              setReceiveMessage(null);
+              setCorrectionNote("");
+              setDraft(buildBlankDraft(data ?? undefined));
+            }}
+          >
               New purchase
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
@@ -460,7 +490,7 @@ export function PilotPurchasesPage() {
         <Card className="p-6">
           <SectionHeader
             title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
-            description={draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Edit the purchase, confirm the lines, then save or receive into inventory."}
+            description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Edit the purchase, confirm the lines, then save or receive into inventory."}
           />
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -470,7 +500,7 @@ export function PilotPurchasesPage() {
                 className="input mt-1"
                 value={draft.supplierName}
                 onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))}
-                disabled={draft.status === "Completed"}
+                disabled={finalizedStatus}
               >
                 {data?.suppliers.map((supplier) => (
                   <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
@@ -479,41 +509,47 @@ export function PilotPurchasesPage() {
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Invoice number</span>
-              <input className="input mt-1" value={draft.invoiceNumber} onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={draft.status === "Completed"} />
+              <input className="input mt-1" value={draft.invoiceNumber} onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Invoice date</span>
-              <input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={draft.status === "Completed"} />
+              <input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Status</span>
-              <select className="input mt-1" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))} disabled={draft.status === "Completed"}>
-                <option value="Draft">Needs review</option>
-                <option value="Ready">Ready</option>
-                <option value="Completed">Completed</option>
-              </select>
+              {finalizedStatus ? (
+                <div className="mt-1 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+                  <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
+                </div>
+              ) : (
+                <select className="input mt-1" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
+                  <option value="Draft">Needs review</option>
+                  <option value="Ready">Ready</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              )}
             </label>
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <label className="block">
               <span className="text-sm font-semibold text-ink">Subtotal</span>
-              <input className="input mt-1" type="number" step="0.01" value={draft.subtotal} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={draft.status === "Completed"} />
+              <input className="input mt-1" type="number" step="0.01" value={draft.subtotal} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Tax</span>
-              <input className="input mt-1" type="number" step="0.01" value={draft.tax} onChange={(event) => setTax(Number(event.target.value))} disabled={draft.status === "Completed"} />
+              <input className="input mt-1" type="number" step="0.01" value={draft.tax} onChange={(event) => setTax(Number(event.target.value))} disabled={finalizedStatus} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Total</span>
-              <input className="input mt-1" type="number" step="0.01" value={draft.totalAmount} onChange={(event) => setDraft((current) => ({ ...current, totalAmount: Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+              <input className="input mt-1" type="number" step="0.01" value={draft.totalAmount} onChange={(event) => setDraft((current) => ({ ...current, totalAmount: Number(event.target.value) }))} disabled={finalizedStatus} />
             </label>
           </div>
 
           <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">Line items</p>
-              <button type="button" className="text-sm font-semibold text-brand-700" onClick={addLine} disabled={draft.status === "Completed"}>
+              <button type="button" className="text-sm font-semibold text-brand-700" onClick={addLine} disabled={finalizedStatus}>
                 Add line
               </button>
             </div>
@@ -528,11 +564,11 @@ export function PilotPurchasesPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Description</span>
-                      <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(index, event.target.value)} disabled={draft.status === "Completed"} />
+                      <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(index, event.target.value)} disabled={finalizedStatus} />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory item</span>
-                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={draft.status === "Completed"}>
+                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus}>
                         <option value="">Unmapped</option>
                         {inventoryItems.map((item) => (
                           <option key={item.id} value={item.id}>{item.name}</option>
@@ -543,7 +579,7 @@ export function PilotPurchasesPage() {
                   <div className="mt-3 grid gap-3 md:grid-cols-4">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
-                      <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={draft.status === "Completed"} />
+                      <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
                       <datalist id={`purchase-units-${index}`}>
                         {commonUnits.map((unit) => (
                           <option key={unit} value={unit} />
@@ -552,7 +588,7 @@ export function PilotPurchasesPage() {
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory unit</span>
-                      <input className="input mt-1" list={`inventory-units-${index}`} value={line.inventoryUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={draft.status === "Completed"} />
+                      <input className="input mt-1" list={`inventory-units-${index}`} value={line.inventoryUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={finalizedStatus} />
                       <datalist id={`inventory-units-${index}`}>
                         {commonUnits.map((unit) => (
                           <option key={unit} value={unit} />
@@ -561,14 +597,14 @@ export function PilotPurchasesPage() {
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion</span>
-                      <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={draft.status === "Completed"} />
+                      <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty / price / total</span>
                       <div className="mt-1 grid grid-cols-3 gap-2">
-                        <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={draft.status === "Completed"} />
-                        <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={draft.status === "Completed"} />
-                        <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                        <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
+                        <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
+                        <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
                       </div>
                     </label>
                   </div>
@@ -583,13 +619,13 @@ export function PilotPurchasesPage() {
                     </div>
                     <div className="flex items-center justify-between gap-3 text-sm md:justify-end">
                       <label className="inline-flex items-center gap-2 text-muted">
-                        <input checked={line.needsReview} disabled={draft.status === "Completed"} type="checkbox" onChange={(event) => updateLine(index, (current) => ({ ...current, needsReview: event.target.checked }))} />
+                        <input checked={line.needsReview} disabled={finalizedStatus} type="checkbox" onChange={(event) => updateLine(index, (current) => ({ ...current, needsReview: event.target.checked }))} />
                         Needs review
                       </label>
                       <button
                         className="text-sm font-semibold text-danger disabled:text-slate-300"
                         type="button"
-                        disabled={draft.status === "Completed" || draft.lineItems.length === 1}
+                        disabled={finalizedStatus || draft.lineItems.length === 1}
                         onClick={() => {
                           const next = draft.lineItems.filter((_, lineIndex) => lineIndex !== index);
                           setDraft((current) => ({ ...current, ...recalculateTotals(next.length ? next : [blankLine()], current.tax) }));
@@ -611,18 +647,18 @@ export function PilotPurchasesPage() {
 
           <label className="mt-5 block">
             <span className="text-sm font-semibold text-ink">Notes</span>
-            <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={draft.status === "Completed"} />
+            <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={finalizedStatus} />
           </label>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <Button disabled={saving || draft.status === "Completed"} type="button" onClick={() => void saveDraft("Draft")}>
+            <Button disabled={saving || finalizedStatus} type="button" onClick={() => void saveDraft("Draft")}>
               {saving ? "Saving..." : "Save draft"}
             </Button>
-            <Button disabled={saving || draft.status === "Completed"} variant="secondary" type="button" onClick={() => void saveDraft("Ready")}>
+            <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Ready")}>
               Save ready
             </Button>
             <Button
-              disabled={saving || !draft.id || draft.status === "Completed" || !readyToReceive}
+              disabled={saving || !draft.id || finalizedStatus || !readyToReceive}
               icon={<CheckCircle2 className="h-4 w-4" />}
               type="button"
               onClick={() => void receiveInvoice()}
@@ -631,9 +667,29 @@ export function PilotPurchasesPage() {
             </Button>
           </div>
 
+          {draft.status === "Completed" ? (
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-ink">Need to correct this receipt?</p>
+              <p className="mt-1 text-sm text-muted">Enter a short reason and Flowtally will reverse the inventory movements, mark the purchase corrected, and keep the audit trail intact.</p>
+              <textarea className="input mt-3" rows={3} value={correctionNote} onChange={(event) => setCorrectionNote(event.target.value)} placeholder="Why is this receipt being corrected?" />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button disabled={saving || !correctionNote.trim()} variant="secondary" type="button" onClick={() => void correctInvoice()}>
+                  {saving ? "Saving..." : "Record correction"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {draft.status === "Corrected" ? (
+            <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
+              <p className="font-semibold text-ink">This invoice was corrected</p>
+              <p className="mt-1">Inventory movements were reversed and the record is now view-only.</p>
+            </div>
+          ) : null}
+
           <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
             <p className="font-semibold text-ink">Purchase status</p>
-            <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Save ready is available only when every line is mapped.</p>
+            <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Corrected purchases stay view-only and preserve the audit trail. Save ready is available only when every line is mapped.</p>
           </div>
         </Card>
       </div>

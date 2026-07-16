@@ -491,6 +491,16 @@ export async function receivePilotPurchaseInvoice(invoiceId: number) {
   });
 }
 
+export async function correctPilotPurchaseInvoice(invoiceId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/correct`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchPilotInventory() {
   return requestJson<PilotInventoryResponse>("/api/pilot/inventory");
 }
