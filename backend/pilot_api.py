@@ -414,6 +414,47 @@ def _replace_invoice_lines(invoice: PurchaseInvoice, organization_id: int, paylo
     invoice.lines = line_map
 
 
+def _sync_supplier_item_mappings(invoice: PurchaseInvoice, actor_id: int):
+    now = _now()
+    for line in invoice.lines:
+        if line.inventory_item_id is None:
+            continue
+        if line.conversion_factor <= 0:
+            raise RequestValidationError("Invoice validation failed.", {f"lineItems[{line.line_index}].conversionFactor": "Conversion factor must be greater than zero."})
+        inventory_item = InventoryItem.query.filter_by(id=line.inventory_item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first()
+        if inventory_item is None:
+            continue
+        mapping = SupplierItemMapping.query.filter_by(
+            organization_id=invoice.organization_id,
+            supplier_id=invoice.supplier_id,
+            inventory_item_id=inventory_item.id,
+            normalized_supplier_item_name=_normalize_name(line.description),
+        ).first()
+        if mapping is None:
+            mapping = SupplierItemMapping(
+                organization_id=invoice.organization_id,
+                supplier_id=invoice.supplier_id,
+                inventory_item_id=inventory_item.id,
+                supplier_item_name=line.description,
+                normalized_supplier_item_name=_normalize_name(line.description),
+                purchase_unit=line.purchase_unit,
+                inventory_unit=line.inventory_unit or inventory_item.stock_unit,
+                conversion_factor=line.conversion_factor,
+                last_seen_at=invoice.invoice_date,
+                created_by_user_id=actor_id,
+                updated_by_user_id=actor_id,
+            )
+            db.session.add(mapping)
+        else:
+            mapping.supplier_item_name = line.description
+            mapping.purchase_unit = line.purchase_unit
+            mapping.inventory_unit = line.inventory_unit or inventory_item.stock_unit
+            mapping.conversion_factor = line.conversion_factor
+            mapping.last_seen_at = invoice.invoice_date
+            mapping.updated_by_user_id = actor_id
+        line.supplier_item_mapping = mapping
+
+
 def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
     if invoice.status == "Completed":
         raise RequestValidationError("Invoice already received.", {"invoice": "This invoice has already been received."})
@@ -428,7 +469,7 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
 
     now = _now()
     for line in invoice.lines:
-        item = line.inventory_item
+        item = InventoryItem.query.filter_by(id=line.inventory_item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first() if line.inventory_item_id else None
         if item is None:
             continue
         quantity_delta = (Decimal(line.quantity) * Decimal(line.conversion_factor)).quantize(QTY)
@@ -492,6 +533,7 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
             )
             db.session.add(mapping)
         else:
+            mapping.supplier_item_name = line.description
             mapping.purchase_unit = line.purchase_unit
             mapping.inventory_unit = item.stock_unit
             mapping.conversion_factor = line.conversion_factor
@@ -746,6 +788,7 @@ def create_purchase_invoice():
     invoice.updated_by_user_id = current_user.id
     invoice.extraction_status = str(payload.get("extractionStatus") or "manual")
     _replace_invoice_lines(invoice, organization.id, list(payload.get("lineItems") or []))
+    _sync_supplier_item_mappings(invoice, current_user.id)
     db.session.add(invoice)
     db.session.flush()
     for line in invoice.lines:
@@ -780,6 +823,7 @@ def update_purchase_invoice(invoice_id: int):
     invoice, _ = _invoice_from_payload(organization.id, location.id, payload, existing=invoice)
     invoice.updated_by_user_id = current_user.id
     _replace_invoice_lines(invoice, organization.id, list(payload.get("lineItems") or []))
+    _sync_supplier_item_mappings(invoice, current_user.id)
     for line in invoice.lines:
         if line.inventory_item_id is None:
             continue

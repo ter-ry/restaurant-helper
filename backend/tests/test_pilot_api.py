@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from backend.extensions import db
-from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession, Supplier
+from backend.models import InventoryItem, InventoryMovement, PurchaseInvoice, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
@@ -78,6 +80,81 @@ def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
         assert cream is not None
         assert float(cream.current_on_hand) == before + 1
         assert InventoryMovement.query.filter_by(source_record_id=str(invoice["id"])).count() >= 3
+
+
+def test_mapped_invoice_save_syncs_supplier_mapping_and_receipt_uses_conversion(app, client):
+    login(client)
+
+    with app.app_context():
+        cream = InventoryItem.query.filter_by(name="Cream").first()
+        assert cream is not None
+        before = float(cream.current_on_hand)
+        cream_stock_unit = cream.stock_unit
+
+    supplier_name = f"Unit Test Dairy {uuid4().hex[:8]}"
+    invoice_number = f"UT-{uuid4().hex[:8].upper()}"
+    create_response = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-07-15",
+            "subtotal": 24,
+            "tax": 3.12,
+            "totalAmount": 27.12,
+            "notes": "Unit test invoice",
+            "status": "Draft",
+            "sourceFileName": "unit-test.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "",
+            "lineItems": [
+                {
+                    "description": "Cream",
+                    "inventoryItemId": cream.id,
+                    "purchaseUnit": "case",
+                    "inventoryUnit": cream_stock_unit,
+                    "conversionFactor": 2,
+                    "quantity": 2,
+                    "unitPrice": 12,
+                    "lineTotal": 24,
+                    "confidence": 0.94,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice = create_response.get_json()
+
+    with app.app_context():
+        mapping = SupplierItemMapping.query.filter_by(
+            organization_id=invoice["organizationId"],
+            supplier_id=invoice["supplierId"],
+            inventory_item_id=cream.id,
+        ).first()
+        assert mapping is not None
+        assert float(mapping.conversion_factor) == 2
+        assert mapping.purchase_unit == "case"
+        assert mapping.inventory_unit == cream_stock_unit
+
+    receive = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert receive.status_code == 200
+    received = receive.get_json()
+    assert received["status"] == "Completed"
+
+    duplicate = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert duplicate.status_code == 409
+
+    with app.app_context():
+        cream_after = InventoryItem.query.filter_by(name="Cream").first()
+        assert cream_after is not None
+        assert float(cream_after.current_on_hand) == before + 4
+        assert InventoryMovement.query.filter_by(source_record_id=str(invoice["id"])).count() == 1
+        stored_invoice = PurchaseInvoice.query.filter_by(id=invoice["id"]).first()
+        assert stored_invoice is not None and stored_invoice.status == "Completed"
 
 
 def test_count_session_finalize_updates_inventory(app, client):

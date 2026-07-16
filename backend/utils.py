@@ -157,6 +157,9 @@ def serialize_purchase_invoice_line(line: PurchaseInvoiceLine) -> dict[str, Any]
     return {
         "id": line.id,
         "invoiceId": line.invoice_id,
+        "supplierName": line.invoice.supplier.name if line.invoice and line.invoice.supplier else "",
+        "invoiceNumber": line.invoice.invoice_number if line.invoice else "",
+        "invoiceDate": line.invoice.invoice_date.isoformat() if line.invoice else "",
         "inventoryItemId": line.inventory_item_id,
         "supplierItemMappingId": line.supplier_item_mapping_id,
         "lineIndex": line.line_index,

@@ -49,8 +49,14 @@ interface PurchaseDraft {
   lineItems: DraftLine[];
 }
 
+const commonUnits = ["each", "bag", "bottle", "box", "case", "dozen", "kg", "lb", "L", "ml", "pack", "roll", "tray"];
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeLookup(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function blankLine(): DraftLine {
@@ -123,6 +129,13 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
   };
 }
 
+type MappingHint = {
+  inventoryItemId: number;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+};
+
 export function PilotPurchasesPage() {
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
@@ -133,6 +146,24 @@ export function PilotPurchasesPage() {
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const mappingHints = useMemo(() => {
+    const hints = new Map<string, MappingHint>();
+    for (const line of data?.purchaseLines ?? []) {
+      if (!line.inventoryItemId || !line.supplierName || !line.description) {
+        continue;
+      }
+      const key = `${normalizeLookup(line.supplierName)}|${normalizeLookup(line.description)}`;
+      if (!hints.has(key)) {
+        hints.set(key, {
+          inventoryItemId: line.inventoryItemId,
+          purchaseUnit: line.purchaseUnit || "each",
+          inventoryUnit: line.inventoryUnit || "each",
+          conversionFactor: line.conversionFactor || 1,
+        });
+      }
+    }
+    return hints;
+  }, [data?.purchaseLines]);
 
   const load = async () => {
     setLoading(true);
@@ -174,17 +205,32 @@ export function PilotPurchasesPage() {
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
   const priceChanges = (data?.priceChanges ?? []).slice(0, 3);
+  const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
+  const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
+  const readyToReceive = draft.status !== "Completed" && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
 
-  const setLine = (index: number, updater: (line: DraftLine) => DraftLine) => {
+  const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
+    const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
+    return {
+      lineItems: lines,
+      subtotal,
+      totalAmount: subtotal + Number(nextTax || 0),
+    };
+  };
+
+  const updateLine = (index: number, updater: (line: DraftLine) => DraftLine) => {
     setDraft((current) => ({
       ...current,
-      lineItems: current.lineItems.map((line, lineIndex) => (lineIndex === index ? updater(line) : line)),
+      ...recalculateTotals(current.lineItems.map((line, lineIndex) => (lineIndex === index ? updater(line) : line)), current.tax),
     }));
   };
 
-  const recalcTotals = (nextLines: DraftLine[]) => {
-    const subtotal = nextLines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
-    setDraft((current) => ({ ...current, lineItems: nextLines, subtotal, totalAmount: subtotal + Number(current.tax || 0) }));
+  const setTax = (tax: number) => {
+    setDraft((current) => ({
+      ...current,
+      tax,
+      totalAmount: current.subtotal + tax,
+    }));
   };
 
   const saveDraft = async (status: string) => {
@@ -193,6 +239,9 @@ export function PilotPurchasesPage() {
     setError(null);
 
     try {
+      if (status === "Ready" && unresolvedLineCount > 0) {
+        throw new Error("Map every invoice line before marking the purchase ready.");
+      }
       const payload = {
         supplierName: draft.supplierName,
         invoiceNumber: draft.invoiceNumber,
@@ -237,6 +286,10 @@ export function PilotPurchasesPage() {
     if (!draft.id) {
       return;
     }
+    if (!readyToReceive) {
+      setError("Map every invoice line before receiving this purchase.");
+      return;
+    }
     setSaving(true);
     setReceiveMessage(null);
     setError(null);
@@ -265,7 +318,41 @@ export function PilotPurchasesPage() {
 
   const addLine = () => {
     const next = [...draft.lineItems, blankLine()];
-    recalcTotals(next);
+    setDraft((current) => ({ ...current, ...recalculateTotals(next, current.tax) }));
+  };
+
+  const applyMappingHint = (supplierName: string, description: string) => {
+    const hint = mappingHints.get(`${normalizeLookup(supplierName)}|${normalizeLookup(description)}`);
+    return hint ?? null;
+  };
+
+  const setLineDescription = (index: number, description: string) => {
+    updateLine(index, (current) => {
+      const next = { ...current, description };
+      const hint = applyMappingHint(draft.supplierName, description);
+      if (hint && !current.inventoryItemId) {
+        return {
+          ...next,
+          inventoryItemId: hint.inventoryItemId,
+          purchaseUnit: hint.purchaseUnit,
+          inventoryUnit: hint.inventoryUnit,
+          conversionFactor: hint.conversionFactor,
+        };
+      }
+      return next;
+    });
+  };
+
+  const setLineInventoryItem = (index: number, inventoryItemId: number | null, description: string) => {
+    const selectedItem = inventoryItems.find((item) => item.id === inventoryItemId) ?? null;
+    const hint = description ? applyMappingHint(draft.supplierName, description) : null;
+    updateLine(index, (current) => ({
+      ...current,
+      inventoryItemId,
+      inventoryUnit: hint?.inventoryUnit ?? selectedItem?.stockUnit ?? current.inventoryUnit,
+      purchaseUnit: hint?.purchaseUnit ?? current.purchaseUnit,
+      conversionFactor: hint?.conversionFactor ?? (current.conversionFactor || 1),
+    }));
   };
 
   return (
@@ -408,7 +495,7 @@ export function PilotPurchasesPage() {
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Tax</span>
-              <input className="input mt-1" type="number" step="0.01" value={draft.tax} onChange={(event) => setDraft((current) => ({ ...current, tax: Number(event.target.value), totalAmount: Number(current.subtotal || 0) + Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+              <input className="input mt-1" type="number" step="0.01" value={draft.tax} onChange={(event) => setTax(Number(event.target.value))} disabled={draft.status === "Completed"} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Total</span>
@@ -423,17 +510,22 @@ export function PilotPurchasesPage() {
                 Add line
               </button>
             </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <Badge tone="neutral">{mappedLineCount} mapped</Badge>
+              <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{unresolvedLineCount} need confirmation</Badge>
+              <Badge tone={readyToReceive ? "success" : "neutral"}>{readyToReceive ? "Ready to receive" : "Not ready to receive"}</Badge>
+            </div>
             <div className="mt-4 space-y-4">
               {draft.lineItems.map((line, index) => (
                 <div key={line.id ?? index} className="rounded-2xl border border-line bg-white p-4">
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Description</span>
-                      <input className="input mt-1" value={line.description} onChange={(event) => setLine(index, (current) => ({ ...current, description: event.target.value }))} disabled={draft.status === "Completed"} />
+                      <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(index, event.target.value)} disabled={draft.status === "Completed"} />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory item</span>
-                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLine(index, (current) => ({ ...current, inventoryItemId: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"}>
+                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={draft.status === "Completed"}>
                         <option value="">Unmapped</option>
                         {inventoryItems.map((item) => (
                           <option key={item.id} value={item.id}>{item.name}</option>
@@ -443,39 +535,68 @@ export function PilotPurchasesPage() {
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-4">
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty</span>
-                      <input className="input mt-1" type="number" step="0.0001" value={line.quantity} onChange={(event) => setLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={draft.status === "Completed"} />
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
+                      <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={draft.status === "Completed"} />
+                      <datalist id={`purchase-units-${index}`}>
+                        {commonUnits.map((unit) => (
+                          <option key={unit} value={unit} />
+                        ))}
+                      </datalist>
                     </label>
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Unit price</span>
-                      <input className="input mt-1" type="number" step="0.01" value={line.unitPrice} onChange={(event) => setLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory unit</span>
+                      <input className="input mt-1" list={`inventory-units-${index}`} value={line.inventoryUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={draft.status === "Completed"} />
+                      <datalist id={`inventory-units-${index}`}>
+                        {commonUnits.map((unit) => (
+                          <option key={unit} value={unit} />
+                        ))}
+                      </datalist>
                     </label>
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Line total</span>
-                      <input className="input mt-1" type="number" step="0.01" value={line.lineTotal} onChange={(event) => setLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion</span>
+                      <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={draft.status === "Completed"} />
                     </label>
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Confidence</span>
-                      <input className="input mt-1" type="number" step="0.01" value={line.confidence} onChange={(event) => setLine(index, (current) => ({ ...current, confidence: Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty / price / total</span>
+                      <div className="mt-1 grid grid-cols-3 gap-2">
+                        <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={draft.status === "Completed"} />
+                        <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                        <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                      </div>
                     </label>
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 text-sm">
-                    <label className="inline-flex items-center gap-2 text-muted">
-                      <input checked={line.needsReview} disabled={draft.status === "Completed"} type="checkbox" onChange={(event) => setLine(index, (current) => ({ ...current, needsReview: event.target.checked }))} />
-                      Needs review
-                    </label>
-                    <button
-                      className="text-sm font-semibold text-danger disabled:text-slate-300"
-                      type="button"
-                      disabled={draft.status === "Completed" || draft.lineItems.length === 1}
-                      onClick={() => {
-                        const next = draft.lineItems.filter((_, lineIndex) => lineIndex !== index);
-                        recalcTotals(next.length ? next : [blankLine()]);
-                      }}
-                    >
-                      Remove
-                    </button>
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Badge tone={line.inventoryItemId ? "success" : "warning"}>{line.inventoryItemId ? "Mapped" : "Needs mapping"}</Badge>
+                      <Badge tone={line.needsReview ? "warning" : "success"}>{line.needsReview ? "Needs review" : "Confirmed"}</Badge>
+                      <Badge tone="neutral">
+                        {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} {line.inventoryUnit || "inventory units"}
+                      </Badge>
+                      <Badge tone="neutral">{line.confidence >= 0.9 ? "High confidence" : line.confidence >= 0.7 ? "Medium confidence" : "Low confidence"}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm md:justify-end">
+                      <label className="inline-flex items-center gap-2 text-muted">
+                        <input checked={line.needsReview} disabled={draft.status === "Completed"} type="checkbox" onChange={(event) => updateLine(index, (current) => ({ ...current, needsReview: event.target.checked }))} />
+                        Needs review
+                      </label>
+                      <button
+                        className="text-sm font-semibold text-danger disabled:text-slate-300"
+                        type="button"
+                        disabled={draft.status === "Completed" || draft.lineItems.length === 1}
+                        onClick={() => {
+                          const next = draft.lineItems.filter((_, lineIndex) => lineIndex !== index);
+                          setDraft((current) => ({ ...current, ...recalculateTotals(next.length ? next : [blankLine()], current.tax) }));
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
+                  {line.inventoryItemId ? (
+                    <p className="mt-3 text-xs leading-5 text-muted">
+                      Inventory unit {line.inventoryUnit || "each"} will receive {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} units from this line.
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -494,7 +615,7 @@ export function PilotPurchasesPage() {
               Save ready
             </Button>
             <Button
-              disabled={saving || !draft.id || draft.status === "Completed"}
+              disabled={saving || !draft.id || draft.status === "Completed" || !readyToReceive}
               icon={<CheckCircle2 className="h-4 w-4" />}
               type="button"
               onClick={() => void receiveInvoice()}
@@ -505,7 +626,7 @@ export function PilotPurchasesPage() {
 
           <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
             <p className="font-semibold text-ink">Purchase status</p>
-            <p className="mt-1">Completed purchases become view-only and can no longer be received twice.</p>
+            <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Save ready is available only when every line is mapped.</p>
           </div>
         </Card>
       </div>
