@@ -25,9 +25,9 @@ Authoritative execution queue for `codex/overnight-pilot`.
 
 ## Milestone 4: Full reorder-plan lifecycle
 - Acceptance criteria: suggestions from current quantity and PAR, purchasing-unit conversions, preferred-supplier grouping, missing supplier and unknown price states, editable quantities, excluded lines, notes, estimated costs, draft saving/reopening, prepared/completed statuses, historical plan values, previous-plan history, duplicate-submission protection, authorization and isolation tests.
-- Current status: NOT STARTED
-- Commit hashes: none yet
-- Verification results: none yet
+- Current status: COMPLETE
+- Commit hashes: c282f1b
+- Verification results: backend tests passed (`28 passed in 34.48s`), frontend build passed, reorder-plan isolation verified.
 - Genuine blockers: none
 
 ## Milestone 5: Permissions and frontend-state audit
