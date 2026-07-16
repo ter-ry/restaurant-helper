@@ -6,6 +6,7 @@ from typing import Any
 
 from flask import Response, jsonify, session
 from flask_login import current_user
+from sqlalchemy import and_
 
 from .models import (
     InventoryItem,
@@ -233,6 +234,20 @@ def serialize_inventory_movement(movement: InventoryMovement) -> dict[str, Any]:
 
 
 def serialize_count_session_line(line: StockCountSessionLine) -> dict[str, Any]:
+    session = line.session
+    movement_count_since_start = 0
+    if session is not None and session.started_at is not None and line.inventory_item_id is not None:
+        query = InventoryMovement.query.filter(
+            InventoryMovement.organization_id == session.organization_id,
+            InventoryMovement.location_id == session.location_id,
+            InventoryMovement.inventory_item_id == line.inventory_item_id,
+            InventoryMovement.created_at > session.started_at,
+        )
+        if session.completed_at is not None:
+            query = query.filter(InventoryMovement.created_at < session.completed_at)
+            query = query.filter(~and_(InventoryMovement.source_type == "stock count reconciliation", InventoryMovement.source_record_id == str(session.id)))
+        movement_count_since_start = query.count()
+
     return {
         "id": line.id,
         "sessionId": line.session_id,
@@ -246,12 +261,19 @@ def serialize_count_session_line(line: StockCountSessionLine) -> dict[str, Any]:
         "resultingQuantity": decimal_to_float(line.resulting_quantity),
         "note": line.note,
         "status": line.status,
+        "movementCountSinceStart": movement_count_since_start,
+        "hasMovementSinceStart": movement_count_since_start > 0,
         "createdAt": isoformat(line.created_at),
         "updatedAt": isoformat(line.updated_at),
     }
 
 
 def serialize_count_session(session_record: StockCountSession) -> dict[str, Any]:
+    line_payloads = [serialize_count_session_line(line) for line in session_record.lines]
+    counted_line_count = sum(1 for line in line_payloads if line["countedQuantity"] is not None)
+    uncounted_line_count = sum(1 for line in line_payloads if line["countedQuantity"] is None)
+    variance_total = round(sum((line["variance"] or 0) for line in line_payloads), 4)
+    movement_count_since_start = sum(line["movementCountSinceStart"] for line in line_payloads)
     return {
         "id": session_record.id,
         "organizationId": session_record.organization_id,
@@ -262,9 +284,14 @@ def serialize_count_session(session_record: StockCountSession) -> dict[str, Any]
         "countedBy": session_record.counted_by,
         "notes": session_record.notes,
         "itemCount": session_record.item_count,
+        "countedLineCount": counted_line_count,
+        "uncountedLineCount": uncounted_line_count,
+        "varianceTotal": variance_total,
+        "movementCountSinceStart": movement_count_since_start,
+        "hasMovementSinceStart": movement_count_since_start > 0,
         "createdByUserId": session_record.created_by_user_id,
         "finalizedByUserId": session_record.finalized_by_user_id,
-        "lines": [serialize_count_session_line(line) for line in session_record.lines],
+        "lines": line_payloads,
         "createdAt": isoformat(session_record.created_at),
         "updatedAt": isoformat(session_record.updated_at),
     }

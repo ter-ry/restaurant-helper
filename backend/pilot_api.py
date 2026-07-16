@@ -1050,6 +1050,32 @@ def _build_count_session_for_location(location: RestaurantLocation, organization
     return items
 
 
+def _count_session_movement_conflicts(session_record: StockCountSession) -> list[dict[str, Any]]:
+    conflicts: list[dict[str, Any]] = []
+    if session_record.started_at is None:
+        return conflicts
+    for line in session_record.lines:
+        if line.inventory_item_id is None:
+            continue
+        movement_count = InventoryMovement.query.filter(
+            InventoryMovement.organization_id == session_record.organization_id,
+            InventoryMovement.location_id == session_record.location_id,
+            InventoryMovement.inventory_item_id == line.inventory_item_id,
+            InventoryMovement.created_at > session_record.started_at,
+        ).count()
+        if movement_count > 0:
+            item = line.inventory_item
+            conflicts.append(
+                {
+                    "lineId": line.id,
+                    "inventoryItemId": line.inventory_item_id,
+                    "itemName": item.name if item else line.item_name_snapshot,
+                    "movementCount": movement_count,
+                }
+            )
+    return conflicts
+
+
 @bp.get("/api/pilot/inventory/count-sessions")
 @login_required
 def list_count_sessions():
@@ -1150,6 +1176,8 @@ def update_count_session(session_id: int):
             if "countedQuantity" in line_payload:
                 counted = line_payload.get("countedQuantity")
                 line.counted_quantity = _to_quantity(counted, field=f"lines[{index}].countedQuantity", required=False) if counted not in (None, "") else None
+                if line.counted_quantity is not None and line.counted_quantity < 0:
+                    return json_error("Counted quantity cannot be negative.", 400, errors={f"lines[{index}].countedQuantity": "Enter a quantity of zero or more."})
                 line.variance = None if line.counted_quantity is None else (Decimal(line.counted_quantity) - Decimal(line.expected_quantity)).quantize(QTY)
                 line.resulting_quantity = line.counted_quantity
                 line.status = "confirmed" if line.counted_quantity is not None else "pending"
@@ -1175,40 +1203,62 @@ def finalize_count_session(session_id: int):
     incomplete = [line for line in session_record.lines if line.counted_quantity is None]
     if incomplete:
         return json_error("Finalize requires a counted quantity for every line.", 400, errors={"lines": "Fill in every line before finalizing."})
-    now = _now()
-    for line in session_record.lines:
-        item = line.inventory_item
-        if item is None or line.counted_quantity is None:
-            continue
-        after = Decimal(line.counted_quantity).quantize(QTY)
-        before = Decimal(item.current_on_hand)
-        delta = (after - before).quantize(QTY)
-        if after < 0:
-            return json_error("Stock count would make inventory negative.", 400, errors={"countedQuantity": f"{line.item_name_snapshot} cannot be negative."})
-        movement = InventoryMovement(
-            organization_id=organization.id,
-            location_id=location.id,
-            inventory_item_id=item.id,
-            quantity_delta=delta,
-            quantity_before=before,
-            quantity_after=after,
-            unit=item.stock_unit,
-            source_type="stock count reconciliation",
-            source_record_id=str(session_record.id),
-            source_line_id=str(line.id),
-            reason=line.note or f"Stock count {session_record.id}",
-            actor_user_id=current_user.id,
+    payload = request.get_json(silent=True) or {}
+    confirm_concurrency = bool(payload.get("confirmConcurrency"))
+    conflicts = _count_session_movement_conflicts(session_record)
+    if conflicts and not confirm_concurrency:
+        return (
+            jsonify(
+                {
+                    "error": "Inventory changed after this count began.",
+                    "errors": {"concurrency": "Review the later movements before finalizing."},
+                    "conflicts": conflicts,
+                }
+            ),
+            409,
         )
-        item.current_on_hand = after
-        item.last_counted_at = now
-        item.updated_by_user_id = current_user.id
-        item.updated_at = now
-        db.session.add(movement)
-    session_record.status = "Completed"
-    session_record.completed_at = now
-    session_record.updated_at = now
-    session_record.finalized_by_user_id = current_user.id
-    db.session.commit()
+
+    now = _now()
+    try:
+        for line in session_record.lines:
+            item = line.inventory_item
+            if item is None or line.counted_quantity is None:
+                continue
+            after = Decimal(line.counted_quantity).quantize(QTY)
+            before = Decimal(item.current_on_hand)
+            delta = (after - before).quantize(QTY)
+            if after < 0:
+                raise RequestValidationError("Stock count would make inventory negative.", {"countedQuantity": f"{line.item_name_snapshot} cannot be negative."})
+            movement = InventoryMovement(
+                organization_id=organization.id,
+                location_id=location.id,
+                inventory_item_id=item.id,
+                quantity_delta=delta,
+                quantity_before=before,
+                quantity_after=after,
+                unit=item.stock_unit,
+                source_type="stock count reconciliation",
+                source_record_id=str(session_record.id),
+                source_line_id=str(line.id),
+                reason=line.note or f"Stock count {session_record.id}",
+                actor_user_id=current_user.id,
+            )
+            item.current_on_hand = after
+            item.last_counted_at = now
+            item.updated_by_user_id = current_user.id
+            item.updated_at = now
+            db.session.add(movement)
+        session_record.status = "Completed"
+        session_record.completed_at = now
+        session_record.updated_at = now
+        session_record.finalized_by_user_id = current_user.id
+        db.session.commit()
+    except RequestValidationError as exc:
+        db.session.rollback()
+        return json_error(exc.message, 400, errors=exc.errors)
+    except Exception:
+        db.session.rollback()
+        return json_error("Could not finalize the stock count.", 500)
     return jsonify(serialize_count_session(session_record)), 200
 
 

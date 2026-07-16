@@ -219,6 +219,156 @@ def test_count_session_finalize_updates_inventory(app, client):
         assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
 
 
+def test_count_session_save_resume_and_concurrency_confirmation(app, client):
+    login(client)
+
+    with app.app_context():
+        cups = InventoryItem.query.filter_by(name="Cups").first()
+        assert cups is not None
+        original = float(cups.current_on_hand)
+
+    create_response = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Closer",
+            "notes": "Draft count",
+            "itemIds": [cups.id],
+        },
+    )
+    assert create_response.status_code == 201
+    session_id = create_response.get_json()["id"]
+
+    update_response = client.patch(
+        f"/api/pilot/inventory/count-sessions/{session_id}",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Closer",
+            "notes": "Draft count",
+            "lines": [
+                {
+                    "id": create_response.get_json()["lines"][0]["id"],
+                    "countedQuantity": original,
+                    "note": "Shelf count",
+                }
+            ],
+        },
+    )
+    assert update_response.status_code == 200
+    saved = update_response.get_json()
+    assert saved["countedLineCount"] == 1
+    assert saved["uncountedLineCount"] == 0
+    assert saved["movementCountSinceStart"] == 0
+
+    resumed = client.get(f"/api/pilot/inventory/count-sessions/{session_id}")
+    assert resumed.status_code == 200
+    assert resumed.get_json()["lines"][0]["countedQuantity"] == original
+
+    with app.app_context():
+        cups_item = InventoryItem.query.filter_by(name="Cups").first()
+        assert cups_item is not None
+        before_adjustment = float(cups_item.current_on_hand)
+
+    manual_adjustment = client.post(
+        f"/api/pilot/inventory/items/{cups.id}/adjustments",
+        headers=csrf_headers(client),
+        json={
+            "reason": "Test timing adjustment",
+            "quantityDelta": 2,
+            "movementType": "manual increase",
+            "sourceRecordId": "count-test-timing",
+            "sourceLineId": "count-test-timing-line",
+            "note": "During draft count",
+        },
+    )
+    assert manual_adjustment.status_code == 201
+
+    draft_after_adjustment = client.get(f"/api/pilot/inventory/count-sessions/{session_id}").get_json()
+    assert draft_after_adjustment["movementCountSinceStart"] >= 1
+    assert draft_after_adjustment["hasMovementSinceStart"] is True
+
+    blocked = client.post(
+        f"/api/pilot/inventory/count-sessions/{session_id}/finalize",
+        headers=csrf_headers(client),
+    )
+    assert blocked.status_code == 409
+    assert blocked.get_json()["error"] == "Inventory changed after this count began."
+
+    confirmed = client.post(
+        f"/api/pilot/inventory/count-sessions/{session_id}/finalize",
+        headers=csrf_headers(client),
+        json={"confirmConcurrency": True},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.get_json()["status"] == "Completed"
+
+    with app.app_context():
+        cups_after = InventoryItem.query.filter_by(name="Cups").first()
+        assert cups_after is not None
+        assert float(cups_after.current_on_hand) == original
+        assert InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").count() == 1
+        assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
+        assert float(cups_after.current_on_hand) == before_adjustment + 2 - 2
+
+
+def test_count_session_finalize_rolls_back_if_commit_fails(app, client, monkeypatch):
+    login(client)
+
+    inventory = client.get("/api/pilot/inventory").get_json()
+    cups = next(item for item in inventory["items"] if item["name"] == "Cups")
+
+    create_response = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Closer",
+            "notes": "Rollback test",
+            "itemIds": [cups["id"]],
+        },
+    )
+    assert create_response.status_code == 201
+    session_id = create_response.get_json()["id"]
+
+    update_response = client.patch(
+        f"/api/pilot/inventory/count-sessions/{session_id}",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Closer",
+            "notes": "Rollback test",
+            "lines": [
+                {
+                    "id": create_response.get_json()["lines"][0]["id"],
+                    "countedQuantity": cups["currentOnHand"],
+                    "note": "Rollback line",
+                }
+            ],
+        },
+    )
+    assert update_response.status_code == 200
+
+    original_commit = db.session.commit
+
+    def failing_commit():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+
+    response = client.post(
+        f"/api/pilot/inventory/count-sessions/{session_id}/finalize",
+        headers=csrf_headers(client),
+        json={"confirmConcurrency": True},
+    )
+    assert response.status_code == 500
+
+    monkeypatch.setattr(db.session, "commit", original_commit)
+
+    with app.app_context():
+        session_record = StockCountSession.query.filter_by(id=session_id).first()
+        assert session_record is not None
+        assert session_record.status == "Draft"
+        assert InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").count() == 0
+
+
 def test_manual_inventory_adjustment_records_movement_and_updates_quantity(app, client):
     login(client)
 
