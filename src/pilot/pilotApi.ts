@@ -216,6 +216,9 @@ export interface PilotSupplierItemMapping {
 export interface PilotInvoiceLine {
   id: number;
   invoiceId: number;
+  supplierName: string;
+  invoiceNumber: string;
+  invoiceDate: string;
   inventoryItemId: number | null;
   supplierItemMappingId: number | null;
   lineIndex: number;
