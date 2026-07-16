@@ -31,6 +31,7 @@
 - Reorder plans now have a backend draft guard to prevent duplicate active drafts and reuse the existing draft on repeat opens.
 - Received invoices can now be corrected through an auditable reversal flow that restores inventory quantities, records correction movements, marks the invoice corrected, and keeps the invoice view-only afterward.
 - Inventory-item creation, editing, adjustments, and receipt corrections are now limited to owner/manager access so the pilot keeps mutation rights aligned with management roles.
+- Inventory navigations now stay within the app shell instead of forcing full-page reloads, which keeps the private pilot stateful on repeat navigation.
 
 ## Current Status
 - Branch: `codex/overnight-pilot`

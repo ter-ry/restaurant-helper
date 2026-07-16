@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -102,6 +103,7 @@ function adjustmentTone(quantity: number) {
 }
 
 export function PilotInventoryPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -296,7 +298,7 @@ export function PilotInventoryPage() {
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
               Refresh
             </Button>
-            <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => window.location.assign("/app/reorder-plan")}>
+            <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>
               Reorder list ({reorderCount})
             </Button>
           </div>
@@ -607,7 +609,7 @@ export function PilotInventoryPage() {
                 <Button variant="secondary" disabled={saving || !draft.id} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
                   {draft.id ? "Update item" : "Create item"}
                 </Button>
-                <Button variant="secondary" icon={<ArrowRight className="h-4 w-4" />} type="button" onClick={() => window.location.assign("/app/stock-counts")}>
+                <Button variant="secondary" icon={<ArrowRight className="h-4 w-4" />} type="button" onClick={() => navigate("/app/stock-counts")}>
                   Stock counts
                 </Button>
               </div>
