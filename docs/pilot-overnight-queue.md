@@ -12,7 +12,7 @@ Authoritative execution queue for `codex/overnight-pilot`.
 ## Milestone 2: Inventory-item management
 - Acceptance criteria: create/edit inventory items, activate/deactivate, search/filters, category, base unit, PAR/minimum quantity, preferred supplier, purchasing conversions, current quantity, estimated value, last purchase price, purchase history, full movement history, protection against unsafe base-unit changes, authorization and tenant-isolation tests.
 - Current status: IN PROGRESS
-- Commit hashes: none yet
+- Commit hashes: 9114e04
 - Verification results: backend tests passed (26/26), frontend build passed; inventory detail/history and base-unit protection wired in.
 - Genuine blockers: none
 
