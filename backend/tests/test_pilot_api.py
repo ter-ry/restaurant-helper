@@ -4,7 +4,14 @@ from uuid import uuid4
 
 from backend.extensions import db
 from backend.models import InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
-from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
+from backend.seed import (
+    LOCAL_LOCATION_NAME,
+    LOCAL_MANAGER_EMAIL,
+    LOCAL_MANAGER_PASSWORD,
+    LOCAL_ORGANIZATION_NAME,
+    LOCAL_OWNER_EMAIL,
+    LOCAL_OWNER_PASSWORD,
+)
 
 
 def login(client):
@@ -805,6 +812,248 @@ def test_reorder_plan_isolated_by_membership(app, client):
 
     isolated_detail = client.get(f"/api/pilot/reorder-plans/{original_plan_id}")
     assert isolated_detail.status_code == 404
+
+
+def test_pilot_end_to_end_workflow_updates_dashboard_and_ledger(app, client):
+    login(client)
+
+    dashboard_before = client.get("/api/pilot/dashboard").get_json()
+    inventory_before = client.get("/api/pilot/inventory").get_json()
+    starting_quantities = {item["id"]: float(item["currentOnHand"]) for item in inventory_before["items"]}
+    with app.app_context():
+        organization = Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).first()
+        location = RestaurantLocation.query.filter_by(name=LOCAL_LOCATION_NAME).first()
+        assert organization is not None and location is not None
+        org_id = organization.id
+        location_id = location.id
+        starting_ledger_totals = {
+            item.id: sum(
+                float(movement.quantity_delta)
+                for movement in InventoryMovement.query.filter_by(
+                    organization_id=org_id,
+                    location_id=location_id,
+                    inventory_item_id=item.id,
+                ).all()
+            )
+            for item in InventoryItem.query.filter_by(organization_id=org_id, location_id=location_id).all()
+        }
+
+    supplier_name = f"Integration Supplier {uuid4().hex[:8]}"
+    supplier_response = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={
+            "name": supplier_name,
+            "categoryFocus": "Dry goods",
+            "contactName": "Integration Contact",
+            "contactPhone": "416-555-0100",
+            "contactEmail": "integration@supplier.example",
+            "orderingNotes": "Leave by kitchen door.",
+            "notes": "Integration test supplier",
+            "isActive": True,
+        },
+    )
+    assert supplier_response.status_code == 201
+
+    item_name = f"Integration Rice {uuid4().hex[:8]}"
+    item_response = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": item_name,
+            "category": "Dry goods",
+            "stockUnit": "kg",
+            "currentOnHand": 0,
+            "minQuantity": 2,
+            "parLevel": 6,
+            "preferredSupplierName": supplier_name,
+            "latestPurchasePrice": 4.25,
+            "lastPurchaseUnit": "case",
+            "lastPurchaseConversionFactor": 4,
+            "averageDailyUsage": 0.5,
+        },
+    )
+    assert item_response.status_code == 201
+    item = item_response.get_json()
+    assert item["lastPurchaseUnit"] == "case"
+    assert float(item["lastPurchaseConversionFactor"]) == 4
+
+    invoice_number = f"INT-{uuid4().hex[:8].upper()}"
+    invoice_response = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-07-16",
+            "subtotal": 34,
+            "tax": 4.42,
+            "totalAmount": 38.42,
+            "notes": "Integration flow invoice",
+            "status": "Ready",
+            "sourceFileName": "integration-flow.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "Integration flow invoice text",
+            "lineItems": [
+                {
+                    "description": "Integration Rice 2kg",
+                    "inventoryItemId": item["id"],
+                    "purchaseUnit": "case",
+                    "inventoryUnit": "kg",
+                    "conversionFactor": 4,
+                    "quantity": 2,
+                    "unitPrice": 17,
+                    "lineTotal": 34,
+                    "confidence": 0.98,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert invoice_response.status_code == 201
+    invoice = invoice_response.get_json()
+
+    receive_response = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert receive_response.status_code == 200
+    received_invoice = receive_response.get_json()
+    assert received_invoice["status"] == "Completed"
+    assert received_invoice["lineItems"][0]["inventoryItemId"] == item["id"]
+
+    with app.app_context():
+        receipt_movements = InventoryMovement.query.filter_by(
+            organization_id=invoice["organizationId"],
+            location_id=invoice["locationId"],
+            source_type="invoice receipt",
+            source_record_id=str(invoice["id"]),
+        ).all()
+        assert len(receipt_movements) == 1
+        current_item = InventoryItem.query.filter_by(id=item["id"]).first()
+        assert current_item is not None
+        quantity_after_receipt = float(current_item.current_on_hand)
+
+    adjustment_response = client.post(
+        f"/api/pilot/inventory/items/{item['id']}/adjustments",
+        headers=csrf_headers(client),
+        json={
+            "reason": "Integration adjustment",
+            "quantityDelta": 1,
+            "movementType": "manual decrease",
+            "sourceRecordId": "integration-adjustment",
+            "sourceLineId": "integration-adjustment-line",
+            "note": "Integration flow",
+        },
+    )
+    assert adjustment_response.status_code == 201
+
+    count_session_response = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Integration Manager",
+            "notes": "Integration count",
+            "itemIds": [item["id"]],
+        },
+    )
+    assert count_session_response.status_code == 201
+    count_session = count_session_response.get_json()
+    count_line = count_session["lines"][0]
+
+    save_count_response = client.patch(
+        f"/api/pilot/inventory/count-sessions/{count_session['id']}",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Integration Manager",
+            "notes": "Integration count",
+                "lines": [
+                    {
+                        "id": count_line["id"],
+                        "countedQuantity": quantity_after_receipt + 1,
+                        "note": "Counted after shelf review",
+                    }
+                ],
+        },
+    )
+    assert save_count_response.status_code == 200
+
+    finalize_count_response = client.post(f"/api/pilot/inventory/count-sessions/{count_session['id']}/finalize", headers=csrf_headers(client))
+    assert finalize_count_response.status_code == 200
+    assert finalize_count_response.get_json()["status"] == "Completed"
+
+    reorder_plan_response = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert reorder_plan_response.status_code in {200, 201}
+    reorder_plan = reorder_plan_response.get_json()
+    assert reorder_plan["lines"]
+
+    prepare_response = client.post(f"/api/pilot/reorder-plans/{reorder_plan['id']}/prepare", headers=csrf_headers(client))
+    assert prepare_response.status_code == 200
+    assert prepare_response.get_json()["status"] == "Prepared"
+
+    complete_response = client.post(f"/api/pilot/reorder-plans/{reorder_plan['id']}/complete", headers=csrf_headers(client))
+    assert complete_response.status_code == 200
+    assert complete_response.get_json()["status"] == "Completed"
+
+    correction_response = client.post(
+        f"/api/pilot/purchases/invoices/{invoice['id']}/correct",
+        headers=csrf_headers(client),
+        json={"reason": "Integration correction"},
+    )
+    assert correction_response.status_code == 200
+    assert correction_response.get_json()["status"] == "Corrected"
+
+    dashboard_after = client.get("/api/pilot/dashboard").get_json()
+    assert dashboard_after["summary"]["inventoryMovementCount"] >= dashboard_before["summary"]["inventoryMovementCount"] + 3
+    assert any(entry["invoiceNumber"] == invoice_number for entry in dashboard_after["recentInvoices"])
+    assert any(movement["inventoryItemName"] == item_name for movement in dashboard_after["recentMovements"])
+
+    with app.app_context():
+        org_id = invoice["organizationId"]
+        location_id = invoice["locationId"]
+        all_items = InventoryItem.query.filter_by(organization_id=org_id, location_id=location_id).all()
+        for inventory_item in all_items:
+            ending_ledger_total = sum(
+                float(movement.quantity_delta)
+                for movement in InventoryMovement.query.filter_by(
+                    organization_id=org_id,
+                    location_id=location_id,
+                    inventory_item_id=inventory_item.id,
+                ).all()
+            )
+            starting_quantity = starting_quantities.get(inventory_item.id, 0.0)
+            starting_ledger_total = starting_ledger_totals.get(inventory_item.id, 0.0)
+            expected_quantity = starting_quantity + (ending_ledger_total - starting_ledger_total)
+            assert round(float(inventory_item.current_on_hand), 4) == round(expected_quantity, 4)
+
+    with app.app_context():
+        other_org = Organization(name=f"Other Integration Org {uuid4().hex[:8]}")
+        db.session.add(other_org)
+        db.session.flush()
+        other_location = RestaurantLocation(
+            organization=other_org,
+            name="Other Integration Location",
+            address_line1="200 Integration Ave",
+            address_line2="",
+            city="Toronto",
+            region="ON",
+            postal_code="M5V 2T6",
+            country="Canada",
+            timezone="America/Toronto",
+        )
+        db.session.add(other_location)
+        owner_user = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner_user is not None
+        other_membership = OrganizationMembership(user=owner_user, organization=other_org, role="owner")
+        db.session.add(other_membership)
+        db.session.commit()
+        other_membership_id = other_membership.id
+
+    with client.session_transaction() as session:
+        session["pilot_current_membership_id"] = other_membership_id
+
+    assert client.get(f"/api/pilot/purchases/invoices/{invoice['id']}").status_code == 404
+    assert client.get(f"/api/pilot/inventory/items/{item['id']}").status_code == 404
+    assert client.get(f"/api/pilot/reorder-plans/{reorder_plan['id']}").status_code == 404
 
 
 def test_supplier_management_create_update_and_deactivate(app, client):
