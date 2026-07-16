@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, CalendarDays, ClipboardList, PackageSearch, RefreshCcw, ShoppingCart, TrendingUp } from "lucide-react";
+import { ArrowUpRight, CalendarDays, ChevronRight, ClipboardList, PackageSearch, RefreshCcw, ShoppingCart, TrendingUp } from "lucide-react";
 import { Card } from "../components/Card";
 import { Badge } from "../components/Badge";
 import { SectionHeader } from "../components/SectionHeader";
 import { fetchPilotDashboard, type PilotDashboardResponse } from "./pilotApi";
-import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 const attentionOrder = [
   ["invoiceReviewQueueCount", "Invoices need review", "Review"],
@@ -51,6 +51,51 @@ export function PilotDashboardPage() {
   );
 
   const summary = (data?.summary ?? {}) as Record<string, number>;
+  const pendingPurchaseDrafts = data?.pendingDraftInvoices ?? [];
+  const pendingCountDrafts = data?.pendingDraftCountSessions ?? [];
+  const pendingReorderDrafts = data?.pendingDraftReorderPlans ?? [];
+
+  const draftCards = [
+    {
+      title: "Purchases",
+      items: pendingPurchaseDrafts.slice(0, 3).map((invoice) => ({
+        key: `purchase-${invoice.id}`,
+        title: invoice.invoiceNumber,
+        detail: `${invoice.supplier?.name ?? "Supplier"} · ${formatDate(invoice.invoiceDate)}`,
+        badge: invoice.status,
+        onClick: () => navigate(`/app/purchases?invoiceId=${invoice.id}`),
+      })),
+      empty: "No draft purchases waiting to continue.",
+      fallback: () => navigate("/app/purchases"),
+      fallbackLabel: "Open purchases",
+    },
+    {
+      title: "Stock counts",
+      items: pendingCountDrafts.slice(0, 3).map((session) => ({
+        key: `count-${session.id}`,
+        title: `Count #${session.id}`,
+        detail: `${formatNumber(session.countedLineCount)}/${formatNumber(session.itemCount)} counted · ${formatNumber(session.varianceTotal)} variance`,
+        badge: session.status,
+        onClick: () => navigate(`/app/stock-counts?sessionId=${session.id}`),
+      })),
+      empty: "No draft stock counts waiting to continue.",
+      fallback: () => navigate("/app/stock-counts"),
+      fallbackLabel: "Open stock counts",
+    },
+    {
+      title: "Reorder plans",
+      items: pendingReorderDrafts.slice(0, 3).map((plan) => ({
+        key: `reorder-${plan.id}`,
+        title: plan.name,
+        detail: `${formatNumber(plan.lineCount)} lines · ${formatNumber(plan.supplierCount)} suppliers`,
+        badge: plan.status,
+        onClick: () => navigate(`/app/reorder-plan?planId=${plan.id}`),
+      })),
+      empty: "No draft reorder plans waiting to continue.",
+      fallback: () => navigate("/app/reorder-plan"),
+      fallbackLabel: "Open reorder plan",
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -101,6 +146,38 @@ export function PilotDashboardPage() {
               <p className="mt-3 text-sm font-bold text-ink">{step.label}</p>
               {index < list.length - 1 ? <p className="mt-1 text-xs text-muted">Connects to the next step</p> : <p className="mt-1 text-xs text-muted">Ready for bookkeeping export</p>}
             </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <SectionHeader title="Continue draft work" description="Reopen the exact invoice, count, or reorder draft you last touched." />
+        <div className="grid gap-4 xl:grid-cols-3">
+          {draftCards.map((card) => (
+            <div key={card.title} className="rounded-3xl border border-line bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-ink">{card.title}</p>
+                <button className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 transition hover:text-brand-800" type="button" onClick={card.fallback}>
+                  {card.fallbackLabel}
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                {card.items.length ? (
+                  card.items.map((item) => (
+                    <button key={item.key} className="flex w-full items-start justify-between gap-3 rounded-2xl border border-line bg-white px-3 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-soft" type="button" onClick={item.onClick}>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">{item.title}</p>
+                        <p className="mt-1 text-xs text-muted">{item.detail}</p>
+                      </div>
+                      <Badge tone={statusTone(item.badge)}>{item.badge}</Badge>
+                    </button>
+                  ))
+                ) : (
+                  <p className="rounded-2xl border border-dashed border-line bg-white px-3 py-4 text-sm text-muted">{card.empty}</p>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       </Card>

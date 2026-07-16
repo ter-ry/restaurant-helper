@@ -67,6 +67,35 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
 
 
+def test_pilot_dashboard_lists_live_drafts(client):
+    login(client)
+
+    inventory = client.get("/api/pilot/inventory").get_json()
+    item_id = inventory["items"][0]["id"]
+
+    reorder_plan = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert reorder_plan.status_code == 201
+    reorder_plan_id = reorder_plan.get_json()["id"]
+
+    count_session = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Floor lead",
+            "notes": "Draft count",
+            "itemIds": [item_id],
+        },
+    )
+    assert count_session.status_code == 201
+    count_session_id = count_session.get_json()["id"]
+
+    dashboard = client.get("/api/pilot/dashboard")
+    assert dashboard.status_code == 200
+    body = dashboard.get_json()
+    assert any(plan["id"] == reorder_plan_id for plan in body["pendingDraftReorderPlans"])
+    assert any(session["id"] == count_session_id for session in body["pendingDraftCountSessions"])
+
+
 def test_pilot_mutations_require_auth_csrf_and_active_users(app, client):
     anonymous_dashboard = client.get("/api/pilot/dashboard")
     assert anonymous_dashboard.status_code == 401

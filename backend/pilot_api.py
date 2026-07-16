@@ -250,6 +250,7 @@ def _dashboard_snapshot(location_id: int):
     draft_invoices = [invoice for invoice in invoices if invoice.status == "Draft"]
     movements = InventoryMovement.query.filter_by(location_id=location_id).order_by(InventoryMovement.created_at.desc()).limit(6).all()
     count_sessions = StockCountSession.query.filter_by(location_id=location_id).order_by(StockCountSession.updated_at.desc()).all()
+    reorder_plans = ReorderPlan.query.filter_by(location_id=location_id).order_by(ReorderPlan.updated_at.desc()).all()
     inventory_items = InventoryItem.query.filter_by(location_id=location_id, active=True).all()
     recent_price_changes = _price_changes_for_location(location_id)
     inventory_summary = _inventory_summary(location_id)
@@ -287,6 +288,7 @@ def _dashboard_snapshot(location_id: int):
         "recentPriceChanges": recent_price_changes[:6],
         "pendingDraftInvoices": [serialize_purchase_invoice(invoice) for invoice in draft_invoices[:5]],
         "pendingDraftCountSessions": [serialize_count_session(session_record) for session_record in count_sessions if session_record.status == "Draft"][:5],
+        "pendingDraftReorderPlans": [serialize_reorder_plan(plan) for plan in reorder_plans if plan.status == "Draft"][:5],
         "supplierSpend": top_supplier,
         "reorderSuggestions": top_reorder[:12],
         "workflow": {

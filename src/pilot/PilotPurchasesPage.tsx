@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, FileText, Plus, RefreshCcw, ShoppingBag } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -137,6 +138,7 @@ type MappingHint = {
 };
 
 export function PilotPurchasesPage() {
+  const location = useLocation();
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -146,6 +148,11 @@ export function PilotPurchasesPage() {
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const requestedInvoiceId = useMemo(() => {
+    const value = new URLSearchParams(location.search).get("invoiceId");
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [location.search]);
   const mappingHints = useMemo(() => {
     const hints = new Map<string, MappingHint>();
     for (const line of data?.purchaseLines ?? []) {
@@ -173,12 +180,14 @@ export function PilotPurchasesPage() {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
       setData(purchases);
       setInventoryItems(inventory.items);
-      if (selectedId === null && purchases.invoices[0]) {
-        setSelectedId(purchases.invoices[0].id);
-        setDraft(invoiceToDraft(purchases.invoices[0]));
-      }
-      if (!selectedId && !purchases.invoices.length) {
+      const requestedInvoice = requestedInvoiceId ? purchases.invoices.find((invoice) => invoice.id === requestedInvoiceId) ?? null : null;
+      const currentInvoice = requestedInvoice ?? (selectedId !== null ? purchases.invoices.find((invoice) => invoice.id === selectedId) ?? null : purchases.invoices[0] ?? null);
+      if (currentInvoice) {
+        setSelectedId(currentInvoice.id);
+        setDraft(invoiceToDraft(currentInvoice));
+      } else {
         setDraft(buildBlankDraft(purchases));
+        setSelectedId(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load purchases.");
@@ -190,7 +199,7 @@ export function PilotPurchasesPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestedInvoiceId]);
 
   const selectedInvoice = useMemo(
     () => data?.invoices.find((invoice) => invoice.id === selectedId) ?? null,

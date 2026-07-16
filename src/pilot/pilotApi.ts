@@ -400,6 +400,7 @@ export interface PilotDashboardResponse {
   recentPriceChanges: Array<Record<string, unknown>>;
   pendingDraftInvoices: PilotPurchaseInvoice[];
   pendingDraftCountSessions: PilotCountSession[];
+  pendingDraftReorderPlans: PilotReorderPlan[];
   supplierSpend: Array<Record<string, unknown>>;
   reorderSuggestions: PilotReorderSuggestion[];
   workflow: Record<string, string>;

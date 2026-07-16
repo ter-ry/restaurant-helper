@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Plus, RefreshCcw, Save, Search, Truck } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -22,6 +23,7 @@ import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspac
 type LineDraft = PilotReorderPlanLine;
 
 export function PilotReorderPlanPage() {
+  const location = useLocation();
   const [currentSuggestions, setCurrentSuggestions] = useState<PilotReorderSuggestion[]>([]);
   const [currentGroups, setCurrentGroups] = useState<PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]>([]);
   const [plans, setPlans] = useState<PilotReorderPlan[]>([]);
@@ -33,6 +35,11 @@ export function PilotReorderPlanPage() {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestedPlanId = useMemo(() => {
+    const value = new URLSearchParams(location.search).get("planId");
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [location.search]);
 
   const load = async () => {
     setLoading(true);
@@ -43,7 +50,9 @@ export function PilotReorderPlanPage() {
       setCurrentSuggestions(suggestionsResponse.suggestions);
       setCurrentGroups(suggestionsResponse.groupedBySupplier);
       setPlans(plansResponse.plans);
-      const selected = plansResponse.plans.find((plan) => plan.id === selectedPlanId) ?? plansResponse.plans.find((plan) => plan.id === plansResponse.activeDraftPlanId) ?? plansResponse.plans[0] ?? null;
+      const selected = requestedPlanId
+        ? plansResponse.plans.find((plan) => plan.id === requestedPlanId) ?? null
+        : plansResponse.plans.find((plan) => plan.id === selectedPlanId) ?? plansResponse.plans.find((plan) => plan.id === plansResponse.activeDraftPlanId) ?? plansResponse.plans[0] ?? null;
       if (selected) {
         setSelectedPlanId(selected.id);
         setDraft(selected);
@@ -61,7 +70,7 @@ export function PilotReorderPlanPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestedPlanId]);
 
   const currentUrgentCount = useMemo(() => currentSuggestions.filter((item) => item.stockStatus === "Out of stock" || item.stockStatus === "Reorder now").length, [currentSuggestions]);
   const currentUnknownPriceCount = useMemo(() => currentSuggestions.filter((item) => item.latestPurchasePrice === 0 || item.estimatedCost === null).length, [currentSuggestions]);

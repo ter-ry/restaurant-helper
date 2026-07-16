@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Plus, RefreshCcw, Save, ClipboardList, Search } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -68,6 +69,7 @@ function sessionToDraft(session: PilotCountSession): CountSessionDraft {
 }
 
 export function PilotStockCountsPage() {
+  const location = useLocation();
   const [sessions, setSessions] = useState<PilotCountSession[]>([]);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -80,6 +82,11 @@ export function PilotStockCountsPage() {
   const [selectionSeeded, setSelectionSeeded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestedSessionId = useMemo(() => {
+    const value = new URLSearchParams(location.search).get("sessionId");
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [location.search]);
 
   const load = async () => {
     setLoading(true);
@@ -93,7 +100,11 @@ export function PilotStockCountsPage() {
         setSelectedItemIds(inventory.items.filter((item) => item.active).map((item) => item.id));
         setSelectionSeeded(true);
       }
-      const current = selectedId ? sessionList.countSessions.find((entry) => entry.id === selectedId) : sessionList.countSessions[0];
+      const current = requestedSessionId
+        ? sessionList.countSessions.find((entry) => entry.id === requestedSessionId) ?? null
+        : selectedId
+          ? sessionList.countSessions.find((entry) => entry.id === selectedId) ?? null
+          : sessionList.countSessions[0] ?? null;
       if (current) {
         setSelectedId(current.id);
         setDraft(sessionToDraft(current));
@@ -112,7 +123,7 @@ export function PilotStockCountsPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestedSessionId]);
 
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedId) ?? null, [sessions, selectedId]);
   const draftSessions = useMemo(() => sessions.filter((session) => session.status === "Draft"), [sessions]);
