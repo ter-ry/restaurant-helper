@@ -299,6 +299,8 @@ export interface PilotCountSessionLine {
   resultingQuantity: number | null;
   note: string;
   status: string;
+  movementCountSinceStart: number;
+  hasMovementSinceStart: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -313,6 +315,11 @@ export interface PilotCountSession {
   countedBy: string;
   notes: string;
   itemCount: number;
+  countedLineCount: number;
+  uncountedLineCount: number;
+  varianceTotal: number;
+  movementCountSinceStart: number;
+  hasMovementSinceStart: boolean;
   createdByUserId: number | null;
   finalizedByUserId: number | null;
   lines: PilotCountSessionLine[];
@@ -517,9 +524,13 @@ export async function updatePilotCountSession(sessionId: number, payload: Record
   });
 }
 
-export async function finalizePilotCountSession(sessionId: number) {
+export async function finalizePilotCountSession(sessionId: number, payload: Record<string, unknown> = {}) {
   return requestCsrfJson<PilotCountSession>(`/api/pilot/inventory/count-sessions/${sessionId}/finalize`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
   });
 }
 
