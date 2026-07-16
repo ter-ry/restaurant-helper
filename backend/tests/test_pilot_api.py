@@ -219,6 +219,37 @@ def test_count_session_finalize_updates_inventory(app, client):
         assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
 
 
+def test_manual_inventory_adjustment_records_movement_and_updates_quantity(app, client):
+    login(client)
+
+    with app.app_context():
+        cups = InventoryItem.query.filter_by(name="Cups").first()
+        assert cups is not None
+        before = float(cups.current_on_hand)
+
+    response = client.post(
+        f"/api/pilot/inventory/items/{cups.id}/adjustments",
+        headers=csrf_headers(client),
+        json={
+            "reason": "Broken cup stock take",
+            "quantityDelta": 3,
+            "movementType": "manual increase",
+            "sourceRecordId": "manual-test",
+            "sourceLineId": "manual-test-line",
+            "note": "Test adjustment",
+        },
+    )
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["quantityDelta"] == 3
+
+    with app.app_context():
+        cups_after = InventoryItem.query.filter_by(name="Cups").first()
+        assert cups_after is not None
+        assert float(cups_after.current_on_hand) == before + 3
+        assert InventoryMovement.query.filter_by(source_record_id="manual-test", source_line_id="manual-test-line").count() == 1
+
+
 def test_reorder_plan_mark_ordered(app, client):
     login(client)
 
