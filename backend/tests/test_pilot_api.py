@@ -751,6 +751,48 @@ def test_reorder_plan_draft_lifecycle_preserves_snapshots(app, client):
     assert any(entry["id"] == original_plan_id and entry["status"] == "Completed" for entry in plans)
 
 
+def test_reorder_plan_isolated_by_membership(app, client):
+    login(client)
+
+    create_response = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert create_response.status_code == 201
+    original_plan_id = create_response.get_json()["id"]
+
+    with app.app_context():
+        other_org = Organization(name=f"Other Reorder Org {uuid4().hex[:8]}")
+        db.session.add(other_org)
+        db.session.flush()
+        other_location = RestaurantLocation(
+            organization=other_org,
+            name="Other Reorder Location",
+            address_line1="200 Test Ave",
+            address_line2="",
+            city="Toronto",
+            region="ON",
+            postal_code="M5V 2T6",
+            country="Canada",
+            timezone="America/Toronto",
+        )
+        db.session.add(other_location)
+        owner_user = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner_user is not None
+        other_membership = OrganizationMembership(user=owner_user, organization=other_org, role="owner")
+        db.session.add(other_membership)
+        db.session.commit()
+        other_membership_id = other_membership.id
+
+    with client.session_transaction() as session:
+        session["pilot_current_membership_id"] = other_membership_id
+
+    isolated_list = client.get("/api/pilot/reorder-plans")
+    assert isolated_list.status_code == 200
+    isolated_plans = isolated_list.get_json()["plans"]
+    assert all(plan["id"] != original_plan_id for plan in isolated_plans)
+
+    isolated_detail = client.get(f"/api/pilot/reorder-plans/{original_plan_id}")
+    assert isolated_detail.status_code == 404
+
+
 def test_supplier_management_create_update_and_deactivate(app, client):
     login(client)
 
