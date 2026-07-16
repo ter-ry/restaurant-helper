@@ -6,6 +6,8 @@ from decimal import Decimal, InvalidOperation
 import re
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
@@ -1104,9 +1106,23 @@ def create_count_session():
     item_ids = payload.get("itemIds")
     if not isinstance(item_ids, list) or not item_ids:
         item_ids = [item.id for item in _build_count_session_for_location(location, organization.id)]
-    candidate_items = InventoryItem.query.filter(InventoryItem.id.in_([int(item_id) for item_id in item_ids]), InventoryItem.organization_id == organization.id, InventoryItem.location_id == location.id).order_by(InventoryItem.name.asc()).all()
+    requested_ids = [int(item_id) for item_id in item_ids]
+    candidate_items = (
+        InventoryItem.query.filter(
+            InventoryItem.id.in_(requested_ids),
+            InventoryItem.organization_id == organization.id,
+            InventoryItem.location_id == location.id,
+            InventoryItem.active.is_(True),
+        )
+        .order_by(InventoryItem.name.asc())
+        .all()
+    )
     if not candidate_items:
         return json_error("No inventory items available for this count session.", 400)
+    candidate_ids = {item.id for item in candidate_items}
+    missing_ids = [item_id for item_id in requested_ids if item_id not in candidate_ids]
+    if missing_ids:
+        return json_error("Validation failed.", 400, errors={"itemIds": "Some requested inventory items are unavailable or inactive."})
     session_record = StockCountSession(
         organization_id=organization.id,
         location_id=location.id,
@@ -1168,6 +1184,11 @@ def update_count_session(session_id: int):
     if session_record.status == "Completed":
         return json_error("Completed stock counts are read-only.", 409)
     payload = _json_body()
+    if "updatedAt" in payload and payload.get("updatedAt") and session_record.updated_at is not None:
+        expected_updated_at = str(payload.get("updatedAt") or "").strip()
+        current_updated_at = session_record.updated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        if expected_updated_at not in {current_updated_at, session_record.updated_at.isoformat()}:
+            return json_error("This stock count has changed since it was opened.", 409, errors={"updatedAt": "Reload the count before saving again."})
     if "countedBy" in payload:
         session_record.counted_by = str(payload.get("countedBy") or "").strip()
     if "notes" in payload:
@@ -1259,6 +1280,12 @@ def finalize_count_session(session_id: int):
         session_record.updated_at = now
         session_record.finalized_by_user_id = current_user.id
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        refreshed = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
+        if refreshed is not None and refreshed.status == "Completed":
+            return json_error("This stock count has already been finalized.", 409)
+        return json_error("Could not finalize the stock count.", 500)
     except RequestValidationError as exc:
         db.session.rollback()
         return json_error(exc.message, 400, errors=exc.errors)

@@ -122,6 +122,9 @@ def test_pilot_mutations_require_auth_csrf_and_active_users(app, client):
         manager.is_active = False
         db.session.commit()
 
+    stale_session_dashboard = client.get("/api/pilot/dashboard")
+    assert stale_session_dashboard.status_code == 401
+
     fresh_client = app.test_client()
     csrf = fresh_client.get("/api/auth/csrf").get_json()["csrfToken"]
     inactive_login = fresh_client.post(
@@ -270,6 +273,7 @@ def test_count_session_finalize_updates_inventory(app, client):
     )
     assert create_response.status_code == 201
     session_id = create_response.get_json()["id"]
+    stale_updated_at = create_response.get_json()["updatedAt"]
 
     update_response = client.patch(
         f"/api/pilot/inventory/count-sessions/{session_id}",
@@ -278,7 +282,7 @@ def test_count_session_finalize_updates_inventory(app, client):
             "countedBy": "Manager on duty",
             "notes": "Evening count",
             "lines": [
-                {"id": create_response.get_json()["lines"][0]["id"], "countedQuantity": 4.0, "note": "Counted on shelf"},
+                {"id": create_response.get_json()["lines"][0]["id"], "countedQuantity": 0.0, "note": "Counted on shelf"},
                 {"id": create_response.get_json()["lines"][1]["id"], "countedQuantity": 31.0, "note": "Good"},
             ],
         },
@@ -289,13 +293,64 @@ def test_count_session_finalize_updates_inventory(app, client):
     assert finalize.status_code == 200
     assert finalize.get_json()["status"] == "Completed"
 
+    duplicate_finalize = client.post(f"/api/pilot/inventory/count-sessions/{session_id}/finalize", headers=csrf_headers(client))
+    assert duplicate_finalize.status_code == 409
+
+    update_after_finalize = client.patch(
+        f"/api/pilot/inventory/count-sessions/{session_id}",
+        headers=csrf_headers(client),
+        json={
+            "notes": "Should not change",
+            "lines": [
+                {"id": create_response.get_json()["lines"][0]["id"], "countedQuantity": 2.0, "note": "Nope"},
+            ],
+        },
+    )
+    assert update_after_finalize.status_code == 409
+
     with app.app_context():
         chicken_item = InventoryItem.query.filter_by(name="Chicken Breast").first()
         cups_item = InventoryItem.query.filter_by(name="Cups").first()
         assert chicken_item is not None and cups_item is not None
-        assert float(chicken_item.current_on_hand) == 4.0
+        assert float(chicken_item.current_on_hand) == 0.0
         assert float(cups_item.current_on_hand) == 31.0
         assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
+
+
+def test_count_session_creation_rejects_unknown_or_inactive_items(app, client):
+    login(client)
+
+    create_response = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Closer",
+            "notes": "Bad selection",
+            "itemIds": [999999],
+        },
+    )
+    assert create_response.status_code == 400
+
+    inventory = client.get("/api/pilot/inventory").get_json()
+    item = inventory["items"][0]
+
+    deactivate = client.patch(
+        f"/api/pilot/inventory/items/{item['id']}",
+        headers=csrf_headers(client),
+        json={"active": False},
+    )
+    assert deactivate.status_code == 200
+
+    inactive_response = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Closer",
+            "notes": "Inactive selection",
+            "itemIds": [item["id"]],
+        },
+    )
+    assert inactive_response.status_code == 400
 
 
 def test_count_session_save_resume_and_concurrency_confirmation(app, client):
@@ -317,6 +372,7 @@ def test_count_session_save_resume_and_concurrency_confirmation(app, client):
     )
     assert create_response.status_code == 201
     session_id = create_response.get_json()["id"]
+    stale_updated_at = create_response.get_json()["updatedAt"]
 
     update_response = client.patch(
         f"/api/pilot/inventory/count-sessions/{session_id}",
@@ -338,6 +394,24 @@ def test_count_session_save_resume_and_concurrency_confirmation(app, client):
     assert saved["countedLineCount"] == 1
     assert saved["uncountedLineCount"] == 0
     assert saved["movementCountSinceStart"] == 0
+
+    stale_save = client.patch(
+        f"/api/pilot/inventory/count-sessions/{session_id}",
+        headers=csrf_headers(client),
+        json={
+            "updatedAt": stale_updated_at,
+            "countedBy": "Closer",
+            "notes": "Draft count",
+            "lines": [
+                {
+                    "id": create_response.get_json()["lines"][0]["id"],
+                    "countedQuantity": original,
+                    "note": "Stale retry",
+                }
+            ],
+        },
+    )
+    assert stale_save.status_code == 409
 
     resumed = client.get(f"/api/pilot/inventory/count-sessions/{session_id}")
     assert resumed.status_code == 200

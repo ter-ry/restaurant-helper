@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, session
 from flask_wtf.csrf import CSRFError
+from flask_login import logout_user
 
 from .auth import bp as auth_bp
 from .config import choose_config
@@ -33,11 +34,28 @@ def create_app(test_config: dict | None = None) -> Flask:
     def load_user(user_id: str) -> User | None:
         if not user_id:
             return None
-        return User.query.filter_by(id=int(user_id)).first()
+        user = User.query.filter_by(id=int(user_id)).first()
+        if user is None or not user.is_active:
+            return None
+        return user
 
     @login_manager.unauthorized_handler
     def unauthorized() -> tuple[object, int]:
         return json_error("Authentication required.", 401)
+
+    @app.before_request
+    def reject_inactive_sessions():
+        user_id = session.get("_user_id")
+        if not user_id:
+            return
+        try:
+            db.session.expire_all()
+            user = User.query.filter_by(id=int(user_id)).first()
+        except (TypeError, ValueError):
+            user = None
+        if user is None or not user.is_active:
+            logout_user()
+            return json_error("Authentication required.", 401)
 
     @app.after_request
     def add_cors_headers(response: Response) -> Response:
