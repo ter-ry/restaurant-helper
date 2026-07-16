@@ -81,8 +81,10 @@ export function PilotStockCountsPage() {
   const [creating, setCreating] = useState(false);
   const [confirmConcurrency, setConfirmConcurrency] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
+  const [lineSearch, setLineSearch] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [selectionSeeded, setSelectionSeeded] = useState(false);
+  const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestedSessionId = useMemo(() => {
@@ -111,9 +113,11 @@ export function PilotStockCountsPage() {
       if (current) {
         setSelectedId(current.id);
         setDraft(sessionToDraft(current));
+        setSavedDraftSignature(JSON.stringify(sessionToDraft(current)));
         setConfirmConcurrency(false);
       } else {
         setDraft(null);
+        setSavedDraftSignature(null);
         setConfirmConcurrency(false);
       }
     } catch (err) {
@@ -135,6 +139,13 @@ export function PilotStockCountsPage() {
     () => inventoryItems.filter((item) => `${item.name} ${item.category} ${item.preferredSupplierName}`.toLowerCase().includes(itemSearch.toLowerCase())),
     [inventoryItems, itemSearch],
   );
+  const filteredLines = useMemo(
+    () =>
+      draft?.lines.filter((line) =>
+        `${line.itemNameSnapshot} ${line.stockUnitSnapshot} ${line.status} ${line.note}`.toLowerCase().includes(lineSearch.toLowerCase()),
+      ) ?? [],
+    [draft?.lines, lineSearch],
+  );
   const conflictLines = useMemo(() => draft?.lines.filter((line) => line.hasMovementSinceStart) ?? [], [draft?.lines]);
 
   useEffect(() => {
@@ -149,6 +160,23 @@ export function PilotStockCountsPage() {
       setConfirmConcurrency(false);
     }
   }, [draft?.status]);
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!draft || draft.status === "Completed") {
+        return;
+      }
+      const currentSignature = JSON.stringify(draft);
+      if (savedDraftSignature !== null && currentSignature !== savedDraftSignature) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [draft, savedDraftSignature]);
+
+  const hasUnsavedChanges = useMemo(() => draft !== null && draft.status !== "Completed" && JSON.stringify(draft) !== savedDraftSignature, [draft, savedDraftSignature]);
 
   const selectedItemCount = selectedItemIds.length;
   const activeItemCount = inventoryItems.filter((item) => item.active).length;
@@ -170,6 +198,7 @@ export function PilotStockCountsPage() {
       });
       setSelectedId(created.id);
       setDraft(sessionToDraft(created));
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(created)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${created.id} started.`);
       await load();
@@ -201,6 +230,7 @@ export function PilotStockCountsPage() {
         })),
       });
       setDraft(sessionToDraft(saved));
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
       setMessage(`Stock count ${saved.id} saved.`);
       await load();
       setSelectedId(saved.id);
@@ -226,6 +256,7 @@ export function PilotStockCountsPage() {
     try {
       const finalized = await finalizePilotCountSession(draft.id, { confirmConcurrency });
       setDraft(sessionToDraft(finalized));
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
       await load();
@@ -283,6 +314,7 @@ export function PilotStockCountsPage() {
             </div>
           ))}
         </div>
+        {hasUnsavedChanges ? <p className="mt-3 text-sm text-amber-700">You have unsaved count changes.</p> : null}
       </Card>
 
       <Card className="p-6">
@@ -434,8 +466,15 @@ export function PilotStockCountsPage() {
 
               <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
                 <p className="text-sm font-semibold text-ink">Count lines</p>
+                <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-muted" />
+                    <input className="w-full bg-transparent text-sm outline-none" placeholder="Search count lines" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
                 <div className="mt-4 space-y-3">
-                  {draft.lines.map((line) => (
+                  {filteredLines.map((line) => (
                     <div key={line.id} className="rounded-2xl border border-line bg-white p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="min-w-0">
@@ -469,6 +508,7 @@ export function PilotStockCountsPage() {
                       </div>
                     </div>
                   ))}
+                  {!filteredLines.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No count lines match this search.</p> : null}
                 </div>
               </div>
 
