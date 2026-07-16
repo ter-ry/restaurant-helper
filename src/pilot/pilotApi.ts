@@ -346,6 +346,53 @@ export interface PilotReorderSuggestion {
   daysRemaining: number | null;
 }
 
+export interface PilotReorderPlanLine {
+  id: number;
+  planId: number;
+  inventoryItemId: number;
+  supplierId: number | null;
+  lineIndex: number;
+  inventoryItemName: string;
+  supplierName: string;
+  category: string;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+  currentOnHand: number;
+  minimumQuantity: number;
+  parLevel: number;
+  suggestedQuantity: number;
+  orderQuantity: number;
+  excluded: boolean;
+  estimatedUnitCost: number | null;
+  estimatedLineCost: number | null;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotReorderPlan {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  name: string;
+  status: string;
+  notes: string;
+  createdByUserId: number | null;
+  preparedByUserId: number | null;
+  completedByUserId: number | null;
+  preparedAt: string | null;
+  completedAt: string | null;
+  lineCount: number;
+  supplierCount: number;
+  estimatedCost: number;
+  includedCost: number;
+  excludedCount: number;
+  lines: PilotReorderPlanLine[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface PilotDashboardResponse {
   summary: Record<string, number>;
   recentInvoices: PilotPurchaseInvoice[];
@@ -387,6 +434,11 @@ export interface PilotInventoryResponse {
     }>;
   };
   summary: Record<string, number>;
+}
+
+export interface PilotReorderPlansResponse {
+  plans: PilotReorderPlan[];
+  activeDraftPlanId: number | null;
 }
 
 async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -540,6 +592,42 @@ export async function fetchPilotReorderPlan() {
 
 export async function markPilotReorderOrdered(itemId: number) {
   return requestCsrfJson<Record<string, unknown>>(`/api/pilot/reorder-plan/${itemId}/ordered`, {
+    method: "POST",
+  });
+}
+
+export async function fetchPilotReorderPlans() {
+  return requestJson<PilotReorderPlansResponse>("/api/pilot/reorder-plans");
+}
+
+export async function createPilotReorderPlan() {
+  return requestCsrfJson<PilotReorderPlan>("/api/pilot/reorder-plans", {
+    method: "POST",
+  });
+}
+
+export async function fetchPilotReorderPlanDetail(planId: number) {
+  return requestJson<PilotReorderPlan>(`/api/pilot/reorder-plans/${planId}`);
+}
+
+export async function updatePilotReorderPlan(planId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotReorderPlan>(`/api/pilot/reorder-plans/${planId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function preparePilotReorderPlan(planId: number) {
+  return requestCsrfJson<PilotReorderPlan>(`/api/pilot/reorder-plans/${planId}/prepare`, {
+    method: "POST",
+  });
+}
+
+export async function completePilotReorderPlan(planId: number) {
+  return requestCsrfJson<PilotReorderPlan>(`/api/pilot/reorder-plans/${planId}/complete`, {
     method: "POST",
   });
 }

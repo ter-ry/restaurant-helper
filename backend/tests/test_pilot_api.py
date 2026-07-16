@@ -418,6 +418,68 @@ def test_reorder_plan_mark_ordered(app, client):
         assert ReorderIntent.query.filter_by(inventory_item_id=item_id, status="Ordered").count() == 1
 
 
+def test_reorder_plan_draft_lifecycle_preserves_snapshots(app, client):
+    login(client)
+
+    create_response = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert create_response.status_code == 201
+    plan = create_response.get_json()
+    assert plan["status"] == "Draft"
+    assert plan["lines"]
+    original_plan_id = plan["id"]
+    first_line = plan["lines"][0]
+    original_unit_cost = first_line["estimatedUnitCost"]
+
+    update_response = client.patch(
+        f"/api/pilot/reorder-plans/{original_plan_id}",
+        headers=csrf_headers(client),
+        json={
+            "name": "Weekly reorder",
+            "notes": "Draft reorder plan",
+            "lines": [
+                {
+                    "id": first_line["id"],
+                    "orderQuantity": first_line["orderQuantity"] + 2,
+                    "notes": "Add buffer",
+                    "excluded": False,
+                }
+            ],
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.get_json()
+    assert updated["name"] == "Weekly reorder"
+    assert updated["notes"] == "Draft reorder plan"
+    assert updated["lines"][0]["orderQuantity"] == first_line["orderQuantity"] + 2
+
+    with app.app_context():
+        item = InventoryItem.query.filter_by(id=first_line["inventoryItemId"]).first()
+        assert item is not None
+        item.latest_purchase_price = item.latest_purchase_price + 10
+        db.session.commit()
+
+    reopened = client.get(f"/api/pilot/reorder-plans/{original_plan_id}")
+    assert reopened.status_code == 200
+    reopened_plan = reopened.get_json()
+    assert reopened_plan["lines"][0]["estimatedUnitCost"] == original_unit_cost
+
+    prepared = client.post(f"/api/pilot/reorder-plans/{original_plan_id}/prepare", headers=csrf_headers(client))
+    assert prepared.status_code == 200
+    assert prepared.get_json()["status"] == "Prepared"
+
+    completed = client.post(f"/api/pilot/reorder-plans/{original_plan_id}/complete", headers=csrf_headers(client))
+    assert completed.status_code == 200
+    assert completed.get_json()["status"] == "Completed"
+
+    duplicate = client.post(f"/api/pilot/reorder-plans/{original_plan_id}/complete", headers=csrf_headers(client))
+    assert duplicate.status_code == 409
+
+    list_response = client.get("/api/pilot/reorder-plans")
+    assert list_response.status_code == 200
+    plans = list_response.get_json()["plans"]
+    assert any(entry["id"] == original_plan_id and entry["status"] == "Completed" for entry in plans)
+
+
 def test_supplier_management_create_update_and_deactivate(app, client):
     login(client)
 

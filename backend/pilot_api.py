@@ -16,6 +16,8 @@ from .models import (
     OrganizationMembership,
     PurchaseInvoice,
     PurchaseInvoiceLine,
+    ReorderPlan,
+    ReorderPlanLine,
     ReorderIntent,
     RestaurantLocation,
     StockCountSession,
@@ -35,6 +37,8 @@ from .utils import (
     serialize_location,
     serialize_purchase_invoice,
     serialize_purchase_invoice_line,
+    serialize_reorder_plan,
+    serialize_reorder_plan_line,
     serialize_reorder_intent,
     serialize_supplier,
 )
@@ -1323,3 +1327,205 @@ def reorder_plan():
     suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
     groups = _group_reorder_by_supplier(suggestions)
     return jsonify({"suggestions": suggestions, "groupedBySupplier": groups}), 200
+
+
+def _current_reorder_suggestions_for_location(organization_id: int, location_id: int) -> list[dict[str, Any]]:
+    items = InventoryItem.query.filter_by(organization_id=organization_id, location_id=location_id, active=True).order_by(InventoryItem.name.asc()).all()
+    intents = ReorderIntent.query.filter_by(organization_id=organization_id, location_id=location_id).all()
+    intent_by_item = {intent.inventory_item_id: intent for intent in intents}
+    suggestions = []
+    for item in items:
+        suggestion = _reorder_suggestion_for_item(item)
+        if suggestion is None:
+            continue
+        intent = intent_by_item.get(item.id)
+        if intent is not None:
+            suggestion["status"] = intent.status
+            suggestion["adjustedQuantity"] = float(intent.adjusted_quantity)
+            suggestion["estimatedCost"] = decimal_to_float(intent.estimated_cost)
+        suggestions.append(suggestion)
+    suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
+    return suggestions
+
+
+def _current_reorder_groups_for_location(organization_id: int, location_id: int):
+    suggestions = _current_reorder_suggestions_for_location(organization_id, location_id)
+    return suggestions, _group_reorder_by_supplier(suggestions)
+
+
+def _create_reorder_plan_from_current(organization_id: int, location_id: int, *, user_id: int) -> ReorderPlan:
+    existing_draft = ReorderPlan.query.filter_by(organization_id=organization_id, location_id=location_id, status="Draft").order_by(ReorderPlan.updated_at.desc()).first()
+    if existing_draft is not None:
+        return existing_draft
+
+    suggestions = _current_reorder_suggestions_for_location(organization_id, location_id)
+    plan = ReorderPlan(
+        organization_id=organization_id,
+        location_id=location_id,
+        name=f"Reorder plan { _now().date().isoformat() }",
+        status="Draft",
+        notes="",
+        created_by_user_id=user_id,
+    )
+    db.session.add(plan)
+    db.session.flush()
+    lines = []
+    for index, suggestion in enumerate(suggestions):
+        item = InventoryItem.query.filter_by(id=suggestion["inventoryItemId"], organization_id=organization_id, location_id=location_id).first()
+        if item is None:
+            continue
+        lines.append(
+            ReorderPlanLine(
+                plan_id=plan.id,
+                inventory_item_id=item.id,
+                supplier_id=item.supplier_id,
+                line_index=index,
+                inventory_item_name_snapshot=item.name,
+                supplier_name_snapshot=suggestion["supplier"] or item.preferred_supplier_name or (item.supplier.name if item.supplier else ""),
+                category_snapshot=item.category,
+                purchase_unit_snapshot=item.last_purchase_unit or item.stock_unit or "each",
+                inventory_unit_snapshot=item.stock_unit or "each",
+                conversion_factor_snapshot=item.last_purchase_conversion_factor or Decimal("1"),
+                current_on_hand_snapshot=item.current_on_hand,
+                minimum_quantity_snapshot=item.min_quantity,
+                par_level_snapshot=item.par_level,
+                suggested_quantity_snapshot=Decimal(str(suggestion["suggestedQuantity"])),
+                order_quantity=Decimal(str(suggestion["adjustedQuantity"] or suggestion["suggestedQuantity"])),
+                excluded=False,
+                estimated_unit_cost_snapshot=Decimal(str(suggestion["latestPurchasePrice"])) if suggestion.get("latestPurchasePrice") is not None else None,
+                estimated_line_cost_snapshot=Decimal(str(suggestion["estimatedCost"])) if suggestion.get("estimatedCost") is not None else None,
+                notes="",
+            )
+        )
+    db.session.add_all(lines)
+    db.session.flush()
+    return plan
+
+
+def _reorder_plan_queryset(organization_id: int, location_id: int):
+    return ReorderPlan.query.filter_by(organization_id=organization_id, location_id=location_id).order_by(ReorderPlan.created_at.desc(), ReorderPlan.updated_at.desc())
+
+
+def _reorder_plan_line_estimated_cost(line: ReorderPlanLine) -> Decimal | None:
+    if line.excluded or line.estimated_unit_cost_snapshot is None:
+        return None
+    conversion_factor = Decimal(line.conversion_factor_snapshot or 1)
+    if conversion_factor <= 0:
+        return None
+    quantity = Decimal(line.order_quantity or 0)
+    return (quantity / conversion_factor * Decimal(line.estimated_unit_cost_snapshot)).quantize(MONEY)
+
+
+@bp.get("/api/pilot/reorder-plans")
+@login_required
+def list_reorder_plans():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    plans = _reorder_plan_queryset(organization.id, location.id).all()
+    active_draft = next((plan for plan in plans if plan.status == "Draft"), None)
+    return jsonify({"plans": [serialize_reorder_plan(plan) for plan in plans], "activeDraftPlanId": active_draft.id if active_draft else None}), 200
+
+
+@bp.post("/api/pilot/reorder-plans")
+@login_required
+def create_or_open_reorder_plan():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    existing_draft = ReorderPlan.query.filter_by(organization_id=organization.id, location_id=location.id, status="Draft").order_by(ReorderPlan.updated_at.desc()).first()
+    plan = _create_reorder_plan_from_current(organization.id, location.id, user_id=current_user.id)
+    db.session.commit()
+    return jsonify(serialize_reorder_plan(plan)), 200 if existing_draft is not None else 201
+
+
+@bp.get("/api/pilot/reorder-plans/<int:plan_id>")
+@login_required
+def get_reorder_plan(plan_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
+    if plan is None:
+        return json_error("Reorder plan not found.", 404)
+    return jsonify(serialize_reorder_plan(plan)), 200
+
+
+@bp.patch("/api/pilot/reorder-plans/<int:plan_id>")
+@login_required
+def update_reorder_plan(plan_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
+    if plan is None:
+        return json_error("Reorder plan not found.", 404)
+    if plan.status == "Completed":
+        return json_error("Completed reorder plans are read-only.", 409)
+    payload = _json_body()
+    if "name" in payload:
+        plan.name = str(payload.get("name") or "").strip() or plan.name
+    if "notes" in payload:
+        plan.notes = str(payload.get("notes") or "").strip()
+    if "lines" in payload and isinstance(payload.get("lines"), list):
+        lines_by_id = {line.id: line for line in plan.lines}
+        for index, line_payload in enumerate(payload.get("lines")):
+            line = lines_by_id.get(int(line_payload.get("id"))) if line_payload.get("id") else None
+            if line is None:
+                continue
+            if "orderQuantity" in line_payload:
+                line.order_quantity = _to_quantity(line_payload.get("orderQuantity"), field=f"lines[{index}].orderQuantity", required=False)
+            if "excluded" in line_payload:
+                line.excluded = bool(line_payload.get("excluded"))
+            if "notes" in line_payload:
+                line.notes = str(line_payload.get("notes") or "").strip()
+            if "supplierNameSnapshot" in line_payload and line_payload.get("supplierNameSnapshot") is not None:
+                line.supplier_name_snapshot = str(line_payload.get("supplierNameSnapshot") or "").strip()
+            line.estimated_line_cost_snapshot = _reorder_plan_line_estimated_cost(line)
+    plan.updated_at = _now()
+    db.session.commit()
+    return jsonify(serialize_reorder_plan(plan)), 200
+
+
+@bp.post("/api/pilot/reorder-plans/<int:plan_id>/prepare")
+@login_required
+def prepare_reorder_plan(plan_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
+    if plan is None:
+        return json_error("Reorder plan not found.", 404)
+    if plan.status == "Completed":
+        return json_error("Completed reorder plans are read-only.", 409)
+    plan.status = "Prepared"
+    plan.prepared_at = _now()
+    plan.prepared_by_user_id = current_user.id
+    plan.updated_at = _now()
+    db.session.commit()
+    return jsonify(serialize_reorder_plan(plan)), 200
+
+
+@bp.post("/api/pilot/reorder-plans/<int:plan_id>/complete")
+@login_required
+def complete_reorder_plan(plan_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
+    if plan is None:
+        return json_error("Reorder plan not found.", 404)
+    if plan.status == "Completed":
+        return json_error("This reorder plan has already been completed.", 409)
+    plan.status = "Completed"
+    plan.completed_at = _now()
+    plan.completed_by_user_id = current_user.id
+    plan.updated_at = _now()
+    db.session.commit()
+    return jsonify(serialize_reorder_plan(plan)), 200

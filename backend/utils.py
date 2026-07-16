@@ -15,6 +15,8 @@ from .models import (
     OrganizationMembership,
     PurchaseInvoice,
     PurchaseInvoiceLine,
+    ReorderPlan,
+    ReorderPlanLine,
     ReorderIntent,
     RestaurantLocation,
     StockCountSession,
@@ -313,6 +315,58 @@ def serialize_reorder_intent(intent: ReorderIntent) -> dict[str, Any]:
         "actorUserId": intent.actor_user_id,
         "createdAt": isoformat(intent.created_at),
         "updatedAt": isoformat(intent.updated_at),
+    }
+
+
+def serialize_reorder_plan_line(line: ReorderPlanLine) -> dict[str, Any]:
+    return {
+        "id": line.id,
+        "planId": line.plan_id,
+        "inventoryItemId": line.inventory_item_id,
+        "supplierId": line.supplier_id,
+        "lineIndex": line.line_index,
+        "inventoryItemName": line.inventory_item_name_snapshot,
+        "supplierName": line.supplier_name_snapshot,
+        "category": line.category_snapshot,
+        "purchaseUnit": line.purchase_unit_snapshot,
+        "inventoryUnit": line.inventory_unit_snapshot,
+        "conversionFactor": decimal_to_float(line.conversion_factor_snapshot) or 1,
+        "currentOnHand": decimal_to_float(line.current_on_hand_snapshot) or 0,
+        "minimumQuantity": decimal_to_float(line.minimum_quantity_snapshot) or 0,
+        "parLevel": decimal_to_float(line.par_level_snapshot) or 0,
+        "suggestedQuantity": decimal_to_float(line.suggested_quantity_snapshot) or 0,
+        "orderQuantity": decimal_to_float(line.order_quantity) or 0,
+        "excluded": bool(line.excluded),
+        "estimatedUnitCost": decimal_to_float(line.estimated_unit_cost_snapshot),
+        "estimatedLineCost": decimal_to_float(line.estimated_line_cost_snapshot),
+        "notes": line.notes,
+        "createdAt": isoformat(line.created_at),
+        "updatedAt": isoformat(line.updated_at),
+    }
+
+
+def serialize_reorder_plan(plan: ReorderPlan) -> dict[str, Any]:
+    lines = [serialize_reorder_plan_line(line) for line in plan.lines]
+    return {
+        "id": plan.id,
+        "organizationId": plan.organization_id,
+        "locationId": plan.location_id,
+        "name": plan.name,
+        "status": plan.status,
+        "notes": plan.notes,
+        "createdByUserId": plan.created_by_user_id,
+        "preparedByUserId": plan.prepared_by_user_id,
+        "completedByUserId": plan.completed_by_user_id,
+        "preparedAt": isoformat(plan.prepared_at),
+        "completedAt": isoformat(plan.completed_at),
+        "lineCount": len(lines),
+        "supplierCount": len({line["supplierName"] or "Unassigned" for line in lines}),
+        "estimatedCost": round(sum((line["estimatedLineCost"] or 0) for line in lines if not line["excluded"]), 2),
+        "includedCost": round(sum((line["estimatedLineCost"] or 0) for line in lines if not line["excluded"]), 2),
+        "excludedCount": sum(1 for line in lines if line["excluded"]),
+        "lines": lines,
+        "createdAt": isoformat(plan.created_at),
+        "updatedAt": isoformat(plan.updated_at),
     }
 
 

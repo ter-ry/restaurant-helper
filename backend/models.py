@@ -292,6 +292,58 @@ class StockCountSessionLine(TimestampMixin, db.Model):
     inventory_item = db.relationship("InventoryItem")
 
 
+class ReorderPlan(TimestampMixin, db.Model):
+    __tablename__ = "reorder_plans"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False, default="Current reorder plan")
+    status = db.Column(db.String(30), nullable=False, default="Draft")
+    notes = db.Column(db.Text, nullable=False, default="")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    prepared_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    completed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    prepared_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    lines = db.relationship("ReorderPlanLine", back_populates="plan", cascade="all, delete-orphan", order_by="ReorderPlanLine.line_index.asc()")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    prepared_by = db.relationship("User", foreign_keys=[prepared_by_user_id])
+    completed_by = db.relationship("User", foreign_keys=[completed_by_user_id])
+
+
+class ReorderPlanLine(TimestampMixin, db.Model):
+    __tablename__ = "reorder_plan_lines"
+
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey("reorder_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    supplier_id = db.Column(db.Integer, db.ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True, index=True)
+    line_index = db.Column(db.Integer, nullable=False, default=0)
+    inventory_item_name_snapshot = db.Column(db.String(255), nullable=False)
+    supplier_name_snapshot = db.Column(db.String(255), nullable=False, default="")
+    category_snapshot = db.Column(db.String(120), nullable=False, default="Other")
+    purchase_unit_snapshot = db.Column(db.String(60), nullable=False, default="each")
+    inventory_unit_snapshot = db.Column(db.String(60), nullable=False, default="each")
+    conversion_factor_snapshot = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("1"))
+    current_on_hand_snapshot = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    minimum_quantity_snapshot = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    par_level_snapshot = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    suggested_quantity_snapshot = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    order_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    excluded = db.Column(db.Boolean, nullable=False, default=False)
+    estimated_unit_cost_snapshot = db.Column(db.Numeric(12, 2), nullable=True)
+    estimated_line_cost_snapshot = db.Column(db.Numeric(12, 2), nullable=True)
+    notes = db.Column(db.Text, nullable=False, default="")
+
+    plan = db.relationship("ReorderPlan", back_populates="lines")
+    inventory_item = db.relationship("InventoryItem")
+    supplier = db.relationship("Supplier")
+
+
 class ReorderIntent(TimestampMixin, db.Model):
     __tablename__ = "reorder_intents"
     __table_args__ = (UniqueConstraint("organization_id", "location_id", "inventory_item_id", name="uq_reorder_intent_item_location"),)
