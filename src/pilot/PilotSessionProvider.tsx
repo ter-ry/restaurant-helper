@@ -15,7 +15,7 @@ import {
 } from "./pilotApi";
 import { pilotAppEnabled } from "./pilotConfig";
 
-type SessionStatus = "disabled" | "loading" | "signedOut" | "signedIn";
+type SessionStatus = "disabled" | "loading" | "signedOut" | "needsSelection" | "signedIn";
 
 interface PilotSessionValue {
   status: SessionStatus;
@@ -101,7 +101,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
       setCsrfToken(current.csrfToken);
-      setStatus("signedIn");
+      setStatus(current.organization ? "signedIn" : "needsSelection");
     } catch (err) {
       const apiError = err instanceof PilotApiError ? err : null;
       if (apiError?.status === 401 || apiError?.status === 403) {
@@ -138,7 +138,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole ?? login.membershipRole ?? null);
       setCsrfToken(login.csrfToken);
-      setStatus("signedIn");
+      setStatus(current.organization ? "signedIn" : "needsSelection");
     } catch (err) {
       setStatus("signedOut");
       setUser(null);
