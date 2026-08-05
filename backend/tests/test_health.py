@@ -8,5 +8,4 @@ def test_health_endpoint_returns_ok(client):
     body = response.get_json()
     assert body["status"] == "ok"
     assert body["service"] == "flowtally-pilot-backend"
-    assert body["databaseUrlConfigured"] is True
-    assert body["csrfEnabled"] is True
+    assert body["environment"] == "testing"

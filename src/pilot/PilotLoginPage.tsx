@@ -11,7 +11,7 @@ export function PilotLoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  if (status === "signedIn") {
+  if (status === "signedIn" || status === "needsSelection") {
     return <Navigate to="/app" replace />;
   }
 
@@ -43,7 +43,7 @@ export function PilotLoginPage() {
           <div className="grid gap-3 sm:grid-cols-3">
             {[
               ["Auth", "Protected login"],
-              ["Tenant", "One org, one location"],
+              ["Tenant", "Explicit org + location"],
               ["Session", "Cookie + CSRF"],
             ].map(([label, detail]) => (
               <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-4">

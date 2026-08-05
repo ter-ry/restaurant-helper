@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from flask import Flask, Response, jsonify, request, session
+import click
+from flask import Flask, Response, g, jsonify, request, session
 from flask_wtf.csrf import CSRFError
 from flask_login import logout_user
 
 from .auth import bp as auth_bp
-from .config import choose_config
+from .audit import ensure_request_id
+from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
+from .policy import enforce_endpoint_permission
 from .seed import seed_pilot_data
 from .validation import RequestValidationError
 from .utils import json_error
@@ -20,6 +23,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.config.from_mapping(choose_config().build())
     if test_config:
         app.config.update(test_config)
+    validate_runtime_config(app.config, environment=app.config.get("FLOWTALLY_ENV"))
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -29,6 +33,14 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     login_manager.login_view = "auth.login"
     login_manager.session_protection = "strong"
+
+    @app.before_request
+    def assign_request_id() -> None:
+        ensure_request_id()
+
+    @app.before_request
+    def enforce_centralized_policy():
+        return enforce_endpoint_permission()
 
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:
@@ -59,6 +71,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.after_request
     def add_cors_headers(response: Response) -> Response:
+        request_id = getattr(g, "request_id", None)
+        if request_id:
+            response.headers.setdefault("X-Request-Id", str(request_id))
         if request.path.startswith("/api/"):
             origin = request.headers.get("Origin", "")
             allowed_origins = set(app.config.get("ALLOWED_ORIGINS", []))
@@ -107,8 +122,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             {
                 "status": "ok",
                 "service": "flowtally-pilot-backend",
+                "environment": app.config.get("FLOWTALLY_ENV", "development"),
                 "databaseUrlConfigured": bool(app.config.get("SQLALCHEMY_DATABASE_URI")),
-                "sessionCookieName": app.config.get("SESSION_COOKIE_NAME"),
                 "csrfEnabled": bool(app.config.get("WTF_CSRF_ENABLED", True)),
             },
             200,
@@ -123,16 +138,26 @@ def create_app(test_config: dict | None = None) -> Flask:
         """Seed local pilot data."""
 
     @seed_group.command("pilot")
-    def seed_pilot_command() -> None:
-        result = seed_pilot_data(reset=False)
+    @click.option(
+        "--confirm-production-seeding",
+        is_flag=True,
+        help="Required together with FLOWTALLY_ALLOW_PRODUCTION_SEEDING when seeding staging or production.",
+    )
+    def seed_pilot_command(confirm_production_seeding: bool) -> None:
+        result = seed_pilot_data(reset=False, confirm_production=confirm_production_seeding)
         print(
             "Seeded pilot data: "
             f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"
         )
 
     @seed_group.command("reset-pilot")
-    def reset_pilot_command() -> None:
-        result = seed_pilot_data(reset=True)
+    @click.option(
+        "--confirm-production-seeding",
+        is_flag=True,
+        help="Required together with FLOWTALLY_ALLOW_PRODUCTION_SEEDING when resetting staging or production.",
+    )
+    def reset_pilot_command(confirm_production_seeding: bool) -> None:
+        result = seed_pilot_data(reset=True, confirm_production=confirm_production_seeding)
         print(
             "Reset and seeded pilot data: "
             f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/**
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend and root dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r requirements.txt
+
+      - name: Fresh-database migration check
+        run: python -m pytest backend/tests/test_seed.py::test_migrations_upgrade_and_seed_on_fresh_database
+
+      - name: Pilot backend tests
+        run: python -m pytest backend/tests
+
+      - name: Root Python tests
+        run: python -m unittest discover -s tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check frontend
+        run: |
+          npx tsc -p tsconfig.app.json --noEmit
+          npx tsc -p tsconfig.node.json --noEmit
+
+      - name: Build frontend
+        run: npm run build

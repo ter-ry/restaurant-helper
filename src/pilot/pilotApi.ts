@@ -37,11 +37,24 @@ export interface PilotOrganizationBundle {
   membershipRole?: "owner" | "manager" | string;
 }
 
+export interface PilotOrganizationMembershipSummary {
+  membership: {
+    id: number;
+    organizationId: number;
+    role: string;
+    createdAt: string | null;
+  };
+  organization: PilotOrganization;
+  membershipRole: "owner" | "manager" | string;
+  selected: boolean;
+}
+
 export interface PilotAuthMeResponse {
   user: PilotUser;
   membershipRole: "owner" | "manager" | string | null;
   currentOrganizationId: number | null;
   currentLocationId: number | null;
+  organizations?: PilotOrganizationMembershipSummary[];
   csrfToken: string;
 }
 
@@ -50,6 +63,7 @@ export interface PilotLoginResponse {
   membershipRole: "owner" | "manager" | string | null;
   currentOrganization: PilotOrganization | null;
   currentLocationId: number | null;
+  organizations?: PilotOrganizationMembershipSummary[];
   csrfToken: string;
 }
 
@@ -140,9 +154,25 @@ export async function fetchCurrentOrganization() {
   return requestJson<PilotOrganizationBundle>("/api/organizations/current");
 }
 
+export async function fetchPilotOrganizations() {
+  return requestJson<{ organizations: PilotOrganizationMembershipSummary[]; currentOrganizationId: number | null; currentMembershipId: number | null }>("/api/organizations");
+}
+
+export async function selectPilotOrganization(organizationId: number) {
+  const csrfToken = await getPilotCsrfToken();
+  return requestJson<PilotOrganizationBundle>("/api/organizations/select", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify({ organizationId }),
+  });
+}
+
 export async function switchPilotLocation(locationId: number) {
   const csrfToken = await getPilotCsrfToken();
-  return requestJson<{ currentLocation: PilotLocation }>("/api/locations/current", {
+  return requestJson<{ currentLocation: PilotLocation }>("/api/locations/select", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

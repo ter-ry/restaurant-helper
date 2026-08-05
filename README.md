@@ -22,6 +22,10 @@ No fake testimonials, logos, customers, or metrics are included. Demo numbers ar
 - Lucide icons
 - GitHub Actions / GitHub Pages
 
+## Application Boundaries
+
+This repository contains both the public demo frontend and a separate authenticated pilot backend. The clean boundary notes live in [docs/application-boundaries.md](docs/application-boundaries.md).
+
 ## Local Setup
 
 ```bash

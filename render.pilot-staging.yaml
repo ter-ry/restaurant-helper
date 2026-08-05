@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: flowtally-pilot-staging
+    env: python
+    plan: starter
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLOWTALLY_ENV
+        value: staging
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: FLOWTALLY_ALLOWED_ORIGINS
+        value: https://staging.flowtally.ca
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: FLOWTALLY_RATE_LIMIT_STORAGE_URI
+        sync: false
+      - key: FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL
+        value: "false"
+      - key: MAX_CONTENT_LENGTH
+        value: "15728640"
+
+  - type: web
+    name: flowtally-legacy-root
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLOWTALLY_ENV
+        value: development

@@ -10,7 +10,20 @@ from backend.seed import seed_pilot_data
 
 
 @pytest.fixture()
-def app(tmp_path: Path):
+def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    for name in [
+        "FLOWTALLY_ENV",
+        "FLASK_ENV",
+        "SECRET_KEY",
+        "DATABASE_URL",
+        "FLOWTALLY_ALLOWED_ORIGINS",
+        "SESSION_COOKIE_SECURE",
+        "FLOWTALLY_RATE_LIMIT_STORAGE_URI",
+        "FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL",
+    ]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("FLOWTALLY_ENV", "testing")
+
     database_path = tmp_path / "pilot.db"
     application = create_app(
         {

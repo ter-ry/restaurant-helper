@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from flask_limiter import Limiter
@@ -14,8 +13,4 @@ db = SQLAlchemy()
 migrate = Migrate(directory=str(Path(__file__).resolve().parent / "migrations"))
 login_manager = LoginManager()
 csrf = CSRFProtect()
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri=os.environ.get("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "memory://"),
-    default_limits=[],
-)
+limiter = Limiter(key_func=get_remote_address, default_limits=[])

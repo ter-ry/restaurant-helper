@@ -52,9 +52,11 @@ function NavItem({
 }
 
 export function PilotWorkspaceLayout() {
-  const { error, user, organization, currentLocation, locations, signOut, switchLocation, refreshSession } = usePilotSession();
+  const { error, user, organization, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const activeOrganizationId = organization?.id ?? "";
+  const activeLocationId = currentLocation?.id ?? "";
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -79,6 +81,198 @@ export function PilotWorkspaceLayout() {
     await switchLocation(locationId);
   };
 
+  const handleOrganizationChange = async (event: ChangeEvent<HTMLSelectElement>) => {
+    const organizationId = Number(event.target.value);
+    if (Number.isNaN(organizationId)) {
+      return;
+    }
+    await switchOrganization(organizationId);
+  };
+
+  if (!organization) {
+    return (
+      <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
+        <AnalyticsTracker />
+        <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-4xl items-center gap-8">
+          <section className="space-y-5 rounded-3xl border border-line bg-ink p-6 text-white shadow-soft sm:p-8">
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Pilot access</p>
+            <h1 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">Choose the active organization</h1>
+            <p className="max-w-2xl text-sm leading-6 text-slate-200 sm:text-base">
+              This account has more than one organization membership, so the pilot keeps the active organization explicit instead of guessing.
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ["Selection", "Server-checked"],
+                ["Tenant", "One active org"],
+                ["Location", "Must match org"],
+              ].map(([label, detail]) => (
+                <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-brand-100">{label}</p>
+                  <p className="mt-1 text-sm text-slate-200">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-line bg-white p-6 shadow-soft sm:p-8">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Organizations</p>
+                <h2 className="mt-1 text-2xl font-bold text-ink">Pick the active workspace</h2>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  Choose the restaurant you want to work in. The pilot will then load locations for that organization and clear any stale location selection.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {error ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  {error}
+                </div>
+              ) : null}
+              {organizations.length > 0 ? (
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">Active organization</span>
+                  <select className="input mt-1" value={activeOrganizationId} onChange={handleOrganizationChange}>
+                    <option value="" disabled>
+                      Select an organization
+                    </option>
+                    {organizations.map((entry) => (
+                      <option key={entry.organization.id} value={entry.organization.id}>
+                        {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  No pilot organization has been assigned to this account yet. Ask the owner to add a membership before continuing.
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={organizations.length === 0}
+                  type="button"
+                  onClick={() => void refreshSession()}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh memberships
+                </button>
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  type="button"
+                  onClick={() => void signOut()}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+                <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/">
+                  Public site
+                </Link>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (!currentLocation) {
+    return (
+      <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-4xl items-center gap-8">
+          <section className="space-y-5 rounded-3xl border border-line bg-ink p-6 text-white shadow-soft sm:p-8">
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Pilot access</p>
+            <h1 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">Choose the active location</h1>
+            <p className="max-w-2xl text-sm leading-6 text-slate-200 sm:text-base">
+              The selected organization is ready, but the backend still needs a location choice before operational pages can load.
+            </p>
+          </section>
+
+          <section className="rounded-3xl border border-line bg-white p-6 shadow-soft sm:p-8">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
+                <MapPin className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Locations</p>
+                <h2 className="mt-1 text-2xl font-bold text-ink">Select where you are working</h2>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  The active location must belong to the active organization. Once you choose it, the workspace will refresh and continue loading.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {organizations.length > 1 ? (
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">Active organization</span>
+                  <select className="input mt-1" value={organization.id} onChange={handleOrganizationChange}>
+                    {organizations.map((entry) => (
+                      <option key={entry.organization.id} value={entry.organization.id}>
+                        {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {locations.length > 0 ? (
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">Active location</span>
+                  <select className="input mt-1" value={activeLocationId} onChange={handleLocationChange}>
+                    <option value="" disabled>
+                      Select a location
+                    </option>
+                    {locations.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  This organization does not have any locations yet.
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={locations.length === 0}
+                  type="button"
+                  onClick={() => void refreshSession()}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh session
+                </button>
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  type="button"
+                  onClick={() => void signOut()}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+                <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/">
+                  Public site
+                </Link>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-ink">
       <AnalyticsTracker />
@@ -95,9 +289,26 @@ export function PilotWorkspaceLayout() {
           </div>
 
           <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
+            {organizations.length > 1 ? (
+              <div className="mb-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
+                <select className="input mt-2" value={organization.id} onChange={handleOrganizationChange}>
+                  {organizations.map((entry) => (
+                    <option key={entry.organization.id} value={entry.organization.id}>
+                      {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Current location</p>
             {locations.length > 1 ? (
               <select className="input mt-2" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
+                {!currentLocation ? (
+                  <option value="" disabled>
+                    Select a location
+                  </option>
+                ) : null}
                 {locations.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.name}
@@ -121,7 +332,7 @@ export function PilotWorkspaceLayout() {
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Signed in as</p>
               <p className="mt-1 truncate font-semibold text-ink">{user?.email ?? "Unknown user"}</p>
-              <p className="mt-1">Working with a single organization context.</p>
+              <p className="mt-1">Working with an explicit organization context.</p>
             </div>
             <div className="flex flex-col gap-2">
               <button
@@ -245,9 +456,26 @@ export function PilotWorkspaceLayout() {
             </div>
 
             <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
+              {organizations.length > 1 ? (
+                <div className="mb-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
+                  <select className="input mt-2" value={organization.id} onChange={handleOrganizationChange}>
+                    {organizations.map((entry) => (
+                      <option key={entry.organization.id} value={entry.organization.id}>
+                        {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Current location</p>
               {locations.length > 1 ? (
                 <select className="input mt-2" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
+                  {!currentLocation ? (
+                    <option value="" disabled>
+                      Select a location
+                    </option>
+                  ) : null}
                   {locations.map((entry) => (
                     <option key={entry.id} value={entry.id}>
                       {entry.name}

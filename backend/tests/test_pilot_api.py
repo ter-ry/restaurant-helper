@@ -156,6 +156,13 @@ def test_pilot_mutations_require_auth_csrf_and_active_users(app, client):
     assert inactive_login.status_code in {400, 401}
 
 
+def test_audit_events_endpoint_is_owner_only(client):
+    login_manager(client)
+
+    response = client.get("/api/pilot/audit-events")
+    assert response.status_code == 403
+
+
 def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
     login(client)
 

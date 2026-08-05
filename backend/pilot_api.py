@@ -11,8 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
+from .audit import record_audit_event
 from .extensions import db
 from .models import (
+    AuditEvent,
     InventoryItem,
     InventoryMovement,
     OrganizationMembership,
@@ -27,6 +29,7 @@ from .models import (
     Supplier,
     SupplierItemMapping,
 )
+from .policy import require_permission
 from .utils import (
     decimal_to_float,
     isoformat,
@@ -40,6 +43,7 @@ from .utils import (
     serialize_location,
     serialize_purchase_invoice,
     serialize_purchase_invoice_line,
+    serialize_audit_event,
     serialize_reorder_plan,
     serialize_reorder_plan_line,
     serialize_reorder_intent,
@@ -135,6 +139,10 @@ def _require_context():
 
 def _check_location_access(location_id: int, locations: list[RestaurantLocation]) -> RestaurantLocation | None:
     return next((candidate for candidate in locations if candidate.id == location_id), None)
+
+
+def _require_role(membership, permission: str):
+    return require_permission(membership.role if membership else None, permission)
 
 
 def _status_for_item(item: InventoryItem) -> dict[str, Any]:
@@ -250,7 +258,7 @@ def _price_changes_for_location(location_id: int):
 def _dashboard_snapshot(location_id: int):
     start = _start_of_week()
     invoices = PurchaseInvoice.query.filter_by(location_id=location_id).all()
-    recent_invoices = sorted(invoices, key=lambda invoice: (invoice.invoice_date, invoice.created_at), reverse=True)[:5]
+    recent_invoices = sorted(invoices, key=lambda invoice: (invoice.created_at, invoice.invoice_date), reverse=True)[:5]
     draft_invoices = [invoice for invoice in invoices if invoice.status == "Draft"]
     movements = InventoryMovement.query.filter_by(location_id=location_id).order_by(InventoryMovement.created_at.desc()).limit(6).all()
     count_sessions = StockCountSession.query.filter_by(location_id=location_id).order_by(StockCountSession.updated_at.desc()).all()
@@ -317,9 +325,7 @@ def _get_supplier_by_name(organization_id: int, name: str) -> Supplier:
 
 
 def _require_management_role(membership: OrganizationMembership):
-    if membership.role not in {"owner", "manager"}:
-        return json_error("You do not have permission to do that.", 403, errors={"permission": "Owner or manager access is required."})
-    return None
+    return _require_role(membership, "suppliers.manage")
 
 
 def _validate_supplier_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -650,7 +656,7 @@ def correct_purchase_invoice(invoice_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, location = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "purchases.manage")
     if permission_error is not None:
         return permission_error
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
@@ -738,6 +744,19 @@ def correct_purchase_invoice(invoice_id: int):
                 actor_id=current_user.id,
             )
 
+        record_audit_event(
+            event_type="purchases.invoice_corrected",
+            entity_type="purchase_invoice",
+            entity_id=invoice.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={
+                "invoiceNumber": invoice.invoice_number,
+                "reason": reason,
+                "affectedItemIds": sorted(affected_items),
+            },
+        )
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -753,6 +772,9 @@ def bootstrap():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, locations, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     return (
         jsonify(
             {
@@ -779,13 +801,26 @@ def set_current_location():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    _, _, locations, _ = context
+    organization, membership, locations, _ = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     payload = _json_body()
     location_id = _to_int(payload.get("locationId"), field="locationId")
     location = _check_location_access(location_id, locations)
     if location is None:
         return json_error("That location is not available to the current account.", 403)
     session["pilot_current_location_id"] = location.id
+    record_audit_event(
+        event_type="tenant.location_selected",
+        entity_type="restaurant_location",
+        entity_id=location.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"source": "legacy-location-endpoint", "membershipRole": membership.role},
+    )
+    db.session.commit()
     return jsonify({"currentLocation": serialize_location(location)}), 200
 
 
@@ -795,7 +830,10 @@ def dashboard():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    _, _, _, location = context
+    _, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     return jsonify(_dashboard_snapshot(location.id)), 200
 
 
@@ -805,7 +843,10 @@ def purchases():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    _, _, _, location = context
+    _, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     invoices = PurchaseInvoice.query.filter_by(location_id=location.id).order_by(PurchaseInvoice.invoice_date.desc(), PurchaseInvoice.created_at.desc()).all()
     suppliers = Supplier.query.filter_by(organization_id=location.organization_id, is_active=True).order_by(Supplier.name.asc()).all()
     purchase_lines = [line for invoice in invoices for line in invoice.lines]
@@ -847,7 +888,7 @@ def suppliers():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, location = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
     supplier_rows = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.is_active.desc(), Supplier.name.asc()).all()
@@ -927,7 +968,7 @@ def create_supplier():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, _ = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
     payload = _validate_supplier_payload(_json_body())
@@ -949,6 +990,15 @@ def create_supplier():
         is_active=bool(payload.get("isActive", True)),
     )
     db.session.add(supplier)
+    db.session.flush()
+    record_audit_event(
+        event_type="suppliers.created",
+        entity_type="supplier",
+        entity_id=supplier.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"supplierName": supplier.name, "categoryFocus": supplier.category_focus, "isActive": supplier.is_active},
+    )
     db.session.commit()
     return jsonify(_serialize_supplier_with_counts(supplier)), 201
 
@@ -960,7 +1010,7 @@ def update_supplier(supplier_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, _ = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
     supplier = Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first()
@@ -1000,6 +1050,14 @@ def update_supplier(supplier_id: int):
         supplier.notes = str(payload.get("notes") or "").strip()
     if "isActive" in payload:
         supplier.is_active = bool(payload.get("isActive"))
+    record_audit_event(
+        event_type="suppliers.updated",
+        entity_type="supplier",
+        entity_id=supplier.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"supplierName": supplier.name, "isActive": supplier.is_active},
+    )
     db.session.commit()
     return jsonify(_serialize_supplier_with_counts(supplier)), 200
 
@@ -1010,7 +1068,10 @@ def purchase_invoice_detail(invoice_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
     if invoice is None:
         return json_error("Purchase invoice not found.", 404)
@@ -1024,6 +1085,9 @@ def create_purchase_invoice():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, location = context
+    permission_error = _require_role(membership, "purchases.manage")
+    if permission_error is not None:
+        return permission_error
     payload = _validate_invoice_payload(_json_body())
     invoice, supplier = _invoice_from_payload(organization.id, location.id, payload)
     invoice.created_by_user_id = current_user.id
@@ -1044,6 +1108,15 @@ def create_purchase_invoice():
         ).first()
         if mapping:
             line.supplier_item_mapping = mapping
+    record_audit_event(
+        event_type="purchases.invoice_created",
+        entity_type="purchase_invoice",
+        entity_id=invoice.invoice_number,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"invoiceId": invoice.id, "invoiceNumber": invoice.invoice_number, "status": invoice.status},
+    )
     db.session.commit()
     return jsonify(serialize_purchase_invoice(invoice)), 201
 
@@ -1055,6 +1128,9 @@ def update_purchase_invoice(invoice_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, _, _, location = context
+    permission_error = _require_role(get_current_membership(), "purchases.manage")
+    if permission_error is not None:
+        return permission_error
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
     if invoice is None:
         return json_error("Purchase invoice not found.", 404)
@@ -1077,6 +1153,15 @@ def update_purchase_invoice(invoice_id: int):
         ).first()
         if mapping:
             line.supplier_item_mapping = mapping
+    record_audit_event(
+        event_type="purchases.invoice_updated",
+        entity_type="purchase_invoice",
+        entity_id=invoice.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"invoiceNumber": invoice.invoice_number, "status": invoice.status},
+    )
     db.session.commit()
     return jsonify(serialize_purchase_invoice(invoice)), 200
 
@@ -1088,6 +1173,9 @@ def receive_purchase_invoice(invoice_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, _, _, location = context
+    permission_error = _require_role(get_current_membership(), "purchases.manage")
+    if permission_error is not None:
+        return permission_error
     invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
     if invoice is None:
         return json_error("Purchase invoice not found.", 404)
@@ -1095,6 +1183,15 @@ def receive_purchase_invoice(invoice_id: int):
         return json_error("This invoice has already been corrected.", 409)
     try:
         _record_receipt(invoice, current_user.id)
+        record_audit_event(
+            event_type="purchases.invoice_received",
+            entity_type="purchase_invoice",
+            entity_id=invoice.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={"invoiceNumber": invoice.invoice_number, "status": invoice.status},
+        )
         db.session.commit()
     except RequestValidationError as exc:
         db.session.rollback()
@@ -1110,7 +1207,10 @@ def inventory():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(InventoryItem.updated_at.desc(), InventoryItem.created_at.desc()).all()
     movements = InventoryMovement.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(InventoryMovement.created_at.desc()).limit(50).all()
     count_sessions = StockCountSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(StockCountSession.updated_at.desc()).all()
@@ -1183,7 +1283,10 @@ def inventory_item_detail(item_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
     if item is None:
         return json_error("Inventory item not found.", 404)
@@ -1232,7 +1335,7 @@ def create_inventory_item():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, location = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "inventory.manage")
     if permission_error is not None:
         return permission_error
     payload = _json_body()
@@ -1267,6 +1370,16 @@ def create_inventory_item():
         updated_by_user_id=current_user.id,
     )
     db.session.add(item)
+    db.session.flush()
+    record_audit_event(
+        event_type="inventory.item_created",
+        entity_type="inventory_item",
+        entity_id=item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"itemName": item.name, "stockUnit": item.stock_unit, "active": item.active},
+    )
     db.session.commit()
     return jsonify(serialize_inventory_item(item)), 201
 
@@ -1278,7 +1391,7 @@ def update_inventory_item(item_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, location = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "inventory.manage")
     if permission_error is not None:
         return permission_error
     item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
@@ -1322,6 +1435,15 @@ def update_inventory_item(item_id: int):
     if "active" in payload:
         item.active = bool(payload.get("active"))
     item.updated_by_user_id = current_user.id
+    record_audit_event(
+        event_type="inventory.item_updated",
+        entity_type="inventory_item",
+        entity_id=item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"itemName": item.name, "stockUnit": item.stock_unit, "active": item.active},
+    )
     db.session.commit()
     return jsonify(serialize_inventory_item(item)), 200
 
@@ -1333,7 +1455,7 @@ def create_inventory_adjustment(item_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, _, location = context
-    permission_error = _require_management_role(membership)
+    permission_error = _require_role(membership, "inventory.manage")
     if permission_error is not None:
         return permission_error
     item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
@@ -1371,6 +1493,21 @@ def create_inventory_adjustment(item_id: int):
     item.updated_by_user_id = current_user.id
     item.updated_at = _now()
     db.session.add(movement)
+    db.session.flush()
+    record_audit_event(
+        event_type="inventory.adjustment_created",
+        entity_type="inventory_movement",
+        entity_id=movement.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "inventoryItemId": item.id,
+            "sourceType": movement.source_type,
+            "quantityDelta": float(delta),
+            "reason": reason,
+        },
+    )
     db.session.commit()
     return jsonify(serialize_inventory_movement(movement)), 201
 
@@ -1412,7 +1549,10 @@ def list_count_sessions():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     sessions = StockCountSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(StockCountSession.updated_at.desc()).all()
     return jsonify({"countSessions": [serialize_count_session(entry) for entry in sessions]}), 200
 
@@ -1424,6 +1564,9 @@ def create_count_session():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, _, _, location = context
+    permission_error = _require_role(get_current_membership(), "stock_counts.manage")
+    if permission_error is not None:
+        return permission_error
     payload = _json_body()
     item_ids = payload.get("itemIds")
     if not isinstance(item_ids, list) or not item_ids:
@@ -1476,6 +1619,15 @@ def create_count_session():
             )
         )
     db.session.add_all(lines)
+    record_audit_event(
+        event_type="stock_counts.session_created",
+        entity_type="stock_count_session",
+        entity_id=session_record.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"itemCount": session_record.item_count, "countedBy": session_record.counted_by},
+    )
     db.session.commit()
     return jsonify(serialize_count_session(session_record)), 201
 
@@ -1486,7 +1638,10 @@ def get_count_session(session_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
     session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
     if session_record is None:
         return json_error("Stock count session not found.", 404)
@@ -1499,7 +1654,10 @@ def update_count_session(session_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "stock_counts.manage")
+    if permission_error is not None:
+        return permission_error
     session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
     if session_record is None:
         return json_error("Stock count session not found.", 404)
@@ -1533,6 +1691,15 @@ def update_count_session(session_id: int):
             if "note" in line_payload:
                 line.note = str(line_payload.get("note") or "").strip()
     session_record.updated_at = _now()
+    record_audit_event(
+        event_type="stock_counts.session_updated",
+        entity_type="stock_count_session",
+        entity_id=session_record.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"countedBy": session_record.counted_by, "status": session_record.status},
+    )
     db.session.commit()
     return jsonify(serialize_count_session(session_record)), 200
 
@@ -1543,7 +1710,10 @@ def finalize_count_session(session_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "stock_counts.manage")
+    if permission_error is not None:
+        return permission_error
     session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
     if session_record is None:
         return json_error("Stock count session not found.", 404)
@@ -1601,6 +1771,15 @@ def finalize_count_session(session_id: int):
         session_record.completed_at = now
         session_record.updated_at = now
         session_record.finalized_by_user_id = current_user.id
+        record_audit_event(
+            event_type="stock_counts.session_finalized",
+            entity_type="stock_count_session",
+            entity_id=session_record.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={"itemCount": session_record.item_count, "status": session_record.status},
+        )
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -1623,7 +1802,10 @@ def mark_reorder_item_ordered(item_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
     if item is None:
         return json_error("Inventory item not found.", 404)
@@ -1650,6 +1832,16 @@ def mark_reorder_item_ordered(item_id: int):
         intent.ordered_at = _now()
         intent.updated_at = _now()
         intent.actor_user_id = current_user.id
+    db.session.flush()
+    record_audit_event(
+        event_type="reorder.intent_marked_ordered",
+        entity_type="reorder_intent",
+        entity_id=intent.id if intent.id is not None else item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"inventoryItemId": item.id, "status": intent.status},
+    )
     db.session.commit()
     return jsonify(serialize_reorder_intent(intent)), 200
 
@@ -1660,7 +1852,10 @@ def reorder_plan():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, active=True).order_by(InventoryItem.name.asc()).all()
     intents = ReorderIntent.query.filter_by(organization_id=organization.id, location_id=location.id).all()
     intent_by_item = {intent.inventory_item_id: intent for intent in intents}
@@ -1773,7 +1968,10 @@ def list_reorder_plans():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     plans = _reorder_plan_queryset(organization.id, location.id).all()
     active_draft = next((plan for plan in plans if plan.status == "Draft"), None)
     return jsonify({"plans": [serialize_reorder_plan(plan) for plan in plans], "activeDraftPlanId": active_draft.id if active_draft else None}), 200
@@ -1785,10 +1983,22 @@ def create_or_open_reorder_plan():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     existing_draft = ReorderPlan.query.filter_by(organization_id=organization.id, location_id=location.id, status="Draft").order_by(ReorderPlan.updated_at.desc()).first()
     plan = _create_reorder_plan_from_current(organization.id, location.id, user_id=current_user.id)
     try:
+        record_audit_event(
+            event_type="reorder.plan_created",
+            entity_type="reorder_plan",
+            entity_id=plan.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={"status": plan.status, "name": plan.name},
+        )
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -1805,7 +2015,10 @@ def get_reorder_plan(plan_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
     if plan is None:
         return json_error("Reorder plan not found.", 404)
@@ -1818,7 +2031,10 @@ def update_reorder_plan(plan_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
     if plan is None:
         return json_error("Reorder plan not found.", 404)
@@ -1845,6 +2061,15 @@ def update_reorder_plan(plan_id: int):
                 line.supplier_name_snapshot = str(line_payload.get("supplierNameSnapshot") or "").strip()
             line.estimated_line_cost_snapshot = _reorder_plan_line_estimated_cost(line)
     plan.updated_at = _now()
+    record_audit_event(
+        event_type="reorder.plan_updated",
+        entity_type="reorder_plan",
+        entity_id=plan.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"status": plan.status, "name": plan.name},
+    )
     db.session.commit()
     return jsonify(serialize_reorder_plan(plan)), 200
 
@@ -1855,7 +2080,10 @@ def prepare_reorder_plan(plan_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
     if plan is None:
         return json_error("Reorder plan not found.", 404)
@@ -1865,6 +2093,15 @@ def prepare_reorder_plan(plan_id: int):
     plan.prepared_at = _now()
     plan.prepared_by_user_id = current_user.id
     plan.updated_at = _now()
+    record_audit_event(
+        event_type="reorder.plan_prepared",
+        entity_type="reorder_plan",
+        entity_id=plan.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"status": plan.status},
+    )
     db.session.commit()
     return jsonify(serialize_reorder_plan(plan)), 200
 
@@ -1875,7 +2112,10 @@ def complete_reorder_plan(plan_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, _, _, location = context
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "reorder.manage")
+    if permission_error is not None:
+        return permission_error
     plan = ReorderPlan.query.filter_by(id=plan_id, organization_id=organization.id, location_id=location.id).first()
     if plan is None:
         return json_error("Reorder plan not found.", 404)
@@ -1885,5 +2125,33 @@ def complete_reorder_plan(plan_id: int):
     plan.completed_at = _now()
     plan.completed_by_user_id = current_user.id
     plan.updated_at = _now()
+    record_audit_event(
+        event_type="reorder.plan_completed",
+        entity_type="reorder_plan",
+        entity_id=plan.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"status": plan.status},
+    )
     db.session.commit()
     return jsonify(serialize_reorder_plan(plan)), 200
+
+
+@bp.get("/api/pilot/audit-events")
+@login_required
+def list_audit_events():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot organization is available for the current account.", 404)
+    organization, membership, _, _ = context
+    permission_error = _require_role(membership, "audit.view")
+    if permission_error is not None:
+        return permission_error
+    events = (
+        AuditEvent.query.filter_by(organization_id=organization.id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(100)
+        .all()
+    )
+    return jsonify({"events": [serialize_audit_event(event) for event in events]}), 200

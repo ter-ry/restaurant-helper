@@ -67,6 +67,7 @@ class OrganizationMembership(TimestampMixin, db.Model):
 
 class RestaurantLocation(TimestampMixin, db.Model):
     __tablename__ = "restaurant_locations"
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_location_org_name"),)
 
     id = db.Column(db.Integer, primary_key=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -203,6 +204,7 @@ class PurchaseInvoice(TimestampMixin, db.Model):
 
 class PurchaseInvoiceLine(TimestampMixin, db.Model):
     __tablename__ = "purchase_invoice_lines"
+    __table_args__ = (UniqueConstraint("invoice_id", "line_index", name="uq_purchase_invoice_line_order"),)
 
     id = db.Column(db.Integer, primary_key=True)
     invoice_id = db.Column(db.Integer, db.ForeignKey("purchase_invoices.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -278,6 +280,7 @@ class StockCountSession(TimestampMixin, db.Model):
 
 class StockCountSessionLine(TimestampMixin, db.Model):
     __tablename__ = "stock_count_session_lines"
+    __table_args__ = (UniqueConstraint("session_id", "line_index", name="uq_stock_count_session_line_order"),)
 
     id = db.Column(db.Integer, primary_key=True)
     session_id = db.Column(db.Integer, db.ForeignKey("stock_count_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -331,6 +334,7 @@ class ReorderPlan(TimestampMixin, db.Model):
 
 class ReorderPlanLine(TimestampMixin, db.Model):
     __tablename__ = "reorder_plan_lines"
+    __table_args__ = (UniqueConstraint("plan_id", "line_index", name="uq_reorder_plan_line_order"),)
 
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey("reorder_plans.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -377,4 +381,29 @@ class ReorderIntent(TimestampMixin, db.Model):
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")
     inventory_item = db.relationship("InventoryItem")
+    actor = db.relationship("User")
+
+
+class AuditEvent(db.Model):
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_organization_created_at", "organization_id", "created_at"),
+        Index("ix_audit_events_entity", "entity_type", "entity_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    event_type = db.Column(db.String(120), nullable=False, index=True)
+    entity_type = db.Column(db.String(120), nullable=False, index=True)
+    entity_id = db.Column(db.String(120), nullable=False, default="")
+    request_id = db.Column(db.String(120), nullable=False, default="")
+    source_ip = db.Column(db.String(120), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=db.func.now())
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
     actor = db.relationship("User")

@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import os
 
 from .extensions import db
 from .models import (
+    AuditEvent,
     InventoryItem,
     InventoryMovement,
     Organization,
@@ -232,6 +234,7 @@ def _normalize_name(value: str) -> str:
 
 def _clear_seed_data() -> None:
     for model in [
+        AuditEvent,
         InventoryMovement,
         SupplierItemMapping,
         PurchaseInvoiceLine,
@@ -558,7 +561,20 @@ def _seed_reorder_intents(organization: Organization, location: RestaurantLocati
             db.session.add(intent)
 
 
-def seed_pilot_data(*, reset: bool = False) -> SeedResult:
+def _current_environment() -> str:
+    return os.environ.get("FLOWTALLY_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
+
+
+def _allow_seed_reset_in_current_environment(*, confirm_production: bool) -> None:
+    if _current_environment() in {"staging", "production"}:
+        if not confirm_production:
+            raise RuntimeError("Pilot seed/reset is disabled in staging and production unless --confirm-production-seeding is provided.")
+        if os.environ.get("FLOWTALLY_ALLOW_PRODUCTION_SEEDING", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            raise RuntimeError("FLOWTALLY_ALLOW_PRODUCTION_SEEDING must be enabled to seed or reset in staging and production.")
+
+
+def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) -> SeedResult:
+    _allow_seed_reset_in_current_environment(confirm_production=confirm_production)
     if reset:
         _clear_seed_data()
 
