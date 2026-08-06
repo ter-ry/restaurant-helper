@@ -110,6 +110,16 @@ export async function createCustomerProspectOrganization(payload: CustomerCreate
   });
 }
 
+export async function requestCustomerSetup(organizationId: number) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<{ organization: CustomerOrganizationSummary }>(`/api/onboarding/organizations/${organizationId}/request-setup`, {
+    method: "POST",
+    headers: {
+      "X-CSRFToken": csrfToken,
+    },
+  });
+}
+
 export async function logoutCustomer() {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<{ ok: true }>("/api/auth/logout", {

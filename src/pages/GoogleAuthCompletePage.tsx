@@ -5,6 +5,7 @@ import {
   createCustomerProspectOrganization,
   fetchCustomerSession,
   logoutCustomer,
+  requestCustomerSetup,
   startGoogleLogin,
   type CustomerSessionResponse,
 } from "../lib/customerAuth";
@@ -152,13 +153,28 @@ function ProspectOnboardingForm({
 function LoggedInProspectView({
   session,
   onLogout,
+  onRequestSetup,
 }: {
   session: CustomerSessionResponse;
   onLogout: () => Promise<void>;
+  onRequestSetup: () => Promise<void>;
 }) {
   const [loggingOut, setLoggingOut] = useState(false);
+  const [requestingSetup, setRequestingSetup] = useState(false);
+  const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const currentOrganization = session.organizations?.find((entry) => entry.selected)?.organization ?? null;
   const currentRole = session.membershipRole ?? "owner";
+  const setupStatus = currentOrganization?.setupStatus ?? "NOT_STARTED";
+  const lifecycleStatus = currentOrganization?.lifecycleStatus ?? "ONBOARDING";
+  const subscriptionStatus = currentOrganization?.subscriptionStatus ?? "NONE";
+  const progress = [
+    ["Account created", true],
+    ["Business information", true],
+    ["Data requested", setupStatus !== "NOT_STARTED"],
+    ["Configuration", setupStatus === "CONFIGURATION_IN_PROGRESS" || setupStatus === "CUSTOMER_REVIEW" || setupStatus === "COMPLETE"],
+    ["Customer review", setupStatus === "CUSTOMER_REVIEW" || setupStatus === "COMPLETE"],
+    ["Ready to launch", setupStatus === "COMPLETE" && lifecycleStatus === "READY_FOR_REVIEW"],
+  ] as const;
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -166,6 +182,23 @@ function LoggedInProspectView({
       await onLogout();
     } finally {
       setLoggingOut(false);
+    }
+  }
+
+  async function handleRequestSetup() {
+    if (!currentOrganization) {
+      return;
+    }
+    setRequestingSetup(true);
+    setSetupMessage(null);
+    try {
+      await requestCustomerSetup(currentOrganization.id);
+      setSetupMessage("Setup request sent. We’ll review the workspace and move it forward.");
+      await onRequestSetup();
+    } catch (err) {
+      setSetupMessage(err instanceof Error ? err.message : "Could not request setup.");
+    } finally {
+      setRequestingSetup(false);
     }
   }
 
@@ -181,6 +214,9 @@ function LoggedInProspectView({
           <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700" to="/demo">
             Keep exploring the demo
           </Link>
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void handleRequestSetup()} disabled={requestingSetup || !currentOrganization}>
+            {requestingSetup ? "Requesting..." : "Request setup"}
+          </button>
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={handleLogout} disabled={loggingOut}>
             <LogOut className="h-4 w-4" />
             {loggingOut ? "Signing out..." : "Logout"}
@@ -208,6 +244,29 @@ function LoggedInProspectView({
             <p className="font-semibold text-ink">Current location</p>
             <p className="mt-1 text-muted">{session.currentLocationId ? `Location #${session.currentLocationId}` : "No location selected yet"}</p>
           </div>
+          <div className="rounded-2xl border border-line bg-white p-4">
+            <p className="font-semibold text-ink">Setup state</p>
+            <p className="mt-1 text-muted">{lifecycleStatus} · {setupStatus} · {subscriptionStatus}</p>
+          </div>
+          {setupMessage ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              {setupMessage}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="md:col-span-2 rounded-2xl border border-line bg-white p-5">
+        <p className="text-sm font-semibold text-ink">Onboarding progress</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {progress.map(([label, complete]) => (
+            <div key={label} className={`rounded-2xl border p-4 text-sm ${complete ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-line bg-slate-50 text-slate-600"}`}>
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                {label}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -345,9 +404,9 @@ export function GoogleAuthCompletePage() {
           <ProspectOnboardingForm session={session} onCreated={handleCreated} />
         ) : (
           <div className="mt-6">
-            <LoggedInProspectView session={session} onLogout={handleLogout} />
-          </div>
-        )}
+          <LoggedInProspectView session={session} onLogout={handleLogout} onRequestSetup={handleCreated} />
+        </div>
+      )}
 
         <div className="mt-6 rounded-3xl border border-line bg-white p-6 shadow-soft">
           <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted">
