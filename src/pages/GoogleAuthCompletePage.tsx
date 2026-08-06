@@ -215,9 +215,14 @@ function LoggedInProspectView({
             Keep exploring the demo
           </Link>
           {lifecycleStatus === "ACTIVE" ? (
-            <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/team">
-              Manage team
-            </Link>
+            <>
+              <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/team">
+                Manage team
+              </Link>
+              <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/audit">
+                Audit history
+              </Link>
+            </>
           ) : null}
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void handleRequestSetup()} disabled={requestingSetup || !currentOrganization}>
             {requestingSetup ? "Requesting..." : "Request setup"}

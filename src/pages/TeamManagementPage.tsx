@@ -211,6 +211,12 @@ export function TeamManagementPage() {
             </button>
           </form>
 
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/audit">
+              Audit history
+            </Link>
+          </div>
+
           {recentInvitationUrl ? (
             <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-sm font-semibold text-ink">Latest invitation URL</p>
