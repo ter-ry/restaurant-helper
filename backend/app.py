@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import click
+import os
+
 from flask import Flask, Response, g, jsonify, request, session
 from flask_wtf.csrf import CSRFError
 from flask_login import logout_user
@@ -12,6 +14,7 @@ from .access import enforce_operational_access
 from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
+from .ocr import bp as ocr_bp
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
 from .policy import enforce_endpoint_permission
@@ -131,12 +134,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "environment": app.config.get("FLOWTALLY_ENV", "development"),
                 "databaseUrlConfigured": bool(app.config.get("SQLALCHEMY_DATABASE_URI")),
                 "csrfEnabled": bool(app.config.get("WTF_CSRF_ENABLED", True)),
+                "ocrConfigured": bool(os.environ.get("OCR_SPACE_API_KEY", "").strip()),
                 "googleOidcEnabled": bool(app.config.get("GOOGLE_OIDC_ENABLED")),
                 "squareEnabled": bool(app.config.get("SQUARE_ENABLED")),
             },
             200,
         )
 
+    csrf.exempt(ocr_bp)
+    app.register_blueprint(ocr_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(commercial_bp)
     app.register_blueprint(organizations_bp)
