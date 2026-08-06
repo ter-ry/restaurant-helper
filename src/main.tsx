@@ -29,6 +29,7 @@ import { PilotReorderPlanPage } from "./pilot/PilotReorderPlanPage";
 import { pilotAppEnabled } from "./pilot/pilotConfig";
 import { GoogleAuthCompletePage } from "./pages/GoogleAuthCompletePage";
 import { InvitationAcceptPage } from "./pages/InvitationAcceptPage";
+import { TeamManagementPage } from "./pages/TeamManagementPage";
 
 function HashScroll() {
   const location = useLocation();
@@ -196,6 +197,7 @@ const routes = [
   { path: "/", element: <PageWithHashScroll><LandingPage /></PageWithHashScroll> },
   { path: "/auth/google/complete", element: <PageWithHashScroll><GoogleAuthCompletePage /></PageWithHashScroll> },
   { path: "/invite/:token", element: <PageWithHashScroll><InvitationAcceptPage /></PageWithHashScroll> },
+  { path: "/owner/team", element: <PageWithHashScroll><TeamManagementPage /></PageWithHashScroll> },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   { path: "/pilot/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
   { path: "/pilot/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },

@@ -394,6 +394,35 @@ def cancel_organization_invitation(raw_token: str) -> tuple[object, int]:
     return jsonify({"invitation": _serialize_invitation(invitation)}), 200
 
 
+@bp.post("/api/organization-invitations/<int:invitation_id>/cancel")
+@login_required
+def cancel_organization_invitation_by_id(invitation_id: int) -> tuple[object, int]:
+    organization, membership = _current_owner_organization()
+    if organization is None or membership is None:
+        return json_error("Only the owner can manage invitations.", 403)
+
+    invitation = OrganizationInvitation.query.filter_by(organization_id=organization.id, id=invitation_id).first()
+    if invitation is None:
+        return json_error("Invitation not found.", 404)
+    if invitation.status == "revoked":
+        return json_error("That invitation was already revoked.", 409)
+    if invitation.status == "accepted":
+        return json_error("That invitation was already accepted.", 409)
+
+    invitation.status = "revoked"
+    invitation.revoked_at = datetime.now(timezone.utc)
+    record_audit_event(
+        event_type="invitation.revoked",
+        entity_type="organization_invitation",
+        entity_id=invitation.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"invitedEmail": invitation.invited_email, "role": invitation.role},
+    )
+    db.session.commit()
+    return jsonify({"invitation": _serialize_invitation(invitation)}), 200
+
+
 @csrf.exempt
 @bp.post("/api/organization-invitations/<string:raw_token>/accept")
 @login_required

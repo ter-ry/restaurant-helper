@@ -53,6 +53,23 @@ def test_owner_can_create_cancel_and_list_invitation(app, client):
     assert repeat_cancel.status_code == 409
 
 
+def test_owner_can_cancel_invitation_by_id(app, client):
+    login(client)
+    invite_email = f"{uuid4().hex[:8]}@example.com"
+
+    create_response = client.post(
+        "/api/organization-invitations",
+        headers=csrf_headers(client),
+        json={"email": invite_email, "role": "manager"},
+    )
+    body = create_response.get_json()
+    invitation_id = body["invitation"]["id"]
+
+    cancel_response = client.post(f"/api/organization-invitations/{invitation_id}/cancel", headers=csrf_headers(client))
+    assert cancel_response.status_code == 200
+    assert cancel_response.get_json()["invitation"]["status"] == "revoked"
+
+
 def test_invitation_accept_requires_matching_email_and_is_single_use(app, client):
     login(client)
     invite_email = f"{uuid4().hex[:8]}@example.com"
