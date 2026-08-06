@@ -38,11 +38,21 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
     create_response = client.post(
         "/api/onboarding/organizations",
         headers=csrf_headers(client),
-        json={"name": f"Prospect Cafe {uuid4().hex[:6]}", "templateKey": "CAFE"},
+        json={
+            "name": f"Prospect Cafe {uuid4().hex[:6]}",
+            "templateKey": "CAFE",
+            "locationName": "Prospect Kitchen",
+            "city": "Toronto",
+        },
     )
     assert create_response.status_code == 201
     body = create_response.get_json()
     assert body["membershipRole"] == "owner"
+    assert body["currentLocationId"] > 0
+
+    with client.session_transaction() as session:
+        assert session["pilot_current_organization_id"] == body["organization"]["id"]
+        assert session["pilot_current_location_id"] == body["currentLocationId"]
 
     with app.app_context():
         organization = Organization.query.filter_by(name=body["organization"]["name"]).first()
@@ -57,7 +67,12 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
     duplicate_response = client.post(
         "/api/onboarding/organizations",
         headers=csrf_headers(client),
-        json={"name": f"Prospect Cafe {uuid4().hex[:6]}", "templateKey": "CAFE"},
+        json={
+            "name": f"Prospect Cafe {uuid4().hex[:6]}",
+            "templateKey": "CAFE",
+            "locationName": "Prospect Kitchen",
+            "city": "Toronto",
+        },
     )
     assert duplicate_response.status_code == 409
 

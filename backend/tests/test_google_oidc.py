@@ -99,3 +99,46 @@ def test_google_start_redirects_with_state_and_nonce(app, client, monkeypatch):
         assert session["google_oidc_purpose"] == "link"
         assert session["google_oidc_state"]
         assert session["google_oidc_nonce"]
+
+
+def test_google_callback_redirects_to_frontend_completion_page(app, client, monkeypatch):
+    with app.app_context():
+        app.config.update(
+            {
+                "GOOGLE_OIDC_ENABLED": True,
+                "GOOGLE_CLIENT_ID": "client-id",
+                "GOOGLE_CLIENT_SECRET": "client-secret",
+                "GOOGLE_REDIRECT_URI": "https://example.com/api/auth/google/callback",
+            }
+        )
+
+    with client.session_transaction() as session:
+        session["google_oidc_state"] = "state"
+        session["google_oidc_nonce"] = "nonce"
+        session["google_oidc_purpose"] = "login"
+        session["google_oidc_expires_at"] = "2026-08-06T12:00:00+00:00"
+
+    monkeypatch.setattr(
+        google_oidc,
+        "exchange_google_code",
+        lambda code: type("Token", (), {"id_token": "stub-id-token"})(),
+    )
+    monkeypatch.setattr(
+        google_oidc,
+        "verify_google_id_token",
+        lambda id_token, nonce: {
+            "iss": "https://accounts.google.com",
+            "aud": "client-id",
+            "sub": "google-subject",
+            "email": "person@example.com",
+            "email_verified": True,
+            "nonce": nonce,
+            "exp": 9999999999,
+            "iat": 9999990000,
+        },
+    )
+
+    response = client.get("/api/auth/google/callback?state=state&code=test-code", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["Location"].startswith("/auth/google/complete?")

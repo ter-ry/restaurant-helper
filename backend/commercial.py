@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
 from .extensions import db
-from .models import Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule
+from .models import Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, RestaurantLocation
 from .modules import MODULE_REGISTRY
-from .utils import get_user_memberships, json_error, serialize_organization
+from .utils import clear_pilot_context, get_user_memberships, json_error, serialize_organization
 
 bp = Blueprint("commercial", __name__)
 
@@ -132,8 +132,20 @@ def create_prospect_organization() -> tuple[object, int]:
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name") or "").strip()
     template_key = str(payload.get("templateKey") or "GENERIC_RESTAURANT").strip() or "GENERIC_RESTAURANT"
+    location_name = str(payload.get("locationName") or "").strip()
+    city = str(payload.get("city") or "").strip()
+    region = str(payload.get("region") or "ON").strip() or "ON"
+    postal_code = str(payload.get("postalCode") or "").strip()
+    country = str(payload.get("country") or "Canada").strip() or "Canada"
+    timezone = str(payload.get("timezone") or "America/Toronto").strip() or "America/Toronto"
+    address_line1 = str(payload.get("addressLine1") or "").strip()
+    address_line2 = str(payload.get("addressLine2") or "").strip()
     if not name:
         return json_error("Organization name is required.", 400)
+    if not location_name:
+        return json_error("At least one location name is required.", 400)
+    if not city:
+        return json_error("Location city is required.", 400)
     if template_key not in {template["templateKey"] for template in SETUP_TEMPLATES}:
         return json_error("Unknown setup template.", 400)
 
@@ -159,6 +171,19 @@ def create_prospect_organization() -> tuple[object, int]:
     membership = OrganizationMembership(user_id=current_user.id, organization_id=organization.id, role="owner")
     db.session.add(membership)
 
+    location = RestaurantLocation(
+        organization_id=organization.id,
+        name=location_name,
+        address_line1=address_line1,
+        address_line2=address_line2,
+        city=city,
+        region=region,
+        postal_code=postal_code,
+        country=country,
+        timezone=timezone,
+    )
+    db.session.add(location)
+
     template = next(template for template in SETUP_TEMPLATES if template["templateKey"] == template_key)
     for module_key in template["defaultModules"]:
         db.session.add(
@@ -181,10 +206,23 @@ def create_prospect_organization() -> tuple[object, int]:
         entity_id=organization.id,
         organization_id=organization.id,
         actor_user_id=current_user.id,
-        metadata={"templateKey": template_key},
+        metadata={"templateKey": template_key, "locationName": location_name},
     )
     db.session.commit()
-    return jsonify({"organization": serialize_organization(organization), "membershipRole": "owner"}), 201
+    clear_pilot_context()
+    session["pilot_current_membership_id"] = membership.id
+    session["pilot_current_organization_id"] = organization.id
+    session["pilot_current_location_id"] = location.id
+    return (
+        jsonify(
+            {
+                "organization": serialize_organization(organization),
+                "membershipRole": "owner",
+                "currentLocationId": location.id,
+            }
+        ),
+        201,
+    )
 
 
 @bp.post("/api/onboarding/organizations/<int:organization_id>/request-setup")

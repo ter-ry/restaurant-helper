@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import secrets
+from urllib.parse import urlencode
 
 from flask import Blueprint, jsonify, redirect, request, session
 from flask_login import current_user, login_required, login_user, logout_user
@@ -26,6 +27,15 @@ from .utils import clear_pilot_context, get_current_location, get_current_organi
 
 bp = Blueprint("auth", __name__)
 INVALID_LOGIN_MESSAGE = "Invalid email or password."
+
+
+def _google_complete_redirect(*, status: str, message: str | None = None, linked: bool = False) -> object:
+    params: dict[str, str] = {"status": status}
+    if message:
+        params["message"] = message
+    if linked:
+        params["linked"] = "true"
+    return redirect(f"/auth/google/complete?{urlencode(params)}", code=303)
 
 
 @bp.get("/api/auth/csrf")
@@ -178,15 +188,15 @@ def google_callback():
     if not context["state"] or context["state"] != query_state:
         return json_error("Google login state validation failed.", 400)
     if not context["expires_at"] or context["purpose"] not in {"login", "link"}:
-        return json_error("Google login session expired.", 400)
+        return _google_complete_redirect(status="error", message="Google login session expired.")
 
     try:
         tokens = exchange_google_code(code)
         claims = verify_google_id_token(tokens.id_token, nonce=context["nonce"])
     except GoogleOIDCError as exc:
-        return json_error(str(exc), 400)
+        return _google_complete_redirect(status="error", message=str(exc))
     except Exception:
-        return json_error("Google login failed.", 400)
+        return _google_complete_redirect(status="error", message="Google login failed.")
 
     email = clean_email(str(claims.get("email") or ""))
     subject = str(claims.get("sub") or "").strip()
@@ -215,11 +225,11 @@ def google_callback():
 
     if context["purpose"] == "link" and current_user.is_authenticated:
         if clean_email(current_user.email) != email:
-            return json_error("Google account email does not match the signed-in account.", 403)
+            return _google_complete_redirect(status="error", message="Google account email does not match the signed-in account.")
         if user.id != current_user.id:
-            return json_error("That Google account is already linked to another Flowtally user.", 409)
+            return _google_complete_redirect(status="error", message="That Google account is already linked to another Flowtally user.")
         db.session.commit()
-        return jsonify({"ok": True, "linked": True, "user": serialize_user(current_user)}), 200
+        return _google_complete_redirect(status="success", linked=True)
 
     session.clear()
     login_user(user)
@@ -234,7 +244,7 @@ def google_callback():
             metadata={"providerSubject": subject, "membershipCount": len(memberships)},
         )
         db.session.commit()
-        return jsonify(_login_payload(user, memberships, None, None, None)), 200
+        return _google_complete_redirect(status="success")
 
     session["pilot_current_membership_id"] = membership.id
     session["pilot_current_organization_id"] = membership.organization_id
@@ -250,7 +260,7 @@ def google_callback():
         metadata={"providerSubject": subject, "membershipRole": membership.role},
     )
     db.session.commit()
-    return jsonify(_login_payload(user, memberships, membership, organization, current_location)), 200
+    return _google_complete_redirect(status="success")
 
 
 @bp.get("/api/auth/me")
