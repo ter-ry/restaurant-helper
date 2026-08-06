@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
-from .extensions import db
-from .models import Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, RestaurantLocation
+from .extensions import csrf, db
+from .models import Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationInvitation, OrganizationMembership, OrganizationModule, RestaurantLocation
 from .modules import MODULE_REGISTRY
-from .utils import clear_pilot_context, get_user_memberships, json_error, serialize_organization
+from .utils import clear_pilot_context, get_current_organization_bundle, get_user_memberships, json_error, serialize_organization
+from .validation import clean_email
 
 bp = Blueprint("commercial", __name__)
 
@@ -248,3 +252,192 @@ def request_setup(organization_id: int) -> tuple[object, int]:
     )
     db.session.commit()
     return jsonify({"organization": serialize_organization(organization)}), 200
+
+
+def _invite_token_hash(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _serialize_invitation(invitation: OrganizationInvitation) -> dict[str, Any]:
+    return {
+        "id": invitation.id,
+        "organizationId": invitation.organization_id,
+        "invitedEmail": invitation.invited_email,
+        "role": invitation.role,
+        "status": invitation.status,
+        "expiresAt": invitation.expires_at.isoformat() if invitation.expires_at else None,
+        "revokedAt": invitation.revoked_at.isoformat() if invitation.revoked_at else None,
+        "acceptedAt": invitation.accepted_at.isoformat() if invitation.accepted_at else None,
+        "createdAt": invitation.created_at.isoformat() if invitation.created_at else None,
+        "updatedAt": invitation.updated_at.isoformat() if invitation.updated_at else None,
+    }
+
+
+def _current_owner_organization():
+    organization, membership, _ = get_current_organization_bundle()
+    if organization is None or membership is None:
+        return None, None
+    if membership.role != "owner":
+        return organization, None
+    return organization, membership
+
+
+@bp.get("/api/organization-invitations")
+@login_required
+def list_organization_invitations() -> tuple[object, int]:
+    organization, membership = _current_owner_organization()
+    if organization is None or membership is None:
+        return json_error("Only the owner can manage invitations.", 403)
+
+    invitations = (
+        OrganizationInvitation.query.filter_by(organization_id=organization.id)
+        .order_by(OrganizationInvitation.created_at.desc(), OrganizationInvitation.id.desc())
+        .all()
+    )
+    return jsonify({"invitations": [_serialize_invitation(invitation) for invitation in invitations]}), 200
+
+
+@bp.post("/api/organization-invitations")
+@login_required
+def create_organization_invitation() -> tuple[object, int]:
+    organization, membership = _current_owner_organization()
+    if organization is None or membership is None:
+        return json_error("Only the owner can manage invitations.", 403)
+
+    payload = request.get_json(silent=True) or {}
+    invited_email = clean_email(str(payload.get("email") or ""))
+    role = str(payload.get("role") or "manager").strip().lower()
+    if not invited_email:
+        return json_error("Invitation email is required.", 400)
+    if invited_email == clean_email(current_user.email):
+        return json_error("You cannot invite yourself.", 400)
+    if role != "manager":
+        return json_error("Only manager invitations are supported yet.", 400)
+
+    now = datetime.now(timezone.utc)
+    existing = (
+        OrganizationInvitation.query.filter_by(organization_id=organization.id, invited_email=invited_email)
+        .filter(OrganizationInvitation.status == "pending")
+        .filter(OrganizationInvitation.revoked_at.is_(None))
+        .filter(OrganizationInvitation.expires_at >= now)
+        .first()
+    )
+    if existing is not None:
+        return json_error("That invitation is already pending.", 409)
+
+    raw_token = secrets.token_urlsafe(32)
+    invitation = OrganizationInvitation(
+        organization_id=organization.id,
+        invited_email=invited_email,
+        role=role,
+        token=_invite_token_hash(raw_token),
+        status="pending",
+        created_by_user_id=current_user.id,
+        expires_at=now + timedelta(days=7),
+        single_use=True,
+    )
+    db.session.add(invitation)
+    record_audit_event(
+        event_type="invitation.created",
+        entity_type="organization_invitation",
+        entity_id=None,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"invitedEmail": invited_email, "role": role},
+    )
+    db.session.commit()
+    return (
+        jsonify(
+            {
+                "invitation": _serialize_invitation(invitation),
+                "invitationUrl": f"/invite/{raw_token}",
+            }
+        ),
+        201,
+    )
+
+
+@bp.post("/api/organization-invitations/<string:raw_token>/cancel")
+@login_required
+def cancel_organization_invitation(raw_token: str) -> tuple[object, int]:
+    organization, membership = _current_owner_organization()
+    if organization is None or membership is None:
+        return json_error("Only the owner can manage invitations.", 403)
+
+    invitation = OrganizationInvitation.query.filter_by(organization_id=organization.id, token=_invite_token_hash(raw_token)).first()
+    if invitation is None:
+        return json_error("Invitation not found.", 404)
+    if invitation.status == "revoked":
+        return json_error("That invitation was already revoked.", 409)
+    if invitation.status == "accepted":
+        return json_error("That invitation was already accepted.", 409)
+
+    invitation.status = "revoked"
+    invitation.revoked_at = datetime.now(timezone.utc)
+    record_audit_event(
+        event_type="invitation.revoked",
+        entity_type="organization_invitation",
+        entity_id=invitation.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"invitedEmail": invitation.invited_email, "role": invitation.role},
+    )
+    db.session.commit()
+    return jsonify({"invitation": _serialize_invitation(invitation)}), 200
+
+
+@csrf.exempt
+@bp.post("/api/organization-invitations/<string:raw_token>/accept")
+@login_required
+def accept_organization_invitation(raw_token: str) -> tuple[object, int]:
+    invitation = OrganizationInvitation.query.filter_by(token=_invite_token_hash(raw_token)).first()
+    if invitation is None:
+        return json_error("Invitation not found.", 404)
+    if invitation.status == "revoked":
+        return json_error("That invitation was revoked.", 409)
+    if invitation.status == "accepted":
+        return json_error("That invitation was already accepted.", 409)
+    now = datetime.now(timezone.utc)
+    expires_at = _as_utc(invitation.expires_at)
+    if expires_at is None or expires_at <= now:
+        invitation.status = "expired"
+        db.session.commit()
+        return json_error("That invitation has expired.", 410)
+    if clean_email(current_user.email) != clean_email(invitation.invited_email):
+        return json_error("That invitation was sent to a different email address.", 403)
+
+    membership = OrganizationMembership.query.filter_by(
+        organization_id=invitation.organization_id,
+        user_id=current_user.id,
+    ).first()
+    if membership is None:
+        membership = OrganizationMembership(
+            organization_id=invitation.organization_id,
+            user_id=current_user.id,
+            role=invitation.role,
+        )
+        db.session.add(membership)
+    else:
+        membership.role = invitation.role
+
+    invitation.status = "accepted"
+    invitation.accepted_by_user_id = current_user.id
+    invitation.accepted_at = now
+    record_audit_event(
+        event_type="invitation.accepted",
+        entity_type="organization_invitation",
+        entity_id=invitation.id,
+        organization_id=invitation.organization_id,
+        actor_user_id=current_user.id,
+        metadata={"invitedEmail": invitation.invited_email, "role": invitation.role},
+    )
+    db.session.commit()
+    return jsonify({"ok": True, "accepted": True, "organizationId": invitation.organization_id, "role": invitation.role}), 200

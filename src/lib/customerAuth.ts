@@ -120,6 +120,16 @@ export async function requestCustomerSetup(organizationId: number) {
   });
 }
 
+export async function acceptCustomerInvitation(token: string) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<{ ok: true; accepted: true; organizationId: number; role: string }>(`/api/organization-invitations/${token}/accept`, {
+    method: "POST",
+    headers: {
+      "X-CSRFToken": csrfToken,
+    },
+  });
+}
+
 export async function logoutCustomer() {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<{ ok: true }>("/api/auth/logout", {
