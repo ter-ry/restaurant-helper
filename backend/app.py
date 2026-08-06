@@ -6,7 +6,9 @@ from flask_wtf.csrf import CSRFError
 from flask_login import logout_user
 
 from .auth import bp as auth_bp
+from .commercial import bp as commercial_bp
 from .audit import ensure_request_id
+from .access import enforce_operational_access
 from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
@@ -41,6 +43,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.before_request
     def enforce_centralized_policy():
         return enforce_endpoint_permission()
+
+    @app.before_request
+    def enforce_commercial_access():
+        return enforce_operational_access()
 
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:
@@ -125,11 +131,14 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "environment": app.config.get("FLOWTALLY_ENV", "development"),
                 "databaseUrlConfigured": bool(app.config.get("SQLALCHEMY_DATABASE_URI")),
                 "csrfEnabled": bool(app.config.get("WTF_CSRF_ENABLED", True)),
+                "googleOidcEnabled": bool(app.config.get("GOOGLE_OIDC_ENABLED")),
+                "squareEnabled": bool(app.config.get("SQUARE_ENABLED")),
             },
             200,
         )
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(commercial_bp)
     app.register_blueprint(organizations_bp)
     app.register_blueprint(pilot_api_bp)
 

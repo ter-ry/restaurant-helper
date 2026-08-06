@@ -1,12 +1,26 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request, session
+from datetime import datetime, timezone
+import secrets
+
+from flask import Blueprint, jsonify, redirect, request, session
 from flask_login import current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import generate_csrf
 
 from .audit import record_audit_event
+from .google_oidc import (
+    GoogleOIDCError,
+    build_google_authorization_url,
+    exchange_google_code,
+    generate_google_nonce,
+    generate_google_state,
+    google_oidc_enabled,
+    pop_google_session_context,
+    store_google_session_context,
+    verify_google_id_token,
+)
 from .extensions import db, limiter
-from .models import User
+from .models import ExternalIdentity, Organization, OrganizationMembership, User
 from .validation import RequestValidationError, clean_email, parse_login_payload
 from .utils import clear_pilot_context, get_current_location, get_current_organization_bundle, get_user_memberships, json_error, serialize_organization, serialize_user
 
@@ -39,6 +53,28 @@ def login() -> tuple[object, int]:
         db.session.commit()
         return json_error(INVALID_LOGIN_MESSAGE, 401)
 
+    return _complete_login(user, event_type_success="auth.login.success")
+
+
+def _login_payload(user: User, memberships: list[OrganizationMembership], membership: OrganizationMembership | None, organization: Organization | None, current_location) -> dict[str, object]:
+    return {
+        "user": serialize_user(user),
+        "membershipRole": membership.role if membership else None,
+        "currentOrganization": serialize_organization(organization) if organization else None,
+        "currentLocationId": current_location.id if current_location else None,
+        "organizations": [
+            {
+                **serialize_organization(entry.organization),
+                "membershipRole": entry.role,
+            }
+            for entry in memberships
+            if entry.organization is not None
+        ],
+        "csrfToken": generate_csrf(),
+    }
+
+
+def _choose_membership_for_user(user: User) -> tuple[list[OrganizationMembership], OrganizationMembership | None]:
     memberships = get_user_memberships(user.id)
     membership = None
     current_organization_id = session.get("pilot_current_organization_id")
@@ -51,6 +87,17 @@ def login() -> tuple[object, int]:
         membership = next((entry for entry in memberships if entry.organization_id == current_organization_id), None)
     if membership is None and len(memberships) == 1:
         membership = memberships[0]
+    return memberships, membership
+
+
+def _complete_login(
+    user: User,
+    *,
+    event_type_success: str,
+    success_metadata: dict[str, object] | None = None,
+    status_code: int = 200,
+) -> tuple[object, int]:
+    memberships, membership = _choose_membership_for_user(user)
     if membership is None:
         login_user(user)
         clear_pilot_context()
@@ -59,29 +106,10 @@ def login() -> tuple[object, int]:
             entity_type="user",
             entity_id=user.id,
             actor_user_id=user.id,
-            metadata={"membershipCount": len(memberships)},
+            metadata={"membershipCount": len(memberships), **(success_metadata or {})},
         )
         db.session.commit()
-        return (
-            jsonify(
-                {
-                    "user": serialize_user(user),
-                    "membershipRole": None,
-                    "currentOrganization": None,
-                    "currentLocationId": None,
-                    "organizations": [
-                        {
-                            **serialize_organization(entry.organization),
-                            "membershipRole": entry.role,
-                        }
-                        for entry in memberships
-                        if entry.organization is not None
-                    ],
-                    "csrfToken": generate_csrf(),
-                }
-            ),
-            200,
-        )
+        return jsonify(_login_payload(user, memberships, None, None, None)), status_code
 
     login_user(user)
     session["pilot_current_membership_id"] = membership.id
@@ -89,35 +117,16 @@ def login() -> tuple[object, int]:
     organization, _, locations = get_current_organization_bundle()
     current_location = get_current_location()
     record_audit_event(
-        event_type="auth.login.success",
+        event_type=event_type_success,
         entity_type="user",
         entity_id=user.id,
         organization_id=organization.id if organization else None,
         location_id=current_location.id if current_location else None,
         actor_user_id=user.id,
-        metadata={"membershipRole": membership.role},
+        metadata={"membershipRole": membership.role, **(success_metadata or {})},
     )
     db.session.commit()
-    return (
-        jsonify(
-            {
-                "user": serialize_user(user),
-                "membershipRole": membership.role,
-                "currentOrganization": serialize_organization(organization) if organization else None,
-                "currentLocationId": current_location.id if current_location else None,
-                "organizations": [
-                    {
-                        **serialize_organization(entry.organization),
-                        "membershipRole": entry.role,
-                    }
-                    for entry in memberships
-                    if entry.organization is not None
-                ],
-                "csrfToken": generate_csrf(),
-            }
-        ),
-        200,
-    )
+    return jsonify(_login_payload(user, memberships, membership, organization, current_location)), status_code
 
 
 @bp.post("/api/auth/logout")
@@ -135,6 +144,113 @@ def logout() -> tuple[dict[str, bool], int]:
     logout_user()
     db.session.commit()
     return {"ok": True}, 200
+
+
+@bp.get("/api/auth/google/start")
+@limiter.limit("10 per minute")
+def google_start() -> object:
+    if not google_oidc_enabled():
+        return json_error("Google login is not enabled.", 404)
+    purpose = request.args.get("purpose", "login").strip().lower()
+    if purpose not in {"login", "link"}:
+        return json_error("Unsupported Google login purpose.", 400)
+    state = generate_google_state()
+    nonce = generate_google_nonce()
+    store_google_session_context(state=state, nonce=nonce, purpose=purpose)
+    return redirect(build_google_authorization_url(state=state, nonce=nonce), code=302)
+
+
+@bp.get("/api/auth/google/callback")
+@limiter.limit("10 per minute")
+def google_callback():
+    if not google_oidc_enabled():
+        return json_error("Google login is not enabled.", 404)
+
+    query_state = request.args.get("state", "").strip()
+    code = request.args.get("code", "").strip()
+    error = request.args.get("error", "").strip()
+    if error:
+        return json_error("Google authentication was not completed.", 400)
+    if not query_state or not code:
+        return json_error("Google callback is missing the authorization response.", 400)
+
+    context = pop_google_session_context()
+    if not context["state"] or context["state"] != query_state:
+        return json_error("Google login state validation failed.", 400)
+    if not context["expires_at"] or context["purpose"] not in {"login", "link"}:
+        return json_error("Google login session expired.", 400)
+
+    try:
+        tokens = exchange_google_code(code)
+        claims = verify_google_id_token(tokens.id_token, nonce=context["nonce"])
+    except GoogleOIDCError as exc:
+        return json_error(str(exc), 400)
+    except Exception:
+        return json_error("Google login failed.", 400)
+
+    email = clean_email(str(claims.get("email") or ""))
+    subject = str(claims.get("sub") or "").strip()
+    if not email or not subject:
+        return json_error("Google account information was incomplete.", 400)
+
+    identity = ExternalIdentity.query.filter_by(provider="google", provider_subject=subject).first()
+    user = identity.user if identity and identity.user else None
+    if user is None:
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user is not None:
+            if context["purpose"] == "link" and current_user.is_authenticated and current_user.id == existing_user.id:
+                user = existing_user
+            else:
+                return json_error("That Google account is already associated with a different Flowtally account.", 409)
+        else:
+            user = User(email=email, is_active=True)
+            user.set_password(secrets.token_urlsafe(32))
+            db.session.add(user)
+            db.session.flush()
+        identity = ExternalIdentity(user_id=user.id, provider="google", provider_subject=subject, email_at_link=email, last_login_at=datetime.now(timezone.utc))
+        db.session.add(identity)
+    else:
+        identity.email_at_link = email
+        identity.last_login_at = datetime.now(timezone.utc)
+
+    if context["purpose"] == "link" and current_user.is_authenticated:
+        if clean_email(current_user.email) != email:
+            return json_error("Google account email does not match the signed-in account.", 403)
+        if user.id != current_user.id:
+            return json_error("That Google account is already linked to another Flowtally user.", 409)
+        db.session.commit()
+        return jsonify({"ok": True, "linked": True, "user": serialize_user(current_user)}), 200
+
+    session.clear()
+    login_user(user)
+    memberships, membership = _choose_membership_for_user(user)
+    if membership is None:
+        clear_pilot_context()
+        record_audit_event(
+            event_type="auth.google.login",
+            entity_type="user",
+            entity_id=user.id,
+            actor_user_id=user.id,
+            metadata={"providerSubject": subject, "membershipCount": len(memberships)},
+        )
+        db.session.commit()
+        return jsonify(_login_payload(user, memberships, None, None, None)), 200
+
+    session["pilot_current_membership_id"] = membership.id
+    session["pilot_current_organization_id"] = membership.organization_id
+    organization, _, _ = get_current_organization_bundle()
+    current_location = get_current_location()
+    record_audit_event(
+        event_type="auth.google.login",
+        entity_type="user",
+        entity_id=user.id,
+        organization_id=organization.id if organization else None,
+        location_id=current_location.id if current_location else None,
+        actor_user_id=user.id,
+        metadata={"providerSubject": subject, "membershipRole": membership.role},
+    )
+    db.session.commit()
+    return jsonify(_login_payload(user, memberships, membership, organization, current_location)), 200
 
 
 @bp.get("/api/auth/me")

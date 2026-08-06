@@ -175,7 +175,19 @@ class BaseConfig:
             "RATELIMIT_DEFAULT": "200 per hour",
             "RATELIMIT_STORAGE_URI": _rate_limit_storage_uri(cls.mode),
             "ALLOWED_ORIGINS": _allowed_origins(cls.mode),
+            "GOOGLE_OIDC_ENABLED": _env_bool("GOOGLE_OIDC_ENABLED", False),
+            "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
+            "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(),
+            "GOOGLE_REDIRECT_URI": os.environ.get("GOOGLE_REDIRECT_URI", "").strip(),
+            "SQUARE_ENABLED": _env_bool("SQUARE_ENABLED", False),
+            "SQUARE_ENVIRONMENT": os.environ.get("SQUARE_ENVIRONMENT", "sandbox").strip().lower() or "sandbox",
+            "SQUARE_APPLICATION_ID": os.environ.get("SQUARE_APPLICATION_ID", "").strip(),
+            "SQUARE_APPLICATION_SECRET": os.environ.get("SQUARE_APPLICATION_SECRET", "").strip(),
+            "SQUARE_REDIRECT_URI": os.environ.get("SQUARE_REDIRECT_URI", "").strip(),
+            "SQUARE_WEBHOOK_SIGNATURE_KEY": os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY", "").strip(),
+            "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
         }
+        validate_runtime_config(config, environment=cls.mode)
         return config
 
 
@@ -271,3 +283,35 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
     rate_limit_storage = str(config.get("RATELIMIT_STORAGE_URI") or "").strip()
     if not rate_limit_storage or rate_limit_storage.startswith("memory://"):
         raise ConfigurationError("Rate-limit storage must not use memory:// in staging or production.")
+
+    google_enabled = bool(config.get("GOOGLE_OIDC_ENABLED"))
+    if google_enabled:
+        google_client_id = str(config.get("GOOGLE_CLIENT_ID") or "").strip()
+        google_client_secret = str(config.get("GOOGLE_CLIENT_SECRET") or "").strip()
+        google_redirect_uri = str(config.get("GOOGLE_REDIRECT_URI") or "").strip()
+        if not google_client_id or not google_client_secret or not google_redirect_uri:
+            raise ConfigurationError("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI are required when Google login is enabled.")
+        parsed_google_redirect = urlparse(google_redirect_uri)
+        if parsed_google_redirect.scheme != "https" or not parsed_google_redirect.netloc:
+            raise ConfigurationError("GOOGLE_REDIRECT_URI must be an explicit https URL in staging and production.")
+
+    square_enabled = bool(config.get("SQUARE_ENABLED"))
+    if square_enabled:
+        square_environment = str(config.get("SQUARE_ENVIRONMENT") or "").strip().lower()
+        square_application_id = str(config.get("SQUARE_APPLICATION_ID") or "").strip()
+        square_application_secret = str(config.get("SQUARE_APPLICATION_SECRET") or "").strip()
+        square_redirect_uri = str(config.get("SQUARE_REDIRECT_URI") or "").strip()
+        square_webhook_key = str(config.get("SQUARE_WEBHOOK_SIGNATURE_KEY") or "").strip()
+        integration_key = str(config.get("INTEGRATION_ENCRYPTION_KEY") or "").strip()
+        if not square_application_id or not square_application_secret or not square_redirect_uri or not square_webhook_key or not integration_key:
+            raise ConfigurationError(
+                "SQUARE_APPLICATION_ID, SQUARE_APPLICATION_SECRET, SQUARE_REDIRECT_URI, SQUARE_WEBHOOK_SIGNATURE_KEY, and INTEGRATION_ENCRYPTION_KEY are required when Square is enabled."
+            )
+        if len(integration_key) < 32:
+            raise ConfigurationError("INTEGRATION_ENCRYPTION_KEY must be at least 32 characters long when Square is enabled.")
+        if square_environment not in {"sandbox", "production"}:
+            raise ConfigurationError("SQUARE_ENVIRONMENT must be either sandbox or production.")
+        if mode == "staging" and square_environment != "sandbox":
+            raise ConfigurationError("Staging must default to Square Sandbox.")
+        if mode == "production" and square_environment != "production":
+            raise ConfigurationError("Production must not use Square Sandbox credentials.")

@@ -8,16 +8,32 @@ import os
 from .extensions import db
 from .models import (
     AuditEvent,
+    DashboardLayout,
+    ExternalIdentity,
     InventoryItem,
     InventoryMovement,
     Organization,
+    OrganizationConfiguration,
+    OrganizationConfigurationVersion,
+    OrganizationInvitation,
     OrganizationMembership,
+    OrganizationModule,
+    PlatformRole,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     ReorderIntent,
     RestaurantLocation,
+    SquareCatalogMapping,
+    SquareCatalogObject,
+    SquareConnection,
+    SquareLocation,
+    SquareLocationMapping,
+    SquareSyncCursor,
+    SquareSyncJob,
+    SquareWebhookEvent,
     StockCountSession,
     StockCountSessionLine,
+    SupportAccessGrant,
     Supplier,
     SupplierItemMapping,
     User,
@@ -195,9 +211,53 @@ def _upsert_user(*, email: str, password: str, is_active: bool = True) -> User:
 def _upsert_organization() -> Organization:
     organization = Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).first()
     if organization is None:
-        organization = Organization(name=LOCAL_ORGANIZATION_NAME)
+        organization = Organization(
+            name=LOCAL_ORGANIZATION_NAME,
+            lifecycle_status="ACTIVE",
+            setup_status="COMPLETE",
+            subscription_status="ACTIVE",
+            setup_template_key="CAFE",
+            setup_fee_status="confirmed",
+            subscription_provider="manual",
+            external_customer_reference="seed-local-customer",
+            external_subscription_reference="seed-local-subscription",
+            is_prospect=False,
+            active_at=_now(),
+            setup_completed_at=_now(),
+        )
         db.session.add(organization)
+    else:
+        organization.lifecycle_status = "ACTIVE"
+        organization.setup_status = "COMPLETE"
+        organization.subscription_status = "ACTIVE"
+        organization.setup_template_key = "CAFE"
+        organization.setup_fee_status = "confirmed"
+        organization.subscription_provider = "manual"
+        organization.external_customer_reference = "seed-local-customer"
+        organization.external_subscription_reference = "seed-local-subscription"
+        organization.is_prospect = False
+        organization.active_at = organization.active_at or _now()
+        organization.setup_completed_at = organization.setup_completed_at or _now()
+        organization.suspended_at = None
+        organization.cancelled_at = None
     return organization
+
+
+def _upsert_module(organization: Organization, module_key: str, *, status: str = "ENABLED") -> OrganizationModule:
+    module = OrganizationModule.query.filter_by(organization_id=organization.id, module_key=module_key).first()
+    if module is None:
+        module = OrganizationModule(
+            organization_id=organization.id,
+            module_key=module_key,
+            status=status,
+            configuration_json={},
+            enabled_at=_now(),
+        )
+        db.session.add(module)
+    else:
+        module.status = status
+        module.enabled_at = module.enabled_at or _now()
+    return module
 
 
 def _upsert_membership(user: User, organization: Organization, role: str) -> OrganizationMembership:
@@ -235,6 +295,22 @@ def _normalize_name(value: str) -> str:
 def _clear_seed_data() -> None:
     for model in [
         AuditEvent,
+        SquareWebhookEvent,
+        SquareSyncCursor,
+        SquareSyncJob,
+        SquareCatalogMapping,
+        SquareCatalogObject,
+        SquareLocationMapping,
+        SquareLocation,
+        SquareConnection,
+        DashboardLayout,
+        OrganizationConfigurationVersion,
+        OrganizationConfiguration,
+        OrganizationInvitation,
+        OrganizationModule,
+        SupportAccessGrant,
+        PlatformRole,
+        ExternalIdentity,
         InventoryMovement,
         SupplierItemMapping,
         PurchaseInvoiceLine,
@@ -590,6 +666,8 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
         _upsert_membership(owner, organization, "owner")
         _upsert_membership(manager, organization, "manager")
         location = _upsert_location(organization)
+        for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING"]:
+            _upsert_module(organization, module_key)
         db.session.commit()
         return SeedResult(organization_id=organization.id, owner_id=owner.id, manager_id=manager.id, location_id=location.id)
 
@@ -601,6 +679,8 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
     _upsert_membership(manager, organization, "manager")
     location = _upsert_location(organization)
     db.session.flush()
+    for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING"]:
+        _upsert_module(organization, module_key)
 
     suppliers = [_get_or_create_supplier(organization, spec) for spec in SUPPLIER_SEED]
     db.session.flush()

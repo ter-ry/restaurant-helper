@@ -2,12 +2,22 @@
 
 This repository contains four separate surfaces that should not be confused with one another.
 
-## Legacy root Flask application
+## Archived job tracker
 
 Purpose:
 
-- Local job-tracker and OCR helper app.
-- Kept for now because it still exists in the repo and deployment history.
+- Historical local job-tracker application, now archived under `legacy/job-tracker/`.
+- Preserved only for reference and migration history.
+
+Deployment note:
+
+- The archived service files are not part of the active Flowtally runtime.
+
+## Active OCR helper service
+
+Purpose:
+
+- Lightweight Flask app at the repository root that serves invoice and reconciliation OCR endpoints for the Flowtally frontend.
 
 Start command:
 
@@ -20,10 +30,6 @@ Gunicorn entrypoint:
 ```bash
 gunicorn app:app --bind 0.0.0.0:$PORT
 ```
-
-Deployment note:
-
-- `render.yaml` still represents this legacy service.
 
 ## Pilot backend
 
@@ -87,4 +93,5 @@ For PowerShell, set the variables with `$env:...` before running Vite.
 
 - The pilot backend should always be treated as a separate service from the legacy root app.
 - Staging should use `backend.wsgi:app`.
-- The root app should only be used for the legacy service until it is deliberately removed or relocated.
+- The archived job tracker should only live under `legacy/job-tracker/`.
+- The root Flask app should only be used for the OCR helper until it is deliberately removed or relocated.

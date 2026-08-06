@@ -5,6 +5,7 @@ from uuid import uuid4
 from backend.extensions import db
 from backend.models import AuditEvent, Organization, OrganizationMembership, RestaurantLocation, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
+from backend.tests.conftest import make_operational_organization
 
 
 def login(client):
@@ -30,22 +31,9 @@ def test_current_organization_bundle(client):
 
 def test_organization_detail_isolated_by_membership(app, client):
     with app.app_context():
-        other_org = Organization(name="Another Test Restaurant")
-        db.session.add(other_org)
-        db.session.flush()
-        db.session.add(
-            RestaurantLocation(
-                organization=other_org,
-                name="Another Kitchen",
-                address_line1="1 Test Way",
-                city="Toronto",
-                region="ON",
-                postal_code="M5V 1A1",
-                country="Canada",
-                timezone="America/Toronto",
-            )
-        )
-        db.session.commit()
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        other_org = make_operational_organization(owner, name="Another Test Restaurant", location_name="Another Kitchen")
         other_org_id = other_org.id
 
     assert login(client).status_code == 200
@@ -61,21 +49,7 @@ def test_explicit_organization_and_location_selection_records_audit(app, client)
     with app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
-
-        org = Organization(name="Explicit Selection Cafe")
-        db.session.add(org)
-        db.session.flush()
-        db.session.add(OrganizationMembership(user=owner, organization=org, role="owner"))
-        first_location = RestaurantLocation(
-            organization=org,
-            name="Cafe Front",
-            address_line1="1 Front St",
-            city="Toronto",
-            region="ON",
-            postal_code="M5H 1A1",
-            country="Canada",
-            timezone="America/Toronto",
-        )
+        org = make_operational_organization(owner, name="Explicit Selection Cafe", location_name="Cafe Front")
         second_location = RestaurantLocation(
             organization=org,
             name="Cafe Back",
@@ -86,7 +60,7 @@ def test_explicit_organization_and_location_selection_records_audit(app, client)
             country="Canada",
             timezone="America/Toronto",
         )
-        db.session.add_all([first_location, second_location])
+        db.session.add(second_location)
         db.session.commit()
         organization_id = org.id
         second_location_id = second_location.id
@@ -127,24 +101,11 @@ def test_multi_membership_login_requires_explicit_selection(app, client):
     with app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
-
-        secondary_org = Organization(name=f"Secondary Org {uuid4().hex[:8]}")
-        db.session.add(secondary_org)
-        db.session.flush()
-        db.session.add(OrganizationMembership(user=owner, organization=secondary_org, role="owner"))
-        db.session.add(
-            RestaurantLocation(
-                organization=secondary_org,
-                name="Secondary Kitchen",
-                address_line1="99 Test Way",
-                city="Toronto",
-                region="ON",
-                postal_code="M5V 1A9",
-                country="Canada",
-                timezone="America/Toronto",
-            )
+        secondary_org = make_operational_organization(
+            owner,
+            name=f"Secondary Org {uuid4().hex[:8]}",
+            location_name="Secondary Kitchen",
         )
-        db.session.commit()
         secondary_org_id = secondary_org.id
 
     response = login(client)

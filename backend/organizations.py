@@ -81,19 +81,12 @@ def current_organization() -> tuple[object, int]:
 @bp.get("/api/organizations/<int:organization_id>")
 @login_required
 def organization_detail(organization_id: int) -> tuple[object, int]:
-    membership = membership_for_organization(current_user.id, organization_id)
-    if membership is None:
+    organization, membership, locations = get_current_organization_bundle()
+    if organization is None or membership is None:
+        return json_error("That organization is not available to the current account.", 403)
+    if organization.id != organization_id:
         return json_error("That organization is not available to the current account.", 403)
 
-    organization = Organization.query.filter_by(id=organization_id).first()
-    if organization is None:
-        return json_error("Organization not found.", 404)
-
-    locations = (
-        RestaurantLocation.query.filter_by(organization_id=organization.id)
-        .order_by(RestaurantLocation.created_at.asc(), RestaurantLocation.id.asc())
-        .all()
-    )
     return jsonify(_serialize_bundle(organization, locations, membership.role)), 200
 
 

@@ -12,6 +12,7 @@ from backend.seed import (
     LOCAL_OWNER_EMAIL,
     LOCAL_OWNER_PASSWORD,
 )
+from backend.tests.conftest import make_operational_organization
 
 
 def login(client):
@@ -787,27 +788,14 @@ def test_reorder_plan_isolated_by_membership(app, client):
     original_plan_id = create_response.get_json()["id"]
 
     with app.app_context():
-        other_org = Organization(name=f"Other Reorder Org {uuid4().hex[:8]}")
-        db.session.add(other_org)
-        db.session.flush()
-        other_location = RestaurantLocation(
-            organization=other_org,
-            name="Other Reorder Location",
-            address_line1="200 Test Ave",
-            address_line2="",
-            city="Toronto",
-            region="ON",
-            postal_code="M5V 2T6",
-            country="Canada",
-            timezone="America/Toronto",
-        )
-        db.session.add(other_location)
         owner_user = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner_user is not None
-        other_membership = OrganizationMembership(user=owner_user, organization=other_org, role="owner")
-        db.session.add(other_membership)
-        db.session.commit()
-        other_membership_id = other_membership.id
+        other_org = make_operational_organization(
+            owner_user,
+            name=f"Other Reorder Org {uuid4().hex[:8]}",
+            location_name="Other Reorder Location",
+        )
+        other_membership_id = other_org.memberships[0].id
 
     with client.session_transaction() as session:
         session["pilot_current_membership_id"] = other_membership_id
@@ -1033,27 +1021,14 @@ def test_pilot_end_to_end_workflow_updates_dashboard_and_ledger(app, client):
             assert round(float(inventory_item.current_on_hand), 4) == round(expected_quantity, 4)
 
     with app.app_context():
-        other_org = Organization(name=f"Other Integration Org {uuid4().hex[:8]}")
-        db.session.add(other_org)
-        db.session.flush()
-        other_location = RestaurantLocation(
-            organization=other_org,
-            name="Other Integration Location",
-            address_line1="200 Integration Ave",
-            address_line2="",
-            city="Toronto",
-            region="ON",
-            postal_code="M5V 2T6",
-            country="Canada",
-            timezone="America/Toronto",
-        )
-        db.session.add(other_location)
         owner_user = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner_user is not None
-        other_membership = OrganizationMembership(user=owner_user, organization=other_org, role="owner")
-        db.session.add(other_membership)
-        db.session.commit()
-        other_membership_id = other_membership.id
+        other_org = make_operational_organization(
+            owner_user,
+            name=f"Other Integration Org {uuid4().hex[:8]}",
+            location_name="Other Integration Location",
+        )
+        other_membership_id = other_org.memberships[0].id
 
     with client.session_transaction() as session:
         session["pilot_current_membership_id"] = other_membership_id
@@ -1170,25 +1145,14 @@ def test_supplier_list_exposes_history_and_manager_access_is_required(app, clien
     assert harbour["recentMappings"]
 
     with app.app_context():
-        other_org = Organization(name=f"Other Supplier Org {uuid4().hex[:8]}")
-        db.session.add(other_org)
-        db.session.flush()
-        other_location = RestaurantLocation(
-            organization=other_org,
-            name="Other Location",
-            address_line1="1 Test St",
-            address_line2="",
-            city="Toronto",
-            region="ON",
-            postal_code="M5V 2T6",
-            country="Canada",
-            timezone="America/Toronto",
-        )
-        db.session.add(other_location)
         manager_user = User.query.filter_by(email=LOCAL_MANAGER_EMAIL).first()
         assert manager_user is not None
-        other_membership = OrganizationMembership(user=manager_user, organization=other_org, role="manager")
-        db.session.add(other_membership)
+        other_org = make_operational_organization(
+            manager_user,
+            name=f"Other Supplier Org {uuid4().hex[:8]}",
+            location_name="Other Location",
+            role="manager",
+        )
         db.session.add(
             Supplier(
                 organization=other_org,
@@ -1204,7 +1168,7 @@ def test_supplier_list_exposes_history_and_manager_access_is_required(app, clien
             )
         )
         db.session.commit()
-        other_membership_id = other_membership.id
+        other_membership_id = other_org.memberships[0].id
 
     with client.session_transaction() as session:
         session["pilot_current_membership_id"] = other_membership_id
@@ -1284,25 +1248,15 @@ def test_inventory_items_are_isolated_by_membership(app, client):
     assert "Cream" in original_names
 
     with app.app_context():
-        other_org = Organization(name=f"Other Inventory Org {uuid4().hex[:8]}")
-        db.session.add(other_org)
-        db.session.flush()
-        other_location = RestaurantLocation(
-            organization=other_org,
-            name="Other Inventory Location",
-            address_line1="99 Test Ave",
-            address_line2="",
-            city="Toronto",
-            region="ON",
-            postal_code="M5V 2T6",
-            country="Canada",
-            timezone="America/Toronto",
-        )
-        db.session.add(other_location)
         manager_user = User.query.filter_by(email=LOCAL_MANAGER_EMAIL).first()
         assert manager_user is not None
-        other_membership = OrganizationMembership(user=manager_user, organization=other_org, role="manager")
-        db.session.add(other_membership)
+        other_org = make_operational_organization(
+            manager_user,
+            name=f"Other Inventory Org {uuid4().hex[:8]}",
+            location_name="Other Inventory Location",
+            role="manager",
+        )
+        other_location = other_org.locations[0]
         db.session.add(
             InventoryItem(
                 organization=other_org,
@@ -1323,7 +1277,7 @@ def test_inventory_items_are_isolated_by_membership(app, client):
             )
         )
         db.session.commit()
-        other_membership_id = other_membership.id
+        other_membership_id = other_org.memberships[0].id
 
     with client.session_transaction() as session:
         session["pilot_current_membership_id"] = other_membership_id

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from backend.app import create_app
-from backend.config import ConfigurationError, choose_config
+from backend.config import ConfigurationError, choose_config, validate_runtime_config
 
 
 def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -20,6 +20,17 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SESSION_COOKIE_SAMESITE",
         "MAX_CONTENT_LENGTH",
         "WTF_CSRF_TIME_LIMIT",
+        "GOOGLE_OIDC_ENABLED",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_REDIRECT_URI",
+        "SQUARE_ENABLED",
+        "SQUARE_ENVIRONMENT",
+        "SQUARE_APPLICATION_ID",
+        "SQUARE_APPLICATION_SECRET",
+        "SQUARE_REDIRECT_URI",
+        "SQUARE_WEBHOOK_SIGNATURE_KEY",
+        "INTEGRATION_ENCRYPTION_KEY",
     ]:
         monkeypatch.delenv(name, raising=False)
 
@@ -148,3 +159,84 @@ def test_create_app_rejects_unsafe_staging_startup(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(ConfigurationError, match="SECRET_KEY is too weak"):
         create_app()
+
+
+def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_OIDC_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://127.0.0.1:5001/api/auth/google/callback")
+    monkeypatch.setenv("SQUARE_ENABLED", "true")
+    monkeypatch.setenv("SQUARE_ENVIRONMENT", "sandbox")
+    monkeypatch.setenv("SQUARE_APPLICATION_ID", "square-app")
+    monkeypatch.setenv("SQUARE_APPLICATION_SECRET", "square-secret")
+    monkeypatch.setenv("SQUARE_REDIRECT_URI", "http://127.0.0.1:5001/api/integrations/square/callback")
+    monkeypatch.setenv("SQUARE_WEBHOOK_SIGNATURE_KEY", "square-webhook-secret")
+    monkeypatch.setenv("INTEGRATION_ENCRYPTION_KEY", "x" * 32)
+
+    config = choose_config().build()
+
+    assert config["GOOGLE_OIDC_ENABLED"] is True
+    assert config["GOOGLE_CLIENT_ID"] == "google-client"
+    assert config["GOOGLE_REDIRECT_URI"].endswith("/api/auth/google/callback")
+    assert config["SQUARE_ENABLED"] is True
+    assert config["SQUARE_ENVIRONMENT"] == "sandbox"
+    assert config["SQUARE_APPLICATION_ID"] == "square-app"
+    assert config["INTEGRATION_ENCRYPTION_KEY"] == "x" * 32
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        (
+            {
+                "FLOWTALLY_ENV": "staging",
+                "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
+                "DATABASE_URL": "postgresql://example.invalid/flowtally",
+                "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "SESSION_COOKIE_SECURE": "true",
+                "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
+                "GOOGLE_OIDC_ENABLED": "true",
+                "GOOGLE_CLIENT_ID": "google-client",
+            },
+            "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI are required",
+        ),
+        (
+            {
+                "FLOWTALLY_ENV": "staging",
+                "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
+                "DATABASE_URL": "postgresql://example.invalid/flowtally",
+                "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "SESSION_COOKIE_SECURE": "true",
+                "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
+                "SQUARE_ENABLED": "true",
+                "SQUARE_ENVIRONMENT": "sandbox",
+                "SQUARE_APPLICATION_ID": "square-app",
+                "SQUARE_APPLICATION_SECRET": "square-secret",
+                "SQUARE_REDIRECT_URI": "http://127.0.0.1:5001/api/integrations/square/callback",
+                "SQUARE_WEBHOOK_SIGNATURE_KEY": "square-webhook-secret",
+            },
+            "INTEGRATION_ENCRYPTION_KEY",
+        ),
+    ],
+)
+def test_enabled_google_and_square_features_fail_closed_without_required_secrets(monkeypatch: pytest.MonkeyPatch, env: dict[str, str], message: str):
+    _clear_config_env(monkeypatch)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    with pytest.raises(ConfigurationError, match=message):
+        validate_runtime_config(
+            {
+                "FLOWTALLY_ENV": "staging",
+                "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
+                "SQLALCHEMY_DATABASE_URI": "postgresql://example.invalid/flowtally",
+                "ALLOWED_ORIGINS": ["https://staging.flowtally.ca"],
+                "SESSION_COOKIE_SECURE": True,
+                "RATELIMIT_STORAGE_URI": "redis://example.invalid/0",
+                "GOOGLE_OIDC_ENABLED": env.get("GOOGLE_OIDC_ENABLED") == "true",
+                "SQUARE_ENABLED": env.get("SQUARE_ENABLED") == "true",
+            },
+            environment="staging",
+        )

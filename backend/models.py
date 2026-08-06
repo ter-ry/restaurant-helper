@@ -44,9 +44,30 @@ class Organization(TimestampMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    lifecycle_status = db.Column(db.String(40), nullable=False, default="ACTIVE")
+    setup_status = db.Column(db.String(40), nullable=False, default="COMPLETE")
+    subscription_status = db.Column(db.String(40), nullable=False, default="ACTIVE")
+    setup_template_key = db.Column(db.String(120), nullable=False, default="")
+    setup_fee_status = db.Column(db.String(40), nullable=False, default="NONE")
+    subscription_provider = db.Column(db.String(120), nullable=False, default="")
+    external_customer_reference = db.Column(db.String(255), nullable=False, default="")
+    external_subscription_reference = db.Column(db.String(255), nullable=False, default="")
+    is_prospect = db.Column(db.Boolean, nullable=False, default=False)
+    active_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    setup_completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    suspended_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    cancelled_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     memberships = db.relationship("OrganizationMembership", back_populates="organization", cascade="all, delete-orphan")
     locations = db.relationship("RestaurantLocation", back_populates="organization", cascade="all, delete-orphan")
+
+    @property
+    def onboarding_status(self) -> str:
+        return self.setup_status
+
+    @onboarding_status.setter
+    def onboarding_status(self, value: str) -> None:
+        self.setup_status = value
 
 
 class OrganizationMembership(TimestampMixin, db.Model):
@@ -407,3 +428,278 @@ class AuditEvent(db.Model):
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")
     actor = db.relationship("User")
+
+
+class ExternalIdentity(TimestampMixin, db.Model):
+    __tablename__ = "external_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subject", name="uq_external_identity_provider_subject"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = db.Column(db.String(80), nullable=False, index=True)
+    provider_subject = db.Column(db.String(255), nullable=False, index=True)
+    email_at_link = db.Column(db.String(254), nullable=False, default="")
+    last_login_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    user = db.relationship("User")
+
+
+class PlatformRole(TimestampMixin, db.Model):
+    __tablename__ = "platform_roles"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_platform_role_user"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = db.Column(db.String(40), nullable=False, default="support")
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    notes = db.Column(db.Text, nullable=False, default="")
+
+    user = db.relationship("User")
+
+
+class SupportAccessGrant(TimestampMixin, db.Model):
+    __tablename__ = "support_access_grants"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    approved_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    support_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reason = db.Column(db.Text, nullable=False, default="")
+    case_reference = db.Column(db.String(120), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="requested")
+    starts_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    visible_in_ui = db.Column(db.Boolean, nullable=False, default=True)
+
+    organization = db.relationship("Organization")
+    requested_by = db.relationship("User", foreign_keys=[requested_by_user_id])
+    approved_by = db.relationship("User", foreign_keys=[approved_by_user_id])
+    support_user = db.relationship("User", foreign_keys=[support_user_id])
+
+
+class OrganizationInvitation(TimestampMixin, db.Model):
+    __tablename__ = "organization_invitations"
+    __table_args__ = (
+        UniqueConstraint("token", name="uq_organization_invitation_token"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    invited_email = db.Column(db.String(254), nullable=False, index=True)
+    role = db.Column(db.String(20), nullable=False, default="manager")
+    token = db.Column(db.String(120), nullable=False, index=True)
+    status = db.Column(db.String(40), nullable=False, default="pending")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    accepted_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    accepted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    single_use = db.Column(db.Boolean, nullable=False, default=True)
+
+    organization = db.relationship("Organization")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    accepted_by = db.relationship("User", foreign_keys=[accepted_by_user_id])
+
+
+class OrganizationModule(TimestampMixin, db.Model):
+    __tablename__ = "organization_modules"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "module_key", name="uq_organization_module_key"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    module_key = db.Column(db.String(120), nullable=False, index=True)
+    status = db.Column(db.String(40), nullable=False, default="DISABLED")
+    configuration_json = db.Column(db.JSON, nullable=False, default=dict)
+    enabled_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    enabled_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization = db.relationship("Organization")
+    enabled_by = db.relationship("User")
+
+
+class OrganizationConfiguration(TimestampMixin, db.Model):
+    __tablename__ = "organization_configurations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    draft_name = db.Column(db.String(255), nullable=False, default="Default configuration")
+    current_version_id = db.Column(db.Integer, nullable=True)
+
+    organization = db.relationship("Organization")
+
+
+class OrganizationConfigurationVersion(TimestampMixin, db.Model):
+    __tablename__ = "organization_configuration_versions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_configuration_id = db.Column(db.Integer, db.ForeignKey("organization_configurations.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number = db.Column(db.Integer, nullable=False, default=1)
+    status = db.Column(db.String(40), nullable=False, default="draft")
+    configuration_json = db.Column(db.JSON, nullable=False, default=dict)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    published_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    published_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    reverted_from_version_id = db.Column(db.Integer, db.ForeignKey("organization_configuration_versions.id", ondelete="SET NULL"), nullable=True)
+
+    configuration = db.relationship("OrganizationConfiguration", foreign_keys=[organization_configuration_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    published_by = db.relationship("User", foreign_keys=[published_by_user_id])
+
+
+class DashboardLayout(TimestampMixin, db.Model):
+    __tablename__ = "dashboard_layouts"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "location_id", "role", "version", name="uq_dashboard_layout_scope"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=True, index=True)
+    role = db.Column(db.String(20), nullable=False, default="owner")
+    widgets_json = db.Column(db.JSON, nullable=False, default=list)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    published_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+
+
+class SquareConnection(TimestampMixin, db.Model):
+    __tablename__ = "square_connections"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_square_connection_organization"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    environment = db.Column(db.String(40), nullable=False, default="sandbox")
+    square_merchant_id = db.Column(db.String(255), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="disconnected")
+    access_token_ciphertext = db.Column(db.Text, nullable=False, default="")
+    refresh_token_ciphertext = db.Column(db.Text, nullable=False, default="")
+    token_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_sync_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    sync_status = db.Column(db.String(40), nullable=False, default="idle")
+    sync_error = db.Column(db.Text, nullable=False, default="")
+
+    organization = db.relationship("Organization")
+
+
+class SquareLocation(TimestampMixin, db.Model):
+    __tablename__ = "square_locations"
+    __table_args__ = (
+        UniqueConstraint("square_connection_id", "square_location_id", name="uq_square_location_connection_external"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    square_location_id = db.Column(db.String(255), nullable=False)
+    name = db.Column(db.String(255), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="active")
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    connection = db.relationship("SquareConnection")
+
+
+class SquareLocationMapping(TimestampMixin, db.Model):
+    __tablename__ = "square_location_mappings"
+    __table_args__ = (
+        UniqueConstraint("square_location_id", name="uq_square_location_mapping_square_location"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_location_id = db.Column(db.Integer, db.ForeignKey("square_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    mapped_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    mapped_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+
+    square_location = db.relationship("SquareLocation")
+    restaurant_location = db.relationship("RestaurantLocation")
+    mapped_by = db.relationship("User")
+
+
+class SquareCatalogObject(TimestampMixin, db.Model):
+    __tablename__ = "square_catalog_objects"
+    __table_args__ = (
+        UniqueConstraint("square_connection_id", "square_object_id", name="uq_square_catalog_connection_object"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    square_object_id = db.Column(db.String(255), nullable=False)
+    object_type = db.Column(db.String(120), nullable=False, default="")
+    version = db.Column(db.Integer, nullable=False, default=0)
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    connection = db.relationship("SquareConnection")
+
+
+class SquareCatalogMapping(TimestampMixin, db.Model):
+    __tablename__ = "square_catalog_mappings"
+    __table_args__ = (
+        UniqueConstraint("square_catalog_object_id", "mapping_type", name="uq_square_catalog_mapping_type"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_catalog_object_id = db.Column(db.Integer, db.ForeignKey("square_catalog_objects.id", ondelete="CASCADE"), nullable=False, index=True)
+    mapping_type = db.Column(db.String(120), nullable=False, default="menu_item")
+    flowtally_entity_type = db.Column(db.String(120), nullable=False, default="")
+    flowtally_entity_id = db.Column(db.String(120), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="unmapped")
+    mapped_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    square_catalog_object = db.relationship("SquareCatalogObject")
+    mapped_by = db.relationship("User")
+
+
+class SquareSyncJob(TimestampMixin, db.Model):
+    __tablename__ = "square_sync_jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_type = db.Column(db.String(120), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="queued")
+    requested_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    error_message = db.Column(db.Text, nullable=False, default="")
+    cursor_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    connection = db.relationship("SquareConnection")
+
+
+class SquareSyncCursor(TimestampMixin, db.Model):
+    __tablename__ = "square_sync_cursors"
+    __table_args__ = (UniqueConstraint("square_connection_id", "cursor_key", name="uq_square_sync_cursor_key"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    cursor_key = db.Column(db.String(120), nullable=False)
+    cursor_value = db.Column(db.String(255), nullable=False, default="")
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+
+    connection = db.relationship("SquareConnection")
+
+
+class SquareWebhookEvent(TimestampMixin, db.Model):
+    __tablename__ = "square_webhook_events"
+    __table_args__ = (UniqueConstraint("square_connection_id", "event_id", name="uq_square_webhook_event"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_id = db.Column(db.String(255), nullable=False)
+    event_type = db.Column(db.String(120), nullable=False)
+    status = db.Column(db.String(40), nullable=False, default="received")
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+    processed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    error_message = db.Column(db.Text, nullable=False, default="")
+
+    connection = db.relationship("SquareConnection")
