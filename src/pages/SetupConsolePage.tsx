@@ -520,10 +520,13 @@ export function SetupConsolePage() {
                   <span className="text-sm font-semibold text-ink">Square JSON</span>
                   <textarea id="square-json" className="mt-1 min-h-32 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson((configJson as any).square ?? {})} />
                 </label>
-                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveSquare()}>
-                  Save Square status
-                </button>
-              </Card>
+                  <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveSquare()}>
+                    Save Square status
+                  </button>
+                  <Link className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
+                    Open migration workspace
+                  </Link>
+                </Card>
             </div>
 
             <Card className="p-6">

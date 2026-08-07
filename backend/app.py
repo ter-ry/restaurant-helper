@@ -11,6 +11,7 @@ from .auth import bp as auth_bp
 from .commercial import bp as commercial_bp
 from .audit import ensure_request_id
 from .access import enforce_operational_access
+from .imports import bp as imports_bp
 from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
@@ -146,6 +147,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(ocr_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(commercial_bp)
+    app.register_blueprint(imports_bp)
     app.register_blueprint(organizations_bp)
     app.register_blueprint(platform_admin_bp)
     app.register_blueprint(pilot_api_bp)

@@ -552,6 +552,145 @@ class OrganizationConfigurationVersion(TimestampMixin, db.Model):
     published_by = db.relationship("User", foreign_keys=[published_by_user_id])
 
 
+class DataImportJob(TimestampMixin, db.Model):
+    __tablename__ = "data_import_jobs"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "source_hash", name="uq_data_import_job_org_source_hash"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    approved_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    source_type = db.Column(db.String(40), nullable=False, default="csv")
+    source_file_name = db.Column(db.String(255), nullable=False, default="")
+    source_file_extension = db.Column(db.String(20), nullable=False, default="")
+    source_mime_type = db.Column(db.String(120), nullable=False, default="")
+    source_hash = db.Column(db.String(128), nullable=False, default="", index=True)
+    storage_path = db.Column(db.String(512), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="UPLOADED")
+    entity_scope = db.Column(db.String(80), nullable=False, default="supplier")
+    mapping_json = db.Column(db.JSON, nullable=False, default=dict)
+    summary_json = db.Column(db.JSON, nullable=False, default=dict)
+    row_count = db.Column(db.Integer, nullable=False, default=0)
+    preview_row_count = db.Column(db.Integer, nullable=False, default=0)
+    applied_row_count = db.Column(db.Integer, nullable=False, default=0)
+    blocked_row_count = db.Column(db.Integer, nullable=False, default=0)
+    warning_count = db.Column(db.Integer, nullable=False, default=0)
+    approved_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    executed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    rolled_back_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    batch_id = db.Column(db.String(120), nullable=False, default="")
+    rollback_blockers_json = db.Column(db.JSON, nullable=False, default=list)
+
+    organization = db.relationship("Organization")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    approved_by = db.relationship("User", foreign_keys=[approved_by_user_id])
+    files = db.relationship("DataImportFile", back_populates="job", cascade="all, delete-orphan")
+    mappings = db.relationship("DataImportMapping", back_populates="job", cascade="all, delete-orphan", order_by="DataImportMapping.display_order.asc()")
+    rows = db.relationship("DataImportRow", back_populates="job", cascade="all, delete-orphan", order_by="DataImportRow.row_number.asc()")
+    changes = db.relationship("DataImportChange", back_populates="job", cascade="all, delete-orphan", order_by="DataImportChange.id.asc()")
+
+
+class DataImportFile(TimestampMixin, db.Model):
+    __tablename__ = "data_import_files"
+    __table_args__ = (
+        UniqueConstraint("data_import_job_id", "role", name="uq_data_import_file_job_role"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    data_import_job_id = db.Column(db.Integer, db.ForeignKey("data_import_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = db.Column(db.String(40), nullable=False, default="source")
+    original_file_name = db.Column(db.String(255), nullable=False, default="")
+    storage_path = db.Column(db.String(512), nullable=False, default="")
+    sha256 = db.Column(db.String(128), nullable=False, default="")
+    byte_size = db.Column(db.Integer, nullable=False, default=0)
+    mime_type = db.Column(db.String(120), nullable=False, default="")
+    uploaded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+
+    job = db.relationship("DataImportJob", back_populates="files")
+
+
+class DataImportMapping(TimestampMixin, db.Model):
+    __tablename__ = "data_import_mappings"
+    __table_args__ = (
+        UniqueConstraint("data_import_job_id", "target_field_name", name="uq_data_import_mapping_target_field"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    data_import_job_id = db.Column(db.Integer, db.ForeignKey("data_import_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_column_name = db.Column(db.String(255), nullable=False, default="")
+    target_field_name = db.Column(db.String(255), nullable=False, default="")
+    mapping_type = db.Column(db.String(40), nullable=False, default="manual")
+    fixed_value_json = db.Column(db.JSON, nullable=False, default=dict)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    is_required = db.Column(db.Boolean, nullable=False, default=False)
+
+    job = db.relationship("DataImportJob", back_populates="mappings")
+
+
+class DataImportRow(TimestampMixin, db.Model):
+    __tablename__ = "data_import_rows"
+    __table_args__ = (
+        UniqueConstraint("data_import_job_id", "row_number", name="uq_data_import_row_number"),
+        UniqueConstraint("data_import_job_id", "row_fingerprint", name="uq_data_import_row_fingerprint"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    data_import_job_id = db.Column(db.Integer, db.ForeignKey("data_import_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    row_number = db.Column(db.Integer, nullable=False, default=0)
+    entity_type = db.Column(db.String(80), nullable=False, default="supplier")
+    source_row_json = db.Column(db.JSON, nullable=False, default=dict)
+    normalized_row_json = db.Column(db.JSON, nullable=False, default=dict)
+    row_fingerprint = db.Column(db.String(128), nullable=False, default="", index=True)
+    status = db.Column(db.String(40), nullable=False, default="preview")
+    target_entity_type = db.Column(db.String(80), nullable=False, default="")
+    target_entity_id = db.Column(db.String(120), nullable=False, default="")
+    issue_summary = db.Column(db.Text, nullable=False, default="")
+    warning_count = db.Column(db.Integer, nullable=False, default=0)
+    blocked_count = db.Column(db.Integer, nullable=False, default=0)
+    can_rollback = db.Column(db.Boolean, nullable=False, default=True)
+
+    job = db.relationship("DataImportJob", back_populates="rows")
+    issues = db.relationship("DataImportIssue", back_populates="row", cascade="all, delete-orphan", order_by="DataImportIssue.id.asc()")
+    changes = db.relationship("DataImportChange", back_populates="row", cascade="all, delete-orphan", order_by="DataImportChange.id.asc()")
+
+
+class DataImportIssue(TimestampMixin, db.Model):
+    __tablename__ = "data_import_issues"
+
+    id = db.Column(db.Integer, primary_key=True)
+    data_import_row_id = db.Column(db.Integer, db.ForeignKey("data_import_rows.id", ondelete="CASCADE"), nullable=False, index=True)
+    severity = db.Column(db.String(20), nullable=False, default="warning")
+    field_name = db.Column(db.String(255), nullable=False, default="")
+    code = db.Column(db.String(80), nullable=False, default="")
+    message = db.Column(db.Text, nullable=False, default="")
+
+    row = db.relationship("DataImportRow", back_populates="issues")
+
+
+class DataImportChange(TimestampMixin, db.Model):
+    __tablename__ = "data_import_changes"
+    __table_args__ = (
+        UniqueConstraint("data_import_job_id", "row_fingerprint", name="uq_data_import_change_fingerprint"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    data_import_job_id = db.Column(db.Integer, db.ForeignKey("data_import_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    data_import_row_id = db.Column(db.Integer, db.ForeignKey("data_import_rows.id", ondelete="CASCADE"), nullable=True, index=True)
+    entity_type = db.Column(db.String(80), nullable=False, default="supplier")
+    change_type = db.Column(db.String(40), nullable=False, default="create")
+    target_entity_id = db.Column(db.String(120), nullable=False, default="")
+    row_fingerprint = db.Column(db.String(128), nullable=False, default="", index=True)
+    previous_json = db.Column(db.JSON, nullable=False, default=dict)
+    applied_json = db.Column(db.JSON, nullable=False, default=dict)
+    rollbackable = db.Column(db.Boolean, nullable=False, default=True)
+    status = db.Column(db.String(40), nullable=False, default="preview")
+
+    job = db.relationship("DataImportJob", back_populates="changes")
+    row = db.relationship("DataImportRow", back_populates="changes")
+
+
 class DashboardLayout(TimestampMixin, db.Model):
     __tablename__ = "dashboard_layouts"
     __table_args__ = (

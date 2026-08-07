@@ -171,6 +171,7 @@ function LoggedInProspectView({
     ["Account created", true],
     ["Business information", true],
     ["Data requested", setupStatus !== "NOT_STARTED"],
+    ["Migration upload", setupStatus !== "NOT_STARTED"],
     ["Configuration", setupStatus === "CONFIGURATION_IN_PROGRESS" || setupStatus === "CUSTOMER_REVIEW" || setupStatus === "COMPLETE"],
     ["Customer review", setupStatus === "CUSTOMER_REVIEW" || setupStatus === "COMPLETE"],
     ["Ready to launch", setupStatus === "COMPLETE" && lifecycleStatus === "READY_FOR_REVIEW"],
@@ -213,6 +214,9 @@ function LoggedInProspectView({
         <div className="mt-5 flex flex-wrap gap-3">
           <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700" to="/demo">
             Keep exploring the demo
+          </Link>
+          <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
+            Upload migration files
           </Link>
           {lifecycleStatus === "ACTIVE" ? (
             <>
