@@ -1,149 +1,91 @@
-# Flowtally Commercial Product Completion Audit
+# Flowtally commercial product completion audit
 
-Date: 2026-08-06  
-Branch start: `codex/commercial-onboarding-square-foundation`  
-Starting commit: `4789ca2f4bafe13ea242be86120e8700ab2a3e52`
+Date: 2026-08-07
+Branch: `codex/complete-commercial-product-foundation`
+Starting commit for this checkpoint: `108d30bb0a9bbda99bdd1d7afad8bfad0d0f442d`
 
-This audit records the repository state before completing the commercial product foundation. It is intentionally requirement-by-requirement so implementation can proceed in bounded phases.
+## Requirement matrix
 
-## Audit Summary
+| Area | Status | Notes |
+| --- | --- | --- |
+| Legacy archive and OCR preservation | Complete | `legacy/job-tracker/` exists and the active app does not import it. OCR test coverage is present in `backend/tests/test_ocr.py` and root tests still pass. |
+| Google login and registration | Partial | Google OIDC foundations, callback handling, and session wiring exist, but the full prospect onboarding UI/edge-case handling still needs end-to-end confirmation. |
+| Commercial access gating | Partial | Server-side operational gating exists in `backend/access.py` and `backend/policy.py`, but the lifecycle/activation path still needs stronger checks and tighter Square/import dependencies. |
+| Owner invitations and memberships | Partial | Invitations, acceptance, cancellation, and membership removal exist, but the workflow still needs full validation against the final commercial lifecycle rules. |
+| Module registry and configuration | Partial | Module registry and setup configuration APIs exist, but the UI and activation dependencies still need more explicit enforcement and refinement. |
+| Internal setup console | Partial | `backend/platform_admin.py` and `src/pages/SetupConsolePage.tsx` provide a real console, including templates, modules, locations, imports, Square status, customer review, activation, and support grants. Some activation checks still need tightening. |
+| Customer onboarding portal | Partial | Onboarding flows exist in backend and frontend, but the setup journey still needs broader confirmation and a more explicit prospect-to-active flow. |
+| CSV/XLSX data migration | Partial | Import pipeline, preview, approval, rollback, and UI exist in `backend/imports.py` / `src/pages/DataMigrationPage.tsx`. This still needs more end-to-end validation and integration with activation criteria. |
+| PostgreSQL RLS | Partial | Request-scoped tenant context and a broad RLS migration are present, but new tables added later still need to be incorporated into the RLS surface. |
+| Support access | Partial | Support grants and banner UI exist, but the full customer operational access model still needs validation against the final lifecycle gate. |
+| Owner audit activity | Partial | Audit events are recorded and surfaced in the setup console / owner audit UI, but the full filtered history and retention story still needs review. |
+| Square Sandbox integration | Scaffolding only | Square connection models, encryption helpers, and webhook signature helpers exist, but the current integration file is incomplete and needs a full backend/frontend implementation. |
+| Frontend product completion | Partial | The console, onboarding, migration, and audit surfaces are present, but the Square workspace and some prospect/activation flows remain incomplete. |
+| Migrations and data safety | Partial | Sequential migrations exist through the commercial/import/RLS foundation, but later phases still need bounded follow-up migrations for any new tables. |
+| Testing and CI | Partial | Backend and root tests pass, but PostgreSQL-specific and browser-level coverage are still incomplete. |
 
-The repository already contains a strong backend foundation for commercial state, Google OIDC, Square scaffolding, tenant-aware access control, and an archived legacy job tracker. It does not yet contain the full customer-facing or internal commercial product required by the prompt.
+## Existing files that can be preserved
 
-The main pattern is:
+- `backend/commercial.py`
+- `backend/access.py`
+- `backend/policy.py`
+- `backend/imports.py`
+- `backend/platform_admin.py`
+- `backend/models.py`
+- `backend/tests/test_commercial.py`
+- `backend/tests/test_setup_console.py`
+- `backend/tests/test_imports.py`
+- `backend/tests/test_postgres_rls.py`
+- `src/pages/SetupConsolePage.tsx`
+- `src/pages/DataMigrationPage.tsx`
+- `src/pages/GoogleAuthCompletePage.tsx`
+- `src/pages/OwnerAuditPage.tsx`
 
-- backend models and helper logic exist for several commercial concerns
-- frontend coverage for the commercial product is mostly absent
-- activation, setup, import, support, audit, and Square sync flows are scaffolded or missing
-- PostgreSQL tenant protection is not implemented
-- the legacy job tracker archive exists, but deployment configuration still needs a final verification pass
+## Existing files that still need correction or extension
 
-## Gap Matrix
-
-| Requirement area | Status | Evidence in repo | Notes |
-| --- | --- | --- | --- |
-| Legacy archive and OCR preservation | Partial | `legacy/job-tracker/`, `app.py`, `tests/test_invoice_ocr.py`, `tests/test_reconciliation_ocr.py`, `Procfile` | Archive copy exists and OCR remains active in the root app. The root Render config still references `app:app`, so active deployment config needs correction. |
-| Google OIDC backend | Partial | `backend/google_oidc.py`, `backend/auth.py`, `backend/tests/test_google_oidc.py` | Authorization-code flow, state, nonce, issuer/audience checks, and verified-email checks exist. Frontend login and account-registration flows are still missing. |
-| Public registration / onboarding signup | Missing | No dedicated customer onboarding frontend; `backend/auth.py` only handles login and callback | Google registration exists only as backend identity creation logic. |
-| Commercial lifecycle and access gating | Partial | `backend/models.py`, `backend/access.py`, `backend/commercial.py`, `backend/policy.py`, `backend/tests/test_commercial.py`, `backend/tests/test_pilot_api.py` | Commercial status concepts exist, but the full centralized operational policy and all route-level checks are not yet complete for the requested product scope. |
-| Invitations and membership management | Missing | `backend/models.py` has invitation-related models, but no complete invite workflow UI/API | Invitation acceptance, revocation, reissue, and owner-only membership management are not finished end to end. |
-| Modular setup architecture | Partial | `backend/modules.py`, `backend/commercial.py`, `backend/models.py` | Registry and some module entitlements exist, but setup templates, configuration versions, layouts, and custom fields are not complete. |
-| Internal setup console | Missing | No setup-console frontend or platform-only workflow | Only data models and some backend scaffolding exist. |
-| Customer onboarding portal | Missing | No onboarding portal frontend | Prospect onboarding exists only as backend/commercial scaffolding. |
-| CSV/XLSX data migration pipeline | Missing | No import workflow, mapping UI, preview/approval/rollback stack | No end-to-end import system exists yet. |
-| PostgreSQL row-level security | Missing | No RLS migration or runtime tenant context | Application-layer filtering exists, but database-level RLS is not implemented. |
-| Support access workflow | Missing | `backend/models.py` has `SupportAccessGrant`, but no complete support console or banner flow | No complete time-limited support-grant flow yet. |
-| Owner audit history UI | Missing | `backend/audit.py` and audit event models exist | No owner-only audit interface yet. |
-| Square Sandbox OAuth and sync | Partial | `backend/square.py`, `backend/models.py`, `backend/tests/test_square.py` | OAuth / encryption helpers and webhook signature logic exist, but locations, catalog, order sync, and frontend workflows are missing. |
-| Frontend commercial product completion | Missing | Current app is still demo/pilot oriented | There is no completed prospect/owner/platform/support UI set for the commercial product. |
-| Migrations and data safety | Partial | `backend/migrations/versions/0007_commercial_onboarding_and_square_foundation.py` | One large commercial migration exists; it needs review and likely follow-up migrations rather than more monoliths. |
-| Testing and CI | Partial | `backend/tests/*`, `tests/test_invoice_ocr.py`, `tests/test_reconciliation_ocr.py`, `npm run build` | Backend and OCR tests exist, but there are no PostgreSQL RLS tests, browser E2E tests, or a complete CI matrix for the requested scope. |
-| Staging readiness | Partial | `backend/.env.staging.example`, `render.pilot-staging.yaml`, `Procfile` | Staging docs and backend entrypoint exist, but full staging readiness documentation and verification are incomplete. |
-
-## Existing files to preserve
-
-- `app.py` and OCR helpers: preserve the invoice and reconciliation OCR paths.
-- `tests/test_invoice_ocr.py` and `tests/test_reconciliation_ocr.py`: preserve OCR coverage.
-- `backend/google_oidc.py`: preserve the correctly implemented OIDC verification pieces.
-- `backend/access.py`, `backend/commercial.py`, `backend/modules.py`, `backend/square.py`: preserve the commercial scaffolding as a base for completion.
-- `backend/models.py` and `backend/migrations/versions/0007_commercial_onboarding_and_square_foundation.py`: preserve the commercial schema work, but review for split follow-up migrations.
-- `legacy/job-tracker/`: preserve the archived legacy app.
-
-## Existing files that need correction
-
-- `render.yaml`: still starts the legacy root app with `gunicorn app:app`.
-- `backend/modules.py` and `backend/commercial.py`: overlapping module-registry abstractions should be reconciled.
-- `legacy/job-tracker/MANIFEST.txt` / archive checksum: should be treated as verified only after matching the external ZIP contents.
+- `backend/square_integration.py` — current draft is incomplete and contains placeholder / consistency issues.
+- `backend/app.py` — needs Square blueprint registration.
+- `backend/platform_admin.py` — activation checks and setup-state derivation still need to be tightened against the final lifecycle model.
+- `src/pages/SetupConsolePage.tsx` — functional, but still needs more explicit state-driven guidance and better Square/import readiness feedback.
 
 ## Missing backend work
 
-- full registration and login-assisted onboarding flow
-- invitation acceptance and revocation
-- setup console APIs
-- customer onboarding portal APIs
-- import pipeline models and endpoints
-- PostgreSQL RLS migrations and request-scoped context
-- support grant lifecycle APIs
-- owner audit listing and filtering APIs
-- Square OAuth / location / catalog / order sync APIs
+- Complete Square OAuth, connection, location mapping, catalog sync, order sync, and webhook processing.
+- Tighten lifecycle activation criteria so imports, customer review, Square mapping, and setup/payment states are enforced consistently.
+- Add any follow-up migrations needed for Square sales persistence and later RLS coverage.
 
 ## Missing frontend work
 
-- continue with Google
-- onboarding portal
-- setup console
-- team/invitations UI
-- module configuration UI
-- custom field editor
-- import mapping / preview / approval UI
-- support grant console
-- audit activity page
-- Square connection and sync UI
+- A dedicated Square Sandbox workspace for owners/support staff.
+- Clearer lifecycle/status feedback for the commercial activation path.
+- More explicit progress UX for Square, imports, and setup readiness.
 
 ## Missing security work
 
-- database-level tenant isolation with PostgreSQL RLS
-- explicit support-grant context and banner
-- full owner-only authorization for internal audit/setup actions
-- safer and more explicit account-linking UX
+- RLS coverage for any new tables introduced after the current RLS migration.
+- More complete tenant-safe support access validation for operational views.
+- More exhaustive PostgreSQL tests for raw SQL / cross-tenant leakage across all sensitive tables.
 
 ## Missing tests
 
-- browser-level login / onboarding / setup / invite / import / Square tests
-- PostgreSQL RLS tests
-- migration upgrade/downgrade tests across the commercial schema boundary
-- support-grant expiry/revocation tests
-- owner audit filtering tests
+- Square OAuth state and callback tests.
+- Square token encryption / no-plaintext-storage tests for the integration flow.
+- Square location mapping, catalog sync, orders sync, and webhook idempotency tests.
+- Browser-level checks for the new Square workspace and lifecycle-driven activation flow.
 
 ## Migration risks
 
-- the current commercial migration is large and likely too monolithic for long-term safety
-- overlapping commercial/module abstractions increase the chance of follow-up schema churn
-- PostgreSQL-only security requirements are not yet represented in migrations
-
-## Test weakening / removal
-
-- OCR root tests were preserved in `tests/test_invoice_ocr.py` and `tests/test_reconciliation_ocr.py`
-- the old job-tracker integration tests were removed from the active root tree and archived under `legacy/job-tracker/tests/`
-- no evidence yet that the remaining OCR tests were weakened
+- The current Square foundation predates a full sales/order persistence model.
+- If new Square order tables are added, they must be introduced with a bounded follow-up migration and later RLS coverage.
 
 ## Legacy archive status
 
-The archive is present in `legacy/job-tracker/` and includes:
+- The legacy tracker archive exists under `legacy/job-tracker/`.
+- The active application entrypoint is `backend.wsgi:app`.
+- The archived job tracker is not the active deployment target.
+- OCR remains active in the Flowtally backend.
 
-- `app.py`
-- OCR helpers
-- `README.md`
-- `HANDOFF.md`
-- `MOBILE_QA.md`
-- `Procfile`
-- `render.yaml`
-- `requirements.txt`
-- `templates/`
-- `static/`
-- `sources/`
-- `tests/`
+## Root test-count change
 
-The archive looks structurally complete from repository inspection, but the external ZIP and checksum still need final verification against the archive path referenced in the prompt.
-
-## OCR status
-
-OCR is still active in the root app:
-
-- invoice OCR route: `/api/invoices/ocr`
-- reconciliation OCR route: `/api/reconciliation/extract`
-- active tests: `tests/test_invoice_ocr.py`, `tests/test_reconciliation_ocr.py`
-
-The root test count changed because the active repository now contains only the OCR-focused root tests; the old job-tracker integration and app tests were removed from the live tree and preserved in the archive instead. That is why the current root test count is lower than the earlier audit count.
-
-## First implementation phase to begin
-
-Phase 1: verify the legacy archive / deployment split and preserve OCR without any regression.
-
-That means:
-
-1. confirm the legacy job tracker is fully inactive in active deployment config
-2. confirm OCR routes and tests remain functional
-3. correct any remaining entrypoint/config drift
-4. then proceed to Google registration and the commercial access flow
+The root `tests/` suite currently contains 15 tests. The earlier 24-count referenced in prior notes appears to have included tests that were later consolidated into backend coverage or moved under `backend/tests/`.
 

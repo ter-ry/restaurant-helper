@@ -33,6 +33,7 @@ import { TeamManagementPage } from "./pages/TeamManagementPage";
 import { OwnerAuditPage } from "./pages/OwnerAuditPage";
 import { SetupConsolePage } from "./pages/SetupConsolePage";
 import { DataMigrationPage } from "./pages/DataMigrationPage";
+import { SquareIntegrationPage } from "./pages/SquareIntegrationPage";
 
 function HashScroll() {
   const location = useLocation();
@@ -204,6 +205,7 @@ const routes = [
   { path: "/owner/audit", element: <PageWithHashScroll><OwnerAuditPage /></PageWithHashScroll> },
   { path: "/platform/setup", element: <PageWithHashScroll><SetupConsolePage /></PageWithHashScroll> },
   { path: "/imports", element: <PageWithHashScroll><DataMigrationPage /></PageWithHashScroll> },
+  { path: "/integrations/square", element: <PageWithHashScroll><SquareIntegrationPage /></PageWithHashScroll> },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   { path: "/pilot/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
   { path: "/pilot/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },

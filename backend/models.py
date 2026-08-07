@@ -842,3 +842,80 @@ class SquareWebhookEvent(TimestampMixin, db.Model):
     error_message = db.Column(db.Text, nullable=False, default="")
 
     connection = db.relationship("SquareConnection")
+
+
+class SquareOrder(TimestampMixin, db.Model):
+    __tablename__ = "square_orders"
+    __table_args__ = (UniqueConstraint("square_connection_id", "square_order_id", name="uq_square_order_connection_order"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    square_order_id = db.Column(db.String(255), nullable=False)
+    square_location_id = db.Column(db.String(255), nullable=False, default="")
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="SET NULL"), nullable=True, index=True)
+    order_state = db.Column(db.String(80), nullable=False, default="")
+    currency = db.Column(db.String(8), nullable=False, default="CAD")
+    gross_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    discount_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tax_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tip_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    refund_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    net_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    item_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    line_count = db.Column(db.Integer, nullable=False, default=0)
+    ordered_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    closed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    cancelled_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    refunded_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+    last_synced_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+
+    connection = db.relationship("SquareConnection")
+    restaurant_location = db.relationship("RestaurantLocation")
+    lines = db.relationship("SquareOrderLine", back_populates="order", cascade="all, delete-orphan", order_by="SquareOrderLine.line_index.asc()")
+
+
+class SquareOrderLine(TimestampMixin, db.Model):
+    __tablename__ = "square_order_lines"
+    __table_args__ = (UniqueConstraint("square_order_id", "line_uid", name="uq_square_order_line_uid"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_order_id = db.Column(db.Integer, db.ForeignKey("square_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    line_uid = db.Column(db.String(255), nullable=False)
+    line_index = db.Column(db.Integer, nullable=False, default=0)
+    square_item_variation_id = db.Column(db.String(255), nullable=False, default="")
+    name = db.Column(db.String(255), nullable=False, default="")
+    quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    gross_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    discount_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tax_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tip_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    net_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    order = db.relationship("SquareOrder", back_populates="lines")
+
+
+class SquareDailySalesSummary(TimestampMixin, db.Model):
+    __tablename__ = "square_daily_sales_summaries"
+    __table_args__ = (UniqueConstraint("square_connection_id", "sale_date", "square_location_id", name="uq_square_sales_summary_scope"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    square_location_id = db.Column(db.String(255), nullable=False, default="")
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="SET NULL"), nullable=True, index=True)
+    sale_date = db.Column(db.Date, nullable=False, index=True)
+    currency = db.Column(db.String(8), nullable=False, default="CAD")
+    gross_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    discount_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tax_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tip_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    refund_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    net_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    order_count = db.Column(db.Integer, nullable=False, default=0)
+    cancelled_order_count = db.Column(db.Integer, nullable=False, default=0)
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    connection = db.relationship("SquareConnection")
+    restaurant_location = db.relationship("RestaurantLocation")

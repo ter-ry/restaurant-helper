@@ -20,6 +20,7 @@ from .tenant_context import apply_request_tenant_context
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
 from .platform_admin import bp as platform_admin_bp
+from .square_integration import bp as square_integration_bp
 from .policy import enforce_endpoint_permission
 from .seed import seed_pilot_data
 from .validation import RequestValidationError
@@ -155,6 +156,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(imports_bp)
     app.register_blueprint(organizations_bp)
     app.register_blueprint(platform_admin_bp)
+    app.register_blueprint(square_integration_bp)
     app.register_blueprint(pilot_api_bp)
 
     @app.cli.group("seed")

@@ -9,7 +9,7 @@ from flask_login import current_user, login_required
 
 from .audit import record_audit_event
 from .extensions import db
-from .models import AuditEvent, DashboardLayout, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SupportAccessGrant, User
+from .models import AuditEvent, DashboardLayout, DataImportJob, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, SupportAccessGrant, User
 from .modules import MODULE_REGISTRY
 from .tenant_context import apply_request_tenant_context
 from .utils import get_platform_role, get_user_memberships, json_error, isoformat, serialize_location, serialize_organization, serialize_user, serialize_audit_event
@@ -190,8 +190,16 @@ def _checklist(organization: Organization) -> dict[str, Any]:
     modules = {entry.module_key: entry for entry in OrganizationModule.query.filter_by(organization_id=organization.id).all()}
     enabled_module_keys = {key for key, entry in modules.items() if entry.status == "ENABLED"}
     missing_modules = sorted(required_module_keys - enabled_module_keys)
-    square_required = bool(payload.get("square", {}).get("required"))
-    square_complete = not square_required or bool(payload.get("square", {}).get("locationMappings"))
+    square_connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
+    square_required = bool(payload.get("square", {}).get("required")) or "SQUARE_INTEGRATION" in enabled_module_keys
+    square_location_mapping_count = 0
+    if square_connection is not None:
+        square_location_ids = [location.id for location in SquareLocation.query.filter_by(square_connection_id=square_connection.id).all()]
+        if square_location_ids:
+            square_location_mapping_count = SquareLocationMapping.query.filter(SquareLocationMapping.square_location_id.in_(square_location_ids)).count()
+    square_complete = not square_required or bool(square_connection and square_connection.status == "connected" and square_location_mapping_count > 0)
+    import_jobs = DataImportJob.query.filter_by(organization_id=organization.id).all()
+    imports_complete = all(job.status in {"APPROVED", "COMPLETED", "COMPLETED_WITH_WARNINGS", "ROLLED_BACK"} for job in import_jobs) if import_jobs else True
     blockers = [str(item) for item in payload.get("launchBlockers", []) if str(item).strip()]
     customer_review = payload.get("customerReview", {})
     approved = bool(customer_review.get("approvedAt"))
@@ -202,6 +210,7 @@ def _checklist(organization: Organization) -> dict[str, Any]:
         and organization.setup_status == "COMPLETE"
         and organization.subscription_status == "ACTIVE"
         and approved
+        and imports_complete
         and not blockers
         and not missing_modules
         and square_complete
@@ -216,6 +225,8 @@ def _checklist(organization: Organization) -> dict[str, Any]:
         "missingModules": missing_modules,
         "squareRequired": square_required,
         "squareComplete": square_complete,
+        "squareLocationMappingCount": square_location_mapping_count,
+        "importsComplete": imports_complete,
         "customerApproved": approved,
         "readyForActivation": activation_ready,
     }
