@@ -2,7 +2,7 @@
 
 Date: 2026-08-07
 Branch: `codex/complete-commercial-product-foundation`
-Current HEAD during this audit: `cd6c031c7bc4e0f4a2ff35b075c50c1f419e0a98`
+Current HEAD during this audit: `9ce9ba74e92b2c3bb8d2ec0aeb9db3eb5c0e9c87`
 
 This audit reflects the repository at the current checkpoint, after the frontend validation stack, the browser journeys, the PostgreSQL RLS coverage, the migration-safety tests, the CI wiring, the shared API-base helper, and the staging-readiness runbook were added.
 
