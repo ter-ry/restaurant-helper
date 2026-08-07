@@ -9,7 +9,24 @@ from sqlalchemy import text
 
 from backend.app import create_app
 from backend.extensions import db
-from backend.models import Organization, OrganizationMembership, OrganizationModule, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareOrder, SupportAccessGrant, Supplier, User
+from backend.models import (
+    DataImportChange,
+    DataImportFile,
+    DataImportJob,
+    DataImportIssue,
+    DataImportMapping,
+    DataImportRow,
+    Organization,
+    OrganizationMembership,
+    OrganizationModule,
+    RestaurantLocation,
+    SquareConnection,
+    SquareDailySalesSummary,
+    SquareOrder,
+    SupportAccessGrant,
+    Supplier,
+    User,
+)
 from backend.seed import LOCAL_OWNER_EMAIL, seed_pilot_data
 from backend.utils import utc_now
 
@@ -215,3 +232,142 @@ def test_rls_protects_square_sales_tables(postgres_app):
         assert SquareOrder.query.filter_by(square_connection_id=connection_b.id).count() == 0
         assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_a.id).count() == 1
         assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_b.id).count() == 0
+
+
+def test_rls_covers_import_tables_and_selected_organization_views(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, "RLS Import Alpha")
+        org_b = _create_org(owner, "RLS Import Beta")
+
+        job_a = DataImportJob(
+            organization_id=org_a.id,
+            created_by_user_id=owner.id,
+            source_type="csv",
+            source_file_name="suppliers-alpha.csv",
+            source_file_extension=".csv",
+            source_mime_type="text/csv",
+            source_hash="hash-a",
+            storage_path="/tmp/a",
+            status="APPROVED",
+            entity_scope="supplier",
+            mapping_json={"name": "name"},
+            summary_json={"rows": 1},
+            row_count=1,
+            preview_row_count=1,
+            applied_row_count=0,
+            blocked_row_count=0,
+            warning_count=0,
+            batch_id="batch-a",
+        )
+        job_b = DataImportJob(
+            organization_id=org_b.id,
+            created_by_user_id=owner.id,
+            source_type="xlsx",
+            source_file_name="suppliers-beta.xlsx",
+            source_file_extension=".xlsx",
+            source_mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            source_hash="hash-b",
+            storage_path="/tmp/b",
+            status="UPLOADED",
+            entity_scope="supplier",
+            mapping_json={"name": "name"},
+            summary_json={"rows": 1},
+            row_count=1,
+            preview_row_count=0,
+            applied_row_count=0,
+            blocked_row_count=0,
+            warning_count=0,
+            batch_id="batch-b",
+        )
+        db.session.add_all([job_a, job_b])
+        db.session.flush()
+        db.session.add(DataImportFile(data_import_job_id=job_a.id, role="source", original_file_name="suppliers-alpha.csv", storage_path="/tmp/a.csv", sha256="file-a", byte_size=12, mime_type="text/csv"))
+        db.session.add(DataImportMapping(data_import_job_id=job_a.id, source_column_name="Name", target_field_name="name", mapping_type="manual", display_order=1, is_required=True))
+        row_a = DataImportRow(data_import_job_id=job_a.id, row_number=1, entity_type="supplier", source_row_json={"Name": "Alpha Supplier"}, normalized_row_json={"name": "Alpha Supplier"}, row_fingerprint="row-a", status="preview", target_entity_type="supplier", target_entity_id="", issue_summary="", warning_count=0, blocked_count=0, can_rollback=True)
+        row_b = DataImportRow(data_import_job_id=job_b.id, row_number=1, entity_type="supplier", source_row_json={"Name": "Beta Supplier"}, normalized_row_json={"name": "Beta Supplier"}, row_fingerprint="row-b", status="preview", target_entity_type="supplier", target_entity_id="", issue_summary="", warning_count=0, blocked_count=0, can_rollback=True)
+        db.session.add_all([row_a, row_b])
+        db.session.flush()
+        db.session.add(DataImportIssue(data_import_row_id=row_a.id, severity="warning", field_name="name", code="missing_note", message="Name mapped but notes missing"))
+        db.session.add(DataImportChange(data_import_job_id=job_a.id, data_import_row_id=row_a.id, entity_type="supplier", change_type="create", target_entity_id="supplier-alpha", row_fingerprint="change-a", previous_json={}, applied_json={"name": "Alpha Supplier"}, rollbackable=True, status="preview"))
+        db.session.commit()
+
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        assert DataImportJob.query.filter_by(organization_id=org_a.id).count() == 1
+        assert DataImportJob.query.filter_by(organization_id=org_b.id).count() == 0
+        assert DataImportFile.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
+        assert DataImportRow.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
+        assert DataImportRow.query.join(DataImportJob).filter(DataImportJob.organization_id == org_b.id).count() == 0
+        assert DataImportIssue.query.join(DataImportRow).join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
+        assert DataImportChange.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
+        assert OrganizationMembership.query.filter_by(user_id=owner.id).count() == 1
+
+        rows = db.session.execute(text("select count(*) from data_import_jobs where organization_id = :org_id"), {"org_id": org_b.id}).scalar_one()
+        assert rows == 0
+
+        _set_rls_context(access_scope="customer", organization_id=org_b.id)
+        assert OrganizationMembership.query.filter_by(user_id=owner.id).count() == 1
+        assert DataImportJob.query.filter_by(organization_id=org_b.id).count() == 1
+
+
+def test_setup_scope_can_access_platform_data_across_organizations(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, "RLS Setup Alpha")
+        org_b = _create_org(owner, "RLS Setup Beta")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+                DataImportJob(
+                    organization_id=org_a.id,
+                    created_by_user_id=owner.id,
+                    source_type="csv",
+                    source_file_name="setup-alpha.csv",
+                    source_file_extension=".csv",
+                    source_mime_type="text/csv",
+                    source_hash="setup-a",
+                    storage_path="/tmp/setup-a",
+                    status="UPLOADED",
+                    entity_scope="supplier",
+                    mapping_json={},
+                    summary_json={},
+                    row_count=0,
+                    preview_row_count=0,
+                    applied_row_count=0,
+                    blocked_row_count=0,
+                    warning_count=0,
+                    batch_id="setup-a",
+                ),
+                DataImportJob(
+                    organization_id=org_b.id,
+                    created_by_user_id=owner.id,
+                    source_type="xlsx",
+                    source_file_name="setup-beta.xlsx",
+                    source_file_extension=".xlsx",
+                    source_mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    source_hash="setup-b",
+                    storage_path="/tmp/setup-b",
+                    status="UPLOADED",
+                    entity_scope="supplier",
+                    mapping_json={},
+                    summary_json={},
+                    row_count=0,
+                    preview_row_count=0,
+                    applied_row_count=0,
+                    blocked_row_count=0,
+                    warning_count=0,
+                    batch_id="setup-b",
+                ),
+            ]
+        )
+        db.session.commit()
+
+        _set_rls_context(access_scope="setup")
+        assert Organization.query.filter_by(id=org_a.id).count() == 1
+        assert Organization.query.filter_by(id=org_b.id).count() == 1
+        assert Supplier.query.count() == 2
+        assert DataImportJob.query.count() == 2
+        assert db.session.execute(text("select count(*) from organizations")).scalar_one() >= 2

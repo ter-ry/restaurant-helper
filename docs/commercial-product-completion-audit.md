@@ -2,90 +2,131 @@
 
 Date: 2026-08-07
 Branch: `codex/complete-commercial-product-foundation`
-Starting commit for this checkpoint: `108d30bb0a9bbda99bdd1d7afad8bfad0d0f442d`
+Current HEAD during this audit: `dc139aeb3e25e53b2212128832ef63a07c58a9b7`
+
+This audit reflects the repository at the current checkpoint, after the frontend test harness, the browser journeys, the PostgreSQL RLS coverage, the migration-safety tests, and the CI wiring were added.
 
 ## Requirement matrix
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Legacy archive and OCR preservation | Complete | `legacy/job-tracker/` exists and the active app does not import it. OCR test coverage is present in `backend/tests/test_ocr.py` and root tests still pass. |
-| Google login and registration | Partial | Google OIDC foundations, callback handling, and session wiring exist, but the full prospect onboarding UI/edge-case handling still needs end-to-end confirmation. |
-| Commercial access gating | Partial | Server-side operational gating exists in `backend/access.py` and `backend/policy.py`, but the lifecycle/activation path still needs stronger checks and tighter Square/import dependencies. |
-| Owner invitations and memberships | Partial | Invitations, acceptance, cancellation, and membership removal exist, but the workflow still needs full validation against the final commercial lifecycle rules. |
-| Module registry and configuration | Partial | Module registry and setup configuration APIs exist, but the UI and activation dependencies still need more explicit enforcement and refinement. |
-| Internal setup console | Partial | `backend/platform_admin.py` and `src/pages/SetupConsolePage.tsx` provide a real console, including templates, modules, locations, imports, Square status, customer review, activation, and support grants. Some activation checks still need tightening. |
-| Customer onboarding portal | Partial | Onboarding flows exist in backend and frontend, but the setup journey still needs broader confirmation and a more explicit prospect-to-active flow. |
-| CSV/XLSX data migration | Partial | Import pipeline, preview, approval, rollback, and UI exist in `backend/imports.py` / `src/pages/DataMigrationPage.tsx`. This still needs more end-to-end validation and integration with activation criteria. |
-| PostgreSQL RLS | Partial | Request-scoped tenant context and a broad RLS migration are present, but new tables added later still need to be incorporated into the RLS surface. |
-| Support access | Partial | Support grants and banner UI exist, but the full customer operational access model still needs validation against the final lifecycle gate. |
-| Owner audit activity | Partial | Audit events are recorded and surfaced in the setup console / owner audit UI, but the full filtered history and retention story still needs review. |
-| Square Sandbox integration | Scaffolding only | Square connection models, encryption helpers, and webhook signature helpers exist, but the current integration file is incomplete and needs a full backend/frontend implementation. |
-| Frontend product completion | Partial | The console, onboarding, migration, and audit surfaces are present, but the Square workspace and some prospect/activation flows remain incomplete. |
-| Migrations and data safety | Partial | Sequential migrations exist through the commercial/import/RLS foundation, but later phases still need bounded follow-up migrations for any new tables. |
-| Testing and CI | Partial | Backend and root tests pass, but PostgreSQL-specific and browser-level coverage are still incomplete. |
+| Prompt 4 item | Status | Evidence in repo | Tests / validation | Notes |
+| --- | --- | --- | --- | --- |
+| Public Google registration has working frontend and backend | Partial | `backend/auth.py`, `backend/google_oidc.py`, `src/pages/GoogleAuthCompletePage.tsx`, `src/lib/customerAuth.ts`, `backend/tests/test_google_oidc.py`, `tests/frontend/GoogleAuthCompletePage.test.tsx`, `tests/e2e/commercial-journeys.spec.ts` | `npm test`, `npm run e2e`, `python -m pytest backend/tests/test_google_oidc.py` (covered by full backend run) | The repo flow is implemented and tested with mocked OIDC, but live Google credentials and redirect URI validation still require external manual verification. |
+| Commercial access states are enforced server-side | Partial | `backend/access.py`, `backend/policy.py`, `backend/commercial.py`, `backend/platform_admin.py`, `backend/tests/test_commercial.py`, `backend/tests/test_setup_console.py` | `python -m pytest backend/tests -q` | The lifecycle gates are centralized and exercised, but this checkpoint does not include a live production tenant or real subscription provider. |
+| Invitations work end to end | Partial | `backend/commercial.py`, `backend/tests/test_invitations.py`, `src/pages/TeamManagementPage.tsx`, `src/lib/invitations.ts`, `tests/e2e/commercial-journeys.spec.ts` | `python -m pytest backend/tests -q`, `npm run e2e` | The owner invite / cancel / accept flow is present and browser-covered; ownership-transfer edge cases and live email delivery remain external. |
+| Module entitlements work end to end | Partial | `backend/models.py`, `backend/platform_admin.py`, `src/pages/SetupConsolePage.tsx`, `backend/tests/test_setup_console.py` | `python -m pytest backend/tests -q`, `npm run e2e` | Module status is represented and enforced in the repo, but some module-specific operational modules remain workflow-only. |
+| Internal setup console exists | Complete | `backend/platform_admin.py`, `src/pages/SetupConsolePage.tsx`, `src/lib/platformSetup.ts` | `npm run e2e`, `python -m pytest backend/tests/test_setup_console.py` | The console is present and supports templates, modules, locations, imports, Square status, support grants, review, and activation actions. |
+| Customer onboarding portal exists | Complete | `backend/commercial.py`, `src/pages/GoogleAuthCompletePage.tsx`, `src/lib/customerAuth.ts` | `npm test`, `npm run e2e`, `python -m pytest backend/tests/test_commercial.py` | The prospect onboarding screen and logged-in prospect state are implemented. |
+| Setup templates exist | Complete | `backend/platform_admin.py`, `backend/commercial.py`, `backend/models.py`, `src/pages/SetupConsolePage.tsx` | `python -m pytest backend/tests/test_setup_console.py`, `npm run e2e` | Template keys and template application are present. |
+| Dashboard configuration exists | Complete | `backend/platform_admin.py`, `backend/models.py`, `src/pages/SetupConsolePage.tsx`, `src/lib/platformSetup.ts` | `python -m pytest backend/tests/test_setup_console.py`, `npm run e2e` | Organization / location / owner / manager layouts are represented in the repo. |
+| Custom fields work | Complete | `backend/platform_admin.py`, `backend/models.py`, `src/pages/SetupConsolePage.tsx` | `python -m pytest backend/tests/test_setup_console.py`, `npm run e2e` | Supplier, inventory-item, and purchase-invoice custom field payloads are wired. |
+| CSV import works | Complete | `backend/imports.py`, `backend/models.py`, `src/pages/DataMigrationPage.tsx`, `src/lib/dataImports.ts` | `python -m pytest backend/tests/test_imports.py`, `npm run e2e` | CSV upload / parse / preview / approve / execute / rollback flow is implemented. |
+| XLSX import works | Complete | `backend/imports.py`, `backend/tests/test_imports.py`, `tests/e2e/commercial-journeys.spec.ts` | `python -m pytest backend/tests/test_imports.py`, `npm run e2e` | `openpyxl` is now declared in `backend/requirements.txt` and installed in the environment. |
+| Preview works | Complete | `backend/imports.py`, `src/pages/DataMigrationPage.tsx` | `python -m pytest backend/tests/test_imports.py`, `npm run e2e` | Preview is a distinct step and does not write live tables before approval. |
+| Rollback works | Complete | `backend/imports.py`, `backend/tests/test_imports.py`, `src/pages/DataMigrationPage.tsx` | `python -m pytest backend/tests/test_imports.py`, `npm run e2e` | Rollback exists with blockers and unsafe-denial behavior. |
+| PostgreSQL RLS works and is tested | Partial | `backend/migrations/versions/0009_postgres_row_level_security.py`, `backend/migrations/versions/0011_postgres_row_level_security_square_orders.py`, `backend/tests/test_postgres_rls.py`, `backend/tests/test_migrations_postgres.py`, `.github/workflows/ci.yml` | `python -m pytest backend/tests -q` (9 PostgreSQL-gated skips in this environment), CI now provisions a real PostgreSQL service | The repo now has service-backed tests and CI wiring, but this local environment cannot start a temp PostgreSQL daemon, so the PG-only tests still skip here. |
+| Support grants work | Complete | `backend/platform_admin.py`, `backend/models.py`, `src/pages/SetupConsolePage.tsx`, `src/components/SupportAccessBanner.tsx` | `python -m pytest backend/tests/test_setup_console.py`, `npm run e2e` | Support grants, revocation, and the visible banner are wired in the repo. |
+| Support banner works | Complete | `src/components/SupportAccessBanner.tsx`, `src/pages/DataMigrationPage.tsx` | `npm test`, `npm run e2e` | The banner is rendered in customer-facing workflows when a support grant is active. |
+| Owner audit page works | Complete | `backend/audit.py`, `backend/tests/test_setup_console.py`, `src/pages/OwnerAuditPage.tsx` | `npm run e2e`, backend tests | Search, filter, and audit-event rendering are present. |
+| Square OAuth foundation works with mocked or Sandbox-compatible flows | Partial | `backend/square_integration.py`, `backend/square.py`, `backend/tests/test_square_integration.py`, `src/pages/SquareIntegrationPage.tsx`, `src/lib/squareIntegration.ts` | `python -m pytest backend/tests/test_square_integration.py`, `npm run e2e` | OAuth start/callback, state, token storage, and sandbox-compatible routes exist; live Square account validation remains external. |
+| Square location mapping works | Partial | `backend/square_integration.py`, `backend/tests/test_square_integration.py`, `src/pages/SquareIntegrationPage.tsx` | `python -m pytest backend/tests/test_square_integration.py`, `npm run e2e` | Mapping logic and UI are present, but live Square location metadata is still sandbox/external only. |
+| Square catalog sync works | Partial | `backend/square_integration.py`, `backend/tests/test_square_integration.py`, `src/pages/SquareIntegrationPage.tsx` | `python -m pytest backend/tests/test_square_integration.py`, `npm run e2e` | Catalog sync is implemented against mocked / sandbox-compatible APIs. |
+| Square orders sync works | Partial | `backend/models.py`, `backend/migrations/versions/0010_square_orders_sync.py`, `backend/tests/test_square_integration.py`, `backend/tests/test_postgres_rls.py`, `src/pages/SquareIntegrationPage.tsx` | `python -m pytest backend/tests/test_square_integration.py`, `npm run e2e`, `python -m pytest backend/tests/test_postgres_rls.py` (skipped locally without PG service) | The persistence and RLS hooks are in place; real Square Sandbox sync remains externally unverified. |
+| Square webhook processing works | Partial | `backend/square_integration.py`, `backend/tests/test_square_integration.py` | `backend/tests/test_square_integration.py`, `npm run e2e` | Signature verification and idempotent webhook handling exist, but live webhook delivery is external. |
+| Frontend tests pass | Complete | `vitest.config.ts`, `tests/frontend/*.test.tsx`, `tests/e2e/commercial-journeys.spec.ts`, `package.json` scripts | `npm test` → 5 passed, `npm run e2e` → 8 passed, `npm run typecheck` → passed | The frontend now has a maintained Vitest + Playwright stack. |
+| Backend tests pass | Complete | `backend/tests/*` | `python -m pytest backend/tests -q` → 68 passed, 9 skipped | The only skips are PostgreSQL-service-gated tests. |
+| PostgreSQL tests pass | Partial | `backend/tests/test_postgres_rls.py`, `backend/tests/test_migrations_postgres.py`, `.github/workflows/ci.yml` | CI now runs them against a temp PostgreSQL service; local runs skip without that service | The repo has the validation path, but this workspace cannot start the temp PostgreSQL daemon directly. |
+| Migration tests pass | Partial | `backend/tests/test_seed.py`, `backend/tests/test_migrations_postgres.py` | Local sqlite migration test passes; PostgreSQL upgrade/downgrade coverage is in CI | Fresh-db, 0006-head, and partial-commercial-head checks are now represented in code. |
+| Build passes | Complete | `src/main.tsx`, lazy-loaded route chunks | `npm run build` → passed | The >500 kB entry warning was materially reduced by route-level code splitting. |
+| Active deployment no longer references the job tracker | Complete | `backend/wsgi.py`, `Procfile`, `render.yaml`, `legacy/job-tracker/` | Repository inspection and existing tests | Active startup remains on `backend.wsgi:app`; the legacy tracker is isolated under `legacy/job-tracker/`. |
+| Documentation is complete | Partial | `docs/commercial-product-completion-audit.md`, `docs/*`, `backend/requirements.txt`, `README.md`, `render.pilot-staging.yaml` | Repository review | Core docs are present, but staging / external credential instructions still need a final pass before any production claim. |
 
 ## Existing files that can be preserved
 
-- `backend/commercial.py`
 - `backend/access.py`
-- `backend/policy.py`
+- `backend/app.py`
+- `backend/auth.py`
+- `backend/commercial.py`
 - `backend/imports.py`
 - `backend/platform_admin.py`
-- `backend/models.py`
+- `backend/square_integration.py`
+- `backend/tests/test_auth.py`
 - `backend/tests/test_commercial.py`
-- `backend/tests/test_setup_console.py`
 - `backend/tests/test_imports.py`
-- `backend/tests/test_postgres_rls.py`
+- `backend/tests/test_invitations.py`
+- `backend/tests/test_setup_console.py`
+- `backend/tests/test_square_integration.py`
+- `src/pages/GoogleAuthCompletePage.tsx`
 - `src/pages/SetupConsolePage.tsx`
 - `src/pages/DataMigrationPage.tsx`
-- `src/pages/GoogleAuthCompletePage.tsx`
 - `src/pages/OwnerAuditPage.tsx`
+- `src/pages/SquareIntegrationPage.tsx`
+- `tests/frontend/GoogleAuthCompletePage.test.tsx`
+- `tests/frontend/SupportAccessBanner.test.tsx`
+- `tests/e2e/commercial-journeys.spec.ts`
 
 ## Existing files that still need correction or extension
 
-- `backend/square_integration.py` — current draft is incomplete and contains placeholder / consistency issues.
-- `backend/app.py` — needs Square blueprint registration.
-- `backend/platform_admin.py` — activation checks and setup-state derivation still need to be tightened against the final lifecycle model.
-- `src/pages/SetupConsolePage.tsx` — functional, but still needs more explicit state-driven guidance and better Square/import readiness feedback.
+- `backend/square_integration.py` still depends on sandbox-compatible / mocked Square access for full end-to-end validation.
+- `backend/tests/test_postgres_rls.py` and `backend/tests/test_migrations_postgres.py` need the temp PostgreSQL service to be available in the execution environment in order to run without skips.
+- `src/pages/SetupConsolePage.tsx` and `src/pages/SquareIntegrationPage.tsx` are functional, but still represent platform flows that need real external validation.
+- `docs/` still needs a final staging / manual external-setup pass before any production claim.
 
 ## Missing backend work
 
-- Complete Square OAuth, connection, location mapping, catalog sync, order sync, and webhook processing.
-- Tighten lifecycle activation criteria so imports, customer review, Square mapping, and setup/payment states are enforced consistently.
-- Add any follow-up migrations needed for Square sales persistence and later RLS coverage.
+- Live Google OIDC validation against a real Google OAuth client.
+- Live Square OAuth and webhook validation against a real Square Sandbox app.
+- A temp PostgreSQL daemon in this workspace so the new PG tests can run instead of skip.
 
 ## Missing frontend work
 
-- A dedicated Square Sandbox workspace for owners/support staff.
-- Clearer lifecycle/status feedback for the commercial activation path.
-- More explicit progress UX for Square, imports, and setup readiness.
+- A final pass over the larger legacy demo pages that still emit lint warnings.
+- A dedicated public registration landing flow beyond the current Google callback and onboarding states.
 
 ## Missing security work
 
-- RLS coverage for any new tables introduced after the current RLS migration.
-- More complete tenant-safe support access validation for operational views.
-- More exhaustive PostgreSQL tests for raw SQL / cross-tenant leakage across all sensitive tables.
-
-## Missing tests
-
-- Square OAuth state and callback tests.
-- Square token encryption / no-plaintext-storage tests for the integration flow.
-- Square location mapping, catalog sync, orders sync, and webhook idempotency tests.
-- Browser-level checks for the new Square workspace and lifecycle-driven activation flow.
+- Full live validation of Google issuer / audience / nonce handling against an external IdP.
+- Full live validation of Square OAuth and webhook processing against the external platform.
+- Service-backed PostgreSQL RLS execution in this workspace; the repo has the tests and CI service, but the local daemon is unavailable here.
 
 ## Migration risks
 
-- The current Square foundation predates a full sales/order persistence model.
-- If new Square order tables are added, they must be introduced with a bounded follow-up migration and later RLS coverage.
+- The repo now has migration tests for a fresh PostgreSQL database, the secure backend head, and the prior commercial head, but those are only runnable where the temp PostgreSQL service exists.
+- `openpyxl` had been missing from the backend requirements; that has now been added, but the environment needed a fresh install to surface the issue.
+
+## Existing test changes and skips
+
+- No existing test was deleted.
+- No existing test was intentionally weakened.
+- The current backend skip count is 9, and every skip is PostgreSQL-service gated:
+  - `backend/tests/test_migrations_postgres.py`: 3 skips
+  - `backend/tests/test_postgres_rls.py`: 6 skips
 
 ## Legacy archive status
 
-- The legacy tracker archive exists under `legacy/job-tracker/`.
-- The active application entrypoint is `backend.wsgi:app`.
-- The archived job tracker is not the active deployment target.
-- OCR remains active in the Flowtally backend.
+- The legacy tracker archive remains under `legacy/job-tracker/`.
+- The active application still starts from `backend.wsgi:app`.
+- The active backend does not import the archived tracker code.
+- OCR routes and tests remain present in the repository.
+
+## OCR status
+
+- Invoice OCR remains active through `invoice_ocr.py`, `reconciliation_ocr.py`, `backend/ocr.py`, and the OCR route tests.
+- Relevant OCR tests were not removed in this checkpoint.
 
 ## Root test-count change
 
-The root `tests/` suite currently contains 15 tests. The earlier 24-count referenced in prior notes appears to have included tests that were later consolidated into backend coverage or moved under `backend/tests/`.
+The root Python count is still 15 tests because the prior 24-count referenced in earlier notes appears to have included tests that were later consolidated into `backend/tests/` or moved out of the root discovery path. The current `python -m unittest discover -s tests` run still finds 15 tests and passes.
 
+## Current validation snapshot
+
+- `python -m pytest backend/tests -q` → `68 passed, 9 skipped`
+- `python -m unittest discover -s tests` → `15 passed`
+- `npm run typecheck` → passed
+- `npm test` → `5 passed`
+- `npm run lint` → passed with warnings only
+- `npm run e2e` → `8 passed`
+- `npm run build` → passed
+
+## Audit conclusion
+
+The repository is materially further along than the earlier checkpoint: the commercial UI flows are present, the frontend test stack is real, the browser journeys pass, the backend suites pass on SQLite, and PostgreSQL service-backed tests plus migration safety tests are now coded and wired into CI. The remaining gap is the absence of a temp PostgreSQL daemon in this local workspace and the still-external Google/Square validation.
