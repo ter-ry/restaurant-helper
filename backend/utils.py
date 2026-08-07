@@ -14,6 +14,7 @@ from .models import (
     InventoryMovement,
     Organization,
     OrganizationMembership,
+    PlatformRole,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     ReorderPlan,
@@ -91,6 +92,10 @@ def serialize_membership(membership: OrganizationMembership) -> dict[str, Any]:
         "role": membership.role,
         "createdAt": isoformat(membership.created_at),
     }
+
+
+def get_platform_role(user_id: int) -> PlatformRole | None:
+    return PlatformRole.query.filter_by(user_id=user_id, is_active=True).first()
 
 
 def serialize_location(location: RestaurantLocation) -> dict[str, Any]:

@@ -26,6 +26,7 @@ export interface CustomerOrganizationMembershipSummary {
 
 export interface CustomerSessionResponse {
   user: CustomerUser;
+  platformRole?: string | null;
   membershipRole: string | null;
   currentOrganizationId: number | null;
   currentLocationId: number | null;

@@ -23,7 +23,7 @@ from .google_oidc import (
 from .extensions import db, limiter
 from .models import ExternalIdentity, Organization, OrganizationMembership, User
 from .validation import RequestValidationError, clean_email, parse_login_payload
-from .utils import clear_pilot_context, get_current_location, get_current_organization_bundle, get_user_memberships, json_error, serialize_organization, serialize_user
+from .utils import clear_pilot_context, get_current_location, get_current_organization_bundle, get_platform_role, get_user_memberships, json_error, serialize_organization, serialize_user
 
 bp = Blueprint("auth", __name__)
 INVALID_LOGIN_MESSAGE = "Invalid email or password."
@@ -69,6 +69,7 @@ def login() -> tuple[object, int]:
 def _login_payload(user: User, memberships: list[OrganizationMembership], membership: OrganizationMembership | None, organization: Organization | None, current_location) -> dict[str, object]:
     return {
         "user": serialize_user(user),
+        "platformRole": get_platform_role(user.id).role if get_platform_role(user.id) else None,
         "membershipRole": membership.role if membership else None,
         "currentOrganization": serialize_organization(organization) if organization else None,
         "currentLocationId": current_location.id if current_location else None,
@@ -272,6 +273,7 @@ def me() -> tuple[object, int]:
         jsonify(
             {
                 "user": serialize_user(current_user),
+                "platformRole": get_platform_role(current_user.id).role if get_platform_role(current_user.id) else None,
                 "membershipRole": membership.role if membership else None,
                 "currentOrganizationId": organization.id if organization else None,
                 "currentLocationId": current_location.id if current_location else None,

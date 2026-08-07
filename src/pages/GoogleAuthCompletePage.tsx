@@ -224,6 +224,11 @@ function LoggedInProspectView({
               </Link>
             </>
           ) : null}
+          {session.platformRole ? (
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/platform/setup">
+              Platform setup
+            </Link>
+          ) : null}
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void handleRequestSetup()} disabled={requestingSetup || !currentOrganization}>
             {requestingSetup ? "Requesting..." : "Request setup"}
           </button>

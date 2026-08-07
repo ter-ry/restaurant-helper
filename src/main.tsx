@@ -31,6 +31,7 @@ import { GoogleAuthCompletePage } from "./pages/GoogleAuthCompletePage";
 import { InvitationAcceptPage } from "./pages/InvitationAcceptPage";
 import { TeamManagementPage } from "./pages/TeamManagementPage";
 import { OwnerAuditPage } from "./pages/OwnerAuditPage";
+import { SetupConsolePage } from "./pages/SetupConsolePage";
 
 function HashScroll() {
   const location = useLocation();
@@ -200,6 +201,7 @@ const routes = [
   { path: "/invite/:token", element: <PageWithHashScroll><InvitationAcceptPage /></PageWithHashScroll> },
   { path: "/owner/team", element: <PageWithHashScroll><TeamManagementPage /></PageWithHashScroll> },
   { path: "/owner/audit", element: <PageWithHashScroll><OwnerAuditPage /></PageWithHashScroll> },
+  { path: "/platform/setup", element: <PageWithHashScroll><SetupConsolePage /></PageWithHashScroll> },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   { path: "/pilot/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
   { path: "/pilot/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
