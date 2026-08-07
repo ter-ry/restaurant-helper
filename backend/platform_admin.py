@@ -11,6 +11,7 @@ from .audit import record_audit_event
 from .extensions import db
 from .models import AuditEvent, DashboardLayout, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation
 from .modules import MODULE_REGISTRY
+from .tenant_context import apply_request_tenant_context
 from .utils import get_platform_role, get_user_memberships, json_error, serialize_location, serialize_organization, serialize_user, serialize_audit_event
 
 bp = Blueprint("platform_admin", __name__)
@@ -61,6 +62,7 @@ def _require_platform_role(*roles: str):
     role = _platform_role()
     if role is None or role.role not in roles:
         return json_error("Platform setup access is required.", 403)
+    apply_request_tenant_context(access_scope="setup" if role.role == "setup_admin" else "support" if role.role == "support" else None)
     return None
 
 

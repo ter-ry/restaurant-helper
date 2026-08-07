@@ -16,6 +16,7 @@ from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
 from .ocr import bp as ocr_bp
+from .tenant_context import apply_request_tenant_context
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
 from .platform_admin import bp as platform_admin_bp
@@ -79,6 +80,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         if user is None or not user.is_active:
             logout_user()
             return json_error("Authentication required.", 401)
+
+    @app.before_request
+    def set_postgres_tenant_context():
+        apply_request_tenant_context()
 
     @app.after_request
     def add_cors_headers(response: Response) -> Response:

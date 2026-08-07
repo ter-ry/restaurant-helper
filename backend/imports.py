@@ -34,6 +34,7 @@ from .models import (
     Supplier,
     SupplierItemMapping,
 )
+from .tenant_context import apply_org_tenant_context
 from .utils import (
     get_platform_role,
     get_current_organization_bundle,
@@ -248,6 +249,7 @@ def _require_import_access(organization_id: int | None) -> tuple[Organization | 
     allowed, message = _can_access_imports(organization)
     if not allowed:
         return organization, json_error(message or "Access denied.", 403)
+    apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) and get_platform_role(current_user.id).role == "setup_admin" else None)
     return organization, None
 
 
