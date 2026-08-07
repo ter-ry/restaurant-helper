@@ -49,7 +49,7 @@ export function PriceChangesPage() {
           return matchesQuery && matchesSupplier && matchesCategory && matchesStatus;
         })
         .sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent)),
-    [category, query, status, supplier],
+    [category, demo.priceChanges, query, status, supplier],
   );
 
   const increasedItems = demo.priceChanges.filter((item) => item.status === "Increased");

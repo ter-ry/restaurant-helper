@@ -10,7 +10,7 @@
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
     "lint": "eslint src tests --ext .ts,.tsx",
-    "e2e": "playwright test --config playwright.config.ts"
+    "e2e": "node scripts/run-e2e.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

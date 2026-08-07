@@ -75,7 +75,7 @@ export function useDemoProfile() {
   const slug = isDemoProfileSlug(params.profile) ? params.profile : defaultDemoProfileSlug;
   const overrides = parseCustomizationOverrides(location.search);
 
-  return useMemo(() => hydrateProfile(slug, overrides), [location.search, slug]);
+  return useMemo(() => hydrateProfile(slug, overrides), [slug, overrides]);
 }
 
 export function replaceDemoProfileInPath(pathname: string, slug: DemoProfileSlug) {

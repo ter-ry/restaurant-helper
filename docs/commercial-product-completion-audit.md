@@ -2,7 +2,7 @@
 
 Date: 2026-08-07
 Branch: `codex/complete-commercial-product-foundation`
-Current HEAD during this audit: `3a8cabe0b4e1626c2f8f1ae7b5e9937078aef2b3`
+Current HEAD during this audit: `cd6c031c7bc4e0f4a2ff35b075c50c1f419e0a98`
 
 This audit reflects the repository at the current checkpoint, after the frontend validation stack, the browser journeys, the PostgreSQL RLS coverage, the migration-safety tests, the CI wiring, the shared API-base helper, and the staging-readiness runbook were added.
 
@@ -123,10 +123,10 @@ The root Python count is still 15 tests because the prior 24-count referenced in
 - `python -m unittest discover -s tests` → `15 passed`
 - `npm run typecheck` → passed
 - `npm test` → `5 passed`
-- `npm run lint` → passed with warnings only
-- `npm run e2e` → `8 passed` before teardown timeout in this shell
+- `npm run lint` → passed with 71 warnings, 0 errors
+- `npm run e2e` → `8 passed` and exited cleanly
 - `npm run build` → passed
 
 ## Audit conclusion
 
-The repository is materially further along than the earlier checkpoint: the commercial UI flows are present, the frontend test stack is real, the browser journeys pass, the backend suites pass on SQLite, and PostgreSQL service-backed tests plus migration safety tests are now coded and wired into CI. The remaining external work is live Google/Square/Render/DNS validation; the repository itself now has the code, tests, and documentation needed for the commercial product foundation.
+The repository is materially further along than the earlier checkpoint: the commercial UI flows are present, the frontend test stack is real, the browser journeys pass and exit cleanly, the backend suites pass on SQLite, and PostgreSQL service-backed tests plus migration safety tests are now coded and wired into CI. The remaining external work is live Google/Square/Render/DNS validation; the repository itself now has the code, tests, and documentation needed for the commercial product foundation.

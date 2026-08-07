@@ -16,15 +16,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function toMillis(value: string | undefined) {
-  if (!value) {
-    return Number.NEGATIVE_INFINITY;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
-}
-
 function clampQuantity(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
 }

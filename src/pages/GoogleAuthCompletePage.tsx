@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Loader2, LogOut, MapPin, ShieldAlert, Sparkles, UserRound } from "lucide-react";
 import { SupportAccessBanner } from "../components/SupportAccessBanner";
