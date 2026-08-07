@@ -67,7 +67,7 @@ export class CustomerApiError extends Error {
 }
 
 function buildUrl(path: string) {
-  return new URL(path, window.location.origin).toString();
+  return buildApiUrl(path);
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
@@ -153,3 +153,4 @@ export async function logoutCustomer() {
 export function startGoogleLogin() {
   window.location.assign("/api/auth/google/start?purpose=login");
 }
+import { buildApiUrl } from "./apiBase";

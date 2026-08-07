@@ -1,8 +1,5 @@
+import { buildApiUrl } from "./apiBase";
 import { CustomerApiError, getCustomerCsrfToken } from "./customerAuth";
-
-function buildUrl(path: string) {
-  return new URL(path, window.location.origin).toString();
-}
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -17,7 +14,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(buildApiUrl(path), {
     ...init,
     credentials: "include",
     headers: {
@@ -252,4 +249,3 @@ export async function updateSquareCatalogMapping(payload: {
     body: JSON.stringify(payload),
   });
 }
-

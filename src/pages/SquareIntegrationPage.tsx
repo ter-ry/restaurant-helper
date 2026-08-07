@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { SupportAccessBanner } from "../components/SupportAccessBanner";
+import { buildApiUrl } from "../lib/apiBase";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
 import {
   beginSquareConnection,
@@ -24,12 +25,8 @@ type OrganizationBundle = {
   membershipRole?: string;
 };
 
-function buildUrl(path: string) {
-  return new URL(path, window.location.origin).toString();
-}
-
 async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(buildUrl(path), { credentials: "include", headers: { Accept: "application/json" } });
+  const response = await fetch(buildApiUrl(path), { credentials: "include", headers: { Accept: "application/json" } });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {

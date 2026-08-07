@@ -1,3 +1,4 @@
+import { buildApiUrl } from "./apiBase";
 import { CustomerApiError, getCustomerCsrfToken } from "./customerAuth";
 
 export interface CustomerInvitation {
@@ -36,7 +37,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(new URL(path, window.location.origin).toString(), {
+  const response = await fetch(buildApiUrl(path), {
     ...init,
     credentials: "include",
     headers: {
