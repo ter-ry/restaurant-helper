@@ -9,6 +9,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import generate_csrf
 
 from .audit import record_audit_event
+from .access import support_grant_for_user
 from .google_oidc import (
     GoogleOIDCError,
     build_google_authorization_url,
@@ -67,12 +68,24 @@ def login() -> tuple[object, int]:
 
 
 def _login_payload(user: User, memberships: list[OrganizationMembership], membership: OrganizationMembership | None, organization: Organization | None, current_location) -> dict[str, object]:
+    support_grant = support_grant_for_user(user.id, organization.id) if organization is not None else None
     return {
         "user": serialize_user(user),
         "platformRole": get_platform_role(user.id).role if get_platform_role(user.id) else None,
         "membershipRole": membership.role if membership else None,
         "currentOrganization": serialize_organization(organization) if organization else None,
         "currentLocationId": current_location.id if current_location else None,
+        "supportAccessGrant": {
+            "id": support_grant.id,
+            "organizationId": support_grant.organization_id,
+            "reason": support_grant.reason,
+            "caseReference": support_grant.case_reference,
+            "status": support_grant.status,
+            "startsAt": support_grant.starts_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "expiresAt": support_grant.expires_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        if support_grant is not None
+        else None,
         "organizations": [
             {
                 **serialize_organization(entry.organization),
@@ -269,6 +282,7 @@ def google_callback():
 def me() -> tuple[object, int]:
     organization, membership, locations = get_current_organization_bundle()
     current_location = get_current_location()
+    support_grant = support_grant_for_user(current_user.id, organization.id) if organization is not None else None
     return (
         jsonify(
             {
@@ -277,6 +291,17 @@ def me() -> tuple[object, int]:
                 "membershipRole": membership.role if membership else None,
                 "currentOrganizationId": organization.id if organization else None,
                 "currentLocationId": current_location.id if current_location else None,
+                "supportAccessGrant": {
+                    "id": support_grant.id,
+                    "organizationId": support_grant.organization_id,
+                    "reason": support_grant.reason,
+                    "caseReference": support_grant.case_reference,
+                    "status": support_grant.status,
+                    "startsAt": support_grant.starts_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "expiresAt": support_grant.expires_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+                }
+                if support_grant is not None
+                else None,
                 "organizations": [
                     {
                         **serialize_organization(entry.organization),

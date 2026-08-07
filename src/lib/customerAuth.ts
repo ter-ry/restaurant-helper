@@ -30,6 +30,15 @@ export interface CustomerSessionResponse {
   membershipRole: string | null;
   currentOrganizationId: number | null;
   currentLocationId: number | null;
+  supportAccessGrant?: {
+    id: number;
+    organizationId: number;
+    reason: string;
+    caseReference: string;
+    status: string;
+    startsAt: string | null;
+    expiresAt: string | null;
+  } | null;
   organizations?: CustomerOrganizationMembershipSummary[];
   csrfToken: string;
 }

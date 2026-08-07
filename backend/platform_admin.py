@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -9,10 +9,11 @@ from flask_login import current_user, login_required
 
 from .audit import record_audit_event
 from .extensions import db
-from .models import AuditEvent, DashboardLayout, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation
+from .models import AuditEvent, DashboardLayout, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SupportAccessGrant, User
 from .modules import MODULE_REGISTRY
 from .tenant_context import apply_request_tenant_context
-from .utils import get_platform_role, get_user_memberships, json_error, serialize_location, serialize_organization, serialize_user, serialize_audit_event
+from .utils import get_platform_role, get_user_memberships, json_error, isoformat, serialize_location, serialize_organization, serialize_user, serialize_audit_event
+from .validation import clean_email
 
 bp = Blueprint("platform_admin", __name__)
 
@@ -68,6 +69,19 @@ def _require_platform_role(*roles: str):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _parse_datetime(value: Any, *, default: datetime | None = None) -> datetime:
+    if value in {None, ""}:
+        if default is not None:
+            return default
+        raise ValueError("A timestamp is required.")
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc)
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _ensure_configuration(organization: Organization) -> OrganizationConfiguration:
@@ -228,6 +242,27 @@ def _serialize_organization_detail(organization: Organization) -> dict[str, Any]
         "checklist": _checklist(organization),
         "auditEvents": [serialize_audit_event(event) for event in AuditEvent.query.filter_by(organization_id=organization.id).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(50).all()],
         "platformRole": platform_role.role if platform_role else None,
+    }
+
+
+def _serialize_support_grant(grant: SupportAccessGrant) -> dict[str, Any]:
+    return {
+        "id": grant.id,
+        "organizationId": grant.organization_id,
+        "organizationName": grant.organization.name if grant.organization else "",
+        "supportUserId": grant.support_user_id,
+        "supportUserEmail": grant.support_user.email if grant.support_user else "",
+        "requestedByUserId": grant.requested_by_user_id,
+        "approvedByUserId": grant.approved_by_user_id,
+        "reason": grant.reason,
+        "caseReference": grant.case_reference,
+        "status": grant.status,
+        "startsAt": isoformat(grant.starts_at),
+        "expiresAt": isoformat(grant.expires_at),
+        "revokedAt": isoformat(grant.revoked_at),
+        "visibleInUi": bool(grant.visible_in_ui),
+        "createdAt": isoformat(grant.created_at),
+        "updatedAt": isoformat(grant.updated_at),
     }
 
 
@@ -761,3 +796,114 @@ def activate_organization(organization_id: int):
     )
     db.session.commit()
     return jsonify(_serialize_organization_detail(organization)), 200
+
+
+@bp.get("/api/platform/support/grants")
+@login_required
+def list_support_grants():
+    permission_error = _require_platform_role("setup_admin", "support")
+    if permission_error is not None:
+        return permission_error
+    query = SupportAccessGrant.query
+    organization_id = request.args.get("organizationId")
+    support_user_id = request.args.get("supportUserId")
+    status = str(request.args.get("status") or "").strip().lower()
+    if organization_id not in {None, ""}:
+        try:
+            query = query.filter(SupportAccessGrant.organization_id == int(organization_id))
+        except (TypeError, ValueError):
+            return json_error("Organization id must be numeric.", 400)
+    if support_user_id not in {None, ""}:
+        try:
+            query = query.filter(SupportAccessGrant.support_user_id == int(support_user_id))
+        except (TypeError, ValueError):
+            return json_error("Support user id must be numeric.", 400)
+    if status:
+        query = query.filter(db.func.lower(SupportAccessGrant.status) == status)
+    role = _platform_role()
+    if role is not None and role.role == "support":
+        query = query.filter(SupportAccessGrant.support_user_id == current_user.id)
+    grants = query.order_by(SupportAccessGrant.created_at.desc(), SupportAccessGrant.id.desc()).all()
+    return jsonify({"grants": [_serialize_support_grant(grant) for grant in grants]}), 200
+
+
+@bp.post("/api/platform/support/grants")
+@login_required
+def create_support_grant():
+    permission_error = _require_platform_role("setup_admin")
+    if permission_error is not None:
+        return permission_error
+    payload = request.get_json(silent=True) or {}
+    organization_id = payload.get("organizationId")
+    support_user_email = clean_email(payload.get("supportUserEmail"))
+    reason = str(payload.get("reason") or "").strip()
+    case_reference = str(payload.get("caseReference") or "").strip()
+    if organization_id in {None, ""}:
+        return json_error("Organization id is required.", 400)
+    if not support_user_email:
+        return json_error("Support user email is required.", 400)
+    if not reason:
+        return json_error("A support reason is required.", 400)
+    try:
+        organization_id_int = int(organization_id)
+    except (TypeError, ValueError):
+        return json_error("Organization id must be numeric.", 400)
+    organization = Organization.query.filter_by(id=organization_id_int).first()
+    if organization is None:
+        return json_error("Organization not found.", 404)
+    support_user = User.query.filter_by(email=support_user_email).first()
+    if support_user is None:
+        return json_error("Support user not found.", 404)
+    starts_at = _parse_datetime(payload.get("startsAt"), default=_utcnow())
+    expires_at = _parse_datetime(payload.get("expiresAt"), default=starts_at + timedelta(hours=1))
+    if expires_at <= starts_at:
+        return json_error("Expiry must be after the start time.", 400)
+    grant = SupportAccessGrant(
+        organization_id=organization.id,
+        requested_by_user_id=current_user.id,
+        approved_by_user_id=current_user.id,
+        support_user_id=support_user.id,
+        reason=reason,
+        case_reference=case_reference,
+        status="active",
+        starts_at=starts_at,
+        expires_at=expires_at,
+        visible_in_ui=True,
+    )
+    db.session.add(grant)
+    db.session.flush()
+    record_audit_event(
+        event_type="support.grant_created",
+        entity_type="support_access_grant",
+        entity_id=grant.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"supportUserEmail": support_user.email, "caseReference": case_reference, "expiresAt": isoformat(expires_at)},
+    )
+    db.session.commit()
+    return jsonify({"grant": _serialize_support_grant(grant)}), 201
+
+
+@bp.post("/api/platform/support/grants/<int:grant_id>/revoke")
+@login_required
+def revoke_support_grant(grant_id: int):
+    permission_error = _require_platform_role("setup_admin")
+    if permission_error is not None:
+        return permission_error
+    grant = SupportAccessGrant.query.filter_by(id=grant_id).first()
+    if grant is None:
+        return json_error("Support grant not found.", 404)
+    if grant.revoked_at is not None:
+        return json_error("Support grant is already revoked.", 409)
+    grant.revoked_at = _utcnow()
+    grant.status = "revoked"
+    record_audit_event(
+        event_type="support.grant_revoked",
+        entity_type="support_access_grant",
+        entity_id=grant.id,
+        organization_id=grant.organization_id,
+        actor_user_id=current_user.id,
+        metadata={"supportUserEmail": grant.support_user.email if grant.support_user else "", "caseReference": grant.case_reference},
+    )
+    db.session.commit()
+    return jsonify({"grant": _serialize_support_grant(grant)}), 200

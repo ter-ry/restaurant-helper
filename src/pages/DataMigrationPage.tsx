@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, RotateCcw, UploadCloud
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
+import { SupportAccessBanner } from "../components/SupportAccessBanner";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
 import {
   approveImportJob,
@@ -307,6 +308,8 @@ export function DataMigrationPage() {
               ) : null}
             </div>
           </Card>
+
+          <SupportAccessBanner grant={session?.supportAccessGrant} />
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="p-6">

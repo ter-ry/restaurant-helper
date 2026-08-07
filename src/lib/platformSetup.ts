@@ -44,6 +44,29 @@ export interface PlatformSetupListResponse {
   organizations: PlatformSetupOrganizationSummary[];
 }
 
+export interface PlatformSupportGrantSummary {
+  id: number;
+  organizationId: number;
+  organizationName: string;
+  supportUserId: number;
+  supportUserEmail: string;
+  requestedByUserId: number | null;
+  approvedByUserId: number | null;
+  reason: string;
+  caseReference: string;
+  status: string;
+  startsAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  visibleInUi: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlatformSupportGrantsResponse {
+  grants: PlatformSupportGrantSummary[];
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
   if (!text) {
@@ -232,6 +255,43 @@ export async function approveCustomerReview(organizationId: number) {
 export async function activateSetupOrganization(organizationId: number) {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<PlatformSetupDetail>(`/api/platform/setup/organizations/${organizationId}/activate`, {
+    method: "POST",
+    headers: {
+      "X-CSRFToken": csrfToken,
+    },
+  });
+}
+
+export async function fetchSupportGrants(params: { organizationId?: number; supportUserId?: number; status?: string } = {}) {
+  const query = new URLSearchParams();
+  if (params.organizationId !== undefined) {
+    query.set("organizationId", String(params.organizationId));
+  }
+  if (params.supportUserId !== undefined) {
+    query.set("supportUserId", String(params.supportUserId));
+  }
+  if (params.status) {
+    query.set("status", params.status);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return requestJson<PlatformSupportGrantsResponse>(`/api/platform/support/grants${suffix}`);
+}
+
+export async function createSupportGrant(payload: { organizationId: number; supportUserEmail: string; reason: string; caseReference?: string; startsAt?: string; expiresAt?: string }) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<{ grant: PlatformSupportGrantSummary }>("/api/platform/support/grants", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function revokeSupportGrant(grantId: number) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<{ grant: PlatformSupportGrantSummary }>(`/api/platform/support/grants/${grantId}/revoke`, {
     method: "POST",
     headers: {
       "X-CSRFToken": csrfToken,

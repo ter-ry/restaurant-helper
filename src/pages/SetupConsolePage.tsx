@@ -7,8 +7,11 @@ import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type Customer
 import {
   activateSetupOrganization,
   approveCustomerReview,
+  createSupportGrant,
   fetchSetupOrganizations,
   fetchSetupOrganization,
+  fetchSupportGrants,
+  revokeSupportGrant,
   requestCustomerReview,
   updateCustomFields,
   updateDashboardLayout,
@@ -22,6 +25,7 @@ import {
   updateSquareStatus,
   type PlatformSetupDetail,
   type PlatformSetupOrganizationSummary,
+  type PlatformSupportGrantSummary,
 } from "../lib/platformSetup";
 
 type LoadState = "loading" | "signedOut" | "permissionDenied" | "ready" | "error";
@@ -67,10 +71,16 @@ export function SetupConsolePage() {
   const [organizations, setOrganizations] = useState<PlatformSetupOrganizationSummary[]>([]);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<number | null>(null);
   const [selected, setSelected] = useState<PlatformSetupDetail | null>(null);
+  const [supportGrants, setSupportGrants] = useState<PlatformSupportGrantSummary[]>([]);
   const [listSearch, setListSearch] = useState("");
   const [listState, setListState] = useState("ONBOARDING");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [supportGrantEmail, setSupportGrantEmail] = useState("");
+  const [supportGrantReason, setSupportGrantReason] = useState("");
+  const [supportGrantCaseReference, setSupportGrantCaseReference] = useState("");
+  const [supportGrantStartsAt, setSupportGrantStartsAt] = useState("");
+  const [supportGrantExpiresAt, setSupportGrantExpiresAt] = useState("");
 
   const currentOrg = useMemo(() => selected?.organization ?? null, [selected]);
   const checklist = selected?.checklist ?? null;
@@ -122,8 +132,13 @@ export function SetupConsolePage() {
     if (targetId) {
       setSelectedOrganizationId(targetId);
       setSelected(await fetchSetupOrganization(targetId));
+      if (session?.platformRole === "setup_admin") {
+        const grants = await fetchSupportGrants({ organizationId: targetId });
+        setSupportGrants(grants.grants);
+      }
     } else {
       setSelected(null);
+      setSupportGrants([]);
     }
   }
 
@@ -142,6 +157,15 @@ export function SetupConsolePage() {
     } finally {
       setSaving(null);
     }
+  }
+
+  async function refreshSupportGrantList() {
+    if (!selected || session?.platformRole !== "setup_admin") {
+      setSupportGrants([]);
+      return;
+    }
+    const grants = await fetchSupportGrants({ organizationId: selected.organization.id });
+    setSupportGrants(grants.grants);
   }
 
   function saveState() {
@@ -236,7 +260,51 @@ export function SetupConsolePage() {
 
   async function handleLoadOrganization(organizationId: number) {
     setSelectedOrganizationId(organizationId);
-    setSelected(await fetchSetupOrganization(organizationId));
+    const detail = await fetchSetupOrganization(organizationId);
+    setSelected(detail);
+    if (session?.platformRole === "setup_admin") {
+      const grants = await fetchSupportGrants({ organizationId });
+      setSupportGrants(grants.grants);
+    }
+  }
+
+  async function createGrant() {
+    if (!selected) {
+      return;
+    }
+    setSaving("support-grant");
+    try {
+      await createSupportGrant({
+        organizationId: selected.organization.id,
+        supportUserEmail: supportGrantEmail,
+        reason: supportGrantReason,
+        caseReference: supportGrantCaseReference,
+        startsAt: supportGrantStartsAt || undefined,
+        expiresAt: supportGrantExpiresAt || undefined,
+      });
+      setSupportGrantEmail("");
+      setSupportGrantReason("");
+      setSupportGrantCaseReference("");
+      setSupportGrantStartsAt("");
+      setSupportGrantExpiresAt("");
+      await refreshSupportGrantList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create support grant.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function revokeGrant(grantId: number) {
+    setSaving(`revoke-${grantId}`);
+    try {
+      await revokeSupportGrant(grantId);
+      await refreshSupportGrantList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not revoke support grant.");
+    } finally {
+      setSaving(null);
+    }
   }
 
   if (state === "loading") {
@@ -520,14 +588,76 @@ export function SetupConsolePage() {
                   <span className="text-sm font-semibold text-ink">Square JSON</span>
                   <textarea id="square-json" className="mt-1 min-h-32 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson((configJson as any).square ?? {})} />
                 </label>
-                  <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveSquare()}>
-                    Save Square status
-                  </button>
-                  <Link className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
-                    Open migration workspace
-                  </Link>
-                </Card>
+                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveSquare()}>
+                  Save Square status
+                </button>
+                <Link className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
+                  Open migration workspace
+                </Link>
+              </Card>
             </div>
+
+            <Card className="p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-ink">Support access grants</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted">Issue time-limited support access with a visible audit trail. Support users can only see customer data while a grant is active.</p>
+                </div>
+                <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void refreshSupportGrantList()}>
+                  Refresh grants
+                </button>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-3 rounded-2xl border border-line bg-slate-50 p-4">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-ink">Support user email</span>
+                    <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" value={supportGrantEmail} onChange={(event) => setSupportGrantEmail(event.target.value)} />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-semibold text-ink">Reason</span>
+                    <textarea className="mt-1 min-h-24 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" value={supportGrantReason} onChange={(event) => setSupportGrantReason(event.target.value)} />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-semibold text-ink">Case / reference</span>
+                    <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" value={supportGrantCaseReference} onChange={(event) => setSupportGrantCaseReference(event.target.value)} />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-sm font-semibold text-ink">Starts at</span>
+                      <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantStartsAt} onChange={(event) => setSupportGrantStartsAt(event.target.value)} />
+                    </label>
+                    <label className="block">
+                      <span className="text-sm font-semibold text-ink">Expires at</span>
+                      <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantExpiresAt} onChange={(event) => setSupportGrantExpiresAt(event.target.value)} />
+                    </label>
+                  </div>
+                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void createGrant()} disabled={saving === "support-grant" || !supportGrantEmail || !supportGrantReason}>
+                    {saving === "support-grant" ? "Creating..." : "Create support grant"}
+                  </button>
+                </div>
+                <div className="grid gap-3">
+                  {supportGrants.length ? supportGrants.map((grant) => (
+                    <div key={grant.id} className="rounded-2xl border border-line bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-ink">{grant.supportUserEmail}</p>
+                          <p className="mt-1 text-xs text-muted">Org #{grant.organizationId} · {grant.status}</p>
+                        </div>
+                        <button className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-slate-100 disabled:opacity-60" type="button" onClick={() => void revokeGrant(grant.id)} disabled={saving === `revoke-${grant.id}` || grant.status === "revoked"}>
+                          {saving === `revoke-${grant.id}` ? "Revoking..." : grant.status === "revoked" ? "Revoked" : "Revoke"}
+                        </button>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-muted">{grant.reason}</p>
+                      <p className="mt-2 text-xs text-muted">
+                        Case {grant.caseReference || "—"} · Expires {grant.expiresAt || "unknown"}
+                      </p>
+                    </div>
+                  )) : (
+                    <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No grants yet for this organization.</div>
+                  )}
+                </div>
+              </div>
+            </Card>
 
             <Card className="p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
