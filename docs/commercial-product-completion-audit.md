@@ -2,9 +2,11 @@
 
 Date: 2026-08-07
 Branch: `codex/complete-commercial-product-foundation`
-Current HEAD during this audit: `9ce9ba74e92b2c3bb8d2ec0aeb9db3eb5c0e9c87`
+Current HEAD during this audit: `118394f1daf61aeea7e8abfe1ac182cf0f0657f6`
 
 This audit reflects the repository at the current checkpoint, after the frontend validation stack, the browser journeys, the PostgreSQL RLS coverage, the migration-safety tests, the CI wiring, the shared API-base helper, and the staging-readiness runbook were added.
+
+Items that depend on real Google, Square, Render, PostgreSQL-hosting, or DNS credentials remain repository-complete but externally unverified from this workstation.
 
 ## Requirement matrix
 
