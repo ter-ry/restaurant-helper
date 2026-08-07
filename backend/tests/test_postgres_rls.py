@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from backend.app import create_app
 from backend.extensions import db
-from backend.models import Organization, OrganizationMembership, OrganizationModule, RestaurantLocation, SupportAccessGrant, Supplier, User
+from backend.models import Organization, OrganizationMembership, OrganizationModule, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareOrder, SupportAccessGrant, Supplier, User
 from backend.seed import LOCAL_OWNER_EMAIL, seed_pilot_data
 from backend.utils import utc_now
 
@@ -24,6 +24,15 @@ assert _rls_spec and _rls_spec.loader
 _rls_module = importlib.util.module_from_spec(_rls_spec)
 _rls_spec.loader.exec_module(_rls_module)
 upgrade = _rls_module.upgrade
+
+_square_rls_spec = importlib.util.spec_from_file_location(
+    "backend.migrations.versions.0011_postgres_row_level_security_square_orders",
+    os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "0011_postgres_row_level_security_square_orders.py"),
+)
+assert _square_rls_spec and _square_rls_spec.loader
+_square_rls_module = importlib.util.module_from_spec(_square_rls_spec)
+_square_rls_spec.loader.exec_module(_square_rls_module)
+square_upgrade = _square_rls_module.upgrade
 
 
 pytestmark = pytest.mark.skipif(
@@ -50,6 +59,7 @@ def postgres_app(tmp_path):
         db.create_all()
         seed_pilot_data(reset=False)
         upgrade()
+        square_upgrade()
         yield application
         db.session.remove()
         db.drop_all()
@@ -182,3 +192,26 @@ def test_support_requires_active_grant(postgres_app):
 
         _set_rls_context(access_scope="support", organization_id=org.id, support_grant_id=grant.id)
         assert Supplier.query.filter_by(organization_id=org.id).count() == 1
+
+
+def test_rls_protects_square_sales_tables(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, "RLS Square Alpha")
+        org_b = _create_org(owner, "RLS Square Beta")
+        connection_a = SquareConnection(organization_id=org_a.id, environment="sandbox", status="connected", square_merchant_id="merchant-a")
+        connection_b = SquareConnection(organization_id=org_b.id, environment="sandbox", status="connected", square_merchant_id="merchant-b")
+        db.session.add_all([connection_a, connection_b])
+        db.session.flush()
+        db.session.add(SquareOrder(square_connection_id=connection_a.id, square_order_id="order-a", square_location_id="LOC-A", order_state="COMPLETED"))
+        db.session.add(SquareOrder(square_connection_id=connection_b.id, square_order_id="order-b", square_location_id="LOC-B", order_state="COMPLETED"))
+        db.session.add(SquareDailySalesSummary(square_connection_id=connection_a.id, square_location_id="LOC-A", sale_date=utc_now().date()))
+        db.session.add(SquareDailySalesSummary(square_connection_id=connection_b.id, square_location_id="LOC-B", sale_date=utc_now().date()))
+        db.session.commit()
+
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        assert SquareOrder.query.filter_by(square_connection_id=connection_a.id).count() == 1
+        assert SquareOrder.query.filter_by(square_connection_id=connection_b.id).count() == 0
+        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_a.id).count() == 1
+        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_b.id).count() == 0
