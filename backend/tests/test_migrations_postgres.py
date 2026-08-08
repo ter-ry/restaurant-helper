@@ -75,7 +75,7 @@ def _assert_policy_exists(policy_name: str, table_name: str) -> None:
 
 
 def _current_revision() -> str:
-    return db.session.execute(text("select version_num from alembic_version")).scalar_one()
+    return db.session.execute(text("select version_num from public.alembic_version")).scalar_one()
 
 
 def test_postgres_migrations_upgrade_from_fresh_database():
