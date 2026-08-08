@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 from logging.config import fileConfig
+from pathlib import Path
+import os
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -14,7 +15,8 @@ config = context.config
 if config.config_file_name is not None and Path(config.config_file_name).exists():
     fileConfig(config.config_file_name)
 
-app = create_app()
+migration_database_url = (os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL") or "").strip()
+app = create_app({"SQLALCHEMY_DATABASE_URI": migration_database_url} if migration_database_url else None)
 target_metadata = db.metadata
 
 
