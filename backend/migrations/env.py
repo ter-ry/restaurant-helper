@@ -29,8 +29,14 @@ else:
 target_metadata = db.metadata
 
 
+def _active_app():
+    if has_app_context():
+        return current_app._get_current_object()
+    return app
+
+
 def run_migrations_offline() -> None:
-    url = app.config["SQLALCHEMY_DATABASE_URI"]
+    url = _active_app().config["SQLALCHEMY_DATABASE_URI"]
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -45,7 +51,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = app.config["SQLALCHEMY_DATABASE_URI"]
+    configuration["sqlalchemy.url"] = _active_app().config["SQLALCHEMY_DATABASE_URI"]
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
