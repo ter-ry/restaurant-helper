@@ -60,6 +60,10 @@ jobs:
         timeout-minutes: 15
         run: python -u -m pytest backend/tests/test_migrations_postgres.py -vv -x --durations=20
 
+      - name: PostgreSQL RLS authorization diagnostics
+        timeout-minutes: 10
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_authorization_chain_diagnostics -vv -x -s --durations=20
+
       - name: PostgreSQL RLS and security tests
         timeout-minutes: 5
         run: python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_hides_other_tenant_rows -vv -x -s --durations=20

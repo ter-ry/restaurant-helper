@@ -152,6 +152,84 @@ def _restore_rls_context(access_scope: str, organization_id: int | None = None, 
     _set_rls_context(access_scope=access_scope, organization_id=organization_id, support_grant_id=support_grant_id)
 
 
+def _log_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
+    print(f"PROBE START: {label}", flush=True)
+    try:
+        result = db.session.execute(text(statement), params or {}).scalar_one()
+        print(f"PROBE OK: {label} -> {result}", flush=True)
+        return result
+    except Exception as exc:
+        print(f"PROBE FAIL: {label} -> {exc.__class__.__name__}: {exc}", flush=True)
+        db.session.rollback()
+        raise
+
+
+def _dump_pg_definitions() -> None:
+    function_specs = [
+        ("flowtally_access_scope", 0),
+        ("flowtally_current_organization_id", 0),
+        ("flowtally_current_support_grant_id", 0),
+        ("flowtally_support_has_access", 1),
+        ("flowtally_has_org_access", 1),
+    ]
+    for name, argcount in function_specs:
+        rows = db.session.execute(
+            text(
+                """
+                select
+                    p.oid::regprocedure::text as signature,
+                    p.prosecdef,
+                    p.proconfig,
+                    pg_get_functiondef(p.oid) as definition
+                from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = current_schema()
+                  and p.proname = :name
+                  and p.pronargs = :argcount
+                order by p.oid
+                """
+            ),
+            {"name": name, "argcount": argcount},
+        ).all()
+        print(f"FUNCTION DEFINITIONS FOR {name}/{argcount}: {len(rows)} row(s)", flush=True)
+        for row in rows:
+            print(f"FUNCTION SIGNATURE: {row.signature}", flush=True)
+            print(f"  SECURITY DEFINER: {row.prosecdef}", flush=True)
+            print(f"  PROCONFIG: {row.proconfig}", flush=True)
+            print(f"  DEFINITION:\n{row.definition}", flush=True)
+
+    policies = db.session.execute(
+        text(
+            """
+            select
+                schemaname,
+                tablename,
+                policyname,
+                permissive,
+                roles,
+                cmd,
+                qual,
+                with_check
+            from pg_policies
+            where tablename in (
+                'suppliers',
+                'support_access_grants'
+            )
+            order by tablename, policyname
+            """
+        )
+    ).all()
+    print(f"POLICY DEFINITIONS: {len(policies)} row(s)", flush=True)
+    for row in policies:
+        print(
+            "POLICY "
+            f"{row.schemaname}.{row.tablename}.{row.policyname} "
+            f"permissive={row.permissive} cmd={row.cmd} roles={row.roles} "
+            f"qual={row.qual} with_check={row.with_check}",
+            flush=True,
+        )
+
+
 def test_rls_hides_other_tenant_rows(postgres_app):
     with postgres_app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
@@ -362,6 +440,58 @@ def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app)
         setup_grant.revoked_at = utc_now()
         setup_grant.status = "revoked"
         db.session.commit()
+
+
+def test_postgres_rls_authorization_chain_diagnostics(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+
+        org_a = _create_org(owner, "RLS Probe Alpha")
+        org_b = _create_org(owner, "RLS Probe Beta")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+            ]
+        )
+
+        support = User.query.filter_by(email="support-probe@example.com").first()
+        if support is None:
+            support = User(email="support-probe@example.com", is_active=True)
+            support.set_password("Support123!")
+            db.session.add(support)
+        db.session.commit()
+
+        active_grant = SupportAccessGrant(
+            organization_id=org_a.id,
+            support_user_id=support.id,
+            reason="Probe grant",
+            case_reference="CASE-PROBE",
+            status="active",
+            starts_at=utc_now() - timedelta(minutes=1),
+            expires_at=utc_now() + timedelta(minutes=30),
+        )
+        db.session.add(active_grant)
+        db.session.commit()
+
+        _dump_pg_definitions()
+
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _log_probe("1 flowtally_access_scope()", "select flowtally_access_scope()")
+        _log_probe("2 flowtally_current_organization_id()", "select flowtally_current_organization_id()")
+        _log_probe("3 flowtally_current_support_grant_id()", "select flowtally_current_support_grant_id()")
+        _log_probe("4 support_access_grants count", "select count(*) from support_access_grants")
+
+        _set_rls_context(access_scope="customer", organization_id=org_a.id, support_grant_id=active_grant.id)
+        _log_probe("5 flowtally_support_has_access(org_a)", "select flowtally_support_has_access(:org_id)", {"org_id": org_a.id})
+        _log_probe("6 flowtally_has_org_access(org_a)", "select flowtally_has_org_access(:org_id)", {"org_id": org_a.id})
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _log_probe(
+            "7 suppliers count for org_a",
+            "select count(*) from suppliers where organization_id = :org_id",
+            {"org_id": org_a.id},
+        )
 
 
 def test_rls_protects_square_sales_tables(postgres_app):
