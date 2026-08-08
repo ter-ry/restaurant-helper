@@ -537,9 +537,13 @@ def test_postgres_rls_authorization_chain_diagnostics(postgres_app):
         )
 
 
-def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_context):
+def test_postgres_rls_probe_definitions(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
         _dump_pg_definitions()
+
+
+def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
         _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
         assert _log_probe("1 flowtally_access_scope()", "select flowtally_access_scope()") == "customer"
 

@@ -60,6 +60,10 @@ jobs:
         timeout-minutes: 15
         run: python -u -m pytest backend/tests/test_migrations_postgres.py -vv -x --durations=20
 
+      - name: PostgreSQL RLS diagnostic definitions dump
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_definitions -vv -x -s --durations=20
+
       - name: PostgreSQL RLS diagnostic probe 1 - access scope
         timeout-minutes: 5
         run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_1_access_scope -vv -x -s --durations=20
