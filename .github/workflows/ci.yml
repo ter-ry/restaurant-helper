@@ -2,14 +2,20 @@ name: CI
 
 on:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
-      - codex/**
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -27,6 +33,7 @@ jobs:
     env:
       FLOWTALLY_TEST_POSTGRES_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
       DATABASE_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,16 +53,28 @@ jobs:
         run: git diff --check
 
       - name: Fresh-database migration check
-        run: python -m pytest backend/tests/test_seed.py::test_migrations_upgrade_and_seed_on_fresh_database
+        timeout-minutes: 10
+        run: python -u -m pytest backend/tests/test_seed.py::test_migrations_upgrade_and_seed_on_fresh_database -vv --durations=20
 
-      - name: Pilot backend tests
-        run: python -m pytest backend/tests
+      - name: PostgreSQL migration acceptance tests
+        timeout-minutes: 15
+        run: python -u -m pytest backend/tests/test_migrations_postgres.py -vv -x --durations=20
+
+      - name: PostgreSQL RLS and security tests
+        timeout-minutes: 20
+        run: python -u -m pytest backend/tests/test_postgres_rls.py -vv -x --durations=20
+
+      - name: Remaining backend tests
+        timeout-minutes: 25
+        run: python -u -m pytest backend/tests --ignore=backend/tests/test_migrations_postgres.py --ignore=backend/tests/test_postgres_rls.py -vv -x --durations=20
 
       - name: Root Python tests
-        run: python -m unittest discover -s tests
+        timeout-minutes: 10
+        run: python -u -m unittest discover -s tests -v
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
