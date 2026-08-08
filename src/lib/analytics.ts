@@ -11,7 +11,8 @@ type AnalyticsEventName =
 
 type AnalyticsProperties = Record<string, string | number | boolean | undefined>;
 
-const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim() || "G-CB7FFQ95VQ";
+const allowedProductionHostnames = new Set(["flowtally.ca", "www.flowtally.ca"]);
+const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim();
 const plausibleDomain = import.meta.env.VITE_PLAUSIBLE_DOMAIN?.trim();
 
 let analyticsInitialized = false;
@@ -33,12 +34,25 @@ function appendScript(src: string, attributes: Record<string, string> = {}) {
   document.head.appendChild(script);
 }
 
+export function shouldEnableAnalytics(hostname?: string, productionMode = import.meta.env.PROD, measurementId = gaMeasurementId) {
+  if (!productionMode) {
+    return false;
+  }
+
+  const resolvedHostname = (hostname ?? (typeof window !== "undefined" ? window.location.hostname : "")).trim().toLowerCase();
+  return allowedProductionHostnames.has(resolvedHostname) && Boolean(measurementId);
+}
+
 export function initAnalytics() {
   if (analyticsInitialized || typeof window === "undefined") {
     return;
   }
 
   analyticsInitialized = true;
+
+  if (!shouldEnableAnalytics()) {
+    return;
+  }
 
   if (plausibleDomain) {
     window.plausible =
@@ -59,6 +73,10 @@ export function initAnalytics() {
 }
 
 export function trackPageView(path: string) {
+  if (!shouldEnableAnalytics()) {
+    return;
+  }
+
   if (import.meta.env.DEV) {
     console.info("[analytics] page_view", { path });
   }
@@ -78,6 +96,10 @@ export function trackPageView(path: string) {
 }
 
 export function trackEvent(name: AnalyticsEventName, properties: AnalyticsProperties = {}) {
+  if (!shouldEnableAnalytics()) {
+    return;
+  }
+
   if (import.meta.env.DEV) {
     console.info("[analytics]", name, properties);
   }

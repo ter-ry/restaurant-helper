@@ -610,6 +610,19 @@ test("anonymous demo access stays open to the public demo", async ({ page }) => 
   await expect(page.locator("main")).toContainText("Purchases");
 });
 
+test("local browser journeys do not request Google Analytics", async ({ page }) => {
+  const analyticsRequests: string[] = [];
+  await page.route(/googletagmanager\.com|google-analytics\.com/i, async (route) => {
+    analyticsRequests.push(route.request().url());
+    await route.abort();
+  });
+
+  await page.goto("/demo/cafe/purchases");
+  await page.goto("/auth/google/complete");
+
+  expect(analyticsRequests).toHaveLength(0);
+});
+
 test("mocked Google registration walks a prospect into onboarding", async ({ page }) => {
   const state: MockState = {
     session: makeProspectSession(),
@@ -624,7 +637,7 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
   };
   await installMockApi(page, state);
 
-  await page.goto("/auth/google/complete?status=success");
+  await page.goto("/auth/google/complete");
   await expect(page.getByRole("heading", { name: "Set up your first restaurant" })).toBeVisible();
   await page.getByLabel("Business name").fill("Demo Bistro");
   await page.getByLabel("Location name").fill("Main Dining Room");

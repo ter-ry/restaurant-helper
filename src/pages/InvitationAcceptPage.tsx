@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
 import { acceptCustomerInvitation, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
 
@@ -7,7 +7,6 @@ type InvitationState = "loading" | "signedOut" | "ready" | "error" | "accepted";
 
 export function InvitationAcceptPage() {
   const { token = "" } = useParams();
-  const navigate = useNavigate();
   const [state, setState] = useState<InvitationState>("loading");
   const [session, setSession] = useState<CustomerSessionResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -42,7 +41,6 @@ export function InvitationAcceptPage() {
       await acceptCustomerInvitation(invitationToken);
       setState("accepted");
       setMessage("Your invitation was accepted.");
-      navigate("/auth/google/complete?status=success", { replace: true });
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "Could not accept the invitation.");

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Loader2, LogOut, MapPin, ShieldAlert, Sparkles, UserRound } from "lucide-react";
 import { SupportAccessBanner } from "../components/SupportAccessBanner";
 import {
@@ -295,7 +295,6 @@ function LoggedInProspectView({
 }
 
 export function GoogleAuthCompletePage() {
-  const navigate = useNavigate();
   const query = useQueryParams();
   const [state, setState] = useState<AuthState>("loading");
   const [session, setSession] = useState<CustomerSessionResponse | null>(null);
@@ -335,7 +334,6 @@ export function GoogleAuthCompletePage() {
     const current = await fetchCustomerSession();
     setSession(current);
     setState(current.currentOrganizationId ? "signedIn" : "needsOnboarding");
-    navigate("/auth/google/complete?status=success", { replace: true });
   }
 
   async function handleLogout() {
@@ -343,7 +341,6 @@ export function GoogleAuthCompletePage() {
     setSession(null);
     setState("signedOut");
     setError(null);
-    navigate("/auth/google/complete?status=logged_out", { replace: true });
   }
 
   if (state === "loading") {
