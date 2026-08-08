@@ -193,11 +193,6 @@ def upgrade() -> None:
         "support_access_grants",
         "organization_invitations",
         "square_connections",
-        "square_locations",
-        "square_catalog_objects",
-        "square_sync_jobs",
-        "square_sync_cursors",
-        "square_webhook_events",
         "data_import_jobs",
     ]:
         _create_policy(table, f"flowtally_{table}_tenant_access", "flowtally_has_org_access(organization_id)")
