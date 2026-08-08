@@ -32,10 +32,19 @@ def _is_postgres() -> bool:
 
 
 def _enable_force_policy(table_name: str, policy_name: str, predicate_sql: str) -> None:
-    op.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
-    op.execute(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
-    op.execute(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")
-    op.execute(f"CREATE POLICY {policy_name} ON {table_name} USING ({predicate_sql}) WITH CHECK ({predicate_sql})")
+    try:
+        op.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
+        op.execute(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")
+        op.execute(f"CREATE POLICY {policy_name} ON {table_name} USING ({predicate_sql}) WITH CHECK ({predicate_sql})")
+        return
+    except AttributeError:
+        pass
+    with db.engine.begin() as connection:
+        connection.exec_driver_sql(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
+        connection.exec_driver_sql(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
+        connection.exec_driver_sql(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")
+        connection.exec_driver_sql(f"CREATE POLICY {policy_name} ON {table_name} USING ({predicate_sql}) WITH CHECK ({predicate_sql})")
 
 
 def upgrade() -> None:
@@ -68,4 +77,8 @@ def downgrade() -> None:
         ("square_order_lines", "flowtally_square_order_lines_tenant_access"),
         ("square_orders", "flowtally_square_orders_tenant_access"),
     ]:
-        op.execute(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")
+        try:
+            op.execute(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")
+        except AttributeError:
+            with db.engine.begin() as connection:
+                connection.exec_driver_sql(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")

@@ -33,7 +33,13 @@ def _is_postgres() -> bool:
 
 
 def _execute(sql: str) -> None:
-    op.execute(sa.text(sql))
+    try:
+        op.execute(sa.text(sql))
+        return
+    except AttributeError:
+        pass
+    with db.engine.begin() as connection:
+        connection.execute(sa.text(sql))
 
 
 def _drop_policy(table: str, policy_name: str) -> None:
