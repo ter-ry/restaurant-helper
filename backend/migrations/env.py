@@ -35,6 +35,11 @@ def _active_app():
     return app
 
 
+def _version_table_schema() -> str | None:
+    url = str(_active_app().config["SQLALCHEMY_DATABASE_URI"]).lower()
+    return "public" if url.startswith("postgres") else None
+
+
 def run_migrations_offline() -> None:
     url = _active_app().config["SQLALCHEMY_DATABASE_URI"]
     context.configure(
@@ -43,6 +48,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        version_table_schema=_version_table_schema(),
     )
 
     with context.begin_transaction():
@@ -59,17 +65,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        if connection.dialect.name == "postgresql":
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS alembic_version (
-                    version_num VARCHAR(255) NOT NULL,
-                    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
-                )
-                """
-            )
-            connection.exec_driver_sql("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)")
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True, version_table_schema=_version_table_schema())
         with context.begin_transaction():
             context.run_migrations()
 
