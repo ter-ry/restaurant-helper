@@ -157,13 +157,8 @@ def upgrade() -> None:
         "support_access_grants",
         "organization_invitations",
         "square_connections",
-        "square_locations",
-        "square_catalog_objects",
         "square_catalog_mappings",
         "square_location_mappings",
-        "square_sync_jobs",
-        "square_sync_cursors",
-        "square_webhook_events",
         "data_import_jobs",
         "data_import_files",
         "data_import_mappings",
@@ -251,6 +246,31 @@ def upgrade() -> None:
         "data_import_changes",
         "flowtally_data_import_changes_tenant_access",
         "EXISTS (SELECT 1 FROM data_import_jobs job_row WHERE job_row.id = data_import_changes.data_import_job_id AND flowtally_has_org_access(job_row.organization_id))",
+    )
+    _create_policy(
+        "square_locations",
+        "flowtally_square_locations_tenant_access",
+        "EXISTS (SELECT 1 FROM square_connections connection_row WHERE connection_row.id = square_locations.square_connection_id AND flowtally_has_org_access(connection_row.organization_id))",
+    )
+    _create_policy(
+        "square_catalog_objects",
+        "flowtally_square_catalog_objects_tenant_access",
+        "EXISTS (SELECT 1 FROM square_connections connection_row WHERE connection_row.id = square_catalog_objects.square_connection_id AND flowtally_has_org_access(connection_row.organization_id))",
+    )
+    _create_policy(
+        "square_sync_jobs",
+        "flowtally_square_sync_jobs_tenant_access",
+        "EXISTS (SELECT 1 FROM square_connections connection_row WHERE connection_row.id = square_sync_jobs.square_connection_id AND flowtally_has_org_access(connection_row.organization_id))",
+    )
+    _create_policy(
+        "square_sync_cursors",
+        "flowtally_square_sync_cursors_tenant_access",
+        "EXISTS (SELECT 1 FROM square_connections connection_row WHERE connection_row.id = square_sync_cursors.square_connection_id AND flowtally_has_org_access(connection_row.organization_id))",
+    )
+    _create_policy(
+        "square_webhook_events",
+        "flowtally_square_webhook_events_tenant_access",
+        "EXISTS (SELECT 1 FROM square_connections connection_row WHERE connection_row.id = square_webhook_events.square_connection_id AND flowtally_has_org_access(connection_row.organization_id))",
     )
     _create_policy(
         "square_location_mappings",
