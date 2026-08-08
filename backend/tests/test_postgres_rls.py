@@ -40,7 +40,7 @@ _rls_spec = importlib.util.spec_from_file_location(
 assert _rls_spec and _rls_spec.loader
 _rls_module = importlib.util.module_from_spec(_rls_spec)
 _rls_spec.loader.exec_module(_rls_module)
-upgrade = _rls_module.upgrade
+apply_postgres_rls = _rls_module.apply_postgres_rls
 
 _square_rls_spec = importlib.util.spec_from_file_location(
     "backend.migrations.versions.0011_postgres_row_level_security_square_orders",
@@ -49,7 +49,7 @@ _square_rls_spec = importlib.util.spec_from_file_location(
 assert _square_rls_spec and _square_rls_spec.loader
 _square_rls_module = importlib.util.module_from_spec(_square_rls_spec)
 _square_rls_spec.loader.exec_module(_square_rls_module)
-square_upgrade = _square_rls_module.upgrade
+square_apply_postgres_rls = _square_rls_module.apply_postgres_rls
 
 
 pytestmark = pytest.mark.skipif(
@@ -75,8 +75,9 @@ def postgres_app(tmp_path):
         db.drop_all()
         db.create_all()
         seed_pilot_data(reset=False)
-        upgrade()
-        square_upgrade()
+        with db.engine.begin() as connection:
+            apply_postgres_rls(connection)
+            square_apply_postgres_rls(connection)
         yield application
         db.session.remove()
         db.drop_all()
