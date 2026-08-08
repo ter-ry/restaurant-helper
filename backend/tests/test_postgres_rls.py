@@ -105,6 +105,13 @@ def postgres_app(tmp_path):
         seed_pilot_data(reset=False)
         print("AFTER: postgres_app seed_pilot_data", flush=True)
         _log_session_state("after seed_pilot_data")
+        print("BEFORE: postgres_app session cleanup experiment", flush=True)
+        seed_session = db.session()
+        if seed_session.in_transaction():
+            seed_session.commit()
+        db.session.remove()
+        print("AFTER: postgres_app session cleanup experiment", flush=True)
+        _log_session_state("after session cleanup experiment")
         with db.engine.begin() as connection:
             print("STATE: postgres_app bootstrap connection acquired", flush=True)
             print("BEFORE: postgres_app apply_postgres_rls", flush=True)
