@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 import importlib.util
-from datetime import timedelta
-import textwrap
+import os
 import threading
 import time
+from datetime import timedelta
+import textwrap
 
 import pytest
 from sqlalchemy import text
@@ -37,6 +37,10 @@ from backend.utils import utc_now
 POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"
+DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT = "15s"
+DIAGNOSTIC_PROBE_LOCK_TIMEOUT = "3s"
+DIAGNOSTIC_WAIT_INSPECTION_SECONDS = 2.0
+DIAGNOSTIC_PROBE_DEADLINE_SECONDS = 25.0
 BOOTSTRAP_STATEMENT_TIMEOUT = "120s"
 BOOTSTRAP_LOCK_TIMEOUT = "5s"
 
@@ -211,10 +215,11 @@ def _dump_admin_organizations_snapshot(label: str, bootstrap_pid: int, engine) -
 
 
 def _log_session_state(label: str) -> None:
+    session = db.session()
     print(
-        f"STATE: {label} -> session_in_transaction={db.session.in_transaction()} "
-        f"session_in_nested_transaction={db.session.in_nested_transaction()} "
-        f"session_is_active={db.session.is_active}",
+        f"STATE: {label} -> session_in_transaction={session.in_transaction()} "
+        f"session_in_nested_transaction={session.in_nested_transaction()} "
+        f"session_is_active={session.is_active}",
         flush=True,
     )
 
@@ -305,6 +310,205 @@ def _log_rows_probe(label: str, statement, params: dict[str, object] | None = No
         print(f"ERROR: {label} -> {exc.__class__.__name__}: {exc}", flush=True)
         db.session.rollback()
         raise
+
+
+def _format_probe_rows(rows: list[dict[str, object]]) -> str:
+    return "[" + ", ".join(str(row) for row in rows) + "]"
+
+
+def _capture_pg_wait_state(engine, label: str, backend_pid: int) -> None:
+    with engine.connect() as connection:
+        connection.exec_driver_sql(f"set statement_timeout = '{DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT}'")
+        connection.exec_driver_sql(f"set lock_timeout = '{DIAGNOSTIC_PROBE_LOCK_TIMEOUT}'")
+        activity = connection.execute(
+            text(
+                """
+                select
+                    pid,
+                    state,
+                    wait_event_type,
+                    wait_event,
+                    xact_start,
+                    query_start,
+                    state_change,
+                    backend_xid,
+                    backend_xmin,
+                    left(query, 500) as query
+                from pg_stat_activity
+                where pid = :pid
+                """
+            ),
+            {"pid": backend_pid},
+        ).mappings().first()
+        if activity is None:
+            print(f"WAIT STATE [{label}] pid={backend_pid} not found in pg_stat_activity", flush=True)
+            return
+
+        print(
+            "WAIT STATE "
+            f"[{label}] "
+            f"pid={activity['pid']} "
+            f"state={activity['state']} "
+            f"wait_event_type={activity['wait_event_type']} "
+            f"wait_event={activity['wait_event']} "
+            f"xact_start={activity['xact_start']} "
+            f"query_start={activity['query_start']} "
+            f"state_change={activity['state_change']} "
+            f"backend_xid={activity['backend_xid']} "
+            f"backend_xmin={activity['backend_xmin']} "
+            f"query={activity['query']!r}",
+            flush=True,
+        )
+
+        blocking_pids = connection.execute(
+            text("select unnest(pg_blocking_pids(:pid)) as blocking_pid"),
+            {"pid": backend_pid},
+        ).scalars().all()
+        print(f"WAIT STATE [{label}] blocking_pids={blocking_pids}", flush=True)
+
+        if blocking_pids:
+            blockers = connection.execute(
+                text(
+                    """
+                    select
+                        pid,
+                        state,
+                        wait_event_type,
+                        wait_event,
+                        xact_start,
+                        query_start,
+                        state_change,
+                        left(query, 500) as query
+                    from pg_stat_activity
+                    where pid in (select unnest(pg_blocking_pids(:pid)))
+                    order by pid
+                    """
+                ),
+                {"pid": backend_pid},
+            ).mappings().all()
+            for blocker in blockers:
+                print(
+                    "WAIT STATE "
+                    f"[{label}] blocker_pid={blocker['pid']} "
+                    f"state={blocker['state']} "
+                    f"wait_event_type={blocker['wait_event_type']} "
+                    f"wait_event={blocker['wait_event']} "
+                    f"xact_start={blocker['xact_start']} "
+                    f"query_start={blocker['query_start']} "
+                    f"state_change={blocker['state_change']} "
+                    f"query={blocker['query']!r}",
+                    flush=True,
+                )
+
+        lock_rows = connection.execute(
+            text(
+                """
+                select
+                    pid,
+                    locktype,
+                    mode,
+                    granted,
+                    relation::regclass::text as relation,
+                    transactionid,
+                    virtualxid,
+                    classid,
+                    objid,
+                    objsubid
+                from pg_locks
+                where pid = :pid
+                   or pid in (select unnest(pg_blocking_pids(:pid)))
+                order by granted, pid, locktype, relation nulls last, mode
+                """
+            ),
+            {"pid": backend_pid},
+        ).mappings().all()
+        print(f"WAIT STATE [{label}] lock_rows={_format_probe_rows([dict(row) for row in lock_rows])}", flush=True)
+
+
+def _run_pg_diagnostic_probe(
+    engine,
+    *,
+    label: str,
+    sql_category: str,
+    statement: str,
+    params: dict[str, object] | None = None,
+    result_mode: str = "rows",
+) -> dict[str, object]:
+    probe_state: dict[str, object] = {
+        "label": label,
+        "sql_category": sql_category,
+        "backend_pid": None,
+        "status": "pending",
+        "result": None,
+        "exception": None,
+    }
+    ready = threading.Event()
+    finished = threading.Event()
+    started_at: float | None = None
+
+    def _worker() -> None:
+        nonlocal started_at
+        try:
+            with engine.connect() as connection:
+                connection.exec_driver_sql(f"set statement_timeout = '{DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT}'")
+                connection.exec_driver_sql(f"set lock_timeout = '{DIAGNOSTIC_PROBE_LOCK_TIMEOUT}'")
+                probe_state["backend_pid"] = connection.exec_driver_sql("select pg_backend_pid()").scalar_one()
+                ready.set()
+                print(f"START PROBE [{label}] category={sql_category}", flush=True)
+                started_at = time.monotonic()
+                if result_mode == "scalar":
+                    result = connection.execute(text(statement), params or {}).scalar_one()
+                elif result_mode == "row":
+                    result = dict(connection.execute(text(statement), params or {}).mappings().one())
+                else:
+                    result = [dict(row) for row in connection.execute(text(statement), params or {}).mappings().all()]
+                elapsed = time.monotonic() - started_at
+                probe_state["status"] = "success"
+                probe_state["result"] = result
+                print(
+                    f"DONE PROBE [{label}] category={sql_category} elapsed={elapsed:.3f}s status=success result={result!r}",
+                    flush=True,
+                )
+        except Exception as exc:
+            elapsed = time.monotonic() - started_at if started_at is not None else 0.0
+            probe_state["exception"] = exc
+            orig = getattr(exc, "orig", None)
+            pgcode = getattr(orig, "pgcode", None)
+            message = str(exc)
+            if pgcode == "57014" or "statement timeout" in message.lower():
+                probe_state["status"] = "timeout"
+            else:
+                probe_state["status"] = "exception"
+            print(
+                f"DONE PROBE [{label}] category={sql_category} elapsed={elapsed:.3f}s status={probe_state['status']} exception={exc.__class__.__name__}: {message}",
+                flush=True,
+            )
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=_worker, name=f"pg-diagnostic-{label}", daemon=True)
+    worker.start()
+
+    if not ready.wait(timeout=5.0):
+        print(f"WAIT STATE [{label}] backend pid was not captured within 5s", flush=True)
+
+    inspected = False
+    probe_started_at = time.monotonic()
+    deadline = time.monotonic() + DIAGNOSTIC_PROBE_DEADLINE_SECONDS
+    while not finished.wait(timeout=0.5):
+        if not inspected and probe_state["backend_pid"] is not None:
+            elapsed = time.monotonic() - probe_started_at
+            if elapsed >= DIAGNOSTIC_WAIT_INSPECTION_SECONDS:
+                _capture_pg_wait_state(engine, label, int(probe_state["backend_pid"]))
+                inspected = True
+        if time.monotonic() >= deadline:
+            print(f"WAIT STATE [{label}] exceeded diagnostic deadline; continuing to next probe", flush=True)
+            break
+
+    if worker.is_alive():
+        worker.join(timeout=0.5)
+
+    return probe_state
 
 
 def _create_org(owner: User, name: str) -> Organization:
@@ -437,13 +641,83 @@ def _dump_policy_metadata(table_name: str) -> None:
 
 
 def _dump_pg_definitions() -> None:
-    _dump_function_metadata("flowtally_current_access_scope", 0)
-    _dump_function_metadata("flowtally_current_organization_id", 0)
-    _dump_function_metadata("flowtally_current_support_grant_id", 0)
-    _dump_function_metadata("flowtally_support_has_access", 1)
-    _dump_function_metadata("flowtally_has_org_access", 1)
-    _dump_policy_metadata("suppliers")
-    _dump_policy_metadata("support_access_grants")
+    engine = db.engine
+    _run_pg_diagnostic_probe(
+        engine,
+        label="basic connectivity",
+        sql_category="connectivity",
+        statement="""
+            select
+                version() as version,
+                current_database() as current_database,
+                current_user as current_user,
+                session_user as session_user,
+                pg_backend_pid() as backend_pid
+        """,
+        result_mode="row",
+    )
+
+    function_specs = [
+        ("flowtally_current_access_scope", 0),
+        ("flowtally_current_organization_id", 0),
+        ("flowtally_current_support_grant_id", 0),
+        ("flowtally_support_has_access", 1),
+        ("flowtally_has_org_access", 1),
+    ]
+    for name, argcount in function_specs:
+        metadata = _run_pg_diagnostic_probe(
+            engine,
+            label=f"pg_proc metadata {name}/{argcount}",
+            sql_category="pg_proc metadata",
+            statement="""
+                select
+                    p.oid as oid,
+                    n.nspname as schema_name,
+                    p.proname as function_name,
+                    pg_get_function_identity_arguments(p.oid) as identity_arguments,
+                    p.prokind as prokind,
+                    p.prosecdef as prosecdef,
+                    p.provolatile as provolatile
+                from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = current_schema()
+                  and p.proname = :name
+                  and p.pronargs = :argcount
+                order by p.oid
+            """,
+            params={"name": name, "argcount": argcount},
+        )
+        for row in metadata["result"] or []:
+            _run_pg_diagnostic_probe(
+                engine,
+                label=f"pg_get_functiondef {name}/{argcount} oid={row['oid']}",
+                sql_category="pg_get_functiondef",
+                statement="select pg_get_functiondef(:oid) as definition",
+                params={"oid": row["oid"]},
+                result_mode="row",
+            )
+
+    for table_name in ["suppliers", "support_access_grants"]:
+        _run_pg_diagnostic_probe(
+            engine,
+            label=f"policy metadata {table_name}",
+            sql_category="pg_policies",
+            statement="""
+                select
+                    schemaname,
+                    tablename,
+                    policyname,
+                    permissive,
+                    roles,
+                    cmd,
+                    qual,
+                    with_check
+                from pg_policies
+                where tablename = :table_name
+                order by policyname
+            """,
+            params={"table_name": table_name},
+        )
 
 
 @pytest.fixture()
