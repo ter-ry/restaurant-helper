@@ -4,6 +4,7 @@ from typing import Any
 
 from flask import request
 from flask_login import current_user
+from sqlalchemy import text
 
 from .access import support_grant_for_user
 from .extensions import db
@@ -21,7 +22,7 @@ def _is_postgresql() -> bool:
 def _set_local_setting(name: str, value: str | None) -> None:
     if not _is_postgresql():
         return
-    db.session.connection().exec_driver_sql("select set_config(%s, %s, true)", (name, value or ""))
+    db.session.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value or ""})
 
 
 def apply_request_tenant_context(*, access_scope: str | None = None, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
@@ -64,4 +65,3 @@ def apply_org_tenant_context(organization: Organization | None, *, access_scope:
         if grant is not None:
             grant_id = grant.id
     apply_request_tenant_context(access_scope=access_scope, organization_id=organization.id, support_grant_id=grant_id)
-
