@@ -32,6 +32,8 @@ from backend.utils import utc_now
 
 
 POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
+DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
+DIAGNOSTIC_LOCK_TIMEOUT = "3s"
 
 _rls_spec = importlib.util.spec_from_file_location(
     "backend.migrations.versions.0009_postgres_row_level_security",
@@ -77,21 +79,39 @@ def postgres_app(tmp_path):
             "SESSION_COOKIE_SECURE": False,
             "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
         "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
-        "WTF_CSRF_ENABLED": True,
-    }
+            "WTF_CSRF_ENABLED": True,
+        }
     )
     with application.app_context():
+        print("BEFORE: postgres_app drop_all", flush=True)
         db.drop_all()
+        print("AFTER: postgres_app drop_all", flush=True)
+        print("BEFORE: postgres_app create_all", flush=True)
         db.create_all()
+        print("AFTER: postgres_app create_all", flush=True)
+        print("BEFORE: postgres_app seed_pilot_data", flush=True)
         seed_pilot_data(reset=False)
+        print("AFTER: postgres_app seed_pilot_data", flush=True)
         with db.engine.begin() as connection:
+            print("BEFORE: postgres_app apply_postgres_rls", flush=True)
+            _apply_diagnostic_timeouts(connection)
             apply_postgres_rls(connection)
+            print("AFTER: postgres_app apply_postgres_rls", flush=True)
+            print("BEFORE: postgres_app square_apply_postgres_rls", flush=True)
             square_apply_postgres_rls(connection)
+            print("AFTER: postgres_app square_apply_postgres_rls", flush=True)
+            print("BEFORE: postgres_app support_apply_postgres_rls", flush=True)
             support_apply_postgres_rls(connection)
-        db.session.execute(text("set statement_timeout = '5s'"))
+            print("AFTER: postgres_app support_apply_postgres_rls", flush=True)
+        print("BEFORE: postgres_app session timeouts", flush=True)
+        db.session.execute(text(f"set statement_timeout = '{DIAGNOSTIC_STATEMENT_TIMEOUT}'"))
+        db.session.execute(text(f"set lock_timeout = '{DIAGNOSTIC_LOCK_TIMEOUT}'"))
+        print("AFTER: postgres_app session timeouts", flush=True)
         yield application
+        print("BEFORE: postgres_app teardown", flush=True)
         db.session.remove()
         db.drop_all()
+        print("AFTER: postgres_app teardown", flush=True)
 
 
 def _set_rls_context(*, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
@@ -107,6 +127,55 @@ def _set_rls_context(*, access_scope: str, organization_id: int | None = None, s
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.support_grant_id", "value": "" if support_grant_id is None else str(support_grant_id)},
     )
+
+
+def _apply_diagnostic_timeouts(connection) -> None:
+    connection.exec_driver_sql(f"set statement_timeout = '{DIAGNOSTIC_STATEMENT_TIMEOUT}'")
+    connection.exec_driver_sql(f"set lock_timeout = '{DIAGNOSTIC_LOCK_TIMEOUT}'")
+
+
+def _log_scalar_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
+    print(f"BEFORE: {label}", flush=True)
+    try:
+        connection = db.session.connection()
+        _apply_diagnostic_timeouts(connection)
+        result = connection.execute(text(statement), params or {}).scalar_one()
+        print(f"AFTER: {label} -> {result}", flush=True)
+        return result
+    except Exception as exc:
+        print(f"ERROR: {label} -> {exc.__class__.__name__}: {exc}", flush=True)
+        db.session.rollback()
+        raise
+
+
+def _log_row_probe(label: str, statement, params: dict[str, object] | None = None):
+    print(f"BEFORE: {label}", flush=True)
+    try:
+        connection = db.session.connection()
+        _apply_diagnostic_timeouts(connection)
+        row = connection.execute(text(statement), params or {}).one()
+        print(f"AFTER: {label} -> {tuple(row)}", flush=True)
+        return row
+    except Exception as exc:
+        print(f"ERROR: {label} -> {exc.__class__.__name__}: {exc}", flush=True)
+        db.session.rollback()
+        raise
+
+
+def _log_rows_probe(label: str, statement, params: dict[str, object] | None = None):
+    print(f"BEFORE: {label}", flush=True)
+    try:
+        connection = db.session.connection()
+        _apply_diagnostic_timeouts(connection)
+        rows = connection.execute(text(statement), params or {}).all()
+        print(f"AFTER: {label} -> {len(rows)} row(s)", flush=True)
+        for row in rows:
+            print(f"  ROW: {tuple(row)}", flush=True)
+        return rows
+    except Exception as exc:
+        print(f"ERROR: {label} -> {exc.__class__.__name__}: {exc}", flush=True)
+        db.session.rollback()
+        raise
 
 
 def _create_org(owner: User, name: str) -> Organization:
@@ -148,88 +217,104 @@ def _create_org(owner: User, name: str) -> Organization:
     return organization
 
 
+def _seed_two_organizations_with_suppliers(owner: User, prefix: str = "RLS") -> dict[str, object]:
+    print("BEFORE: seed two organizations", flush=True)
+    org_a = _create_org(owner, f"{prefix} Alpha")
+    org_b = _create_org(owner, f"{prefix} Beta")
+    db.session.add_all(
+        [
+            Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+            Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+        ]
+    )
+    db.session.commit()
+    print("AFTER: seed two organizations", flush=True)
+    return {"org_a": org_a, "org_b": org_b}
+
+
 def _restore_rls_context(access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
     _set_rls_context(access_scope=access_scope, organization_id=organization_id, support_grant_id=support_grant_id)
 
 
 def _log_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
-    print(f"PROBE START: {label}", flush=True)
-    try:
-        connection = db.session.connection()
-        connection.exec_driver_sql("set statement_timeout = '5s'")
-        result = connection.execute(text(statement), params or {}).scalar_one()
-        print(f"PROBE OK: {label} -> {result}", flush=True)
-        return result
-    except Exception as exc:
-        print(f"PROBE FAIL: {label} -> {exc.__class__.__name__}: {exc}", flush=True)
-        db.session.rollback()
-        raise
+    return _log_scalar_probe(label, statement, params)
+
+
+def _dump_function_metadata(name: str, argcount: int) -> None:
+    rows = _log_rows_probe(
+        f"function metadata {name}/{argcount}",
+        """
+        select
+            p.oid::regprocedure::text as signature,
+            p.prosecdef,
+            p.proconfig,
+            pg_get_userbyid(p.proowner) as owner,
+            pg_get_function_identity_arguments(p.oid) as identity_arguments,
+            pg_get_function_arguments(p.oid) as arguments
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = current_schema()
+          and p.proname = :name
+          and p.pronargs = :argcount
+        order by p.oid
+        """,
+        {"name": name, "argcount": argcount},
+    )
+    assert rows
+
+
+def _dump_function_definition(name: str, argcount: int) -> None:
+    rows = _log_rows_probe(
+        f"function definition {name}/{argcount}",
+        """
+        select
+            p.oid::regprocedure::text as signature,
+            p.prosecdef,
+            p.proconfig,
+            pg_get_userbyid(p.proowner) as owner,
+            pg_get_functiondef(p.oid) as definition
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = current_schema()
+          and p.proname = :name
+          and p.pronargs = :argcount
+        order by p.oid
+        """,
+        {"name": name, "argcount": argcount},
+    )
+    assert rows
+
+
+def _dump_policy_metadata(table_name: str) -> None:
+    rows = _log_rows_probe(
+        f"policy metadata {table_name}",
+        """
+        select
+            schemaname,
+            tablename,
+            policyname,
+            permissive,
+            roles,
+            cmd,
+            qual,
+            with_check
+        from pg_policies
+        where tablename = :table_name
+        order by policyname
+        """,
+        {"table_name": table_name},
+    )
+    assert rows
 
 
 def _dump_pg_definitions() -> None:
-    function_specs = [
-        ("flowtally_access_scope", 0),
-        ("flowtally_current_organization_id", 0),
-        ("flowtally_current_support_grant_id", 0),
-        ("flowtally_support_has_access", 1),
-        ("flowtally_has_org_access", 1),
-    ]
-    for name, argcount in function_specs:
-        rows = db.session.execute(
-            text(
-                """
-                select
-                    p.oid::regprocedure::text as signature,
-                    p.prosecdef,
-                    p.proconfig,
-                    pg_get_functiondef(p.oid) as definition
-                from pg_proc p
-                join pg_namespace n on n.oid = p.pronamespace
-                where n.nspname = current_schema()
-                  and p.proname = :name
-                  and p.pronargs = :argcount
-                order by p.oid
-                """
-            ),
-            {"name": name, "argcount": argcount},
-        ).all()
-        print(f"FUNCTION DEFINITIONS FOR {name}/{argcount}: {len(rows)} row(s)", flush=True)
-        for row in rows:
-            print(f"FUNCTION SIGNATURE: {row.signature}", flush=True)
-            print(f"  SECURITY DEFINER: {row.prosecdef}", flush=True)
-            print(f"  PROCONFIG: {row.proconfig}", flush=True)
-            print(f"  DEFINITION:\n{row.definition}", flush=True)
-
-    policies = db.session.execute(
-        text(
-            """
-            select
-                schemaname,
-                tablename,
-                policyname,
-                permissive,
-                roles,
-                cmd,
-                qual,
-                with_check
-            from pg_policies
-            where tablename in (
-                'suppliers',
-                'support_access_grants'
-            )
-            order by tablename, policyname
-            """
-        )
-    ).all()
-    print(f"POLICY DEFINITIONS: {len(policies)} row(s)", flush=True)
-    for row in policies:
-        print(
-            "POLICY "
-            f"{row.schemaname}.{row.tablename}.{row.policyname} "
-            f"permissive={row.permissive} cmd={row.cmd} roles={row.roles} "
-            f"qual={row.qual} with_check={row.with_check}",
-            flush=True,
-        )
+    _dump_function_metadata("flowtally_current_access_scope", 0)
+    _dump_function_metadata("flowtally_current_organization_id", 0)
+    _dump_function_metadata("flowtally_current_support_grant_id", 0)
+    _dump_function_metadata("flowtally_support_has_access", 1)
+    _dump_function_metadata("flowtally_has_org_access", 1)
+    _dump_policy_metadata("suppliers")
+    _dump_policy_metadata("support_access_grants")
 
 
 @pytest.fixture()
@@ -273,22 +358,155 @@ def postgres_rls_probe_context(postgres_app):
         }
 
 
+def test_postgres_rls_connection_sanity(postgres_app):
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer")
+        assert _log_scalar_probe("sanity select 1", "select 1") == 1
+        assert _log_scalar_probe("sanity now()", "select now()") is not None
+        row = _log_row_probe("sanity current_user and session_user", "select current_user, session_user")
+        assert row[0] == row[1]
+        assert _log_scalar_probe("sanity current_database()", "select current_database()") == db.engine.url.database
+        assert _log_scalar_probe("sanity pg_backend_pid()", "select pg_backend_pid()") > 0
+        assert _log_scalar_probe("sanity statement_timeout", "show statement_timeout") in {"5s", "5000ms"}
+        assert _log_scalar_probe("sanity lock_timeout", "show lock_timeout") in {"3s", "3000ms"}
+
+
+def test_postgres_rls_activity_and_lock_snapshot(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        _log_rows_probe(
+            "pg_stat_activity snapshot",
+            """
+            select
+                pid,
+                usename,
+                state,
+                wait_event_type,
+                wait_event,
+                query
+            from pg_stat_activity
+            where datname = current_database()
+            order by pid
+            """,
+        )
+        _log_rows_probe(
+            "pg_locks snapshot",
+            """
+            select
+                pid,
+                locktype,
+                relation::regclass::text as relation_name,
+                mode,
+                granted
+            from pg_locks
+            where relation in (
+                'pg_proc'::regclass,
+                'pg_policy'::regclass,
+                'pg_class'::regclass,
+                'support_access_grants'::regclass,
+                'suppliers'::regclass
+            )
+            order by pid, relation_name, mode
+            """,
+        )
+
+
+def test_postgres_rls_function_metadata_current_access_scope(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_metadata("flowtally_current_access_scope", 0)
+
+
+def test_postgres_rls_function_metadata_current_organization_id(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_metadata("flowtally_current_organization_id", 0)
+
+
+def test_postgres_rls_function_metadata_current_support_grant_id(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_metadata("flowtally_current_support_grant_id", 0)
+
+
+def test_postgres_rls_function_metadata_support_has_access(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_metadata("flowtally_support_has_access", 1)
+
+
+def test_postgres_rls_function_metadata_has_org_access(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_metadata("flowtally_has_org_access", 1)
+
+
+def test_postgres_rls_function_definition_current_access_scope(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_definition("flowtally_current_access_scope", 0)
+
+
+def test_postgres_rls_function_definition_current_organization_id(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_definition("flowtally_current_organization_id", 0)
+
+
+def test_postgres_rls_function_definition_current_support_grant_id(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_definition("flowtally_current_support_grant_id", 0)
+
+
+def test_postgres_rls_function_definition_support_has_access(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_definition("flowtally_support_has_access", 1)
+
+
+def test_postgres_rls_function_definition_has_org_access(postgres_app):
+    with postgres_app.app_context():
+        _dump_function_definition("flowtally_has_org_access", 1)
+
+
+def test_postgres_rls_policy_metadata_suppliers(postgres_app):
+    with postgres_app.app_context():
+        _dump_policy_metadata("suppliers")
+
+
+def test_postgres_rls_policy_metadata_support_access_grants(postgres_app):
+    with postgres_app.app_context():
+        _dump_policy_metadata("support_access_grants")
+
+
 def test_rls_hides_other_tenant_rows(postgres_app):
     with postgres_app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
+        print("BEFORE: test_rls_hides_other_tenant_rows show statement_timeout", flush=True)
         assert db.session.execute(text("show statement_timeout")).scalar_one() in {"5s", "5000ms"}
+        print("AFTER: test_rls_hides_other_tenant_rows show statement_timeout", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows create org_a", flush=True)
         org_a = _create_org(owner, "RLS Alpha")
+        print("AFTER: test_rls_hides_other_tenant_rows create org_a", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows create org_b", flush=True)
         org_b = _create_org(owner, "RLS Beta")
+        print("AFTER: test_rls_hides_other_tenant_rows create org_b", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows insert alpha supplier", flush=True)
         db.session.add(Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"))
+        print("AFTER: test_rls_hides_other_tenant_rows insert alpha supplier", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows insert beta supplier", flush=True)
         db.session.add(Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"))
+        print("AFTER: test_rls_hides_other_tenant_rows insert beta supplier", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows commit seed rows", flush=True)
         db.session.commit()
+        print("AFTER: test_rls_hides_other_tenant_rows commit seed rows", flush=True)
 
+        print("BEFORE: test_rls_hides_other_tenant_rows set customer context", flush=True)
         _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        print("AFTER: test_rls_hides_other_tenant_rows set customer context", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
         assert Supplier.query.filter_by(organization_id=org_a.id).count() == 1
+        print("AFTER: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
+        print("BEFORE: test_rls_hides_other_tenant_rows supplier count org_b", flush=True)
         assert Supplier.query.filter_by(organization_id=org_b.id).count() == 0
+        print("AFTER: test_rls_hides_other_tenant_rows supplier count org_b", flush=True)
 
+        print("BEFORE: test_rls_hides_other_tenant_rows direct count org_b", flush=True)
         rows = db.session.execute(text("select count(*) from suppliers where organization_id = :org_id"), {"org_id": org_b.id}).scalar_one()
+        print("AFTER: test_rls_hides_other_tenant_rows direct count org_b", flush=True)
         assert rows == 0
 
 
