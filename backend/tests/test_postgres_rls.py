@@ -4,6 +4,8 @@ import os
 import importlib.util
 from datetime import timedelta
 import textwrap
+import threading
+import time
 
 import pytest
 from sqlalchemy import text
@@ -36,7 +38,7 @@ POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"
 BOOTSTRAP_STATEMENT_TIMEOUT = "120s"
-BOOTSTRAP_LOCK_TIMEOUT = "120s"
+BOOTSTRAP_LOCK_TIMEOUT = "5s"
 
 _rls_spec = importlib.util.spec_from_file_location(
     "backend.migrations.versions.0009_postgres_row_level_security",
@@ -87,17 +89,23 @@ def postgres_app(tmp_path):
     )
     with application.app_context():
         print("BEFORE: postgres_app drop_all", flush=True)
+        _log_session_state("before drop_all")
         db.drop_all()
         print("AFTER: postgres_app drop_all", flush=True)
         print("BEFORE: postgres_app create_all", flush=True)
+        _log_session_state("before create_all")
         db.create_all()
         print("AFTER: postgres_app create_all", flush=True)
         print("BEFORE: postgres_app seed_pilot_data", flush=True)
+        _log_session_state("before seed_pilot_data")
         seed_pilot_data(reset=False)
         print("AFTER: postgres_app seed_pilot_data", flush=True)
+        _log_session_state("after seed_pilot_data")
         with db.engine.begin() as connection:
+            print("STATE: postgres_app bootstrap connection acquired", flush=True)
             print("BEFORE: postgres_app apply_postgres_rls", flush=True)
             _apply_bootstrap_timeouts(connection)
+            _log_bootstrap_connection_state("postgres_app bootstrap pre-RLS", connection)
             apply_postgres_rls(_LoggingConnection(connection, "postgres_app apply_postgres_rls"))
             print("AFTER: postgres_app apply_postgres_rls", flush=True)
             print("BEFORE: postgres_app square_apply_postgres_rls", flush=True)
@@ -110,8 +118,10 @@ def postgres_app(tmp_path):
         db.session.execute(text(f"set statement_timeout = '{DIAGNOSTIC_STATEMENT_TIMEOUT}'"))
         db.session.execute(text(f"set lock_timeout = '{DIAGNOSTIC_LOCK_TIMEOUT}'"))
         print("AFTER: postgres_app session timeouts", flush=True)
+        _log_session_state("after session timeouts")
         yield application
         print("BEFORE: postgres_app teardown", flush=True)
+        _log_session_state("before teardown")
         db.session.remove()
         db.drop_all()
         print("AFTER: postgres_app teardown", flush=True)
@@ -142,6 +152,73 @@ def _apply_bootstrap_timeouts(connection) -> None:
     connection.exec_driver_sql(f"set lock_timeout = '{BOOTSTRAP_LOCK_TIMEOUT}'")
 
 
+def _log_bootstrap_connection_state(label: str, connection) -> dict[str, object]:
+    snapshot = {
+        "backend_pid": connection.exec_driver_sql("select pg_backend_pid()").scalar_one(),
+        "current_user": connection.exec_driver_sql("select current_user").scalar_one(),
+        "session_user": connection.exec_driver_sql("select session_user").scalar_one(),
+        "current_role": connection.exec_driver_sql("select current_role").scalar_one(),
+        "current_database": connection.exec_driver_sql("select current_database()").scalar_one(),
+        "application_name": connection.exec_driver_sql("show application_name").scalar_one(),
+        "txid_current_if_assigned": connection.exec_driver_sql("select txid_current_if_assigned()").scalar_one(),
+        "sqlalchemy_connection_in_transaction": connection.in_transaction(),
+    }
+    print(f"STATE: {label} -> {snapshot}", flush=True)
+    return snapshot
+
+
+def _dump_admin_organizations_snapshot(label: str, bootstrap_pid: int, engine) -> None:
+    print(f"BEFORE: admin organizations snapshot {label}", flush=True)
+    with engine.connect() as admin_connection:
+        _apply_diagnostic_timeouts(admin_connection)
+        organizations_oid = admin_connection.exec_driver_sql("select 'organizations'::regclass::oid").scalar_one()
+        rows = admin_connection.execute(
+            text(
+                """
+                select
+                    a.pid,
+                    a.usename,
+                    a.application_name,
+                    a.state,
+                    a.wait_event_type,
+                    a.wait_event,
+                    a.xact_start,
+                    a.query_start,
+                    a.backend_xid,
+                    a.backend_xmin,
+                    a.query,
+                    pg_blocking_pids(a.pid) as blocking_pids,
+                    l.mode,
+                    l.granted
+                from pg_stat_activity a
+                left join pg_locks l on l.pid = a.pid and l.relation = :organizations_oid
+                where a.pid = :bootstrap_pid
+                   or a.pid = any(pg_blocking_pids(:bootstrap_pid))
+                   or exists (
+                        select 1
+                        from pg_locks other_l
+                        where other_l.pid = a.pid
+                          and other_l.relation = :organizations_oid
+                   )
+                order by a.pid, l.mode
+                """
+            ),
+            {"bootstrap_pid": bootstrap_pid, "organizations_oid": organizations_oid},
+        ).all()
+        for row in rows:
+            print(f"ADMIN ROW: {tuple(row)}", flush=True)
+    print(f"AFTER: admin organizations snapshot {label}", flush=True)
+
+
+def _log_session_state(label: str) -> None:
+    print(
+        f"STATE: {label} -> session_in_transaction={db.session.in_transaction()} "
+        f"session_in_nested_transaction={db.session.in_nested_transaction()} "
+        f"session_is_active={db.session.is_active}",
+        flush=True,
+    )
+
+
 def _summarize_sql(sql: str, limit: int = 160) -> str:
     compact = " ".join(sql.split())
     return textwrap.shorten(compact, width=limit, placeholder=" ...")
@@ -161,6 +238,20 @@ class _LoggingConnection:
         summary = _summarize_sql(statement)
         print(f"BEFORE: {self._label} sql[{self._counter}] {summary}", flush=True)
         try:
+            if 'ALTER TABLE "organizations" ENABLE ROW LEVEL SECURITY' in statement:
+                _log_bootstrap_connection_state(f"{self._label} before organizations RLS", self._connection)
+                bootstrap_pid = self._connection.exec_driver_sql("select pg_backend_pid()").scalar_one()
+                admin_engine = db.engine
+
+                def _delayed_snapshot() -> None:
+                    time.sleep(1)
+                    _dump_admin_organizations_snapshot(
+                        f"while {self._label} waits on organizations RLS",
+                        bootstrap_pid,
+                        admin_engine,
+                    )
+
+                threading.Thread(target=_delayed_snapshot, daemon=True).start()
             result = self._connection.exec_driver_sql(statement, *args, **kwargs)
             print(f"AFTER: {self._label} sql[{self._counter}]", flush=True)
             return result
