@@ -41,6 +41,13 @@ def _alembic_config(application) -> Config:
     return config
 
 
+def _reset_public_schema(application) -> None:
+    with application.app_context():
+        db.session.execute(text("drop schema if exists public cascade"))
+        db.session.execute(text("create schema public"))
+        db.session.commit()
+
+
 def _upgrade_to(application, revision: str) -> None:
     with application.app_context():
         command.upgrade(_alembic_config(application), revision)
@@ -73,6 +80,7 @@ def _current_revision() -> str:
 
 def test_postgres_migrations_upgrade_from_fresh_database():
     application = _create_app()
+    _reset_public_schema(application)
     _upgrade_to(application, "head")
     with application.app_context():
         assert _current_revision() == "0011_postgres_row_level_security_square_orders"
@@ -84,6 +92,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
 
 def test_postgres_migrations_upgrade_from_secure_backend_head():
     application = _create_app()
+    _reset_public_schema(application)
     _upgrade_to(application, "0006_audit_events_and_tenant_constraints")
     with application.app_context():
         assert _current_revision() == "0006_audit_events_and_tenant_constraints"
@@ -96,6 +105,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
 
 def test_postgres_migrations_upgrade_from_partial_commercial_head():
     application = _create_app()
+    _reset_public_schema(application)
     _upgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
     with application.app_context():
         assert _current_revision() == "0007_commercial_onboarding_and_square_foundation"

@@ -49,6 +49,13 @@ def _alembic_config(application) -> Config:
     return config
 
 
+def _reset_public_schema(application) -> None:
+    with application.app_context():
+        db.session.execute(text("drop schema if exists public cascade"))
+        db.session.execute(text("create schema public"))
+        db.session.commit()
+
+
 def _upgrade_to(application, revision: str) -> None:
     with application.app_context():
         command.upgrade(_alembic_config(application), revision)
@@ -68,14 +75,14 @@ def postgres_app(tmp_path):
         }
     )
     with application.app_context():
-        db.drop_all()
-        db.create_all()
+        _reset_public_schema(application)
+        _upgrade_to(application, "head")
         seed_pilot_data(reset=False)
         _upgrade_to(application, "0009_postgres_row_level_security")
         _upgrade_to(application, "0011_postgres_row_level_security_square_orders")
         yield application
         db.session.remove()
-        db.drop_all()
+        _reset_public_schema(application)
 
 
 def _set_rls_context(*, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
