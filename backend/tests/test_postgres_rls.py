@@ -34,6 +34,8 @@ from backend.utils import utc_now
 POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"
+BOOTSTRAP_STATEMENT_TIMEOUT = "30s"
+BOOTSTRAP_LOCK_TIMEOUT = "30s"
 
 _rls_spec = importlib.util.spec_from_file_location(
     "backend.migrations.versions.0009_postgres_row_level_security",
@@ -94,7 +96,7 @@ def postgres_app(tmp_path):
         print("AFTER: postgres_app seed_pilot_data", flush=True)
         with db.engine.begin() as connection:
             print("BEFORE: postgres_app apply_postgres_rls", flush=True)
-            _apply_diagnostic_timeouts(connection)
+            _apply_bootstrap_timeouts(connection)
             apply_postgres_rls(connection)
             print("AFTER: postgres_app apply_postgres_rls", flush=True)
             print("BEFORE: postgres_app square_apply_postgres_rls", flush=True)
@@ -132,6 +134,11 @@ def _set_rls_context(*, access_scope: str, organization_id: int | None = None, s
 def _apply_diagnostic_timeouts(connection) -> None:
     connection.exec_driver_sql(f"set statement_timeout = '{DIAGNOSTIC_STATEMENT_TIMEOUT}'")
     connection.exec_driver_sql(f"set lock_timeout = '{DIAGNOSTIC_LOCK_TIMEOUT}'")
+
+
+def _apply_bootstrap_timeouts(connection) -> None:
+    connection.exec_driver_sql(f"set statement_timeout = '{BOOTSTRAP_STATEMENT_TIMEOUT}'")
+    connection.exec_driver_sql(f"set lock_timeout = '{BOOTSTRAP_LOCK_TIMEOUT}'")
 
 
 def _log_scalar_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
