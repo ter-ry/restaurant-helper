@@ -67,6 +67,17 @@ def upgrade() -> None:
     )
     _execute(
         """
+        CREATE OR REPLACE FUNCTION flowtally_access_scope()
+        RETURNS text
+        LANGUAGE sql
+        STABLE
+        AS $$ 
+          SELECT flowtally_current_access_scope()
+        $$;
+        """
+    )
+    _execute(
+        """
         CREATE OR REPLACE FUNCTION flowtally_current_organization_id()
         RETURNS integer
         LANGUAGE sql
