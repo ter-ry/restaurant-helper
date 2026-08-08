@@ -80,7 +80,7 @@ def upgrade() -> None:
         sa.Column("mapping_type", sa.String(length=40), nullable=False, server_default="manual"),
         sa.Column("fixed_value_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("display_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("is_required", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_required", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.UniqueConstraint("data_import_job_id", "target_field_name", name="uq_data_import_mapping_target_field"),
@@ -102,7 +102,7 @@ def upgrade() -> None:
         sa.Column("issue_summary", sa.Text(), nullable=False, server_default=""),
         sa.Column("warning_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("blocked_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("can_rollback", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("can_rollback", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.UniqueConstraint("data_import_job_id", "row_number", name="uq_data_import_row_number"),
@@ -135,7 +135,7 @@ def upgrade() -> None:
         sa.Column("row_fingerprint", sa.String(length=128), nullable=False, server_default=""),
         sa.Column("previous_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("applied_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
-        sa.Column("rollbackable", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("rollbackable", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("status", sa.String(length=40), nullable=False, server_default="preview"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
@@ -170,4 +170,3 @@ def downgrade() -> None:
     op.drop_index("ix_data_import_jobs_created_by_user_id", table_name="data_import_jobs")
     op.drop_index("ix_data_import_jobs_organization_id", table_name="data_import_jobs")
     op.drop_table("data_import_jobs")
-

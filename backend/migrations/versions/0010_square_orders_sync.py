@@ -41,7 +41,7 @@ def upgrade() -> None:
         sa.Column("refunded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("raw_payload_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("last_synced_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.UniqueConstraint("square_connection_id", "square_order_id", name="uq_square_order_connection_order"),
@@ -94,4 +94,3 @@ def downgrade() -> None:
     op.drop_table("square_daily_sales_summaries")
     op.drop_table("square_order_lines")
     op.drop_table("square_orders")
-
