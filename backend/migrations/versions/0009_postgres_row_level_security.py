@@ -20,10 +20,12 @@ depends_on = None
 
 
 def _is_postgres() -> bool:
-    if op is not None and hasattr(op, "get_context"):
+    try:
         context = op.get_context()
-        if context is not None:
-            return context.dialect.name == "postgresql"
+    except Exception:
+        context = None
+    if context is not None:
+        return context.dialect.name == "postgresql"
     try:
         return db.engine.dialect.name == "postgresql"
     except Exception:
