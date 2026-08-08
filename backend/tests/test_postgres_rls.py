@@ -51,6 +51,15 @@ _square_rls_module = importlib.util.module_from_spec(_square_rls_spec)
 _square_rls_spec.loader.exec_module(_square_rls_module)
 square_apply_postgres_rls = _square_rls_module.apply_postgres_rls
 
+_support_rls_spec = importlib.util.spec_from_file_location(
+    "backend.migrations.versions.0012_fix_support_access_grant_rls_recursion",
+    os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "0012_fix_support_access_grant_rls_recursion.py"),
+)
+assert _support_rls_spec and _support_rls_spec.loader
+_support_rls_module = importlib.util.module_from_spec(_support_rls_spec)
+_support_rls_spec.loader.exec_module(_support_rls_module)
+support_apply_postgres_rls = _support_rls_module.apply_postgres_rls
+
 
 pytestmark = pytest.mark.skipif(
     not POSTGRES_URL.startswith("postgres"),
@@ -67,9 +76,9 @@ def postgres_app(tmp_path):
             "SQLALCHEMY_DATABASE_URI": POSTGRES_URL,
             "SESSION_COOKIE_SECURE": False,
             "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
-            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
-            "WTF_CSRF_ENABLED": True,
-        }
+        "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+        "WTF_CSRF_ENABLED": True,
+    }
     )
     with application.app_context():
         db.drop_all()
@@ -78,6 +87,8 @@ def postgres_app(tmp_path):
         with db.engine.begin() as connection:
             apply_postgres_rls(connection)
             square_apply_postgres_rls(connection)
+            support_apply_postgres_rls(connection)
+        db.session.execute(text("set statement_timeout = '5s'"))
         yield application
         db.session.remove()
         db.drop_all()
@@ -145,6 +156,7 @@ def test_rls_hides_other_tenant_rows(postgres_app):
     with postgres_app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
+        assert db.session.execute(text("show statement_timeout")).scalar_one() in {"5s", "5000ms"}
         org_a = _create_org(owner, "RLS Alpha")
         org_b = _create_org(owner, "RLS Beta")
         db.session.add(Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"))
@@ -222,6 +234,134 @@ def test_support_requires_active_grant(postgres_app):
 
         _set_rls_context(access_scope="support", organization_id=org.id, support_grant_id=grant.id)
         assert Supplier.query.filter_by(organization_id=org.id).count() == 1
+
+
+def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        support = User.query.filter_by(email="support-rls@example.com").first()
+        if support is None:
+            support = User(email="support-rls@example.com", is_active=True)
+            support.set_password("Support123!")
+            db.session.add(support)
+            db.session.commit()
+
+        org_a = _create_org(owner, "RLS Support Grant Alpha")
+        org_b = _create_org(owner, "RLS Support Grant Beta")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+            ]
+        )
+        db.session.commit()
+
+        active_grant = SupportAccessGrant(
+            organization_id=org_a.id,
+            support_user_id=support.id,
+            reason="Investigate alpha",
+            case_reference="CASE-ALPHA",
+            status="active",
+            starts_at=utc_now() - timedelta(minutes=1),
+            expires_at=utc_now() + timedelta(minutes=30),
+        )
+        expired_grant = SupportAccessGrant(
+            organization_id=org_b.id,
+            support_user_id=support.id,
+            reason="Investigate beta",
+            case_reference="CASE-BETA",
+            status="active",
+            starts_at=utc_now() - timedelta(hours=2),
+            expires_at=utc_now() - timedelta(minutes=1),
+        )
+        revoked_grant = SupportAccessGrant(
+            organization_id=org_a.id,
+            support_user_id=support.id,
+            reason="Investigate revoked",
+            case_reference="CASE-REVOKED",
+            status="revoked",
+            starts_at=utc_now() - timedelta(minutes=5),
+            expires_at=utc_now() + timedelta(minutes=30),
+            revoked_at=utc_now() - timedelta(minutes=1),
+        )
+        db.session.add_all([active_grant, expired_grant, revoked_grant])
+        db.session.commit()
+
+        _set_rls_context(access_scope="support", organization_id=org_a.id, support_grant_id=active_grant.id)
+        assert Supplier.query.filter_by(organization_id=org_a.id).count() == 1
+        assert Supplier.query.filter_by(organization_id=org_b.id).count() == 0
+
+        _set_rls_context(access_scope="support", organization_id=org_b.id, support_grant_id=expired_grant.id)
+        assert Supplier.query.filter_by(organization_id=org_b.id).count() == 0
+
+        _set_rls_context(access_scope="support", organization_id=org_a.id, support_grant_id=revoked_grant.id)
+        assert Supplier.query.filter_by(organization_id=org_a.id).count() == 0
+
+        _set_rls_context(access_scope="support", organization_id=org_a.id, support_grant_id=active_grant.id)
+        with pytest.raises(Exception):
+            db.session.add(
+                SupportAccessGrant(
+                    organization_id=org_a.id,
+                    support_user_id=support.id,
+                    reason="Self create attempt",
+                    case_reference="CASE-CREATE",
+                    status="active",
+                    starts_at=utc_now(),
+                    expires_at=utc_now() + timedelta(minutes=10),
+                )
+            )
+            db.session.commit()
+        db.session.rollback()
+
+        with pytest.raises(Exception):
+            active_grant.expires_at = active_grant.expires_at + timedelta(minutes=10)
+            db.session.commit()
+        db.session.rollback()
+
+        with pytest.raises(Exception):
+            active_grant.organization_id = org_b.id
+            db.session.commit()
+        db.session.rollback()
+
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        with pytest.raises(Exception):
+            db.session.add(
+                SupportAccessGrant(
+                    organization_id=org_a.id,
+                    support_user_id=support.id,
+                    reason="Customer create attempt",
+                    case_reference="CASE-CUSTOMER",
+                    status="active",
+                    starts_at=utc_now(),
+                    expires_at=utc_now() + timedelta(minutes=10),
+                )
+            )
+            db.session.commit()
+        db.session.rollback()
+
+        with pytest.raises(Exception):
+            active_grant.revoked_at = utc_now()
+            db.session.commit()
+        db.session.rollback()
+
+        _set_rls_context(access_scope="setup")
+        setup_grant = SupportAccessGrant(
+            organization_id=org_b.id,
+            support_user_id=support.id,
+            reason="Setup access",
+            case_reference="CASE-SETUP",
+            status="active",
+            starts_at=utc_now() - timedelta(minutes=1),
+            expires_at=utc_now() + timedelta(minutes=30),
+        )
+        db.session.add(setup_grant)
+        db.session.commit()
+        setup_grant.reason = "Setup access updated"
+        db.session.commit()
+        setup_grant.revoked_at = utc_now()
+        setup_grant.status = "revoked"
+        db.session.commit()
 
 
 def test_rls_protects_square_sales_tables(postgres_app):

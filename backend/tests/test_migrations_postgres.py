@@ -83,11 +83,12 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     _reset_public_schema(application)
     _upgrade_to(application, "head")
     with application.app_context():
-        assert _current_revision() == "0011_postgres_row_level_security_square_orders"
+        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
         _assert_policy_exists("flowtally_organizations_tenant_access", "organizations")
         _assert_policy_exists("flowtally_suppliers_tenant_access", "suppliers")
         _assert_policy_exists("flowtally_data_import_jobs_tenant_access", "data_import_jobs")
         _assert_policy_exists("flowtally_square_orders_tenant_access", "square_orders")
+        _assert_policy_exists("flowtally_support_access_grants_select_access", "support_access_grants")
 
 
 def test_postgres_migrations_upgrade_from_secure_backend_head():
@@ -99,7 +100,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
 
     _upgrade_to(application, "head")
     with application.app_context():
-        assert _current_revision() == "0011_postgres_row_level_security_square_orders"
+        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
 
 
@@ -112,7 +113,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
 
     _upgrade_to(application, "head")
     with application.app_context():
-        assert _current_revision() == "0011_postgres_row_level_security_square_orders"
+        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
 
     _downgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
     with application.app_context():
@@ -120,5 +121,5 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
 
     _upgrade_to(application, "head")
     with application.app_context():
-        assert _current_revision() == "0011_postgres_row_level_security_square_orders"
+        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
