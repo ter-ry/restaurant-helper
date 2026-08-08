@@ -19,10 +19,14 @@ depends_on = None
 
 
 def _is_postgres() -> bool:
-    context = op.get_context()
-    if context is not None:
-        return context.dialect.name == "postgresql"
-    return db.engine.dialect.name == "postgresql"
+    if op is not None and hasattr(op, "get_context"):
+        context = op.get_context()
+        if context is not None:
+            return context.dialect.name == "postgresql"
+    try:
+        return db.engine.dialect.name == "postgresql"
+    except Exception:
+        return False
 
 
 def _enable_force_policy(table_name: str, policy_name: str, predicate_sql: str) -> None:

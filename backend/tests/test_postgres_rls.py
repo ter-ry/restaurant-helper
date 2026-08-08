@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
-import importlib.util
 from datetime import timedelta
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 import pytest
 from sqlalchemy import text
 
@@ -33,29 +35,23 @@ from backend.utils import utc_now
 
 POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
 
-_rls_spec = importlib.util.spec_from_file_location(
-    "backend.migrations.versions.0009_postgres_row_level_security",
-    os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "0009_postgres_row_level_security.py"),
-)
-assert _rls_spec and _rls_spec.loader
-_rls_module = importlib.util.module_from_spec(_rls_spec)
-_rls_spec.loader.exec_module(_rls_module)
-upgrade = _rls_module.upgrade
-
-_square_rls_spec = importlib.util.spec_from_file_location(
-    "backend.migrations.versions.0011_postgres_row_level_security_square_orders",
-    os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "0011_postgres_row_level_security_square_orders.py"),
-)
-assert _square_rls_spec and _square_rls_spec.loader
-_square_rls_module = importlib.util.module_from_spec(_square_rls_spec)
-_square_rls_spec.loader.exec_module(_square_rls_module)
-square_upgrade = _square_rls_module.upgrade
-
 
 pytestmark = pytest.mark.skipif(
     not POSTGRES_URL.startswith("postgres"),
     reason="PostgreSQL test database is not configured.",
 )
+
+
+def _alembic_config(application) -> Config:
+    config = Config()
+    config.set_main_option("script_location", str((Path(__file__).resolve().parents[1] / "migrations").resolve()))
+    config.set_main_option("sqlalchemy.url", application.config["SQLALCHEMY_DATABASE_URI"])
+    return config
+
+
+def _upgrade_to(application, revision: str) -> None:
+    with application.app_context():
+        command.upgrade(_alembic_config(application), revision)
 
 
 @pytest.fixture()
@@ -75,8 +71,8 @@ def postgres_app(tmp_path):
         db.drop_all()
         db.create_all()
         seed_pilot_data(reset=False)
-        upgrade()
-        square_upgrade()
+        _upgrade_to(application, "0009_postgres_row_level_security")
+        _upgrade_to(application, "0011_postgres_row_level_security_square_orders")
         yield application
         db.session.remove()
         db.drop_all()

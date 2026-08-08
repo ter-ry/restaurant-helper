@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 import pytest
 from sqlalchemy import text
 
@@ -31,6 +34,23 @@ def _create_app():
     )
 
 
+def _alembic_config(application) -> Config:
+    config = Config()
+    config.set_main_option("script_location", str((Path(__file__).resolve().parents[1] / "migrations").resolve()))
+    config.set_main_option("sqlalchemy.url", application.config["SQLALCHEMY_DATABASE_URI"])
+    return config
+
+
+def _upgrade_to(application, revision: str) -> None:
+    with application.app_context():
+        command.upgrade(_alembic_config(application), revision)
+
+
+def _downgrade_to(application, revision: str) -> None:
+    with application.app_context():
+        command.downgrade(_alembic_config(application), revision)
+
+
 def _assert_policy_exists(policy_name: str, table_name: str) -> None:
     row = db.session.execute(
         text(
@@ -53,10 +73,8 @@ def _current_revision() -> str:
 
 def test_postgres_migrations_upgrade_from_fresh_database():
     application = _create_app()
+    _upgrade_to(application, "head")
     with application.app_context():
-        runner = application.test_cli_runner()
-        result = runner.invoke(args=["db", "upgrade"])
-        assert result.exit_code == 0, result.output
         assert _current_revision() == "0011_postgres_row_level_security_square_orders"
         _assert_policy_exists("flowtally_organizations_tenant_access", "organizations")
         _assert_policy_exists("flowtally_suppliers_tenant_access", "suppliers")
@@ -66,35 +84,31 @@ def test_postgres_migrations_upgrade_from_fresh_database():
 
 def test_postgres_migrations_upgrade_from_secure_backend_head():
     application = _create_app()
+    _upgrade_to(application, "0006_audit_events_and_tenant_constraints")
     with application.app_context():
-        runner = application.test_cli_runner()
-        result = runner.invoke(args=["db", "upgrade", "0006_audit_events_and_tenant_constraints"])
-        assert result.exit_code == 0, result.output
         assert _current_revision() == "0006_audit_events_and_tenant_constraints"
 
-        result = runner.invoke(args=["db", "upgrade"])
-        assert result.exit_code == 0, result.output
+    _upgrade_to(application, "head")
+    with application.app_context():
         assert _current_revision() == "0011_postgres_row_level_security_square_orders"
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
 
 
 def test_postgres_migrations_upgrade_from_partial_commercial_head():
     application = _create_app()
+    _upgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
     with application.app_context():
-        runner = application.test_cli_runner()
-        result = runner.invoke(args=["db", "upgrade", "0007_commercial_onboarding_and_square_foundation"])
-        assert result.exit_code == 0, result.output
         assert _current_revision() == "0007_commercial_onboarding_and_square_foundation"
 
-        result = runner.invoke(args=["db", "upgrade"])
-        assert result.exit_code == 0, result.output
+    _upgrade_to(application, "head")
+    with application.app_context():
         assert _current_revision() == "0011_postgres_row_level_security_square_orders"
 
-        result = runner.invoke(args=["db", "downgrade", "0007_commercial_onboarding_and_square_foundation"])
-        assert result.exit_code == 0, result.output
+    _downgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
+    with application.app_context():
         assert _current_revision() == "0007_commercial_onboarding_and_square_foundation"
 
-        result = runner.invoke(args=["db", "upgrade"])
-        assert result.exit_code == 0, result.output
+    _upgrade_to(application, "head")
+    with application.app_context():
         assert _current_revision() == "0011_postgres_row_level_security_square_orders"
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
