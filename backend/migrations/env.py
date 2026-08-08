@@ -77,6 +77,7 @@ def run_migrations_online() -> None:
             connection.exec_driver_sql(
                 "ALTER TABLE public.alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
             )
+            connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True, version_table_schema=_version_table_schema())
         with context.begin_transaction():
             context.run_migrations()
