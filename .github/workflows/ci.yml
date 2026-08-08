@@ -61,8 +61,28 @@ jobs:
         run: python -u -m pytest backend/tests/test_migrations_postgres.py -vv -x --durations=20
 
       - name: PostgreSQL RLS and security tests
-        timeout-minutes: 20
-        run: python -u -m pytest backend/tests/test_postgres_rls.py -vv -x --durations=20
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_hides_other_tenant_rows -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - cross-tenant write
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_blocks_cross_tenant_insert_and_update -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - support grant
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_support_requires_active_grant -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - square sales
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_protects_square_sales_tables -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - imports
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_covers_import_tables_and_selected_organization_views -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - setup scope
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_setup_scope_can_access_platform_data_across_organizations -vv -x -s --durations=20
 
       - name: Remaining backend tests
         timeout-minutes: 25
