@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import importlib.util
 from datetime import timedelta
+import textwrap
 
 import pytest
 from sqlalchemy import text
@@ -97,13 +98,13 @@ def postgres_app(tmp_path):
         with db.engine.begin() as connection:
             print("BEFORE: postgres_app apply_postgres_rls", flush=True)
             _apply_bootstrap_timeouts(connection)
-            apply_postgres_rls(connection)
+            apply_postgres_rls(_LoggingConnection(connection, "postgres_app apply_postgres_rls"))
             print("AFTER: postgres_app apply_postgres_rls", flush=True)
             print("BEFORE: postgres_app square_apply_postgres_rls", flush=True)
-            square_apply_postgres_rls(connection)
+            square_apply_postgres_rls(_LoggingConnection(connection, "postgres_app square_apply_postgres_rls"))
             print("AFTER: postgres_app square_apply_postgres_rls", flush=True)
             print("BEFORE: postgres_app support_apply_postgres_rls", flush=True)
-            support_apply_postgres_rls(connection)
+            support_apply_postgres_rls(_LoggingConnection(connection, "postgres_app support_apply_postgres_rls"))
             print("AFTER: postgres_app support_apply_postgres_rls", flush=True)
         print("BEFORE: postgres_app session timeouts", flush=True)
         db.session.execute(text(f"set statement_timeout = '{DIAGNOSTIC_STATEMENT_TIMEOUT}'"))
@@ -139,6 +140,36 @@ def _apply_diagnostic_timeouts(connection) -> None:
 def _apply_bootstrap_timeouts(connection) -> None:
     connection.exec_driver_sql(f"set statement_timeout = '{BOOTSTRAP_STATEMENT_TIMEOUT}'")
     connection.exec_driver_sql(f"set lock_timeout = '{BOOTSTRAP_LOCK_TIMEOUT}'")
+
+
+def _summarize_sql(sql: str, limit: int = 160) -> str:
+    compact = " ".join(sql.split())
+    return textwrap.shorten(compact, width=limit, placeholder=" ...")
+
+
+class _LoggingConnection:
+    def __init__(self, connection, label: str):
+        self._connection = connection
+        self._label = label
+        self._counter = 0
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+    def exec_driver_sql(self, statement, *args, **kwargs):
+        self._counter += 1
+        summary = _summarize_sql(statement)
+        print(f"BEFORE: {self._label} sql[{self._counter}] {summary}", flush=True)
+        try:
+            result = self._connection.exec_driver_sql(statement, *args, **kwargs)
+            print(f"AFTER: {self._label} sql[{self._counter}]", flush=True)
+            return result
+        except Exception as exc:
+            print(
+                f"ERROR: {self._label} sql[{self._counter}] -> {exc.__class__.__name__}: {exc}",
+                flush=True,
+            )
+            raise
 
 
 def _log_scalar_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
