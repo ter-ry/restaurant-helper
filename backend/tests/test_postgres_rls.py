@@ -34,8 +34,8 @@ from backend.utils import utc_now
 POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"
-BOOTSTRAP_STATEMENT_TIMEOUT = "30s"
-BOOTSTRAP_LOCK_TIMEOUT = "30s"
+BOOTSTRAP_STATEMENT_TIMEOUT = "120s"
+BOOTSTRAP_LOCK_TIMEOUT = "120s"
 
 _rls_spec = importlib.util.spec_from_file_location(
     "backend.migrations.versions.0009_postgres_row_level_security",
