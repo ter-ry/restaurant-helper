@@ -83,14 +83,14 @@ def postgres_app(tmp_path):
 
 
 def _set_rls_context(*, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
-    db.session.connection().exec_driver_sql("select set_config(%s, %s, true)", ("flowtally.access_scope", access_scope))
-    db.session.connection().exec_driver_sql(
-        "select set_config(%s, %s, true)",
-        ("flowtally.organization_id", "" if organization_id is None else str(organization_id)),
+    db.session.execute(text("select set_config(:name, :value, true)"), {"name": "flowtally.access_scope", "value": access_scope})
+    db.session.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.organization_id", "value": "" if organization_id is None else str(organization_id)},
     )
-    db.session.connection().exec_driver_sql(
-        "select set_config(%s, %s, true)",
-        ("flowtally.support_grant_id", "" if support_grant_id is None else str(support_grant_id)),
+    db.session.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.support_grant_id", "value": "" if support_grant_id is None else str(support_grant_id)},
     )
 
 
@@ -164,12 +164,15 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
             db.session.commit()
         db.session.rollback()
 
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
         supplier = Supplier(organization_id=org_a.id, name="Right Org", normalized_name="right org")
         db.session.add(supplier)
         db.session.commit()
 
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
         db.session.execute(text("update suppliers set name = :name where id = :id"), {"name": "Changed", "id": supplier.id})
         db.session.commit()
+        _set_rls_context(access_scope="customer", organization_id=org_a.id)
         assert Supplier.query.filter_by(id=supplier.id).first().name == "Changed"
 
         _set_rls_context(access_scope="customer", organization_id=org_b.id)
