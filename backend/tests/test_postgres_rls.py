@@ -909,6 +909,18 @@ def test_rls_hides_other_tenant_rows(postgres_app):
         print("BEFORE: test_rls_hides_other_tenant_rows set customer context", flush=True)
         _set_rls_context(access_scope="customer", organization_id=org_a.id)
         print("AFTER: test_rls_hides_other_tenant_rows set customer context", flush=True)
+        _log_row_probe(
+            "test_rls_hides_other_tenant_rows context snapshot",
+            """
+            select
+                flowtally_access_scope(),
+                flowtally_current_organization_id(),
+                flowtally_current_support_grant_id(),
+                current_setting('flowtally.access_scope', true),
+                current_setting('flowtally.organization_id', true),
+                current_setting('flowtally.support_grant_id', true)
+            """,
+        )
         print("BEFORE: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
         assert Supplier.query.filter_by(organization_id=org_a.id).count() == 1
         print("AFTER: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
