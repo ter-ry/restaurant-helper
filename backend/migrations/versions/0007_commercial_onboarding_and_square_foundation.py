@@ -27,7 +27,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("subscription_provider", sa.String(length=120), nullable=False, server_default=""))
         batch_op.add_column(sa.Column("external_customer_reference", sa.String(length=255), nullable=False, server_default=""))
         batch_op.add_column(sa.Column("external_subscription_reference", sa.String(length=255), nullable=False, server_default=""))
-        batch_op.add_column(sa.Column("is_prospect", sa.Boolean(), nullable=False, server_default=sa.text("0")))
+        batch_op.add_column(sa.Column("is_prospect", sa.Boolean(), nullable=False, server_default=sa.false()))
         batch_op.add_column(sa.Column("active_at", sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column("setup_completed_at", sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column("suspended_at", sa.DateTime(timezone=True), nullable=True))
@@ -51,7 +51,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("role", sa.String(length=40), nullable=False, server_default="support"),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("notes", sa.Text(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
@@ -71,7 +71,7 @@ def upgrade() -> None:
         sa.Column("starts_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("visible_in_ui", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("visible_in_ui", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
     )
@@ -89,7 +89,7 @@ def upgrade() -> None:
         sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("single_use", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("single_use", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.UniqueConstraint("token", name="uq_organization_invitation_token"),
@@ -199,7 +199,7 @@ def upgrade() -> None:
         sa.Column("square_object_id", sa.String(length=255), nullable=False),
         sa.Column("object_type", sa.String(length=120), nullable=False, server_default=""),
         sa.Column("version", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("raw_payload_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),

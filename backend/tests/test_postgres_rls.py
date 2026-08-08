@@ -83,7 +83,10 @@ def postgres_app(tmp_path):
 
 
 def _set_rls_context(*, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
-    db.session.execute(text("select set_config(:name, :value, true)"), {"name": "flowtally.access_scope", "value": access_scope})
+    db.session.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.access_scope", "value": access_scope},
+    )
     db.session.execute(
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.organization_id", "value": "" if organization_id is None else str(organization_id)},
@@ -133,6 +136,10 @@ def _create_org(owner: User, name: str) -> Organization:
     return organization
 
 
+def _restore_rls_context(access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
+    _set_rls_context(access_scope=access_scope, organization_id=organization_id, support_grant_id=support_grant_id)
+
+
 def test_rls_hides_other_tenant_rows(postgres_app):
     with postgres_app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
@@ -163,6 +170,7 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
         with pytest.raises(Exception):
             db.session.commit()
         db.session.rollback()
+        _restore_rls_context("customer", organization_id=org_a.id)
 
         _set_rls_context(access_scope="customer", organization_id=org_a.id)
         supplier = Supplier(organization_id=org_a.id, name="Right Org", normalized_name="right org")
@@ -179,6 +187,7 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
         with pytest.raises(Exception):
             db.session.execute(text("update suppliers set name = :name where id = :id"), {"name": "Blocked", "id": supplier.id})
             db.session.commit()
+        db.session.rollback()
 
 
 def test_support_requires_active_grant(postgres_app):
