@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 
 from alembic import context
+from flask import current_app, has_app_context
 from sqlalchemy import engine_from_config, pool
 
 from backend.app import create_app
@@ -15,13 +16,16 @@ config = context.config
 if config.config_file_name is not None and Path(config.config_file_name).exists():
     fileConfig(config.config_file_name)
 
-migration_database_url = (
-    os.environ.get("DATABASE_URL")
-    or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
-    or config.get_main_option("sqlalchemy.url")
-    or ""
-).strip()
-app = create_app({"SQLALCHEMY_DATABASE_URI": migration_database_url}) if migration_database_url else create_app()
+if has_app_context():
+    app = current_app._get_current_object()
+else:
+    migration_database_url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
+        or config.get_main_option("sqlalchemy.url")
+        or ""
+    ).strip()
+    app = create_app({"SQLALCHEMY_DATABASE_URI": migration_database_url}) if migration_database_url else create_app()
 target_metadata = db.metadata
 
 
