@@ -26,6 +26,7 @@ jobs:
           --health-retries 10
     env:
       FLOWTALLY_TEST_POSTGRES_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
+      DATABASE_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4

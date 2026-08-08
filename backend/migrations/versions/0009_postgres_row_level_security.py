@@ -10,6 +10,8 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
+from backend.extensions import db
+
 
 revision = "0009_postgres_row_level_security"
 down_revision = "0008_data_import_pipeline"
@@ -18,7 +20,10 @@ depends_on = None
 
 
 def _is_postgres() -> bool:
-    return op.get_context().dialect.name == "postgresql"
+    context = op.get_context()
+    if context is not None:
+        return context.dialect.name == "postgresql"
+    return db.engine.dialect.name == "postgresql"
 
 
 def _execute(sql: str) -> None:

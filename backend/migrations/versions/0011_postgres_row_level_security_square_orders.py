@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from alembic import op
 
+from backend.extensions import db
+
 
 revision = "0011_postgres_row_level_security_square_orders"
 down_revision = "0010_square_orders_sync"
@@ -17,7 +19,10 @@ depends_on = None
 
 
 def _is_postgres() -> bool:
-    return op.get_context().dialect.name == "postgresql"
+    context = op.get_context()
+    if context is not None:
+        return context.dialect.name == "postgresql"
+    return db.engine.dialect.name == "postgresql"
 
 
 def _enable_force_policy(table_name: str, policy_name: str, predicate_sql: str) -> None:
