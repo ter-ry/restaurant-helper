@@ -60,9 +60,33 @@ jobs:
         timeout-minutes: 15
         run: python -u -m pytest backend/tests/test_migrations_postgres.py -vv -x --durations=20
 
-      - name: PostgreSQL RLS authorization diagnostics
-        timeout-minutes: 10
-        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_authorization_chain_diagnostics -vv -x -s --durations=20
+      - name: PostgreSQL RLS diagnostic probe 1 - access scope
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_1_access_scope -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 2 - current org id
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_2_current_organization_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 3 - current support grant
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_3_current_support_grant_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 4 - support grants count
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_4_support_access_grants_count -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 5 - support access helper
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_5_support_has_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 6 - org access helper
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_6_has_org_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 7 - supplier count
+        timeout-minutes: 5
+        run: python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_7_suppliers_count -vv -x -s --durations=20
 
       - name: PostgreSQL RLS and security tests
         timeout-minutes: 5

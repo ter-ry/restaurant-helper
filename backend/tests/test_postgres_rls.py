@@ -155,7 +155,9 @@ def _restore_rls_context(access_scope: str, organization_id: int | None = None, 
 def _log_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
     print(f"PROBE START: {label}", flush=True)
     try:
-        result = db.session.execute(text(statement), params or {}).scalar_one()
+        connection = db.session.connection()
+        connection.exec_driver_sql("set statement_timeout = '5s'")
+        result = connection.execute(text(statement), params or {}).scalar_one()
         print(f"PROBE OK: {label} -> {result}", flush=True)
         return result
     except Exception as exc:
@@ -228,6 +230,47 @@ def _dump_pg_definitions() -> None:
             f"qual={row.qual} with_check={row.with_check}",
             flush=True,
         )
+
+
+@pytest.fixture()
+def postgres_rls_probe_context(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+
+        org_a = _create_org(owner, "RLS Probe Alpha")
+        org_b = _create_org(owner, "RLS Probe Beta")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+            ]
+        )
+
+        support = User.query.filter_by(email="support-probe@example.com").first()
+        if support is None:
+            support = User(email="support-probe@example.com", is_active=True)
+            support.set_password("Support123!")
+            db.session.add(support)
+        db.session.commit()
+
+        active_grant = SupportAccessGrant(
+            organization_id=org_a.id,
+            support_user_id=support.id,
+            reason="Probe grant",
+            case_reference="CASE-PROBE",
+            status="active",
+            starts_at=utc_now() - timedelta(minutes=1),
+            expires_at=utc_now() + timedelta(minutes=30),
+        )
+        db.session.add(active_grant)
+        db.session.commit()
+
+        return {
+            "org_a_id": org_a.id,
+            "org_b_id": org_b.id,
+            "active_grant_id": active_grant.id,
+        }
 
 
 def test_rls_hides_other_tenant_rows(postgres_app):
@@ -492,6 +535,69 @@ def test_postgres_rls_authorization_chain_diagnostics(postgres_app):
             "select count(*) from suppliers where organization_id = :org_id",
             {"org_id": org_a.id},
         )
+
+
+def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _dump_pg_definitions()
+        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        assert _log_probe("1 flowtally_access_scope()", "select flowtally_access_scope()") == "customer"
+
+
+def test_postgres_rls_probe_2_current_organization_id(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        assert _log_probe("2 flowtally_current_organization_id()", "select flowtally_current_organization_id()") == postgres_rls_probe_context["org_a_id"]
+
+
+def test_postgres_rls_probe_3_current_support_grant_id(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        assert _log_probe("3 flowtally_current_support_grant_id()", "select flowtally_current_support_grant_id()") is None
+
+
+def test_postgres_rls_probe_4_support_access_grants_count(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        assert _log_probe("4 support_access_grants count", "select count(*) from support_access_grants") >= 0
+
+
+def test_postgres_rls_probe_5_support_has_access(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(
+            access_scope="customer",
+            organization_id=postgres_rls_probe_context["org_a_id"],
+            support_grant_id=postgres_rls_probe_context["active_grant_id"],
+        )
+        assert _log_probe(
+            "5 flowtally_support_has_access(org_a)",
+            "select flowtally_support_has_access(:org_id)",
+            {"org_id": postgres_rls_probe_context["org_a_id"]},
+        ) is True
+
+
+def test_postgres_rls_probe_6_has_org_access(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(
+            access_scope="customer",
+            organization_id=postgres_rls_probe_context["org_a_id"],
+            support_grant_id=postgres_rls_probe_context["active_grant_id"],
+        )
+        assert _log_probe(
+            "6 flowtally_has_org_access(org_a)",
+            "select flowtally_has_org_access(:org_id)",
+            {"org_id": postgres_rls_probe_context["org_a_id"]},
+        ) is True
+
+
+def test_postgres_rls_probe_7_suppliers_count(postgres_app, postgres_rls_probe_context):
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        assert _log_probe(
+            "7 suppliers count for org_a",
+            "select count(*) from suppliers where organization_id = :org_id",
+            {"org_id": postgres_rls_probe_context["org_a_id"]},
+        ) == 1
 
 
 def test_rls_protects_square_sales_tables(postgres_app):
