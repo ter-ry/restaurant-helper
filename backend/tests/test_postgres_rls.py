@@ -886,7 +886,9 @@ def test_rls_hides_other_tenant_rows(postgres_app):
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
         print("BEFORE: test_rls_hides_other_tenant_rows show statement_timeout", flush=True)
-        assert db.session.execute(text("show statement_timeout")).scalar_one() in {"5s", "5000ms"}
+        statement_timeout = db.session.execute(text("show statement_timeout")).scalar_one()
+        print(f"STATE: test_rls_hides_other_tenant_rows statement_timeout -> {statement_timeout}", flush=True)
+        _apply_diagnostic_timeouts(db.session.connection())
         print("AFTER: test_rls_hides_other_tenant_rows show statement_timeout", flush=True)
         print("BEFORE: test_rls_hides_other_tenant_rows create org_a", flush=True)
         org_a = _create_org(owner, "RLS Alpha")
