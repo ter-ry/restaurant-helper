@@ -319,6 +319,128 @@ def _log_rows_probe(label: str, statement, params: dict[str, object] | None = No
         raise
 
 
+def _log_supplier_enforcement_snapshot(*, org_a_id: int, org_b_id: int) -> dict[str, object]:
+    label = "test_rls_hides_other_tenant_rows enforcement snapshot"
+    print(f"BEFORE: {label}", flush=True)
+    connection = db.session.connection()
+    _apply_diagnostic_timeouts(connection)
+
+    snapshot: dict[str, object] = {}
+
+    connection_identity = connection.execute(
+        text(
+            """
+            SELECT
+                current_user,
+                session_user,
+                current_role,
+                current_setting('row_security', true),
+                current_setting('flowtally.access_scope', true),
+                current_setting('flowtally.organization_id', true),
+                current_setting('flowtally.support_grant_id', true)
+            """
+        )
+    ).mappings().one()
+    snapshot["connection_identity"] = dict(connection_identity)
+    print(f"STATE: {label} connection_identity -> {snapshot['connection_identity']}", flush=True)
+
+    role_properties = connection.execute(
+        text(
+            """
+            SELECT
+                rolname,
+                rolsuper,
+                rolbypassrls,
+                rolcanlogin
+            FROM pg_roles
+            WHERE rolname = current_user
+            """
+        )
+    ).mappings().all()
+    snapshot["role_properties"] = [dict(row) for row in role_properties]
+    print(f"STATE: {label} role_properties -> {snapshot['role_properties']}", flush=True)
+
+    table_metadata = connection.execute(
+        text(
+            """
+            SELECT
+                c.relname,
+                owner_role.rolname AS table_owner,
+                c.relrowsecurity,
+                c.relforcerowsecurity
+            FROM pg_class c
+            JOIN pg_roles owner_role
+                ON owner_role.oid = c.relowner
+            WHERE c.relname = 'suppliers'
+            """
+        )
+    ).mappings().all()
+    snapshot["table_metadata"] = [dict(row) for row in table_metadata]
+    print(f"STATE: {label} table_metadata -> {snapshot['table_metadata']}", flush=True)
+
+    policy_rows = connection.execute(
+        text(
+            """
+            SELECT
+                policyname,
+                cmd,
+                roles,
+                permissive,
+                qual,
+                with_check
+            FROM pg_policies
+            WHERE tablename = 'suppliers'
+            ORDER BY policyname
+            """
+        )
+    ).mappings().all()
+    snapshot["policy_rows"] = [dict(row) for row in policy_rows]
+    print(f"STATE: {label} policy_rows -> {snapshot['policy_rows']}", flush=True)
+
+    has_org_access_a = connection.execute(
+        text("select flowtally_has_org_access(:org_id)"),
+        {"org_id": org_a_id},
+    ).scalar_one()
+    has_org_access_b = connection.execute(
+        text("select flowtally_has_org_access(:org_id)"),
+        {"org_id": org_b_id},
+    ).scalar_one()
+    support_has_access_b = connection.execute(
+        text("select flowtally_support_has_access(:org_id)"),
+        {"org_id": org_b_id},
+    ).scalar_one()
+    snapshot["has_org_access_a"] = has_org_access_a
+    snapshot["has_org_access_b"] = has_org_access_b
+    snapshot["support_has_access_b"] = support_has_access_b
+    print(
+        f"STATE: {label} helper_access -> "
+        f"has_org_access_a={has_org_access_a} "
+        f"has_org_access_b={has_org_access_b} "
+        f"support_has_access_b={support_has_access_b}",
+        flush=True,
+    )
+
+    supplier_rows = connection.execute(
+        text(
+            """
+            select id, organization_id
+            from suppliers
+            order by organization_id, id
+            """
+        )
+    ).mappings().all()
+    snapshot["supplier_rows"] = [dict(row) for row in supplier_rows]
+    print(f"STATE: {label} supplier_rows -> {snapshot['supplier_rows']}", flush=True)
+
+    orm_count_a = Supplier.query.filter_by(organization_id=org_a_id).count()
+    orm_count_b = Supplier.query.filter_by(organization_id=org_b_id).count()
+    snapshot["orm_count_a"] = orm_count_a
+    snapshot["orm_count_b"] = orm_count_b
+    print(f"STATE: {label} orm_counts -> org_a={orm_count_a} org_b={orm_count_b}", flush=True)
+    print(f"AFTER: {label}", flush=True)
+    return snapshot
+
+
 def _format_probe_rows(rows: list[dict[str, object]]) -> str:
     return "[" + ", ".join(str(row) for row in rows) + "]"
 
@@ -1159,6 +1281,7 @@ def test_rls_hides_other_tenant_rows(postgres_app):
                 current_setting('flowtally.support_grant_id', true)
             """,
         )
+        _log_supplier_enforcement_snapshot(org_a_id=org_a.id, org_b_id=org_b.id)
         print("BEFORE: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
         assert Supplier.query.filter_by(organization_id=org_a.id).count() == 1
         print("AFTER: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
