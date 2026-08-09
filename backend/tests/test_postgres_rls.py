@@ -34,7 +34,13 @@ from backend.seed import LOCAL_OWNER_EMAIL, seed_pilot_data
 from backend.utils import utc_now
 
 
-POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
+ADMIN_POSTGRES_URL = (
+    os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+    or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
+    or os.environ.get("DATABASE_URL", "")
+)
+RUNTIME_POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
+POSTGRES_URL = RUNTIME_POSTGRES_URL or ADMIN_POSTGRES_URL
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"
 DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT = "15s"
@@ -80,18 +86,18 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture()
 def postgres_app(tmp_path):
-    application = create_app(
+    admin_application = create_app(
         {
             "TESTING": True,
             "SECRET_KEY": "test-secret",
-            "SQLALCHEMY_DATABASE_URI": POSTGRES_URL,
+            "SQLALCHEMY_DATABASE_URI": ADMIN_POSTGRES_URL,
             "SESSION_COOKIE_SECURE": False,
             "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
-        "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
             "WTF_CSRF_ENABLED": True,
         }
     )
-    with application.app_context():
+    with admin_application.app_context():
         print("BEFORE: postgres_app drop_all", flush=True)
         _log_session_state("before drop_all")
         db.drop_all()
@@ -125,17 +131,70 @@ def postgres_app(tmp_path):
             print("BEFORE: postgres_app support_apply_postgres_rls", flush=True)
             support_apply_postgres_rls(_LoggingConnection(connection, "postgres_app support_apply_postgres_rls"))
             print("AFTER: postgres_app support_apply_postgres_rls", flush=True)
-        print("BEFORE: postgres_app session timeouts", flush=True)
+    runtime_application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "SQLALCHEMY_DATABASE_URI": RUNTIME_POSTGRES_URL,
+            "SESSION_COOKIE_SECURE": False,
+            "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
+            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+            "WTF_CSRF_ENABLED": True,
+        }
+    )
+    with runtime_application.app_context():
+        print("BEFORE: postgres_app runtime role verification", flush=True)
+        _log_row_probe(
+            "postgres_app runtime role metadata",
+            """
+            select
+                current_user,
+                session_user,
+                current_role,
+                current_setting('row_security', true),
+                current_setting('flowtally.access_scope', true),
+                current_setting('flowtally.organization_id', true),
+                current_setting('flowtally.support_grant_id', true)
+            """,
+        )
+        _log_row_probe(
+            "postgres_app runtime role flags",
+            """
+            select rolname, rolsuper, rolbypassrls
+            from pg_roles
+            where rolname = current_user
+            """,
+        )
+        _log_row_probe(
+            "postgres_app suppliers ownership and RLS metadata",
+            """
+            select
+                c.relname,
+                r.rolname as table_owner,
+                c.relrowsecurity,
+                c.relforcerowsecurity
+            from pg_class c
+            join pg_roles r on r.oid = c.relowner
+            where c.relname = 'suppliers'
+            """,
+        )
+        print("AFTER: postgres_app runtime role verification", flush=True)
+        _log_session_state("after runtime role verification")
+    print("BEFORE: postgres_app session timeouts", flush=True)
+    with runtime_application.app_context():
         db.session.execute(text(f"set statement_timeout = '{DIAGNOSTIC_STATEMENT_TIMEOUT}'"))
         db.session.execute(text(f"set lock_timeout = '{DIAGNOSTIC_LOCK_TIMEOUT}'"))
-        print("AFTER: postgres_app session timeouts", flush=True)
-        _log_session_state("after session timeouts")
-        yield application
-        print("BEFORE: postgres_app teardown", flush=True)
-        _log_session_state("before teardown")
+    print("AFTER: postgres_app session timeouts", flush=True)
+    yield runtime_application
+    print("BEFORE: postgres_app teardown", flush=True)
+    with runtime_application.app_context():
+        _log_session_state("before runtime teardown")
+        db.session.remove()
+    with admin_application.app_context():
+        _log_session_state("before admin teardown")
         db.session.remove()
         db.drop_all()
-        print("AFTER: postgres_app teardown", flush=True)
+    print("AFTER: postgres_app teardown", flush=True)
 
 
 def _set_rls_context(*, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
@@ -334,10 +393,10 @@ def _log_supplier_enforcement_snapshot(*, org_a_id: int, org_b_id: int) -> dict[
                 current_user,
                 session_user,
                 current_role,
-                current_setting('row_security', true),
-                current_setting('flowtally.access_scope', true),
-                current_setting('flowtally.organization_id', true),
-                current_setting('flowtally.support_grant_id', true)
+                current_setting('row_security', true) AS row_security,
+                current_setting('flowtally.access_scope', true) AS access_scope,
+                current_setting('flowtally.organization_id', true) AS organization_id,
+                current_setting('flowtally.support_grant_id', true) AS support_grant_id
             """
         )
     ).mappings().one()
@@ -1268,6 +1327,44 @@ def test_rls_hides_other_tenant_rows(postgres_app):
 
         print("BEFORE: test_rls_hides_other_tenant_rows set customer context", flush=True)
         _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _log_row_probe(
+            "test_rls_hides_other_tenant_rows active role metadata",
+            """
+            select
+                current_user,
+                session_user,
+                current_role,
+                current_setting('row_security', true),
+                current_setting('flowtally.access_scope', true),
+                current_setting('flowtally.organization_id', true),
+                current_setting('flowtally.support_grant_id', true)
+            """,
+        )
+        _log_row_probe(
+            "test_rls_hides_other_tenant_rows role flags",
+            """
+            select rolname, rolsuper, rolbypassrls
+            from pg_roles
+            where rolname = current_user
+            """,
+        )
+        _log_row_probe(
+            "test_rls_hides_other_tenant_rows suppliers ownership metadata",
+            """
+            select
+                c.relname,
+                r.rolname as table_owner,
+                c.relrowsecurity,
+                c.relforcerowsecurity
+            from pg_class c
+            join pg_roles r on r.oid = c.relowner
+            where c.relname = 'suppliers'
+            """,
+        )
+        _log_rows_probe(
+            "test_rls_hides_other_tenant_rows supplier visibility snapshot",
+            "select id, organization_id from suppliers order by organization_id, id",
+        )
         print("AFTER: test_rls_hides_other_tenant_rows set customer context", flush=True)
         _log_row_probe(
             "test_rls_hides_other_tenant_rows context snapshot",
