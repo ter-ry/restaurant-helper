@@ -452,6 +452,7 @@ def _run_pg_diagnostic_probe(
     ready = threading.Event()
     finished = threading.Event()
     started_at: float | None = None
+    wait_marks = [1.0, 5.0]
 
     def _worker() -> None:
         nonlocal started_at
@@ -460,8 +461,20 @@ def _run_pg_diagnostic_probe(
                 connection.exec_driver_sql(f"set statement_timeout = '{DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT}'")
                 connection.exec_driver_sql(f"set lock_timeout = '{DIAGNOSTIC_PROBE_LOCK_TIMEOUT}'")
                 probe_state["backend_pid"] = connection.exec_driver_sql("select pg_backend_pid()").scalar_one()
+                probe_state["connection_in_transaction"] = connection.in_transaction()
+                probe_state["statement_timeout"] = connection.exec_driver_sql("show statement_timeout").scalar_one()
+                probe_state["lock_timeout"] = connection.exec_driver_sql("show lock_timeout").scalar_one()
                 ready.set()
-                print(f"START PROBE [{label}] category={sql_category}", flush=True)
+                start_stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                print(
+                    f"START PROBE [{label}] category={sql_category} "
+                    f"started_at={start_stamp} "
+                    f"backend_pid={probe_state['backend_pid']} "
+                    f"connection_in_transaction={probe_state['connection_in_transaction']} "
+                    f"statement_timeout={probe_state['statement_timeout']} "
+                    f"lock_timeout={probe_state['lock_timeout']}",
+                    flush=True,
+                )
                 started_at = time.monotonic()
                 if result_mode == "scalar":
                     result = connection.execute(text(statement), params or {}).scalar_one()
@@ -505,17 +518,308 @@ def _run_pg_diagnostic_probe(
     while not finished.wait(timeout=0.5):
         if not inspected and probe_state["backend_pid"] is not None:
             elapsed = time.monotonic() - probe_started_at
-            if elapsed >= DIAGNOSTIC_WAIT_INSPECTION_SECONDS:
+            if wait_marks and elapsed >= wait_marks[0]:
                 _capture_pg_wait_state(engine, label, int(probe_state["backend_pid"]))
-                inspected = True
+                wait_marks.pop(0)
+                if not wait_marks:
+                    inspected = True
         if time.monotonic() >= deadline:
             print(f"WAIT STATE [{label}] exceeded diagnostic deadline; continuing to next probe", flush=True)
+            if probe_state["backend_pid"] is not None:
+                _capture_pg_wait_state(engine, label, int(probe_state["backend_pid"]))
             break
 
     if worker.is_alive():
         worker.join(timeout=0.5)
 
     return probe_state
+
+
+def _run_connection_probe(
+    connection,
+    *,
+    label: str,
+    sql_category: str,
+    statement: str,
+    params: dict[str, object] | None = None,
+    result_mode: str = "rows",
+) -> dict[str, object]:
+    probe_state: dict[str, object] = {
+        "label": label,
+        "sql_category": sql_category,
+        "backend_pid": None,
+        "connection_in_transaction": connection.in_transaction(),
+        "statement_timeout": None,
+        "lock_timeout": None,
+        "status": "pending",
+        "result": None,
+        "exception": None,
+    }
+
+    start_stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    probe_state["backend_pid"] = connection.exec_driver_sql("select pg_backend_pid()").scalar_one()
+    probe_state["statement_timeout"] = connection.exec_driver_sql("show statement_timeout").scalar_one()
+    probe_state["lock_timeout"] = connection.exec_driver_sql("show lock_timeout").scalar_one()
+
+    print(
+        "START PROBE "
+        f"[{label}] "
+        f"category={sql_category} "
+        f"started_at={start_stamp} "
+        f"backend_pid={probe_state['backend_pid']} "
+        f"connection_in_transaction={probe_state['connection_in_transaction']} "
+        f"statement_timeout={probe_state['statement_timeout']} "
+        f"lock_timeout={probe_state['lock_timeout']}",
+        flush=True,
+    )
+
+    started_at = time.monotonic()
+    try:
+        if result_mode == "scalar":
+            result = connection.execute(text(statement), params or {}).scalar_one()
+        elif result_mode == "row":
+            result = dict(connection.execute(text(statement), params or {}).mappings().one())
+        else:
+            result = [dict(row) for row in connection.execute(text(statement), params or {}).mappings().all()]
+        elapsed = time.monotonic() - started_at
+        probe_state["status"] = "success"
+        probe_state["result"] = result
+        print(
+            f"DONE PROBE [{label}] category={sql_category} elapsed={elapsed:.3f}s status=success result={result!r}",
+            flush=True,
+        )
+    except Exception as exc:
+        elapsed = time.monotonic() - started_at
+        probe_state["exception"] = exc
+        orig = getattr(exc, "orig", None)
+        pgcode = getattr(orig, "pgcode", None)
+        message = str(exc)
+        if pgcode == "57014" or "statement timeout" in message.lower():
+            probe_state["status"] = "timeout"
+        else:
+            probe_state["status"] = "exception"
+        print(
+            f"DONE PROBE [{label}] category={sql_category} elapsed={elapsed:.3f}s status={probe_state['status']} exception={exc.__class__.__name__}: {message}",
+            flush=True,
+        )
+
+    return probe_state
+
+
+def _run_session_probe(
+    *,
+    label: str,
+    sql_category: str,
+    statement: str,
+    params: dict[str, object] | None = None,
+    result_mode: str = "rows",
+) -> dict[str, object]:
+    print(f"BEFORE: session probe acquire {label}", flush=True)
+    session = db.session()
+    print(
+        f"STATE: session probe before acquire {label} -> "
+        f"session_in_transaction={session.in_transaction()} "
+        f"session_in_nested_transaction={session.in_nested_transaction()} "
+        f"session_is_active={session.is_active}",
+        flush=True,
+    )
+    acquired_at = time.monotonic()
+    try:
+        connection = db.session.connection()
+    except Exception as exc:
+        elapsed = time.monotonic() - acquired_at
+        print(
+            f"DONE PROBE [{label}] category={sql_category} elapsed={elapsed:.3f}s status=connection_error "
+            f"exception={exc.__class__.__name__}: {exc}",
+            flush=True,
+        )
+        db.session.rollback()
+        return {
+            "label": label,
+            "sql_category": sql_category,
+            "backend_pid": None,
+            "connection_in_transaction": session.in_transaction(),
+            "statement_timeout": None,
+            "lock_timeout": None,
+            "status": "connection_error",
+            "result": None,
+            "exception": exc,
+        }
+    try:
+        return _run_connection_probe(
+            connection,
+            label=label,
+            sql_category=sql_category,
+            statement=statement,
+            params=params,
+            result_mode=result_mode,
+        )
+    finally:
+        db.session.rollback()
+        print(
+            f"STATE: session probe after rollback {label} -> "
+            f"session_in_transaction={session.in_transaction()} "
+            f"session_in_nested_transaction={session.in_nested_transaction()} "
+            f"session_is_active={session.is_active}",
+            flush=True,
+        )
+
+
+def _collect_function_catalog_diagnostics(
+    name: str,
+    argcount: int,
+    *,
+    detailed: bool = False,
+    include_definition: bool = False,
+) -> dict[str, object]:
+    print(f"BEGIN CATALOG DIAGNOSTICS {name}/{argcount}", flush=True)
+    summary: dict[str, object] = {
+        "name": name,
+        "argcount": argcount,
+        "fixture": {},
+        "fresh": {},
+    }
+
+    fixture_select = _run_session_probe(
+        label=f"{name} fixture select 1",
+        sql_category="connectivity",
+        statement="select 1",
+        result_mode="scalar",
+    )
+    summary["fixture"]["select_1"] = fixture_select
+
+    fixture_metadata = _run_session_probe(
+        label=f"{name} fixture pg_proc lookup",
+        sql_category="pg_proc metadata",
+        statement="""
+            select
+                oid,
+                proname,
+                pronargs
+            from pg_catalog.pg_proc
+            where proname = :name
+              and pronargs = :argcount
+            order by oid
+        """,
+        params={"name": name, "argcount": argcount},
+    )
+    summary["fixture"]["pg_proc_lookup"] = fixture_metadata
+
+    fresh_select = _run_pg_diagnostic_probe(
+        db.engine,
+        label=f"{name} fresh select 1",
+        sql_category="connectivity",
+        statement="select 1",
+        result_mode="scalar",
+    )
+    summary["fresh"]["select_1"] = fresh_select
+
+    fresh_metadata = _run_pg_diagnostic_probe(
+        db.engine,
+        label=f"{name} fresh pg_proc lookup",
+        sql_category="pg_proc metadata",
+        statement="""
+            select
+                oid,
+                proname,
+                pronargs
+            from pg_catalog.pg_proc
+            where proname = :name
+              and pronargs = :argcount
+            order by oid
+        """,
+        params={"name": name, "argcount": argcount},
+    )
+    summary["fresh"]["pg_proc_lookup"] = fresh_metadata
+
+    if detailed:
+        fresh_namespace = _run_pg_diagnostic_probe(
+            db.engine,
+            label=f"{name} fresh namespace lookup",
+            sql_category="pg_namespace",
+            statement="""
+                select
+                    n.oid,
+                    n.nspname
+                from pg_catalog.pg_namespace n
+                where n.oid in (
+                    select p.pronamespace
+                    from pg_catalog.pg_proc p
+                    where p.proname = :name
+                      and p.pronargs = :argcount
+                )
+                order by n.oid
+            """,
+            params={"name": name, "argcount": argcount},
+        )
+        summary["fresh"]["namespace_lookup"] = fresh_namespace
+
+        fresh_join = _run_pg_diagnostic_probe(
+            db.engine,
+            label=f"{name} fresh namespace join",
+            sql_category="pg_proc join pg_namespace",
+            statement="""
+                select
+                    p.oid,
+                    p.proname,
+                    p.pronargs,
+                    n.nspname as schema_name,
+                    p.prokind,
+                    p.prosecdef,
+                    p.provolatile
+                from pg_catalog.pg_proc p
+                join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                where p.proname = :name
+                  and p.pronargs = :argcount
+                order by p.oid
+            """,
+            params={"name": name, "argcount": argcount},
+        )
+        summary["fresh"]["namespace_join"] = fresh_join
+
+        join_rows = (fresh_join.get("result") or []) if isinstance(fresh_join, dict) else []
+        for row in join_rows:
+            oid = row.get("oid")
+            if oid is None:
+                continue
+            fresh_identity = _run_pg_diagnostic_probe(
+                db.engine,
+                label=f"{name} fresh function identity arguments oid={oid}",
+                sql_category="pg_get_function_identity_arguments",
+                statement="select pg_get_function_identity_arguments(:oid) as identity_arguments",
+                params={"oid": oid},
+                result_mode="row",
+            )
+            summary["fresh"].setdefault("identity_arguments", []).append(fresh_identity)
+
+            fresh_definition = _run_pg_diagnostic_probe(
+                db.engine,
+                label=f"{name} fresh pg_get_functiondef oid={oid}",
+                sql_category="pg_get_functiondef",
+                statement="select pg_get_functiondef(:oid) as definition",
+                params={"oid": oid},
+                result_mode="row",
+            )
+            summary["fresh"].setdefault("function_definition", []).append(fresh_definition)
+    elif include_definition:
+        fresh_oid_rows = (fresh_metadata.get("result") or []) if isinstance(fresh_metadata, dict) else []
+        fresh_oid = fresh_oid_rows[0]["oid"] if fresh_oid_rows else None
+        if fresh_oid is None:
+            print(f"SKIP PROBE [{name} fresh pg_get_functiondef] no oid available", flush=True)
+            summary["fresh"]["function_definition"] = {"status": "skipped", "reason": "no oid from metadata probe"}
+        else:
+            fresh_definition = _run_pg_diagnostic_probe(
+                db.engine,
+                label=f"{name} fresh pg_get_functiondef",
+                sql_category="pg_get_functiondef",
+                statement="select pg_get_functiondef(:oid) as definition",
+                params={"oid": fresh_oid},
+                result_mode="row",
+            )
+            summary["fresh"]["function_definition"] = fresh_definition
+
+    print(f"END CATALOG DIAGNOSTICS {name}/{argcount} -> {summary}", flush=True)
+    return summary
 
 
 def _create_org(owner: User, name: str) -> Organization:
@@ -581,150 +885,84 @@ def _log_probe(label: str, statement, params: dict[str, object] | None = None) -
 
 
 def _dump_function_metadata(name: str, argcount: int) -> None:
-    rows = _log_rows_probe(
-        f"function metadata {name}/{argcount}",
-        """
-        select
-            p.oid::regprocedure::text as signature,
-            p.prosecdef,
-            p.proconfig,
-            pg_get_userbyid(p.proowner) as owner,
-            pg_get_function_identity_arguments(p.oid) as identity_arguments,
-            pg_get_function_arguments(p.oid) as arguments
-        from pg_proc p
-        join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = current_schema()
-          and p.proname = :name
-          and p.pronargs = :argcount
-        order by p.oid
-        """,
-        {"name": name, "argcount": argcount},
+    _collect_function_catalog_diagnostics(
+        name,
+        argcount,
+        detailed=name == "flowtally_current_access_scope",
+        include_definition=False,
     )
-    assert rows
 
 
 def _dump_function_definition(name: str, argcount: int) -> None:
-    rows = _log_rows_probe(
-        f"function definition {name}/{argcount}",
-        """
-        select
-            p.oid::regprocedure::text as signature,
-            p.prosecdef,
-            p.proconfig,
-            pg_get_userbyid(p.proowner) as owner,
-            pg_get_functiondef(p.oid) as definition
-        from pg_proc p
-        join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = current_schema()
-          and p.proname = :name
-          and p.pronargs = :argcount
-        order by p.oid
-        """,
-        {"name": name, "argcount": argcount},
+    _collect_function_catalog_diagnostics(
+        name,
+        argcount,
+        detailed=False,
+        include_definition=True,
     )
-    assert rows
 
 
 def _dump_policy_metadata(table_name: str) -> None:
-    rows = _log_rows_probe(
-        f"policy metadata {table_name}",
-        """
-        select
-            schemaname,
-            tablename,
-            policyname,
-            permissive,
-            roles,
-            cmd,
-            qual,
-            with_check
-        from pg_policies
-        where tablename = :table_name
-        order by policyname
+    print(f"BEGIN POLICY DIAGNOSTICS {table_name}", flush=True)
+    _run_session_probe(
+        label=f"policy metadata {table_name} fixture",
+        sql_category="pg_policies",
+        statement="""
+            select
+                schemaname,
+                tablename,
+                policyname,
+                permissive,
+                roles,
+                cmd,
+                qual,
+                with_check
+            from pg_policies
+            where tablename = :table_name
+            order by policyname
         """,
-        {"table_name": table_name},
+        params={"table_name": table_name},
     )
-    assert rows
+    _run_pg_diagnostic_probe(
+        db.engine,
+        label=f"policy metadata {table_name} fresh",
+        sql_category="pg_policies",
+        statement="""
+            select
+                schemaname,
+                tablename,
+                policyname,
+                permissive,
+                roles,
+                cmd,
+                qual,
+                with_check
+            from pg_policies
+            where tablename = :table_name
+            order by policyname
+        """,
+        params={"table_name": table_name},
+    )
+    print(f"END POLICY DIAGNOSTICS {table_name}", flush=True)
 
 
 def _dump_pg_definitions() -> None:
-    engine = db.engine
-    _run_pg_diagnostic_probe(
-        engine,
-        label="basic connectivity",
-        sql_category="connectivity",
-        statement="""
-            select
-                version() as version,
-                current_database() as current_database,
-                current_user as current_user,
-                session_user as session_user,
-                pg_backend_pid() as backend_pid
-        """,
-        result_mode="row",
-    )
-
-    function_specs = [
+    for name, argcount in [
         ("flowtally_current_access_scope", 0),
         ("flowtally_current_organization_id", 0),
         ("flowtally_current_support_grant_id", 0),
         ("flowtally_support_has_access", 1),
         ("flowtally_has_org_access", 1),
-    ]
-    for name, argcount in function_specs:
-        metadata = _run_pg_diagnostic_probe(
-            engine,
-            label=f"pg_proc metadata {name}/{argcount}",
-            sql_category="pg_proc metadata",
-            statement="""
-                select
-                    p.oid as oid,
-                    n.nspname as schema_name,
-                    p.proname as function_name,
-                    pg_get_function_identity_arguments(p.oid) as identity_arguments,
-                    p.prokind as prokind,
-                    p.prosecdef as prosecdef,
-                    p.provolatile as provolatile
-                from pg_proc p
-                join pg_namespace n on n.oid = p.pronamespace
-                where n.nspname = current_schema()
-                  and p.proname = :name
-                  and p.pronargs = :argcount
-                order by p.oid
-            """,
-            params={"name": name, "argcount": argcount},
+    ]:
+        _collect_function_catalog_diagnostics(
+            name,
+            argcount,
+            detailed=name == "flowtally_current_access_scope",
+            include_definition=True,
         )
-        for row in metadata["result"] or []:
-            _run_pg_diagnostic_probe(
-                engine,
-                label=f"pg_get_functiondef {name}/{argcount} oid={row['oid']}",
-                sql_category="pg_get_functiondef",
-                statement="select pg_get_functiondef(:oid) as definition",
-                params={"oid": row["oid"]},
-                result_mode="row",
-            )
 
     for table_name in ["suppliers", "support_access_grants"]:
-        _run_pg_diagnostic_probe(
-            engine,
-            label=f"policy metadata {table_name}",
-            sql_category="pg_policies",
-            statement="""
-                select
-                    schemaname,
-                    tablename,
-                    policyname,
-                    permissive,
-                    roles,
-                    cmd,
-                    qual,
-                    with_check
-                from pg_policies
-                where tablename = :table_name
-                order by policyname
-            """,
-            params={"table_name": table_name},
-        )
+        _dump_policy_metadata(table_name)
 
 
 @pytest.fixture()

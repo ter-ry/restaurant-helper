@@ -97,6 +97,38 @@ jobs:
           timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select pid, locktype, relation::regclass::text as relation_name, mode, granted from pg_locks where relation in ('pg_proc'::regclass, 'pg_policy'::regclass, 'pg_class'::regclass, 'support_access_grants'::regclass, 'suppliers'::regclass) order by pid, relation_name, mode;" -h localhost -p 5432 -U flowtally -d flowtally_test
           echo "AFTER: pg_locks"
 
+      - name: PostgreSQL direct psql catalog controls
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          set +e
+          run_probe() {
+            local label="$1"
+            local sql="$2"
+            local started_at
+            started_at=$(date +%s)
+            echo "START: ${label}"
+            timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '15s'; set lock_timeout = '3s'; show statement_timeout; show lock_timeout; ${sql}" -h localhost -p 5432 -U flowtally -d flowtally_test
+            local status=$?
+            local finished_at
+            finished_at=$(date +%s)
+            local elapsed=$((finished_at - started_at))
+            if [ "$status" -eq 0 ]; then
+              echo "DONE: ${label} status=success elapsed=${elapsed}s"
+            elif [ "$status" -eq 124 ]; then
+              echo "DONE: ${label} status=timeout elapsed=${elapsed}s"
+            else
+              echo "DONE: ${label} status=error exit_code=${status} elapsed=${elapsed}s"
+            fi
+            return 0
+          }
+          run_probe "control select 1" "select 1;"
+          run_probe "control pg_proc count" "select count(*) from pg_catalog.pg_proc;"
+          run_probe "control flowtally_current_access_scope pg_proc lookup" "select oid, proname, pronargs from pg_catalog.pg_proc where proname = 'flowtally_current_access_scope';"
+          run_probe "control flowtally_current_access_scope namespace lookup" "select n.oid, n.nspname from pg_catalog.pg_namespace n where n.oid in (select pronamespace from pg_catalog.pg_proc where proname = 'flowtally_current_access_scope');"
+          set -e
+
       - name: PostgreSQL RLS function metadata - current access scope
         timeout-minutes: 5
         run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_metadata_current_access_scope -vv -x -s --durations=20
