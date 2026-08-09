@@ -31,8 +31,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      FLOWTALLY_TEST_POSTGRES_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
-      DATABASE_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
+      FLOWTALLY_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
+      FLOWTALLY_TEST_POSTGRES_URL: postgresql+psycopg2://flowtally_runtime:flowtally_runtime@localhost:5432/flowtally_test
+      DATABASE_URL: postgresql+psycopg2://flowtally_runtime:flowtally_runtime@localhost:5432/flowtally_test
       PYTHONUNBUFFERED: "1"
     steps:
       - name: Checkout
@@ -55,6 +56,29 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y postgresql-client
           fi
+
+      - name: Configure PostgreSQL runtime role
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "
+            DO \$\$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flowtally_runtime') THEN
+                CREATE ROLE flowtally_runtime LOGIN PASSWORD 'flowtally_runtime' NOSUPERUSER NOBYPASSRLS NOINHERIT;
+              END IF;
+            END
+            \$\$;
+            ALTER ROLE flowtally_runtime NOSUPERUSER NOBYPASSRLS NOINHERIT;
+            GRANT CONNECT ON DATABASE flowtally_test TO flowtally_runtime;
+            GRANT USAGE ON SCHEMA public TO flowtally_runtime;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO flowtally_runtime;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO flowtally_runtime;
+            GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO flowtally_runtime;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO flowtally_runtime;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO flowtally_runtime;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO flowtally_runtime;
+          " -h localhost -p 5432 -U flowtally -d flowtally_test
 
       - name: Verify clean diff
         run: git diff --check
@@ -96,6 +120,15 @@ jobs:
           echo "BEFORE: pg_locks"
           timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select pid, locktype, relation::regclass::text as relation_name, mode, granted from pg_locks where relation in ('pg_proc'::regclass, 'pg_policy'::regclass, 'pg_class'::regclass, 'support_access_grants'::regclass, 'suppliers'::regclass) order by pid, relation_name, mode;" -h localhost -p 5432 -U flowtally -d flowtally_test
           echo "AFTER: pg_locks"
+
+      - name: PostgreSQL role separation evidence
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          echo "BEFORE: role flags"
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select rolname, rolsuper, rolbypassrls from pg_roles where rolname in ('flowtally', 'flowtally_runtime') order by rolname;" -h localhost -p 5432 -U flowtally -d flowtally_test
+          echo "AFTER: role flags"
 
       - name: PostgreSQL direct psql catalog controls
         timeout-minutes: 5
