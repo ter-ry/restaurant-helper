@@ -1799,10 +1799,11 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
         assert Supplier.query.filter_by(id=supplier.id).first().name == "Changed"
 
         _set_rls_context(access_scope="customer", organization_id=org_b_id)
-        with pytest.raises(Exception):
-            db.session.execute(text("update suppliers set name = :name where id = :id"), {"name": "Blocked", "id": supplier.id})
-            db.session.commit()
-        db.session.rollback()
+        result = db.session.execute(text("update suppliers set name = :name where id = :id"), {"name": "Blocked", "id": supplier.id})
+        db.session.commit()
+        assert result.rowcount == 0
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        assert Supplier.query.filter_by(id=supplier.id).first().name == "Changed"
 
 
 def test_support_requires_active_grant(postgres_app):
