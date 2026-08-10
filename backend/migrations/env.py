@@ -1,49 +1,40 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
-from pathlib import Path
 import os
 
 from alembic import context
-from flask import current_app, has_app_context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
-from backend.app import create_app
 from backend.extensions import db
 
 config = context.config
 
-if config.config_file_name is not None and Path(config.config_file_name).exists():
+if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-if has_app_context():
-    app = current_app._get_current_object()
-else:
-    migration_database_url = (
-        os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
-        or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
-        or os.environ.get("DATABASE_URL")
-        or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
-        or config.get_main_option("sqlalchemy.url")
-        or ""
-    ).strip()
-    app = create_app({"SQLALCHEMY_DATABASE_URI": migration_database_url}) if migration_database_url else create_app()
 target_metadata = db.metadata
 
 
-def _active_app():
-    if has_app_context():
-        return current_app._get_current_object()
-    return app
+def _migration_database_url() -> str:
+    return (
+        os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
+        or os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
+        or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+        or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
+        or os.environ.get("DATABASE_URL")
+        or config.get_main_option("sqlalchemy.url")
+        or ""
+    ).strip()
 
 
 def _version_table_schema() -> str | None:
-    url = str(_active_app().config["SQLALCHEMY_DATABASE_URI"]).lower()
+    url = _migration_database_url().lower()
     return "public" if url.startswith("postgres") else None
 
 
 def run_migrations_offline() -> None:
-    url = _active_app().config["SQLALCHEMY_DATABASE_URI"]
+    url = _migration_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -59,7 +50,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = _active_app().config["SQLALCHEMY_DATABASE_URI"]
+    configuration["sqlalchemy.url"] = _migration_database_url()
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -68,6 +59,16 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         if connection.dialect.name == "postgresql":
+            migration_identity = connection.execute(
+                text(
+                    """
+                    select
+                        current_user,
+                        session_user
+                    """
+                )
+            ).one()
+            config.attributes["flowtally_migration_identity"] = tuple(migration_identity)
             connection.exec_driver_sql(
                 """
                 CREATE TABLE IF NOT EXISTS public.alembic_version (

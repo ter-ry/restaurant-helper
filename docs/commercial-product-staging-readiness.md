@@ -129,18 +129,7 @@ Use `scripts/provision_postgres_roles_staging.sql` for the real staging database
 
 It is separate from the CI/test-only script and avoids hardcoded test passwords or `flowtally_test`.
 
-It accepts the actual database name and passwords through `psql -v` variables.
-
-Recommended command pattern:
-
-```bash
-psql -X -v ON_ERROR_STOP=1 \
-  -v database_name='<staging database name>' \
-  -v migrator_password='<strong random migrator password>' \
-  -v runtime_password='<strong random runtime password>' \
-  -f scripts/provision_postgres_roles_staging.sql \
-  -h <render-postgres-host> -p <port> -U <render-admin-user> -d <staging database name>
-```
+It accepts the actual database name and passwords through `psql -v` variables, and the password values are interpolated safely by `psql` outside any quoted PL/pgSQL block.
 
 Do not echo the passwords back to the terminal or commit them to the repo.
 
@@ -171,6 +160,91 @@ Expected result:
 - both roles are `rolbypassrls = false`
 - `suppliers` is not owned by `flowtally_runtime`
 
+## Windows PowerShell staging procedure
+
+Use the following PowerShell sequence when you are ready to bootstrap the real Render staging database.
+
+### 1. Generate strong temporary passwords
+
+```powershell
+function New-StrongPassword {
+    param([int]$Length = 32)
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
+    $bytes = New-Object byte[] $Length
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
+}
+
+$migratorPassword = New-StrongPassword
+$runtimePassword = New-StrongPassword
+```
+
+### 2. Fill in the Render PostgreSQL admin connection details
+
+Use the Render dashboard to copy the admin connection for the staging database. Keep the values local only.
+
+```powershell
+$databaseName = '<staging database name>'
+$dbHost = '<render-postgres-host>'
+$dbPort = '<port>'
+$dbAdminUser = '<render-admin-user>'
+$dbAdminPassword = '<render-admin-password>'
+```
+
+### 3. Run the provisioning script
+
+```powershell
+$env:PGPASSWORD = $dbAdminPassword
+psql -X -v ON_ERROR_STOP=1 `
+  -v database_name=$databaseName `
+  -v migrator_password=$migratorPassword `
+  -v runtime_password=$runtimePassword `
+  -f scripts/provision_postgres_roles_staging.sql `
+  -h $dbHost `
+  -p $dbPort `
+  -U $dbAdminUser `
+  -d $databaseName
+Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+```
+
+### 4. Build the migrator and runtime URLs
+
+Use the passwords you generated in step 1.
+
+```powershell
+$migratorUrl = "postgresql+psycopg2://flowtally_migrator:$migratorPassword@$dbHost:$dbPort/$databaseName"
+$runtimeUrl = "postgresql+psycopg2://flowtally_runtime:$runtimePassword@$dbHost:$dbPort/$databaseName"
+```
+
+### 5. Save the URLs in Render
+
+Set these on the backend service:
+
+- `FLOWTALLY_MIGRATION_DATABASE_URL = $migratorUrl`
+- `DATABASE_URL = $runtimeUrl`
+- `FLOWTALLY_RATE_LIMIT_STORAGE_URI = <Render Key Value internal URL>`
+
+Leave these disabled for this staging pass:
+
+- `GOOGLE_OIDC_ENABLED = false`
+- `SQUARE_ENABLED = false`
+
+### 6. Run the migration command
+
+`backend/migrations/env.py` now explicitly prefers `FLOWTALLY_MIGRATION_DATABASE_URL` during migration execution, so this command is safe for staging migrations:
+
+```powershell
+flask --app backend.wsgi:app db upgrade
+```
+
+To confirm the connection split after the migration:
+
+```powershell
+flask --app backend.wsgi:app db current
+```
+
+The migration path should resolve as `flowtally_migrator`, while the running backend uses `flowtally_runtime`.
+
 ## Migration procedure
 
 Alembic already uses `FLOWTALLY_MIGRATION_DATABASE_URL` when it is set, while the running Flask application uses `DATABASE_URL`.
@@ -178,7 +252,7 @@ Alembic already uses `FLOWTALLY_MIGRATION_DATABASE_URL` when it is set, while th
 The safe staging order is:
 
 1. Use the bootstrap/admin connection once to create roles and apply ownership/grants.
-2. Run migrations with `flowtally_migrator`.
+2. Run migrations with `flowtally_migrator` using `flask --app backend.wsgi:app db upgrade`.
 3. Start the backend with `flowtally_runtime`.
 4. Confirm `/api/health`.
 
@@ -269,5 +343,5 @@ The remaining work before a first private staging deployment is manual and exter
 1. Provision the staging PostgreSQL roles with `scripts/provision_postgres_roles_staging.sql`.
 2. Set `FLOWTALLY_MIGRATION_DATABASE_URL` and `DATABASE_URL` in Render.
 3. Set `VITE_FLOWTALLY_API_BASE_URL=https://api-staging.flowtally.ca` on the frontend static site.
-4. Run the migration head with `flowtally_migrator`.
+4. Run `flask --app backend.wsgi:app db upgrade`.
 5. Restart the backend and verify `/api/health`.

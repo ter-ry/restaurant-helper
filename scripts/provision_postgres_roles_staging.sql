@@ -1,36 +1,42 @@
 \set ON_ERROR_STOP on
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flowtally_migrator') THEN
-        EXECUTE format(
-            'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
-            'flowtally_migrator',
-            :'migrator_password'
-        );
-    ELSE
-        EXECUTE format(
-            'ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
-            'flowtally_migrator',
-            :'migrator_password'
-        );
-    END IF;
+SELECT format(
+    'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
+    'flowtally_migrator',
+    :'migrator_password'
+)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'flowtally_migrator'
+)
+\gexec
 
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flowtally_runtime') THEN
-        EXECUTE format(
-            'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
-            'flowtally_runtime',
-            :'runtime_password'
-        );
-    ELSE
-        EXECUTE format(
-            'ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
-            'flowtally_runtime',
-            :'runtime_password'
-        );
-    END IF;
-END
-$$;
+SELECT format(
+    'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
+    'flowtally_migrator',
+    :'migrator_password'
+)
+\gexec
+
+SELECT format(
+    'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
+    'flowtally_runtime',
+    :'runtime_password'
+)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'flowtally_runtime'
+)
+\gexec
+
+SELECT format(
+    'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS NOINHERIT',
+    'flowtally_runtime',
+    :'runtime_password'
+)
+\gexec
 
 REVOKE ALL PRIVILEGES ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO flowtally_migrator, flowtally_runtime;
