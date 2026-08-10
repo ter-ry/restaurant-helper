@@ -2160,8 +2160,22 @@ def test_setup_scope_can_access_platform_data_across_organizations(postgres_app)
             assert context_snapshot[5] in (None, ""), f"setup scope runtime context: {tuple(context_snapshot)!r}"
             assert connection.execute(text("select count(*) from organizations where id = :org_id"), {"org_id": org_a_id}).scalar_one() == 1
             assert connection.execute(text("select count(*) from organizations where id = :org_id"), {"org_id": org_b_id}).scalar_one() == 1
-            assert connection.execute(text("select count(*) from suppliers")).scalar_one() == 2
-            assert connection.execute(text("select count(*) from data_import_jobs")).scalar_one() == 2
+            assert (
+                connection.execute(text("select count(*) from suppliers where organization_id = :org_id"), {"org_id": org_a_id}).scalar_one()
+                == 1
+            ), f"setup scope supplier count mismatch for org_a: expected=1, org_a_id={org_a_id}, org_b_id={org_b_id}"
+            assert (
+                connection.execute(text("select count(*) from suppliers where organization_id = :org_id"), {"org_id": org_b_id}).scalar_one()
+                == 1
+            ), f"setup scope supplier count mismatch for org_b: expected=1, org_a_id={org_a_id}, org_b_id={org_b_id}"
+            assert (
+                connection.execute(text("select count(*) from data_import_jobs where organization_id = :org_id"), {"org_id": org_a_id}).scalar_one()
+                == 1
+            ), f"setup scope import count mismatch for org_a: expected=1, org_a_id={org_a_id}, org_b_id={org_b_id}"
+            assert (
+                connection.execute(text("select count(*) from data_import_jobs where organization_id = :org_id"), {"org_id": org_b_id}).scalar_one()
+                == 1
+            ), f"setup scope import count mismatch for org_b: expected=1, org_a_id={org_a_id}, org_b_id={org_b_id}"
             assert connection.execute(text("select count(*) from organizations")).scalar_one() >= 2
             owner_membership_count = connection.execute(
                 text("select count(*) from organization_memberships where user_id = :owner_id"),
