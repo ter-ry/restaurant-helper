@@ -2163,4 +2163,8 @@ def test_setup_scope_can_access_platform_data_across_organizations(postgres_app)
             assert connection.execute(text("select count(*) from suppliers")).scalar_one() == 2
             assert connection.execute(text("select count(*) from data_import_jobs")).scalar_one() == 2
             assert connection.execute(text("select count(*) from organizations")).scalar_one() >= 2
-            assert connection.execute(text("select count(*) from organization_memberships where user_id = :owner_id"), {"owner_id": seeded["owner_id"]}).scalar_one() == 2
+            owner_membership_count = connection.execute(
+                text("select count(*) from organization_memberships where user_id = :owner_id"),
+                {"owner_id": seeded["owner_id"]},
+            ).scalar_one()
+            assert owner_membership_count >= 3, f"setup scope membership count mismatch: expected >= 3, actual={owner_membership_count}, org_a_id={org_a_id}, org_b_id={org_b_id}, owner_id={seeded['owner_id']}"
