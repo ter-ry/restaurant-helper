@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from backend.extensions import db
 from backend.models import User
 from backend.seed import (
@@ -8,6 +10,7 @@ from backend.seed import (
     LOCAL_OWNER_EMAIL,
     LOCAL_OWNER_PASSWORD,
 )
+from backend import tenant_context
 
 
 def login(client, email: str, password: str):
@@ -74,3 +77,35 @@ def test_login_requires_csrf(client):
     response = client.post("/api/auth/login", json={"email": LOCAL_OWNER_EMAIL, "password": LOCAL_OWNER_PASSWORD})
     assert response.status_code == 400
     assert response.get_json()["error"]
+
+
+def test_disabled_support_access_does_not_set_tenant_scope(monkeypatch):
+    captured: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
+    monkeypatch.setattr(
+        tenant_context,
+        "_set_local_setting",
+        lambda name, value: captured.append((name, value or "")),
+    )
+    monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="pilot_api.dashboard"))
+    monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
+    monkeypatch.setattr(
+        tenant_context,
+        "get_current_organization_bundle",
+        lambda: (SimpleNamespace(id=42), SimpleNamespace(id=1), []),
+    )
+    monkeypatch.setattr(
+        tenant_context,
+        "get_platform_role",
+        lambda user_id: SimpleNamespace(is_active=True, role="support"),
+    )
+    monkeypatch.setattr(tenant_context, "support_grant_for_user", lambda *_args, **_kwargs: SimpleNamespace(id=99))
+
+    tenant_context.apply_request_tenant_context()
+
+    assert captured == [
+        ("flowtally.access_scope", "public"),
+        ("flowtally.organization_id", ""),
+        ("flowtally.support_grant_id", ""),
+    ]
