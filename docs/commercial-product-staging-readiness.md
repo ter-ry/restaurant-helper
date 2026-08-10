@@ -1,237 +1,223 @@
 # Flowtally commercial product staging readiness
 
-Date: 2026-08-07
+Date: 2026-08-10
 Branch: `codex/complete-commercial-product-foundation`
-Current repo head at time of writing: `118394f1daf61aeea7e8abfe1ac182cf0f0657f6`
+Current repository head at the time of this handoff: `f4e454ebcf8d8f0e7dd60eebc7166101d9887ef2`
 
-This document is the repository-side staging runbook for the commercial Flowtally app. It is intentionally narrow: it describes what the repository can already support, what must be configured externally, and what still needs manual validation before any real staging launch.
+This is the repository-side staging runbook for the commercial Flowtally app. It assumes the external private-staging resources already exist and that the remaining work is manual owner/bootstrap work, not more product development.
 
-It does not claim that staging has been deployed or manually validated.
+It does not claim that staging has been deployed or live-validated from this workspace.
 
-## Current validation snapshot
+## Current staging posture
 
-These checks were run locally in this workspace:
+The following external resources already exist:
 
-- `python -m pytest backend/tests -q -rs` → `68 passed, 9 skipped`
-- `python -m unittest discover -s tests` → `15 passed`
-- `npm test` → `5 passed`
-- `npm run typecheck` → passed
-- `npm run lint` → passed with warnings only
-- `npm run build` → passed
-- `npm run e2e` → `8 passed` and exited normally
-- `git diff --check` → clean
+- Render managed PostgreSQL staging database
+- Render Key Value / Redis-compatible rate-limit service
+- Render backend service
+- Render frontend static site
+- `https://staging.flowtally.ca`
+- `https://api-staging.flowtally.ca`
+- Google staging OAuth project/client
+- Google callback: `https://api-staging.flowtally.ca/api/auth/google/callback`
+- Square Sandbox application
+- Square OAuth callback: `https://api-staging.flowtally.ca/api/integrations/square/callback`
+- separate Square Sandbox test seller
+- `SECRET_KEY` stored in Render
+- `INTEGRATION_ENCRYPTION_KEY` stored in Render
+- Google client ID/secret stored in Render
+- Square Sandbox application ID/secret stored in Render
 
-The nine backend skips are the PostgreSQL-service-gated tests in:
+Current intentional state:
 
-- `backend/tests/test_migrations_postgres.py`
-- `backend/tests/test_postgres_rls.py`
+- `GOOGLE_OIDC_ENABLED=false`
+- `SQUARE_ENABLED=false`
+- Square webhook not created yet
+- `SQUARE_WEBHOOK_SIGNATURE_KEY` not created yet
+- support access remains disabled/deferred
 
-They are expected to skip in this local workspace because no temporary PostgreSQL service is available here. The repository and CI configuration now include the service-backed execution path.
+## Repository-side staging configuration
 
-## CI assessment
+### Backend service
 
-The repository CI workflow in `.github/workflows/ci.yml` is already wired for the commercial foundation:
+`render.pilot-staging.yaml` now deploys only the authenticated commercial backend:
 
-- Backend job
-  - starts `postgres:16` as a service
-  - waits on `pg_isready -U flowtally -d flowtally_test`
-  - sets `FLOWTALLY_TEST_POSTGRES_URL=postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test`
-  - runs `git diff --check`
-  - runs the fresh-database migration test
-  - runs `python -m pytest backend/tests`
-  - runs `python -m unittest discover -s tests`
-- Frontend job
-  - runs `npm run lint`
-  - runs `npm run typecheck`
-  - runs `npm test`
-  - installs Playwright Chromium
-  - runs `npm run e2e`
-  - runs `npm run build`
+- start command: `gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
+- health check: `/api/health`
+- no legacy root app in the staging blueprint
 
-I have not executed GitHub Actions from this workstation, so CI remains repository-configured but not externally observed from this session.
+The backend staging environment is documented in `backend/.env.staging.example` and mirrors the actual split-origin staging layout:
 
-## Recommended staging topology
-
-The repository supports two safe deployment patterns:
-
-1. Same-origin staging, where the frontend and backend share one origin and `/api` stays relative.
-2. Split-origin staging, where the frontend is `https://staging.flowtally.ca` and the backend is `https://api-staging.flowtally.ca`, with the frontend configured through `VITE_FLOWTALLY_API_BASE_URL`.
-
-For the least operational complexity, same-origin is simpler. For a more production-like split, the shared API base helper in `src/lib/apiBase.ts` supports separate frontend and API hosts.
-
-## Exact staging deployment checklist
-
-Before declaring a staging environment ready, verify each item:
-
-- [ ] Create the frontend and backend services in Render or the chosen host.
-- [ ] Attach a managed PostgreSQL instance.
-- [ ] Configure separate runtime and migration database roles.
-- [ ] Set the backend runtime environment variables listed below.
-- [ ] Set the frontend API base variable if using split-origin hosting.
-- [ ] Add Google OAuth redirect configuration for the backend callback route.
-- [ ] Add Square Sandbox OAuth and webhook configuration for the backend callback routes.
-- [ ] Configure allowed origins and secure cookies.
-- [ ] Configure integration encryption and rate-limit storage.
-- [ ] Run the migration deployment procedure below against the staging database.
-- [ ] Boot the backend and confirm `/api/health` responds.
-- [ ] Confirm the public site loads and the authenticated route stays protected.
-- [ ] Perform the manual validation plan below with two isolated tenant fixtures.
-
-## Environment-variable checklist
-
-Group the variables by purpose so staging setup is easier to audit.
-
-### Core backend and runtime
-
-| Variable | Required for staging | Purpose |
-| --- | --- | --- |
-| `SECRET_KEY` | Yes | Flask session and app signing secret. Must be strong and unique to staging. |
-| `DATABASE_URL` | Yes | Runtime database connection string. Use the runtime role here. |
-| `FLOWTALLY_ALLOWED_ORIGINS` | Yes | Explicit allowed browser origins, comma-separated. |
-| `SESSION_COOKIE_SECURE` | Yes | Must be `true` in staging. |
-| `SESSION_COOKIE_SAMESITE` | Recommended | Keep `Lax` unless a later cookie flow requires stricter handling. |
-| `FLOWTALLY_RATE_LIMIT_STORAGE_URI` | Yes | Shared rate-limit backend. |
-| `FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL` | Yes | Set to `false` in staging. |
-
-### Google OIDC
-
-| Variable | Required for staging | Purpose |
-| --- | --- | --- |
-| `GOOGLE_CLIENT_ID` | Yes if Google login is enabled | Google OAuth client identifier. |
-| `GOOGLE_CLIENT_SECRET` | Yes if Google login is enabled | Google OAuth client secret. |
-| `GOOGLE_REDIRECT_URI` | Yes if Google login is enabled | Must point to the backend callback route. |
-
-### Square Sandbox
-
-| Variable | Required for staging | Purpose |
-| --- | --- | --- |
-| `SQUARE_APPLICATION_ID` | Yes if Square is enabled | Square Sandbox client identifier. |
-| `SQUARE_APPLICATION_SECRET` | Yes if Square is enabled | Square Sandbox client secret. |
-| `SQUARE_REDIRECT_URI` | Yes if Square is enabled | Must point to the backend callback route. |
-| `SQUARE_WEBHOOK_SIGNATURE_KEY` | Yes if Square is enabled | Used to verify webhook signatures. |
-| `INTEGRATION_ENCRYPTION_KEY` | Yes if Square is enabled | Fernet key used to encrypt integration tokens. |
-
-### Frontend
-
-| Variable | Required for staging | Purpose |
-| --- | --- | --- |
-| `VITE_FLOWTALLY_API_BASE_URL` | Only for split-origin staging | Points the browser at `https://api-staging.flowtally.ca`. |
-
-### Practical notes
-
-- The backend config rejects weak or missing secrets in staging and production.
-- The backend config rejects SQLite in non-local environments unless the explicit override is set.
-- The backend config requires `FLOWTALLY_ALLOWED_ORIGINS` and `SESSION_COOKIE_SECURE=true`.
-- The repository tests already cover the configuration guardrails in `backend/tests/test_config.py`.
-
-## Database deployment procedure
-
-Use a deliberate order so schema deployment, service startup, and validation stay safe.
-
-1. Provision the managed PostgreSQL database.
-2. Create separate roles:
-   - migration role with schema-change privileges
-   - runtime role without `BYPASSRLS`
-3. Set the runtime `DATABASE_URL` on the backend service.
-4. Run the migration job or one-off worker using the migration role.
-5. Apply migrations to the final head.
-6. Confirm the database head matches the repository head.
-7. Run the PostgreSQL-backed validation suite against the staging database.
-8. Start the backend with the runtime role and verify `/api/health`.
-9. Confirm the application can boot without falling back to SQLite.
-
-Recommended verification commands during deployment:
-
-- `python -m pytest backend/tests/test_seed.py::test_migrations_upgrade_and_seed_on_fresh_database`
-- `python -m pytest backend/tests/test_migrations_postgres.py`
-- `python -m pytest backend/tests/test_postgres_rls.py`
-
-Do not reuse the runtime role for migrations. Do not grant the runtime role `BYPASSRLS`.
-
-## Render backend configuration
-
-Use the authenticated backend entrypoint only:
-
-- Start command: `gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
-- Health check: `/api/health`
-- Build: `pip install -r backend/requirements.txt`
-
-Do not point staging at the legacy root app.
-
-## Render frontend configuration
-
-If staging is split-origin:
-
-- Serve the Vite production build from `staging.flowtally.ca`
-- Set `VITE_FLOWTALLY_API_BASE_URL=https://api-staging.flowtally.ca`
-
-If staging is same-origin:
-
-- Keep `VITE_FLOWTALLY_API_BASE_URL` unset
-- Serve frontend and backend behind one origin so relative `/api` requests keep working
-
-The repository already uses route-level code splitting, so no additional staging-only rewrite is required.
-
-## Google OAuth configuration
-
-Required environment variables:
-
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URI`
-
-Use the backend callback route as the redirect URI:
-
-- `https://api-staging.flowtally.ca/api/auth/google/callback`
-
-The browser-facing completion page remains:
-
-- `https://staging.flowtally.ca/auth/google/complete`
-
-That page is reached after the backend completes the OIDC exchange and redirects back to the frontend.
-
-## Square Sandbox configuration
-
-Required environment variables:
-
-- `SQUARE_APPLICATION_ID`
-- `SQUARE_APPLICATION_SECRET`
-- `SQUARE_REDIRECT_URI`
-- `SQUARE_WEBHOOK_SIGNATURE_KEY`
-- `INTEGRATION_ENCRYPTION_KEY`
-
-Use the backend callback and webhook routes:
-
-- OAuth callback: `https://api-staging.flowtally.ca/api/integrations/square/callback`
-- Webhook endpoint: `https://api-staging.flowtally.ca/api/integrations/square/webhooks`
-
-Staging must use Square Sandbox credentials only. The repository rejects production Square credentials when staging mode is enabled.
-
-## CORS and cookies
-
-Set:
-
+- `FLOWTALLY_ENV=staging`
+- `DATABASE_URL=<flowtally_runtime connection URL>`
+- `FLOWTALLY_MIGRATION_DATABASE_URL=<flowtally_migrator connection URL>`
+- `SECRET_KEY=<strong-random-staging-secret>`
 - `FLOWTALLY_ALLOWED_ORIGINS=https://staging.flowtally.ca`
 - `SESSION_COOKIE_SECURE=true`
 - `SESSION_COOKIE_SAMESITE=Lax`
-- `SESSION_COOKIE_HTTPONLY=true` is already enforced by the backend defaults
+- `SESSION_COOKIE_NAME=flowtally_pilot_session`
+- `FLOWTALLY_RATE_LIMIT_STORAGE_URI=<Render Key Value internal URL>`
+- `FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL=false`
+- `MAX_CONTENT_LENGTH=15728640`
+- `GOOGLE_OIDC_ENABLED=false`
+- `GOOGLE_REDIRECT_URI=https://api-staging.flowtally.ca/api/auth/google/callback`
+- `SQUARE_ENABLED=false`
+- `SQUARE_ENVIRONMENT=sandbox`
+- `SQUARE_REDIRECT_URI=https://api-staging.flowtally.ca/api/integrations/square/callback`
+- `SQUARE_WEBHOOK_SIGNATURE_KEY=<not-created-yet>`
+- `INTEGRATION_ENCRYPTION_KEY=<strong base64 Fernet key>`
 
-If the frontend and backend are split across origins, the backend origin must be allowed explicitly and the browser must send credentials.
+### Frontend static site
+
+Split-origin staging uses:
+
+- frontend: `https://staging.flowtally.ca`
+- API base: `https://api-staging.flowtally.ca`
+
+The frontend build reads `VITE_FLOWTALLY_API_BASE_URL`, and `src/lib/apiBase.ts` falls back to the current origin only when that variable is unset. For staging, set:
+
+- `VITE_FLOWTALLY_API_BASE_URL=https://api-staging.flowtally.ca`
+
+### Rate limiting
+
+Staging uses the Render Key Value / Redis-compatible URL through `FLOWTALLY_RATE_LIMIT_STORAGE_URI`.
+
+The backend dependency list now includes the Redis client needed for a `redis://` or `rediss://` storage URL.
+
+## PostgreSQL role separation
+
+The staging database must keep three privilege layers distinct:
+
+### Bootstrap/admin
+
+The initial Render database owner/admin is used only for:
+
+- creating the application roles
+- transferring ownership where required
+- bootstrap-level grants
+
+It must not become the application runtime identity.
+
+### `flowtally_migrator`
+
+Requirements:
+
+- `LOGIN`
+- `NOSUPERUSER`
+- `NOBYPASSRLS`
+- `NOINHERIT`
+- sufficient DDL privileges for Alembic and RLS bootstrap
+
+This role runs migrations and owns migration-created schema objects.
+
+### `flowtally_runtime`
+
+Requirements:
+
+- `LOGIN`
+- `NOSUPERUSER`
+- `NOBYPASSRLS`
+- `NOINHERIT`
+- no tenant-table ownership
+- only runtime privileges required by the application
+
+This role is the normal Flask application identity and the role used by PostgreSQL RLS/security acceptance tests.
+
+## Staging-safe provisioning script
+
+Use `scripts/provision_postgres_roles_staging.sql` for the real staging database.
+
+It is separate from the CI/test-only script and avoids hardcoded test passwords or `flowtally_test`.
+
+It accepts the actual database name and passwords through `psql -v` variables.
+
+Recommended command pattern:
+
+```bash
+psql -X -v ON_ERROR_STOP=1 \
+  -v database_name='<staging database name>' \
+  -v migrator_password='<strong random migrator password>' \
+  -v runtime_password='<strong random runtime password>' \
+  -f scripts/provision_postgres_roles_staging.sql \
+  -h <render-postgres-host> -p <port> -U <render-admin-user> -d <staging database name>
+```
+
+Do not echo the passwords back to the terminal or commit them to the repo.
+
+## Verification queries
+
+After running the staging provisioning script, verify the roles and ownership with:
+
+```sql
+select rolname, rolsuper, rolbypassrls, rolcanlogin
+from pg_roles
+where rolname in ('flowtally_migrator', 'flowtally_runtime')
+order by rolname;
+
+select
+    c.relname,
+    pg_get_userbyid(c.relowner) as table_owner,
+    c.relrowsecurity,
+    c.relforcerowsecurity
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname = 'suppliers';
+```
+
+Expected result:
+
+- both roles are `rolsuper = false`
+- both roles are `rolbypassrls = false`
+- `suppliers` is not owned by `flowtally_runtime`
+
+## Migration procedure
+
+Alembic already uses `FLOWTALLY_MIGRATION_DATABASE_URL` when it is set, while the running Flask application uses `DATABASE_URL`.
+
+The safe staging order is:
+
+1. Use the bootstrap/admin connection once to create roles and apply ownership/grants.
+2. Run migrations with `flowtally_migrator`.
+3. Start the backend with `flowtally_runtime`.
+4. Confirm `/api/health`.
+
+Do not run migrations under the runtime role.
+
+## Exact Render configuration summary
+
+### Backend Render service
+
+- Build command: `pip install -r backend/requirements.txt`
+- Start command: `gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
+- Health check: `/api/health`
+- `FLOWTALLY_ENV=staging`
+- `SESSION_COOKIE_SECURE=true`
+- `FLOWTALLY_ALLOWED_ORIGINS=https://staging.flowtally.ca`
+- `FLOWTALLY_RATE_LIMIT_STORAGE_URI=<Render Key Value internal URL>`
+- `GOOGLE_OIDC_ENABLED=false`
+- `SQUARE_ENABLED=false`
+
+### Frontend Render static site
+
+- `VITE_FLOWTALLY_API_BASE_URL=https://api-staging.flowtally.ca`
+
+### Google callback
+
+- `https://api-staging.flowtally.ca/api/auth/google/callback`
+
+### Square Sandbox callback/webhook
+
+- OAuth callback: `https://api-staging.flowtally.ca/api/integrations/square/callback`
+- Webhook: not created yet
 
 ## Backup and restore
 
 Before first customer onboarding, staging should have:
 
-- Automated database backups enabled in the managed PostgreSQL provider
-- A documented restore test
-- A documented rollback procedure for the current migration head
-
-Restore test checklist:
-
-1. Restore a recent backup into a separate temporary database.
-2. Run the migration head check.
-3. Confirm tenant-scoped data is still isolated.
-4. Confirm the app can boot against the restored database.
+- automated database backups enabled
+- a documented restore test
+- a rollback test against the current migration head
 
 ## Platform-admin bootstrap
 
@@ -240,11 +226,10 @@ The internal setup console requires a user with the `setup_admin` platform role.
 Bootstrap approach:
 
 1. Create a normal Flowtally user through the Google login flow.
-2. Insert or grant the `setup_admin` platform role for that user in the staging database.
-3. Verify the user can open `/setup`.
-4. Keep the bootstrap path documented and restricted to staff only.
+2. Grant the `setup_admin` platform role in the staging database.
+3. Confirm the user can open `/setup`.
 
-The repository already uses this role in tests and in the setup-console authorization checks.
+Keep the bootstrap path restricted to staff only.
 
 ## Manual validation plan
 
@@ -252,51 +237,37 @@ Use two separate tenant fixtures so cross-tenant denial is explicit rather than 
 
 ### Tenant A
 
-- Create a prospect organization.
-- Complete Google login.
-- Finish onboarding.
-- Approve launch configuration.
-- Activate the organization.
-- Validate owner flows, imports, audit activity, and Square mapping against Tenant A only.
+- create a prospect organization
+- complete Google login
+- finish onboarding
+- approve launch configuration
+- activate the organization
+- validate owner flows, imports, audit activity, and Square mapping against Tenant A only
 
 ### Tenant B
 
-- Create a separate prospect organization.
-- Keep it in onboarding or inactive state.
-- Attempt to access Tenant A resources.
-- Confirm the API denies cross-tenant reads and writes.
-- Confirm the UI does not leak Tenant A data into Tenant B views.
-
-### Specific checks to run manually
-
-- Public site loads without exposing customer routes.
-- Google login starts and completes with the staging OAuth client.
-- Prospect onboarding creates exactly one prospective organization.
-- Setup console can configure templates, modules, layouts, custom fields, locations, imports, Square status, blockers, and activation.
-- Customer review and approval are recorded.
-- Active owner routes remain blocked until activation criteria are satisfied.
-- Invitations work only for authorized owners.
-- Imports preview without writing, then execute only after approval.
-- Support grants show an active banner and are auditable.
-- Square Sandbox connection, location mapping, and sync display status and errors clearly.
-- Owner audit history filters by actor, entity, location, and date.
+- create a separate prospect organization
+- keep it in onboarding or inactive state
+- attempt to access Tenant A resources
+- confirm the API denies cross-tenant reads and writes
+- confirm the UI does not leak Tenant A data into Tenant B views
 
 ## External owner actions still required
 
-These cannot be completed safely from the repository alone:
+The remaining work before a first private staging deployment is manual and external:
 
-- A real Google OAuth application and consent screen
-- A real Square Sandbox application
-- Managed PostgreSQL provisioning
-- DNS records for the two staging hostnames, if split-origin hosting is used
-- Render service creation and secret entry
-- Manual verification using the real staging hostnames
+- provision the real managed PostgreSQL roles using the staging script
+- set the backend runtime and migration URLs in Render
+- set the frontend API base URL in the static site service
+- run migrations using `flowtally_migrator`
+- restart/deploy the backend with `flowtally_runtime`
+- confirm `https://api-staging.flowtally.ca/api/health`
+- create the Square webhook only when Square is intentionally enabled later
 
-## Remaining blockers
+## NEXT OWNER ACTION
 
-Repository-local work is in good shape. The remaining blockers are external and operational:
-
-- CI has not been executed from this workstation, only reviewed in source form.
-- Live Google OAuth and live Square Sandbox access are still externally unverified.
-- DNS and Render service setup are still outside the repository.
-- Managed PostgreSQL provisioning and backup configuration are still external setup tasks.
+1. Provision the staging PostgreSQL roles with `scripts/provision_postgres_roles_staging.sql`.
+2. Set `FLOWTALLY_MIGRATION_DATABASE_URL` and `DATABASE_URL` in Render.
+3. Set `VITE_FLOWTALLY_API_BASE_URL=https://api-staging.flowtally.ca` on the frontend static site.
+4. Run the migration head with `flowtally_migrator`.
+5. Restart the backend and verify `/api/health`.

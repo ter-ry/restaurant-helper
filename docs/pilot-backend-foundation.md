@@ -45,7 +45,7 @@
 
 - Pilot queries are scoped by organization and, where relevant, location.
 - Session selection is cleared if it no longer matches the authenticated user.
-- The backend still depends on application-level enforcement for most tenant boundaries; database row-level security is not enabled yet.
+- The backend still depends on application-level enforcement for most tenant boundaries, and PostgreSQL row-level security is enabled for the commercial staging path.
 
 ## Migrations
 
@@ -67,7 +67,6 @@
 
 ## Remaining limitations
 
-- No row-level security.
 - No full membership administration UI yet.
 - No POS, accounting, or scheduling backend.
-- The legacy root app still exists and is intentionally kept separate.
+- The legacy root app is not part of the commercial staging blueprint.
