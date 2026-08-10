@@ -14,6 +14,7 @@ ALTER ROLE flowtally_migrator NOSUPERUSER NOBYPASSRLS NOINHERIT;
 ALTER ROLE flowtally_runtime NOSUPERUSER NOBYPASSRLS NOINHERIT;
 
 GRANT CONNECT ON DATABASE flowtally_test TO flowtally_migrator, flowtally_runtime;
+ALTER SCHEMA public OWNER TO flowtally_migrator;
 GRANT USAGE, CREATE ON SCHEMA public TO flowtally_migrator;
 GRANT USAGE ON SCHEMA public TO flowtally_runtime;
 
