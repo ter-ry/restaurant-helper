@@ -400,6 +400,7 @@ def _log_scalar_probe(label: str, statement, params: dict[str, object] | None = 
     try:
         connection = db.session.connection()
         _apply_diagnostic_timeouts(connection)
+        _log_connection_identity(connection, f"{label} connection identity")
         result = connection.execute(text(statement), params or {}).scalar_one()
         print(f"AFTER: {label} -> {result}", flush=True)
         return result
@@ -414,6 +415,7 @@ def _log_row_probe(label: str, statement, params: dict[str, object] | None = Non
     try:
         connection = db.session.connection()
         _apply_diagnostic_timeouts(connection)
+        _log_connection_identity(connection, f"{label} connection identity")
         row = connection.execute(text(statement), params or {}).one()
         print(f"AFTER: {label} -> {tuple(row)}", flush=True)
         return row
@@ -428,6 +430,7 @@ def _log_rows_probe(label: str, statement, params: dict[str, object] | None = No
     try:
         connection = db.session.connection()
         _apply_diagnostic_timeouts(connection)
+        _log_connection_identity(connection, f"{label} connection identity")
         rows = connection.execute(text(statement), params or {}).all()
         print(f"AFTER: {label} -> {len(rows)} row(s)", flush=True)
         for row in rows:
