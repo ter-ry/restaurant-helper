@@ -32,6 +32,7 @@ jobs:
           --health-retries 10
     env:
       FLOWTALLY_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
+      FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL: postgresql+psycopg2://flowtally_migrator:flowtally_migrator@localhost:5432/flowtally_test
       FLOWTALLY_MIGRATION_DATABASE_URL: postgresql+psycopg2://flowtally_migrator:flowtally_migrator@localhost:5432/flowtally_test
       FLOWTALLY_TEST_POSTGRES_URL: postgresql+psycopg2://flowtally_runtime:flowtally_runtime@localhost:5432/flowtally_test
       DATABASE_URL: postgresql+psycopg2://flowtally_runtime:flowtally_runtime@localhost:5432/flowtally_test

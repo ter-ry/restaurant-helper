@@ -108,12 +108,15 @@ def postgres_app(tmp_path):
         }
     )
     with migrator_application.app_context():
+        print(f"STATE: postgres_app migrator url -> {MIGRATION_POSTGRES_URL}", flush=True)
         print("BEFORE: postgres_app drop_all", flush=True)
         _log_session_state("before drop_all")
         db.drop_all()
         print("AFTER: postgres_app drop_all", flush=True)
         print("BEFORE: postgres_app create_all", flush=True)
         _log_session_state("before create_all")
+        with db.engine.connect() as connection:
+            _log_connection_identity(connection, "postgres_app migrator create_all connection")
         db.create_all()
         print("AFTER: postgres_app create_all", flush=True)
         print("BEFORE: postgres_app seed_pilot_data", flush=True)
@@ -130,6 +133,7 @@ def postgres_app(tmp_path):
         _log_session_state("after session cleanup experiment")
         with db.engine.begin() as connection:
             print("STATE: postgres_app bootstrap connection acquired", flush=True)
+            _log_connection_identity(connection, "postgres_app bootstrap connection before RLS")
             print("BEFORE: postgres_app apply_postgres_rls", flush=True)
             _apply_bootstrap_timeouts(connection)
             _log_bootstrap_connection_state("postgres_app bootstrap pre-RLS", connection)
@@ -153,6 +157,7 @@ def postgres_app(tmp_path):
         }
     )
     with runtime_application.app_context():
+        print(f"STATE: postgres_app runtime url -> {RUNTIME_POSTGRES_URL}", flush=True)
         print("BEFORE: postgres_app runtime role verification", flush=True)
         runtime_role = _log_row_probe(
             "postgres_app runtime role metadata",
@@ -924,6 +929,7 @@ def _collect_function_catalog_diagnostics(
     include_definition: bool = False,
 ) -> dict[str, object]:
     print(f"BEGIN CATALOG DIAGNOSTICS {name}/{argcount}", flush=True)
+    catalog_engine = create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool)
     summary: dict[str, object] = {
         "name": name,
         "argcount": argcount,
@@ -957,7 +963,7 @@ def _collect_function_catalog_diagnostics(
     summary["fixture"]["pg_proc_lookup"] = fixture_metadata
 
     fresh_select = _run_pg_diagnostic_probe(
-        db.engine,
+        catalog_engine,
         label=f"{name} fresh select 1",
         sql_category="connectivity",
         statement="select 1",
@@ -966,7 +972,7 @@ def _collect_function_catalog_diagnostics(
     summary["fresh"]["select_1"] = fresh_select
 
     fresh_metadata = _run_pg_diagnostic_probe(
-        create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
+        catalog_engine,
         label=f"{name} fresh pg_proc lookup",
         sql_category="pg_proc metadata",
         statement="""
@@ -985,7 +991,7 @@ def _collect_function_catalog_diagnostics(
 
     if detailed:
         fresh_namespace = _run_pg_diagnostic_probe(
-            db.engine,
+            catalog_engine,
             label=f"{name} fresh namespace lookup",
             sql_category="pg_namespace",
             statement="""
@@ -1006,7 +1012,7 @@ def _collect_function_catalog_diagnostics(
         summary["fresh"]["namespace_lookup"] = fresh_namespace
 
         fresh_join = _run_pg_diagnostic_probe(
-            db.engine,
+            catalog_engine,
             label=f"{name} fresh namespace join",
             sql_category="pg_proc join pg_namespace",
             statement="""
@@ -1034,7 +1040,7 @@ def _collect_function_catalog_diagnostics(
             if oid is None:
                 continue
             fresh_identity = _run_pg_diagnostic_probe(
-                create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
+                catalog_engine,
                 label=f"{name} fresh function identity arguments oid={oid}",
                 sql_category="pg_get_function_identity_arguments",
                 statement="select pg_get_function_identity_arguments(:oid) as identity_arguments",
@@ -1044,7 +1050,7 @@ def _collect_function_catalog_diagnostics(
             summary["fresh"].setdefault("identity_arguments", []).append(fresh_identity)
 
             fresh_definition = _run_pg_diagnostic_probe(
-                create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
+                catalog_engine,
                 label=f"{name} fresh pg_get_functiondef oid={oid}",
                 sql_category="pg_get_functiondef",
                 statement="select pg_get_functiondef(:oid) as definition",
@@ -1060,7 +1066,7 @@ def _collect_function_catalog_diagnostics(
             summary["fresh"]["function_definition"] = {"status": "skipped", "reason": "no oid from metadata probe"}
         else:
             fresh_definition = _run_pg_diagnostic_probe(
-                create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
+                catalog_engine,
                 label=f"{name} fresh pg_get_functiondef",
                 sql_category="pg_get_functiondef",
                 statement="select pg_get_functiondef(:oid) as definition",
@@ -1070,6 +1076,7 @@ def _collect_function_catalog_diagnostics(
             summary["fresh"]["function_definition"] = fresh_definition
 
     print(f"END CATALOG DIAGNOSTICS {name}/{argcount} -> {summary}", flush=True)
+    catalog_engine.dispose()
     return summary
 
 
@@ -1155,6 +1162,7 @@ def _dump_function_definition(name: str, argcount: int) -> None:
 
 def _dump_policy_metadata(table_name: str) -> None:
     print(f"BEGIN POLICY DIAGNOSTICS {table_name}", flush=True)
+    catalog_engine = create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool)
     _run_session_probe(
         label=f"policy metadata {table_name} fixture",
         sql_category="pg_policies",
@@ -1175,7 +1183,7 @@ def _dump_policy_metadata(table_name: str) -> None:
         params={"table_name": table_name},
     )
     _run_pg_diagnostic_probe(
-        create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
+        catalog_engine,
         label=f"policy metadata {table_name} fresh",
         sql_category="pg_policies",
         statement="""
@@ -1194,6 +1202,7 @@ def _dump_policy_metadata(table_name: str) -> None:
         """,
         params={"table_name": table_name},
     )
+    catalog_engine.dispose()
     print(f"END POLICY DIAGNOSTICS {table_name}", flush=True)
 
 
