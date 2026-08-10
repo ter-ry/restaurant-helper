@@ -1138,7 +1138,276 @@ def _seed_two_organizations_with_suppliers(owner: User, prefix: str = "RLS") -> 
     )
     db.session.commit()
     print("AFTER: seed two organizations", flush=True)
-    return {"org_a": org_a, "org_b": org_b}
+    return {"org_a_id": org_a.id, "org_b_id": org_b.id}
+
+
+def _seed_admin_fixture(label: str, seed_fn):
+    admin_application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "SQLALCHEMY_DATABASE_URI": ADMIN_POSTGRES_URL or MIGRATION_POSTGRES_URL,
+            "SESSION_COOKIE_SECURE": False,
+            "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
+            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+            "WTF_CSRF_ENABLED": True,
+        }
+    )
+    with admin_application.app_context():
+        print(f"STATE: {label} admin url -> {ADMIN_POSTGRES_URL or MIGRATION_POSTGRES_URL}", flush=True)
+        _log_session_state(f"before {label} admin seed")
+        connection = db.session.connection()
+        _apply_bootstrap_timeouts(connection)
+        _log_connection_identity(connection, f"{label} admin seed connection")
+        try:
+            result = seed_fn()
+            db.session.commit()
+            print(f"AFTER: {label} admin seed commit", flush=True)
+            _log_session_state(f"after {label} admin seed commit")
+            return result
+        finally:
+            print(f"BEFORE: {label} admin seed cleanup", flush=True)
+            db.session.remove()
+            _log_session_state(f"after {label} admin seed cleanup")
+            print(f"AFTER: {label} admin seed cleanup", flush=True)
+
+
+def _seed_admin_org_pair_with_suppliers(prefix: str) -> dict[str, object]:
+    return _seed_admin_fixture(
+        f"{prefix} org pair with suppliers",
+        lambda: _seed_two_organizations_with_suppliers(
+            User.query.filter_by(email=LOCAL_OWNER_EMAIL).first(),
+            prefix,
+        ),
+    )
+
+
+def _seed_admin_support_org(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        support = User.query.filter_by(email="support@example.com").first()
+        if support is None:
+            support = User(email="support@example.com", is_active=True)
+            support.set_password("Support123!")
+            db.session.add(support)
+            db.session.flush()
+        org = _create_org(owner, f"{prefix} Support Org")
+        db.session.add(Supplier(organization_id=org.id, name="Support Supplier", normalized_name="support supplier"))
+        active_grant = SupportAccessGrant(
+            organization_id=org.id,
+            support_user_id=support.id,
+            reason="Investigate import issue",
+            case_reference="CASE-123",
+            status="active",
+            starts_at=utc_now() - timedelta(minutes=1),
+            expires_at=utc_now() + timedelta(minutes=30),
+        )
+        db.session.add(active_grant)
+        db.session.flush()
+        return {"org_id": org.id, "support_id": support.id, "active_grant_id": active_grant.id}
+
+    return _seed_admin_fixture(f"{prefix} support org", _seed)
+
+
+def _seed_admin_support_grant_dataset(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        support = User.query.filter_by(email="support-rls@example.com").first()
+        if support is None:
+            support = User(email="support-rls@example.com", is_active=True)
+            support.set_password("Support123!")
+            db.session.add(support)
+            db.session.flush()
+
+        org_a = _create_org(owner, f"{prefix} Support Grant Alpha")
+        org_b = _create_org(owner, f"{prefix} Support Grant Beta")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+            ]
+        )
+
+        active_grant = SupportAccessGrant(
+            organization_id=org_a.id,
+            support_user_id=support.id,
+            reason="Investigate alpha",
+            case_reference="CASE-ALPHA",
+            status="active",
+            starts_at=utc_now() - timedelta(minutes=1),
+            expires_at=utc_now() + timedelta(minutes=30),
+        )
+        expired_grant = SupportAccessGrant(
+            organization_id=org_b.id,
+            support_user_id=support.id,
+            reason="Investigate beta",
+            case_reference="CASE-BETA",
+            status="active",
+            starts_at=utc_now() - timedelta(hours=2),
+            expires_at=utc_now() - timedelta(minutes=1),
+        )
+        revoked_grant = SupportAccessGrant(
+            organization_id=org_a.id,
+            support_user_id=support.id,
+            reason="Investigate revoked",
+            case_reference="CASE-REVOKED",
+            status="revoked",
+            starts_at=utc_now() - timedelta(minutes=5),
+            expires_at=utc_now() + timedelta(minutes=30),
+            revoked_at=utc_now() - timedelta(minutes=1),
+        )
+        db.session.add_all([active_grant, expired_grant, revoked_grant])
+        db.session.flush()
+        return {
+            "org_a_id": org_a.id,
+            "org_b_id": org_b.id,
+            "support_id": support.id,
+            "active_grant_id": active_grant.id,
+            "expired_grant_id": expired_grant.id,
+            "revoked_grant_id": revoked_grant.id,
+        }
+
+    return _seed_admin_fixture(f"{prefix} support grant dataset", _seed)
+
+
+def _seed_admin_square_dataset(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, f"{prefix} Square Alpha")
+        org_b = _create_org(owner, f"{prefix} Square Beta")
+        connection_a = SquareConnection(organization_id=org_a.id, environment="sandbox", status="connected", square_merchant_id="merchant-a")
+        connection_b = SquareConnection(organization_id=org_b.id, environment="sandbox", status="connected", square_merchant_id="merchant-b")
+        db.session.add_all([connection_a, connection_b])
+        db.session.flush()
+        db.session.add(SquareOrder(square_connection_id=connection_a.id, square_order_id="order-a", square_location_id="LOC-A", order_state="COMPLETED"))
+        db.session.add(SquareOrder(square_connection_id=connection_b.id, square_order_id="order-b", square_location_id="LOC-B", order_state="COMPLETED"))
+        db.session.add(SquareDailySalesSummary(square_connection_id=connection_a.id, square_location_id="LOC-A", sale_date=utc_now().date()))
+        db.session.add(SquareDailySalesSummary(square_connection_id=connection_b.id, square_location_id="LOC-B", sale_date=utc_now().date()))
+        return {"org_a_id": org_a.id, "org_b_id": org_b.id, "connection_a_id": connection_a.id, "connection_b_id": connection_b.id}
+
+    return _seed_admin_fixture(f"{prefix} square dataset", _seed)
+
+
+def _seed_admin_import_dataset(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, f"{prefix} Import Alpha")
+        org_b = _create_org(owner, f"{prefix} Import Beta")
+
+        job_a = DataImportJob(
+            organization_id=org_a.id,
+            created_by_user_id=owner.id,
+            source_type="csv",
+            source_file_name="suppliers-alpha.csv",
+            source_file_extension=".csv",
+            source_mime_type="text/csv",
+            source_hash="hash-a",
+            storage_path="/tmp/a",
+            status="APPROVED",
+            entity_scope="supplier",
+            mapping_json={"name": "name"},
+            summary_json={"rows": 1},
+            row_count=1,
+            preview_row_count=1,
+            applied_row_count=0,
+            blocked_row_count=0,
+            warning_count=0,
+            batch_id="batch-a",
+        )
+        job_b = DataImportJob(
+            organization_id=org_b.id,
+            created_by_user_id=owner.id,
+            source_type="xlsx",
+            source_file_name="suppliers-beta.xlsx",
+            source_file_extension=".xlsx",
+            source_mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            source_hash="hash-b",
+            storage_path="/tmp/b",
+            status="UPLOADED",
+            entity_scope="supplier",
+            mapping_json={"name": "name"},
+            summary_json={"rows": 1},
+            row_count=1,
+            preview_row_count=0,
+            applied_row_count=0,
+            blocked_row_count=0,
+            warning_count=0,
+            batch_id="batch-b",
+        )
+        db.session.add_all([job_a, job_b])
+        db.session.flush()
+        db.session.add(DataImportFile(data_import_job_id=job_a.id, role="source", original_file_name="suppliers-alpha.csv", storage_path="/tmp/a.csv", sha256="file-a", byte_size=12, mime_type="text/csv"))
+        db.session.add(DataImportMapping(data_import_job_id=job_a.id, source_column_name="Name", target_field_name="name", mapping_type="manual", display_order=1, is_required=True))
+        row_a = DataImportRow(data_import_job_id=job_a.id, row_number=1, entity_type="supplier", source_row_json={"Name": "Alpha Supplier"}, normalized_row_json={"name": "Alpha Supplier"}, row_fingerprint="row-a", status="preview", target_entity_type="supplier", target_entity_id="", issue_summary="", warning_count=0, blocked_count=0, can_rollback=True)
+        row_b = DataImportRow(data_import_job_id=job_b.id, row_number=1, entity_type="supplier", source_row_json={"Name": "Beta Supplier"}, normalized_row_json={"name": "Beta Supplier"}, row_fingerprint="row-b", status="preview", target_entity_type="supplier", target_entity_id="", issue_summary="", warning_count=0, blocked_count=0, can_rollback=True)
+        db.session.add_all([row_a, row_b])
+        db.session.flush()
+        db.session.add(DataImportIssue(data_import_row_id=row_a.id, severity="warning", field_name="name", code="missing_note", message="Name mapped but notes missing"))
+        db.session.add(DataImportChange(data_import_job_id=job_a.id, data_import_row_id=row_a.id, entity_type="supplier", change_type="create", target_entity_id="supplier-alpha", row_fingerprint="change-a", previous_json={}, applied_json={"name": "Alpha Supplier"}, rollbackable=True, status="preview"))
+        return {"org_a_id": org_a.id, "org_b_id": org_b.id, "owner_id": owner.id, "job_a_id": job_a.id, "job_b_id": job_b.id}
+
+    return _seed_admin_fixture(f"{prefix} import dataset", _seed)
+
+
+def _seed_admin_setup_dataset(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, f"{prefix} Setup Alpha")
+        org_b = _create_org(owner, f"{prefix} Setup Beta")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
+                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
+                DataImportJob(
+                    organization_id=org_a.id,
+                    created_by_user_id=owner.id,
+                    source_type="csv",
+                    source_file_name="setup-alpha.csv",
+                    source_file_extension=".csv",
+                    source_mime_type="text/csv",
+                    source_hash="setup-a",
+                    storage_path="/tmp/setup-a",
+                    status="UPLOADED",
+                    entity_scope="supplier",
+                    mapping_json={},
+                    summary_json={},
+                    row_count=0,
+                    preview_row_count=0,
+                    applied_row_count=0,
+                    blocked_row_count=0,
+                    warning_count=0,
+                    batch_id="setup-a",
+                ),
+                DataImportJob(
+                    organization_id=org_b.id,
+                    created_by_user_id=owner.id,
+                    source_type="xlsx",
+                    source_file_name="setup-beta.xlsx",
+                    source_file_extension=".xlsx",
+                    source_mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    source_hash="setup-b",
+                    storage_path="/tmp/setup-b",
+                    status="UPLOADED",
+                    entity_scope="supplier",
+                    mapping_json={},
+                    summary_json={},
+                    row_count=0,
+                    preview_row_count=0,
+                    applied_row_count=0,
+                    blocked_row_count=0,
+                    warning_count=0,
+                    batch_id="setup-b",
+                ),
+            ]
+        )
+        return {"org_a_id": org_a.id, "org_b_id": org_b.id}
+
+    return _seed_admin_fixture(f"{prefix} setup dataset", _seed)
 
 
 def _restore_rls_context(access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
@@ -1417,32 +1686,23 @@ def test_postgres_rls_policy_metadata_support_access_grants(postgres_app):
 
 
 def test_rls_hides_other_tenant_rows(postgres_app):
+    seeded = _seed_admin_fixture(
+        "test_rls_hides_other_tenant_rows",
+        lambda: _seed_two_organizations_with_suppliers(
+            User.query.filter_by(email=LOCAL_OWNER_EMAIL).first(),
+            "RLS",
+        ),
+    )
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
         print("BEFORE: test_rls_hides_other_tenant_rows show statement_timeout", flush=True)
         statement_timeout = db.session.execute(text("show statement_timeout")).scalar_one()
         print(f"STATE: test_rls_hides_other_tenant_rows statement_timeout -> {statement_timeout}", flush=True)
         _apply_diagnostic_timeouts(db.session.connection())
         print("AFTER: test_rls_hides_other_tenant_rows show statement_timeout", flush=True)
-        print("BEFORE: test_rls_hides_other_tenant_rows create org_a", flush=True)
-        org_a = _create_org(owner, "RLS Alpha")
-        print("AFTER: test_rls_hides_other_tenant_rows create org_a", flush=True)
-        print("BEFORE: test_rls_hides_other_tenant_rows create org_b", flush=True)
-        org_b = _create_org(owner, "RLS Beta")
-        print("AFTER: test_rls_hides_other_tenant_rows create org_b", flush=True)
-        print("BEFORE: test_rls_hides_other_tenant_rows insert alpha supplier", flush=True)
-        db.session.add(Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"))
-        print("AFTER: test_rls_hides_other_tenant_rows insert alpha supplier", flush=True)
-        print("BEFORE: test_rls_hides_other_tenant_rows insert beta supplier", flush=True)
-        db.session.add(Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"))
-        print("AFTER: test_rls_hides_other_tenant_rows insert beta supplier", flush=True)
-        print("BEFORE: test_rls_hides_other_tenant_rows commit seed rows", flush=True)
-        db.session.commit()
-        print("AFTER: test_rls_hides_other_tenant_rows commit seed rows", flush=True)
-
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
         print("BEFORE: test_rls_hides_other_tenant_rows set customer context", flush=True)
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
         _log_row_probe(
             "test_rls_hides_other_tenant_rows active role metadata",
             """
@@ -1494,46 +1754,51 @@ def test_rls_hides_other_tenant_rows(postgres_app):
                 current_setting('flowtally.support_grant_id', true)
             """,
         )
-        _log_supplier_enforcement_snapshot(org_a_id=org_a.id, org_b_id=org_b.id)
+        _log_supplier_enforcement_snapshot(org_a_id=org_a_id, org_b_id=org_b_id)
         print("BEFORE: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
-        assert Supplier.query.filter_by(organization_id=org_a.id).count() == 1
+        assert Supplier.query.filter_by(organization_id=org_a_id).count() == 1
         print("AFTER: test_rls_hides_other_tenant_rows supplier count org_a", flush=True)
         print("BEFORE: test_rls_hides_other_tenant_rows supplier count org_b", flush=True)
-        assert Supplier.query.filter_by(organization_id=org_b.id).count() == 0
+        assert Supplier.query.filter_by(organization_id=org_b_id).count() == 0
         print("AFTER: test_rls_hides_other_tenant_rows supplier count org_b", flush=True)
 
         print("BEFORE: test_rls_hides_other_tenant_rows direct count org_b", flush=True)
-        rows = db.session.execute(text("select count(*) from suppliers where organization_id = :org_id"), {"org_id": org_b.id}).scalar_one()
+        rows = db.session.execute(text("select count(*) from suppliers where organization_id = :org_id"), {"org_id": org_b_id}).scalar_one()
         print("AFTER: test_rls_hides_other_tenant_rows direct count org_b", flush=True)
         assert rows == 0
 
 
 def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
+    seeded = _seed_admin_fixture(
+        "test_rls_blocks_cross_tenant_insert_and_update",
+        lambda: _seed_two_organizations_with_suppliers(
+            User.query.filter_by(email=LOCAL_OWNER_EMAIL).first(),
+            "RLS Insert",
+        ),
+    )
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-        org_a = _create_org(owner, "RLS Insert Alpha")
-        org_b = _create_org(owner, "RLS Insert Beta")
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
-        db.session.add(Supplier(organization_id=org_b.id, name="Wrong Org", normalized_name="wrong org"))
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        db.session.add(Supplier(organization_id=org_b_id, name="Wrong Org", normalized_name="wrong org"))
         with pytest.raises(Exception):
             db.session.commit()
         db.session.rollback()
-        _restore_rls_context("customer", organization_id=org_a.id)
+        _restore_rls_context("customer", organization_id=org_a_id)
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
-        supplier = Supplier(organization_id=org_a.id, name="Right Org", normalized_name="right org")
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        supplier = Supplier(organization_id=org_a_id, name="Right Org", normalized_name="right org")
         db.session.add(supplier)
         db.session.commit()
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
         db.session.execute(text("update suppliers set name = :name where id = :id"), {"name": "Changed", "id": supplier.id})
         db.session.commit()
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
         assert Supplier.query.filter_by(id=supplier.id).first().name == "Changed"
 
-        _set_rls_context(access_scope="customer", organization_id=org_b.id)
+        _set_rls_context(access_scope="customer", organization_id=org_b_id)
         with pytest.raises(Exception):
             db.session.execute(text("update suppliers set name = :name where id = :id"), {"name": "Blocked", "id": supplier.id})
             db.session.commit()
@@ -1541,106 +1806,45 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
 
 
 def test_support_requires_active_grant(postgres_app):
+    seeded = _seed_admin_support_org("RLS")
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-        support = User.query.filter_by(email="support@example.com").first()
-        if support is None:
-            support = User(email="support@example.com", is_active=True)
-            support.set_password("Support123!")
-            db.session.add(support)
-            db.session.commit()
-        org = _create_org(owner, "RLS Support Org")
-        db.session.add(Supplier(organization_id=org.id, name="Support Supplier", normalized_name="support supplier"))
-        db.session.commit()
+        org_id = seeded["org_id"]
+        support_id = seeded["support_id"]
+        active_grant_id = seeded["active_grant_id"]
 
-        _set_rls_context(access_scope="support", organization_id=org.id, support_grant_id=None)
-        assert Supplier.query.filter_by(organization_id=org.id).count() == 0
+        _set_rls_context(access_scope="support", organization_id=org_id, support_grant_id=None)
+        assert Supplier.query.filter_by(organization_id=org_id).count() == 0
 
-        grant = SupportAccessGrant(
-            organization_id=org.id,
-            support_user_id=support.id,
-            reason="Investigate import issue",
-            case_reference="CASE-123",
-            status="active",
-            starts_at=utc_now() - timedelta(minutes=1),
-            expires_at=utc_now() + timedelta(minutes=30),
-        )
-        db.session.add(grant)
-        db.session.commit()
-
-        _set_rls_context(access_scope="support", organization_id=org.id, support_grant_id=grant.id)
-        assert Supplier.query.filter_by(organization_id=org.id).count() == 1
+        _set_rls_context(access_scope="support", organization_id=org_id, support_grant_id=active_grant_id)
+        assert Supplier.query.filter_by(organization_id=org_id).count() == 1
 
 
 def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app):
+    seeded = _seed_admin_support_grant_dataset("RLS")
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-        support = User.query.filter_by(email="support-rls@example.com").first()
-        if support is None:
-            support = User(email="support-rls@example.com", is_active=True)
-            support.set_password("Support123!")
-            db.session.add(support)
-            db.session.commit()
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+        active_grant_id = seeded["active_grant_id"]
+        expired_grant_id = seeded["expired_grant_id"]
+        revoked_grant_id = seeded["revoked_grant_id"]
+        support_id = seeded["support_id"]
 
-        org_a = _create_org(owner, "RLS Support Grant Alpha")
-        org_b = _create_org(owner, "RLS Support Grant Beta")
-        db.session.add_all(
-            [
-                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
-                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
-            ]
-        )
-        db.session.commit()
+        _set_rls_context(access_scope="support", organization_id=org_a_id, support_grant_id=active_grant_id)
+        assert Supplier.query.filter_by(organization_id=org_a_id).count() == 1
+        assert Supplier.query.filter_by(organization_id=org_b_id).count() == 0
 
-        active_grant = SupportAccessGrant(
-            organization_id=org_a.id,
-            support_user_id=support.id,
-            reason="Investigate alpha",
-            case_reference="CASE-ALPHA",
-            status="active",
-            starts_at=utc_now() - timedelta(minutes=1),
-            expires_at=utc_now() + timedelta(minutes=30),
-        )
-        expired_grant = SupportAccessGrant(
-            organization_id=org_b.id,
-            support_user_id=support.id,
-            reason="Investigate beta",
-            case_reference="CASE-BETA",
-            status="active",
-            starts_at=utc_now() - timedelta(hours=2),
-            expires_at=utc_now() - timedelta(minutes=1),
-        )
-        revoked_grant = SupportAccessGrant(
-            organization_id=org_a.id,
-            support_user_id=support.id,
-            reason="Investigate revoked",
-            case_reference="CASE-REVOKED",
-            status="revoked",
-            starts_at=utc_now() - timedelta(minutes=5),
-            expires_at=utc_now() + timedelta(minutes=30),
-            revoked_at=utc_now() - timedelta(minutes=1),
-        )
-        db.session.add_all([active_grant, expired_grant, revoked_grant])
-        db.session.commit()
+        _set_rls_context(access_scope="support", organization_id=org_b_id, support_grant_id=expired_grant_id)
+        assert Supplier.query.filter_by(organization_id=org_b_id).count() == 0
 
-        _set_rls_context(access_scope="support", organization_id=org_a.id, support_grant_id=active_grant.id)
-        assert Supplier.query.filter_by(organization_id=org_a.id).count() == 1
-        assert Supplier.query.filter_by(organization_id=org_b.id).count() == 0
+        _set_rls_context(access_scope="support", organization_id=org_a_id, support_grant_id=revoked_grant_id)
+        assert Supplier.query.filter_by(organization_id=org_a_id).count() == 0
 
-        _set_rls_context(access_scope="support", organization_id=org_b.id, support_grant_id=expired_grant.id)
-        assert Supplier.query.filter_by(organization_id=org_b.id).count() == 0
-
-        _set_rls_context(access_scope="support", organization_id=org_a.id, support_grant_id=revoked_grant.id)
-        assert Supplier.query.filter_by(organization_id=org_a.id).count() == 0
-
-        _set_rls_context(access_scope="support", organization_id=org_a.id, support_grant_id=active_grant.id)
+        _set_rls_context(access_scope="support", organization_id=org_a_id, support_grant_id=active_grant_id)
         with pytest.raises(Exception):
             db.session.add(
                 SupportAccessGrant(
-                    organization_id=org_a.id,
-                    support_user_id=support.id,
+                    organization_id=org_a_id,
+                    support_user_id=support_id,
                     reason="Self create attempt",
                     case_reference="CASE-CREATE",
                     status="active",
@@ -1652,21 +1856,25 @@ def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app)
         db.session.rollback()
 
         with pytest.raises(Exception):
+            active_grant = db.session.get(SupportAccessGrant, active_grant_id)
+            assert active_grant is not None
             active_grant.expires_at = active_grant.expires_at + timedelta(minutes=10)
             db.session.commit()
         db.session.rollback()
 
         with pytest.raises(Exception):
-            active_grant.organization_id = org_b.id
+            active_grant = db.session.get(SupportAccessGrant, active_grant_id)
+            assert active_grant is not None
+            active_grant.organization_id = org_b_id
             db.session.commit()
         db.session.rollback()
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
         with pytest.raises(Exception):
             db.session.add(
                 SupportAccessGrant(
-                    organization_id=org_a.id,
-                    support_user_id=support.id,
+                    organization_id=org_a_id,
+                    support_user_id=support_id,
                     reason="Customer create attempt",
                     case_reference="CASE-CUSTOMER",
                     status="active",
@@ -1678,14 +1886,16 @@ def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app)
         db.session.rollback()
 
         with pytest.raises(Exception):
+            active_grant = db.session.get(SupportAccessGrant, active_grant_id)
+            assert active_grant is not None
             active_grant.revoked_at = utc_now()
             db.session.commit()
         db.session.rollback()
 
         _set_rls_context(access_scope="setup")
         setup_grant = SupportAccessGrant(
-            organization_id=org_b.id,
-            support_user_id=support.id,
+            organization_id=org_b_id,
+            support_user_id=support_id,
             reason="Setup access",
             case_reference="CASE-SETUP",
             status="active",
@@ -1702,54 +1912,27 @@ def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app)
 
 
 def test_postgres_rls_authorization_chain_diagnostics(postgres_app):
+    seeded = _seed_admin_support_grant_dataset("RLS Probe")
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-
-        org_a = _create_org(owner, "RLS Probe Alpha")
-        org_b = _create_org(owner, "RLS Probe Beta")
-        db.session.add_all(
-            [
-                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
-                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
-            ]
-        )
-
-        support = User.query.filter_by(email="support-probe@example.com").first()
-        if support is None:
-            support = User(email="support-probe@example.com", is_active=True)
-            support.set_password("Support123!")
-            db.session.add(support)
-        db.session.commit()
-
-        active_grant = SupportAccessGrant(
-            organization_id=org_a.id,
-            support_user_id=support.id,
-            reason="Probe grant",
-            case_reference="CASE-PROBE",
-            status="active",
-            starts_at=utc_now() - timedelta(minutes=1),
-            expires_at=utc_now() + timedelta(minutes=30),
-        )
-        db.session.add(active_grant)
-        db.session.commit()
-
         _dump_pg_definitions()
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        org_a_id = seeded["org_a_id"]
+        active_grant_id = seeded["active_grant_id"]
+
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
         _log_probe("1 flowtally_access_scope()", "select flowtally_access_scope()")
         _log_probe("2 flowtally_current_organization_id()", "select flowtally_current_organization_id()")
         _log_probe("3 flowtally_current_support_grant_id()", "select flowtally_current_support_grant_id()")
         _log_probe("4 support_access_grants count", "select count(*) from support_access_grants")
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id, support_grant_id=active_grant.id)
-        _log_probe("5 flowtally_support_has_access(org_a)", "select flowtally_support_has_access(:org_id)", {"org_id": org_a.id})
-        _log_probe("6 flowtally_has_org_access(org_a)", "select flowtally_has_org_access(:org_id)", {"org_id": org_a.id})
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
+        _set_rls_context(access_scope="customer", organization_id=org_a_id, support_grant_id=active_grant_id)
+        _log_probe("5 flowtally_support_has_access(org_a)", "select flowtally_support_has_access(:org_id)", {"org_id": org_a_id})
+        _log_probe("6 flowtally_has_org_access(org_a)", "select flowtally_has_org_access(:org_id)", {"org_id": org_a_id})
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
         _log_probe(
             "7 suppliers count for org_a",
             "select count(*) from suppliers where organization_id = :org_id",
-            {"org_id": org_a.id},
+            {"org_id": org_a_id},
         )
 
 
@@ -1860,162 +2043,54 @@ def test_postgres_rls_probe_7_suppliers_count(postgres_app, postgres_rls_probe_c
 
 
 def test_rls_protects_square_sales_tables(postgres_app):
+    seeded = _seed_admin_square_dataset("RLS")
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-        org_a = _create_org(owner, "RLS Square Alpha")
-        org_b = _create_org(owner, "RLS Square Beta")
-        connection_a = SquareConnection(organization_id=org_a.id, environment="sandbox", status="connected", square_merchant_id="merchant-a")
-        connection_b = SquareConnection(organization_id=org_b.id, environment="sandbox", status="connected", square_merchant_id="merchant-b")
-        db.session.add_all([connection_a, connection_b])
-        db.session.flush()
-        db.session.add(SquareOrder(square_connection_id=connection_a.id, square_order_id="order-a", square_location_id="LOC-A", order_state="COMPLETED"))
-        db.session.add(SquareOrder(square_connection_id=connection_b.id, square_order_id="order-b", square_location_id="LOC-B", order_state="COMPLETED"))
-        db.session.add(SquareDailySalesSummary(square_connection_id=connection_a.id, square_location_id="LOC-A", sale_date=utc_now().date()))
-        db.session.add(SquareDailySalesSummary(square_connection_id=connection_b.id, square_location_id="LOC-B", sale_date=utc_now().date()))
-        db.session.commit()
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+        connection_a_id = seeded["connection_a_id"]
+        connection_b_id = seeded["connection_b_id"]
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
-        assert SquareOrder.query.filter_by(square_connection_id=connection_a.id).count() == 1
-        assert SquareOrder.query.filter_by(square_connection_id=connection_b.id).count() == 0
-        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_a.id).count() == 1
-        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_b.id).count() == 0
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        assert SquareOrder.query.filter_by(square_connection_id=connection_a_id).count() == 1
+        assert SquareOrder.query.filter_by(square_connection_id=connection_b_id).count() == 0
+        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_a_id).count() == 1
+        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_b_id).count() == 0
 
 
 def test_rls_covers_import_tables_and_selected_organization_views(postgres_app):
+    seeded = _seed_admin_import_dataset("RLS")
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-        org_a = _create_org(owner, "RLS Import Alpha")
-        org_b = _create_org(owner, "RLS Import Beta")
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+        owner_id = seeded["owner_id"]
 
-        job_a = DataImportJob(
-            organization_id=org_a.id,
-            created_by_user_id=owner.id,
-            source_type="csv",
-            source_file_name="suppliers-alpha.csv",
-            source_file_extension=".csv",
-            source_mime_type="text/csv",
-            source_hash="hash-a",
-            storage_path="/tmp/a",
-            status="APPROVED",
-            entity_scope="supplier",
-            mapping_json={"name": "name"},
-            summary_json={"rows": 1},
-            row_count=1,
-            preview_row_count=1,
-            applied_row_count=0,
-            blocked_row_count=0,
-            warning_count=0,
-            batch_id="batch-a",
-        )
-        job_b = DataImportJob(
-            organization_id=org_b.id,
-            created_by_user_id=owner.id,
-            source_type="xlsx",
-            source_file_name="suppliers-beta.xlsx",
-            source_file_extension=".xlsx",
-            source_mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            source_hash="hash-b",
-            storage_path="/tmp/b",
-            status="UPLOADED",
-            entity_scope="supplier",
-            mapping_json={"name": "name"},
-            summary_json={"rows": 1},
-            row_count=1,
-            preview_row_count=0,
-            applied_row_count=0,
-            blocked_row_count=0,
-            warning_count=0,
-            batch_id="batch-b",
-        )
-        db.session.add_all([job_a, job_b])
-        db.session.flush()
-        db.session.add(DataImportFile(data_import_job_id=job_a.id, role="source", original_file_name="suppliers-alpha.csv", storage_path="/tmp/a.csv", sha256="file-a", byte_size=12, mime_type="text/csv"))
-        db.session.add(DataImportMapping(data_import_job_id=job_a.id, source_column_name="Name", target_field_name="name", mapping_type="manual", display_order=1, is_required=True))
-        row_a = DataImportRow(data_import_job_id=job_a.id, row_number=1, entity_type="supplier", source_row_json={"Name": "Alpha Supplier"}, normalized_row_json={"name": "Alpha Supplier"}, row_fingerprint="row-a", status="preview", target_entity_type="supplier", target_entity_id="", issue_summary="", warning_count=0, blocked_count=0, can_rollback=True)
-        row_b = DataImportRow(data_import_job_id=job_b.id, row_number=1, entity_type="supplier", source_row_json={"Name": "Beta Supplier"}, normalized_row_json={"name": "Beta Supplier"}, row_fingerprint="row-b", status="preview", target_entity_type="supplier", target_entity_id="", issue_summary="", warning_count=0, blocked_count=0, can_rollback=True)
-        db.session.add_all([row_a, row_b])
-        db.session.flush()
-        db.session.add(DataImportIssue(data_import_row_id=row_a.id, severity="warning", field_name="name", code="missing_note", message="Name mapped but notes missing"))
-        db.session.add(DataImportChange(data_import_job_id=job_a.id, data_import_row_id=row_a.id, entity_type="supplier", change_type="create", target_entity_id="supplier-alpha", row_fingerprint="change-a", previous_json={}, applied_json={"name": "Alpha Supplier"}, rollbackable=True, status="preview"))
-        db.session.commit()
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        assert DataImportJob.query.filter_by(organization_id=org_a_id).count() == 1
+        assert DataImportJob.query.filter_by(organization_id=org_b_id).count() == 0
+        assert DataImportFile.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a_id).count() == 1
+        assert DataImportRow.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a_id).count() == 1
+        assert DataImportRow.query.join(DataImportJob).filter(DataImportJob.organization_id == org_b_id).count() == 0
+        assert DataImportIssue.query.join(DataImportRow).join(DataImportJob).filter(DataImportJob.organization_id == org_a_id).count() == 1
+        assert DataImportChange.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a_id).count() == 1
+        assert OrganizationMembership.query.filter_by(user_id=owner_id).count() == 1
 
-        _set_rls_context(access_scope="customer", organization_id=org_a.id)
-        assert DataImportJob.query.filter_by(organization_id=org_a.id).count() == 1
-        assert DataImportJob.query.filter_by(organization_id=org_b.id).count() == 0
-        assert DataImportFile.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
-        assert DataImportRow.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
-        assert DataImportRow.query.join(DataImportJob).filter(DataImportJob.organization_id == org_b.id).count() == 0
-        assert DataImportIssue.query.join(DataImportRow).join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
-        assert DataImportChange.query.join(DataImportJob).filter(DataImportJob.organization_id == org_a.id).count() == 1
-        assert OrganizationMembership.query.filter_by(user_id=owner.id).count() == 1
-
-        rows = db.session.execute(text("select count(*) from data_import_jobs where organization_id = :org_id"), {"org_id": org_b.id}).scalar_one()
+        rows = db.session.execute(text("select count(*) from data_import_jobs where organization_id = :org_id"), {"org_id": org_b_id}).scalar_one()
         assert rows == 0
 
-        _set_rls_context(access_scope="customer", organization_id=org_b.id)
-        assert OrganizationMembership.query.filter_by(user_id=owner.id).count() == 1
-        assert DataImportJob.query.filter_by(organization_id=org_b.id).count() == 1
+        _set_rls_context(access_scope="customer", organization_id=org_b_id)
+        assert OrganizationMembership.query.filter_by(user_id=owner_id).count() == 1
+        assert DataImportJob.query.filter_by(organization_id=org_b_id).count() == 1
 
 
 def test_setup_scope_can_access_platform_data_across_organizations(postgres_app):
+    seeded = _seed_admin_setup_dataset("RLS")
     with postgres_app.app_context():
-        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        assert owner is not None
-        org_a = _create_org(owner, "RLS Setup Alpha")
-        org_b = _create_org(owner, "RLS Setup Beta")
-        db.session.add_all(
-            [
-                Supplier(organization_id=org_a.id, name="Alpha Supplier", normalized_name="alpha supplier"),
-                Supplier(organization_id=org_b.id, name="Beta Supplier", normalized_name="beta supplier"),
-                DataImportJob(
-                    organization_id=org_a.id,
-                    created_by_user_id=owner.id,
-                    source_type="csv",
-                    source_file_name="setup-alpha.csv",
-                    source_file_extension=".csv",
-                    source_mime_type="text/csv",
-                    source_hash="setup-a",
-                    storage_path="/tmp/setup-a",
-                    status="UPLOADED",
-                    entity_scope="supplier",
-                    mapping_json={},
-                    summary_json={},
-                    row_count=0,
-                    preview_row_count=0,
-                    applied_row_count=0,
-                    blocked_row_count=0,
-                    warning_count=0,
-                    batch_id="setup-a",
-                ),
-                DataImportJob(
-                    organization_id=org_b.id,
-                    created_by_user_id=owner.id,
-                    source_type="xlsx",
-                    source_file_name="setup-beta.xlsx",
-                    source_file_extension=".xlsx",
-                    source_mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    source_hash="setup-b",
-                    storage_path="/tmp/setup-b",
-                    status="UPLOADED",
-                    entity_scope="supplier",
-                    mapping_json={},
-                    summary_json={},
-                    row_count=0,
-                    preview_row_count=0,
-                    applied_row_count=0,
-                    blocked_row_count=0,
-                    warning_count=0,
-                    batch_id="setup-b",
-                ),
-            ]
-        )
-        db.session.commit()
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
 
         _set_rls_context(access_scope="setup")
-        assert Organization.query.filter_by(id=org_a.id).count() == 1
-        assert Organization.query.filter_by(id=org_b.id).count() == 1
+        assert Organization.query.filter_by(id=org_a_id).count() == 1
+        assert Organization.query.filter_by(id=org_b_id).count() == 1
         assert Supplier.query.count() == 2
         assert DataImportJob.query.count() == 2
         assert db.session.execute(text("select count(*) from organizations")).scalar_one() >= 2
