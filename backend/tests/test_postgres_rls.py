@@ -1770,6 +1770,10 @@ def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_cont
             print(f"STATE: probe 1 runtime connection after helper -> backend_pid={final_pid}", flush=True)
             print(f"STATE: probe 1 runtime tuple -> {tuple(context_row)}", flush=True)
             runtime_tuple = tuple(context_row)
+            print(
+                f"::warning file=backend/tests/test_postgres_rls.py,line=1730::runtime context probe: {runtime_tuple!r}",
+                flush=True,
+            )
             assert before_pid == after_set_pid == final_pid, f"runtime context probe pid mismatch: {runtime_tuple!r}"
             assert runtime_tuple[0] == "flowtally_runtime", f"runtime context probe: {runtime_tuple!r}"
             assert runtime_tuple[1] == "flowtally_runtime", f"runtime context probe: {runtime_tuple!r}"
@@ -1777,11 +1781,6 @@ def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_cont
             assert runtime_tuple[3] == "customer", f"runtime context probe: {runtime_tuple!r}"
             assert runtime_tuple[4] == str(postgres_rls_probe_context["org_a_id"]), f"runtime context probe: {runtime_tuple!r}"
             assert runtime_tuple[5] in (None, ""), f"runtime context probe: {runtime_tuple!r}"
-            if runtime_tuple[6] != "customer":
-                print(
-                    f"::error file=backend/tests/test_postgres_rls.py,line=1730::runtime context probe: {runtime_tuple!r}",
-                    flush=True,
-                )
             assert runtime_tuple[6] == "customer", f"runtime context probe: {runtime_tuple!r}"
 
 
