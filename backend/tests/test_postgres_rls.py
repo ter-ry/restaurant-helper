@@ -1141,6 +1141,21 @@ def _restore_rls_context(access_scope: str, organization_id: int | None = None, 
     _set_rls_context(access_scope=access_scope, organization_id=organization_id, support_grant_id=support_grant_id)
 
 
+def _set_rls_context_on_connection(connection, *, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
+    connection.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.access_scope", "value": access_scope},
+    )
+    connection.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.organization_id", "value": "" if organization_id is None else str(organization_id)},
+    )
+    connection.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.support_grant_id", "value": "" if support_grant_id is None else str(support_grant_id)},
+    )
+
+
 def _log_probe(label: str, statement, params: dict[str, object] | None = None) -> object:
     return _log_scalar_probe(label, statement, params)
 
@@ -1726,8 +1741,31 @@ def test_postgres_rls_probe_definitions(postgres_app, postgres_rls_probe_context
 
 def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
-        _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
-        assert _log_probe("1 flowtally_access_scope()", "select flowtally_access_scope()") == "customer"
+        connection = db.session.connection()
+        _apply_diagnostic_timeouts(connection)
+        before_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+        print(f"STATE: probe 1 runtime connection before set_config -> backend_pid={before_pid}", flush=True)
+        _set_rls_context_on_connection(connection, access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
+        after_set_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+        print(f"STATE: probe 1 runtime connection after set_config -> backend_pid={after_set_pid}", flush=True)
+        context_row = connection.execute(
+            text(
+                """
+                select
+                    current_user,
+                    session_user,
+                    current_role,
+                    current_setting('flowtally.access_scope', true),
+                    current_setting('flowtally.organization_id', true),
+                    current_setting('flowtally.support_grant_id', true),
+                    flowtally_access_scope()
+                """
+            )
+        ).one()
+        final_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+        print(f"STATE: probe 1 runtime connection after helper -> backend_pid={final_pid}", flush=True)
+        print(f"STATE: probe 1 runtime tuple -> {tuple(context_row)}", flush=True)
+        assert context_row[6] == "customer", f"runtime context probe: {tuple(context_row)!r}"
 
 
 def test_postgres_rls_probe_2_current_organization_id(postgres_app, postgres_rls_probe_context):
