@@ -6,7 +6,7 @@ from flask import request
 from flask_login import current_user
 from sqlalchemy import text
 
-from .access import support_grant_for_user
+from .access import SUPPORT_ACCESS_ENABLED, support_grant_for_user
 from .extensions import db
 from .models import Organization
 from .utils import get_current_organization_bundle, get_platform_role
@@ -48,8 +48,13 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
         role = get_platform_role(current_user.id)
         if role and role.is_active and role.role == "setup_admin":
             scope = "setup"
-        elif role and role.is_active and role.role == "support" and grant_id is not None:
-            scope = "support"
+        elif role and role.is_active and role.role == "support":
+            if SUPPORT_ACCESS_ENABLED and grant_id is not None:
+                scope = "support"
+            else:
+                scope = "public"
+                org_id = None
+                grant_id = None
 
     _set_local_setting("flowtally.access_scope", scope)
     _set_local_setting("flowtally.organization_id", str(org_id) if org_id is not None else "")

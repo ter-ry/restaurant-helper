@@ -15,6 +15,7 @@ OPERATIONAL_ORG_STATUSES = {"ACTIVE"}
 OPERATIONAL_SETUP_STATUSES = {"COMPLETE"}
 OPERATIONAL_SUBSCRIPTION_STATUSES = {"ACTIVE"}
 ENABLED_MODULE_STATUSES = {"ENABLED"}
+SUPPORT_ACCESS_ENABLED = False
 
 ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.correct_purchase_invoice": "PURCHASES",
@@ -137,6 +138,8 @@ def access_state_for_request(endpoint: str) -> dict[str, Any] | None:
 
 
 def support_grant_for_user(user_id: int, organization_id: int) -> SupportAccessGrant | None:
+    if not SUPPORT_ACCESS_ENABLED:
+        return None
     now = datetime.now(timezone.utc)
     return (
         SupportAccessGrant.query.filter(
@@ -153,6 +156,8 @@ def support_grant_for_user(user_id: int, organization_id: int) -> SupportAccessG
 
 
 def support_access_is_active_for_current_user() -> bool:
+    if not SUPPORT_ACCESS_ENABLED:
+        return False
     if not current_user.is_authenticated:
         return False
     organization = current_organization()

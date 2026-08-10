@@ -97,6 +97,8 @@ pytestmark = pytest.mark.skipif(
     reason="PostgreSQL test database is not configured.",
 )
 
+SUPPORT_ACCESS_DEFERRED = pytest.mark.skip(reason="Support access deferred for the current staging milestone.")
+
 
 @pytest.fixture()
 def postgres_app(tmp_path):
@@ -1656,11 +1658,13 @@ def test_postgres_rls_function_metadata_current_organization_id(postgres_app):
         _dump_function_metadata("flowtally_current_organization_id", 0)
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_function_metadata_current_support_grant_id(postgres_app):
     with postgres_app.app_context():
         _dump_function_metadata("flowtally_current_support_grant_id", 0)
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_function_metadata_support_has_access(postgres_app):
     with postgres_app.app_context():
         _dump_function_metadata("flowtally_support_has_access", 1)
@@ -1681,11 +1685,13 @@ def test_postgres_rls_function_definition_current_organization_id(postgres_app):
         _dump_function_definition("flowtally_current_organization_id", 0)
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_function_definition_current_support_grant_id(postgres_app):
     with postgres_app.app_context():
         _dump_function_definition("flowtally_current_support_grant_id", 0)
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_function_definition_support_has_access(postgres_app):
     with postgres_app.app_context():
         _dump_function_definition("flowtally_support_has_access", 1)
@@ -1701,6 +1707,7 @@ def test_postgres_rls_policy_metadata_suppliers(postgres_app):
         _dump_policy_metadata("suppliers")
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_policy_metadata_support_access_grants(postgres_app):
     with postgres_app.app_context():
         _dump_policy_metadata("support_access_grants")
@@ -1827,6 +1834,7 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
         assert Supplier.query.filter_by(id=supplier.id).first().name == "Changed"
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_support_requires_active_grant(postgres_app):
     seeded = _seed_admin_support_org("RLS", include_active_grant=False)
     with postgres_app.app_context():
@@ -1847,6 +1855,7 @@ def test_support_requires_active_grant(postgres_app):
         assert Supplier.query.filter_by(organization_id=org_id).count() == 1
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app):
     seeded = _seed_admin_support_grant_dataset("RLS")
     with postgres_app.app_context():
@@ -1939,6 +1948,7 @@ def test_support_access_grants_are_not_recursive_and_respect_scope(postgres_app)
         db.session.commit()
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_authorization_chain_diagnostics(postgres_app):
     seeded = _seed_admin_support_grant_dataset("RLS Probe")
     with postgres_app.app_context():
@@ -2020,18 +2030,21 @@ def test_postgres_rls_probe_2_current_organization_id(postgres_app, postgres_rls
         assert _log_probe("2 flowtally_current_organization_id()", "select flowtally_current_organization_id()") == postgres_rls_probe_context["org_a_id"]
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_probe_3_current_support_grant_id(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
         _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
         assert _log_probe("3 flowtally_current_support_grant_id()", "select flowtally_current_support_grant_id()") is None
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_probe_4_support_access_grants_count(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
         _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
         assert _log_probe("4 support_access_grants count", "select count(*) from support_access_grants") >= 0
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_probe_5_support_has_access(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
         _set_rls_context(
@@ -2046,6 +2059,7 @@ def test_postgres_rls_probe_5_support_has_access(postgres_app, postgres_rls_prob
         ) is True
 
 
+@SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_probe_6_has_org_access(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
         _set_rls_context(
