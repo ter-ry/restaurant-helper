@@ -20,7 +20,9 @@ if has_app_context():
     app = current_app._get_current_object()
 else:
     migration_database_url = (
-        os.environ.get("DATABASE_URL")
+        os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
+        or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+        or os.environ.get("DATABASE_URL")
         or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
         or config.get_main_option("sqlalchemy.url")
         or ""

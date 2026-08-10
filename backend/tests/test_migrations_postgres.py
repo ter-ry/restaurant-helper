@@ -13,7 +13,8 @@ from backend.extensions import db
 
 
 POSTGRES_URL = (
-    os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+    os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
+    or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
     or os.environ.get("DATABASE_URL", "")
 )

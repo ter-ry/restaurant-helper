@@ -34,13 +34,14 @@ from backend.seed import LOCAL_OWNER_EMAIL, seed_pilot_data
 from backend.utils import utc_now
 
 
-ADMIN_POSTGRES_URL = (
-    os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+MIGRATION_POSTGRES_URL = (
+    os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
+    or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
     or os.environ.get("DATABASE_URL", "")
 )
 RUNTIME_POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
-POSTGRES_URL = RUNTIME_POSTGRES_URL or ADMIN_POSTGRES_URL
+POSTGRES_URL = RUNTIME_POSTGRES_URL or MIGRATION_POSTGRES_URL
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"
 DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT = "15s"
@@ -86,18 +87,18 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture()
 def postgres_app(tmp_path):
-    admin_application = create_app(
+    migrator_application = create_app(
         {
             "TESTING": True,
             "SECRET_KEY": "test-secret",
-            "SQLALCHEMY_DATABASE_URI": ADMIN_POSTGRES_URL,
+            "SQLALCHEMY_DATABASE_URI": MIGRATION_POSTGRES_URL,
             "SESSION_COOKIE_SECURE": False,
             "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
             "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
             "WTF_CSRF_ENABLED": True,
         }
     )
-    with admin_application.app_context():
+    with migrator_application.app_context():
         print("BEFORE: postgres_app drop_all", flush=True)
         _log_session_state("before drop_all")
         db.drop_all()
@@ -144,28 +145,28 @@ def postgres_app(tmp_path):
     )
     with runtime_application.app_context():
         print("BEFORE: postgres_app runtime role verification", flush=True)
-        _log_row_probe(
+        runtime_role = _log_row_probe(
             "postgres_app runtime role metadata",
             """
             select
                 current_user,
                 session_user,
                 current_role,
-                current_setting('row_security', true),
-                current_setting('flowtally.access_scope', true),
-                current_setting('flowtally.organization_id', true),
-                current_setting('flowtally.support_grant_id', true)
+                current_setting('row_security', true) as row_security,
+                current_setting('flowtally.access_scope', true) as access_scope,
+                current_setting('flowtally.organization_id', true) as organization_id,
+                current_setting('flowtally.support_grant_id', true) as support_grant_id
             """,
         )
-        _log_row_probe(
+        runtime_flags = _log_row_probe(
             "postgres_app runtime role flags",
             """
-            select rolname, rolsuper, rolbypassrls
+            select rolname, rolsuper, rolbypassrls, rolcanlogin
             from pg_roles
             where rolname = current_user
             """,
         )
-        _log_row_probe(
+        supplier_metadata = _log_row_probe(
             "postgres_app suppliers ownership and RLS metadata",
             """
             select
@@ -178,6 +179,34 @@ def postgres_app(tmp_path):
             where c.relname = 'suppliers'
             """,
         )
+        application_table_ownership = _log_scalar_probe(
+            "postgres_app runtime table ownership count",
+            """
+            select count(*)
+            from pg_class c
+            join pg_roles r on r.oid = c.relowner
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public'
+              and c.relkind = 'r'
+              and r.rolname = current_user
+            """,
+        )
+        assert runtime_role[0] == "flowtally_runtime"
+        assert runtime_role[1] is False
+        assert runtime_role[2] is False
+        assert runtime_role[3] == "flowtally_runtime"
+        assert runtime_role[4] == "on"
+        assert runtime_role[5] in (None, "")
+        assert runtime_role[6] in (None, "")
+        assert runtime_flags[0] == "flowtally_runtime"
+        assert runtime_flags[1] is False
+        assert runtime_flags[2] is False
+        assert runtime_flags[3] is True
+        assert supplier_metadata[0] == "suppliers"
+        assert supplier_metadata[1] == "flowtally_migrator"
+        assert supplier_metadata[2] is True
+        assert supplier_metadata[3] is True
+        assert application_table_ownership == 0
         print("AFTER: postgres_app runtime role verification", flush=True)
         _log_session_state("after runtime role verification")
     print("BEFORE: postgres_app session timeouts", flush=True)
@@ -190,8 +219,8 @@ def postgres_app(tmp_path):
     with runtime_application.app_context():
         _log_session_state("before runtime teardown")
         db.session.remove()
-    with admin_application.app_context():
-        _log_session_state("before admin teardown")
+    with migrator_application.app_context():
+        _log_session_state("before migrator teardown")
         db.session.remove()
         db.drop_all()
     print("AFTER: postgres_app teardown", flush=True)
