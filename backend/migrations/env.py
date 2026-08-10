@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+from pathlib import Path
 import os
 
 from alembic import context
@@ -10,20 +11,23 @@ from backend.extensions import db
 
 config = context.config
 
-if config.config_file_name is not None:
+if config.config_file_name is not None and Path(config.config_file_name).exists():
     fileConfig(config.config_file_name)
 
 target_metadata = db.metadata
 
 
 def _migration_database_url() -> str:
+    configured_url = (config.get_main_option("sqlalchemy.url") or "").strip()
+    if configured_url.startswith("sqlite:"):
+        return configured_url
     return (
         os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
         or os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
         or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
         or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
         or os.environ.get("DATABASE_URL")
-        or config.get_main_option("sqlalchemy.url")
+        or configured_url
         or ""
     ).strip()
 
