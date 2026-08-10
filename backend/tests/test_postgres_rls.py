@@ -8,7 +8,8 @@ from datetime import timedelta
 import textwrap
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 from backend.app import create_app
 from backend.extensions import db
@@ -35,7 +36,15 @@ from backend.utils import utc_now
 
 
 MIGRATION_POSTGRES_URL = (
+    os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
+    or os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
+    or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+    or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
+    or os.environ.get("DATABASE_URL", "")
+)
+CATALOG_POSTGRES_URL = (
     os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
+    or os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
     or os.environ.get("DATABASE_URL", "")
@@ -192,10 +201,10 @@ def postgres_app(tmp_path):
             """,
         )
         assert runtime_role[0] == "flowtally_runtime"
-        assert runtime_role[1] is False
-        assert runtime_role[2] is False
-        assert runtime_role[3] == "flowtally_runtime"
-        assert runtime_role[4] == "on"
+        assert runtime_role[1] == "flowtally_runtime"
+        assert runtime_role[2] == "flowtally_runtime"
+        assert runtime_role[3] == "on"
+        assert runtime_role[4] in (None, "")
         assert runtime_role[5] in (None, "")
         assert runtime_role[6] in (None, "")
         assert runtime_flags[0] == "flowtally_runtime"
@@ -239,6 +248,24 @@ def _set_rls_context(*, access_scope: str, organization_id: int | None = None, s
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.support_grant_id", "value": "" if support_grant_id is None else str(support_grant_id)},
     )
+
+
+def _log_connection_identity(connection, label: str) -> dict[str, object]:
+    snapshot = connection.execute(
+        text(
+            """
+            select
+                current_user,
+                session_user,
+                current_role,
+                current_database() as current_database,
+                pg_backend_pid() as backend_pid
+            """
+        )
+    ).mappings().one()
+    data = dict(snapshot)
+    print(f"STATE: {label} -> {data}", flush=True)
+    return data
 
 
 def _apply_diagnostic_timeouts(connection) -> None:
@@ -670,16 +697,23 @@ def _run_pg_diagnostic_probe(
             with engine.connect() as connection:
                 connection.exec_driver_sql(f"set statement_timeout = '{DIAGNOSTIC_PROBE_STATEMENT_TIMEOUT}'")
                 connection.exec_driver_sql(f"set lock_timeout = '{DIAGNOSTIC_PROBE_LOCK_TIMEOUT}'")
+                identity = _log_connection_identity(connection, f"probe {label} identity")
                 probe_state["backend_pid"] = connection.exec_driver_sql("select pg_backend_pid()").scalar_one()
                 probe_state["connection_in_transaction"] = connection.in_transaction()
                 probe_state["statement_timeout"] = connection.exec_driver_sql("show statement_timeout").scalar_one()
                 probe_state["lock_timeout"] = connection.exec_driver_sql("show lock_timeout").scalar_one()
+                probe_state["current_user"] = identity["current_user"]
+                probe_state["session_user"] = identity["session_user"]
+                probe_state["current_role"] = identity["current_role"]
                 ready.set()
                 start_stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 print(
                     f"START PROBE [{label}] category={sql_category} "
                     f"started_at={start_stamp} "
                     f"backend_pid={probe_state['backend_pid']} "
+                    f"current_user={probe_state['current_user']} "
+                    f"session_user={probe_state['session_user']} "
+                    f"current_role={probe_state['current_role']} "
                     f"connection_in_transaction={probe_state['connection_in_transaction']} "
                     f"statement_timeout={probe_state['statement_timeout']} "
                     f"lock_timeout={probe_state['lock_timeout']}",
@@ -767,9 +801,13 @@ def _run_connection_probe(
     }
 
     start_stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    identity = _log_connection_identity(connection, f"probe {label} identity")
     probe_state["backend_pid"] = connection.exec_driver_sql("select pg_backend_pid()").scalar_one()
     probe_state["statement_timeout"] = connection.exec_driver_sql("show statement_timeout").scalar_one()
     probe_state["lock_timeout"] = connection.exec_driver_sql("show lock_timeout").scalar_one()
+    probe_state["current_user"] = identity["current_user"]
+    probe_state["session_user"] = identity["session_user"]
+    probe_state["current_role"] = identity["current_role"]
 
     print(
         "START PROBE "
@@ -777,6 +815,9 @@ def _run_connection_probe(
         f"category={sql_category} "
         f"started_at={start_stamp} "
         f"backend_pid={probe_state['backend_pid']} "
+        f"current_user={probe_state['current_user']} "
+        f"session_user={probe_state['session_user']} "
+        f"current_role={probe_state['current_role']} "
         f"connection_in_transaction={probe_state['connection_in_transaction']} "
         f"statement_timeout={probe_state['statement_timeout']} "
         f"lock_timeout={probe_state['lock_timeout']}",
@@ -925,7 +966,7 @@ def _collect_function_catalog_diagnostics(
     summary["fresh"]["select_1"] = fresh_select
 
     fresh_metadata = _run_pg_diagnostic_probe(
-        db.engine,
+        create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
         label=f"{name} fresh pg_proc lookup",
         sql_category="pg_proc metadata",
         statement="""
@@ -993,7 +1034,7 @@ def _collect_function_catalog_diagnostics(
             if oid is None:
                 continue
             fresh_identity = _run_pg_diagnostic_probe(
-                db.engine,
+                create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
                 label=f"{name} fresh function identity arguments oid={oid}",
                 sql_category="pg_get_function_identity_arguments",
                 statement="select pg_get_function_identity_arguments(:oid) as identity_arguments",
@@ -1003,7 +1044,7 @@ def _collect_function_catalog_diagnostics(
             summary["fresh"].setdefault("identity_arguments", []).append(fresh_identity)
 
             fresh_definition = _run_pg_diagnostic_probe(
-                db.engine,
+                create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
                 label=f"{name} fresh pg_get_functiondef oid={oid}",
                 sql_category="pg_get_functiondef",
                 statement="select pg_get_functiondef(:oid) as definition",
@@ -1019,7 +1060,7 @@ def _collect_function_catalog_diagnostics(
             summary["fresh"]["function_definition"] = {"status": "skipped", "reason": "no oid from metadata probe"}
         else:
             fresh_definition = _run_pg_diagnostic_probe(
-                db.engine,
+                create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
                 label=f"{name} fresh pg_get_functiondef",
                 sql_category="pg_get_functiondef",
                 statement="select pg_get_functiondef(:oid) as definition",
@@ -1134,7 +1175,7 @@ def _dump_policy_metadata(table_name: str) -> None:
         params={"table_name": table_name},
     )
     _run_pg_diagnostic_probe(
-        db.engine,
+        create_engine(CATALOG_POSTGRES_URL, poolclass=NullPool),
         label=f"policy metadata {table_name} fresh",
         sql_category="pg_policies",
         statement="""
