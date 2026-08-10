@@ -17,12 +17,13 @@ ADMIN_POSTGRES_URL = (
     os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("DATABASE_URL", "")
 )
-POSTGRES_URL = (
+MIGRATION_POSTGRES_URL = (
     os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
     or os.environ.get("DATABASE_URL", "")
 )
+POSTGRES_URL = MIGRATION_POSTGRES_URL
 
 pytestmark = pytest.mark.skipif(
     not POSTGRES_URL.startswith("postgres"),
@@ -72,8 +73,39 @@ def _log_connection_state(connection, label: str) -> None:
     print(f"STATE: {label} -> {dict(snapshot)}", flush=True)
 
 
+def _schema_owner(connection, schema_name: str) -> str:
+    return connection.execute(
+        text(
+            """
+            select pg_get_userbyid(nspowner)
+            from pg_namespace
+            where nspname = :schema_name
+            """
+        ),
+        {"schema_name": schema_name},
+    ).scalar_one()
+
+
+def _table_owner(connection, table_name: str) -> str:
+    return connection.execute(
+        text(
+            """
+            select pg_get_userbyid(c.relowner)
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public'
+              and c.relname = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).scalar_one()
+
+
 def _reset_public_schema(application) -> None:
-    admin_engine = create_engine(ADMIN_POSTGRES_URL or application.config["SQLALCHEMY_DATABASE_URI"], poolclass=NullPool)
+    if not ADMIN_POSTGRES_URL:
+        raise RuntimeError("FLOWTALLY_TEST_POSTGRES_ADMIN_URL is required for migration bootstrap reset")
+
+    admin_engine = create_engine(ADMIN_POSTGRES_URL, poolclass=NullPool)
     with admin_engine.begin() as connection:
         print("BEFORE: reset_public_schema connection state", flush=True)
         _log_connection_state(connection, "reset_public_schema connection state")
@@ -84,6 +116,8 @@ def _reset_public_schema(application) -> None:
         _log_connection_state(connection, "before create schema public")
         connection.exec_driver_sql("create schema public authorization flowtally_migrator")
         print("AFTER: create schema public authorization flowtally_migrator", flush=True)
+        assert _schema_owner(connection, "public") == "flowtally_migrator"
+        print("STATE: public schema owner -> flowtally_migrator", flush=True)
         print("BEFORE: restore postgres roles and grants", flush=True)
         connection.exec_driver_sql(
             (Path(__file__).resolve().parents[2] / "scripts" / "provision_postgres_roles.sql").read_text(encoding="utf-8")
@@ -122,12 +156,35 @@ def _current_revision() -> str:
     return db.session.execute(text("select version_num from public.alembic_version")).scalar_one()
 
 
+def _assert_migrator_connection() -> None:
+    identity = db.session.execute(
+        text(
+            """
+            select
+                current_user,
+                session_user,
+                current_role
+            """
+        )
+    ).one()
+    assert identity[0] == "flowtally_migrator"
+    assert identity[1] == "flowtally_migrator"
+    assert identity[2] == "flowtally_migrator"
+
+
+def _assert_table_owned_by_migrator(table_name: str) -> None:
+    with db.engine.connect() as connection:
+        assert _table_owner(connection, table_name) == "flowtally_migrator"
+
+
 def test_postgres_migrations_upgrade_from_fresh_database():
     application = _create_app()
     _reset_public_schema(application)
     _upgrade_to(application, "head")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        _assert_table_owned_by_migrator("suppliers")
         _assert_policy_exists("flowtally_organizations_tenant_access", "organizations")
         _assert_policy_exists("flowtally_suppliers_tenant_access", "suppliers")
         _assert_policy_exists("flowtally_data_import_jobs_tenant_access", "data_import_jobs")
@@ -140,11 +197,14 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     _reset_public_schema(application)
     _upgrade_to(application, "0006_audit_events_and_tenant_constraints")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0006_audit_events_and_tenant_constraints"
 
     _upgrade_to(application, "head")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        _assert_table_owned_by_migrator("audit_events")
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
 
 
@@ -153,17 +213,22 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     _reset_public_schema(application)
     _upgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0007_commercial_onboarding_and_square_foundation"
 
     _upgrade_to(application, "head")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        _assert_table_owned_by_migrator("square_location_mappings")
 
     _downgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0007_commercial_onboarding_and_square_foundation"
 
     _upgrade_to(application, "head")
     with application.app_context():
+        _assert_migrator_connection()
         assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
