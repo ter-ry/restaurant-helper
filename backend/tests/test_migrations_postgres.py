@@ -6,12 +6,17 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 from backend.app import create_app
 from backend.extensions import db
 
 
+ADMIN_POSTGRES_URL = (
+    os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+    or os.environ.get("DATABASE_URL", "")
+)
 POSTGRES_URL = (
     os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
@@ -46,11 +51,45 @@ def _alembic_config(application) -> Config:
     return config
 
 
+def _log_connection_state(connection, label: str) -> None:
+    snapshot = connection.execute(
+        text(
+            """
+            select
+                current_user,
+                session_user,
+                current_role,
+                current_database() as current_database,
+                pg_backend_pid() as backend_pid,
+                datname,
+                pg_get_userbyid(datdba) as database_owner,
+                has_database_privilege(current_user, current_database(), 'CREATE') as can_create
+            from pg_database
+            where datname = current_database()
+            """
+        )
+    ).mappings().one()
+    print(f"STATE: {label} -> {dict(snapshot)}", flush=True)
+
+
 def _reset_public_schema(application) -> None:
-    with application.app_context():
-        db.session.execute(text("drop schema if exists public cascade"))
-        db.session.execute(text("create schema public"))
-        db.session.commit()
+    admin_engine = create_engine(ADMIN_POSTGRES_URL or application.config["SQLALCHEMY_DATABASE_URI"], poolclass=NullPool)
+    with admin_engine.begin() as connection:
+        print("BEFORE: reset_public_schema connection state", flush=True)
+        _log_connection_state(connection, "reset_public_schema connection state")
+        print("BEFORE: drop schema if exists public cascade", flush=True)
+        connection.exec_driver_sql("drop schema if exists public cascade")
+        print("AFTER: drop schema if exists public cascade", flush=True)
+        print("BEFORE: create schema public authorization flowtally_migrator", flush=True)
+        _log_connection_state(connection, "before create schema public")
+        connection.exec_driver_sql("create schema public authorization flowtally_migrator")
+        print("AFTER: create schema public authorization flowtally_migrator", flush=True)
+        print("BEFORE: restore postgres roles and grants", flush=True)
+        connection.exec_driver_sql(
+            (Path(__file__).resolve().parents[2] / "scripts" / "provision_postgres_roles.sql").read_text(encoding="utf-8")
+        )
+        print("AFTER: restore postgres roles and grants", flush=True)
+        _log_connection_state(connection, "reset_public_schema post-grant state")
 
 
 def _upgrade_to(application, revision: str) -> None:
