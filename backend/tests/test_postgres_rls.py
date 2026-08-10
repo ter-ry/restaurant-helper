@@ -1741,31 +1741,48 @@ def test_postgres_rls_probe_definitions(postgres_app, postgres_rls_probe_context
 
 def test_postgres_rls_probe_1_access_scope(postgres_app, postgres_rls_probe_context):
     with postgres_app.app_context():
-        connection = db.session.connection()
-        _apply_diagnostic_timeouts(connection)
-        before_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
-        print(f"STATE: probe 1 runtime connection before set_config -> backend_pid={before_pid}", flush=True)
-        _set_rls_context_on_connection(connection, access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
-        after_set_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
-        print(f"STATE: probe 1 runtime connection after set_config -> backend_pid={after_set_pid}", flush=True)
-        context_row = connection.execute(
-            text(
-                """
-                select
-                    current_user,
-                    session_user,
-                    current_role,
-                    current_setting('flowtally.access_scope', true),
-                    current_setting('flowtally.organization_id', true),
-                    current_setting('flowtally.support_grant_id', true),
-                    flowtally_access_scope()
-                """
+        with db.engine.connect() as connection:
+            _apply_diagnostic_timeouts(connection)
+            before_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+            print(f"STATE: probe 1 runtime connection before set_config -> backend_pid={before_pid}", flush=True)
+            _set_rls_context_on_connection(
+                connection,
+                access_scope="customer",
+                organization_id=postgres_rls_probe_context["org_a_id"],
             )
-        ).one()
-        final_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
-        print(f"STATE: probe 1 runtime connection after helper -> backend_pid={final_pid}", flush=True)
-        print(f"STATE: probe 1 runtime tuple -> {tuple(context_row)}", flush=True)
-        assert context_row[6] == "customer", f"runtime context probe: {tuple(context_row)!r}"
+            after_set_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+            print(f"STATE: probe 1 runtime connection after set_config -> backend_pid={after_set_pid}", flush=True)
+            context_row = connection.execute(
+                text(
+                    """
+                    select
+                        current_user,
+                        session_user,
+                        current_role,
+                        current_setting('flowtally.access_scope', true),
+                        current_setting('flowtally.organization_id', true),
+                        current_setting('flowtally.support_grant_id', true),
+                        flowtally_access_scope()
+                    """
+                )
+            ).one()
+            final_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+            print(f"STATE: probe 1 runtime connection after helper -> backend_pid={final_pid}", flush=True)
+            print(f"STATE: probe 1 runtime tuple -> {tuple(context_row)}", flush=True)
+            runtime_tuple = tuple(context_row)
+            assert before_pid == after_set_pid == final_pid, f"runtime context probe pid mismatch: {runtime_tuple!r}"
+            assert runtime_tuple[0] == "flowtally_runtime", f"runtime context probe: {runtime_tuple!r}"
+            assert runtime_tuple[1] == "flowtally_runtime", f"runtime context probe: {runtime_tuple!r}"
+            assert runtime_tuple[2] == "flowtally_runtime", f"runtime context probe: {runtime_tuple!r}"
+            assert runtime_tuple[3] == "customer", f"runtime context probe: {runtime_tuple!r}"
+            assert runtime_tuple[4] == str(postgres_rls_probe_context["org_a_id"]), f"runtime context probe: {runtime_tuple!r}"
+            assert runtime_tuple[5] in (None, ""), f"runtime context probe: {runtime_tuple!r}"
+            if runtime_tuple[6] != "customer":
+                print(
+                    f"::error file=backend/tests/test_postgres_rls.py,line=1730::runtime context probe: {runtime_tuple!r}",
+                    flush=True,
+                )
+            assert runtime_tuple[6] == "customer", f"runtime context probe: {runtime_tuple!r}"
 
 
 def test_postgres_rls_probe_2_current_organization_id(postgres_app, postgres_rls_probe_context):
