@@ -1428,7 +1428,7 @@ def _seed_admin_setup_dataset(prefix: str) -> dict[str, object]:
                 ),
             ]
         )
-        return {"org_a_id": org_a.id, "org_b_id": org_b.id}
+        return {"org_a_id": org_a.id, "org_b_id": org_b.id, "owner_id": owner.id}
 
     return _seed_admin_fixture(f"{prefix} setup dataset", _seed)
 
@@ -2163,3 +2163,4 @@ def test_setup_scope_can_access_platform_data_across_organizations(postgres_app)
             assert connection.execute(text("select count(*) from suppliers")).scalar_one() == 2
             assert connection.execute(text("select count(*) from data_import_jobs")).scalar_one() == 2
             assert connection.execute(text("select count(*) from organizations")).scalar_one() >= 2
+            assert connection.execute(text("select count(*) from organization_memberships where user_id = :owner_id"), {"owner_id": seeded["owner_id"]}).scalar_one() == 2
