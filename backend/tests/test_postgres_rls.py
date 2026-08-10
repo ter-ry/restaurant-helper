@@ -42,6 +42,10 @@ MIGRATION_POSTGRES_URL = (
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
     or os.environ.get("DATABASE_URL", "")
 )
+ADMIN_POSTGRES_URL = (
+    os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
+    or os.environ.get("DATABASE_URL", "")
+)
 CATALOG_POSTGRES_URL = (
     os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
@@ -1245,7 +1249,19 @@ def _dump_pg_definitions() -> None:
 
 @pytest.fixture()
 def postgres_rls_probe_context(postgres_app):
-    with postgres_app.app_context():
+    admin_application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "SQLALCHEMY_DATABASE_URI": ADMIN_POSTGRES_URL or MIGRATION_POSTGRES_URL,
+            "SESSION_COOKIE_SECURE": False,
+            "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
+            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+            "WTF_CSRF_ENABLED": True,
+        }
+    )
+    with admin_application.app_context():
+        print(f"STATE: postgres_rls_probe_context admin url -> {ADMIN_POSTGRES_URL or MIGRATION_POSTGRES_URL}", flush=True)
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
 
@@ -1277,11 +1293,14 @@ def postgres_rls_probe_context(postgres_app):
         db.session.add(active_grant)
         db.session.commit()
 
-        return {
+        probe_context = {
             "org_a_id": org_a.id,
             "org_b_id": org_b.id,
             "active_grant_id": active_grant.id,
         }
+        print(f"STATE: postgres_rls_probe_context seeded -> {probe_context}", flush=True)
+        db.session.remove()
+    return probe_context
 
 
 def test_postgres_rls_connection_sanity(postgres_app):
