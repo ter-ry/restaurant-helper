@@ -1182,7 +1182,7 @@ def _seed_admin_org_pair_with_suppliers(prefix: str) -> dict[str, object]:
     )
 
 
-def _seed_admin_support_org(prefix: str) -> dict[str, object]:
+def _seed_admin_support_org(prefix: str, *, include_active_grant: bool = True) -> dict[str, object]:
     def _seed():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         assert owner is not None
@@ -1194,20 +1194,41 @@ def _seed_admin_support_org(prefix: str) -> dict[str, object]:
             db.session.flush()
         org = _create_org(owner, f"{prefix} Support Org")
         db.session.add(Supplier(organization_id=org.id, name="Support Supplier", normalized_name="support supplier"))
-        active_grant = SupportAccessGrant(
-            organization_id=org.id,
-            support_user_id=support.id,
-            reason="Investigate import issue",
-            case_reference="CASE-123",
+        result: dict[str, object] = {"org_id": org.id, "support_id": support.id}
+        if include_active_grant:
+            active_grant = SupportAccessGrant(
+                organization_id=org.id,
+                support_user_id=support.id,
+                reason="Investigate import issue",
+                case_reference="CASE-123",
+                status="active",
+                starts_at=utc_now() - timedelta(minutes=1),
+                expires_at=utc_now() + timedelta(minutes=30),
+            )
+            db.session.add(active_grant)
+            db.session.flush()
+            result["active_grant_id"] = active_grant.id
+        return result
+
+    return _seed_admin_fixture(f"{prefix} support org", _seed)
+
+
+def _seed_admin_support_grant_for_org(*, label: str, org_id: int, support_id: int, case_reference: str, reason: str = "Investigate import issue") -> dict[str, object]:
+    def _seed():
+        grant = SupportAccessGrant(
+            organization_id=org_id,
+            support_user_id=support_id,
+            reason=reason,
+            case_reference=case_reference,
             status="active",
             starts_at=utc_now() - timedelta(minutes=1),
             expires_at=utc_now() + timedelta(minutes=30),
         )
-        db.session.add(active_grant)
+        db.session.add(grant)
         db.session.flush()
-        return {"org_id": org.id, "support_id": support.id, "active_grant_id": active_grant.id}
+        return {"active_grant_id": grant.id}
 
-    return _seed_admin_fixture(f"{prefix} support org", _seed)
+    return _seed_admin_fixture(label, _seed)
 
 
 def _seed_admin_support_grant_dataset(prefix: str) -> dict[str, object]:
@@ -1807,15 +1828,21 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
 
 
 def test_support_requires_active_grant(postgres_app):
-    seeded = _seed_admin_support_org("RLS")
+    seeded = _seed_admin_support_org("RLS", include_active_grant=False)
     with postgres_app.app_context():
         org_id = seeded["org_id"]
         support_id = seeded["support_id"]
-        active_grant_id = seeded["active_grant_id"]
 
         _set_rls_context(access_scope="support", organization_id=org_id, support_grant_id=None)
         assert Supplier.query.filter_by(organization_id=org_id).count() == 0
 
+        grant_seed = _seed_admin_support_grant_for_org(
+            label="test_support_requires_active_grant active grant",
+            org_id=org_id,
+            support_id=support_id,
+            case_reference="CASE-123",
+        )
+        active_grant_id = grant_seed["active_grant_id"]
         _set_rls_context(access_scope="support", organization_id=org_id, support_grant_id=active_grant_id)
         assert Supplier.query.filter_by(organization_id=org_id).count() == 1
 
