@@ -2130,9 +2130,36 @@ def test_setup_scope_can_access_platform_data_across_organizations(postgres_app)
         org_a_id = seeded["org_a_id"]
         org_b_id = seeded["org_b_id"]
 
-        _set_rls_context(access_scope="setup")
-        assert Organization.query.filter_by(id=org_a_id).count() == 1
-        assert Organization.query.filter_by(id=org_b_id).count() == 1
-        assert Supplier.query.count() == 2
-        assert DataImportJob.query.count() == 2
-        assert db.session.execute(text("select count(*) from organizations")).scalar_one() >= 2
+        with db.session.connection() as connection:
+            _apply_diagnostic_timeouts(connection)
+            before_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+            print(f"STATE: test_setup_scope_can_access_platform_data_across_organizations before context -> backend_pid={before_pid}", flush=True)
+            _set_rls_context_on_connection(connection, access_scope="setup")
+            after_pid = connection.execute(text("select pg_backend_pid()")).scalar_one()
+            print(f"STATE: test_setup_scope_can_access_platform_data_across_organizations after context -> backend_pid={after_pid}", flush=True)
+            context_snapshot = connection.execute(
+                text(
+                    """
+                    select
+                        current_user,
+                        session_user,
+                        current_role,
+                        current_setting('flowtally.access_scope', true),
+                        current_setting('flowtally.organization_id', true),
+                        current_setting('flowtally.support_grant_id', true)
+                    """
+                )
+            ).one()
+            print(f"STATE: test_setup_scope_can_access_platform_data_across_organizations context snapshot -> {tuple(context_snapshot)}", flush=True)
+            assert before_pid == after_pid, f"setup scope runtime pid changed: {tuple(context_snapshot)!r}"
+            assert context_snapshot[0] == "flowtally_runtime", f"setup scope runtime context: {tuple(context_snapshot)!r}"
+            assert context_snapshot[1] == "flowtally_runtime", f"setup scope runtime context: {tuple(context_snapshot)!r}"
+            assert context_snapshot[2] == "flowtally_runtime", f"setup scope runtime context: {tuple(context_snapshot)!r}"
+            assert context_snapshot[3] == "setup", f"setup scope runtime context: {tuple(context_snapshot)!r}"
+            assert context_snapshot[4] in (None, ""), f"setup scope runtime context: {tuple(context_snapshot)!r}"
+            assert context_snapshot[5] in (None, ""), f"setup scope runtime context: {tuple(context_snapshot)!r}"
+            assert connection.execute(text("select count(*) from organizations where id = :org_id"), {"org_id": org_a_id}).scalar_one() == 1
+            assert connection.execute(text("select count(*) from organizations where id = :org_id"), {"org_id": org_b_id}).scalar_one() == 1
+            assert connection.execute(text("select count(*) from suppliers")).scalar_one() == 2
+            assert connection.execute(text("select count(*) from data_import_jobs")).scalar_one() == 2
+            assert connection.execute(text("select count(*) from organizations")).scalar_one() >= 2
