@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import secrets
 from urllib.parse import urlencode
 
-from flask import Blueprint, jsonify, redirect, request, session
+from flask import Blueprint, current_app, jsonify, redirect, request, session
 from flask_login import current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import generate_csrf
 
@@ -36,7 +36,8 @@ def _google_complete_redirect(*, status: str, message: str | None = None, linked
         params["message"] = message
     if linked:
         params["linked"] = "true"
-    return redirect(f"/auth/google/complete?{urlencode(params)}", code=303)
+    frontend_origin = str(current_app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").rstrip("/")
+    return redirect(f"{frontend_origin}/auth/google/complete?{urlencode(params)}", code=303)
 
 
 @bp.get("/api/auth/csrf")

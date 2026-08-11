@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from backend import google_oidc
+from backend import auth as auth_routes
 from backend.google_oidc import verify_google_id_token
 
 
@@ -109,6 +110,7 @@ def test_google_callback_redirects_to_frontend_completion_page(app, client, monk
                 "GOOGLE_CLIENT_ID": "client-id",
                 "GOOGLE_CLIENT_SECRET": "client-secret",
                 "GOOGLE_REDIRECT_URI": "https://example.com/api/auth/google/callback",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
             }
         )
 
@@ -118,13 +120,9 @@ def test_google_callback_redirects_to_frontend_completion_page(app, client, monk
         session["google_oidc_purpose"] = "login"
         session["google_oidc_expires_at"] = "2026-08-06T12:00:00+00:00"
 
+    monkeypatch.setattr(auth_routes, "exchange_google_code", lambda code: type("Token", (), {"id_token": "stub-id-token"})())
     monkeypatch.setattr(
-        google_oidc,
-        "exchange_google_code",
-        lambda code: type("Token", (), {"id_token": "stub-id-token"})(),
-    )
-    monkeypatch.setattr(
-        google_oidc,
+        auth_routes,
         "verify_google_id_token",
         lambda id_token, nonce: {
             "iss": "https://accounts.google.com",
@@ -141,4 +139,4 @@ def test_google_callback_redirects_to_frontend_completion_page(app, client, monk
     response = client.get("/api/auth/google/callback?state=state&code=test-code", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["Location"].startswith("/auth/google/complete?")
+    assert response.headers["Location"] == "https://staging.flowtally.ca/auth/google/complete?status=success"

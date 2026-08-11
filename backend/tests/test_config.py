@@ -13,6 +13,7 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SECRET_KEY",
         "DATABASE_URL",
         "FLOWTALLY_ALLOWED_ORIGINS",
+        "FLOWTALLY_FRONTEND_ORIGIN",
         "SESSION_COOKIE_SECURE",
         "FLOWTALLY_RATE_LIMIT_STORAGE_URI",
         "FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL",
@@ -46,6 +47,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
     assert config["SESSION_COOKIE_SECURE"] is False
     assert config["RATELIMIT_STORAGE_URI"] == "memory://"
     assert "http://127.0.0.1:5173" in config["ALLOWED_ORIGINS"]
+    assert config["FLOWTALLY_FRONTEND_ORIGIN"] == "http://127.0.0.1:5173"
 
 
 @pytest.mark.parametrize(
@@ -57,6 +59,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
                 "SECRET_KEY": "replace-me",
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
             },
@@ -68,6 +71,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
                 "DATABASE_URL": "sqlite:///tmp/pilot.db",
                 "SECRET_KEY": "replace-with-a-long-random-staging-secret",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
             },
@@ -79,6 +83,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "SECRET_KEY": "replace-with-a-long-random-staging-secret",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "false",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
             },
@@ -90,6 +95,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "SECRET_KEY": "replace-with-a-long-random-staging-secret",
                 "FLOWTALLY_ALLOWED_ORIGINS": "*",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
             },
@@ -101,6 +107,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "SECRET_KEY": "replace-with-a-long-random-staging-secret",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
             },
@@ -112,10 +119,22 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "SECRET_KEY": "short-secret",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
             },
             "SECRET_KEY is too weak",
+        ),
+        (
+            {
+                "FLOWTALLY_ENV": "staging",
+                "DATABASE_URL": "postgresql://example.invalid/flowtally",
+                "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
+                "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "SESSION_COOKIE_SECURE": "true",
+                "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
+            },
+            "FLOWTALLY_FRONTEND_ORIGIN must be set",
         ),
     ],
 )
@@ -138,6 +157,7 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
     monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-staging-secret-key")
     monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
     monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://staging.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://staging.flowtally.ca")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
     monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
 
@@ -146,6 +166,7 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
     assert config["FLOWTALLY_ENV"] == "staging"
     assert config["SESSION_COOKIE_SECURE"] is True
     assert config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql://")
+    assert config["FLOWTALLY_FRONTEND_ORIGIN"] == "https://staging.flowtally.ca"
 
 
 def test_create_app_rejects_unsafe_staging_startup(monkeypatch: pytest.MonkeyPatch):
@@ -154,6 +175,7 @@ def test_create_app_rejects_unsafe_staging_startup(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("SECRET_KEY", "short-secret")
     monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
     monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://staging.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://staging.flowtally.ca")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
     monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
 
@@ -167,6 +189,7 @@ def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.Monkey
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-secret")
     monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://127.0.0.1:5001/api/auth/google/callback")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "http://127.0.0.1:5173")
     monkeypatch.setenv("SQUARE_ENABLED", "true")
     monkeypatch.setenv("SQUARE_ENVIRONMENT", "sandbox")
     monkeypatch.setenv("SQUARE_APPLICATION_ID", "square-app")
@@ -195,6 +218,7 @@ def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.Monkey
                 "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
                 "GOOGLE_OIDC_ENABLED": "true",
@@ -208,6 +232,7 @@ def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.Monkey
                 "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
                 "DATABASE_URL": "postgresql://example.invalid/flowtally",
                 "FLOWTALLY_ALLOWED_ORIGINS": "https://staging.flowtally.ca",
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": "true",
                 "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "redis://example.invalid/0",
                 "SQUARE_ENABLED": "true",
@@ -233,6 +258,7 @@ def test_enabled_google_and_square_features_fail_closed_without_required_secrets
                 "SECRET_KEY": "a-very-long-explicit-staging-secret-key",
                 "SQLALCHEMY_DATABASE_URI": "postgresql://example.invalid/flowtally",
                 "ALLOWED_ORIGINS": ["https://staging.flowtally.ca"],
+                "FLOWTALLY_FRONTEND_ORIGIN": "https://staging.flowtally.ca",
                 "SESSION_COOKIE_SECURE": True,
                 "RATELIMIT_STORAGE_URI": "redis://example.invalid/0",
                 "GOOGLE_OIDC_ENABLED": env.get("GOOGLE_OIDC_ENABLED") == "true",

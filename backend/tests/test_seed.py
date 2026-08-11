@@ -59,6 +59,7 @@ def test_seed_refuses_in_staging_without_confirmation(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-staging-secret-key")
     monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
     monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://staging.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://staging.flowtally.ca")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
     monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
     monkeypatch.delenv("FLOWTALLY_ALLOW_PRODUCTION_SEEDING", raising=False)

@@ -1,3 +1,5 @@
+import { buildApiUrl } from "./apiBase";
+
 export interface CustomerUser {
   id: number;
   email: string;
@@ -150,7 +152,10 @@ export async function logoutCustomer() {
   });
 }
 
-export function startGoogleLogin() {
-  window.location.assign("/api/auth/google/start?purpose=login");
+export function getGoogleLoginStartUrl() {
+  return buildApiUrl("/api/auth/google/start?purpose=login");
 }
-import { buildApiUrl } from "./apiBase";
+
+export function startGoogleLogin() {
+  window.location.assign(getGoogleLoginStartUrl());
+}

@@ -167,8 +167,12 @@ export async function fetchSquareStatus(organizationId: number) {
   return requestJson<{ connection: SquareConnectionSummary | null }>(`/api/integrations/square/status?organizationId=${organizationId}`);
 }
 
+export function getSquareConnectionStartUrl(organizationId: number) {
+  return buildApiUrl(`/api/integrations/square/start?organizationId=${organizationId}`);
+}
+
 export async function beginSquareConnection(organizationId: number) {
-  window.location.assign(`/api/integrations/square/start?organizationId=${organizationId}`);
+  window.location.assign(getSquareConnectionStartUrl(organizationId));
 }
 
 export async function disconnectSquare(organizationId: number) {

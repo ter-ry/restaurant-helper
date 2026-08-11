@@ -110,6 +110,21 @@ def _allowed_origins(mode: str) -> list[str]:
     return unique_origins
 
 
+def _frontend_origin(mode: str) -> str:
+    configured = os.environ.get("FLOWTALLY_FRONTEND_ORIGIN", "").strip()
+    if not configured:
+        if mode in PROD_LIKE_MODES:
+            raise ConfigurationError("FLOWTALLY_FRONTEND_ORIGIN must be set in staging and production.")
+        return "http://127.0.0.1:5173"
+
+    parsed = urlparse(configured)
+    if "*" in configured or parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ConfigurationError("FLOWTALLY_FRONTEND_ORIGIN must contain an explicit http or https origin only.")
+    if mode in PROD_LIKE_MODES and parsed.scheme != "https":
+        raise ConfigurationError("Staging and production frontend origins must use https.")
+    return configured.rstrip("/")
+
+
 def _secret_key(mode: str) -> str:
     configured = os.environ.get("SECRET_KEY", "").strip()
     if configured:
@@ -175,6 +190,7 @@ class BaseConfig:
             "RATELIMIT_DEFAULT": "200 per hour",
             "RATELIMIT_STORAGE_URI": _rate_limit_storage_uri(cls.mode),
             "ALLOWED_ORIGINS": _allowed_origins(cls.mode),
+            "FLOWTALLY_FRONTEND_ORIGIN": _frontend_origin(cls.mode),
             "GOOGLE_OIDC_ENABLED": _env_bool("GOOGLE_OIDC_ENABLED", False),
             "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
             "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(),
@@ -279,6 +295,13 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
 
     if not _env_bool("SESSION_COOKIE_SECURE", False):
         raise ConfigurationError("SESSION_COOKIE_SECURE must be true in staging and production.")
+
+    frontend_origin = str(config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip().rstrip("/")
+    if not frontend_origin:
+        raise ConfigurationError("FLOWTALLY_FRONTEND_ORIGIN must be set in staging and production.")
+    parsed_frontend_origin = urlparse(frontend_origin)
+    if parsed_frontend_origin.scheme != "https" or not parsed_frontend_origin.netloc:
+        raise ConfigurationError("FLOWTALLY_FRONTEND_ORIGIN must be an explicit https URL in staging and production.")
 
     rate_limit_storage = str(config.get("RATELIMIT_STORAGE_URI") or "").strip()
     if not rate_limit_storage or rate_limit_storage.startswith("memory://"):

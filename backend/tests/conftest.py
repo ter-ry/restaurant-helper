@@ -17,6 +17,7 @@ CONFIG_ENV_VARS = [
     "SECRET_KEY",
     "DATABASE_URL",
     "FLOWTALLY_ALLOWED_ORIGINS",
+    "FLOWTALLY_FRONTEND_ORIGIN",
     "SESSION_COOKIE_SECURE",
     "FLOWTALLY_RATE_LIMIT_STORAGE_URI",
     "FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL",
@@ -55,6 +56,7 @@ def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path.as_posix()}",
             "SESSION_COOKIE_SECURE": False,
             "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
+            "FLOWTALLY_FRONTEND_ORIGIN": "http://127.0.0.1:5173",
             "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
             "WTF_CSRF_ENABLED": True,
         }

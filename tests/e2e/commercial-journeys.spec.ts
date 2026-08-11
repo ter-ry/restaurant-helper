@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
+declare const process: {
+  env: Record<string, string | undefined>;
+};
+
 type OrganizationSummary = {
   id: number;
   name: string;
@@ -621,6 +625,28 @@ test("local browser journeys do not request Google Analytics", async ({ page }) 
   await page.goto("/auth/google/complete");
 
   expect(analyticsRequests).toHaveLength(0);
+});
+
+test("google login buttons launch the API start endpoint from the configured API origin", async ({ page }) => {
+  const expectedApiOrigin = (
+    process.env.VITE_FLOWTALLY_API_BASE_URL ?? process.env.VITE_PILOT_API_BASE_URL ?? "http://127.0.0.1:4173"
+  ).replace(/\/+$/, "");
+  let requestUrl = "";
+
+  await page.route("**/api/auth/google/start**", async (route) => {
+    requestUrl = route.request().url();
+    await route.fulfill({ status: 200, contentType: "text/plain", body: "ok" });
+  });
+
+  const requestPromise = page.waitForRequest((request) => request.url().includes("/api/auth/google/start?purpose=login"));
+  await page.goto("/auth/google/complete?status=error&message=Session%20expired.");
+  await page.getByRole("button", { name: "Try Google again" }).click();
+  const request = await requestPromise;
+
+  expect(request.url()).toBe(requestUrl);
+  expect(new URL(request.url()).origin).toBe(expectedApiOrigin);
+  expect(new URL(request.url()).pathname).toBe("/api/auth/google/start");
+  expect(new URL(request.url()).searchParams.get("purpose")).toBe("login");
 });
 
 test("mocked Google registration walks a prospect into onboarding", async ({ page }) => {
