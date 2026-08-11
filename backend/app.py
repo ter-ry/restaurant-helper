@@ -133,6 +133,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def api_options(_path: str = "") -> Response:
         return Response(status=204)
 
+    @limiter.exempt
     @app.get("/api/health")
     def health() -> tuple[dict[str, object], int]:
         return (
