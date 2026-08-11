@@ -48,6 +48,16 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.update_reorder_plan": "REORDER_PLANS",
     "pilot_api.prepare_reorder_plan": "REORDER_PLANS",
     "pilot_api.complete_reorder_plan": "REORDER_PLANS",
+    "pilot_api.menu_costing": "MENU_COSTING",
+    "pilot_api.create_menu_costing_recipe": "MENU_COSTING",
+    "pilot_api.update_menu_costing_recipe": "MENU_COSTING",
+    "pilot_api.delete_menu_costing_recipe": "MENU_COSTING",
+    "pilot_api.create_menu_costing_recipe_ingredient": "MENU_COSTING",
+    "pilot_api.update_menu_costing_recipe_ingredient": "MENU_COSTING",
+    "pilot_api.delete_menu_costing_recipe_ingredient": "MENU_COSTING",
+    "pilot_api.create_menu_costing_menu_item": "MENU_COSTING",
+    "pilot_api.update_menu_costing_menu_item": "MENU_COSTING",
+    "pilot_api.delete_menu_costing_menu_item": "MENU_COSTING",
     "pilot_api.list_audit_events": "REPORTING",
 }
 
@@ -129,10 +139,26 @@ def access_state_for_request(endpoint: str) -> dict[str, Any] | None:
     module_key = ENDPOINT_MODULE_KEYS.get(endpoint)
     if module_key:
         if not organization_has_enabled_module(organization.id, module_key):
-            return module_access_error(module_key)
+            module = MODULE_REGISTRY.get(module_key)
+            return {
+                "status": 403,
+                "message": "This organization does not have access to that module yet.",
+                "errors": {
+                    "module": module["displayName"] if module else module_key,
+                    "dependencies": ", ".join(module_dependency_keys(module_key)),
+                },
+            }
         missing_dependencies = missing_module_dependencies(organization.id, module_key)
         if missing_dependencies:
-            return module_access_error(module_key, dependency_keys=missing_dependencies)
+            module = MODULE_REGISTRY.get(module_key)
+            return {
+                "status": 403,
+                "message": "This organization does not have access to that module yet.",
+                "errors": {
+                    "module": module["displayName"] if module else module_key,
+                    "dependencies": ", ".join(missing_dependencies),
+                },
+            }
 
     return None
 

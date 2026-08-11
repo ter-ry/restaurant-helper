@@ -48,11 +48,11 @@ MODULE_REGISTRY: dict[str, dict[str, Any]] = {
         "key": "MENU_COSTING",
         "displayName": "Menu Costing",
         "description": "Menu and recipe costing support.",
-        "backendReady": False,
+        "backendReady": True,
         "dependencies": ["PURCHASES", "INVENTORY"],
         "dashboardWidgets": ["menu_readiness"],
         "requiredSetupTasks": ["recipe_import"],
-        "requiredPermissions": ["operational.read"],
+        "requiredPermissions": ["menu_costing.manage"],
     },
     "REPORTING": {
         "key": "REPORTING",
@@ -116,4 +116,3 @@ def module_dependency_keys(module_key: str) -> list[str]:
     if module is None:
         return []
     return list(module.get("dependencies", []))
-

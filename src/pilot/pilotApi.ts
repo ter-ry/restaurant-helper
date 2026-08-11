@@ -500,6 +500,77 @@ export interface PilotInventoryResponse {
   summary: Record<string, number>;
 }
 
+export interface PilotMenuCostingRecipeIngredient {
+  id: number;
+  organizationId: number;
+  recipeId: number;
+  inventoryItemId: number;
+  quantityRequired: number;
+  unit: string;
+  notes: string;
+  sortOrder: number;
+  inventoryItem: PilotInventoryItem | null;
+  inventoryItemCostPerStockUnit: number | null;
+  lineCost: number | null;
+  warnings: string[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotMenuCostingRecipe {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  name: string;
+  normalizedName: string;
+  description: string;
+  yieldQuantity: number;
+  yieldUnit: string;
+  active: boolean;
+  notes: string;
+  ingredientCount: number;
+  ingredients: PilotMenuCostingRecipeIngredient[];
+  totalCost: number | null;
+  costPerYield: number | null;
+  costAvailable: boolean;
+  warnings: string[];
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotMenuCostingMenuItem {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  recipeId: number;
+  name: string;
+  normalizedName: string;
+  category: string;
+  sellingPrice: number;
+  active: boolean;
+  notes: string;
+  recipe: PilotMenuCostingRecipe | null;
+  recipeCostPerYield: number | null;
+  grossProfit: number | null;
+  foodCostPercent: number | null;
+  grossMarginPercent: number | null;
+  costAvailable: boolean;
+  warnings: string[];
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotMenuCostingResponse {
+  organizationId: number;
+  locationId: number;
+  recipes: PilotMenuCostingRecipe[];
+  menuItems: PilotMenuCostingMenuItem[];
+}
+
 export interface PilotReorderPlansResponse {
   plans: PilotReorderPlan[];
   activeDraftPlanId: number | null;
@@ -676,6 +747,88 @@ export async function markPilotReorderOrdered(itemId: number) {
 
 export async function fetchPilotReorderPlans() {
   return requestJson<PilotReorderPlansResponse>("/api/pilot/reorder-plans");
+}
+
+export async function fetchPilotMenuCosting() {
+  return requestJson<PilotMenuCostingResponse>("/api/pilot/menu-costing");
+}
+
+export async function createPilotMenuCostingRecipe(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingRecipe>("/api/pilot/menu-costing/recipes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotMenuCostingRecipe(recipeId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingRecipe>(`/api/pilot/menu-costing/recipes/${recipeId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePilotMenuCostingRecipe(recipeId: number) {
+  return requestCsrfJson<{ ok: true }>(`/api/pilot/menu-costing/recipes/${recipeId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function createPilotMenuCostingRecipeIngredient(recipeId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingRecipe>(`/api/pilot/menu-costing/recipes/${recipeId}/ingredients`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotMenuCostingRecipeIngredient(recipeId: number, ingredientId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingRecipe>(`/api/pilot/menu-costing/recipes/${recipeId}/ingredients/${ingredientId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePilotMenuCostingRecipeIngredient(recipeId: number, ingredientId: number) {
+  return requestCsrfJson<PilotMenuCostingRecipe>(`/api/pilot/menu-costing/recipes/${recipeId}/ingredients/${ingredientId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function createPilotMenuCostingMenuItem(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingMenuItem>("/api/pilot/menu-costing/menu-items", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotMenuCostingMenuItem(menuItemId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingMenuItem>(`/api/pilot/menu-costing/menu-items/${menuItemId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePilotMenuCostingMenuItem(menuItemId: number) {
+  return requestCsrfJson<{ ok: true }>(`/api/pilot/menu-costing/menu-items/${menuItemId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function createPilotReorderPlan() {

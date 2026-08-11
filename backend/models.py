@@ -405,6 +405,79 @@ class ReorderIntent(TimestampMixin, db.Model):
     actor = db.relationship("User")
 
 
+class Recipe(TimestampMixin, db.Model):
+    __tablename__ = "recipes"
+    __table_args__ = (UniqueConstraint("organization_id", "location_id", "normalized_name", name="uq_recipe_org_location_normalized_name"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    normalized_name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    yield_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("1"))
+    yield_unit = db.Column(db.String(60), nullable=False, default="servings")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    notes = db.Column(db.Text, nullable=False, default="")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    ingredients = db.relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan", order_by="RecipeIngredient.id.asc()")
+    menu_items = db.relationship("MenuItem", back_populates="recipe")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", foreign_keys=[updated_by_user_id])
+
+
+class RecipeIngredient(TimestampMixin, db.Model):
+    __tablename__ = "recipe_ingredients"
+    __table_args__ = (
+        UniqueConstraint("recipe_id", "inventory_item_id", name="uq_recipe_ingredient_recipe_inventory_item"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity_required = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    unit = db.Column(db.String(60), nullable=False, default="each")
+    notes = db.Column(db.Text, nullable=False, default="")
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization = db.relationship("Organization")
+    recipe = db.relationship("Recipe", back_populates="ingredients")
+    inventory_item = db.relationship("InventoryItem")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", foreign_keys=[updated_by_user_id])
+
+
+class MenuItem(TimestampMixin, db.Model):
+    __tablename__ = "menu_items"
+    __table_args__ = (UniqueConstraint("organization_id", "location_id", "normalized_name", name="uq_menu_item_org_location_normalized_name"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id", ondelete="RESTRICT"), nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    normalized_name = db.Column(db.String(255), nullable=False)
+    category = db.Column(db.String(120), nullable=False, default="Other")
+    selling_price = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0"))
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    notes = db.Column(db.Text, nullable=False, default="")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    recipe = db.relationship("Recipe", back_populates="menu_items")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", foreign_keys=[updated_by_user_id])
+
+
 class AuditEvent(db.Model):
     __tablename__ = "audit_events"
     __table_args__ = (

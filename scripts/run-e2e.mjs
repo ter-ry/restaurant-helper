@@ -4,8 +4,20 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = process.cwd();
-const viteCli = resolve(root, "node_modules", "vite", "bin", "vite.js");
-const playwrightCli = resolve(root, "node_modules", "@playwright", "test", "cli.js");
+const candidateRoots = [root, resolve(root, "..", "..")];
+
+function findCliPath(relativePath) {
+  for (const candidateRoot of candidateRoots) {
+    const candidate = resolve(candidateRoot, relativePath);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return resolve(root, relativePath);
+}
+
+const viteCli = findCliPath("node_modules/vite/bin/vite.js");
+const playwrightCli = findCliPath("node_modules/@playwright/test/cli.js");
 const serverUrl = "http://127.0.0.1:4173";
 
 if (!existsSync(viteCli)) {
@@ -67,7 +79,9 @@ function killProcessTree(pid) {
   return Promise.resolve();
 }
 
-const vite = spawnNode(viteCli, ["--host", "127.0.0.1", "--port", "4173"]);
+const vite = spawnNode(viteCli, ["--host", "127.0.0.1", "--port", "4173"], {
+  VITE_ENABLE_PILOT_APP: "true",
+});
 const viteEarlyExit = new Promise((_, reject) => {
   vite.on("exit", (code) => {
     if (code !== 0 && code !== null) {
@@ -96,7 +110,9 @@ process.on("SIGTERM", async () => {
 try {
   await Promise.race([waitForServer(), viteEarlyExit]);
 
-  const playwright = spawnNode(playwrightCli, ["test", "--config", "playwright.config.ts"]);
+  const playwright = spawnNode(playwrightCli, ["test", "--config", "playwright.config.ts"], {
+    VITE_ENABLE_PILOT_APP: "true",
+  });
   const exitCode = await new Promise((resolveExit, rejectExit) => {
     playwright.on("exit", (code, signal) => {
       resolveExit(code ?? (signal ? 1 : 0));

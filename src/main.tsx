@@ -31,6 +31,7 @@ const PilotLoginPage = lazyNamed(() => import("./pilot/PilotLoginPage"), "PilotL
 const PilotDashboardPage = lazyNamed(() => import("./pilot/PilotDashboardPage"), "PilotDashboardPage");
 const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"), "PilotPurchasesPage");
 const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
+const PilotMenuCostingPage = lazyNamed(() => import("./pilot/PilotMenuCostingPage"), "PilotMenuCostingPage");
 const PilotStockCountsPage = lazyNamed(() => import("./pilot/PilotStockCountsPage"), "PilotStockCountsPage");
 const PilotReorderPlanPage = lazyNamed(() => import("./pilot/PilotReorderPlanPage"), "PilotReorderPlanPage");
 const GoogleAuthCompletePage = lazyNamed(() => import("./pages/GoogleAuthCompletePage"), "GoogleAuthCompletePage");
@@ -206,6 +207,7 @@ const pilotAppRoutes = pilotAppEnabled
               { path: "dashboard", element: <PilotDashboardPage /> },
               { path: "purchases", element: <PilotPurchasesPage /> },
               { path: "inventory", element: <PilotInventoryPage /> },
+              { path: "menu-costing", element: <PilotMenuCostingPage /> },
               { path: "stock-counts", element: <PilotStockCountsPage /> },
               { path: "reorder-plan", element: <PilotReorderPlanPage /> },
             ],

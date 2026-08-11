@@ -8,6 +8,7 @@ const navItems = [
   { to: "/app/dashboard", label: "Dashboard" },
   { to: "/app/purchases", label: "Purchases" },
   { to: "/app/inventory", label: "Inventory" },
+  { to: "/app/menu-costing", label: "Menu Costing" },
   { to: "/app/stock-counts", label: "Stock Counts" },
   { to: "/app/reorder-plan", label: "Reorder Plan" },
 ];

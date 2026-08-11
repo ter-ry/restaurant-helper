@@ -231,6 +231,31 @@ async function installMockApi(page: Page, state: MockState) {
       return jsonResponse(route, { ok: true });
     }
 
+    if (path === "/api/organizations" && method === "GET") {
+      const organization = state.currentOrganization ?? makeOrganization();
+      return jsonResponse(route, {
+        organizations: state.session
+          ? [
+              {
+                organization,
+                membershipRole: state.session.membershipRole ?? "owner",
+                selected: true,
+              },
+            ]
+          : [],
+        currentOrganizationId: organization.id,
+        currentMembershipId: 1,
+        currentLocationId: 7,
+        currentOrganization: {
+          organization,
+          restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
+          currentLocation: { id: 7, name: "Main Dining Room" },
+          membershipRole: state.session?.membershipRole ?? "owner",
+        },
+        restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
+      });
+    }
+
     if (path === "/api/onboarding/organizations" && method === "POST") {
       const organization = makeOrganization({
         id: 42,
@@ -670,6 +695,156 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
   await page.getByRole("button", { name: "Create your workspace" }).click();
   await expect(page.getByText("Logged-in prospect")).toBeVisible();
   await expect(page.getByText("Welcome back, owner@example.com")).toBeVisible();
+});
+
+test("authenticated menu costing page loads live pricing data", async ({ page }) => {
+  const organization = makeOrganization({
+    id: 42,
+    name: "Menu Costing Cafe",
+  });
+  const session = makeActiveOwnerSession({
+    currentOrganizationId: organization.id,
+    currentLocationId: 7,
+    organizations: [{ organization, membershipRole: "owner", selected: true }],
+  });
+
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    const path = url.pathname;
+
+    if (path === "/api/auth/me" && method === "GET") {
+      return jsonResponse(route, session);
+    }
+    if (path === "/api/auth/csrf" && method === "GET") {
+      return jsonResponse(route, { csrfToken: "csrf-token" });
+    }
+    if (path === "/api/organizations/current" && method === "GET") {
+      return jsonResponse(route, {
+        organization,
+        restaurantLocations: [{ id: 7, name: "Line Kitchen", city: "Toronto", region: "ON" }],
+        currentLocation: { id: 7, name: "Line Kitchen" },
+        membershipRole: "owner",
+      });
+    }
+    if (path === "/api/pilot/inventory" && method === "GET") {
+      return jsonResponse(route, {
+        items: [
+          {
+            id: 101,
+            organizationId: organization.id,
+            locationId: 7,
+            supplierId: null,
+            name: "Cheese",
+            normalizedName: "cheese",
+            category: "Dairy",
+            stockUnit: "each",
+            currentOnHand: 0,
+            minQuantity: 0,
+            parLevel: 0,
+            preferredSupplierName: "",
+            latestPurchasePrice: 4,
+            lastPurchaseUnit: "each",
+            lastPurchaseConversionFactor: 2,
+            lastReceivedAt: null,
+            lastCountedAt: null,
+            averageDailyUsage: null,
+            estimatedCostMethod: "latest_purchase_price",
+            active: true,
+            notes: "",
+            createdByUserId: null,
+            updatedByUserId: null,
+            createdAt: null,
+            updatedAt: null,
+          },
+        ],
+        movements: [],
+        countSessions: [],
+        reorderPlan: { suggestions: [], groupedBySupplier: [] },
+        summary: {},
+      });
+    }
+    if (path === "/api/pilot/menu-costing" && method === "GET") {
+      return jsonResponse(route, {
+        organizationId: organization.id,
+        locationId: 7,
+        recipes: [
+          {
+            id: 1,
+            organizationId: organization.id,
+            locationId: 7,
+            name: "Cheesy Toast",
+            normalizedName: "cheesy toast",
+            description: "Toasted bread with cheese",
+            yieldQuantity: 2,
+            yieldUnit: "servings",
+            active: true,
+            notes: "Pilot recipe",
+            ingredientCount: 1,
+            ingredients: [
+              {
+                id: 11,
+                organizationId: organization.id,
+                recipeId: 1,
+                inventoryItemId: 101,
+                quantityRequired: 2,
+                unit: "each",
+                notes: "Two portions of cheese",
+                sortOrder: 1,
+                inventoryItem: null,
+                inventoryItemCostPerStockUnit: 2,
+                lineCost: 4,
+                warnings: [],
+                createdAt: null,
+                updatedAt: null,
+              },
+            ],
+            totalCost: 4,
+            costPerYield: 2,
+            costAvailable: true,
+            warnings: [],
+            createdByUserId: null,
+            updatedByUserId: null,
+            createdAt: null,
+            updatedAt: null,
+          },
+        ],
+        menuItems: [
+          {
+            id: 21,
+            organizationId: organization.id,
+            locationId: 7,
+            recipeId: 1,
+            name: "Cheesy Toast",
+            normalizedName: "cheesy toast",
+            category: "Breakfast",
+            sellingPrice: 12,
+            active: true,
+            notes: "Pilot menu item",
+            recipe: null,
+            recipeCostPerYield: 2,
+            grossProfit: 10,
+            foodCostPercent: 16.7,
+            grossMarginPercent: 83.3,
+            costAvailable: true,
+            warnings: [],
+            createdByUserId: null,
+            updatedByUserId: null,
+            createdAt: null,
+            updatedAt: null,
+          },
+        ],
+      });
+    }
+
+    throw new Error(`Unhandled API route: ${method} ${path}`);
+  });
+
+  await page.goto("/app/menu-costing");
+  await expect(page.getByText("Recipe and menu pricing")).toBeVisible();
+  await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
+  await expect(page.getByText("Cost $2.00").first()).toBeVisible();
+  await expect(page.getByText("Food cost 16.7%").first()).toBeVisible();
 });
 
 test("operational access is denied before activation", async ({ page }) => {
