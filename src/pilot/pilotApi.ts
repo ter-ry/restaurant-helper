@@ -505,6 +505,86 @@ export interface PilotReorderPlansResponse {
   activeDraftPlanId: number | null;
 }
 
+export interface PilotMenuRecipeLine {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  recipeId: number;
+  inventoryItemId: number | null;
+  inventoryItemName: string;
+  lineIndex: number;
+  ingredientName: string;
+  quantity: number;
+  unit: string;
+  inventoryUnit: string;
+  purchaseUnit: string;
+  conversionFactor: number;
+  unitCost: number | null;
+  lineCost: number | null;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotMenuRecipe {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  menuItemId: number;
+  notes: string;
+  lineCount: number;
+  lines: PilotMenuRecipeLine[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotMenuItem {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  name: string;
+  normalizedName: string;
+  category: string;
+  sellingPrice: number;
+  active: boolean;
+  notes: string;
+  recipe: PilotMenuRecipe | null;
+  salesUnits: number;
+  salesNetAmount: number;
+  recipeCost: number;
+  grossProfit: number;
+  marginPercent: number | null;
+  mappingStatus: string;
+  squareCatalogObjectId: number | null;
+  dataIssues: string[];
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PilotMenuInventoryUsage {
+  inventoryItemId: number;
+  inventoryItemName: string;
+  stockUnit: string;
+  currentOnHand: number;
+  theoreticalUsage: number;
+  expectedInventory: number;
+  actualStockCount: number | null;
+  variance: number | null;
+  latestCountSessionId: number | null;
+}
+
+export interface PilotMenuCostingResponse {
+  summary: Record<string, number>;
+  menuItems: PilotMenuItem[];
+  inventoryUsage: PilotMenuInventoryUsage[];
+  unmappedSales: Array<Record<string, unknown>>;
+  latestCountSession: PilotCountSession | null;
+  salesStartDate: string;
+  salesEndDate: string;
+}
+
 async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const csrfToken = await getPilotCsrfToken();
   return requestJson<T>(path, {
@@ -707,5 +787,33 @@ export async function preparePilotReorderPlan(planId: number) {
 export async function completePilotReorderPlan(planId: number) {
   return requestCsrfJson<PilotReorderPlan>(`/api/pilot/reorder-plans/${planId}/complete`, {
     method: "POST",
+  });
+}
+
+export async function fetchPilotMenuCosting(lookbackDays = 14) {
+  return requestJson<PilotMenuCostingResponse>(`/api/pilot/menu-costing?lookbackDays=${encodeURIComponent(String(lookbackDays))}`);
+}
+
+export async function fetchPilotMenuItem(itemId: number) {
+  return requestJson<PilotMenuItem>(`/api/pilot/menu-items/${itemId}`);
+}
+
+export async function createPilotMenuItem(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingResponse>("/api/pilot/menu-items", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotMenuItem(itemId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotMenuCostingResponse>(`/api/pilot/menu-items/${itemId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
   });
 }

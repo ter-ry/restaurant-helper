@@ -14,6 +14,9 @@ from .models import (
     InventoryMovement,
     Organization,
     OrganizationMembership,
+    MenuItem,
+    MenuRecipe,
+    MenuRecipeLine,
     PlatformRole,
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -339,6 +342,63 @@ def serialize_reorder_intent(intent: ReorderIntent) -> dict[str, Any]:
         "actorUserId": intent.actor_user_id,
         "createdAt": isoformat(intent.created_at),
         "updatedAt": isoformat(intent.updated_at),
+    }
+
+
+def serialize_menu_recipe_line(line: MenuRecipeLine, *, unit_cost: float | None = None, line_cost: float | None = None) -> dict[str, Any]:
+    return {
+        "id": line.id,
+        "organizationId": line.organization_id,
+        "locationId": line.location_id,
+        "recipeId": line.recipe_id,
+        "inventoryItemId": line.inventory_item_id,
+        "inventoryItemName": line.inventory_item.name if line.inventory_item else "",
+        "lineIndex": line.line_index,
+        "ingredientName": line.ingredient_name,
+        "quantity": decimal_to_float(line.quantity) or 0,
+        "unit": line.unit,
+        "inventoryUnit": line.inventory_unit,
+        "purchaseUnit": line.purchase_unit,
+        "conversionFactor": decimal_to_float(line.conversion_factor) or 1,
+        "unitCost": unit_cost,
+        "lineCost": line_cost,
+        "notes": line.notes,
+        "createdAt": isoformat(line.created_at),
+        "updatedAt": isoformat(line.updated_at),
+    }
+
+
+def serialize_menu_recipe(recipe: MenuRecipe, *, line_payloads: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    payload_lines = line_payloads if line_payloads is not None else [serialize_menu_recipe_line(line) for line in recipe.lines]
+    return {
+        "id": recipe.id,
+        "organizationId": recipe.organization_id,
+        "locationId": recipe.location_id,
+        "menuItemId": recipe.menu_item_id,
+        "notes": recipe.notes,
+        "lineCount": len(payload_lines),
+        "lines": payload_lines,
+        "createdAt": isoformat(recipe.created_at),
+        "updatedAt": isoformat(recipe.updated_at),
+    }
+
+
+def serialize_menu_item(menu_item: MenuItem, *, recipe_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "id": menu_item.id,
+        "organizationId": menu_item.organization_id,
+        "locationId": menu_item.location_id,
+        "name": menu_item.name,
+        "normalizedName": menu_item.normalized_name,
+        "category": menu_item.category,
+        "sellingPrice": decimal_to_float(menu_item.selling_price) or 0,
+        "active": bool(menu_item.active),
+        "notes": menu_item.notes,
+        "recipe": recipe_payload,
+        "createdByUserId": menu_item.created_by_user_id,
+        "updatedByUserId": menu_item.updated_by_user_id,
+        "createdAt": isoformat(menu_item.created_at),
+        "updatedAt": isoformat(menu_item.updated_at),
     }
 
 

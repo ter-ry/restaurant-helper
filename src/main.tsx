@@ -33,6 +33,7 @@ const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"),
 const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
 const PilotStockCountsPage = lazyNamed(() => import("./pilot/PilotStockCountsPage"), "PilotStockCountsPage");
 const PilotReorderPlanPage = lazyNamed(() => import("./pilot/PilotReorderPlanPage"), "PilotReorderPlanPage");
+const PilotMenuCostingPage = lazyNamed(() => import("./pilot/PilotMenuCostingPage"), "PilotMenuCostingPage");
 const GoogleAuthCompletePage = lazyNamed(() => import("./pages/GoogleAuthCompletePage"), "GoogleAuthCompletePage");
 const InvitationAcceptPage = lazyNamed(() => import("./pages/InvitationAcceptPage"), "InvitationAcceptPage");
 const TeamManagementPage = lazyNamed(() => import("./pages/TeamManagementPage"), "TeamManagementPage");
@@ -208,6 +209,7 @@ const pilotAppRoutes = pilotAppEnabled
               { path: "inventory", element: <PilotInventoryPage /> },
               { path: "stock-counts", element: <PilotStockCountsPage /> },
               { path: "reorder-plan", element: <PilotReorderPlanPage /> },
+              { path: "menu-costing", element: <PilotMenuCostingPage /> },
             ],
           },
         ],
@@ -229,6 +231,7 @@ const routes = [
   { path: "/pilot/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
   { path: "/pilot/daily-reconciliation", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "daily-reconciliation")} replace /> },
   { path: "/pilot/inventory", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "inventory")} replace /> },
+  { path: "/pilot/menu-costing", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "menu-costing")} replace /> },
   { path: "/pilot/price-changes", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug)} replace /> },
   { path: "/demo", element: <TrackedNavigate to={buildDemoPath(defaultDemoProfileSlug)} /> },
   {

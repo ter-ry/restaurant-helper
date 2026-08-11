@@ -12,6 +12,9 @@ from .models import (
     ExternalIdentity,
     InventoryItem,
     InventoryMovement,
+    MenuItem,
+    MenuRecipe,
+    MenuRecipeLine,
     Organization,
     OrganizationConfiguration,
     OrganizationConfigurationVersion,
@@ -303,6 +306,9 @@ def _clear_seed_data() -> None:
         SquareLocationMapping,
         SquareLocation,
         SquareConnection,
+        MenuRecipeLine,
+        MenuRecipe,
+        MenuItem,
         DashboardLayout,
         OrganizationConfigurationVersion,
         OrganizationConfiguration,
@@ -637,6 +643,121 @@ def _seed_reorder_intents(organization: Organization, location: RestaurantLocati
             db.session.add(intent)
 
 
+MENU_SEED = [
+    {
+        "name": "Classic Milk Tea",
+        "category": "Signature drinks",
+        "selling_price": 7.95,
+        "notes": "Core cafe drink with stable margin.",
+        "recipe": [
+            {"ingredient_name": "Tea Base", "quantity": 0.006, "unit": "kg", "inventory_item": "Tea Base"},
+            {"ingredient_name": "Milk", "quantity": 0.25, "unit": "L", "inventory_item": "Milk"},
+            {"ingredient_name": "Tapioca Pearls", "quantity": 0.03, "unit": "kg", "inventory_item": "Tapioca Pearls"},
+            {"ingredient_name": "Cups", "quantity": 1, "unit": "each", "inventory_item": "Cups"},
+            {"ingredient_name": "Lids", "quantity": 1, "unit": "each", "inventory_item": "Lids"},
+            {"ingredient_name": "Straws", "quantity": 1, "unit": "each", "inventory_item": "Straws"},
+        ],
+    },
+    {
+        "name": "Chicken Rice Bowl",
+        "category": "Lunch bowls",
+        "selling_price": 14.95,
+        "notes": "High-volume bowl with a tight protein cost.",
+        "recipe": [
+            {"ingredient_name": "Chicken Breast", "quantity": 0.16, "unit": "kg", "inventory_item": "Chicken Breast"},
+            {"ingredient_name": "Rice", "quantity": 0.14, "unit": "kg", "inventory_item": "Rice"},
+            {"ingredient_name": "Vegetable Oil", "quantity": 0.01, "unit": "L", "inventory_item": "Vegetable Oil"},
+            {"ingredient_name": "Lettuce", "quantity": 0.25, "unit": "head", "inventory_item": "Lettuce"},
+        ],
+    },
+    {
+        "name": "Tomato Cream Pasta",
+        "category": "Noodles / pasta",
+        "selling_price": 15.95,
+        "notes": "Lunch pasta where sauce pricing matters.",
+        "recipe": [
+            {"ingredient_name": "Pasta", "quantity": 0.17, "unit": "kg", "inventory_item": "Pasta"},
+            {"ingredient_name": "Tomato Sauce", "quantity": 0.12, "unit": "L", "inventory_item": "Tomato Sauce"},
+            {"ingredient_name": "Cream", "quantity": 0.06, "unit": "L", "inventory_item": "Cream"},
+        ],
+    },
+]
+
+
+def _seed_menu_items(
+    organization: Organization,
+    location: RestaurantLocation,
+    item_by_name: dict[str, InventoryItem],
+    *,
+    actor_id: int,
+) -> None:
+    for spec in MENU_SEED:
+        normalized = _normalize_name(spec["name"])
+        menu_item = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+        if menu_item is None:
+            menu_item = MenuItem(
+                organization_id=organization.id,
+                location_id=location.id,
+                name=spec["name"],
+                normalized_name=normalized,
+                category=spec["category"],
+                selling_price=Decimal(str(spec["selling_price"])),
+                active=True,
+                notes=spec.get("notes", ""),
+                created_by_user_id=actor_id,
+                updated_by_user_id=actor_id,
+            )
+            db.session.add(menu_item)
+            db.session.flush()
+        else:
+            menu_item.name = spec["name"]
+            menu_item.normalized_name = normalized
+            menu_item.category = spec["category"]
+            menu_item.selling_price = Decimal(str(spec["selling_price"]))
+            menu_item.notes = spec.get("notes", "")
+            menu_item.active = True
+            menu_item.updated_by_user_id = actor_id
+
+        recipe = MenuRecipe.query.filter_by(organization_id=organization.id, location_id=location.id, menu_item_id=menu_item.id).first()
+        if recipe is None:
+            recipe = MenuRecipe(
+                organization_id=organization.id,
+                location_id=location.id,
+                menu_item_id=menu_item.id,
+                notes=spec.get("notes", ""),
+                created_by_user_id=actor_id,
+                updated_by_user_id=actor_id,
+            )
+            db.session.add(recipe)
+            db.session.flush()
+        else:
+            recipe.notes = spec.get("notes", "")
+            recipe.updated_by_user_id = actor_id
+            recipe.lines = []
+            db.session.flush()
+
+        for index, line_spec in enumerate(spec["recipe"]):
+            inventory_item = item_by_name.get(line_spec["inventory_item"])
+            if inventory_item is None:
+                continue
+            recipe.lines.append(
+                MenuRecipeLine(
+                    organization_id=organization.id,
+                    location_id=location.id,
+                    recipe_id=recipe.id,
+                    inventory_item_id=inventory_item.id,
+                    line_index=index,
+                    ingredient_name=line_spec["ingredient_name"],
+                    quantity=Decimal(str(line_spec["quantity"])),
+                    unit=line_spec["unit"],
+                    inventory_unit=inventory_item.stock_unit,
+                    purchase_unit=inventory_item.last_purchase_unit,
+                    conversion_factor=inventory_item.last_purchase_conversion_factor or Decimal("1"),
+                    notes="Seeded menu recipe",
+                )
+            )
+
+
 def _current_environment() -> str:
     return os.environ.get("FLOWTALLY_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
 
@@ -666,8 +787,13 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
         _upsert_membership(owner, organization, "owner")
         _upsert_membership(manager, organization, "manager")
         location = _upsert_location(organization)
-        for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING"]:
+        for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "REPORTING"]:
             _upsert_module(organization, module_key)
+        item_by_name = {
+            item.name: item
+            for item in InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+        }
+        _seed_menu_items(organization, location, item_by_name, actor_id=owner.id)
         db.session.commit()
         return SeedResult(organization_id=organization.id, owner_id=owner.id, manager_id=manager.id, location_id=location.id)
 
@@ -679,7 +805,7 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
     _upsert_membership(manager, organization, "manager")
     location = _upsert_location(organization)
     db.session.flush()
-    for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING"]:
+    for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "REPORTING"]:
         _upsert_module(organization, module_key)
 
     suppliers = [_get_or_create_supplier(organization, spec) for spec in SUPPLIER_SEED]
@@ -696,6 +822,7 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
 
     _seed_count_session(organization, location, item_by_name, actor_id=manager.id)
     _seed_reorder_intents(organization, location, item_by_name, actor_id=manager.id)
+    _seed_menu_items(organization, location, item_by_name, actor_id=owner.id)
 
     db.session.commit()
     return SeedResult(organization_id=organization.id, owner_id=owner.id, manager_id=manager.id, location_id=location.id)

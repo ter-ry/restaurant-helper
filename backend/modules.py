@@ -48,11 +48,11 @@ MODULE_REGISTRY: dict[str, dict[str, Any]] = {
         "key": "MENU_COSTING",
         "displayName": "Menu Costing",
         "description": "Menu and recipe costing support.",
-        "backendReady": False,
+        "backendReady": True,
         "dependencies": ["PURCHASES", "INVENTORY"],
         "dashboardWidgets": ["menu_readiness"],
         "requiredSetupTasks": ["recipe_import"],
-        "requiredPermissions": ["operational.read"],
+        "requiredPermissions": ["menu.manage"],
     },
     "REPORTING": {
         "key": "REPORTING",

@@ -16,6 +16,7 @@ from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
 from .ocr import bp as ocr_bp
+from .menu_api import bp as menu_api_bp
 from .tenant_context import apply_request_tenant_context
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
@@ -154,6 +155,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(commercial_bp)
     app.register_blueprint(imports_bp)
+    app.register_blueprint(menu_api_bp)
     app.register_blueprint(organizations_bp)
     app.register_blueprint(platform_admin_bp)
     app.register_blueprint(square_integration_bp)
