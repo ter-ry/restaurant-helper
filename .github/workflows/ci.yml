@@ -77,6 +77,10 @@ jobs:
           timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select c.relname, owner_role.rolname as table_owner, c.relrowsecurity, c.relforcerowsecurity from pg_class c join pg_roles owner_role on owner_role.oid = c.relowner where c.relname = 'suppliers';" -h localhost -p 5432 -U flowtally -d flowtally_test
           echo "AFTER: suppliers ownership"
 
+      - name: Staging provisioning script acceptance test
+        timeout-minutes: 10
+        run: timeout 180s python -u -m pytest backend/tests/test_staging_postgres_roles.py -vv -x --durations=20
+
       - name: Verify clean diff
         run: git diff --check
 

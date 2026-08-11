@@ -224,6 +224,11 @@ Set these on the backend service:
 - `DATABASE_URL = $runtimeUrl`
 - `FLOWTALLY_RATE_LIMIT_STORAGE_URI = <Render Key Value internal URL>`
 
+Keep the two database URLs separate:
+
+- `FLOWTALLY_MIGRATION_DATABASE_URL` is for migrations and bootstrap DDL.
+- `DATABASE_URL` stays the runtime/application connection used by Flask.
+
 Leave these disabled for this staging pass:
 
 - `GOOGLE_OIDC_ENABLED = false`
