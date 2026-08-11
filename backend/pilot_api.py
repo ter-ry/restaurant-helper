@@ -415,6 +415,10 @@ def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[
 
 
 def _replace_invoice_lines(invoice: PurchaseInvoice, organization_id: int, payload_lines: list[dict[str, Any]]):
+    if invoice.lines:
+        invoice.lines = []
+        db.session.flush()
+
     line_map: list[PurchaseInvoiceLine] = []
     for index, line_payload in enumerate(payload_lines):
         description = str(line_payload.get("description") or line_payload.get("itemName") or "").strip()

@@ -104,6 +104,223 @@ def test_pilot_dashboard_lists_live_drafts(client):
     assert any(session["id"] == count_session_id for session in body["pendingDraftCountSessions"])
 
 
+def test_pilot_operational_journey_persists_across_refetches(app, client):
+    login(client)
+
+    supplier_name = f"Journey Dairy {uuid4().hex[:8]}"
+    item_name = f"Journey Cream {uuid4().hex[:8]}"
+    invoice_number = f"JRN-{uuid4().hex[:8].upper()}"
+
+    supplier_create = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={
+            "name": supplier_name,
+            "categoryFocus": "Dairy",
+            "contactName": "Pilot Buyer",
+            "contactPhone": "416-555-0188",
+            "contactEmail": "buyer@example.com",
+            "orderingNotes": "Call before noon.",
+            "notes": "Seeded during the readiness audit.",
+            "isActive": True,
+        },
+    )
+    assert supplier_create.status_code == 201
+    supplier = supplier_create.get_json()
+
+    supplier_update = client.patch(
+        f"/api/pilot/suppliers/{supplier['id']}",
+        headers=csrf_headers(client),
+        json={
+            "notes": "Primary dairy supplier",
+            "contactPhone": "416-555-0199",
+        },
+    )
+    assert supplier_update.status_code == 200
+    assert supplier_update.get_json()["notes"] == "Primary dairy supplier"
+
+    supplier_list = client.get("/api/pilot/suppliers")
+    assert supplier_list.status_code == 200
+    assert any(entry["id"] == supplier["id"] and entry["notes"] == "Primary dairy supplier" for entry in supplier_list.get_json()["suppliers"])
+
+    item_create = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": item_name,
+            "category": "Dairy",
+            "stockUnit": "case",
+            "currentOnHand": 4,
+            "minQuantity": 2,
+            "parLevel": 8,
+            "preferredSupplierName": supplier_name,
+            "latestPurchasePrice": 18.5,
+            "lastPurchaseUnit": "case",
+            "lastPurchaseConversionFactor": 1,
+            "averageDailyUsage": 0.5,
+            "notes": "Initial readiness item",
+            "active": True,
+        },
+    )
+    assert item_create.status_code == 201
+    item = item_create.get_json()
+
+    item_update = client.patch(
+        f"/api/pilot/inventory/items/{item['id']}",
+        headers=csrf_headers(client),
+        json={
+            "notes": "Used for the pilot readiness pass",
+            "averageDailyUsage": 0.75,
+        },
+    )
+    assert item_update.status_code == 200
+    assert item_update.get_json()["notes"] == "Used for the pilot readiness pass"
+
+    inventory = client.get("/api/pilot/inventory")
+    assert inventory.status_code == 200
+    inventory_body = inventory.get_json()
+    assert any(entry["id"] == item["id"] and entry["notes"] == "Used for the pilot readiness pass" for entry in inventory_body["items"])
+
+    invoice_create = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-08-11",
+            "subtotal": 37.0,
+            "tax": 4.81,
+            "totalAmount": 41.81,
+            "notes": "OCR draft from the readiness pass",
+            "status": "Draft",
+            "sourceFileName": "journey-invoice.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "ocr",
+            "extractedText": "Journey Cream 2 case $18.50",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item["id"],
+                    "purchaseUnit": "case",
+                    "inventoryUnit": "case",
+                    "conversionFactor": 1,
+                    "quantity": 2,
+                    "unitPrice": 18.5,
+                    "lineTotal": 37.0,
+                    "confidence": 0.97,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert invoice_create.status_code == 201
+    invoice = invoice_create.get_json()
+
+    invoice_update = client.patch(
+        f"/api/pilot/purchases/invoices/{invoice['id']}",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-08-11",
+            "subtotal": 37.0,
+            "tax": 4.81,
+            "totalAmount": 41.81,
+            "notes": "Reviewed and ready",
+            "status": "Ready",
+            "sourceFileName": "journey-invoice.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "ocr",
+            "extractedText": "Journey Cream 2 case $18.50",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item["id"],
+                    "purchaseUnit": "case",
+                    "inventoryUnit": "case",
+                    "conversionFactor": 1,
+                    "quantity": 2,
+                    "unitPrice": 18.5,
+                    "lineTotal": 37.0,
+                    "confidence": 0.97,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert invoice_update.status_code == 200
+    assert invoice_update.get_json()["notes"] == "Reviewed and ready"
+
+    invoice_detail = client.get(f"/api/pilot/purchases/invoices/{invoice['id']}")
+    assert invoice_detail.status_code == 200
+    assert invoice_detail.get_json()["notes"] == "Reviewed and ready"
+
+    receive = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert receive.status_code == 200
+    assert receive.get_json()["status"] == "Completed"
+
+    item_detail = client.get(f"/api/pilot/inventory/items/{item['id']}")
+    assert item_detail.status_code == 200
+    item_body = item_detail.get_json()
+    assert item_body["item"]["notes"] == "Used for the pilot readiness pass"
+    assert item_body["purchaseHistory"]
+    assert item_body["movementHistory"]
+
+    count_create = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Readiness tester",
+            "notes": "Count after receipt",
+            "itemIds": [item["id"]],
+        },
+    )
+    assert count_create.status_code == 201
+    count_session = count_create.get_json()
+
+    count_update = client.patch(
+        f"/api/pilot/inventory/count-sessions/{count_session['id']}",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Readiness tester",
+            "notes": "Count after receipt",
+            "lines": [
+                {
+                    "id": count_session["lines"][0]["id"],
+                    "countedQuantity": 6.0,
+                    "note": "Shelf count matched after receipt",
+                }
+            ],
+        },
+    )
+    assert count_update.status_code == 200
+    assert count_update.get_json()["countedLineCount"] == 1
+
+    count_finalize = client.post(f"/api/pilot/inventory/count-sessions/{count_session['id']}/finalize", headers=csrf_headers(client))
+    assert count_finalize.status_code == 200
+    assert count_finalize.get_json()["status"] == "Completed"
+
+    count_detail = client.get(f"/api/pilot/inventory/count-sessions/{count_session['id']}")
+    assert count_detail.status_code == 200
+    assert count_detail.get_json()["status"] == "Completed"
+
+    reorder_plan = client.get("/api/pilot/reorder-plan")
+    assert reorder_plan.status_code == 200
+    assert any(suggestion["inventoryItemId"] == item["id"] for suggestion in reorder_plan.get_json()["suggestions"])
+
+    with app.app_context():
+        reloaded_supplier = Supplier.query.filter_by(id=supplier["id"]).first()
+        reloaded_item = InventoryItem.query.filter_by(id=item["id"]).first()
+        reloaded_invoice = PurchaseInvoice.query.filter_by(id=invoice["id"]).first()
+        reloaded_count = StockCountSession.query.filter_by(id=count_session["id"]).first()
+        assert reloaded_supplier is not None and reloaded_supplier.notes == "Primary dairy supplier"
+        assert reloaded_item is not None and float(reloaded_item.current_on_hand) == 6.0
+        assert reloaded_invoice is not None and reloaded_invoice.status == "Completed"
+        assert reloaded_count is not None and reloaded_count.status == "Completed"
+
+
 def test_pilot_mutations_require_auth_csrf_and_active_users(app, client):
     protected_endpoints = [
         ("GET", "/api/pilot/dashboard"),

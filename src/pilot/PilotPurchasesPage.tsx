@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, FileText, Plus, RefreshCcw, ShoppingBag } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, CheckCircle2, FileText, FileUp, Plus, RefreshCcw, ShoppingBag, Sparkles } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
+import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import {
   createPilotPurchaseInvoice,
   correctPilotPurchaseInvoice,
@@ -138,6 +139,57 @@ type MappingHint = {
   conversionFactor: number;
 };
 
+function createDraftFromOcr(
+  result: Awaited<ReturnType<typeof captureInvoiceDocument>>,
+  file: File,
+  inventoryItems: PilotInventoryItem[],
+  mappingHints: Map<string, MappingHint>,
+): PurchaseDraft {
+  const supplierName = result.fields.supplier.value.trim() || "Unknown supplier";
+  const normalizedSupplier = normalizeLookup(supplierName);
+  const lineItems = result.lineItems.length
+    ? result.lineItems.map((item, index) => {
+        const description = item.itemName || item.originalDescription || `Line item ${index + 1}`;
+        const normalizedDescription = normalizeLookup(description);
+        const hint = mappingHints.get(`${normalizedSupplier}|${normalizedDescription}`) ?? null;
+        const matchedItem = inventoryItems.find((candidate) => normalizeLookup(candidate.name) === normalizedDescription) ?? null;
+        const inventoryItemId = hint?.inventoryItemId ?? matchedItem?.id ?? null;
+        const inventoryItem = inventoryItemId ? inventoryItems.find((candidate) => candidate.id === inventoryItemId) ?? null : null;
+
+        return {
+          description,
+          inventoryItemId,
+          purchaseUnit: hint?.purchaseUnit ?? item.unit ?? inventoryItem?.lastPurchaseUnit ?? "each",
+          inventoryUnit: hint?.inventoryUnit ?? inventoryItem?.stockUnit ?? item.unit ?? "each",
+          conversionFactor: hint?.conversionFactor ?? 1,
+          quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
+          unitPrice: Number.isFinite(item.unitPrice) ? Number(item.unitPrice.toFixed(2)) : 0,
+          lineTotal: Number.isFinite(item.lineTotal) ? Number(item.lineTotal.toFixed(2)) : 0,
+          confidence: item.confidence,
+          needsReview: item.needsReview,
+          note: "",
+        };
+      })
+    : [blankLine()];
+
+  return {
+    id: null,
+    supplierName,
+    invoiceNumber: result.fields.invoiceNumber.value.trim() || `OCR-${Date.now().toString(36).toUpperCase()}`,
+    invoiceDate: result.fields.invoiceDate.value || todayIso(),
+    subtotal: Number.isFinite(result.fields.subtotal.value) ? Number(result.fields.subtotal.value.toFixed(2)) : 0,
+    tax: Number.isFinite(result.fields.tax.value) ? Number(result.fields.tax.value.toFixed(2)) : 0,
+    totalAmount: Number.isFinite(result.fields.total.value) ? Number(result.fields.total.value.toFixed(2)) : 0,
+    notes: result.warnings.join(" "),
+    status: result.needsReview ? "Draft" : "Ready",
+    sourceFileName: file.name,
+    sourceFileType: file.type || "application/octet-stream",
+    extractionStatus: result.provider,
+    extractedText: result.rawText,
+    lineItems,
+  };
+}
+
 export function PilotPurchasesPage() {
   const location = useLocation();
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
@@ -146,10 +198,13 @@ export function PilotPurchasesPage() {
   const [draft, setDraft] = useState<PurchaseDraft>(buildBlankDraft());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
+  const [ocrMessage, setOcrMessage] = useState<string | null>(null);
   const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
     const parsed = Number(value);
@@ -174,6 +229,35 @@ export function PilotPurchasesPage() {
     return hints;
   }, [data?.purchaseLines]);
 
+  const handleOcrUpload = async (file: File | null | undefined) => {
+    if (!file) {
+      return;
+    }
+    if (!isSupportedInvoiceUpload(file)) {
+      setError("Upload a JPG, PNG, WEBP, or PDF invoice.");
+      return;
+    }
+
+    setOcrLoading(true);
+    setError(null);
+    setReceiveMessage(null);
+    setOcrMessage(null);
+
+    try {
+      const result = await captureInvoiceDocument(file);
+      setDraft(createDraftFromOcr(result, file, inventoryItems, mappingHints));
+      setSelectedId(null);
+      setOcrMessage(`OCR draft loaded from ${file.name}. Review the fields before saving.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not extract the invoice.");
+    } finally {
+      setOcrLoading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   const load = async (preferredInvoiceId: number | null = requestedInvoiceId) => {
     setLoading(true);
     setError(null);
@@ -182,6 +266,7 @@ export function PilotPurchasesPage() {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
       setData(purchases);
       setInventoryItems(inventory.items);
+      setOcrMessage(null);
       const requestedInvoice = preferredInvoiceId ? purchases.invoices.find((invoice) => invoice.id === preferredInvoiceId) ?? null : null;
       const currentInvoice = requestedInvoice ?? (selectedId !== null ? purchases.invoices.find((invoice) => invoice.id === selectedId) ?? null : purchases.invoices[0] ?? null);
       if (currentInvoice) {
@@ -286,6 +371,7 @@ export function PilotPurchasesPage() {
       setSelectedId(saved.id);
       setDraft(invoiceToDraft(saved));
       setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
+      setOcrMessage(null);
       await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the purchase.");
@@ -311,6 +397,7 @@ export function PilotPurchasesPage() {
       setSelectedId(received.id);
       setDraft(invoiceToDraft(received));
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
+      setOcrMessage(null);
       await load(received.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not receive the purchase.");
@@ -335,6 +422,7 @@ export function PilotPurchasesPage() {
       setDraft(invoiceToDraft(corrected));
       setCorrectionNote("");
       setReceiveMessage(`Invoice ${corrected.invoiceNumber} corrected and inventory movements were reversed.`);
+      setOcrMessage(null);
       await load(corrected.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record the correction.");
@@ -416,11 +504,61 @@ export function PilotPurchasesPage() {
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
               Refresh
             </Button>
+            <Button variant="secondary" icon={<FileUp className="h-4 w-4" />} type="button" onClick={() => fileInputRef.current?.click()} disabled={ocrLoading}>
+              {ocrLoading ? "Processing OCR..." : "Upload invoice"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-3xl border border-line bg-slate-50 p-5">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Authenticated OCR intake</p>
+            <h2 className="mt-2 text-xl font-bold text-ink">Upload a supplier invoice and review the extracted draft</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              This path uses the real OCR backend, then saves the extracted draft into the pilot database after you review it. No browser localStorage is involved.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={ocrLoading} icon={<Sparkles className="h-4 w-4" />}>
+                {ocrLoading ? "Extracting..." : "Choose invoice file"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setDraft(buildBlankDraft(data ?? undefined));
+                  setSelectedId(null);
+                  setReceiveMessage(null);
+                  setOcrMessage("Started a blank purchase draft.");
+                }}
+              >
+                Blank draft
+              </Button>
+              <input
+                ref={fileInputRef}
+                className="hidden"
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf"
+                onChange={(event) => void handleOcrUpload(event.target.files?.[0] ?? null)}
+              />
+            </div>
+            <p className="mt-3 text-xs leading-5 text-muted">
+              Supported files: JPG, PNG, WEBP, PDF. OCR improves the supplier, invoice number, totals, and line-item review queue before you save.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-line bg-white p-5">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Review status</p>
+            <div className="mt-3 space-y-2 text-sm leading-6 text-muted">
+              <p>{ocrMessage ?? "Upload a file to prefill a real purchase draft."}</p>
+              <p>{data?.summary.uploadsNeedingReview ? `${data.summary.uploadsNeedingReview} purchases still need review.` : "No review backlog right now."}</p>
+              <p>{data?.summary.exportReady ? `${data.summary.exportReady} purchases are ready for export once received.` : "Save and receive a draft to move it into inventory."}</p>
+            </div>
           </div>
         </div>
 
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
+        {!error && ocrLoading ? <div className="mt-5 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">Extracting invoice data from the selected file...</div> : null}
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
