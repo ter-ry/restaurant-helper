@@ -157,6 +157,45 @@ def _assert_login_identity(connection, role_name: str) -> None:
     assert identity[2] == role_name, f"expected current role {role_name!r}, got {identity!r}"
 
 
+def _assert_runtime_schema_usage(connection) -> None:
+    has_usage = connection.execute(
+        text(
+            """
+            select has_schema_privilege('flowtally_runtime', 'public', 'USAGE')
+            """
+        )
+    ).scalar_one()
+    assert has_usage is True, "expected flowtally_runtime to have USAGE on schema public"
+
+
+def _restore_runtime_schema_privileges(connection) -> None:
+    print("BEFORE: restore runtime schema privileges", flush=True)
+    connection.exec_driver_sql("revoke all on schema public from public")
+    connection.exec_driver_sql("grant usage on schema public to flowtally_runtime")
+    connection.exec_driver_sql("grant select, insert, update, delete on all tables in schema public to flowtally_runtime")
+    connection.exec_driver_sql("grant usage, select on all sequences in schema public to flowtally_runtime")
+    connection.exec_driver_sql("grant execute on all functions in schema public to flowtally_runtime")
+    connection.exec_driver_sql(
+        """
+        alter default privileges for role flowtally_migrator in schema public
+            grant select, insert, update, delete on tables to flowtally_runtime
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        alter default privileges for role flowtally_migrator in schema public
+            grant usage, select on sequences to flowtally_runtime
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        alter default privileges for role flowtally_migrator in schema public
+            grant execute on functions to flowtally_runtime
+        """
+    )
+    print("AFTER: restore runtime schema privileges", flush=True)
+
+
 def _reset_public_schema(application) -> None:
     admin_url = _admin_postgres_url()
     if not admin_url:
@@ -175,6 +214,8 @@ def _reset_public_schema(application) -> None:
         print("AFTER: create schema public authorization flowtally_migrator", flush=True)
         assert _schema_owner(connection, "public") == "flowtally_migrator"
         print("STATE: public schema owner -> flowtally_migrator", flush=True)
+        _restore_runtime_schema_privileges(connection)
+        _assert_runtime_schema_usage(connection)
 
 
 def _upgrade_to(application, revision: str) -> Config:
