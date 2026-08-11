@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 
 from alembic import context
+from flask import current_app, has_app_context
 from sqlalchemy import engine_from_config, pool, text
 
 from backend.extensions import db
@@ -18,6 +19,10 @@ target_metadata = db.metadata
 
 
 def _migration_database_url() -> str:
+    if has_app_context():
+        app_url = str(current_app.config.get("SQLALCHEMY_DATABASE_URI") or "").strip()
+        if app_url.startswith("sqlite:"):
+            return app_url
     configured_url = (config.get_main_option("sqlalchemy.url") or "").strip()
     if configured_url.startswith("sqlite:"):
         return configured_url
