@@ -87,6 +87,9 @@ export function OwnerAuditPage() {
           </div>
           <h1 className="mt-3 text-2xl font-bold text-ink">Continue with Google to review audit activity</h1>
           <div className="mt-5 flex flex-wrap gap-3">
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/reports">
+              Reports &amp; exports
+            </Link>
             <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={startGoogleLogin}>
               Continue with Google
             </button>
@@ -134,10 +137,15 @@ export function OwnerAuditPage() {
         <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted">
           Organization: {session?.organizations?.find((entry) => entry.selected)?.organization.name ?? "Current organization"}
         </div>
-        <label className="flex min-w-64 flex-1 max-w-lg items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3">
-          <Activity className="h-4 w-4 text-brand-700" />
-          <input className="w-full border-0 bg-transparent text-sm outline-none" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search event type, entity or metadata" />
-        </label>
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+          <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/reports">
+            Reports &amp; exports
+          </Link>
+          <label className="flex min-w-64 flex-1 max-w-lg items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3">
+            <Activity className="h-4 w-4 text-brand-700" />
+            <input className="w-full border-0 bg-transparent text-sm outline-none" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search event type, entity or metadata" />
+          </label>
+        </div>
       </div>
 
       {filteredEvents.length === 0 ? (

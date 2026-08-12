@@ -222,6 +222,9 @@ function LoggedInProspectView({
           </Link>
           {lifecycleStatus === "ACTIVE" ? (
             <>
+              <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/reports">
+                Reports &amp; exports
+              </Link>
               <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/team">
                 Manage team
               </Link>

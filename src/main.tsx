@@ -39,6 +39,7 @@ const GoogleAuthCompletePage = lazyNamed(() => import("./pages/GoogleAuthComplet
 const InvitationAcceptPage = lazyNamed(() => import("./pages/InvitationAcceptPage"), "InvitationAcceptPage");
 const TeamManagementPage = lazyNamed(() => import("./pages/TeamManagementPage"), "TeamManagementPage");
 const OwnerAuditPage = lazyNamed(() => import("./pages/OwnerAuditPage"), "OwnerAuditPage");
+const OwnerReportsPage = lazyNamed(() => import("./pages/OwnerReportsPage"), "OwnerReportsPage");
 const SetupConsolePage = lazyNamed(() => import("./pages/SetupConsolePage"), "SetupConsolePage");
 const DataMigrationPage = lazyNamed(() => import("./pages/DataMigrationPage"), "DataMigrationPage");
 const SquareIntegrationPage = lazyNamed(() => import("./pages/SquareIntegrationPage"), "SquareIntegrationPage");
@@ -223,6 +224,8 @@ const routes = [
   { path: "/", element: <PageWithHashScroll><LandingPage /></PageWithHashScroll> },
   { path: "/auth/google/complete", element: <PageWithHashScroll><GoogleAuthCompletePage /></PageWithHashScroll> },
   { path: "/invite/:token", element: <PageWithHashScroll><InvitationAcceptPage /></PageWithHashScroll> },
+  { path: "/owner/reports", element: <PageWithHashScroll><OwnerReportsPage /></PageWithHashScroll> },
+  { path: "/owner/exports", element: <Navigate to="/owner/reports" replace /> },
   { path: "/owner/team", element: <PageWithHashScroll><TeamManagementPage /></PageWithHashScroll> },
   { path: "/owner/audit", element: <PageWithHashScroll><OwnerAuditPage /></PageWithHashScroll> },
   { path: "/platform/setup", element: <PageWithHashScroll><SetupConsolePage /></PageWithHashScroll> },

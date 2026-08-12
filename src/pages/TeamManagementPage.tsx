@@ -212,6 +212,9 @@ export function TeamManagementPage() {
           </form>
 
           <div className="mt-5 flex flex-wrap gap-3">
+            <Link className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/reports">
+              Reports &amp; exports
+            </Link>
             <Link className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/audit">
               Audit history
             </Link>

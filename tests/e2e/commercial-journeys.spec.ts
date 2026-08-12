@@ -322,6 +322,119 @@ async function installMockApi(page: Page, state: MockState) {
       return jsonResponse(route, { events: state.auditEvents });
     }
 
+    if (path === "/api/pilot/dashboard" && method === "GET") {
+      return jsonResponse(route, {
+        summary: {
+          weeklyInvoiceSpend: 482.5,
+          weeklyInvoiceCount: 4,
+          monthlyInvoiceCount: 8,
+          monthlyInvoiceSpend: 1120.25,
+          invoiceReviewQueueCount: 1,
+          inventoryItemCount: 12,
+          inventoryLowStockCount: 3,
+          inventoryOutOfStockCount: 1,
+          inventoryCountNeededCount: 2,
+          inventoryMovementCount: 9,
+          inventoryReceiptCount: 6,
+          inventoryValue: 915.75,
+          recentPriceChangeCount: 2,
+          inventoryItemsToReorderCount: 4,
+        },
+        recentInvoices: [],
+        recentMovements: [],
+        recentPriceChanges: [
+          { itemName: "Milk", supplier: "Dairy Co", invoiceDate: "2026-06-21", changePercent: 12.5, status: "Increased" },
+        ],
+        pendingDraftInvoices: [],
+        pendingDraftCountSessions: [],
+        pendingDraftReorderPlans: [],
+        supplierSpend: [
+          { supplier: "Dairy Co", spend: 240.5, invoiceCount: 3 },
+          { supplier: "Bakery Ltd", spend: 180.25, invoiceCount: 2 },
+        ],
+        reorderSuggestions: [],
+        workflow: { purchase: "Done", review: "Done", inventory: "Updated", reorder: "Alert", close: "Done", export: "Not ready" },
+      });
+    }
+
+    if (path === "/api/pilot/purchases" && method === "GET") {
+      return jsonResponse(route, {
+        invoices: [
+          {
+            id: 101,
+            organizationId: 42,
+            locationId: 7,
+            supplierId: 21,
+            supplier: { id: 21, organizationId: 42, name: "Dairy Co", normalizedName: "dairy-co", categoryFocus: "Dairy", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true, createdAt: null, updatedAt: null },
+            invoiceNumber: "INV-1001",
+            invoiceDate: "2026-06-21",
+            subtotal: 100,
+            tax: 13,
+            totalAmount: 113,
+            notes: "",
+            status: "Completed",
+            sourceFileName: "",
+            sourceFileType: "",
+            sourceFileKey: "",
+            extractedText: "",
+            extractionStatus: "",
+            receivedAt: null,
+            receivedByUserId: null,
+            createdByUserId: null,
+            updatedByUserId: null,
+            postedAt: null,
+            lineItems: [{ id: 1 }, { id: 2 }],
+            createdAt: "2026-06-21T09:00:00.000Z",
+            updatedAt: "2026-06-21T09:30:00.000Z",
+          },
+          {
+            id: 102,
+            organizationId: 42,
+            locationId: 7,
+            supplierId: 22,
+            supplier: { id: 22, organizationId: 42, name: "Bakery Ltd", normalizedName: "bakery-ltd", categoryFocus: "Bakery", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true, createdAt: null, updatedAt: null },
+            invoiceNumber: "INV-1002",
+            invoiceDate: "2026-06-22",
+            subtotal: 75,
+            tax: 9.75,
+            totalAmount: 84.75,
+            notes: "",
+            status: "Draft",
+            sourceFileName: "",
+            sourceFileType: "",
+            sourceFileKey: "",
+            extractedText: "",
+            extractionStatus: "",
+            receivedAt: null,
+            receivedByUserId: null,
+            createdByUserId: null,
+            updatedByUserId: null,
+            postedAt: null,
+            lineItems: [{ id: 3 }],
+            createdAt: "2026-06-22T10:00:00.000Z",
+            updatedAt: "2026-06-22T10:15:00.000Z",
+          },
+        ],
+        suppliers: [],
+        purchaseLines: [],
+        priceChanges: [],
+        summary: {
+          thisMonthSpend: 197.75,
+          uploadsNeedingReview: 1,
+          priceChangesFlagged: 2,
+          mappedItems: 6,
+          exportReady: 1,
+          needsMapping: 0,
+        },
+        exportReadiness: {
+          readyForCsv: 1,
+          needsReview: 1,
+          needsMapping: 0,
+          quickBooksFutureOnly: true,
+        },
+      });
+    }
+
     if (path === "/api/organizations/current" && method === "GET") {
       if (!state.currentOrganization) {
         return jsonResponse(route, { error: "Organization not found." }, 404);
@@ -1253,4 +1366,34 @@ test("owner audit history shows filtered organization activity", async ({ page }
   await expect(page.getByText("invitation.created")).toBeVisible();
   await page.getByPlaceholder("Search event type, entity or metadata").fill("square");
   await expect(page.getByText("square.connection.updated")).toBeVisible();
+});
+
+test("owner reports and exports surface authenticated reporting data", async ({ page }) => {
+  const state: MockState = {
+    session: makeActiveOwnerSession(),
+    csrfToken: "csrf-token",
+    currentOrganization: makeOrganization(),
+    invitations: [],
+    auditEvents: [
+      { id: 1, organizationId: 42, locationId: 7, actorUserId: 1, eventType: "invoice.completed", entityType: "purchase_invoice", entityId: 101, requestId: null, sourceIp: null, userAgent: null, metadata: { totalAmount: 113 }, createdAt: nowIso() },
+    ],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+
+  await page.goto("/owner/reports");
+  await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
+  await expect(page.getByText("Demo Bistro", { exact: true })).toBeVisible();
+  await expect(page.getByText("Weekly invoice spend")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download purchase CSV" })).toBeVisible();
+  await expect(page.getByText("Dairy Co leads spending this period.")).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download summary CSV" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("flowtally-owner-report-demo-bistro.csv");
+  expect(await download.path()).not.toBeNull();
 });
