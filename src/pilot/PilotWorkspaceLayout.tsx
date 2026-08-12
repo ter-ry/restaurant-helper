@@ -9,6 +9,7 @@ const navItems = [
   { to: "/app/purchases", label: "Purchases" },
   { to: "/app/inventory", label: "Inventory" },
   { to: "/app/menu-costing", label: "Menu Costing" },
+  { to: "/app/square-usage", label: "Usage / Variance" },
   { to: "/app/stock-counts", label: "Stock Counts" },
   { to: "/app/reorder-plan", label: "Reorder Plan" },
 ];

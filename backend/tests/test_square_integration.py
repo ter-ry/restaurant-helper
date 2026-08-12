@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
 
 from backend.extensions import db
-from backend.models import Organization, OrganizationMembership, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareOrder, SquareWebhookEvent, User
+from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.square import square_notification_signature
 from backend.tests.conftest import make_operational_organization
@@ -53,6 +55,10 @@ def configure_square(app):
                 "INTEGRATION_ENCRYPTION_KEY": Fernet.generate_key().decode("utf-8"),
             }
         )
+
+
+def configure_square_usage(app):
+    configure_square(app)
 
 
 def oauth_responder():
@@ -149,6 +155,217 @@ def connect_square(client, monkeypatch, app, organization_id: int):
     assert callback_response.status_code == 302
     assert "/integrations/square" in callback_response.headers["Location"]
     return fake_urlopen
+
+
+def _create_square_usage_fixture(app, owner: User, *, organization_name: str):
+    organization = make_operational_organization(
+        owner,
+        name=organization_name,
+        location_name="Main Kitchen",
+        enabled_modules=("PURCHASES", "INVENTORY", "REPORTING", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "SQUARE_INTEGRATION"),
+    )
+    location = organization.locations[0]
+
+    with app.app_context():
+        square_connection = SquareConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            square_merchant_id="merchant-usage",
+            status="connected",
+            sync_status="idle",
+        )
+        db.session.add(square_connection)
+        db.session.flush()
+
+        square_location = SquareLocation(
+            square_connection_id=square_connection.id,
+            square_location_id="LOC-1",
+            name="Front Bar",
+            status="active",
+            raw_payload_json={"id": "LOC-1", "name": "Front Bar"},
+        )
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(
+            SquareLocationMapping(
+                square_location_id=square_location.id,
+                restaurant_location_id=location.id,
+                mapped_by_user_id=owner.id,
+            )
+        )
+
+        recipe = Recipe(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Classic Cheeseburger",
+            normalized_name="classic cheeseburger",
+            yield_quantity=Decimal("1"),
+            yield_unit="servings",
+            active=True,
+        )
+        db.session.add(recipe)
+        db.session.flush()
+
+        inventory_item = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Beef",
+            normalized_name="beef",
+            category="Meat",
+            stock_unit="kg",
+            current_on_hand=Decimal("20"),
+            min_quantity=Decimal("0"),
+            par_level=Decimal("0"),
+            preferred_supplier_name="",
+            latest_purchase_price=Decimal("0"),
+            last_purchase_unit="kg",
+            last_purchase_conversion_factor=Decimal("1"),
+            average_daily_usage=Decimal("0"),
+            active=True,
+            notes="",
+        )
+        db.session.add(inventory_item)
+        db.session.flush()
+        db.session.add(
+            RecipeIngredient(
+                organization_id=organization.id,
+                recipe_id=recipe.id,
+                inventory_item_id=inventory_item.id,
+                quantity_required=Decimal("0.18"),
+                unit="kg",
+                notes="",
+                sort_order=0,
+            )
+        )
+
+        menu_item = MenuItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            recipe_id=recipe.id,
+            name="Classic Cheeseburger",
+            normalized_name="classic cheeseburger",
+            category="Burgers",
+            selling_price=Decimal("18"),
+            active=True,
+            notes="",
+        )
+        db.session.add(menu_item)
+        db.session.flush()
+
+        square_catalog_object = SquareCatalogObject(
+            square_connection_id=square_connection.id,
+            square_object_id="VAR-1",
+            object_type="ITEM_VARIATION",
+            version=1,
+            is_deleted=False,
+            raw_payload_json={"id": "VAR-1", "type": "ITEM_VARIATION"},
+        )
+        db.session.add(square_catalog_object)
+        db.session.flush()
+        db.session.add(
+            SquareCatalogMapping(
+                square_catalog_object_id=square_catalog_object.id,
+                mapping_type="menu_item",
+                flowtally_entity_type="menu_item",
+                flowtally_entity_id=str(menu_item.id),
+                status="mapped",
+                mapped_by_user_id=owner.id,
+            )
+        )
+
+        order = SquareOrder(
+            square_connection_id=square_connection.id,
+            square_order_id="ORDER-1",
+            square_location_id="LOC-1",
+            restaurant_location_id=location.id,
+            order_state="COMPLETED",
+            currency="CAD",
+            gross_amount=Decimal("12.50"),
+            discount_amount=Decimal("0"),
+            tax_amount=Decimal("1.63"),
+            tip_amount=Decimal("2.00"),
+            refund_amount=Decimal("0"),
+            net_amount=Decimal("12.50"),
+            item_quantity=Decimal("10"),
+            line_count=1,
+            ordered_at=datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc),
+            closed_at=datetime(2026, 8, 8, 12, 15, tzinfo=timezone.utc),
+            raw_payload_json={"id": "ORDER-1"},
+        )
+        db.session.add(order)
+        db.session.flush()
+        db.session.add(
+            SquareOrderLine(
+                order=order,
+                line_uid="line-1",
+                line_index=0,
+                square_item_variation_id="VAR-1",
+                name="Classic Cheeseburger",
+                quantity=Decimal("10"),
+                gross_amount=Decimal("12.50"),
+                discount_amount=Decimal("0"),
+                tax_amount=Decimal("1.63"),
+                tip_amount=Decimal("2.00"),
+                net_amount=Decimal("12.50"),
+                raw_payload_json={"uid": "line-1"},
+            )
+        )
+
+        opening_session = StockCountSession(
+            organization_id=organization.id,
+            location_id=location.id,
+            status="Completed",
+            started_at=datetime(2026, 8, 4, 9, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 8, 4, 9, 30, tzinfo=timezone.utc),
+            counted_by="Owner",
+            notes="",
+            item_count=1,
+        )
+        closing_session = StockCountSession(
+            organization_id=organization.id,
+            location_id=location.id,
+            status="Completed",
+            started_at=datetime(2026, 8, 11, 9, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 8, 11, 9, 30, tzinfo=timezone.utc),
+            counted_by="Owner",
+            notes="",
+            item_count=1,
+        )
+        db.session.add_all([opening_session, closing_session])
+        db.session.flush()
+        db.session.add(
+            StockCountSessionLine(
+                session_id=opening_session.id,
+                inventory_item_id=inventory_item.id,
+                line_index=0,
+                item_name_snapshot="Beef",
+                stock_unit_snapshot="kg",
+                expected_quantity=Decimal("0"),
+                counted_quantity=Decimal("21.6"),
+                variance=Decimal("0"),
+                resulting_quantity=Decimal("21.6"),
+                note="",
+                status="completed",
+            )
+        )
+        db.session.add(
+            StockCountSessionLine(
+                session_id=closing_session.id,
+                inventory_item_id=inventory_item.id,
+                line_index=0,
+                item_name_snapshot="Beef",
+                stock_unit_snapshot="kg",
+                expected_quantity=Decimal("0"),
+                counted_quantity=Decimal("19.5"),
+                variance=Decimal("0"),
+                resulting_quantity=Decimal("19.5"),
+                note="",
+                status="completed",
+            )
+        )
+        db.session.commit()
+
+    return organization, location
 
 
 def test_square_oauth_connection_catalog_and_status(app, client, monkeypatch):
@@ -330,3 +547,115 @@ def test_square_owner_requires_active_organization(app, client, monkeypatch):
     configure_square(app)
     start_response = client.get(f"/api/integrations/square/start?organizationId={organization.id}")
     assert start_response.status_code == 403
+
+
+def test_square_usage_report_calculates_theoretical_and_actual_usage(app, client, monkeypatch):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization, location = _create_square_usage_fixture(app, owner, organization_name=f"Square Usage {uuid4().hex[:6]}")
+    client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
+    configure_square_usage(app)
+
+    with app.app_context():
+        seeded_orders = SquareOrder.query.filter_by(square_connection_id=SquareConnection.query.filter_by(organization_id=organization.id).first().id).all()
+        for order in seeded_orders:
+            _ = list(order.lines)
+
+    class _FakeQuery:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def filter_by(self, *args, **kwargs):
+            return self
+
+        def filter(self, *args, **kwargs):
+            return self
+
+        def order_by(self, *args, **kwargs):
+            return self
+
+        def limit(self, *args, **kwargs):
+            return self
+
+        def count(self):
+            return len(self._rows)
+
+        def all(self):
+            return self._rows
+
+    monkeypatch.setattr("backend.square_integration.SquareOrder.query", _FakeQuery(seeded_orders))
+    monkeypatch.setattr(
+        "backend.square_integration._inventory_usage_basis",
+        lambda *args, **kwargs: {
+            "available": True,
+            "warnings": [],
+            "openingQuantity": 21.6,
+            "openingCountSessionId": 1,
+            "openingCountCompletedAt": "2026-08-04T09:30:00Z",
+            "closingQuantity": 19.5,
+            "closingCountSessionId": 2,
+            "closingCountCompletedAt": "2026-08-11T09:30:00Z",
+            "movementNet": 0,
+            "actualUsage": 2.1,
+        },
+    )
+
+    response = client.get(
+        "/api/integrations/square/usage",
+        query_string={
+            "organizationId": organization.id,
+            "locationId": location.id,
+            "startAt": "2026-08-04T00:00:00Z",
+            "endAt": "2026-08-11T23:59:59Z",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mappingCoverage"] == {"mappedVariationCount": 1, "totalVariationCount": 1, "mappedPercent": 100}
+    assert payload["usage"]["coverage"]["mappedSalesCoveragePercent"] == 100
+    assert payload["usage"]["coverage"]["calculableSalesCoveragePercent"] == 100
+    assert payload["usage"]["totals"]["theoreticalUsage"] == 1.8
+    assert payload["usage"]["totals"]["actualUsage"] == 2.1
+    assert payload["usage"]["totals"]["discrepancy"] == 0.3
+    assert payload["usage"]["ingredientUsage"][0]["inventoryItemName"] == "Beef"
+    assert payload["usage"]["ingredientUsage"][0]["actualUsageBasis"]["available"] is True
+
+
+def test_square_catalog_mapping_rejects_non_variation_catalog_objects(app, client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization, _ = _create_square_usage_fixture(app, owner, organization_name=f"Square Mapping {uuid4().hex[:6]}")
+    client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
+    configure_square_usage(app)
+
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
+        assert connection is not None
+        bad_object = SquareCatalogObject(
+            square_connection_id=connection.id,
+            square_object_id="ITEM-1",
+            object_type="ITEM",
+            version=1,
+            is_deleted=False,
+            raw_payload_json={"id": "ITEM-1", "type": "ITEM"},
+        )
+        db.session.add(bad_object)
+        db.session.flush()
+        bad_object_id = bad_object.id
+        db.session.commit()
+
+    response = client.post(
+        "/api/integrations/square/catalog/mappings",
+        headers=csrf_headers(client),
+        json={
+            "organizationId": organization.id,
+            "squareCatalogObjectId": bad_object_id,
+            "mappingType": "menu_item",
+            "flowtallyEntityType": "menu_item",
+            "flowtallyEntityId": "1",
+            "status": "mapped",
+        },
+    )
+    assert response.status_code == 400

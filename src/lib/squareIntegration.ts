@@ -62,6 +62,125 @@ export interface SquareCatalogObjectSummary {
   }>;
 }
 
+export interface SquareCatalogMappingSummary {
+  id: number;
+  squareCatalogObjectId: number;
+  squareObjectId: string;
+  squareObjectType: string;
+  squareObjectName: string;
+  squareItemName: string;
+  mappingType: string;
+  flowtallyEntityType: string;
+  flowtallyEntityId: string;
+  status: string;
+  mappedByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface SquareUsageMenuItemSummary {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  recipeId: number;
+  name: string;
+  normalizedName: string;
+  category: string;
+  sellingPrice: number;
+  active: boolean;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface SquareUsageMappingCoverage {
+  mappedVariationCount: number;
+  totalVariationCount: number;
+  mappedPercent: number;
+}
+
+export interface SquareUsageIngredientRow {
+  inventoryItemId: number;
+  inventoryItemName: string;
+  unit: string;
+  currentOnHand: number;
+  theoreticalUsage: number;
+  soldMenuUnits: number;
+  contributingMenuItems: Array<{
+    menuItemId: number;
+    menuItemName: string;
+    soldUnits: number;
+    theoreticalUsage: number;
+    recipeId: number;
+    recipeYield: number;
+  }>;
+  mappingStatus: string;
+  actualUsage: number | null;
+  actualUsageBasis: {
+    available: boolean;
+    warnings: string[];
+    openingQuantity: number | null;
+    openingCountSessionId: number | null;
+    openingCountCompletedAt: string | null;
+    closingQuantity: number | null;
+    closingCountSessionId: number | null;
+    closingCountCompletedAt: string | null;
+    movementNet: number | null;
+    actualUsage: number | null;
+  };
+  discrepancy: number | null;
+  discrepancyPercent: number | null;
+  warnings: string[];
+}
+
+export interface SquareUsageReport {
+  organizationId: number;
+  locationId: number | null;
+  period: {
+    startAt: string;
+    endAt: string;
+  };
+  coverage: {
+    totalSoldUnits: number;
+    mappedSoldUnits: number;
+    calculableSoldUnits: number;
+    excludedUnmappedUnits: number;
+    excludedIncompleteUnits: number;
+    excludedCancelledUnits: number;
+    mappedSalesCoveragePercent: number;
+    calculableSalesCoveragePercent: number;
+    mappedVariationCount: number;
+    unmappedVariationCount: number;
+  };
+  ingredientUsage: SquareUsageIngredientRow[];
+  totals: {
+    theoreticalUsage: number;
+    actualUsage: number | null;
+    discrepancy: number | null;
+    discrepancyPercent: number | null;
+  };
+  contributingMenuItems: Array<{
+    menuItemId: number;
+    menuItemName: string;
+    soldUnits: number;
+    recipeYield: number;
+    recipeYieldUnit: string;
+    warnings: string[];
+  }>;
+  unmappedVariations: Array<{
+    squareItemVariationId: string;
+    squareObjectName: string;
+    squareItemName: string;
+    soldUnits: number;
+    recentOrders: Array<{
+      squareOrderId: string;
+      orderedAt: string | null;
+      quantity: number;
+    }>;
+  }>;
+  warnings: string[];
+}
+
 export interface SquareOrderLineSummary {
   id: number;
   lineUid: string;
@@ -252,4 +371,70 @@ export async function updateSquareCatalogMapping(payload: {
     },
     body: JSON.stringify(payload),
   });
+}
+
+export async function deleteSquareCatalogMapping(payload: { organizationId: number; mappingId: number }) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<{ connection: SquareConnectionSummary }>(`/api/integrations/square/catalog/mappings/${payload.mappingId}?organizationId=${payload.organizationId}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+  });
+}
+
+export async function fetchSquareCatalogMappings(payload: { organizationId: number; locationId?: number | null }) {
+  const params = new URLSearchParams({ organizationId: String(payload.organizationId) });
+  if (payload.locationId != null) {
+    params.set("locationId", String(payload.locationId));
+  }
+  return requestJson<{
+    connection: SquareConnectionSummary;
+    menuItems: SquareUsageMenuItemSummary[];
+    mappings: SquareCatalogMappingSummary[];
+    unmappedVariations: Array<{
+      id: number;
+      squareCatalogObjectId: number;
+      squareObjectId: string;
+      squareObjectType: string;
+      squareObjectName: string;
+      squareItemName: string;
+      isDeleted: boolean;
+      soldUnits: number;
+      suggestedMenuItemId: number | null;
+      suggestedMenuItemName: string;
+      mapping: SquareCatalogMappingSummary | null;
+    }>;
+    mappingCoverage: SquareUsageMappingCoverage;
+  }>(`/api/integrations/square/catalog/mappings?${params.toString()}`);
+}
+
+export async function fetchSquareUsage(payload: { organizationId: number; locationId?: number | null; startAt: string; endAt: string }) {
+  const params = new URLSearchParams({
+    organizationId: String(payload.organizationId),
+    startAt: payload.startAt,
+    endAt: payload.endAt,
+  });
+  if (payload.locationId != null) {
+    params.set("locationId", String(payload.locationId));
+  }
+  return requestJson<{
+    connection: SquareConnectionSummary;
+    menuItems: SquareUsageMenuItemSummary[];
+    mappings: SquareCatalogMappingSummary[];
+    unmappedVariations: Array<{
+      squareItemVariationId: string;
+      squareObjectName: string;
+      squareItemName: string;
+      soldUnits: number;
+      recentOrders: Array<{
+        squareOrderId: string;
+        orderedAt: string | null;
+        quantity: number;
+      }>;
+    }>;
+    mappingCoverage: SquareUsageMappingCoverage;
+    usage: SquareUsageReport;
+  }>(`/api/integrations/square/usage?${params.toString()}`);
 }

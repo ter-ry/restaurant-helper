@@ -89,6 +89,8 @@ type MockState = {
     updatedAt: string | null;
   }>;
   squareConnection: any;
+  squareCatalogMappings?: any;
+  squareUsage?: any;
   importJobs: any[];
   importJob: any | null;
 };
@@ -617,7 +619,194 @@ async function installMockApi(page: Page, state: MockState) {
     }
 
     if (path === "/api/integrations/square/catalog/mappings" && method === "POST") {
+      const catalogObjectId = Number(body.squareCatalogObjectId ?? 0);
+      const entityId = String(body.flowtallyEntityId ?? "");
+      const mapping = {
+        id: 1,
+        squareCatalogObjectId: catalogObjectId,
+        squareObjectId: "VAR-1",
+        squareObjectType: "ITEM_VARIATION",
+        squareObjectName: "Classic Cheeseburger - Regular",
+        squareItemName: "Classic Cheeseburger",
+        mappingType: "menu_item",
+        flowtallyEntityType: "menu_item",
+        flowtallyEntityId: entityId,
+        status: "mapped",
+        mappedByUserId: 1,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      state.squareCatalogMappings = {
+        connection: state.squareConnection,
+        menuItems: [
+          { id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: nowIso(), updatedAt: nowIso() },
+        ],
+        mappings: [mapping],
+        unmappedVariations: [],
+        mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
+      };
+      if (state.squareUsage) {
+        state.squareUsage = {
+          ...state.squareUsage,
+          mappings: [mapping],
+          unmappedVariations: [],
+          mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
+          usage: {
+            ...state.squareUsage.usage,
+            mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
+            coverage: {
+              ...state.squareUsage.usage.coverage,
+              mappedVariationCount: 1,
+              mappedSalesCoveragePercent: 100,
+            },
+          },
+        };
+      }
       return jsonResponse(route, { connection: state.squareConnection });
+    }
+
+    if (path === "/api/integrations/square/catalog/mappings" && method === "GET") {
+      return jsonResponse(
+        route,
+        state.squareCatalogMappings ?? {
+          connection: state.squareConnection,
+          menuItems: [
+            { id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: nowIso(), updatedAt: nowIso() },
+          ],
+          mappings: [],
+          unmappedVariations: [
+            {
+              id: 1,
+              squareCatalogObjectId: 501,
+              squareObjectId: "VAR-1",
+              squareObjectType: "ITEM_VARIATION",
+              squareObjectName: "Classic Cheeseburger - Regular",
+              squareItemName: "Classic Cheeseburger",
+              isDeleted: false,
+              soldUnits: 10,
+              suggestedMenuItemId: 11,
+              suggestedMenuItemName: "Classic Cheeseburger",
+              mapping: null,
+            },
+          ],
+          mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 1, mappedPercent: 0 },
+        },
+      );
+    }
+
+    if (path === "/api/integrations/square/catalog/mappings/1" && method === "DELETE") {
+      if (state.squareCatalogMappings) {
+        const removedMapping = state.squareCatalogMappings.mappings?.[0] ?? null;
+        state.squareCatalogMappings = {
+          ...state.squareCatalogMappings,
+          mappings: [],
+          unmappedVariations: removedMapping
+            ? [
+                {
+                  id: removedMapping.squareCatalogObjectId,
+                  squareCatalogObjectId: removedMapping.squareCatalogObjectId,
+                  squareObjectId: removedMapping.squareObjectId,
+                  squareObjectType: removedMapping.squareObjectType,
+                  squareObjectName: removedMapping.squareObjectName,
+                  squareItemName: removedMapping.squareItemName,
+                  isDeleted: false,
+                  soldUnits: 10,
+                  suggestedMenuItemId: 11,
+                  suggestedMenuItemName: "Classic Cheeseburger",
+                  mapping: null,
+                },
+              ]
+            : [],
+          mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 1, mappedPercent: 0 },
+        };
+      }
+      if (state.squareUsage) {
+        state.squareUsage = {
+          ...state.squareUsage,
+          mappings: [],
+          unmappedVariations: state.squareUsage.unmappedVariations?.length ? state.squareUsage.unmappedVariations : state.squareUsage.mappings ?? [],
+          mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 1, mappedPercent: 0 },
+          usage: {
+            ...state.squareUsage.usage,
+            coverage: {
+              ...state.squareUsage.usage.coverage,
+              mappedVariationCount: 0,
+              mappedSalesCoveragePercent: 0,
+            },
+          },
+        };
+      }
+      return jsonResponse(route, { connection: state.squareConnection });
+    }
+
+    if (path === "/api/integrations/square/usage" && method === "GET") {
+      return jsonResponse(
+        route,
+        state.squareUsage ?? {
+          connection: state.squareConnection,
+          menuItems: [
+            { id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: nowIso(), updatedAt: nowIso() },
+          ],
+          mappings: [
+            { id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", mappingType: "menu_item", flowtallyEntityType: "menu_item", flowtallyEntityId: "11", status: "mapped", mappedByUserId: 1, createdAt: nowIso(), updatedAt: nowIso() },
+          ],
+          unmappedVariations: [],
+          mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
+          usage: {
+            organizationId: 42,
+            locationId: 7,
+            period: { startAt: nowIso(), endAt: nowIso() },
+            coverage: {
+              totalSoldUnits: 10,
+              mappedSoldUnits: 10,
+              calculableSoldUnits: 10,
+              excludedUnmappedUnits: 0,
+              excludedIncompleteUnits: 0,
+              excludedCancelledUnits: 0,
+              mappedSalesCoveragePercent: 100,
+              calculableSalesCoveragePercent: 100,
+              mappedVariationCount: 1,
+              unmappedVariationCount: 0,
+            },
+            ingredientUsage: [
+              {
+                inventoryItemId: 201,
+                inventoryItemName: "Beef",
+                unit: "kg",
+                currentOnHand: 20,
+                theoreticalUsage: 1.8,
+                soldMenuUnits: 10,
+                contributingMenuItems: [
+                  { menuItemId: 11, menuItemName: "Classic Cheeseburger", soldUnits: 10, theoreticalUsage: 1.8, recipeId: 21, recipeYield: 1 },
+                ],
+                mappingStatus: "complete",
+                actualUsage: 2.1,
+                actualUsageBasis: {
+                  available: true,
+                  warnings: [],
+                  openingQuantity: 21.6,
+                  openingCountSessionId: 1,
+                  openingCountCompletedAt: nowIso(),
+                  closingQuantity: 19.5,
+                  closingCountSessionId: 2,
+                  closingCountCompletedAt: nowIso(),
+                  movementNet: 0,
+                  actualUsage: 2.1,
+                },
+                discrepancy: 0.3,
+                discrepancyPercent: 16.7,
+                warnings: [],
+              },
+            ],
+            totals: { theoreticalUsage: 1.8, actualUsage: 2.1, discrepancy: 0.3, discrepancyPercent: 16.7 },
+            contributingMenuItems: [
+              { menuItemId: 11, menuItemName: "Classic Cheeseburger", soldUnits: 10, recipeYield: 1, recipeYieldUnit: "servings", warnings: [] },
+            ],
+            unmappedVariations: [],
+            warnings: [],
+          },
+        },
+      );
     }
 
     if (path === "/api/organizations/current" && method === "GET") {
@@ -995,6 +1184,51 @@ test("Square Sandbox connection and synchronization are visible to the owner", a
   await page.getByRole("button", { name: "Sync catalog" }).click();
   await page.getByRole("button", { name: "Sync orders" }).click();
   await expect(page.getByText("Connected and ready to sync locations, catalog objects, and orders.")).toBeVisible();
+});
+
+test("Square usage variance maps and clears variation links", async ({ page }) => {
+  const state: MockState = {
+    session: makeActiveOwnerSession(),
+    csrfToken: "csrf-token",
+    currentOrganization: makeOrganization(),
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: {
+      id: 1,
+      organizationId: 42,
+      organization: { id: 42, name: "Demo Bistro" },
+      environment: "sandbox",
+      squareMerchantId: "merchant-1",
+      status: "connected",
+      tokenExpiresAt: nowIso(),
+      revokedAt: null,
+      lastSyncAt: nowIso(),
+      syncStatus: "idle",
+      syncError: "",
+      catalogCount: 0,
+      orderCount: 0,
+      locationCount: 0,
+      dailySalesCount: 0,
+      locations: [],
+      catalogObjects: [],
+      orders: [],
+      dailySales: [],
+      syncJobs: [],
+      webhookEvents: [],
+    },
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+
+  await page.goto("/app/square-usage");
+  await expect(page.getByRole("heading", { name: "Inventory usage and variance" })).toBeVisible();
+  await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
+  await page.getByRole("button", { name: "Map" }).click();
+  await expect(page.getByText("No unmapped Square variations found for the selected scope.")).toBeVisible();
+  await page.getByRole("button", { name: "Remove" }).first().click();
+  await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
 });
 
 test("owner audit history shows filtered organization activity", async ({ page }) => {
