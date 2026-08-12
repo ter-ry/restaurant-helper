@@ -285,13 +285,19 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        assert _current_revision() == "0013_menu_costing_core"
         _assert_table_owned_by_migrator("suppliers")
+        _assert_table_owned_by_migrator("recipes")
+        _assert_table_owned_by_migrator("recipe_ingredients")
+        _assert_table_owned_by_migrator("menu_items")
         _assert_policy_exists("flowtally_organizations_tenant_access", "organizations")
         _assert_policy_exists("flowtally_suppliers_tenant_access", "suppliers")
         _assert_policy_exists("flowtally_data_import_jobs_tenant_access", "data_import_jobs")
         _assert_policy_exists("flowtally_square_orders_tenant_access", "square_orders")
         _assert_policy_exists("flowtally_support_access_grants_select_access", "support_access_grants")
+        _assert_policy_exists("flowtally_recipes_tenant_access", "recipes")
+        _assert_policy_exists("flowtally_recipe_ingredients_tenant_access", "recipe_ingredients")
+        _assert_policy_exists("flowtally_menu_items_tenant_access", "menu_items")
 
 
 def test_postgres_migrations_upgrade_from_secure_backend_head():
@@ -307,7 +313,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        assert _current_revision() == "0013_menu_costing_core"
         _assert_table_owned_by_migrator("audit_events")
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
 
@@ -325,7 +331,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        assert _current_revision() == "0013_menu_costing_core"
         _assert_table_owned_by_migrator("square_location_mappings")
 
     migration_config = _downgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
@@ -338,5 +344,5 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0012_fix_support_access_grant_rls_recursion"
+        assert _current_revision() == "0013_menu_costing_core"
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")

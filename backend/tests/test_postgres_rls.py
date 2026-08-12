@@ -20,9 +20,13 @@ from backend.models import (
     DataImportIssue,
     DataImportMapping,
     DataImportRow,
+    InventoryItem,
     Organization,
     OrganizationMembership,
     OrganizationModule,
+    MenuItem,
+    Recipe,
+    RecipeIngredient,
     RestaurantLocation,
     SquareConnection,
     SquareDailySalesSummary,
@@ -1433,6 +1437,143 @@ def _seed_admin_setup_dataset(prefix: str) -> dict[str, object]:
     return _seed_admin_fixture(f"{prefix} setup dataset", _seed)
 
 
+def _seed_admin_menu_costing_dataset(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, f"{prefix} Menu Alpha")
+        org_b = _create_org(owner, f"{prefix} Menu Beta")
+
+        location_a = RestaurantLocation.query.filter_by(organization_id=org_a.id).one()
+        location_b = RestaurantLocation.query.filter_by(organization_id=org_b.id).one()
+
+        inventory_a = InventoryItem(
+            organization_id=org_a.id,
+            location_id=location_a.id,
+            supplier_id=None,
+            name="Alpha Flour",
+            normalized_name="alpha flour",
+            category="Dry Goods",
+            stock_unit="kg",
+            current_on_hand=Decimal("10"),
+            min_quantity=Decimal("1"),
+            par_level=Decimal("5"),
+            preferred_supplier_name="",
+            latest_purchase_price=Decimal("4.99"),
+            last_purchase_unit="kg",
+            last_purchase_conversion_factor=Decimal("1"),
+            active=True,
+            notes="",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        inventory_b = InventoryItem(
+            organization_id=org_b.id,
+            location_id=location_b.id,
+            supplier_id=None,
+            name="Beta Flour",
+            normalized_name="beta flour",
+            category="Dry Goods",
+            stock_unit="kg",
+            current_on_hand=Decimal("10"),
+            min_quantity=Decimal("1"),
+            par_level=Decimal("5"),
+            preferred_supplier_name="",
+            latest_purchase_price=Decimal("4.99"),
+            last_purchase_unit="kg",
+            last_purchase_conversion_factor=Decimal("1"),
+            active=True,
+            notes="",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add_all([inventory_a, inventory_b])
+        db.session.flush()
+
+        recipe_a = Recipe(
+            organization_id=org_a.id,
+            location_id=location_a.id,
+            name="Alpha Sandwich",
+            normalized_name="alpha sandwich",
+            description="",
+            yield_quantity=Decimal("1"),
+            yield_unit="servings",
+            active=True,
+            notes="",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        recipe_b = Recipe(
+            organization_id=org_b.id,
+            location_id=location_b.id,
+            name="Beta Sandwich",
+            normalized_name="beta sandwich",
+            description="",
+            yield_quantity=Decimal("1"),
+            yield_unit="servings",
+            active=True,
+            notes="",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add_all([recipe_a, recipe_b])
+        db.session.flush()
+
+        ingredient_a = RecipeIngredient(
+            organization_id=org_a.id,
+            recipe_id=recipe_a.id,
+            inventory_item_id=inventory_a.id,
+            quantity_required=Decimal("0.25"),
+            unit="kg",
+            notes="",
+            sort_order=1,
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        ingredient_b = RecipeIngredient(
+            organization_id=org_b.id,
+            recipe_id=recipe_b.id,
+            inventory_item_id=inventory_b.id,
+            quantity_required=Decimal("0.25"),
+            unit="kg",
+            notes="",
+            sort_order=1,
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        menu_item_a = MenuItem(
+            organization_id=org_a.id,
+            location_id=location_a.id,
+            recipe_id=recipe_a.id,
+            name="Alpha Sandwich",
+            normalized_name="alpha sandwich",
+            category="Lunch",
+            selling_price=Decimal("12.50"),
+            active=True,
+            notes="",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        menu_item_b = MenuItem(
+            organization_id=org_b.id,
+            location_id=location_b.id,
+            recipe_id=recipe_b.id,
+            name="Beta Sandwich",
+            normalized_name="beta sandwich",
+            category="Lunch",
+            selling_price=Decimal("12.50"),
+            active=True,
+            notes="",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add_all([ingredient_a, ingredient_b, menu_item_a, menu_item_b])
+        db.session.commit()
+        return {"org_a_id": org_a.id, "org_b_id": org_b.id}
+
+    return _seed_admin_fixture(f"{prefix} menu costing dataset", _seed)
+
+
 def _restore_rls_context(access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
     _set_rls_context(access_scope=access_scope, organization_id=organization_id, support_grant_id=support_grant_id)
 
@@ -2082,6 +2223,21 @@ def test_postgres_rls_probe_7_suppliers_count(postgres_app, postgres_rls_probe_c
             "select count(*) from suppliers where organization_id = :org_id",
             {"org_id": postgres_rls_probe_context["org_a_id"]},
         ) == 1
+
+
+def test_rls_protects_menu_costing_tables(postgres_app):
+    seeded = _seed_admin_menu_costing_dataset("RLS")
+    with postgres_app.app_context():
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        assert Recipe.query.filter_by(organization_id=org_a_id).count() == 1
+        assert Recipe.query.filter_by(organization_id=org_b_id).count() == 0
+        assert RecipeIngredient.query.filter_by(organization_id=org_a_id).count() == 1
+        assert RecipeIngredient.query.filter_by(organization_id=org_b_id).count() == 0
+        assert MenuItem.query.filter_by(organization_id=org_a_id).count() == 1
+        assert MenuItem.query.filter_by(organization_id=org_b_id).count() == 0
 
 
 def test_rls_protects_square_sales_tables(postgres_app):
