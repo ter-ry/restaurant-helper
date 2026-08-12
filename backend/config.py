@@ -191,6 +191,9 @@ class BaseConfig:
             "RATELIMIT_STORAGE_URI": _rate_limit_storage_uri(cls.mode),
             "ALLOWED_ORIGINS": _allowed_origins(cls.mode),
             "FLOWTALLY_FRONTEND_ORIGIN": _frontend_origin(cls.mode),
+            "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF": _env_bool(
+                "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", cls.mode in PROD_LIKE_MODES
+            ),
             "GOOGLE_OIDC_ENABLED": _env_bool("GOOGLE_OIDC_ENABLED", False),
             "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
             "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(),

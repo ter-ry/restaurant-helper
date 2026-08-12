@@ -14,6 +14,7 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DATABASE_URL",
         "FLOWTALLY_ALLOWED_ORIGINS",
         "FLOWTALLY_FRONTEND_ORIGIN",
+        "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF",
         "SESSION_COOKIE_SECURE",
         "FLOWTALLY_RATE_LIMIT_STORAGE_URI",
         "FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL",
@@ -48,6 +49,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
     assert config["RATELIMIT_STORAGE_URI"] == "memory://"
     assert "http://127.0.0.1:5173" in config["ALLOWED_ORIGINS"]
     assert config["FLOWTALLY_FRONTEND_ORIGIN"] == "http://127.0.0.1:5173"
+    assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is False
 
 
 @pytest.mark.parametrize(
