@@ -555,6 +555,7 @@ def test_menu_costing_proves_unit_normalization_mapping_costing_and_variance_cha
         },
     )
     assert deluxe_create.status_code == 201
+    deluxe_item = _menu_item_by_name(deluxe_create.get_json(), "Beef Deluxe")
 
     plain_create = client.post(
         "/api/pilot/menu-items",
@@ -634,6 +635,7 @@ def test_menu_costing_proves_unit_normalization_mapping_costing_and_variance_cha
             mapped_by_user_id=owner.id,
         )
         create_square_menu_mapping(app, square_connection_id=connection_id, square_object_id="VAR-BURGER", menu_item_id=burger["id"], mapped_by_user_id=owner.id)
+        create_square_menu_mapping(app, square_connection_id=connection_id, square_object_id="VAR-DELUXE", menu_item_id=deluxe_item["id"], mapped_by_user_id=owner.id)
         create_square_menu_mapping(app, square_connection_id=connection_id, square_object_id="VAR-PASTA", menu_item_id=pasta_item["id"], mapped_by_user_id=owner.id)
 
         create_square_order(
@@ -674,6 +676,19 @@ def test_menu_costing_proves_unit_normalization_mapping_costing_and_variance_cha
             net_amount=800.0,
             ordered_at=datetime(2026, 8, 11, 14, 0, tzinfo=timezone.utc),
             closed_at=datetime(2026, 8, 11, 14, 2, tzinfo=timezone.utc),
+        )
+        create_square_order(
+            app,
+            square_connection_id=connection_id,
+            square_location_id="square-location-1",
+            restaurant_location_id=location_id,
+            square_order_id="ORDER-DELUXE-1",
+            square_item_variation_id="VAR-DELUXE",
+            name="Beef Deluxe",
+            quantity=3,
+            net_amount=54.0,
+            ordered_at=datetime(2026, 8, 11, 14, 30, tzinfo=timezone.utc),
+            closed_at=datetime(2026, 8, 11, 14, 32, tzinfo=timezone.utc),
         )
         create_square_order(
             app,
@@ -776,8 +791,8 @@ def test_menu_costing_proves_unit_normalization_mapping_costing_and_variance_cha
     sauce_usage = next(row for row in body["inventoryUsage"] if row["inventoryItemName"] == "Burger Sauce")
     pasta_usage = next(row for row in body["inventoryUsage"] if row["inventoryItemName"] == "Bulk Pasta")
 
-    assert beef_usage["theoreticalUsage"] == pytest.approx(1.8, rel=1e-6)
-    assert bun_usage["theoreticalUsage"] == pytest.approx(10, rel=1e-6)
+    assert beef_usage["theoreticalUsage"] == pytest.approx(2.1, rel=1e-6)
+    assert bun_usage["theoreticalUsage"] == pytest.approx(13, rel=1e-6)
     assert sauce_usage["theoreticalUsage"] == pytest.approx(10, rel=1e-6)
     assert pasta_usage["theoreticalUsage"] == pytest.approx(9, rel=1e-6)
     assert pasta_usage["expectedInventory"] == pytest.approx(6, rel=1e-6)
