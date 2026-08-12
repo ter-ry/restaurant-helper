@@ -22,6 +22,13 @@ Positioning:
 - `/demo/cafe/menu-costing`
 - `/demo/cafe/schedule`
 
+## Backend Boundaries
+
+- The authenticated pilot backend lives under `backend/` and starts from `backend.wsgi:app`.
+- `app.py`, `Procfile`, and `render.yaml` belong to the legacy root service unless the owner explicitly says otherwise.
+- `render.pilot-staging.yaml` and `backend/.env.staging.example` describe the pilot staging service.
+- Do not add, delete, move, or commit unrelated untracked files already present in the workspace.
+
 ## Working Rules
 
 - Keep changes narrow and high-confidence.
@@ -36,6 +43,7 @@ Positioning:
 ## Verification
 
 - Run `npm.cmd run build` before finishing.
+- Run the backend test suite and migration checks whenever backend code changes.
 - Manually check the relevant routes for any UI or workflow changes.
 - Summarize files changed, what changed, build result, and any remaining limitations.
 

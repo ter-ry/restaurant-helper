@@ -14,7 +14,7 @@ export function SuppliersPage() {
 
   useEffect(() => {
     setSelected(demo.suppliers[0]);
-  }, [demo.slug]);
+  }, [demo.slug, demo.suppliers]);
 
   const items = demo.trackedItems.filter((item) => item.preferredSupplier === selected.name);
   const columns: Column<Supplier>[] = [

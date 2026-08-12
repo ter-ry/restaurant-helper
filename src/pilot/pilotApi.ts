@@ -37,11 +37,24 @@ export interface PilotOrganizationBundle {
   membershipRole?: "owner" | "manager" | string;
 }
 
+export interface PilotOrganizationMembershipSummary {
+  membership: {
+    id: number;
+    organizationId: number;
+    role: string;
+    createdAt: string | null;
+  };
+  organization: PilotOrganization;
+  membershipRole: "owner" | "manager" | string;
+  selected: boolean;
+}
+
 export interface PilotAuthMeResponse {
   user: PilotUser;
   membershipRole: "owner" | "manager" | string | null;
   currentOrganizationId: number | null;
   currentLocationId: number | null;
+  organizations?: PilotOrganizationMembershipSummary[];
   csrfToken: string;
 }
 
@@ -50,6 +63,7 @@ export interface PilotLoginResponse {
   membershipRole: "owner" | "manager" | string | null;
   currentOrganization: PilotOrganization | null;
   currentLocationId: number | null;
+  organizations?: PilotOrganizationMembershipSummary[];
   csrfToken: string;
 }
 
@@ -140,9 +154,25 @@ export async function fetchCurrentOrganization() {
   return requestJson<PilotOrganizationBundle>("/api/organizations/current");
 }
 
+export async function fetchPilotOrganizations() {
+  return requestJson<{ organizations: PilotOrganizationMembershipSummary[]; currentOrganizationId: number | null; currentMembershipId: number | null }>("/api/organizations");
+}
+
+export async function selectPilotOrganization(organizationId: number) {
+  const csrfToken = await getPilotCsrfToken();
+  return requestJson<PilotOrganizationBundle>("/api/organizations/select", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify({ organizationId }),
+  });
+}
+
 export async function switchPilotLocation(locationId: number) {
   const csrfToken = await getPilotCsrfToken();
-  return requestJson<{ currentLocation: PilotLocation }>("/api/locations/current", {
+  return requestJson<{ currentLocation: PilotLocation }>("/api/locations/select", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -158,16 +188,42 @@ export interface PilotSupplier {
   name: string;
   normalizedName: string;
   categoryFocus: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  orderingNotes: string;
   notes: string;
   isActive: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }
 
+export interface PilotSupplierRecentInvoice {
+  id: number;
+  invoiceNumber: string;
+  invoiceDate: string;
+  status: string;
+  totalAmount: number;
+}
+
+export interface PilotSupplierRecentMapping {
+  id: number;
+  supplierItemName: string;
+  inventoryItemName: string;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+  lastSeenAt: string | null;
+}
+
 export interface PilotSupplierSummary extends PilotSupplier {
   inventoryItemCount: number;
   purchaseInvoiceCount: number;
+  supplierItemMappingCount: number;
   latestInvoiceDate: string | null;
+  historicalReferenceCount: number;
+  recentInvoices: PilotSupplierRecentInvoice[];
+  recentMappings: PilotSupplierRecentMapping[];
 }
 
 export interface PilotInventoryItem {
@@ -196,6 +252,13 @@ export interface PilotInventoryItem {
   updatedByUserId: number | null;
   createdAt: string | null;
   updatedAt: string | null;
+}
+
+export interface PilotInventoryItemDetail {
+  item: PilotInventoryItem;
+  purchaseHistory: PilotInvoiceLine[];
+  movementHistory: PilotInventoryMovement[];
+  supplierMappings: PilotSupplierItemMapping[];
 }
 
 export interface PilotSupplierItemMapping {
@@ -491,8 +554,22 @@ export async function receivePilotPurchaseInvoice(invoiceId: number) {
   });
 }
 
+export async function correctPilotPurchaseInvoice(invoiceId: number, payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/correct`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchPilotInventory() {
   return requestJson<PilotInventoryResponse>("/api/pilot/inventory");
+}
+
+export async function fetchPilotInventoryItem(itemId: number) {
+  return requestJson<PilotInventoryItemDetail>(`/api/pilot/inventory/items/${itemId}`);
 }
 
 export async function fetchPilotSuppliers() {

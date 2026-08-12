@@ -30,6 +30,7 @@ interface CountLineDraft {
 
 interface CountSessionDraft {
   id: number | null;
+  updatedAt: string | null;
   countedBy: string;
   notes: string;
   status: string;
@@ -45,6 +46,7 @@ interface CountSessionDraft {
 function sessionToDraft(session: PilotCountSession): CountSessionDraft {
   return {
     id: session.id,
+    updatedAt: session.updatedAt,
     countedBy: session.countedBy,
     notes: session.notes,
     status: session.status,
@@ -76,10 +78,13 @@ export function PilotStockCountsPage() {
   const [draft, setDraft] = useState<CountSessionDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [confirmConcurrency, setConfirmConcurrency] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
+  const [lineSearch, setLineSearch] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [selectionSeeded, setSelectionSeeded] = useState(false);
+  const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestedSessionId = useMemo(() => {
@@ -108,9 +113,11 @@ export function PilotStockCountsPage() {
       if (current) {
         setSelectedId(current.id);
         setDraft(sessionToDraft(current));
+        setSavedDraftSignature(JSON.stringify(sessionToDraft(current)));
         setConfirmConcurrency(false);
       } else {
         setDraft(null);
+        setSavedDraftSignature(null);
         setConfirmConcurrency(false);
       }
     } catch (err) {
@@ -132,6 +139,14 @@ export function PilotStockCountsPage() {
     () => inventoryItems.filter((item) => `${item.name} ${item.category} ${item.preferredSupplierName}`.toLowerCase().includes(itemSearch.toLowerCase())),
     [inventoryItems, itemSearch],
   );
+  const filteredLines = useMemo(
+    () =>
+      draft?.lines.filter((line) =>
+        `${line.itemNameSnapshot} ${line.stockUnitSnapshot} ${line.status} ${line.note}`.toLowerCase().includes(lineSearch.toLowerCase()),
+      ) ?? [],
+    [draft?.lines, lineSearch],
+  );
+  const conflictLines = useMemo(() => draft?.lines.filter((line) => line.hasMovementSinceStart) ?? [], [draft?.lines]);
 
   useEffect(() => {
     if (selectedSession) {
@@ -146,11 +161,31 @@ export function PilotStockCountsPage() {
     }
   }, [draft?.status]);
 
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!draft || draft.status === "Completed") {
+        return;
+      }
+      const currentSignature = JSON.stringify(draft);
+      if (savedDraftSignature !== null && currentSignature !== savedDraftSignature) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [draft, savedDraftSignature]);
+
+  const hasUnsavedChanges = useMemo(() => draft !== null && draft.status !== "Completed" && JSON.stringify(draft) !== savedDraftSignature, [draft, savedDraftSignature]);
+
   const selectedItemCount = selectedItemIds.length;
   const activeItemCount = inventoryItems.filter((item) => item.active).length;
 
   const createSession = async () => {
-    setSaving(true);
+    if (creating || saving || loading) {
+      return;
+    }
+    setCreating(true);
     setMessage(null);
     setError(null);
 
@@ -163,6 +198,7 @@ export function PilotStockCountsPage() {
       });
       setSelectedId(created.id);
       setDraft(sessionToDraft(created));
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(created)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${created.id} started.`);
       await load();
@@ -170,7 +206,7 @@ export function PilotStockCountsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a stock count.");
     } finally {
-      setSaving(false);
+      setCreating(false);
     }
   };
 
@@ -184,6 +220,7 @@ export function PilotStockCountsPage() {
 
     try {
       const saved = await updatePilotCountSession(draft.id, {
+        updatedAt: draft.updatedAt,
         countedBy: draft.countedBy,
         notes: draft.notes,
         lines: draft.lines.map((line) => ({
@@ -193,6 +230,7 @@ export function PilotStockCountsPage() {
         })),
       });
       setDraft(sessionToDraft(saved));
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
       setMessage(`Stock count ${saved.id} saved.`);
       await load();
       setSelectedId(saved.id);
@@ -218,6 +256,7 @@ export function PilotStockCountsPage() {
     try {
       const finalized = await finalizePilotCountSession(draft.id, { confirmConcurrency });
       setDraft(sessionToDraft(finalized));
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
       await load();
@@ -250,10 +289,10 @@ export function PilotStockCountsPage() {
             <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Start a count, enter counted quantities, save the draft, and finalize into the inventory ledger when the shelf is reconciled.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
+            <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
               New count
             </Button>
-            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
+            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={creating || saving || loading}>
               Refresh
             </Button>
           </div>
@@ -275,6 +314,7 @@ export function PilotStockCountsPage() {
             </div>
           ))}
         </div>
+        {hasUnsavedChanges ? <p className="mt-3 text-sm text-amber-700">You have unsaved count changes.</p> : null}
       </Card>
 
       <Card className="p-6">
@@ -313,8 +353,9 @@ export function PilotStockCountsPage() {
                   <button
                     key={item.id}
                     type="button"
+                    disabled={creating || saving}
                     onClick={() => setSelectedItemIds((current) => (current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]))}
-                    className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition hover:shadow-soft ${
+                    className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
                       selected ? "border-brand-200 bg-brand-50" : "border-line bg-white"
                     }`}
                   >
@@ -337,7 +378,7 @@ export function PilotStockCountsPage() {
           <SectionHeader title="Sessions" description="Latest count sessions first." />
           <div className="space-y-2">
             {draftSessions.map((session) => (
-              <button key={session.id} type="button" onClick={() => { setSelectedId(session.id); setDraft(sessionToDraft(session)); setConfirmConcurrency(false); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { setSelectedId(session.id); setDraft(sessionToDraft(session)); setConfirmConcurrency(false); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">Draft #{session.id}</p>
@@ -352,7 +393,7 @@ export function PilotStockCountsPage() {
               </button>
             ))}
             {completedSessions.map((session) => (
-              <button key={session.id} type="button" onClick={() => { setSelectedId(session.id); setDraft(sessionToDraft(session)); setConfirmConcurrency(false); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { setSelectedId(session.id); setDraft(sessionToDraft(session)); setConfirmConcurrency(false); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">Completed #{session.id}</p>
@@ -401,6 +442,22 @@ export function PilotStockCountsPage() {
                   Inventory moved after this count began. Review the variances, then confirm you want to finalize against the current ledger.
                 </div>
               ) : null}
+              {conflictLines.length ? (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-white px-4 py-3">
+                  <p className="text-sm font-semibold text-ink">Later movements since this count began</p>
+                  <div className="mt-3 space-y-2">
+                    {conflictLines.slice(0, 4).map((line) => (
+                      <div key={line.id} className="flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-3 py-2 text-sm">
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink">{line.itemNameSnapshot}</p>
+                          <p className="text-xs text-muted">{line.movementCountSinceStart} later movement{line.movementCountSinceStart === 1 ? "" : "s"}</p>
+                        </div>
+                        <Badge tone="warning">{line.hasMovementSinceStart ? "Review" : "Clear"}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <label className="mt-4 block">
                 <span className="text-sm font-semibold text-ink">Notes</span>
@@ -409,8 +466,15 @@ export function PilotStockCountsPage() {
 
               <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
                 <p className="text-sm font-semibold text-ink">Count lines</p>
+                <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-muted" />
+                    <input className="w-full bg-transparent text-sm outline-none" placeholder="Search count lines" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
                 <div className="mt-4 space-y-3">
-                  {draft.lines.map((line) => (
+                  {filteredLines.map((line) => (
                     <div key={line.id} className="rounded-2xl border border-line bg-white p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="min-w-0">
@@ -444,14 +508,15 @@ export function PilotStockCountsPage() {
                       </div>
                     </div>
                   ))}
+                  {!filteredLines.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No count lines match this search.</p> : null}
                 </div>
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <Button disabled={saving || draft.status === "Completed"} icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
+                <Button disabled={creating || saving || draft.status === "Completed"} icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
                   Save count
                 </Button>
-                <Button disabled={saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
+                <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
                   {draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Finalize count"}
                 </Button>
               </div>

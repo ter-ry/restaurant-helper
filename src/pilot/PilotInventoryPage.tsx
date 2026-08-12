@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -8,11 +9,13 @@ import {
   createPilotInventoryAdjustment,
   createPilotInventoryItem,
   fetchPilotInventory,
+  fetchPilotInventoryItem,
   fetchPilotSuppliers,
   createPilotSupplier,
   updatePilotSupplier,
   type PilotCountSession,
   type PilotInventoryItem,
+  type PilotInventoryItemDetail,
   type PilotInventoryResponse,
   type PilotSupplierSummary,
   updatePilotInventoryItem,
@@ -29,6 +32,8 @@ interface InventoryDraft {
   parLevel: number;
   preferredSupplierName: string;
   latestPurchasePrice: number;
+  lastPurchaseUnit: string;
+  lastPurchaseConversionFactor: number;
   averageDailyUsage: number;
   notes: string;
   active: boolean;
@@ -38,6 +43,10 @@ interface SupplierDraft {
   id: number | null;
   name: string;
   categoryFocus: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  orderingNotes: string;
   notes: string;
   isActive: boolean;
 }
@@ -53,6 +62,8 @@ function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
     parLevel: 0,
     preferredSupplierName: "",
     latestPurchasePrice: 0,
+    lastPurchaseUnit: "each",
+    lastPurchaseConversionFactor: 1,
     averageDailyUsage: 0,
     notes: "",
     active: true,
@@ -65,6 +76,10 @@ function blankSupplierDraft(suppliers: PilotSupplierSummary[] = []): SupplierDra
     id: null,
     name: "",
     categoryFocus: activeSupplier?.categoryFocus ?? "Other",
+    contactName: "",
+    contactPhone: "",
+    contactEmail: "",
+    orderingNotes: "",
     notes: "",
     isActive: true,
   };
@@ -81,6 +96,8 @@ function draftFromItem(item: PilotInventoryItem): InventoryDraft {
     parLevel: item.parLevel,
     preferredSupplierName: item.preferredSupplierName,
     latestPurchasePrice: item.latestPurchasePrice,
+    lastPurchaseUnit: item.lastPurchaseUnit,
+    lastPurchaseConversionFactor: item.lastPurchaseConversionFactor,
     averageDailyUsage: item.averageDailyUsage ?? 0,
     notes: item.notes,
     active: item.active,
@@ -102,16 +119,20 @@ function adjustmentTone(quantity: number) {
 }
 
 export function PilotInventoryPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<InventoryDraft>(blankDraft());
+  const [itemDetail, setItemDetail] = useState<PilotInventoryItemDetail | null>(null);
+  const [itemDetailLoading, setItemDetailLoading] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [supplierDraft, setSupplierDraft] = useState<SupplierDraft>(blankSupplierDraft());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [supplierSearch, setSupplierSearch] = useState("");
   const [adjustmentDelta, setAdjustmentDelta] = useState(0);
   const [adjustmentReason, setAdjustmentReason] = useState("Periodic review");
   const [adjustmentNote, setAdjustmentNote] = useState("");
@@ -139,6 +160,10 @@ export function PilotInventoryPage() {
           id: supplierResponse.suppliers[0].id,
           name: supplierResponse.suppliers[0].name,
           categoryFocus: supplierResponse.suppliers[0].categoryFocus,
+          contactName: supplierResponse.suppliers[0].contactName,
+          contactPhone: supplierResponse.suppliers[0].contactPhone,
+          contactEmail: supplierResponse.suppliers[0].contactEmail,
+          orderingNotes: supplierResponse.suppliers[0].orderingNotes,
           notes: supplierResponse.suppliers[0].notes,
           isActive: supplierResponse.suppliers[0].isActive,
         });
@@ -160,9 +185,16 @@ export function PilotInventoryPage() {
 
   const selectedItem = useMemo(() => data?.items.find((item) => item.id === selectedId) ?? null, [data?.items, selectedId]);
   const selectedSupplier = useMemo(() => suppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null, [selectedSupplierId, suppliers]);
+  const selectedItemPurchaseHistory = itemDetail?.purchaseHistory ?? [];
+  const selectedItemMovementHistory = itemDetail?.movementHistory ?? [];
+  const selectedItemSupplierMappings = itemDetail?.supplierMappings ?? [];
   const filteredItems = useMemo(
     () => (data?.items ?? []).filter((item) => `${item.name} ${item.category} ${item.preferredSupplierName}`.toLowerCase().includes(search.toLowerCase())),
     [data?.items, search],
+  );
+  const filteredSuppliers = useMemo(
+    () => suppliers.filter((supplier) => `${supplier.name} ${supplier.categoryFocus} ${supplier.contactName} ${supplier.contactPhone} ${supplier.contactEmail}`.toLowerCase().includes(supplierSearch.toLowerCase())),
+    [supplierSearch, suppliers],
   );
 
   useEffect(() => {
@@ -172,11 +204,45 @@ export function PilotInventoryPage() {
   }, [selectedItem]);
 
   useEffect(() => {
+    if (!selectedId) {
+      setItemDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setItemDetailLoading(true);
+    void fetchPilotInventoryItem(selectedId)
+      .then((detail) => {
+        if (!cancelled) {
+          setItemDetail(detail);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load inventory item history.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setItemDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  useEffect(() => {
     if (selectedSupplier) {
       setSupplierDraft({
         id: selectedSupplier.id,
         name: selectedSupplier.name,
         categoryFocus: selectedSupplier.categoryFocus,
+        contactName: selectedSupplier.contactName,
+        contactPhone: selectedSupplier.contactPhone,
+        contactEmail: selectedSupplier.contactEmail,
+        orderingNotes: selectedSupplier.orderingNotes,
         notes: selectedSupplier.notes,
         isActive: selectedSupplier.isActive,
       });
@@ -198,6 +264,8 @@ export function PilotInventoryPage() {
         parLevel: draft.parLevel,
         preferredSupplierName: draft.preferredSupplierName,
         latestPurchasePrice: draft.latestPurchasePrice,
+        lastPurchaseUnit: draft.lastPurchaseUnit,
+        lastPurchaseConversionFactor: draft.lastPurchaseConversionFactor,
         averageDailyUsage: draft.averageDailyUsage,
         notes: draft.notes,
         active: draft.active,
@@ -224,6 +292,10 @@ export function PilotInventoryPage() {
       const payload = {
         name: supplierDraft.name,
         categoryFocus: supplierDraft.categoryFocus,
+        contactName: supplierDraft.contactName,
+        contactPhone: supplierDraft.contactPhone,
+        contactEmail: supplierDraft.contactEmail,
+        orderingNotes: supplierDraft.orderingNotes,
         notes: supplierDraft.notes,
         isActive: supplierDraft.isActive,
       };
@@ -233,6 +305,10 @@ export function PilotInventoryPage() {
         id: saved.id,
         name: saved.name,
         categoryFocus: saved.categoryFocus,
+        contactName: saved.contactName,
+        contactPhone: saved.contactPhone,
+        contactEmail: saved.contactEmail,
+        orderingNotes: saved.orderingNotes,
         notes: saved.notes,
         isActive: saved.isActive,
       });
@@ -296,7 +372,7 @@ export function PilotInventoryPage() {
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
               Refresh
             </Button>
-            <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => window.location.assign("/app/reorder-plan")}>
+            <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>
               Reorder list ({reorderCount})
             </Button>
           </div>
@@ -330,7 +406,13 @@ export function PilotInventoryPage() {
               <Badge tone="neutral">{suppliers.filter((supplier) => supplier.isActive).length} active</Badge>
               <Badge tone="neutral">{suppliers.filter((supplier) => !supplier.isActive).length} inactive</Badge>
             </div>
-            {suppliers.map((supplier) => (
+            <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted" />
+                <input className="w-full bg-transparent text-sm outline-none" placeholder="Search supplier, contact, or category" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} />
+              </div>
+            </div>
+            {filteredSuppliers.map((supplier) => (
               <button
                 key={supplier.id}
                 type="button"
@@ -340,6 +422,10 @@ export function PilotInventoryPage() {
                     id: supplier.id,
                     name: supplier.name,
                     categoryFocus: supplier.categoryFocus,
+                    contactName: supplier.contactName,
+                    contactPhone: supplier.contactPhone,
+                    contactEmail: supplier.contactEmail,
+                    orderingNotes: supplier.orderingNotes,
                     notes: supplier.notes,
                     isActive: supplier.isActive,
                   });
@@ -352,6 +438,7 @@ export function PilotInventoryPage() {
                   <div>
                     <p className="font-semibold text-ink">{supplier.name}</p>
                     <p className="text-sm text-muted">{supplier.categoryFocus || "Other"}</p>
+                    <p className="mt-1 text-xs text-muted">{supplier.contactName || "No contact"}{supplier.contactEmail ? ` · ${supplier.contactEmail}` : ""}</p>
                   </div>
                   <Badge tone={supplier.isActive ? "success" : "neutral"}>{supplier.isActive ? "Active" : "Inactive"}</Badge>
                 </div>
@@ -371,7 +458,7 @@ export function PilotInventoryPage() {
                 </div>
               </button>
             ))}
-            {!suppliers.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No suppliers yet. Create the first supplier to keep purchasing organized.</p> : null}
+            {!filteredSuppliers.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No suppliers match this search.</p> : null}
           </div>
 
           <div className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -385,9 +472,25 @@ export function PilotInventoryPage() {
                 <span className="text-sm font-semibold text-ink">Category focus</span>
                 <input className="input mt-1" value={supplierDraft.categoryFocus} onChange={(event) => setSupplierDraft((current) => ({ ...current, categoryFocus: event.target.value }))} />
               </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Contact name</span>
+                <input className="input mt-1" value={supplierDraft.contactName} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactName: event.target.value }))} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Contact phone</span>
+                <input className="input mt-1" value={supplierDraft.contactPhone} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactPhone: event.target.value }))} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Contact email</span>
+                <input className="input mt-1" type="email" value={supplierDraft.contactEmail} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactEmail: event.target.value }))} />
+              </label>
             </div>
             <label className="mt-4 block">
-              <span className="text-sm font-semibold text-ink">Notes</span>
+              <span className="text-sm font-semibold text-ink">Ordering notes</span>
+              <textarea className="input mt-1" value={supplierDraft.orderingNotes} onChange={(event) => setSupplierDraft((current) => ({ ...current, orderingNotes: event.target.value }))} />
+            </label>
+            <label className="mt-4 block">
+              <span className="text-sm font-semibold text-ink">Internal notes</span>
               <textarea className="input mt-1" value={supplierDraft.notes} onChange={(event) => setSupplierDraft((current) => ({ ...current, notes: event.target.value }))} />
             </label>
             <label className="mt-4 block">
@@ -413,6 +516,60 @@ export function PilotInventoryPage() {
                 New supplier
               </Button>
             </div>
+
+            {selectedSupplier ? (
+              <div className="mt-4 rounded-2xl border border-line bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Historical references</p>
+                <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Items</p>
+                    <p className="mt-1 text-ink">{formatNumber(selectedSupplier.inventoryItemCount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoices</p>
+                    <p className="mt-1 text-ink">{formatNumber(selectedSupplier.purchaseInvoiceCount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Mappings</p>
+                    <p className="mt-1 text-ink">{formatNumber(selectedSupplier.supplierItemMappingCount)}</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-muted">
+                  This supplier is referenced by {formatNumber(selectedSupplier.historicalReferenceCount)} historical records.
+                </p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">Recent invoices</p>
+                    <div className="mt-2 space-y-2">
+                      {selectedSupplier.recentInvoices.length ? selectedSupplier.recentInvoices.map((invoice) => (
+                        <div key={invoice.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-ink">{invoice.invoiceNumber}</p>
+                              <p className="text-xs text-muted">{invoice.invoiceDate}</p>
+                            </div>
+                            <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
+                          </div>
+                          <p className="mt-2 text-muted">{formatMoney(invoice.totalAmount)}</p>
+                        </div>
+                      )) : <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No invoice history yet.</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-ink">Recent mappings</p>
+                    <div className="mt-2 space-y-2">
+                      {selectedSupplier.recentMappings.length ? selectedSupplier.recentMappings.map((mapping) => (
+                        <div key={mapping.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                          <p className="font-semibold text-ink">{mapping.supplierItemName}</p>
+                          <p className="text-xs text-muted">{mapping.inventoryItemName || "Unlinked inventory item"}</p>
+                          <p className="mt-2 text-muted">{mapping.purchaseUnit} → {mapping.inventoryUnit} · x{formatNumber(mapping.conversionFactor)}</p>
+                        </div>
+                      )) : <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No mapping history yet.</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -493,9 +650,9 @@ export function PilotInventoryPage() {
               <input className="input mt-1" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))} />
             </label>
             <label className="block">
-              <span className="text-sm font-semibold text-ink">Stock unit</span>
-              <input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} />
-            </label>
+                <span className="text-sm font-semibold text-ink">Base unit</span>
+                <input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} />
+              </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Preferred supplier</span>
               {suppliers.length ? (
@@ -529,6 +686,14 @@ export function PilotInventoryPage() {
             <label className="block">
               <span className="text-sm font-semibold text-ink">Latest price</span>
               <input className="input mt-1" type="number" step="0.01" value={draft.latestPurchasePrice} onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Last purchase unit</span>
+              <input className="input mt-1" value={draft.lastPurchaseUnit} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Purchase conversion</span>
+              <input className="input mt-1" type="number" step="0.0001" value={draft.lastPurchaseConversionFactor} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) }))} />
             </label>
           </div>
 
@@ -580,7 +745,16 @@ export function PilotInventoryPage() {
                     <p className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</p>
                     <p className="mt-1 text-ink">{formatMoney(draft.latestPurchasePrice)}</p>
                   </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase</p>
+                    <p className="mt-1 text-ink">{draft.lastPurchaseUnit || "each"} · x{formatNumber(draft.lastPurchaseConversionFactor)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimated value</p>
+                    <p className="mt-1 text-ink">{formatMoney((draft.currentOnHand || 0) * (draft.latestPurchasePrice || 0))}</p>
+                  </div>
                 </div>
+                <p className="text-xs text-muted">Base unit changes are blocked once an item has invoice or movement history.</p>
               </div>
             </div>
 
@@ -607,9 +781,62 @@ export function PilotInventoryPage() {
                 <Button variant="secondary" disabled={saving || !draft.id} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
                   {draft.id ? "Update item" : "Create item"}
                 </Button>
-                <Button variant="secondary" icon={<ArrowRight className="h-4 w-4" />} type="button" onClick={() => window.location.assign("/app/stock-counts")}>
+                <Button variant="secondary" icon={<ArrowRight className="h-4 w-4" />} type="button" onClick={() => navigate("/app/stock-counts")}>
                   Stock counts
                 </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-3">
+            <div className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Purchase history</p>
+              <div className="mt-3 space-y-2">
+                {itemDetailLoading ? <p className="text-sm text-muted">Loading purchase history...</p> : null}
+                {selectedItemPurchaseHistory.length ? selectedItemPurchaseHistory.map((line) => (
+                  <div key={line.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-ink">{line.invoiceNumber}</p>
+                        <p className="text-xs text-muted">{line.supplierName} · {line.invoiceDate}</p>
+                      </div>
+                      <p className="font-semibold text-ink">{formatMoney(line.lineTotal)}</p>
+                    </div>
+                    <p className="mt-2 text-muted">{line.description} · {formatNumber(line.quantity)} {line.purchaseUnit}</p>
+                  </div>
+                )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No purchase history yet.</p> : null}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Movement history</p>
+              <div className="mt-3 space-y-2">
+                {itemDetailLoading ? <p className="text-sm text-muted">Loading movement history...</p> : null}
+                {selectedItemMovementHistory.length ? selectedItemMovementHistory.map((movement) => (
+                  <div key={movement.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-ink">{movement.sourceType}</p>
+                      <p className={`font-semibold ${movement.quantityDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                        {movement.quantityDelta >= 0 ? "+" : ""}{formatNumber(movement.quantityDelta)} {movement.unit}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">{movement.reason}</p>
+                  </div>
+                )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No movement history yet.</p> : null}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Supplier mappings</p>
+              <div className="mt-3 space-y-2">
+                {itemDetailLoading ? <p className="text-sm text-muted">Loading mapping history...</p> : null}
+                {selectedItemSupplierMappings.length ? selectedItemSupplierMappings.map((mapping) => (
+                  <div key={mapping.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                    <p className="font-semibold text-ink">{mapping.supplierItemName}</p>
+                    <p className="text-xs text-muted">{mapping.purchaseUnit} → {mapping.inventoryUnit} · x{formatNumber(mapping.conversionFactor)}</p>
+                    <p className="mt-2 text-xs text-muted">{mapping.lastSeenAt ? `Last seen ${mapping.lastSeenAt}` : "No last-seen date"}</p>
+                  </div>
+                )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No supplier mappings yet.</p> : null}
               </div>
             </div>
           </div>

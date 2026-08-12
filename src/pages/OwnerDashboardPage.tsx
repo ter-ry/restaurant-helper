@@ -361,9 +361,11 @@ export function OwnerDashboardPage() {
     inventoryCountSessions,
     inventoryMovements,
     inventoryReceipts,
+    inventoryRoute,
     priceChanges,
     purchasesRoute,
     reconciliations,
+    recentInvoices,
     scheduleRoute,
     summary.todayReconciliationDate,
     summary.todayReconciliationStatus,
@@ -441,6 +443,9 @@ export function OwnerDashboardPage() {
           </Link>
           <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to={closeReportsRoute}>
             Open bookkeeping export
+          </Link>
+          <Link className="font-semibold text-ink underline decoration-slate-300 decoration-1 underline-offset-4 transition hover:text-slate-900 hover:decoration-slate-500" to="/integrations/square">
+            Square Sandbox
           </Link>
         </div>
       </Card>

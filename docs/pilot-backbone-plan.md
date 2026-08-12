@@ -1,5 +1,7 @@
 # Flowtally Pilot Backbone Plan
 
+> Superseded by [pilot-backend-foundation.md](pilot-backend-foundation.md) for the current backend boundary, configuration, selection, and staging notes.
+
 ## Objective
 
 Create the private pilot foundation for one restaurant tenant before adding operational features.

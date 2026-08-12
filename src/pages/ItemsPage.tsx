@@ -26,7 +26,7 @@ export function ItemsPage() {
         const matchesCategory = category === "All" || item.category === category;
         return matchesQuery && matchesCategory;
       }),
-    [category, query],
+    [category, query, demo.trackedItems],
   );
 
   const columns: Column<TrackedItem>[] = [

@@ -44,6 +44,12 @@ export function PilotReorderPlanPage() {
   const load = async () => {
     setLoading(true);
     setError(null);
+    setMessage(null);
+    setPlans([]);
+    setCurrentSuggestions([]);
+    setCurrentGroups([]);
+    setSelectedPlanId(null);
+    setDraft(null);
 
     try {
       const [suggestionsResponse, plansResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans()]);
@@ -92,6 +98,9 @@ export function PilotReorderPlanPage() {
   const completedPlanCount = plans.filter((plan) => plan.status === "Completed").length;
 
   const openPlan = async (planId: number) => {
+    if (saving || creating || loading) {
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setError(null);
@@ -107,6 +116,9 @@ export function PilotReorderPlanPage() {
   };
 
   const createDraft = async () => {
+    if (creating || saving || loading) {
+      return;
+    }
     setCreating(true);
     setMessage(null);
     setError(null);
@@ -251,7 +263,7 @@ export function PilotReorderPlanPage() {
             <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Build a draft order from current inventory pressure, adjust quantities, exclude items, and complete the plan when it is ready.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating}>
+            <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
               {creating ? "Starting..." : "Start / reopen draft"}
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading || saving || creating}>
@@ -262,6 +274,7 @@ export function PilotReorderPlanPage() {
 
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
+        {loading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading reorder plans...</div> : null}
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
@@ -349,8 +362,9 @@ export function PilotReorderPlanPage() {
               <button
                 key={plan.id}
                 type="button"
+                disabled={creating || saving || loading}
                 onClick={() => void openPlan(plan.id)}
-                className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
+                className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
                   selectedPlanId === plan.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"
                 }`}
               >
@@ -404,13 +418,13 @@ export function PilotReorderPlanPage() {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
-              <Button disabled={saving || draft.status === "Completed"} icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
+              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
                 {saving ? "Saving..." : "Save draft"}
               </Button>
-              <Button disabled={saving || draft.status === "Completed"} variant="secondary" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
+              <Button disabled={creating || saving || loading || draft.status === "Completed"} variant="secondary" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
                 Mark prepared
               </Button>
-              <Button disabled={saving || draft.status === "Completed"} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void completeDraft()}>
+              <Button disabled={creating || saving || loading || draft.status === "Completed"} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void completeDraft()}>
                 Complete plan
               </Button>
             </div>

@@ -1,20 +1,35 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchCurrentOrganization, fetchPilotSession, loginToPilot, logoutOfPilot, PilotApiError, switchPilotLocation, type PilotLocation, type PilotOrganization, type PilotUser } from "./pilotApi";
+import {
+  fetchCurrentOrganization,
+  fetchPilotOrganizations,
+  fetchPilotSession,
+  loginToPilot,
+  logoutOfPilot,
+  PilotApiError,
+  selectPilotOrganization,
+  switchPilotLocation,
+  type PilotLocation,
+  type PilotOrganization,
+  type PilotOrganizationMembershipSummary,
+  type PilotUser,
+} from "./pilotApi";
 import { pilotAppEnabled } from "./pilotConfig";
 
-type SessionStatus = "disabled" | "loading" | "signedOut" | "signedIn";
+type SessionStatus = "disabled" | "loading" | "signedOut" | "needsSelection" | "signedIn";
 
 interface PilotSessionValue {
   status: SessionStatus;
   error: string | null;
   user: PilotUser | null;
   organization: PilotOrganization | null;
+  organizations: PilotOrganizationMembershipSummary[];
   locations: PilotLocation[];
   currentLocation: PilotLocation | null;
   membershipRole: string | null;
   csrfToken: string | null;
   refreshSession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  switchOrganization: (organizationId: number) => Promise<void>;
   switchLocation: (locationId: number) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -23,14 +38,36 @@ const PilotSessionContext = createContext<PilotSessionValue | null>(null);
 
 async function loadCurrentSession() {
   const session = await fetchPilotSession();
-  const organizationBundle = await fetchCurrentOrganization();
+  let organizationBundle: Awaited<ReturnType<typeof fetchCurrentOrganization>> | null = null;
+  let organizations = session.organizations ?? [];
+
+  try {
+    organizationBundle = await fetchCurrentOrganization();
+  } catch (err) {
+    const apiError = err instanceof PilotApiError ? err : null;
+    if (apiError?.status !== 404) {
+      throw err;
+    }
+  }
+
+  if (!organizations.length) {
+    try {
+      organizations = (await fetchPilotOrganizations()).organizations;
+    } catch (err) {
+      const apiError = err instanceof PilotApiError ? err : null;
+      if (apiError?.status !== 404) {
+        throw err;
+      }
+    }
+  }
 
   return {
     user: session.user,
-    organization: organizationBundle.organization,
-    locations: organizationBundle.restaurantLocations,
-    currentLocation: organizationBundle.currentLocation,
-    membershipRole: organizationBundle.membershipRole ?? session.membershipRole ?? null,
+    organizations,
+    organization: organizationBundle?.organization ?? null,
+    locations: organizationBundle?.restaurantLocations ?? [],
+    currentLocation: organizationBundle?.currentLocation ?? null,
+    membershipRole: organizationBundle?.membershipRole ?? session.membershipRole ?? null,
     csrfToken: session.csrfToken,
   };
 }
@@ -40,6 +77,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<PilotUser | null>(null);
   const [organization, setOrganization] = useState<PilotOrganization | null>(null);
+  const [organizations, setOrganizations] = useState<PilotOrganizationMembershipSummary[]>([]);
   const [locations, setLocations] = useState<PilotLocation[]>([]);
   const [currentLocation, setCurrentLocation] = useState<PilotLocation | null>(null);
   const [membershipRole, setMembershipRole] = useState<string | null>(null);
@@ -57,12 +95,13 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     try {
       const current = await loadCurrentSession();
       setUser(current.user);
+      setOrganizations(current.organizations);
       setOrganization(current.organization);
       setLocations(current.locations);
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
       setCsrfToken(current.csrfToken);
-      setStatus("signedIn");
+      setStatus(current.organization ? "signedIn" : "needsSelection");
     } catch (err) {
       const apiError = err instanceof PilotApiError ? err : null;
       if (apiError?.status === 401 || apiError?.status === 403) {
@@ -73,6 +112,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       }
       setUser(null);
       setOrganization(null);
+      setOrganizations([]);
       setLocations([]);
       setCurrentLocation(null);
       setMembershipRole(null);
@@ -90,23 +130,51 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
 
     try {
       const login = await loginToPilot(email, password);
-      const organizationBundle = await fetchCurrentOrganization();
+      const current = await loadCurrentSession();
       setUser(login.user);
-      setOrganization(organizationBundle.organization);
-      setLocations(organizationBundle.restaurantLocations);
-      setCurrentLocation(organizationBundle.currentLocation);
-      setMembershipRole(organizationBundle.membershipRole ?? login.membershipRole ?? null);
+      setOrganizations(login.organizations ?? current.organizations);
+      setOrganization(current.organization);
+      setLocations(current.locations);
+      setCurrentLocation(current.currentLocation);
+      setMembershipRole(current.membershipRole ?? login.membershipRole ?? null);
       setCsrfToken(login.csrfToken);
-      setStatus("signedIn");
+      setStatus(current.organization ? "signedIn" : "needsSelection");
     } catch (err) {
       setStatus("signedOut");
       setUser(null);
       setOrganization(null);
+      setOrganizations([]);
       setLocations([]);
       setCurrentLocation(null);
       setMembershipRole(null);
       setCsrfToken(null);
       setError(err instanceof Error ? err.message : "Could not sign in.");
+      throw err;
+    }
+  };
+
+  const switchOrganization = async (organizationId: number) => {
+    if (!pilotAppEnabled) {
+      return;
+    }
+
+    setStatus("loading");
+    setError(null);
+
+    try {
+      await selectPilotOrganization(organizationId);
+      const current = await loadCurrentSession();
+      setUser(current.user);
+      setOrganizations(current.organizations);
+      setOrganization(current.organization);
+      setLocations(current.locations);
+      setCurrentLocation(current.currentLocation);
+      setMembershipRole(current.membershipRole);
+      setCsrfToken(current.csrfToken);
+      setStatus("signedIn");
+    } catch (err) {
+      setStatus("signedIn");
+      setError(err instanceof Error ? err.message : "Could not switch organizations.");
       throw err;
     }
   };
@@ -123,6 +191,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       await switchPilotLocation(locationId);
       const current = await loadCurrentSession();
       setUser(current.user);
+      setOrganizations(current.organizations);
       setOrganization(current.organization);
       setLocations(current.locations);
       setCurrentLocation(current.currentLocation);
@@ -151,6 +220,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     setStatus("signedOut");
     setUser(null);
     setOrganization(null);
+    setOrganizations([]);
     setLocations([]);
     setCurrentLocation(null);
     setMembershipRole(null);
@@ -164,16 +234,18 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       error,
       user,
       organization,
+      organizations,
       locations,
       currentLocation,
       membershipRole,
       csrfToken,
       refreshSession,
       signIn,
+      switchOrganization,
       switchLocation,
       signOut,
     }),
-    [csrfToken, currentLocation, error, locations, membershipRole, organization, refreshSession, signIn, signOut, status, switchLocation, user],
+    [csrfToken, currentLocation, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, status, switchLocation, switchOrganization, user],
   );
 
   return <PilotSessionContext.Provider value={value}>{children}</PilotSessionContext.Provider>;

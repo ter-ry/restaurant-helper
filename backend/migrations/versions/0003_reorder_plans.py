@@ -61,7 +61,7 @@ def upgrade() -> None:
         sa.Column("par_level_snapshot", sa.Numeric(12, 4), nullable=False, server_default="0"),
         sa.Column("suggested_quantity_snapshot", sa.Numeric(12, 4), nullable=False, server_default="0"),
         sa.Column("order_quantity", sa.Numeric(12, 4), nullable=False, server_default="0"),
-        sa.Column("excluded", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("excluded", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("estimated_unit_cost_snapshot", sa.Numeric(12, 2), nullable=True),
         sa.Column("estimated_line_cost_snapshot", sa.Numeric(12, 2), nullable=True),
         sa.Column("notes", sa.Text(), nullable=False, server_default=""),

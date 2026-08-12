@@ -1,32 +1,45 @@
-import React from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { useEffect } from "react";
 import { createBrowserRouter, isRouteErrorResponse, Link, Navigate, RouterProvider, useLocation, useParams, useRouteError } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import "./styles.css";
-import { DailyReconciliationPage } from "./pages/DailyReconciliationPage";
-import { OwnerDashboardPage } from "./pages/OwnerDashboardPage";
-import { InvoiceUploadPage } from "./pages/InvoiceUploadPage";
-import { InventoryPage } from "./pages/InventoryPageNew";
-import { LandingPage } from "./pages/LandingPage";
-import { PilotPage } from "./pages/PilotPage";
-import { MenuCostingPage } from "./pages/MenuCostingPage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { CloseReportsPage } from "./pages/CloseReportsPage";
-import { SchedulePage } from "./pages/SchedulePage";
 import { PilotWorkspaceProvider } from "./lib/pilotWorkspace";
 import { buildDemoPath, defaultDemoProfileSlug, isDemoProfileSlug } from "./data/demoProfiles";
 import { initAnalytics, trackPageView } from "./lib/analytics";
 import { PilotSessionProvider } from "./pilot/PilotSessionProvider";
 import { PilotAppGate } from "./pilot/PilotAppGate";
-import { PilotLoginPage } from "./pilot/PilotLoginPage";
 import { PilotWorkspaceLayout } from "./pilot/PilotWorkspaceLayout";
-import { PilotDashboardPage } from "./pilot/PilotDashboardPage";
-import { PilotPurchasesPage } from "./pilot/PilotPurchasesPage";
-import { PilotInventoryPage } from "./pilot/PilotInventoryPage";
-import { PilotStockCountsPage } from "./pilot/PilotStockCountsPage";
-import { PilotReorderPlanPage } from "./pilot/PilotReorderPlanPage";
 import { pilotAppEnabled } from "./pilot/pilotConfig";
+
+const lazyNamed = (factory: () => Promise<any>, exportName: string) =>
+  lazy(async () => {
+    const module = await factory();
+    return { default: module[exportName] as React.ComponentType<any> };
+  });
+
+const DailyReconciliationPage = lazyNamed(() => import("./pages/DailyReconciliationPage"), "DailyReconciliationPage");
+const OwnerDashboardPage = lazyNamed(() => import("./pages/OwnerDashboardPage"), "OwnerDashboardPage");
+const InvoiceUploadPage = lazyNamed(() => import("./pages/InvoiceUploadPage"), "InvoiceUploadPage");
+const InventoryPage = lazyNamed(() => import("./pages/InventoryPageNew"), "InventoryPage");
+const LandingPage = lazyNamed(() => import("./pages/LandingPage"), "LandingPage");
+const PilotPage = lazyNamed(() => import("./pages/PilotPage"), "PilotPage");
+const MenuCostingPage = lazyNamed(() => import("./pages/MenuCostingPage"), "MenuCostingPage");
+const ReportsPage = lazyNamed(() => import("./pages/ReportsPage"), "ReportsPage");
+const CloseReportsPage = lazyNamed(() => import("./pages/CloseReportsPage"), "CloseReportsPage");
+const SchedulePage = lazyNamed(() => import("./pages/SchedulePage"), "SchedulePage");
+const PilotLoginPage = lazyNamed(() => import("./pilot/PilotLoginPage"), "PilotLoginPage");
+const PilotDashboardPage = lazyNamed(() => import("./pilot/PilotDashboardPage"), "PilotDashboardPage");
+const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"), "PilotPurchasesPage");
+const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
+const PilotStockCountsPage = lazyNamed(() => import("./pilot/PilotStockCountsPage"), "PilotStockCountsPage");
+const PilotReorderPlanPage = lazyNamed(() => import("./pilot/PilotReorderPlanPage"), "PilotReorderPlanPage");
+const GoogleAuthCompletePage = lazyNamed(() => import("./pages/GoogleAuthCompletePage"), "GoogleAuthCompletePage");
+const InvitationAcceptPage = lazyNamed(() => import("./pages/InvitationAcceptPage"), "InvitationAcceptPage");
+const TeamManagementPage = lazyNamed(() => import("./pages/TeamManagementPage"), "TeamManagementPage");
+const OwnerAuditPage = lazyNamed(() => import("./pages/OwnerAuditPage"), "OwnerAuditPage");
+const SetupConsolePage = lazyNamed(() => import("./pages/SetupConsolePage"), "SetupConsolePage");
+const DataMigrationPage = lazyNamed(() => import("./pages/DataMigrationPage"), "DataMigrationPage");
+const SquareIntegrationPage = lazyNamed(() => import("./pages/SquareIntegrationPage"), "SquareIntegrationPage");
 
 function HashScroll() {
   const location = useLocation();
@@ -91,6 +104,18 @@ function PageWithHashScroll({ children }: { children: React.ReactNode }) {
       <HashScroll />
       {children}
     </>
+  );
+}
+
+function RouteLoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12">
+      <div className="rounded-3xl border border-line bg-white p-8 text-center shadow-soft">
+        <p className="text-xs font-bold uppercase tracking-wide text-muted">Flowtally</p>
+        <h1 className="mt-3 text-2xl font-bold text-ink">Loading workspace…</h1>
+        <p className="mt-2 text-sm leading-6 text-muted">We’re loading the selected route and shared application state.</p>
+      </div>
+    </div>
   );
 }
 
@@ -192,6 +217,13 @@ const pilotAppRoutes = pilotAppEnabled
 
 const routes = [
   { path: "/", element: <PageWithHashScroll><LandingPage /></PageWithHashScroll> },
+  { path: "/auth/google/complete", element: <PageWithHashScroll><GoogleAuthCompletePage /></PageWithHashScroll> },
+  { path: "/invite/:token", element: <PageWithHashScroll><InvitationAcceptPage /></PageWithHashScroll> },
+  { path: "/owner/team", element: <PageWithHashScroll><TeamManagementPage /></PageWithHashScroll> },
+  { path: "/owner/audit", element: <PageWithHashScroll><OwnerAuditPage /></PageWithHashScroll> },
+  { path: "/platform/setup", element: <PageWithHashScroll><SetupConsolePage /></PageWithHashScroll> },
+  { path: "/imports", element: <PageWithHashScroll><DataMigrationPage /></PageWithHashScroll> },
+  { path: "/integrations/square", element: <PageWithHashScroll><SquareIntegrationPage /></PageWithHashScroll> },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   { path: "/pilot/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
   { path: "/pilot/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
@@ -214,7 +246,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <PilotWorkspaceProvider>
       <PilotSessionProvider>
-        <RouterProvider router={router} />
+        <Suspense fallback={<RouteLoadingScreen />}>
+          <RouterProvider router={router} />
+        </Suspense>
       </PilotSessionProvider>
     </PilotWorkspaceProvider>
   </React.StrictMode>,
