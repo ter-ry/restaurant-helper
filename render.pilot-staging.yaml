@@ -19,6 +19,8 @@ services:
         value: https://staging.flowtally.ca
       - key: FLOWTALLY_FRONTEND_ORIGIN
         value: https://staging.flowtally.ca
+      - key: FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF
+        value: "true"
       - key: SESSION_COOKIE_SECURE
         value: "true"
       - key: SESSION_COOKIE_SAMESITE

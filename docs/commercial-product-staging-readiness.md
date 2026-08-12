@@ -56,6 +56,7 @@ The backend staging environment is documented in `backend/.env.staging.example` 
 - `SESSION_COOKIE_SECURE=true`
 - `SESSION_COOKIE_SAMESITE=Lax`
 - `SESSION_COOKIE_NAME=flowtally_pilot_session`
+- `FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF=true`
 - `FLOWTALLY_RATE_LIMIT_STORAGE_URI=<Render Key Value internal URL>`
 - `FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL=false`
 - `MAX_CONTENT_LENGTH=15728640`
