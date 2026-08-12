@@ -91,6 +91,7 @@ type MockState = {
   squareConnection: any;
   importJobs: any[];
   importJob: any | null;
+  menuState?: any;
 };
 
 function nowIso() {
@@ -298,6 +299,41 @@ async function installMockApi(page: Page, state: MockState) {
     if (path === "/api/organizations/current" && method === "GET") {
       if (!state.currentOrganization) {
         return jsonResponse(route, { error: "Organization not found." }, 404);
+      }
+      return jsonResponse(route, {
+        organization: state.currentOrganization,
+        restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
+        currentLocation: { id: 7, name: "Main Dining Room" },
+        membershipRole: "owner",
+      });
+    }
+
+    if (path === "/api/organizations" && method === "GET") {
+      const organization = state.currentOrganization ?? makeOrganization();
+      const selected = state.session?.currentOrganizationId ?? organization.id;
+      return jsonResponse(route, {
+        organizations: [
+          {
+            organization,
+            membershipRole: "owner",
+            selected: selected === organization.id,
+          },
+        ],
+        currentOrganizationId: selected,
+        currentMembershipId: 1,
+      });
+    }
+
+    if (path === "/api/organizations/select" && method === "POST") {
+      const organizationId = Number(body.organizationId ?? state.currentOrganization?.id ?? 42);
+      const organization = state.currentOrganization ?? makeOrganization({ id: organizationId });
+      state.currentOrganization = { ...organization, id: organizationId };
+      if (state.session) {
+        state.session = {
+          ...state.session,
+          currentOrganizationId: organizationId,
+          organizations: [{ organization: state.currentOrganization, membershipRole: "owner", selected: true }],
+        };
       }
       return jsonResponse(route, {
         organization: state.currentOrganization,
@@ -595,13 +631,122 @@ async function installMockApi(page: Page, state: MockState) {
       return jsonResponse(route, { connection: state.squareConnection });
     }
 
-    if (path === "/api/organizations/current" && method === "GET") {
-      return jsonResponse(route, {
-        organization: state.currentOrganization ?? makeOrganization(),
-        restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
-        currentLocation: { id: 7, name: "Main Dining Room" },
-        membershipRole: "owner",
-      });
+    if (state.menuState) {
+      if (path === "/api/pilot/inventory" && method === "GET") {
+        return jsonResponse(route, {
+          items: state.menuState.inventory,
+          summary: { inventoryItemCount: state.menuState.inventory.length },
+          reorderPlan: { suggestions: [] },
+        });
+      }
+
+      if (path === "/api/pilot/menu-costing" && method === "GET") {
+        return jsonResponse(route, state.menuState.snapshot);
+      }
+
+      if (path === "/api/pilot/menu-items" && method === "POST") {
+        const body = (() => {
+          const raw = route.request().postData();
+          if (!raw) return {};
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        })();
+        const nextId = state.menuState.nextId++;
+        const item = {
+          id: nextId,
+          organizationId: state.menuState.organizationId,
+          locationId: state.menuState.locationId,
+          name: String(body.name ?? "Menu item"),
+          normalizedName: String(body.name ?? "Menu item").toLowerCase(),
+          category: String(body.category ?? "Other"),
+          sellingPrice: Number(body.sellingPrice ?? 0),
+          active: Boolean(body.active ?? true),
+          notes: String(body.notes ?? ""),
+          recipe: {
+            id: nextId + 1000,
+            organizationId: state.menuState.organizationId,
+            locationId: state.menuState.locationId,
+            menuItemId: nextId,
+            notes: "",
+            lineCount: Array.isArray(body.recipeLines) ? body.recipeLines.length : 0,
+            lines: Array.isArray(body.recipeLines)
+              ? body.recipeLines.map((line: any, index: number) => ({
+                  id: nextId + 2000 + index,
+                  organizationId: state.menuState.organizationId,
+                  locationId: state.menuState.locationId,
+                  recipeId: nextId + 1000,
+                  inventoryItemId: line.inventoryItemId ?? null,
+                  inventoryItemName: String(line.ingredientName ?? ""),
+                  lineIndex: index,
+                  ingredientName: String(line.ingredientName ?? ""),
+                  quantity: Number(line.quantity ?? 0),
+                  unit: String(line.unit ?? "each"),
+                  inventoryUnit: String(line.inventoryUnit ?? "each"),
+                  purchaseUnit: String(line.purchaseUnit ?? "each"),
+                  conversionFactor: Number(line.conversionFactor ?? 1),
+                  unitCost: null,
+                  lineCost: null,
+                  notes: String(line.notes ?? ""),
+                  createdAt: nowIso(),
+                  updatedAt: nowIso(),
+                }))
+              : [],
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+          },
+          salesUnits: 0,
+          salesNetAmount: 0,
+          recipeCost: Array.isArray(body.recipeLines) && body.recipeLines.length ? 0 : null,
+          grossProfit: Array.isArray(body.recipeLines) && body.recipeLines.length ? Number(body.sellingPrice ?? 0) : null,
+          marginPercent: null,
+          foodCostPercent: null,
+          costingComplete: Array.isArray(body.recipeLines) && body.recipeLines.length > 0,
+          usageComplete: Array.isArray(body.recipeLines) && body.recipeLines.length > 0,
+          mappingStatus: "Unmapped",
+          squareCatalogObjectId: null,
+          dataIssues: Array.isArray(body.recipeLines) && body.recipeLines.length ? [] : ["Recipe missing", "Untracked ingredients", "Incomplete costing"],
+          createdByUserId: state.session?.user.id ?? null,
+          updatedByUserId: state.session?.user.id ?? null,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        state.menuState.items.push(item);
+        state.menuState.snapshot = { ...state.menuState.snapshot, menuItems: state.menuState.items, summary: { ...state.menuState.snapshot.summary, menuItemCount: state.menuState.items.length } };
+        return jsonResponse(route, state.menuState.snapshot, 201);
+      }
+
+      if (path.startsWith("/api/pilot/menu-items/") && (method === "PATCH" || method === "DELETE")) {
+        const itemId = Number(path.split("/").pop());
+        const item = state.menuState.items.find((entry: any) => entry.id === itemId) ?? null;
+        if (!item) {
+          return jsonResponse(route, { error: "Menu item not found." }, 404);
+        }
+        const body = (() => {
+          const raw = route.request().postData();
+          if (!raw) return {};
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        })();
+        if (method === "PATCH") {
+          item.name = String(body.name ?? item.name);
+          item.normalizedName = item.name.toLowerCase();
+          item.category = String(body.category ?? item.category);
+          item.sellingPrice = Number(body.sellingPrice ?? item.sellingPrice);
+          item.active = Boolean(body.active ?? item.active);
+          item.notes = String(body.notes ?? item.notes);
+        } else {
+          item.active = false;
+        }
+        item.updatedAt = nowIso();
+        state.menuState.snapshot = { ...state.menuState.snapshot, menuItems: state.menuState.items };
+        return jsonResponse(route, state.menuState.snapshot);
+      }
     }
 
     throw new Error(`Unhandled API route: ${method} ${path}`);
@@ -844,4 +989,268 @@ test("owner audit history shows filtered organization activity", async ({ page }
   await expect(page.getByText("invitation.created")).toBeVisible();
   await page.getByPlaceholder("Search event type, entity or metadata").fill("square");
   await expect(page.getByText("square.connection.updated")).toBeVisible();
+});
+
+test("menu costing browser journey can create edit deactivate and refetch a persisted menu item", async ({ page }) => {
+  const burgerMenuItem = {
+    id: 501,
+    organizationId: 42,
+    locationId: 7,
+    name: "Burger",
+    normalizedName: "burger",
+    category: "Burgers",
+    sellingPrice: 15,
+    active: true,
+    notes: "",
+    recipe: {
+      id: 601,
+      organizationId: 42,
+      locationId: 7,
+      menuItemId: 501,
+      notes: "",
+      lineCount: 3,
+      lines: [
+        {
+          id: 701,
+          organizationId: 42,
+          locationId: 7,
+          recipeId: 601,
+          inventoryItemId: 1,
+          inventoryItemName: "Burger Beef",
+          lineIndex: 0,
+          ingredientName: "Burger Beef",
+          quantity: 180,
+          unit: "g",
+          inventoryUnit: "kg",
+          purchaseUnit: "kg",
+          conversionFactor: 1,
+          unitCost: 11.11,
+          lineCost: 2,
+          notes: "",
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        {
+          id: 702,
+          organizationId: 42,
+          locationId: 7,
+          recipeId: 601,
+          inventoryItemId: 2,
+          inventoryItemName: "Burger Bun",
+          lineIndex: 1,
+          ingredientName: "Burger Bun",
+          quantity: 1,
+          unit: "each",
+          inventoryUnit: "each",
+          purchaseUnit: "each",
+          conversionFactor: 1,
+          unitCost: 0.5,
+          lineCost: 0.5,
+          notes: "",
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        {
+          id: 703,
+          organizationId: 42,
+          locationId: 7,
+          recipeId: 601,
+          inventoryItemId: 3,
+          inventoryItemName: "Burger Sauce",
+          lineIndex: 2,
+          ingredientName: "Burger Sauce",
+          quantity: 1,
+          unit: "each",
+          inventoryUnit: "each",
+          purchaseUnit: "each",
+          conversionFactor: 1,
+          unitCost: 0.25,
+          lineCost: 0.25,
+          notes: "",
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+      ],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    },
+    salesUnits: 10,
+    salesNetAmount: 150,
+    recipeCost: 2.75,
+    grossProfit: 12.25,
+    marginPercent: 81.7,
+    foodCostPercent: 18.3,
+    costingComplete: true,
+    usageComplete: true,
+    mappingStatus: "Mapped",
+    squareCatalogObjectId: 9001,
+    dataIssues: [],
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  const plainCoffee = {
+    id: 502,
+    organizationId: 42,
+    locationId: 7,
+    name: "Plain Coffee",
+    normalizedName: "plain coffee",
+    category: "Drinks",
+    sellingPrice: 3,
+    active: true,
+    notes: "",
+    recipe: null,
+    salesUnits: 0,
+    salesNetAmount: 0,
+    recipeCost: null,
+    grossProfit: null,
+    marginPercent: null,
+    foodCostPercent: null,
+    costingComplete: false,
+    usageComplete: false,
+    mappingStatus: "Unmapped",
+    squareCatalogObjectId: null,
+    dataIssues: ["Recipe missing", "Untracked ingredients", "Incomplete costing"],
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+
+  const menuState = {
+    organizationId: 42,
+    locationId: 7,
+    nextId: 600,
+    inventory: [
+      { id: 1, name: "Burger Beef", stockUnit: "kg" },
+      { id: 2, name: "Burger Bun", stockUnit: "each" },
+      { id: 3, name: "Burger Sauce", stockUnit: "each" },
+    ],
+    items: [burgerMenuItem, plainCoffee],
+    snapshot: null as any,
+  };
+
+  const rebuildSnapshot = () => {
+    menuState.snapshot = {
+      summary: {
+        menuItemCount: menuState.items.length,
+        recipeCount: menuState.items.filter((item: any) => item.recipe?.lineCount).length,
+        mappedMenuItemCount: menuState.items.filter((item: any) => item.mappingStatus === "Mapped").length,
+        salesUnits: 10,
+        salesNetAmount: 150,
+        recipeCost: 2.75,
+        grossProfit: 12.25,
+        inventoryVarianceCount: 1,
+        estimatedCostVariance: -2.3,
+        receivedPurchasesCount: 1,
+        incompleteCostingCount: menuState.items.filter((item: any) => !item.costingComplete).length,
+        incompleteUsageCount: menuState.items.filter((item: any) => !item.usageComplete).length,
+        unmappedSalesCount: 1,
+        openingCountSessionId: 11,
+        latestCountSessionId: 12,
+      },
+      menuItems: menuState.items,
+      inventoryUsage: [
+        {
+          inventoryItemId: 1,
+          inventoryItemName: "Burger Beef",
+          stockUnit: "kg",
+          referenceInventory: 10,
+          referenceInventorySessionId: 11,
+          referenceInventoryCompletedAt: nowIso(),
+          receivedPurchases: 0,
+          theoreticalUsage: 1.8,
+          expectedInventory: 8.2,
+          actualStockCount: 5.5,
+          variance: -2.7,
+          estimatedCostVariance: -29.99,
+          latestCountSessionId: 12,
+          latestCountCompletedAt: nowIso(),
+          calculationComplete: true,
+        },
+      ],
+      unmappedSales: [
+        {
+          squareOrderId: "ORDER-UNMAPPED-1",
+          squareItemVariationId: "VAR-FRIES",
+          name: "Fries",
+          quantity: 1,
+          netAmount: 5,
+        },
+      ],
+      openingCountSession: {
+        id: 11,
+        organizationId: 42,
+        locationId: 7,
+        status: "Completed",
+        countedBy: "Opening cashier",
+        itemCount: 3,
+        varianceTotal: 0,
+        completedAt: nowIso(),
+        updatedAt: nowIso(),
+      },
+      latestCountSession: {
+        id: 12,
+        organizationId: 42,
+        locationId: 7,
+        status: "Completed",
+        countedBy: "Closing cashier",
+        itemCount: 3,
+        varianceTotal: -2.7,
+        completedAt: nowIso(),
+        updatedAt: nowIso(),
+      },
+      salesStartDate: "2026-07-13",
+      salesEndDate: "2026-08-12",
+    };
+  };
+
+  rebuildSnapshot();
+
+  const state: MockState = {
+    session: makeActiveOwnerSession(),
+    csrfToken: "csrf-token",
+    currentOrganization: makeOrganization(),
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+    menuState,
+  };
+  await installMockApi(page, state);
+
+  await page.goto("/app/menu-costing");
+  await expect(page.getByRole("heading", { name: "Sales, recipes, usage, and stock variance." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Burger" })).toBeVisible();
+  await expect(page.getByText("1.8 kg")).toBeVisible();
+  await expect(page.getByText("Unmapped Square sales")).toBeVisible();
+  await expect(page.getByText("Fries").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "New menu item" }).click();
+  await page.getByLabel("Menu item name").fill("Pesto Pasta");
+  await page.getByLabel("Category").fill("Pasta");
+  await page.getByLabel("Selling price").fill("17");
+  await page.getByLabel("Ingredient name").fill("Burger Beef");
+  await page.getByLabel("Inventory item").selectOption({ label: "Burger Beef - kg" });
+  await page.getByLabel("Quantity").fill("180");
+  await page.getByRole("textbox", { name: "Unit", exact: true }).fill("g");
+  await page.getByRole("button", { name: "Save menu item" }).click();
+  await expect(page.getByText("Menu item created.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pesto Pasta" })).toBeVisible();
+
+  await page.getByLabel("Selling price").fill("18");
+  await page.getByRole("textbox", { name: "Notes", exact: true }).fill("Updated after tasting.");
+  await page.getByRole("button", { name: "Save menu item" }).click();
+  await expect(page.getByText("Menu item updated.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Deactivate" }).click();
+  await expect(page.getByText("Menu item deactivated.")).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Pesto Pasta" }).click();
+  await expect(page.getByLabel("Selling price")).toHaveValue("18");
+  await expect(page.getByLabel("Active")).toHaveValue("false");
 });

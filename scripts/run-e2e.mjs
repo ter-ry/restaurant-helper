@@ -67,7 +67,9 @@ function killProcessTree(pid) {
   return Promise.resolve();
 }
 
-const vite = spawnNode(viteCli, ["--host", "127.0.0.1", "--port", "4173"]);
+const vite = spawnNode(viteCli, ["--host", "127.0.0.1", "--port", "4173"], {
+  VITE_ENABLE_PILOT_APP: "1",
+});
 const viteEarlyExit = new Promise((_, reject) => {
   vite.on("exit", (code) => {
     if (code !== 0 && code !== null) {

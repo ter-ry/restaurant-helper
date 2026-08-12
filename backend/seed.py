@@ -623,6 +623,52 @@ def _seed_count_session(organization: Organization, location: RestaurantLocation
     return session_record
 
 
+def _seed_opening_count_session(organization: Organization, location: RestaurantLocation, item_by_name: dict[str, InventoryItem], *, actor_id: int) -> StockCountSession:
+    session_record = StockCountSession(
+        organization_id=organization.id,
+        location_id=location.id,
+        status="Completed",
+        started_at=_now() - timedelta(days=18),
+        completed_at=_now() - timedelta(days=18, hours=-1),
+        counted_by="Manager on duty",
+        notes="Pilot opening count",
+        item_count=5,
+        created_by_user_id=actor_id,
+        finalized_by_user_id=actor_id,
+    )
+    db.session.add(session_record)
+    db.session.flush()
+
+    lines = [
+        ("Chicken Breast", 6.0),
+        ("Rice", 10.0),
+        ("Cups", 200.0),
+        ("Tapioca Pearls", 2.0),
+        ("Eggs", 12.0),
+    ]
+    for index, (item_name, counted) in enumerate(lines):
+        item = item_by_name[item_name]
+        counted_value = Decimal(str(counted))
+        line = StockCountSessionLine(
+            session_id=session_record.id,
+            inventory_item_id=item.id,
+            line_index=index,
+            item_name_snapshot=item.name,
+            stock_unit_snapshot=item.stock_unit,
+            expected_quantity=counted_value,
+            counted_quantity=counted_value,
+            variance=Decimal("0"),
+            resulting_quantity=counted_value,
+            note="Seeded opening count line",
+            status="confirmed",
+        )
+        db.session.add(line)
+        item.current_on_hand = counted_value
+        item.last_counted_at = _now() - timedelta(days=18)
+        item.updated_by_user_id = actor_id
+    return session_record
+
+
 def _seed_reorder_intents(organization: Organization, location: RestaurantLocation, item_by_name: dict[str, InventoryItem], *, actor_id: int) -> None:
     for item_name in ["Chicken Breast", "Tomato Sauce", "Lettuce", "Tapioca Pearls", "Eggs"]:
         item = item_by_name[item_name]
@@ -815,6 +861,8 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
     items = [_get_or_create_inventory_item(organization, location, supplier_by_name, spec) for spec in INVENTORY_SEED]
     db.session.flush()
     item_by_name = {item.name: item for item in items}
+
+    _seed_opening_count_session(organization, location, item_by_name, actor_id=owner.id)
 
     for spec in INVOICE_SEED:
         _seed_invoice(organization, location, supplier_by_name, item_by_name, spec, actor_id=owner.id)

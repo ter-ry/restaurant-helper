@@ -551,9 +551,12 @@ export interface PilotMenuItem {
   recipe: PilotMenuRecipe | null;
   salesUnits: number;
   salesNetAmount: number;
-  recipeCost: number;
-  grossProfit: number;
+  recipeCost: number | null;
+  grossProfit: number | null;
   marginPercent: number | null;
+  foodCostPercent: number | null;
+  costingComplete: boolean;
+  usageComplete: boolean;
   mappingStatus: string;
   squareCatalogObjectId: number | null;
   dataIssues: string[];
@@ -567,19 +570,26 @@ export interface PilotMenuInventoryUsage {
   inventoryItemId: number;
   inventoryItemName: string;
   stockUnit: string;
-  currentOnHand: number;
+  referenceInventory: number | null;
+  referenceInventorySessionId: number | null;
+  referenceInventoryCompletedAt: string | null;
+  receivedPurchases: number;
   theoreticalUsage: number;
-  expectedInventory: number;
+  expectedInventory: number | null;
   actualStockCount: number | null;
   variance: number | null;
+  estimatedCostVariance: number | null;
   latestCountSessionId: number | null;
+  latestCountCompletedAt: string | null;
+  calculationComplete: boolean;
 }
 
 export interface PilotMenuCostingResponse {
-  summary: Record<string, number>;
+  summary: Record<string, number | null>;
   menuItems: PilotMenuItem[];
   inventoryUsage: PilotMenuInventoryUsage[];
   unmappedSales: Array<Record<string, unknown>>;
+  openingCountSession: PilotCountSession | null;
   latestCountSession: PilotCountSession | null;
   salesStartDate: string;
   salesEndDate: string;
@@ -815,5 +825,11 @@ export async function updatePilotMenuItem(itemId: number, payload: Record<string
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePilotMenuItem(itemId: number) {
+  return requestCsrfJson<PilotMenuCostingResponse>(`/api/pilot/menu-items/${itemId}`, {
+    method: "DELETE",
   });
 }

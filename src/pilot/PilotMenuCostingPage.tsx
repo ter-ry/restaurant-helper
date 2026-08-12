@@ -5,6 +5,7 @@ import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotMenuItem,
+  deletePilotMenuItem,
   fetchPilotInventory,
   fetchPilotMenuCosting,
   type PilotInventoryItem,
@@ -95,7 +96,7 @@ function draftFromItem(item: PilotMenuItem): MenuItemDraft {
 
 function menuItemTone(item: PilotMenuItem) {
   if (item.dataIssues.includes("Recipe missing")) return "critical" as const;
-  if (item.dataIssues.includes("Square mapping missing") || item.dataIssues.includes("Untracked ingredients")) return "warning" as const;
+  if (!item.costingComplete || !item.usageComplete || item.dataIssues.includes("Square mapping missing") || item.dataIssues.includes("Untracked ingredients")) return "warning" as const;
   if ((item.marginPercent ?? 0) < 55) return "orange" as const;
   return "success" as const;
 }
@@ -104,7 +105,7 @@ function summarizeRecipe(item: PilotMenuItem) {
   if (!item.recipe?.lines?.length) {
     return "No recipe yet";
   }
-  return `${formatNumber(item.recipe.lineCount)} lines - ${formatMoney(item.recipeCost)} cost`;
+  return item.recipeCost === null ? `${formatNumber(item.recipe.lineCount)} lines - cost incomplete` : `${formatNumber(item.recipe.lineCount)} lines - ${formatMoney(item.recipeCost)} cost`;
 }
 
 export function PilotMenuCostingPage() {
@@ -225,6 +226,40 @@ export function PilotMenuCostingPage() {
     }
   };
 
+  const deactivate = async () => {
+    if (draft.id === null) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await deletePilotMenuItem(draft.id);
+      setData(response);
+      const updated = response.menuItems.find((item) => item.id === draft.id);
+      if (updated) {
+        setSelectedId(updated.id);
+        setDraft(draftFromItem(updated));
+      }
+      setMessage("Menu item deactivated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not deactivate the menu item.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createDraftFromSale = (saleName: string) => {
+    setSelectedId(null);
+    setDraft((current) => ({
+      ...blankDraft(),
+      name: saleName,
+      category: current.category || "Other",
+    }));
+    setMessage(null);
+    setError(null);
+  };
+
   const selectItem = (item: PilotMenuItem) => {
     setSelectedId(item.id);
     setDraft(draftFromItem(item));
@@ -329,16 +364,20 @@ export function PilotMenuCostingPage() {
                     <p>Selling price</p>
                   </div>
                   <div>
-                    <p className="font-semibold text-ink">{formatMoney(item.recipeCost)}</p>
+                    <p className="font-semibold text-ink">{item.recipeCost === null || item.recipeCost === undefined ? "n/a" : formatMoney(item.recipeCost)}</p>
                     <p>Recipe cost</p>
                   </div>
                   <div>
-                    <p className="font-semibold text-ink">{formatMoney(item.grossProfit)}</p>
+                    <p className="font-semibold text-ink">{item.grossProfit === null || item.grossProfit === undefined ? "n/a" : formatMoney(item.grossProfit)}</p>
                     <p>Gross profit</p>
                   </div>
                   <div>
                     <p className="font-semibold text-ink">{item.marginPercent === null ? "n/a" : `${formatNumber(item.marginPercent)}%`}</p>
                     <p>Margin</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-ink">{item.foodCostPercent === null || item.foodCostPercent === undefined ? "n/a" : `${formatNumber(item.foodCostPercent)}%`}</p>
+                    <p>Food cost</p>
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-muted">{summarizeRecipe(item)}</p>
@@ -384,10 +423,17 @@ export function PilotMenuCostingPage() {
                 <Sparkles className="h-4 w-4 text-brand-700" />
                 {selectedItem ? "Updating a persisted menu item." : "This will create a new persisted menu item."}
               </div>
-              <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving} onClick={() => void save()}>
-                <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save menu item"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {draft.id !== null ? (
+                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving || !draft.active} onClick={() => void deactivate()}>
+                    Deactivate
+                  </button>
+                ) : null}
+                <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving} onClick={() => void save()}>
+                  <Save className="h-4 w-4" />
+                  {saving ? "Saving..." : "Save menu item"}
+                </button>
+              </div>
             </div>
           </Card>
 
@@ -470,6 +516,7 @@ export function PilotMenuCostingPage() {
                   <th className="px-4 py-3">Expected inventory</th>
                   <th className="px-4 py-3">Actual count</th>
                   <th className="px-4 py-3">Variance</th>
+                  <th className="px-4 py-3">Cost variance</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line bg-white">
@@ -480,7 +527,7 @@ export function PilotMenuCostingPage() {
                       <p className="text-xs text-muted">{line.quantity} {line.unit} per sale</p>
                     </td>
                     <td className="px-4 py-3 text-muted">{usage ? `${formatNumber(usage.theoreticalUsage)} ${usage.stockUnit}` : "0"}</td>
-                    <td className="px-4 py-3 text-muted">{usage ? `${formatNumber(usage.expectedInventory)} ${usage.stockUnit}` : "-"}</td>
+                    <td className="px-4 py-3 text-muted">{usage?.expectedInventory === null || usage?.expectedInventory === undefined ? "-" : `${formatNumber(usage.expectedInventory)} ${usage.stockUnit}`}</td>
                     <td className="px-4 py-3 text-muted">{usage?.actualStockCount === null || usage?.actualStockCount === undefined ? "-" : `${formatNumber(usage.actualStockCount)} ${usage.stockUnit}`}</td>
                     <td className="px-4 py-3">
                       {usage?.variance === null || usage?.variance === undefined ? (
@@ -489,11 +536,14 @@ export function PilotMenuCostingPage() {
                         <Badge tone={usage.variance < 0 ? "danger" : usage.variance > 0 ? "success" : "neutral"}>{formatNumber(usage.variance)}</Badge>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-muted">
+                      {usage?.estimatedCostVariance === null || usage?.estimatedCostVariance === undefined ? "-" : formatMoney(usage.estimatedCostVariance)}
+                    </td>
                   </tr>
                 ))}
                 {!recipeUsageRows.length ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-muted" colSpan={5}>
+                    <td className="px-4 py-6 text-sm text-muted" colSpan={6}>
                       Select a menu item with a recipe to see ingredient usage and variance.
                     </td>
                   </tr>
@@ -522,21 +572,63 @@ export function PilotMenuCostingPage() {
               </div>
               <div className="rounded-2xl border border-line bg-white p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Recipe cost</p>
-                <p className="mt-2 text-2xl font-bold text-ink">{selectedItem ? formatMoney(selectedItem.recipeCost) : formatMoney(0)}</p>
+                <p className="mt-2 text-2xl font-bold text-ink">{selectedItem?.recipeCost === null || selectedItem?.recipeCost === undefined ? "n/a" : formatMoney(selectedItem.recipeCost)}</p>
               </div>
               <div className="rounded-2xl border border-line bg-white p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Margin</p>
                 <p className="mt-2 text-2xl font-bold text-ink">{selectedItem?.marginPercent === null || selectedItem?.marginPercent === undefined ? "n/a" : `${formatNumber(selectedItem.marginPercent)}%`}</p>
               </div>
+              <div className="rounded-2xl border border-line bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Food cost</p>
+                <p className="mt-2 text-2xl font-bold text-ink">{selectedItem?.foodCostPercent === null || selectedItem?.foodCostPercent === undefined ? "n/a" : `${formatNumber(selectedItem.foodCostPercent)}%`}</p>
+              </div>
             </div>
+            {!selectedItem?.costingComplete || !selectedItem?.usageComplete ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                This menu item is not fully costed yet. {selectedItem?.dataIssues.length ? selectedItem.dataIssues.join(" - ") : "Complete the recipe, ingredient mapping, and unit handling before treating the numbers as final."}
+              </div>
+            ) : null}
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Latest stock count</p>
               <p className="mt-1 text-sm text-ink">{latestCountSession ? `${latestCountSession.countedBy} - ${latestCountSession.itemCount} items - ${latestCountSession.varianceTotal} variance` : "No completed count session found."}</p>
               {latestCountSession ? <p className="mt-1 text-xs text-muted">Count session #{latestCountSession.id} completed on {latestCountSession.completedAt ?? latestCountSession.updatedAt ?? "the latest count date"}.</p> : null}
             </div>
             <div className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Opening reference</p>
+              <p className="mt-1 text-sm text-ink">{data?.openingCountSession ? `Count session #${data.openingCountSession.id} completed on ${data.openingCountSession.completedAt ?? data.openingCountSession.updatedAt ?? "the reference date"}.` : "No opening count session was found before the lookback window."}</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-white p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Square sales coverage</p>
               <p className="mt-1 text-sm text-ink">{formatNumber(summary.mappedMenuItemCount)} mapped items, {formatNumber(summary.unmappedSalesCount)} unmapped sales lines.</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Purchase movements</p>
+              <p className="mt-1 text-sm text-ink">{formatNumber(summary.receivedPurchasesCount ?? 0)} receipt movements included in expected inventory.</p>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-3xl border border-line bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Unmapped Square sales</p>
+                <p className="mt-1 text-sm text-ink">These sale lines are visible, but they do not affect usage until they are mapped to a Flowtally menu item.</p>
+              </div>
+              <Badge tone="warning">{formatNumber(summary.unmappedSalesCount ?? 0)}</Badge>
+            </div>
+            <div className="mt-4 space-y-2">
+              {data?.unmappedSales?.length ? data.unmappedSales.map((sale, index) => (
+                <div key={`${String(sale.squareOrderId ?? "sale")}-${index}`} className="rounded-2xl border border-line bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink">{String(sale.name ?? "Unmapped sale")}</p>
+                      <p className="mt-1 text-xs text-muted">{String(sale.squareOrderId ?? "Unknown order")}{sale.squareItemVariationId ? ` · ${String(sale.squareItemVariationId)}` : ""}</p>
+                    </div>
+                    <button className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-line bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => createDraftFromSale(String(sale.name ?? "Menu item"))}>
+                      Draft item
+                    </button>
+                  </div>
+                </div>
+              )) : <p className="rounded-2xl border border-dashed border-line bg-white p-4 text-sm text-muted">No unmapped sale lines in the current lookback window.</p>}
             </div>
           </div>
         </Card>

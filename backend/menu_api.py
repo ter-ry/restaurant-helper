@@ -13,6 +13,7 @@ from .audit import record_audit_event
 from .extensions import db
 from .models import (
     InventoryItem,
+    InventoryMovement,
     MenuItem,
     MenuRecipe,
     MenuRecipeLine,
@@ -41,6 +42,9 @@ bp = Blueprint("menu_api", __name__)
 MONEY = Decimal("0.01")
 QTY = Decimal("0.0001")
 DEFAULT_LOOKBACK_DAYS = 14
+MASS_UNITS = {"kg", "g"}
+VOLUME_UNITS = {"l", "ml"}
+COUNT_UNITS = {"each", "unit"}
 
 
 def _now() -> datetime:
@@ -92,6 +96,46 @@ def _normalize_name(value: str) -> str:
     return " ".join(" ".join(ch if ch.isalnum() else " " for ch in value.lower()).split())
 
 
+def _normalize_unit_name(value: str) -> str:
+    unit = str(value or "").strip().lower()
+    return unit[:-1] if unit.endswith("s") and unit[:-1] in MASS_UNITS | VOLUME_UNITS | COUNT_UNITS else unit
+
+
+def _unit_family(unit: str) -> str | None:
+    normalized = _normalize_unit_name(unit)
+    if normalized in MASS_UNITS:
+        return "mass"
+    if normalized in VOLUME_UNITS:
+        return "volume"
+    if normalized in COUNT_UNITS:
+        return "count"
+    return None
+
+
+def _convert_quantity(quantity: Decimal, source_unit: str, target_unit: str) -> Decimal | None:
+    source = _normalize_unit_name(source_unit)
+    target = _normalize_unit_name(target_unit)
+    source_family = _unit_family(source)
+    target_family = _unit_family(target)
+    if source_family is None or target_family is None or source_family != target_family:
+        return None
+
+    if source == target:
+        return quantity.quantize(QTY)
+
+    if source_family == "mass":
+        source_factor = Decimal("1000") if source == "kg" else Decimal("1")
+        target_factor = Decimal("1000") if target == "kg" else Decimal("1")
+    elif source_family == "volume":
+        source_factor = Decimal("1000") if source == "l" else Decimal("1")
+        target_factor = Decimal("1000") if target == "l" else Decimal("1")
+    else:
+        source_factor = Decimal("1")
+        target_factor = Decimal("1")
+
+    return (quantity * source_factor / target_factor).quantize(QTY)
+
+
 def _current_context():
     organization, membership, locations = get_current_organization_bundle()
     location = get_current_location()
@@ -115,7 +159,7 @@ def _inventory_unit_cost(item: InventoryItem) -> Decimal | None:
     purchase_price = Decimal(item.latest_purchase_price or 0)
     conversion_factor = Decimal(item.last_purchase_conversion_factor or 0)
     if purchase_price <= 0:
-        return Decimal("0")
+        return None
     if conversion_factor <= 0:
         return None
     return (purchase_price / conversion_factor).quantize(MONEY)
@@ -227,8 +271,6 @@ def _sales_line_lookup(connection: SquareConnection | None, organization_id: int
         mapped_menu_id = catalog_id_to_menu_id.get(catalog_object.id)
         if mapped_menu_id is not None:
             lookup[square_object_id] = mapped_menu_id
-    for item in menu_items:
-        lookup.setdefault(item.normalized_name, item.id)
     return lookup
 
 
@@ -240,21 +282,48 @@ def _latest_count_session_for_location(organization_id: int, location_id: int) -
     )
 
 
+def _latest_completed_count_session_before(organization_id: int, location_id: int, moment: datetime) -> StockCountSession | None:
+    return (
+        StockCountSession.query.filter_by(organization_id=organization_id, location_id=location_id, status="Completed")
+        .filter(StockCountSession.completed_at.isnot(None))
+        .filter(StockCountSession.completed_at <= moment)
+        .order_by(StockCountSession.completed_at.desc(), StockCountSession.updated_at.desc(), StockCountSession.id.desc())
+        .first()
+    )
+
+
 def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> dict[str, Any]:
     now = _now()
     lookback_start = now - timedelta(days=max(1, lookback_days))
     menu_items = _menu_items_query(organization_id, location_id).all()
     inventory_items = InventoryItem.query.filter_by(organization_id=organization_id, location_id=location_id, active=True).all()
+    opening_count_session = _latest_completed_count_session_before(organization_id, location_id, lookback_start)
     latest_count_session = _latest_count_session_for_location(organization_id, location_id)
-    count_lookup: dict[int, Any] = {}
+    opening_lookup: dict[int, Any] = {}
+    if opening_count_session is not None:
+        opening_lookup = {line.inventory_item_id: line for line in opening_count_session.lines}
+    closing_lookup: dict[int, Any] = {}
     if latest_count_session is not None:
-        count_lookup = {line.inventory_item_id: line for line in latest_count_session.lines}
+        closing_lookup = {line.inventory_item_id: line for line in latest_count_session.lines}
 
     connection = _latest_square_connection(organization_id)
     sales_lookup = _sales_line_lookup(connection, organization_id, menu_items)
     sales_units_by_menu_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     sales_net_by_menu_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     unmapped_sales: list[dict[str, Any]] = []
+    received_purchases_by_inventory_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    if connection is not None:
+        movements = (
+            InventoryMovement.query.filter_by(organization_id=organization_id, location_id=location_id)
+            .filter(InventoryMovement.source_type.in_(["invoice receipt", "invoice correction"]))
+            .all()
+        )
+        for movement in movements:
+            movement_moment = _aware_datetime(movement.created_at)
+            if movement_moment is None or movement_moment < lookback_start:
+                continue
+            received_purchases_by_inventory_item[movement.inventory_item_id] += Decimal(movement.quantity_delta or 0)
+
     if connection is not None:
         orders = (
             SquareOrder.query.filter_by(square_connection_id=connection.id, restaurant_location_id=location_id)
@@ -268,7 +337,7 @@ def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int
                 continue
             for line in order.lines:
                 quantity = Decimal(line.quantity or 0)
-                matched_menu_item_id = sales_lookup.get(line.square_item_variation_id) or sales_lookup.get(_normalize_name(line.name))
+                matched_menu_item_id = sales_lookup.get(line.square_item_variation_id)
                 if matched_menu_item_id is None:
                     unmapped_sales.append(
                         {
@@ -289,30 +358,52 @@ def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int
         recipe = menu_item.recipe
         recipe_line_payloads: list[dict[str, Any]] = []
         recipe_cost = Decimal("0")
-        recipe_missing_lines = 0
+        recipe_cost_complete = True
+        usage_complete = True
+        costing_issues: list[str] = []
         sold_units = sales_units_by_menu_item.get(menu_item.id, Decimal("0"))
+        if recipe is None or not recipe.lines:
+            recipe_cost_complete = False
+            usage_complete = False
         for recipe_line in recipe.lines if recipe else []:
             inventory_item = recipe_line.inventory_item
             unit_cost = _inventory_unit_cost(inventory_item) if inventory_item else None
             line_cost = None
-            if inventory_item is not None and unit_cost is not None:
-                line_cost = (Decimal(recipe_line.quantity or 0) * unit_cost).quantize(MONEY)
-                recipe_cost += line_cost
-                usage_by_inventory_item[inventory_item.id] += Decimal(recipe_line.quantity or 0) * sold_units
+            normalized_quantity = None
+            if inventory_item is not None:
+                normalized_quantity = _convert_quantity(Decimal(recipe_line.quantity or 0), recipe_line.unit, inventory_item.stock_unit)
+            if inventory_item is None:
+                usage_complete = False
+                recipe_cost_complete = False
+                costing_issues.append(f"Untracked ingredient: {recipe_line.ingredient_name}")
+            elif normalized_quantity is None:
+                usage_complete = False
+                recipe_cost_complete = False
+                costing_issues.append(f"Incompatible units for {recipe_line.ingredient_name}")
             else:
-                recipe_missing_lines += 1
+                usage_by_inventory_item[inventory_item.id] += normalized_quantity * sold_units
+                if unit_cost is not None:
+                    line_cost = (normalized_quantity * unit_cost).quantize(MONEY)
+                    recipe_cost += line_cost
+                else:
+                    recipe_cost_complete = False
+                    costing_issues.append(f"Missing cost for {recipe_line.ingredient_name}")
             recipe_line_payloads.append(
                 serialize_menu_recipe_line(
                     recipe_line,
                     unit_cost=decimal_to_float(unit_cost),
                     line_cost=decimal_to_float(line_cost),
                 )
-            )
+                    )
         selling_price = Decimal(menu_item.selling_price or 0)
-        gross_profit = (selling_price - recipe_cost).quantize(MONEY)
+        gross_profit = None
         margin_percent = None
-        if selling_price > 0:
-            margin_percent = round(float(gross_profit / selling_price * 100), 1)
+        food_cost_percent = None
+        if recipe_cost_complete:
+            gross_profit = (selling_price - recipe_cost).quantize(MONEY)
+            if selling_price > 0:
+                margin_percent = round(float(gross_profit / selling_price * 100), 1)
+                food_cost_percent = round(float(recipe_cost / selling_price * 100), 1)
         mapping = None
         if connection is not None:
             mapping = (
@@ -328,8 +419,11 @@ def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int
         data_issues: list[str] = []
         if recipe is None or not recipe.lines:
             data_issues.append("Recipe missing")
-        if recipe_missing_lines:
+        if not usage_complete:
             data_issues.append("Untracked ingredients")
+        if not recipe_cost_complete:
+            data_issues.append("Incomplete costing")
+        data_issues.extend(costing_issues)
         if mapping is None:
             data_issues.append("Square mapping missing")
         menu_payload = serialize_menu_item(menu_item, recipe_payload=serialize_menu_recipe(recipe, line_payloads=recipe_line_payloads) if recipe else None)
@@ -337,9 +431,12 @@ def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int
             {
                 "salesUnits": decimal_to_float(sold_units) or 0,
                 "salesNetAmount": decimal_to_float(sales_net_by_menu_item.get(menu_item.id, Decimal("0"))) or 0,
-                "recipeCost": decimal_to_float(recipe_cost) or 0,
-                "grossProfit": decimal_to_float(gross_profit) or 0,
+                "recipeCost": decimal_to_float(recipe_cost) if recipe_cost_complete else None,
+                "grossProfit": decimal_to_float(gross_profit),
                 "marginPercent": margin_percent,
+                "foodCostPercent": food_cost_percent,
+                "costingComplete": recipe_cost_complete,
+                "usageComplete": usage_complete,
                 "mappingStatus": "Mapped" if mapping is not None else "Unmapped",
                 "squareCatalogObjectId": mapping.square_catalog_object_id if mapping is not None else None,
                 "dataIssues": data_issues,
@@ -350,25 +447,42 @@ def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int
     inventory_usage: list[dict[str, Any]] = []
     for inventory_item in inventory_items:
         theoretical_usage = usage_by_inventory_item.get(inventory_item.id, Decimal("0"))
-        expected_inventory = (Decimal(inventory_item.current_on_hand or 0) - theoretical_usage).quantize(QTY)
-        latest_count_line = count_lookup.get(inventory_item.id)
-        actual_stock_count = decimal_to_float(latest_count_line.counted_quantity if latest_count_line else None)
-        if actual_stock_count is None and latest_count_line is not None:
-            actual_stock_count = decimal_to_float(latest_count_line.resulting_quantity)
+        opening_count_line = opening_lookup.get(inventory_item.id)
+        closing_count_line = closing_lookup.get(inventory_item.id)
+        opening_reference_quantity = None
+        if opening_count_line is not None:
+            opening_reference_quantity = Decimal(opening_count_line.resulting_quantity if opening_count_line.resulting_quantity is not None else opening_count_line.counted_quantity or 0)
+        received_purchases = received_purchases_by_inventory_item.get(inventory_item.id, Decimal("0"))
+        expected_inventory = None
+        if opening_reference_quantity is not None:
+            expected_inventory = (opening_reference_quantity + received_purchases - theoretical_usage).quantize(QTY)
+        actual_stock_count = None
+        if closing_count_line is not None:
+            actual_stock_count = decimal_to_float(closing_count_line.resulting_quantity if closing_count_line.resulting_quantity is not None else closing_count_line.counted_quantity)
         variance = None
-        if actual_stock_count is not None:
+        estimated_cost_variance = None
+        if actual_stock_count is not None and expected_inventory is not None:
             variance = round(actual_stock_count - float(expected_inventory), 4)
+            unit_cost = _inventory_unit_cost(inventory_item)
+            if unit_cost is not None:
+                estimated_cost_variance = round(variance * float(unit_cost), 2)
         inventory_usage.append(
             {
                 "inventoryItemId": inventory_item.id,
                 "inventoryItemName": inventory_item.name,
                 "stockUnit": inventory_item.stock_unit,
-                "currentOnHand": decimal_to_float(inventory_item.current_on_hand) or 0,
+                "referenceInventory": decimal_to_float(opening_reference_quantity),
+                "referenceInventorySessionId": opening_count_session.id if opening_count_session is not None else None,
+                "referenceInventoryCompletedAt": serialize_count_session(opening_count_session)["completedAt"] if opening_count_session is not None else None,
+                "receivedPurchases": decimal_to_float(received_purchases) or 0,
                 "theoreticalUsage": decimal_to_float(theoretical_usage) or 0,
-                "expectedInventory": decimal_to_float(expected_inventory) or 0,
+                "expectedInventory": decimal_to_float(expected_inventory),
                 "actualStockCount": actual_stock_count,
                 "variance": variance,
+                "estimatedCostVariance": estimated_cost_variance,
                 "latestCountSessionId": latest_count_session.id if latest_count_session is not None else None,
+                "latestCountCompletedAt": serialize_count_session(latest_count_session)["completedAt"] if latest_count_session is not None else None,
+                "calculationComplete": opening_reference_quantity is not None and actual_stock_count is not None,
             }
         )
 
@@ -378,16 +492,23 @@ def _menu_snapshot(organization_id: int, location_id: int, *, lookback_days: int
         "mappedMenuItemCount": sum(1 for item in menu_payloads if item["mappingStatus"] == "Mapped"),
         "salesUnits": round(sum(float(item["salesUnits"]) for item in menu_payloads), 4),
         "salesNetAmount": round(sum(float(item["salesNetAmount"]) for item in menu_payloads), 2),
-        "recipeCost": round(sum(float(item["recipeCost"]) for item in menu_payloads), 2),
-        "grossProfit": round(sum(float(item["grossProfit"]) for item in menu_payloads), 2),
+        "recipeCost": round(sum(float(item["recipeCost"]) for item in menu_payloads if item["recipeCost"] is not None), 2),
+        "grossProfit": round(sum(float(item["grossProfit"]) for item in menu_payloads if item["grossProfit"] is not None), 2),
         "inventoryVarianceCount": sum(1 for row in inventory_usage if row["variance"] is not None),
+        "estimatedCostVariance": round(sum(float(row["estimatedCostVariance"]) for row in inventory_usage if row["estimatedCostVariance"] is not None), 2),
+        "receivedPurchasesCount": sum(1 for row in inventory_usage if (row["receivedPurchases"] or 0) != 0),
+        "incompleteCostingCount": sum(1 for item in menu_payloads if not item["costingComplete"]),
+        "incompleteUsageCount": sum(1 for item in menu_payloads if not item["usageComplete"]),
         "unmappedSalesCount": len(unmapped_sales),
+        "openingCountSessionId": opening_count_session.id if opening_count_session is not None else None,
+        "latestCountSessionId": latest_count_session.id if latest_count_session is not None else None,
     }
     return {
         "summary": summary,
         "menuItems": menu_payloads,
         "inventoryUsage": inventory_usage,
         "unmappedSales": unmapped_sales[:20],
+        "openingCountSession": serialize_count_session(opening_count_session) if opening_count_session is not None else None,
         "latestCountSession": serialize_count_session(latest_count_session) if latest_count_session is not None else None,
         "salesStartDate": lookback_start.date().isoformat(),
         "salesEndDate": now.date().isoformat(),
@@ -531,4 +652,37 @@ def update_menu_item(item_id: int):
     except IntegrityError:
         db.session.rollback()
         return json_error("Could not update the menu item.", 500)
+    return jsonify(_menu_snapshot(organization.id, location.id)), 200
+
+
+@bp.delete("/api/pilot/menu-items/<int:item_id>")
+@login_required
+def delete_menu_item(item_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_menu_manage(membership)
+    if permission_error is not None:
+        return permission_error
+    menu_item = MenuItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if menu_item is None:
+        return json_error("Menu item not found.", 404)
+    menu_item.active = False
+    menu_item.updated_by_user_id = current_user.id
+    menu_item.updated_at = _now()
+    record_audit_event(
+        event_type="menu.item_deactivated",
+        entity_type="menu_item",
+        entity_id=menu_item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": menu_item.name, "category": menu_item.category, "sellingPrice": decimal_to_float(menu_item.selling_price) or 0},
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("Could not deactivate the menu item.", 500)
     return jsonify(_menu_snapshot(organization.id, location.id)), 200
