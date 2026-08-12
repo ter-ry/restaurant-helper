@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import click
 import os
+from urllib.parse import urlparse
 
 from flask import Flask, Response, g, jsonify, request, session
 from flask_wtf.csrf import CSRFError
@@ -54,6 +55,39 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.before_request
     def enforce_commercial_access():
         return enforce_operational_access()
+
+    @app.before_request
+    def enforce_split_origin_browser_boundary():
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.path.startswith("/api/"):
+            return None
+
+        allowed_origins = set(app.config.get("ALLOWED_ORIGINS", []))
+        trusted_frontend_origin = str(app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip()
+        if trusted_frontend_origin:
+            allowed_origins.add(trusted_frontend_origin)
+
+        origin = request.headers.get("Origin", "").strip()
+        referer = request.headers.get("Referer", "").strip()
+
+        def _extract_origin(value: str) -> str:
+            parsed = urlparse(value)
+            if not parsed.scheme or not parsed.netloc:
+                return ""
+            return f"{parsed.scheme}://{parsed.netloc}"
+
+        if origin:
+            if origin not in allowed_origins:
+                return json_error("Origin does not match the configured frontend.", 403)
+            return None
+
+        if referer:
+            referer_origin = _extract_origin(referer)
+            if referer_origin not in allowed_origins:
+                return json_error("Referrer does not match the configured frontend.", 403)
+
+        return None
 
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:

@@ -13,6 +13,7 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SECRET_KEY",
         "DATABASE_URL",
         "FLOWTALLY_ALLOWED_ORIGINS",
+        "FLOWTALLY_FRONTEND_ORIGIN",
         "SESSION_COOKIE_SECURE",
         "FLOWTALLY_RATE_LIMIT_STORAGE_URI",
         "FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL",
@@ -145,6 +146,7 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
 
     assert config["FLOWTALLY_ENV"] == "staging"
     assert config["SESSION_COOKIE_SECURE"] is True
+    assert config["WTF_CSRF_SSL_STRICT"] is False
     assert config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql://")
 
 
