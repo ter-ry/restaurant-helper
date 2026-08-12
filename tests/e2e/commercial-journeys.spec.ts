@@ -435,6 +435,42 @@ async function installMockApi(page: Page, state: MockState) {
       });
     }
 
+    if (state.menuState && path === "/api/pilot/inventory" && method === "GET") {
+      return jsonResponse(route, {
+        items: state.menuState.inventory.map((item: any) => ({
+          id: item.id,
+          organizationId: state.menuState.organizationId,
+          locationId: state.menuState.locationId,
+          supplierId: null,
+          name: item.name,
+          normalizedName: String(item.name).trim().toLowerCase(),
+          category: "Prepared",
+          stockUnit: item.stockUnit,
+          currentOnHand: 0,
+          minQuantity: 0,
+          parLevel: 0,
+          preferredSupplierName: "",
+          latestPurchasePrice: null,
+          lastPurchaseUnit: item.stockUnit,
+          lastPurchaseConversionFactor: 1,
+          lastReceivedAt: null,
+          lastCountedAt: null,
+          averageDailyUsage: null,
+          estimatedCostMethod: "latest_purchase_price",
+          active: true,
+          notes: "",
+          createdByUserId: null,
+          updatedByUserId: null,
+          createdAt: null,
+          updatedAt: null,
+        })),
+        movements: [],
+        countSessions: [],
+        reorderPlan: { suggestions: [], groupedBySupplier: [] },
+        summary: {},
+      });
+    }
+
     if (path === "/api/organizations/current" && method === "GET") {
       if (!state.currentOrganization) {
         return jsonResponse(route, { error: "Organization not found." }, 404);
