@@ -91,6 +91,15 @@ type MockState = {
   squareConnection: any;
   squareCatalogMappings?: any;
   squareUsage?: any;
+  menuState?: {
+    organizationId: number;
+    locationId: number;
+    inventory: Array<{
+      id: number;
+      name: string;
+      stockUnit: string;
+    }>;
+  };
   importJobs: any[];
   importJob: any | null;
 };
@@ -435,12 +444,13 @@ async function installMockApi(page: Page, state: MockState) {
       });
     }
 
-    if (state.menuState && path === "/api/pilot/inventory" && method === "GET") {
+    const menuState = state.menuState;
+    if (menuState && path === "/api/pilot/inventory" && method === "GET") {
       return jsonResponse(route, {
-        items: state.menuState.inventory.map((item: any) => ({
+        items: menuState.inventory.map((item: any) => ({
           id: item.id,
-          organizationId: state.menuState.organizationId,
-          locationId: state.menuState.locationId,
+          organizationId: menuState.organizationId,
+          locationId: menuState.locationId,
           supplierId: null,
           name: item.name,
           normalizedName: String(item.name).trim().toLowerCase(),
