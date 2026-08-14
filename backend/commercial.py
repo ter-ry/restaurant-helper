@@ -12,6 +12,7 @@ from .audit import record_audit_event
 from .extensions import csrf, db
 from .models import Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationInvitation, OrganizationMembership, OrganizationModule, RestaurantLocation
 from .modules import MODULE_REGISTRY
+from .tenant_context import apply_request_tenant_context
 from .utils import clear_pilot_context, get_current_organization_bundle, get_user_memberships, json_error, serialize_organization
 from .validation import clean_email
 
@@ -152,6 +153,8 @@ def create_prospect_organization() -> tuple[object, int]:
         return json_error("Location city is required.", 400)
     if template_key not in {template["templateKey"] for template in SETUP_TEMPLATES}:
         return json_error("Unknown setup template.", 400)
+
+    apply_request_tenant_context(access_scope="setup")
 
     existing = _prospect_org_for_user(current_user.id)
     if existing is not None and existing.lifecycle_status != "CANCELLED":

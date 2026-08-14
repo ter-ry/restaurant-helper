@@ -35,7 +35,7 @@ from backend.models import (
     Supplier,
     User,
 )
-from backend.seed import LOCAL_OWNER_EMAIL, seed_pilot_data
+from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD, seed_pilot_data
 from backend.utils import utc_now
 
 
@@ -263,6 +263,18 @@ def _set_rls_context(*, access_scope: str, organization_id: int | None = None, s
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.support_grant_id", "value": "" if support_grant_id is None else str(support_grant_id)},
     )
+
+
+def _login_owner(client) -> None:
+    csrf_response = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001")
+    csrf_token = csrf_response.get_json()["csrfToken"]
+    response = client.post(
+        "/api/auth/login",
+        base_url="http://127.0.0.1:5001",
+        json={"email": LOCAL_OWNER_EMAIL, "password": LOCAL_OWNER_PASSWORD},
+        headers={"X-CSRFToken": csrf_token},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
 
 
 def _log_connection_identity(connection, label: str) -> dict[str, object]:
@@ -2169,6 +2181,43 @@ def test_postgres_rls_probe_2_current_organization_id(postgres_app, postgres_rls
     with postgres_app.app_context():
         _set_rls_context(access_scope="customer", organization_id=postgres_rls_probe_context["org_a_id"])
         assert _log_probe("2 flowtally_current_organization_id()", "select flowtally_current_organization_id()") == postgres_rls_probe_context["org_a_id"]
+
+
+def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_app):
+    with postgres_app.app_context():
+        client = postgres_app.test_client()
+        _login_owner(client)
+
+        response = client.post(
+            "/api/onboarding/organizations",
+            base_url="http://127.0.0.1:5001",
+            json={
+                "name": "Flowtally Test Cafe",
+                "templateKey": "GENERIC_RESTAURANT",
+                "locationName": "Flowtally Test Kitchen",
+                "city": "Toronto",
+            },
+            headers={"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]},
+        )
+
+        assert response.status_code == 201, response.get_data(as_text=True)
+        body = response.get_json()
+        assert body["membershipRole"] == "owner"
+        assert body["currentLocationId"] > 0
+
+        organization = Organization.query.filter_by(id=body["organization"]["id"]).first()
+        assert organization is not None
+        assert organization.name == "Flowtally Test Cafe"
+        assert organization.lifecycle_status == "ONBOARDING"
+        assert organization.setup_status == "INTAKE"
+        assert organization.subscription_status == "NONE"
+        assert organization.is_prospect is True
+        assert OrganizationMembership.query.filter_by(organization_id=organization.id).count() == 1
+        assert RestaurantLocation.query.filter_by(organization_id=organization.id).count() == 1
+
+        with client.session_transaction() as session:
+            assert session["pilot_current_organization_id"] == organization.id
+            assert session["pilot_current_location_id"] == body["currentLocationId"]
 
 
 @SUPPORT_ACCESS_DEFERRED
