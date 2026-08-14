@@ -50,6 +50,7 @@ def test_development_defaults_are_easy_for_local_setup(monkeypatch: pytest.Monke
     assert "http://127.0.0.1:5173" in config["ALLOWED_ORIGINS"]
     assert config["FLOWTALLY_FRONTEND_ORIGIN"] == "http://127.0.0.1:5173"
     assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is False
+    assert config["WTF_CSRF_SSL_STRICT"] is True
 
 
 @pytest.mark.parametrize(
@@ -169,6 +170,25 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
     assert config["SESSION_COOKIE_SECURE"] is True
     assert config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql://")
     assert config["FLOWTALLY_FRONTEND_ORIGIN"] == "https://staging.flowtally.ca"
+    assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is True
+    assert config["WTF_CSRF_SSL_STRICT"] is False
+
+
+def test_split_origin_disabled_keeps_ssl_referrer_strict(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "staging")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-staging-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://staging.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://staging.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "false")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+
+    config = choose_config().build()
+
+    assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is False
+    assert config["WTF_CSRF_SSL_STRICT"] is True
 
 
 def test_create_app_rejects_unsafe_staging_startup(monkeypatch: pytest.MonkeyPatch):

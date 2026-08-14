@@ -194,6 +194,9 @@ class BaseConfig:
             "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF": _env_bool(
                 "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", cls.mode in PROD_LIKE_MODES
             ),
+            "WTF_CSRF_SSL_STRICT": not _env_bool(
+                "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", cls.mode in PROD_LIKE_MODES
+            ),
             "GOOGLE_OIDC_ENABLED": _env_bool("GOOGLE_OIDC_ENABLED", False),
             "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
             "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(),

@@ -11,13 +11,14 @@ from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.seed import seed_pilot_data
 
 
-TRUSTED_FRONTEND_ORIGIN = "http://127.0.0.1:5173"
-API_BASE_URL = "http://127.0.0.1:5001"
+TRUSTED_FRONTEND_ORIGIN = "https://staging.flowtally.ca"
+API_BASE_URL = "https://api-staging.flowtally.ca"
 
 
 @pytest.fixture()
 def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("FLOWTALLY_ENV", "testing")
+    monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "true")
 
     database_path = tmp_path / "pilot.db"
     application = create_app(
@@ -25,11 +26,10 @@ def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             "TESTING": True,
             "SECRET_KEY": "test-secret",
             "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path.as_posix()}",
-            "SESSION_COOKIE_SECURE": False,
+            "SESSION_COOKIE_SECURE": True,
             "ALLOWED_ORIGINS": [TRUSTED_FRONTEND_ORIGIN],
             "FLOWTALLY_FRONTEND_ORIGIN": TRUSTED_FRONTEND_ORIGIN,
             "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
-            "FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF": True,
             "WTF_CSRF_ENABLED": True,
         }
     )
@@ -65,6 +65,27 @@ def _login(client) -> None:
         headers=_csrf_headers(client),
     )
     assert response.status_code == 200
+
+
+def test_split_origin_disabled_keeps_same_host_csrf_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("FLOWTALLY_ENV", "testing")
+    monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "false")
+    database_path = tmp_path / "pilot.db"
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path.as_posix()}",
+            "SESSION_COOKIE_SECURE": True,
+            "ALLOWED_ORIGINS": [TRUSTED_FRONTEND_ORIGIN],
+            "FLOWTALLY_FRONTEND_ORIGIN": TRUSTED_FRONTEND_ORIGIN,
+            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+            "WTF_CSRF_ENABLED": True,
+        }
+    )
+
+    assert application.config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is False
+    assert application.config["WTF_CSRF_SSL_STRICT"] is True
 
 
 def test_split_origin_onboarding_accepts_trusted_frontend(app, client):
