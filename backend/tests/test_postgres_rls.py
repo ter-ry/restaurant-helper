@@ -290,6 +290,10 @@ def _login_user(client, email: str, password: str) -> None:
     assert response.status_code == 200, response.get_data(as_text=True)
 
 
+def _github_warning(message: str) -> None:
+    print(f"::warning file=backend/tests/test_postgres_rls.py,line=2199::{message}", flush=True)
+
+
 def _log_connection_identity(connection, label: str) -> dict[str, object]:
     snapshot = connection.execute(
         text(
@@ -2209,12 +2213,15 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert OrganizationMembership.query.filter_by(user_id=zero_org_user.id).count() == 0
         assert Organization.query.join(OrganizationMembership).filter(OrganizationMembership.user_id == zero_org_user.id).count() == 0
         assert PlatformRole.query.filter_by(user_id=zero_org_user.id).count() == 0
+        _github_warning("onboarding regression: zero-org user seeded")
 
         with client.session_transaction() as session:
             assert "pilot_current_organization_id" not in session
             assert "pilot_current_location_id" not in session
 
+        _github_warning("onboarding regression: session confirmed empty before login")
         _login_user(client, zero_org_email, zero_org_password)
+        _github_warning("onboarding regression: authenticated zero-org user")
 
         response = client.post(
             "/api/onboarding/organizations",
@@ -2229,6 +2236,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         )
 
         assert response.status_code == 201, response.get_data(as_text=True)
+        _github_warning("onboarding regression: onboarding POST returned 201")
         body = response.get_json()
         assert body["membershipRole"] == "owner"
         assert body["currentLocationId"] > 0
@@ -2251,15 +2259,18 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
             for module in OrganizationModule.query.filter_by(organization_id=organization.id).all()
         }
         assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
+        _github_warning("onboarding regression: persisted organization, location, modules, and configuration")
 
         with client.session_transaction() as session:
             assert session["pilot_current_organization_id"] == organization.id
             assert session["pilot_current_location_id"] == body["currentLocationId"]
+        _github_warning("onboarding regression: session handoff confirmed")
 
         follow_up = client.get("/api/onboarding/organizations", base_url="http://127.0.0.1:5001")
         assert follow_up.status_code == 200, follow_up.get_data(as_text=True)
         follow_up_body = follow_up.get_json()
         assert any(entry["organization"]["id"] == organization.id for entry in follow_up_body["organizations"])
+        _github_warning("onboarding regression: follow-up onboarding list sees new organization")
 
 
 @SUPPORT_ACCESS_DEFERRED
