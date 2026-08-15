@@ -109,3 +109,31 @@ def test_disabled_support_access_does_not_set_tenant_scope(monkeypatch):
         ("flowtally.organization_id", ""),
         ("flowtally.support_grant_id", ""),
     ]
+
+
+def test_explicit_setup_scope_is_preserved_for_onboarding_endpoint(monkeypatch):
+    captured: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
+    monkeypatch.setattr(
+        tenant_context,
+        "_set_local_setting",
+        lambda name, value: captured.append((name, value or "")),
+    )
+    monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="commercial.create_prospect_organization"))
+    monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
+    monkeypatch.setattr(
+        tenant_context,
+        "get_current_organization_bundle",
+        lambda: (None, None, []),
+    )
+    monkeypatch.setattr(tenant_context, "get_platform_role", lambda user_id: None)
+    monkeypatch.setattr(tenant_context, "support_grant_for_user", lambda *_args, **_kwargs: None)
+
+    tenant_context.apply_request_tenant_context(access_scope="setup")
+
+    assert captured == [
+        ("flowtally.access_scope", "setup"),
+        ("flowtally.organization_id", ""),
+        ("flowtally.support_grant_id", ""),
+    ]

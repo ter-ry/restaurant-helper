@@ -277,6 +277,18 @@ def _login_owner(client) -> None:
     assert response.status_code == 200, response.get_data(as_text=True)
 
 
+def _login_user(client, email: str, password: str) -> None:
+    csrf_response = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001")
+    csrf_token = csrf_response.get_json()["csrfToken"]
+    response = client.post(
+        "/api/auth/login",
+        base_url="http://127.0.0.1:5001",
+        json={"email": email, "password": password},
+        headers={"X-CSRFToken": csrf_token},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+
+
 def _log_connection_identity(connection, label: str) -> dict[str, object]:
     snapshot = connection.execute(
         text(
@@ -2186,7 +2198,17 @@ def test_postgres_rls_probe_2_current_organization_id(postgres_app, postgres_rls
 def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_app):
     with postgres_app.app_context():
         client = postgres_app.test_client()
-        _login_owner(client)
+        zero_org_email = f"zero-org-onboarding-{int(time.time() * 1000)}@example.com"
+        zero_org_password = "ZeroOrg!123"
+        zero_org_user = User(email=zero_org_email, is_active=True)
+        zero_org_user.set_password(zero_org_password)
+        db.session.add(zero_org_user)
+        db.session.commit()
+
+        assert OrganizationMembership.query.filter_by(user_id=zero_org_user.id).count() == 0
+        assert Organization.query.join(OrganizationMembership).filter(OrganizationMembership.user_id == zero_org_user.id).count() == 0
+
+        _login_user(client, zero_org_email, zero_org_password)
 
         response = client.post(
             "/api/onboarding/organizations",
@@ -2214,10 +2236,16 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert organization.is_prospect is True
         assert OrganizationMembership.query.filter_by(organization_id=organization.id).count() == 1
         assert RestaurantLocation.query.filter_by(organization_id=organization.id).count() == 1
+        assert OrganizationModule.query.filter_by(organization_id=organization.id).count() == 4
 
         with client.session_transaction() as session:
             assert session["pilot_current_organization_id"] == organization.id
             assert session["pilot_current_location_id"] == body["currentLocationId"]
+
+        follow_up = client.get("/api/onboarding/organizations", base_url="http://127.0.0.1:5001")
+        assert follow_up.status_code == 200, follow_up.get_data(as_text=True)
+        follow_up_body = follow_up.get_json()
+        assert any(entry["organization"]["id"] == organization.id for entry in follow_up_body["organizations"])
 
 
 @SUPPORT_ACCESS_DEFERRED

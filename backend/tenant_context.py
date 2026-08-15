@@ -41,7 +41,7 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
                 grant = support_grant_for_user(current_user.id, organization.id)
                 if grant is not None:
                     grant_id = grant.id
-        elif request.endpoint == "commercial.create_prospect_organization":
+        elif access_scope is None and request.endpoint == "commercial.create_prospect_organization":
             scope = "public"
 
     if current_user.is_authenticated:
