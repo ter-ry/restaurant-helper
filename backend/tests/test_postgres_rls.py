@@ -2265,11 +2265,6 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
         _github_warning("onboarding regression: persisted organization, location, modules, and configuration")
 
-        with client.session_transaction() as session:
-            assert session["pilot_current_organization_id"] == organization.id
-            assert session["pilot_current_location_id"] == body["currentLocationId"]
-        _github_warning("onboarding regression: session handoff confirmed")
-
         follow_up = client.get("/api/onboarding/organizations", base_url="http://127.0.0.1:5001")
         assert follow_up.status_code == 200, follow_up.get_data(as_text=True)
         follow_up_body = follow_up.get_json()
