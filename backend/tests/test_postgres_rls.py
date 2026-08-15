@@ -2313,11 +2313,13 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         zero_org_user = User(email=zero_org_email, is_active=True)
         zero_org_user.set_password(zero_org_password)
         db.session.add(zero_org_user)
+        db.session.flush()
+        zero_org_user_id = zero_org_user.id
         db.session.commit()
 
-        assert OrganizationMembership.query.filter_by(user_id=zero_org_user.id).count() == 0
-        assert Organization.query.join(OrganizationMembership).filter(OrganizationMembership.user_id == zero_org_user.id).count() == 0
-        assert PlatformRole.query.filter_by(user_id=zero_org_user.id).count() == 0
+        assert OrganizationMembership.query.filter_by(user_id=zero_org_user_id).count() == 0
+        assert Organization.query.join(OrganizationMembership).filter(OrganizationMembership.user_id == zero_org_user_id).count() == 0
+        assert PlatformRole.query.filter_by(user_id=zero_org_user_id).count() == 0
         _github_warning("onboarding regression: zero-org user seeded")
 
         with client.session_transaction(base_url="http://127.0.0.1:5001") as session:
@@ -2346,36 +2348,38 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         _github_warning("onboarding regression: onboarding POST returned 201")
         body = response.get_json()
         assert body["membershipRole"] == "owner"
-        assert body["currentLocationId"] > 0
+        organization_id = body["organization"]["id"]
+        current_location_id = body["currentLocationId"]
+        assert current_location_id > 0
 
-        _set_rls_context(access_scope="setup", organization_id=body["organization"]["id"])
-        organization = Organization.query.filter_by(id=body["organization"]["id"]).first()
+        _set_rls_context(access_scope="setup", organization_id=organization_id)
+        organization = Organization.query.filter_by(id=organization_id).first()
         assert organization is not None
         assert organization.name == "Flowtally Test Cafe"
         assert organization.lifecycle_status == "ONBOARDING"
         assert organization.setup_status == "INTAKE"
         assert organization.subscription_status == "NONE"
         assert organization.is_prospect is True
-        assert OrganizationMembership.query.filter_by(organization_id=organization.id).count() == 1
-        assert RestaurantLocation.query.filter_by(organization_id=organization.id).count() == 1
-        assert OrganizationConfiguration.query.filter_by(organization_id=organization.id).count() == 1
-        configuration = OrganizationConfiguration.query.filter_by(organization_id=organization.id).first()
+        assert OrganizationMembership.query.filter_by(organization_id=organization_id).count() == 1
+        assert RestaurantLocation.query.filter_by(organization_id=organization_id).count() == 1
+        assert OrganizationConfiguration.query.filter_by(organization_id=organization_id).count() == 1
+        configuration = OrganizationConfiguration.query.filter_by(organization_id=organization_id).first()
         assert configuration is not None
         assert configuration.draft_name == "Flowtally Test Cafe setup"
         module_keys = {
             module.module_key
-            for module in OrganizationModule.query.filter_by(organization_id=organization.id).all()
+            for module in OrganizationModule.query.filter_by(organization_id=organization_id).all()
         }
         assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
         _github_warning("onboarding regression: persisted organization, location, modules, and configuration")
         with postgres_app.app_context():
-            _set_rls_context(access_scope="setup", organization_id=organization.id)
-            membership = OrganizationMembership.query.filter_by(organization_id=organization.id, user_id=zero_org_user.id).first()
+            _set_rls_context(access_scope="setup", organization_id=organization_id)
+            membership = OrganizationMembership.query.filter_by(organization_id=organization_id, user_id=zero_org_user_id).first()
             assert membership is not None
             membership_id = membership.id
 
         with postgres_app.app_context():
-            _set_rls_context(access_scope="setup", organization_id=organization.id)
+            _set_rls_context(access_scope="setup", organization_id=organization_id)
             other_user = User(email=f"onboarding-other-{int(time.time() * 1000)}@example.com", is_active=True)
             other_user.set_password("OtherOrg!123")
             db.session.add(other_user)
@@ -2403,10 +2407,10 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
         assert me_response.status_code == 200, me_response.get_data(as_text=True)
         me_body = me_response.get_json()
-        assert me_body["currentOrganizationId"] == organization.id, me_body
-        assert me_body["currentLocationId"] == body["currentLocationId"], me_body
+        assert me_body["currentOrganizationId"] == organization_id, me_body
+        assert me_body["currentLocationId"] == current_location_id, me_body
         assert me_body["organizations"], me_body
-        assert me_body["organizations"][0]["organization"]["id"] == organization.id, me_body
+        assert me_body["organizations"][0]["organization"]["id"] == organization_id, me_body
         assert me_body["organizations"][0]["selected"] is True, me_body
         assert all(entry["organization"]["id"] != other_org_id for entry in me_body["organizations"]), me_body
 
@@ -2419,19 +2423,19 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
                     base_url="http://127.0.0.1:5001",
                 ).get_json()["csrfToken"]
             },
-            json={"organizationId": organization.id},
+            json={"organizationId": organization_id},
         )
         assert select_response.status_code == 200, select_response.get_data(as_text=True)
 
         with client.session_transaction(base_url="http://127.0.0.1:5001") as session:
             assert session["pilot_current_membership_id"] == membership_id
-            assert session["pilot_current_organization_id"] == organization.id
-            assert session["pilot_current_location_id"] == body["currentLocationId"]
+            assert session["pilot_current_organization_id"] == organization_id
+            assert session["pilot_current_location_id"] == current_location_id
 
         follow_up = client.get("/api/onboarding/organizations", base_url="http://127.0.0.1:5001")
         assert follow_up.status_code == 200, follow_up.get_data(as_text=True)
         follow_up_body = follow_up.get_json()
-        assert any(entry["organization"]["id"] == organization.id for entry in follow_up_body["organizations"])
+        assert any(entry["organization"]["id"] == organization_id for entry in follow_up_body["organizations"])
         _github_warning("onboarding regression: follow-up onboarding list sees new organization")
 
 
