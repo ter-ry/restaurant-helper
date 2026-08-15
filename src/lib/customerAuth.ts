@@ -132,6 +132,21 @@ export async function requestCustomerSetup(organizationId: number) {
   });
 }
 
+export async function selectCustomerOrganization(organizationId: number) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<{ organization: CustomerOrganizationSummary; membershipRole: string; currentLocationId: number | null }>(
+    "/api/organizations/select",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
+      },
+      body: JSON.stringify({ organizationId }),
+    },
+  );
+}
+
 export async function acceptCustomerInvitation(token: string) {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<{ ok: true; accepted: true; organizationId: number; role: string }>(`/api/organization-invitations/${token}/accept`, {

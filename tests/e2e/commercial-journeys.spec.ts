@@ -243,31 +243,64 @@ async function installMockApi(page: Page, state: MockState) {
     }
 
     if (path === "/api/organizations" && method === "GET") {
-      const organization = state.currentOrganization ?? makeOrganization();
+      const organization = state.currentOrganization ?? state.session?.organizations?.find((entry) => entry.selected)?.organization ?? state.session?.organizations?.[0]?.organization ?? makeOrganization();
+      const organizations = state.session?.organizations ?? (state.session
+        ? [
+            {
+              organization,
+              membershipRole: state.session.membershipRole ?? "owner",
+              selected: Boolean(state.session.currentOrganizationId === organization.id),
+            },
+          ]
+        : []);
       return jsonResponse(route, {
-        organizations: state.session
-          ? [
-              {
-                organization,
-                membershipRole: state.session.membershipRole ?? "owner",
-                selected: true,
-              },
-            ]
-          : [],
-        currentOrganizationId: organization.id,
-        currentMembershipId: 1,
-        currentLocationId: 7,
+        organizations,
+        currentOrganizationId: state.session?.currentOrganizationId ?? null,
+        currentMembershipId: state.session?.currentOrganizationId ? 1 : null,
+        currentLocationId: state.session?.currentLocationId ?? null,
         currentOrganization: {
           organization,
           restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
-          currentLocation: { id: 7, name: "Main Dining Room" },
+          currentLocation: state.session?.currentLocationId ? { id: state.session.currentLocationId, name: "Main Dining Room" } : null,
           membershipRole: state.session?.membershipRole ?? "owner",
         },
         restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
       });
     }
 
+    if (path === "/api/organizations/select" && method === "POST") {
+      const organizationId = Number(body.organizationId ?? 0);
+      const organization = state.session?.organizations?.find((entry) => entry.organization.id === organizationId)?.organization ?? state.currentOrganization ?? makeOrganization({ id: organizationId });
+      state.currentOrganization = organization;
+      if (state.session) {
+        state.session = {
+          ...state.session,
+          currentOrganizationId: organization.id,
+          currentLocationId: 7,
+          organizations: (state.session.organizations ?? [
+            {
+              organization,
+              membershipRole: state.session.membershipRole ?? "owner",
+              selected: true,
+            },
+          ]).map((entry) => ({
+            ...entry,
+            selected: entry.organization.id === organization.id,
+          })),
+        };
+      }
+      return jsonResponse(route, {
+        organization,
+        restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
+        currentLocation: { id: 7, name: "Main Dining Room" },
+        membershipRole: state.session?.membershipRole ?? "owner",
+      });
+    }
+
     if (path === "/api/onboarding/organizations" && method === "POST") {
+      if (state.currentOrganization) {
+        return jsonResponse(route, { error: "This account already has a prospective organization." }, 409);
+      }
       const organization = makeOrganization({
         id: 42,
         name: String(body.name ?? "Demo Bistro"),
@@ -1043,6 +1076,43 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
   await page.getByRole("button", { name: "Create your workspace" }).click();
   await expect(page.getByText("Logged-in prospect")).toBeVisible();
   await expect(page.getByText("Welcome back, owner@example.com")).toBeVisible();
+});
+
+test("existing Google prospect sessions resume the workspace instead of recreating it", async ({ page }) => {
+  const existingOrganization = makeOrganization({
+    id: 77,
+    name: "Prospect Cafe",
+    lifecycleStatus: "ONBOARDING",
+    setupStatus: "INTAKE",
+    subscriptionStatus: "NONE",
+    isProspect: true,
+  });
+  const state: MockState = {
+    session: makeProspectSession({
+      organizations: [
+        {
+          organization: existingOrganization,
+          membershipRole: "owner",
+          selected: false,
+        },
+      ],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: existingOrganization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+
+  await page.goto("/auth/google/complete");
+  await expect(page.getByRole("heading", { name: "Customer setup" })).toBeVisible();
+  await expect(page.getByText("Logged-in prospect", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Prospect Cafe/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Set up your first restaurant" })).not.toBeVisible();
 });
 
 test("authenticated menu costing page loads live pricing data", async ({ page }) => {

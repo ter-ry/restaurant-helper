@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Loader2, LogOut, MapPin, ShieldAlert, Sparkles, UserRound } from "lucide-react";
@@ -8,6 +8,7 @@ import {
   fetchCustomerSession,
   logoutCustomer,
   requestCustomerSetup,
+  selectCustomerOrganization,
   startGoogleLogin,
   type CustomerSessionResponse,
 } from "../lib/customerAuth";
@@ -75,6 +76,16 @@ function ProspectOnboardingForm({
       });
       await onCreated();
     } catch (err) {
+      const status = typeof err === "object" && err !== null && "status" in err ? Number((err as { status?: number }).status) : null;
+      if (status === 409) {
+        try {
+          await onCreated();
+          return;
+        } catch (resumeError) {
+          setError(resumeError instanceof Error ? resumeError.message : "Could not restore your organization.");
+          return;
+        }
+      }
       setError(err instanceof Error ? err.message : "Could not create your organization.");
     } finally {
       setSubmitting(false);
@@ -297,11 +308,35 @@ function LoggedInProspectView({
   );
 }
 
+function pickResumeOrganization(session: CustomerSessionResponse) {
+  return (
+    session.organizations?.find((entry) => entry.selected)?.organization ??
+    session.organizations?.find((entry) => entry.organization.isProspect)?.organization ??
+    session.organizations?.[0]?.organization ??
+    null
+  );
+}
+
 export function GoogleAuthCompletePage() {
   const query = useQueryParams();
   const [state, setState] = useState<AuthState>("loading");
   const [session, setSession] = useState<CustomerSessionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const loadSessionWithResume = useCallback(async () => {
+    const current = await fetchCustomerSession();
+    if (current.currentOrganizationId || !current.organizations?.length) {
+      return current;
+    }
+
+    const organization = pickResumeOrganization(current);
+    if (!organization) {
+      return current;
+    }
+
+    await selectCustomerOrganization(organization.id);
+    return fetchCustomerSession();
+  }, []);
 
   useEffect(() => {
     const queryStatus = query.get("status");
@@ -316,7 +351,7 @@ export function GoogleAuthCompletePage() {
     let cancelled = false;
     async function load() {
       try {
-        const current = await fetchCustomerSession();
+        const current = await loadSessionWithResume();
         if (cancelled) return;
         setSession(current);
         setState(current.currentOrganizationId ? "signedIn" : "needsOnboarding");
@@ -334,7 +369,7 @@ export function GoogleAuthCompletePage() {
   }, [query]);
 
   async function handleCreated() {
-    const current = await fetchCustomerSession();
+    const current = await loadSessionWithResume();
     setSession(current);
     setState(current.currentOrganizationId ? "signedIn" : "needsOnboarding");
   }

@@ -9,6 +9,7 @@ const authMocks = vi.hoisted(() => ({
   createCustomerProspectOrganization: vi.fn(),
   requestCustomerSetup: vi.fn(),
   logoutCustomer: vi.fn(),
+  selectCustomerOrganization: vi.fn(),
   startGoogleLogin: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock("../../src/lib/customerAuth", () => ({
   createCustomerProspectOrganization: authMocks.createCustomerProspectOrganization,
   requestCustomerSetup: authMocks.requestCustomerSetup,
   logoutCustomer: authMocks.logoutCustomer,
+  selectCustomerOrganization: authMocks.selectCustomerOrganization,
   startGoogleLogin: authMocks.startGoogleLogin,
 }));
 
@@ -102,5 +104,115 @@ describe("GoogleAuthCompletePage", () => {
     await screen.findByRole("heading", { name: "Customer setup" });
     expect(screen.getByText(/Owner Cafe/)).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Logout" })[0]).toBeVisible();
+  });
+
+  it("restores an existing organization session instead of showing the creation form", async () => {
+    const resumeSession = {
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: null,
+      currentLocationId: null,
+      organizations: [
+        {
+          organization: {
+            id: 77,
+            name: "Prospect Cafe",
+            lifecycleStatus: "ONBOARDING",
+            setupStatus: "INTAKE",
+            subscriptionStatus: "NONE",
+            isProspect: true,
+          },
+          membershipRole: "owner",
+          selected: false,
+        },
+      ],
+      csrfToken: "csrf-3",
+    };
+    const restoredSession = {
+      ...resumeSession,
+      currentOrganizationId: 77,
+      currentLocationId: 8,
+      organizations: [
+        {
+          ...resumeSession.organizations[0],
+          selected: true,
+        },
+      ],
+    };
+
+    authMocks.fetchCustomerSession
+      .mockResolvedValueOnce(resumeSession)
+      .mockResolvedValueOnce(restoredSession);
+    authMocks.selectCustomerOrganization.mockResolvedValueOnce({
+      organization: restoredSession.organizations[0].organization,
+      membershipRole: "owner",
+      currentLocationId: 8,
+    });
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Customer setup" });
+    expect(screen.queryByRole("heading", { name: "Set up your first restaurant" })).not.toBeInTheDocument();
+    expect(screen.getByText("Logged-in prospect")).toBeVisible();
+    expect(screen.getByText(/Prospect Cafe/)).toBeVisible();
+    expect(authMocks.selectCustomerOrganization).toHaveBeenCalledWith(77);
+  });
+
+  it("treats a duplicate organization post as recoverable by restoring the existing workspace", async () => {
+    const resumeSession = {
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: null,
+      currentLocationId: null,
+      organizations: [
+        {
+          organization: {
+            id: 88,
+            name: "Existing Bistro",
+            lifecycleStatus: "ONBOARDING",
+            setupStatus: "INTAKE",
+            subscriptionStatus: "NONE",
+            isProspect: true,
+          },
+          membershipRole: "owner",
+          selected: false,
+        },
+      ],
+      csrfToken: "csrf-4",
+    };
+    const restoredSession = {
+      ...resumeSession,
+      currentOrganizationId: 88,
+      currentLocationId: 9,
+      organizations: [
+        {
+          ...resumeSession.organizations[0],
+          selected: true,
+        },
+      ],
+    };
+
+    authMocks.fetchCustomerSession
+      .mockResolvedValueOnce({ ...resumeSession, organizations: [] })
+      .mockResolvedValueOnce(resumeSession)
+      .mockResolvedValueOnce(restoredSession);
+    authMocks.createCustomerProspectOrganization.mockRejectedValueOnce(Object.assign(new Error("This account already has a prospective organization."), { status: 409 }));
+    authMocks.selectCustomerOrganization.mockResolvedValueOnce({
+      organization: restoredSession.organizations[0].organization,
+      membershipRole: "owner",
+      currentLocationId: 9,
+    });
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Set up your first restaurant" });
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Existing Bistro" } });
+    fireEvent.change(screen.getByLabelText("Location name"), { target: { value: "Main Dining Room" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create your workspace/i }));
+
+    await waitFor(() => expect(authMocks.selectCustomerOrganization).toHaveBeenCalledWith(88));
+    expect(await screen.findByRole("heading", { name: "Customer setup" })).toBeVisible();
+    expect(screen.getByText(/Existing Bistro/)).toBeVisible();
+    expect(screen.queryByText("This account already has a prospective organization.")).not.toBeInTheDocument();
   });
 });
