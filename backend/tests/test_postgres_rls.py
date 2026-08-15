@@ -2320,7 +2320,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert PlatformRole.query.filter_by(user_id=zero_org_user.id).count() == 0
         _github_warning("onboarding regression: zero-org user seeded")
 
-        with client.session_transaction() as session:
+        with client.session_transaction(base_url="http://127.0.0.1:5001") as session:
             assert "pilot_current_organization_id" not in session
             assert "pilot_current_location_id" not in session
 
@@ -2395,7 +2395,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
             db.session.add(OrganizationMembership(user_id=other_user.id, organization_id=other_org.id, role="owner"))
             db.session.commit()
 
-        with client.session_transaction() as session:
+        with client.session_transaction(base_url="http://127.0.0.1:5001") as session:
             session.pop("pilot_current_membership_id", None)
             session.pop("pilot_current_organization_id", None)
             session.pop("pilot_current_location_id", None)
@@ -2423,7 +2423,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         )
         assert select_response.status_code == 200, select_response.get_data(as_text=True)
 
-        with client.session_transaction() as session:
+        with client.session_transaction(base_url="http://127.0.0.1:5001") as session:
             assert session["pilot_current_membership_id"] == membership_id
             assert session["pilot_current_organization_id"] == organization.id
             assert session["pilot_current_location_id"] == body["currentLocationId"]
