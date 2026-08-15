@@ -230,6 +230,10 @@ jobs:
         timeout-minutes: 5
         run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_7_suppliers_count -vv -x -s --durations=20
 
+      - name: PostgreSQL onboarding bootstrap regression
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_onboarding_bootstrap_creates_prospect_organization -vv -x -s --durations=20
+
       - name: PostgreSQL RLS and security tests
         timeout-minutes: 5
         run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_hides_other_tenant_rows -vv -x -s --durations=20

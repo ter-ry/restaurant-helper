@@ -23,6 +23,7 @@ from backend.models import (
     InventoryItem,
     Organization,
     OrganizationMembership,
+    PlatformRole,
     OrganizationModule,
     MenuItem,
     Recipe,
@@ -2207,6 +2208,11 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
 
         assert OrganizationMembership.query.filter_by(user_id=zero_org_user.id).count() == 0
         assert Organization.query.join(OrganizationMembership).filter(OrganizationMembership.user_id == zero_org_user.id).count() == 0
+        assert PlatformRole.query.filter_by(user_id=zero_org_user.id).count() == 0
+
+        with client.session_transaction() as session:
+            assert "pilot_current_organization_id" not in session
+            assert "pilot_current_location_id" not in session
 
         _login_user(client, zero_org_email, zero_org_password)
 
@@ -2236,7 +2242,15 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert organization.is_prospect is True
         assert OrganizationMembership.query.filter_by(organization_id=organization.id).count() == 1
         assert RestaurantLocation.query.filter_by(organization_id=organization.id).count() == 1
-        assert OrganizationModule.query.filter_by(organization_id=organization.id).count() == 4
+        assert OrganizationConfiguration.query.filter_by(organization_id=organization.id).count() == 1
+        configuration = OrganizationConfiguration.query.filter_by(organization_id=organization.id).first()
+        assert configuration is not None
+        assert configuration.draft_name == "Flowtally Test Cafe setup"
+        module_keys = {
+            module.module_key
+            for module in OrganizationModule.query.filter_by(organization_id=organization.id).all()
+        }
+        assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
 
         with client.session_transaction() as session:
             assert session["pilot_current_organization_id"] == organization.id
