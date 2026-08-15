@@ -210,7 +210,9 @@ def create_prospect_organization() -> tuple[object, int]:
         )
     print("::warning file=backend/commercial.py,line=204::onboarding route: modules staged", flush=True)
 
+    print("::warning file=backend/commercial.py,line=206::onboarding route: before configuration object", flush=True)
     configuration = OrganizationConfiguration(organization_id=organization.id, draft_name=f"{name} setup")
+    print("::warning file=backend/commercial.py,line=207::onboarding route: configuration object created", flush=True)
     db.session.add(configuration)
     print("::warning file=backend/commercial.py,line=208::onboarding route: configuration staged", flush=True)
 
