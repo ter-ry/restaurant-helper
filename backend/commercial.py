@@ -201,6 +201,8 @@ def create_prospect_organization() -> tuple[object, int]:
             timezone=timezone,
         )
         db.session.add(location)
+        db.session.flush()
+        location_id = location.id
         print("::warning file=backend/commercial.py,line=191::onboarding route: location staged", flush=True)
 
         template = next(template for template in SETUP_TEMPLATES if template["templateKey"] == template_key)
@@ -232,18 +234,19 @@ def create_prospect_organization() -> tuple[object, int]:
             metadata={"templateKey": template_key, "locationName": location_name},
         )
         print("::warning file=backend/commercial.py,line=217::onboarding route: audit staged", flush=True)
+        organization_payload = serialize_organization(organization)
         db.session.commit()
         print("::warning file=backend/commercial.py,line=219::onboarding route: commit complete", flush=True)
         clear_pilot_context()
         session["pilot_current_membership_id"] = membership_id
         session["pilot_current_organization_id"] = organization_id
-        session["pilot_current_location_id"] = location.id
+        session["pilot_current_location_id"] = location_id
         return (
             jsonify(
                 {
-                    "organization": serialize_organization(organization),
+                    "organization": organization_payload,
                     "membershipRole": "owner",
-                    "currentLocationId": location.id,
+                    "currentLocationId": location_id,
                 }
             ),
             201,
