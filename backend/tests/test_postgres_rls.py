@@ -1242,6 +1242,34 @@ def _reset_public_schema_for_rls_tests() -> None:
     admin_engine.dispose()
 
 
+def _restore_runtime_schema_privileges(connection) -> None:
+    print("BEFORE: restore runtime schema privileges", flush=True)
+    connection.exec_driver_sql("revoke all on schema public from public")
+    connection.exec_driver_sql("grant usage on schema public to flowtally_runtime")
+    connection.exec_driver_sql("grant select, insert, update, delete on all tables in schema public to flowtally_runtime")
+    connection.exec_driver_sql("grant usage, select on all sequences in schema public to flowtally_runtime")
+    connection.exec_driver_sql("grant execute on all functions in schema public to flowtally_runtime")
+    connection.exec_driver_sql(
+        """
+        alter default privileges for role flowtally_migrator in schema public
+            grant select, insert, update, delete on tables to flowtally_runtime
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        alter default privileges for role flowtally_migrator in schema public
+            grant usage, select on sequences to flowtally_runtime
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        alter default privileges for role flowtally_migrator in schema public
+            grant execute on functions to flowtally_runtime
+        """
+    )
+    print("AFTER: restore runtime schema privileges", flush=True)
+
+
 def _seed_admin_fixture(label: str, seed_fn):
     admin_application = create_app(
         {
