@@ -248,6 +248,39 @@ def _assert_policy_exists(policy_name: str, table_name: str) -> None:
     assert row == 1
 
 
+def _assert_policy_absent(policy_name: str, table_name: str) -> None:
+    row = db.session.execute(
+        text(
+            """
+            select count(*)
+            from pg_policies
+            where schemaname = current_schema()
+              and tablename = :table_name
+              and policyname = :policy_name
+            """
+        ),
+        {"table_name": table_name, "policy_name": policy_name},
+    ).scalar_one()
+    assert row == 0
+
+
+def _assert_function_exists(function_name: str, argcount: int) -> None:
+    row = db.session.execute(
+        text(
+            """
+            select count(*)
+            from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = current_schema()
+              and p.proname = :function_name
+              and p.pronargs = :argcount
+            """
+        ),
+        {"function_name": function_name, "argcount": argcount},
+    ).scalar_one()
+    assert row == 1
+
+
 def _current_revision() -> str:
     return db.session.execute(text("select version_num from public.alembic_version")).scalar_one()
 
@@ -285,12 +318,18 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0013_menu_costing_core"
+        assert _current_revision() == "0014_authenticated_membership_discovery"
+        _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
         _assert_table_owned_by_migrator("recipe_ingredients")
         _assert_table_owned_by_migrator("menu_items")
-        _assert_policy_exists("flowtally_organizations_tenant_access", "organizations")
+        _assert_policy_exists("flowtally_organizations_read_access", "organizations")
+        _assert_policy_exists("flowtally_organizations_write_access", "organizations")
+        _assert_policy_absent("flowtally_organizations_tenant_access", "organizations")
+        _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
+        _assert_policy_exists("flowtally_organization_memberships_write_access", "organization_memberships")
+        _assert_policy_absent("flowtally_organization_memberships_tenant_access", "organization_memberships")
         _assert_policy_exists("flowtally_suppliers_tenant_access", "suppliers")
         _assert_policy_exists("flowtally_data_import_jobs_tenant_access", "data_import_jobs")
         _assert_policy_exists("flowtally_square_orders_tenant_access", "square_orders")
@@ -313,9 +352,14 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0013_menu_costing_core"
+        assert _current_revision() == "0014_authenticated_membership_discovery"
+        _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
+        _assert_policy_exists("flowtally_organizations_read_access", "organizations")
+        _assert_policy_exists("flowtally_organizations_write_access", "organizations")
+        _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
+        _assert_policy_exists("flowtally_organization_memberships_write_access", "organization_memberships")
 
 
 def test_postgres_migrations_upgrade_from_partial_commercial_head():
@@ -331,8 +375,13 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0013_menu_costing_core"
+        assert _current_revision() == "0014_authenticated_membership_discovery"
+        _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
+        _assert_policy_exists("flowtally_organizations_read_access", "organizations")
+        _assert_policy_exists("flowtally_organizations_write_access", "organizations")
+        _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
+        _assert_policy_exists("flowtally_organization_memberships_write_access", "organization_memberships")
 
     migration_config = _downgrade_to(application, "0007_commercial_onboarding_and_square_foundation")
     with application.app_context():
@@ -344,5 +393,10 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0013_menu_costing_core"
+        assert _current_revision() == "0014_authenticated_membership_discovery"
+        _assert_function_exists("flowtally_current_user_id", 0)
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
+        _assert_policy_exists("flowtally_organizations_read_access", "organizations")
+        _assert_policy_exists("flowtally_organizations_write_access", "organizations")
+        _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
+        _assert_policy_exists("flowtally_organization_memberships_write_access", "organization_memberships")

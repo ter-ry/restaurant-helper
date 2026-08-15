@@ -68,7 +68,7 @@ def _apply_sql(execute_sql: Callable[[str], None]) -> None:
         CREATE POLICY "flowtally_organizations_read_access" ON "organizations"
         FOR SELECT TO PUBLIC
         USING (
-          flowtally_access_scope() IN ('setup', 'public')
+          flowtally_access_scope() = 'setup'
           OR flowtally_support_has_access(id)
           OR id = flowtally_current_organization_id()
           OR EXISTS (
@@ -85,12 +85,12 @@ def _apply_sql(execute_sql: Callable[[str], None]) -> None:
         CREATE POLICY "flowtally_organizations_write_access" ON "organizations"
         FOR ALL TO PUBLIC
         USING (
-          flowtally_access_scope() IN ('setup', 'public')
+          flowtally_access_scope() = 'setup'
           OR flowtally_support_has_access(id)
           OR id = flowtally_current_organization_id()
         )
         WITH CHECK (
-          flowtally_access_scope() IN ('setup', 'public')
+          flowtally_access_scope() = 'setup'
           OR flowtally_support_has_access(id)
           OR id = flowtally_current_organization_id()
         )

@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import timedelta
 import textwrap
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -264,10 +265,20 @@ def postgres_app(tmp_path):
     print("AFTER: postgres_app teardown", flush=True)
 
 
-def _set_rls_context(*, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
+def _set_rls_context(
+    *,
+    access_scope: str,
+    organization_id: int | None = None,
+    support_grant_id: int | None = None,
+    user_id: int | None = None,
+) -> None:
     db.session.execute(
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.access_scope", "value": access_scope},
+    )
+    db.session.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.user_id", "value": "" if user_id is None else str(user_id)},
     )
     db.session.execute(
         text("select set_config(:name, :value, true)"),
@@ -1189,6 +1200,28 @@ def _seed_two_organizations_with_suppliers(owner: User, prefix: str = "RLS") -> 
     return {"org_a_id": org_a.id, "org_b_id": org_b.id}
 
 
+def _seed_membership_discovery_dataset(prefix: str = "RLS") -> dict[str, object]:
+    print("BEFORE: seed membership discovery dataset", flush=True)
+    user_a = User(email=f"{prefix.lower()}-membership-a-{uuid4().hex[:8]}@example.com", is_active=True)
+    user_a.set_password("MembershipA123!")
+    user_b = User(email=f"{prefix.lower()}-membership-b-{uuid4().hex[:8]}@example.com", is_active=True)
+    user_b.set_password("MembershipB123!")
+    support_user = User(email=f"{prefix.lower()}-support-{uuid4().hex[:8]}@example.com", is_active=True)
+    support_user.set_password("Support123!")
+    db.session.add_all([user_a, user_b, support_user])
+    db.session.flush()
+    org_a = _create_org(user_a, f"{prefix} Discovery Alpha")
+    org_b = _create_org(user_b, f"{prefix} Discovery Beta")
+    db.session.commit()
+    print("AFTER: seed membership discovery dataset", flush=True)
+    return {
+        "user_a_id": user_a.id,
+        "org_a_id": org_a.id,
+        "org_b_id": org_b.id,
+        "support_user_id": support_user.id,
+    }
+
+
 def _seed_admin_fixture(label: str, seed_fn):
     admin_application = create_app(
         {
@@ -1620,10 +1653,21 @@ def _restore_rls_context(access_scope: str, organization_id: int | None = None, 
     _set_rls_context(access_scope=access_scope, organization_id=organization_id, support_grant_id=support_grant_id)
 
 
-def _set_rls_context_on_connection(connection, *, access_scope: str, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
+def _set_rls_context_on_connection(
+    connection,
+    *,
+    access_scope: str,
+    organization_id: int | None = None,
+    support_grant_id: int | None = None,
+    user_id: int | None = None,
+) -> None:
     connection.execute(
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.access_scope", "value": access_scope},
+    )
+    connection.execute(
+        text("select set_config(:name, :value, true)"),
+        {"name": "flowtally.user_id", "value": "" if user_id is None else str(user_id)},
     )
     connection.execute(
         text("select set_config(:name, :value, true)"),
@@ -2387,6 +2431,102 @@ def test_postgres_rls_probe_7_suppliers_count(postgres_app, postgres_rls_probe_c
             "select count(*) from suppliers where organization_id = :org_id",
             {"org_id": postgres_rls_probe_context["org_a_id"]},
         ) == 1
+
+
+def test_postgres_rls_membership_discovery_limits_organization_visibility(postgres_app):
+    seeded = _seed_membership_discovery_dataset("RLS")
+    with postgres_app.app_context():
+        user_a_id = seeded["user_a_id"]
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+        support_user_id = seeded["support_user_id"]
+
+        with db.session.connection() as connection:
+            _apply_diagnostic_timeouts(connection)
+            _set_rls_context_on_connection(connection, access_scope="customer", user_id=user_a_id)
+            runtime_context = connection.execute(
+                text(
+                    """
+                    select
+                        current_user,
+                        session_user,
+                        current_role,
+                        current_setting('flowtally.access_scope', true),
+                        current_setting('flowtally.user_id', true),
+                        current_setting('flowtally.organization_id', true),
+                        current_setting('flowtally.support_grant_id', true)
+                    """
+                )
+            ).one()
+            assert runtime_context[0] == "flowtally_runtime", f"membership discovery runtime context: {tuple(runtime_context)!r}"
+            assert runtime_context[1] == "flowtally_runtime", f"membership discovery runtime context: {tuple(runtime_context)!r}"
+            assert runtime_context[2] == "flowtally_runtime", f"membership discovery runtime context: {tuple(runtime_context)!r}"
+            assert runtime_context[3] == "customer", f"membership discovery runtime context: {tuple(runtime_context)!r}"
+            assert runtime_context[4] == str(user_a_id), f"membership discovery runtime context: {tuple(runtime_context)!r}"
+            assert runtime_context[5] in (None, ""), f"membership discovery runtime context: {tuple(runtime_context)!r}"
+            assert runtime_context[6] in (None, ""), f"membership discovery runtime context: {tuple(runtime_context)!r}"
+
+            visible_org_ids = [
+                row[0]
+                for row in connection.execute(
+                    text("select id from organizations order by id")
+                ).all()
+            ]
+            visible_membership_org_ids = [
+                row[0]
+                for row in connection.execute(
+                    text("select organization_id from organization_memberships where user_id = :user_id order by organization_id"),
+                    {"user_id": user_a_id},
+                ).all()
+            ]
+            assert visible_org_ids == [org_a_id], (
+                "membership discovery should only expose the selected user's organization set: "
+                f"runtime_context={tuple(runtime_context)!r}, visible_org_ids={visible_org_ids!r}, "
+                f"org_a_id={org_a_id}, org_b_id={org_b_id}, user_a_id={user_a_id}"
+            )
+            assert visible_membership_org_ids == [org_a_id], (
+                "membership discovery should only expose the selected user's memberships: "
+                f"runtime_context={tuple(runtime_context)!r}, visible_membership_org_ids={visible_membership_org_ids!r}, "
+                f"org_a_id={org_a_id}, org_b_id={org_b_id}, user_a_id={user_a_id}"
+            )
+            assert connection.execute(text("select count(*) from organizations where id = :org_id"), {"org_id": org_b_id}).scalar_one() == 0
+
+            _set_rls_context_on_connection(connection, access_scope="public")
+            public_context = connection.execute(
+                text(
+                    """
+                    select
+                        current_user,
+                        session_user,
+                        current_role,
+                        current_setting('flowtally.access_scope', true),
+                        current_setting('flowtally.user_id', true),
+                        current_setting('flowtally.organization_id', true),
+                        current_setting('flowtally.support_grant_id', true)
+                    """
+                )
+            ).one()
+            assert public_context[3] == "public", f"public discovery context: {tuple(public_context)!r}"
+            assert connection.execute(text("select count(*) from organizations")).scalar_one() == 0
+
+            _set_rls_context_on_connection(connection, access_scope="public", user_id=support_user_id)
+            support_public_context = connection.execute(
+                text(
+                    """
+                    select
+                        current_user,
+                        session_user,
+                        current_role,
+                        current_setting('flowtally.access_scope', true),
+                        current_setting('flowtally.user_id', true),
+                        current_setting('flowtally.organization_id', true),
+                        current_setting('flowtally.support_grant_id', true)
+                    """
+                )
+            ).one()
+            assert support_public_context[3] == "public", f"support public discovery context: {tuple(support_public_context)!r}"
+            assert support_public_context[4] == str(support_user_id), f"support public discovery context: {tuple(support_public_context)!r}"
+            assert connection.execute(text("select count(*) from organizations")).scalar_one() == 0
 
 
 def test_rls_protects_menu_costing_tables(postgres_app):
