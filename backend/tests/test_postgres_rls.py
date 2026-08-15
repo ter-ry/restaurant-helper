@@ -2369,11 +2369,13 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
         _github_warning("onboarding regression: persisted organization, location, modules, and configuration")
         with postgres_app.app_context():
+            _set_rls_context(access_scope="setup", organization_id=organization.id)
             membership = OrganizationMembership.query.filter_by(organization_id=organization.id, user_id=zero_org_user.id).first()
             assert membership is not None
             membership_id = membership.id
 
         with postgres_app.app_context():
+            _set_rls_context(access_scope="setup", organization_id=organization.id)
             other_user = User(email=f"onboarding-other-{int(time.time() * 1000)}@example.com", is_active=True)
             other_user.set_password("OtherOrg!123")
             db.session.add(other_user)
