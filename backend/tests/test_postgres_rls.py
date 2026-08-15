@@ -2223,6 +2223,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         _login_user(client, zero_org_email, zero_org_password)
         _github_warning("onboarding regression: authenticated zero-org user")
 
+        _github_warning("onboarding regression: before onboarding POST")
         response = client.post(
             "/api/onboarding/organizations",
             base_url="http://127.0.0.1:5001",
@@ -2234,6 +2235,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
             },
             headers={"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]},
         )
+        _github_warning(f"onboarding regression: after onboarding POST status={response.status_code}")
 
         assert response.status_code == 201, response.get_data(as_text=True)
         _github_warning("onboarding regression: onboarding POST returned 201")
