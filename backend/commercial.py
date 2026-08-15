@@ -184,6 +184,9 @@ def create_prospect_organization() -> tuple[object, int]:
 
         membership = OrganizationMembership(user_id=current_user.id, organization_id=organization.id, role="owner")
         db.session.add(membership)
+        db.session.flush()
+        membership_id = membership.id
+        organization_id = organization.id
         print("::warning file=backend/commercial.py,line=179::onboarding route: membership staged", flush=True)
 
         location = RestaurantLocation(
@@ -232,8 +235,8 @@ def create_prospect_organization() -> tuple[object, int]:
         db.session.commit()
         print("::warning file=backend/commercial.py,line=219::onboarding route: commit complete", flush=True)
         clear_pilot_context()
-        session["pilot_current_membership_id"] = membership.id
-        session["pilot_current_organization_id"] = organization.id
+        session["pilot_current_membership_id"] = membership_id
+        session["pilot_current_organization_id"] = organization_id
         session["pilot_current_location_id"] = location.id
         return (
             jsonify(
