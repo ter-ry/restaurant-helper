@@ -129,12 +129,11 @@ def postgres_app(tmp_path):
             "WTF_CSRF_ENABLED": True,
         }
     )
+    print("BEFORE: postgres_app schema reset", flush=True)
+    _reset_public_schema_for_rls_tests()
+    print("AFTER: postgres_app schema reset", flush=True)
     with migrator_application.app_context():
         print(f"STATE: postgres_app migrator url -> {MIGRATION_POSTGRES_URL}", flush=True)
-        print("BEFORE: postgres_app drop_all", flush=True)
-        _log_session_state("before drop_all")
-        db.drop_all()
-        print("AFTER: postgres_app drop_all", flush=True)
         print("BEFORE: postgres_app create_all", flush=True)
         _log_session_state("before create_all")
         with db.engine.connect() as connection:
@@ -261,7 +260,9 @@ def postgres_app(tmp_path):
     with migrator_application.app_context():
         _log_session_state("before migrator teardown")
         db.session.remove()
-        db.drop_all()
+    print("BEFORE: postgres_app schema reset teardown", flush=True)
+    _reset_public_schema_for_rls_tests()
+    print("AFTER: postgres_app schema reset teardown", flush=True)
     print("AFTER: postgres_app teardown", flush=True)
 
 
@@ -1220,6 +1221,25 @@ def _seed_membership_discovery_dataset(prefix: str = "RLS") -> dict[str, object]
         "org_b_id": org_b.id,
         "support_user_id": support_user.id,
     }
+
+
+def _reset_public_schema_for_rls_tests() -> None:
+    admin_url = ADMIN_POSTGRES_URL or MIGRATION_POSTGRES_URL
+    if not admin_url:
+        raise RuntimeError("PostgreSQL admin or migrator URL is required for RLS test schema reset")
+    print(f"STATE: rls test schema reset url -> {admin_url}", flush=True)
+    admin_engine = create_engine(admin_url, poolclass=NullPool)
+    with admin_engine.begin() as connection:
+        _apply_bootstrap_timeouts(connection)
+        print("BEFORE: rls test drop schema if exists public cascade", flush=True)
+        connection.exec_driver_sql("drop schema if exists public cascade")
+        print("AFTER: rls test drop schema if exists public cascade", flush=True)
+        print("BEFORE: rls test create schema public authorization flowtally_migrator", flush=True)
+        connection.exec_driver_sql("create schema public authorization flowtally_migrator")
+        print("AFTER: rls test create schema public authorization flowtally_migrator", flush=True)
+        _restore_runtime_schema_privileges(connection)
+        _log_connection_identity(connection, "rls test schema reset connection")
+    admin_engine.dispose()
 
 
 def _seed_admin_fixture(label: str, seed_fn):
