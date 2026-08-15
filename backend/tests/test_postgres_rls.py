@@ -2412,7 +2412,13 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
 
         select_response = client.post(
             "/api/organizations/select",
-            headers=csrf_headers(client),
+            base_url="http://127.0.0.1:5001",
+            headers={
+                "X-CSRFToken": client.get(
+                    "/api/auth/csrf",
+                    base_url="http://127.0.0.1:5001",
+                ).get_json()["csrfToken"]
+            },
             json={"organizationId": organization.id},
         )
         assert select_response.status_code == 200, select_response.get_data(as_text=True)
