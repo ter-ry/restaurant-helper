@@ -25,6 +25,7 @@ from backend.models import (
     OrganizationMembership,
     PlatformRole,
     OrganizationModule,
+    OrganizationConfiguration,
     MenuItem,
     Recipe,
     RecipeIngredient,
