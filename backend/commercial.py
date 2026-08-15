@@ -179,6 +179,8 @@ def create_prospect_organization() -> tuple[object, int]:
         print("::warning file=backend/commercial.py,line=173::onboarding route: organization staged", flush=True)
         db.session.flush()
         print("::warning file=backend/commercial.py,line=175::onboarding route: organization flushed", flush=True)
+        apply_request_tenant_context(access_scope="setup", organization_id=organization.id)
+        print("::warning file=backend/commercial.py,line=176::onboarding route: setup scope rebound to new org", flush=True)
 
         membership = OrganizationMembership(user_id=current_user.id, organization_id=organization.id, role="owner")
         db.session.add(membership)
