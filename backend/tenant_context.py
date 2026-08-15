@@ -33,17 +33,6 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
     org_id = organization_id
     grant_id = support_grant_id
 
-    if org_id is None:
-        organization, membership, _ = get_current_organization_bundle()
-        if organization is not None and membership is not None:
-            org_id = organization.id
-            if current_user.is_authenticated:
-                grant = support_grant_for_user(current_user.id, organization.id)
-                if grant is not None:
-                    grant_id = grant.id
-        elif access_scope is None and request.endpoint == "commercial.create_prospect_organization":
-            scope = "public"
-
     if current_user.is_authenticated:
         _set_local_setting("flowtally.user_id", str(current_user.id))
         role = get_platform_role(current_user.id)
@@ -58,6 +47,17 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
                 grant_id = None
     else:
         _set_local_setting("flowtally.user_id", "")
+
+    if org_id is None and scope != "public":
+        organization, membership, _ = get_current_organization_bundle()
+        if organization is not None and membership is not None:
+            org_id = organization.id
+            if current_user.is_authenticated:
+                grant = support_grant_for_user(current_user.id, organization.id)
+                if grant is not None:
+                    grant_id = grant.id
+        elif access_scope is None and request.endpoint == "commercial.create_prospect_organization":
+            scope = "public"
 
     _set_local_setting("flowtally.access_scope", scope)
     _set_local_setting("flowtally.organization_id", str(org_id) if org_id is not None else "")

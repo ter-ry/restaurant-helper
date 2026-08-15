@@ -2414,6 +2414,14 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert me_body["organizations"][0]["selected"] is True, me_body
         assert all(entry["organization"]["id"] != other_org_id for entry in me_body["organizations"]), me_body
 
+        locations_response = client.get("/api/locations", base_url="http://127.0.0.1:5001")
+        assert locations_response.status_code == 200, locations_response.get_data(as_text=True)
+        locations_body = locations_response.get_json()
+        assert locations_body["organizationId"] == organization_id, locations_body
+        assert locations_body["currentLocation"]["id"] == current_location_id, locations_body
+        assert len(locations_body["restaurantLocations"]) == 1, locations_body
+        assert locations_body["restaurantLocations"][0]["id"] == current_location_id, locations_body
+
         select_response = client.post(
             "/api/organizations/select",
             base_url="http://127.0.0.1:5001",
