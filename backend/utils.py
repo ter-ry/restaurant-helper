@@ -94,6 +94,26 @@ def serialize_membership(membership: OrganizationMembership) -> dict[str, Any]:
     }
 
 
+def serialize_membership_summary(membership: OrganizationMembership, *, selected: bool = False) -> dict[str, Any]:
+    return {
+        "organization": serialize_organization(membership.organization),
+        "membershipRole": membership.role,
+        "selected": selected,
+    }
+
+
+def serialize_membership_summaries(
+    memberships: list[OrganizationMembership],
+    *,
+    selected_organization_id: int | None = None,
+) -> list[dict[str, Any]]:
+    return [
+        serialize_membership_summary(membership, selected=selected_organization_id is not None and membership.organization_id == selected_organization_id)
+        for membership in memberships
+        if membership.organization is not None
+    ]
+
+
 def get_platform_role(user_id: int) -> PlatformRole | None:
     return PlatformRole.query.filter_by(user_id=user_id, is_active=True).first()
 

@@ -97,6 +97,15 @@ _support_rls_module = importlib.util.module_from_spec(_support_rls_spec)
 _support_rls_spec.loader.exec_module(_support_rls_module)
 support_apply_postgres_rls = _support_rls_module.apply_postgres_rls
 
+_membership_discovery_spec = importlib.util.spec_from_file_location(
+    "backend.migrations.versions.0014_authenticated_membership_discovery",
+    os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "0014_authenticated_membership_discovery.py"),
+)
+assert _membership_discovery_spec and _membership_discovery_spec.loader
+_membership_discovery_module = importlib.util.module_from_spec(_membership_discovery_spec)
+_membership_discovery_spec.loader.exec_module(_membership_discovery_module)
+membership_discovery_apply_postgres_rls = _membership_discovery_module.apply_postgres_rls
+
 
 pytestmark = pytest.mark.skipif(
     not POSTGRES_URL.startswith("postgres"),
@@ -157,6 +166,9 @@ def postgres_app(tmp_path):
             print("BEFORE: postgres_app support_apply_postgres_rls", flush=True)
             support_apply_postgres_rls(_LoggingConnection(connection, "postgres_app support_apply_postgres_rls"))
             print("AFTER: postgres_app support_apply_postgres_rls", flush=True)
+            print("BEFORE: postgres_app membership_discovery_apply_postgres_rls", flush=True)
+            membership_discovery_apply_postgres_rls(_LoggingConnection(connection, "postgres_app membership_discovery_apply_postgres_rls"))
+            print("AFTER: postgres_app membership_discovery_apply_postgres_rls", flush=True)
     runtime_application = create_app(
         {
             "TESTING": True,
@@ -2264,6 +2276,57 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         }
         assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
         _github_warning("onboarding regression: persisted organization, location, modules, and configuration")
+        with app.app_context():
+            membership = OrganizationMembership.query.filter_by(organization_id=organization.id, user_id=zero_org_user.id).first()
+            assert membership is not None
+            membership_id = membership.id
+
+        with app.app_context():
+            other_user = User(email=f"onboarding-other-{int(time.time() * 1000)}@example.com", is_active=True)
+            other_user.set_password("OtherOrg!123")
+            db.session.add(other_user)
+            db.session.flush()
+            other_org = Organization(
+                name=f"Other Tenant Cafe {int(time.time() * 1000)}",
+                lifecycle_status="ONBOARDING",
+                setup_status="INTAKE",
+                subscription_status="NONE",
+                setup_template_key="CAFE",
+                setup_fee_status="NONE",
+                is_prospect=True,
+            )
+            db.session.add(other_org)
+            db.session.flush()
+            db.session.add(OrganizationMembership(user_id=other_user.id, organization_id=other_org.id, role="owner"))
+            db.session.commit()
+            other_org_id = other_org.id
+
+        with client.session_transaction() as session:
+            session.pop("pilot_current_membership_id", None)
+            session.pop("pilot_current_organization_id", None)
+            session.pop("pilot_current_location_id", None)
+
+        me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
+        assert me_response.status_code == 200, me_response.get_data(as_text=True)
+        me_body = me_response.get_json()
+        assert me_body["currentOrganizationId"] == organization.id, me_body
+        assert me_body["currentLocationId"] == body["currentLocationId"], me_body
+        assert me_body["organizations"], me_body
+        assert me_body["organizations"][0]["organization"]["id"] == organization.id, me_body
+        assert me_body["organizations"][0]["selected"] is True, me_body
+        assert all(entry["organization"]["id"] != other_org_id for entry in me_body["organizations"]), me_body
+
+        select_response = client.post(
+            "/api/organizations/select",
+            headers=csrf_headers(client),
+            json={"organizationId": organization.id},
+        )
+        assert select_response.status_code == 200, select_response.get_data(as_text=True)
+
+        with client.session_transaction() as session:
+            assert session["pilot_current_membership_id"] == membership_id
+            assert session["pilot_current_organization_id"] == organization.id
+            assert session["pilot_current_location_id"] == body["currentLocationId"]
 
         follow_up = client.get("/api/onboarding/organizations", base_url="http://127.0.0.1:5001")
         assert follow_up.status_code == 200, follow_up.get_data(as_text=True)

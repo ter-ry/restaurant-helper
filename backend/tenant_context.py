@@ -45,6 +45,7 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
             scope = "public"
 
     if current_user.is_authenticated:
+        _set_local_setting("flowtally.user_id", str(current_user.id))
         role = get_platform_role(current_user.id)
         if role and role.is_active and role.role == "setup_admin":
             scope = "setup"
@@ -55,6 +56,8 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
                 scope = "public"
                 org_id = None
                 grant_id = None
+    else:
+        _set_local_setting("flowtally.user_id", "")
 
     _set_local_setting("flowtally.access_scope", scope)
     _set_local_setting("flowtally.organization_id", str(org_id) if org_id is not None else "")

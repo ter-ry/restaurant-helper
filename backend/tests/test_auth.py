@@ -37,6 +37,9 @@ def test_owner_login_and_me_returns_session(client):
     assert me_body["user"]["email"] == LOCAL_OWNER_EMAIL
     assert me_body["membershipRole"] == "owner"
     assert me_body["currentOrganizationId"] == body["currentOrganization"]["id"]
+    assert me_body["organizations"][0]["organization"]["name"] == "Flowtally Pilot Restaurant"
+    assert me_body["organizations"][0]["membershipRole"] == "owner"
+    assert me_body["organizations"][0]["selected"] is True
 
 
 def test_login_rejects_unknown_or_wrong_password(client):
@@ -105,6 +108,7 @@ def test_disabled_support_access_does_not_set_tenant_scope(monkeypatch):
     tenant_context.apply_request_tenant_context()
 
     assert captured == [
+        ("flowtally.user_id", "77"),
         ("flowtally.access_scope", "public"),
         ("flowtally.organization_id", ""),
         ("flowtally.support_grant_id", ""),
@@ -133,6 +137,7 @@ def test_explicit_setup_scope_is_preserved_for_onboarding_endpoint(monkeypatch):
     tenant_context.apply_request_tenant_context(access_scope="setup")
 
     assert captured == [
+        ("flowtally.user_id", "77"),
         ("flowtally.access_scope", "setup"),
         ("flowtally.organization_id", ""),
         ("flowtally.support_grant_id", ""),

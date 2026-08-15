@@ -24,7 +24,7 @@ from .google_oidc import (
 from .extensions import db, limiter
 from .models import ExternalIdentity, Organization, OrganizationMembership, User
 from .validation import RequestValidationError, clean_email, parse_login_payload
-from .utils import clear_pilot_context, get_current_location, get_current_organization_bundle, get_platform_role, get_user_memberships, json_error, serialize_organization, serialize_user
+from .utils import clear_pilot_context, get_current_location, get_current_organization_bundle, get_platform_role, get_user_memberships, json_error, serialize_membership_summaries, serialize_organization, serialize_user
 
 bp = Blueprint("auth", __name__)
 INVALID_LOGIN_MESSAGE = "Invalid email or password."
@@ -87,14 +87,7 @@ def _login_payload(user: User, memberships: list[OrganizationMembership], member
         }
         if support_grant is not None
         else None,
-        "organizations": [
-            {
-                **serialize_organization(entry.organization),
-                "membershipRole": entry.role,
-            }
-            for entry in memberships
-            if entry.organization is not None
-        ],
+        "organizations": serialize_membership_summaries(memberships, selected_organization_id=membership.organization_id if membership else None),
         "csrfToken": generate_csrf(),
     }
 
@@ -303,14 +296,10 @@ def me() -> tuple[object, int]:
                 }
                 if support_grant is not None
                 else None,
-                "organizations": [
-                    {
-                        **serialize_organization(entry.organization),
-                        "membershipRole": entry.role,
-                    }
-                    for entry in get_user_memberships(current_user.id)
-                    if entry.organization is not None
-                ],
+                "organizations": serialize_membership_summaries(
+                    get_user_memberships(current_user.id),
+                    selected_organization_id=organization.id if organization else None,
+                ),
                 "csrfToken": generate_csrf(),
             }
         ),
