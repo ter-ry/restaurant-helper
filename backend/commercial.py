@@ -155,6 +155,7 @@ def create_prospect_organization() -> tuple[object, int]:
         return json_error("Unknown setup template.", 400)
 
     apply_request_tenant_context(access_scope="setup")
+    print("::warning file=backend/commercial.py,line=157::onboarding route: setup scope applied", flush=True)
 
     existing = _prospect_org_for_user(current_user.id)
     if existing is not None and existing.lifecycle_status != "CANCELLED":
@@ -173,10 +174,13 @@ def create_prospect_organization() -> tuple[object, int]:
         is_prospect=True,
     )
     db.session.add(organization)
+    print("::warning file=backend/commercial.py,line=173::onboarding route: organization staged", flush=True)
     db.session.flush()
+    print("::warning file=backend/commercial.py,line=175::onboarding route: organization flushed", flush=True)
 
     membership = OrganizationMembership(user_id=current_user.id, organization_id=organization.id, role="owner")
     db.session.add(membership)
+    print("::warning file=backend/commercial.py,line=179::onboarding route: membership staged", flush=True)
 
     location = RestaurantLocation(
         organization_id=organization.id,
@@ -190,6 +194,7 @@ def create_prospect_organization() -> tuple[object, int]:
         timezone=timezone,
     )
     db.session.add(location)
+    print("::warning file=backend/commercial.py,line=191::onboarding route: location staged", flush=True)
 
     template = next(template for template in SETUP_TEMPLATES if template["templateKey"] == template_key)
     for module_key in template["defaultModules"]:
@@ -203,9 +208,11 @@ def create_prospect_organization() -> tuple[object, int]:
                 enabled_by_user_id=None,
             )
         )
+    print("::warning file=backend/commercial.py,line=204::onboarding route: modules staged", flush=True)
 
     configuration = OrganizationConfiguration(organization_id=organization.id, draft_name=f"{name} setup")
     db.session.add(configuration)
+    print("::warning file=backend/commercial.py,line=208::onboarding route: configuration staged", flush=True)
 
     record_audit_event(
         event_type="onboarding.prospect_created",
@@ -215,7 +222,9 @@ def create_prospect_organization() -> tuple[object, int]:
         actor_user_id=current_user.id,
         metadata={"templateKey": template_key, "locationName": location_name},
     )
+    print("::warning file=backend/commercial.py,line=217::onboarding route: audit staged", flush=True)
     db.session.commit()
+    print("::warning file=backend/commercial.py,line=219::onboarding route: commit complete", flush=True)
     clear_pilot_context()
     session["pilot_current_membership_id"] = membership.id
     session["pilot_current_organization_id"] = organization.id
