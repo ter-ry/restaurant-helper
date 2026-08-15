@@ -2243,6 +2243,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert body["membershipRole"] == "owner"
         assert body["currentLocationId"] > 0
 
+        _set_rls_context(access_scope="setup", organization_id=body["organization"]["id"])
         organization = Organization.query.filter_by(id=body["organization"]["id"]).first()
         assert organization is not None
         assert organization.name == "Flowtally Test Cafe"
