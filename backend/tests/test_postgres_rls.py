@@ -2391,9 +2391,9 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
             )
             db.session.add(other_org)
             db.session.flush()
+            other_org_id = other_org.id
             db.session.add(OrganizationMembership(user_id=other_user.id, organization_id=other_org.id, role="owner"))
             db.session.commit()
-            other_org_id = other_org.id
 
         with client.session_transaction() as session:
             session.pop("pilot_current_membership_id", None)
