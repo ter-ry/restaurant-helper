@@ -128,8 +128,9 @@ def select_organization() -> tuple[object, int]:
         actor_user_id=current_user.id,
         metadata={"membershipRole": membership.role},
     )
+    response_payload = _serialize_bundle(organization, locations, membership.role)
     db.session.commit()
-    return jsonify(_serialize_bundle(organization, locations, membership.role)), 200
+    return jsonify(response_payload), 200
 
 
 @bp.get("/api/locations")
@@ -179,5 +180,6 @@ def select_location() -> tuple[object, int]:
         actor_user_id=current_user.id,
         metadata={"membershipRole": membership.role},
     )
+    response_payload = {"currentLocation": serialize_location(location)}
     db.session.commit()
-    return jsonify({"currentLocation": serialize_location(location)}), 200
+    return jsonify(response_payload), 200
