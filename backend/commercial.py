@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -157,90 +158,98 @@ def create_prospect_organization() -> tuple[object, int]:
     apply_request_tenant_context(access_scope="setup")
     print("::warning file=backend/commercial.py,line=157::onboarding route: setup scope applied", flush=True)
 
-    existing = _prospect_org_for_user(current_user.id)
-    if existing is not None and existing.lifecycle_status != "CANCELLED":
-        return json_error("This account already has a prospective organization.", 409)
+    try:
+        existing = _prospect_org_for_user(current_user.id)
+        if existing is not None and existing.lifecycle_status != "CANCELLED":
+            return json_error("This account already has a prospective organization.", 409)
 
-    organization = Organization(
-        name=name,
-        lifecycle_status="ONBOARDING",
-        setup_status="INTAKE",
-        subscription_status="NONE",
-        setup_template_key=template_key,
-        setup_fee_status="NONE",
-        subscription_provider="",
-        external_customer_reference="",
-        external_subscription_reference="",
-        is_prospect=True,
-    )
-    db.session.add(organization)
-    print("::warning file=backend/commercial.py,line=173::onboarding route: organization staged", flush=True)
-    db.session.flush()
-    print("::warning file=backend/commercial.py,line=175::onboarding route: organization flushed", flush=True)
-
-    membership = OrganizationMembership(user_id=current_user.id, organization_id=organization.id, role="owner")
-    db.session.add(membership)
-    print("::warning file=backend/commercial.py,line=179::onboarding route: membership staged", flush=True)
-
-    location = RestaurantLocation(
-        organization_id=organization.id,
-        name=location_name,
-        address_line1=address_line1,
-        address_line2=address_line2,
-        city=city,
-        region=region,
-        postal_code=postal_code,
-        country=country,
-        timezone=timezone,
-    )
-    db.session.add(location)
-    print("::warning file=backend/commercial.py,line=191::onboarding route: location staged", flush=True)
-
-    template = next(template for template in SETUP_TEMPLATES if template["templateKey"] == template_key)
-    for module_key in template["defaultModules"]:
-        db.session.add(
-            OrganizationModule(
-                organization_id=organization.id,
-                module_key=module_key,
-                status="SETUP_REQUIRED",
-                configuration_json={},
-                enabled_at=None,
-                enabled_by_user_id=None,
-            )
+        organization = Organization(
+            name=name,
+            lifecycle_status="ONBOARDING",
+            setup_status="INTAKE",
+            subscription_status="NONE",
+            setup_template_key=template_key,
+            setup_fee_status="NONE",
+            subscription_provider="",
+            external_customer_reference="",
+            external_subscription_reference="",
+            is_prospect=True,
         )
-    print("::warning file=backend/commercial.py,line=204::onboarding route: modules staged", flush=True)
+        db.session.add(organization)
+        print("::warning file=backend/commercial.py,line=173::onboarding route: organization staged", flush=True)
+        db.session.flush()
+        print("::warning file=backend/commercial.py,line=175::onboarding route: organization flushed", flush=True)
 
-    print("::warning file=backend/commercial.py,line=206::onboarding route: before configuration object", flush=True)
-    configuration = OrganizationConfiguration(organization_id=organization.id, draft_name=f"{name} setup")
-    print("::warning file=backend/commercial.py,line=207::onboarding route: configuration object created", flush=True)
-    db.session.add(configuration)
-    print("::warning file=backend/commercial.py,line=208::onboarding route: configuration staged", flush=True)
+        membership = OrganizationMembership(user_id=current_user.id, organization_id=organization.id, role="owner")
+        db.session.add(membership)
+        print("::warning file=backend/commercial.py,line=179::onboarding route: membership staged", flush=True)
 
-    record_audit_event(
-        event_type="onboarding.prospect_created",
-        entity_type="organization",
-        entity_id=organization.id,
-        organization_id=organization.id,
-        actor_user_id=current_user.id,
-        metadata={"templateKey": template_key, "locationName": location_name},
-    )
-    print("::warning file=backend/commercial.py,line=217::onboarding route: audit staged", flush=True)
-    db.session.commit()
-    print("::warning file=backend/commercial.py,line=219::onboarding route: commit complete", flush=True)
-    clear_pilot_context()
-    session["pilot_current_membership_id"] = membership.id
-    session["pilot_current_organization_id"] = organization.id
-    session["pilot_current_location_id"] = location.id
-    return (
-        jsonify(
-            {
-                "organization": serialize_organization(organization),
-                "membershipRole": "owner",
-                "currentLocationId": location.id,
-            }
-        ),
-        201,
-    )
+        location = RestaurantLocation(
+            organization_id=organization.id,
+            name=location_name,
+            address_line1=address_line1,
+            address_line2=address_line2,
+            city=city,
+            region=region,
+            postal_code=postal_code,
+            country=country,
+            timezone=timezone,
+        )
+        db.session.add(location)
+        print("::warning file=backend/commercial.py,line=191::onboarding route: location staged", flush=True)
+
+        template = next(template for template in SETUP_TEMPLATES if template["templateKey"] == template_key)
+        for module_key in template["defaultModules"]:
+            db.session.add(
+                OrganizationModule(
+                    organization_id=organization.id,
+                    module_key=module_key,
+                    status="SETUP_REQUIRED",
+                    configuration_json={},
+                    enabled_at=None,
+                    enabled_by_user_id=None,
+                )
+            )
+        print("::warning file=backend/commercial.py,line=204::onboarding route: modules staged", flush=True)
+
+        print("::warning file=backend/commercial.py,line=206::onboarding route: before configuration object", flush=True)
+        configuration = OrganizationConfiguration(organization_id=organization.id, draft_name=f"{name} setup")
+        print("::warning file=backend/commercial.py,line=207::onboarding route: configuration object created", flush=True)
+        db.session.add(configuration)
+        print("::warning file=backend/commercial.py,line=208::onboarding route: configuration staged", flush=True)
+
+        record_audit_event(
+            event_type="onboarding.prospect_created",
+            entity_type="organization",
+            entity_id=organization.id,
+            organization_id=organization.id,
+            actor_user_id=current_user.id,
+            metadata={"templateKey": template_key, "locationName": location_name},
+        )
+        print("::warning file=backend/commercial.py,line=217::onboarding route: audit staged", flush=True)
+        db.session.commit()
+        print("::warning file=backend/commercial.py,line=219::onboarding route: commit complete", flush=True)
+        clear_pilot_context()
+        session["pilot_current_membership_id"] = membership.id
+        session["pilot_current_organization_id"] = organization.id
+        session["pilot_current_location_id"] = location.id
+        return (
+            jsonify(
+                {
+                    "organization": serialize_organization(organization),
+                    "membershipRole": "owner",
+                    "currentLocationId": location.id,
+                }
+            ),
+            201,
+        )
+    except Exception as exc:
+        print(
+            f"::warning file=backend/commercial.py,line=220::onboarding route exception: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        print(traceback.format_exc(), flush=True)
+        raise
 
 
 @bp.post("/api/onboarding/organizations/<int:organization_id>/request-setup")
