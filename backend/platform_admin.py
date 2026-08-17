@@ -281,6 +281,11 @@ def _select_template(template_key: str) -> dict[str, Any] | None:
     return next((template for template in SETUP_TEMPLATES if template["templateKey"] == template_key), None)
 
 
+def _commit_json_response(payload: dict[str, Any], status_code: int = 200):
+    db.session.commit()
+    return jsonify(payload), status_code
+
+
 @bp.get("/api/platform/setup/organizations")
 @login_required
 def list_setup_organizations():
@@ -382,8 +387,8 @@ def set_setup_template(organization_id: int):
         actor_user_id=current_user.id,
         metadata={"templateKey": template_key},
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/modules")
@@ -429,8 +434,8 @@ def update_module_entitlements(organization_id: int):
         actor_user_id=current_user.id,
         metadata={"moduleKeys": sorted(normalized.keys())},
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/locations")
@@ -483,8 +488,8 @@ def update_locations(organization_id: int):
         actor_user_id=current_user.id,
         metadata={"locationCount": len(updated)},
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/dashboard-layout")
@@ -524,8 +529,8 @@ def update_dashboard_layout(organization_id: int):
         actor_user_id=current_user.id,
         metadata={"layoutKey": layout_key, "locationId": scope_location_id},
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/custom-fields")
@@ -551,8 +556,8 @@ def update_custom_fields(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/blockers")
@@ -578,8 +583,8 @@ def update_blockers(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/notes")
@@ -607,8 +612,8 @@ def update_internal_notes(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/imports")
@@ -634,8 +639,8 @@ def update_imports(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/square")
@@ -661,8 +666,8 @@ def update_square_status(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/review")
@@ -694,8 +699,8 @@ def mark_customer_review(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/review/approve")
@@ -727,8 +732,8 @@ def approve_customer_review(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/state")
@@ -776,8 +781,8 @@ def update_setup_state(organization_id: int):
             "setupFeeStatus": setup_fee_status,
         },
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/activate")
@@ -805,8 +810,8 @@ def activate_organization(organization_id: int):
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
-    db.session.commit()
-    return jsonify(_serialize_organization_detail(organization)), 200
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
 
 
 @bp.get("/api/platform/support/grants")
@@ -891,8 +896,8 @@ def create_support_grant():
         actor_user_id=current_user.id,
         metadata={"supportUserEmail": support_user.email, "caseReference": case_reference, "expiresAt": isoformat(expires_at)},
     )
-    db.session.commit()
-    return jsonify({"grant": _serialize_support_grant(grant)}), 201
+    payload = {"grant": _serialize_support_grant(grant)}
+    return _commit_json_response(payload, 201)
 
 
 @bp.post("/api/platform/support/grants/<int:grant_id>/revoke")
@@ -916,5 +921,5 @@ def revoke_support_grant(grant_id: int):
         actor_user_id=current_user.id,
         metadata={"supportUserEmail": grant.support_user.email if grant.support_user else "", "caseReference": grant.case_reference},
     )
-    db.session.commit()
-    return jsonify({"grant": _serialize_support_grant(grant)}), 200
+    payload = {"grant": _serialize_support_grant(grant)}
+    return _commit_json_response(payload)

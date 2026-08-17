@@ -21,6 +21,7 @@ from backend.models import (
     DataImportIssue,
     DataImportMapping,
     DataImportRow,
+    DashboardLayout,
     InventoryItem,
     Organization,
     OrganizationMembership,
@@ -2445,6 +2446,173 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         follow_up_body = follow_up.get_json()
         assert any(entry["organization"]["id"] == organization_id for entry in follow_up_body["organizations"])
         _github_warning("onboarding regression: follow-up onboarding list sees new organization")
+
+
+def test_postgres_setup_console_mutations_materialize_before_commit(postgres_app):
+    seeded = _seed_admin_setup_dataset("RLS Setup Console")
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        if PlatformRole.query.filter_by(user_id=owner.id, role="setup_admin", is_active=True).first() is None:
+            db.session.add(PlatformRole(user_id=owner.id, role="setup_admin", is_active=True))
+            db.session.commit()
+
+        _set_rls_context(access_scope="setup")
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+        org_a_location = RestaurantLocation.query.filter_by(organization_id=org_a_id).order_by(RestaurantLocation.id.asc()).first()
+        assert org_a_location is not None
+        org_a_location_id = org_a_location.id
+        org_b_module_snapshot = {
+            module.module_key: module.status
+            for module in OrganizationModule.query.filter_by(organization_id=org_b_id).all()
+        }
+
+    client = postgres_app.test_client()
+    _login_owner(client)
+
+    def csrf_headers() -> dict[str, str]:
+        return {"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]}
+
+    template_response = client.post(
+        f"/api/platform/setup/organizations/{org_a_id}/template",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={"templateKey": "GENERIC_RESTAURANT"},
+    )
+    assert template_response.status_code == 200, template_response.get_data(as_text=True)
+    assert template_response.get_json()["organization"]["setupTemplateKey"] == "GENERIC_RESTAURANT"
+
+    module_response = client.post(
+        f"/api/platform/setup/organizations/{org_a_id}/modules",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "modules": [
+                {"moduleKey": "PURCHASES", "status": "ENABLED"},
+                {"moduleKey": "INVENTORY", "status": "ENABLED"},
+                {"moduleKey": "REORDER_PLANS", "status": "ENABLED"},
+                {"moduleKey": "STOCK_COUNTS", "status": "ENABLED"},
+            ]
+        },
+    )
+    assert module_response.status_code == 200, module_response.get_data(as_text=True)
+    module_body = module_response.get_json()
+    module_statuses = {entry["key"]: entry["status"] for entry in module_body["modules"]}
+    assert module_statuses["PURCHASES"] == "ENABLED"
+    assert module_statuses["INVENTORY"] == "ENABLED"
+    assert module_statuses["REORDER_PLANS"] == "ENABLED"
+    assert module_statuses["STOCK_COUNTS"] == "ENABLED"
+    assert module_body["checklist"]["missingModules"] == []
+
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/locations",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"locations": [{"id": org_a_location_id, "name": "Setup Kitchen", "city": "Toronto"}]},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/dashboard-layout",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"layoutKey": "owner", "widgets": ["sales-today", "inventory-alerts"]},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/custom-fields",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"fields": {"supplier": [], "inventoryItem": [], "purchaseInvoice": []}},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/notes",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"notes": ["Ready for platform review"]},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/blockers",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"blockers": []},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/imports",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"imports": []},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/platform/setup/organizations/{org_a_id}/square",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"square": {"required": False, "locationMappings": []}},
+        ).status_code
+        == 200
+    )
+    assert client.post(f"/api/platform/setup/organizations/{org_a_id}/review", base_url="http://127.0.0.1:5001", headers=csrf_headers()).status_code == 200
+    assert (
+        client.post(f"/api/platform/setup/organizations/{org_a_id}/review/approve", base_url="http://127.0.0.1:5001", headers=csrf_headers()).status_code
+        == 200
+    )
+    state_response = client.post(
+        f"/api/platform/setup/organizations/{org_a_id}/state",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "lifecycleStatus": "READY_FOR_REVIEW",
+            "setupStatus": "COMPLETE",
+            "subscriptionStatus": "ACTIVE",
+            "setupFeeStatus": "confirmed",
+        },
+    )
+    assert state_response.status_code == 200, state_response.get_data(as_text=True)
+    assert state_response.get_json()["checklist"]["readyForActivation"] is True
+    assert client.post(f"/api/platform/setup/organizations/{org_a_id}/activate", base_url="http://127.0.0.1:5001", headers=csrf_headers()).status_code == 200
+
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="setup")
+        organization = Organization.query.filter_by(id=org_a_id).first()
+        assert organization is not None
+        assert organization.lifecycle_status == "ACTIVE"
+        assert organization.setup_status == "COMPLETE"
+        assert organization.subscription_status == "ACTIVE"
+
+        persisted_modules = {
+            module.module_key: module.status
+            for module in OrganizationModule.query.filter_by(organization_id=org_a_id).all()
+        }
+        assert persisted_modules["PURCHASES"] == "ENABLED"
+        assert persisted_modules["INVENTORY"] == "ENABLED"
+        assert persisted_modules["REORDER_PLANS"] == "ENABLED"
+        assert persisted_modules["STOCK_COUNTS"] == "ENABLED"
+
+        assert {
+            module.module_key: module.status
+            for module in OrganizationModule.query.filter_by(organization_id=org_b_id).all()
+        } == org_b_module_snapshot
+
+        layout = DashboardLayout.query.filter_by(organization_id=org_a_id, role="owner").first()
+        assert layout is not None
+        assert layout.widgets_json == ["sales-today", "inventory-alerts"]
 
 
 @SUPPORT_ACCESS_DEFERRED
