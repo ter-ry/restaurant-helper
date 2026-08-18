@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotPurchasesPage } from "../../src/pilot/PilotPurchasesPage";
+import { PilotApiError } from "../../src/pilot/pilotApi";
 
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
@@ -18,17 +19,21 @@ const pilotApiMocks = vi.hoisted(() => ({
   fetchPilotPurchaseInvoice: vi.fn(),
 }));
 
-vi.mock("../../src/pilot/pilotApi", () => ({
-  fetchPilotPurchases: pilotApiMocks.fetchPilotPurchases,
-  fetchPilotInventory: pilotApiMocks.fetchPilotInventory,
-  createPilotSupplier: pilotApiMocks.createPilotSupplier,
-  createPilotInventoryItem: pilotApiMocks.createPilotInventoryItem,
-  createPilotPurchaseInvoice: pilotApiMocks.createPilotPurchaseInvoice,
-  updatePilotPurchaseInvoice: pilotApiMocks.updatePilotPurchaseInvoice,
-  receivePilotPurchaseInvoice: pilotApiMocks.receivePilotPurchaseInvoice,
-  correctPilotPurchaseInvoice: pilotApiMocks.correctPilotPurchaseInvoice,
-  fetchPilotPurchaseInvoice: pilotApiMocks.fetchPilotPurchaseInvoice,
-}));
+vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
+  const actual = (await importOriginal()) as any;
+  return {
+    ...actual,
+    fetchPilotPurchases: pilotApiMocks.fetchPilotPurchases,
+    fetchPilotInventory: pilotApiMocks.fetchPilotInventory,
+    createPilotSupplier: pilotApiMocks.createPilotSupplier,
+    createPilotInventoryItem: pilotApiMocks.createPilotInventoryItem,
+    createPilotPurchaseInvoice: pilotApiMocks.createPilotPurchaseInvoice,
+    updatePilotPurchaseInvoice: pilotApiMocks.updatePilotPurchaseInvoice,
+    receivePilotPurchaseInvoice: pilotApiMocks.receivePilotPurchaseInvoice,
+    correctPilotPurchaseInvoice: pilotApiMocks.correctPilotPurchaseInvoice,
+    fetchPilotPurchaseInvoice: pilotApiMocks.fetchPilotPurchaseInvoice,
+  };
+});
 
 function emptyPurchases() {
   return {
@@ -158,6 +163,10 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   }));
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
 
   const nextPurchases = () => ({
     ...emptyPurchases(),
@@ -360,10 +369,11 @@ describe("PilotPurchasesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Blank draft" }));
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(2));
 
-    fireEvent.change(screen.getByLabelText("Supplier name"), { target: { value: "North Bay Dairy" } });
+    const supplierNameInput = await screen.findByPlaceholderText("Enter supplier name");
+    fireEvent.change(supplierNameInput, { target: { value: "North Bay Dairy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create supplier" }));
     await waitFor(() => expect(pilotApiMocks.createPilotSupplier).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByLabelText("Supplier")).toHaveValue("North Bay Dairy"));
+    await waitFor(() => expect(document.getElementById("purchase-supplier")).toHaveValue("North Bay Dairy"));
 
     fireEvent.click(screen.getByRole("button", { name: "Add line" }));
     await waitFor(() => expect(screen.getAllByTestId("purchase-line-card")).toHaveLength(2));
@@ -413,5 +423,98 @@ describe("PilotPurchasesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save ready" }));
     await waitFor(() => expect(pilotApiMocks.createPilotPurchaseInvoice).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeEnabled());
+  });
+
+  it("shows field-level validation errors for supplier and inventory creation without losing the draft", async () => {
+    let supplierNameInput: HTMLInputElement;
+    render(
+      <MemoryRouter initialEntries={["/app/purchases"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Capture invoices, confirm items, and move stock" });
+    fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "New purchase" })).toBeInTheDocument());
+
+    supplierNameInput = await screen.findByPlaceholderText("Enter supplier name");
+    fireEvent.change(supplierNameInput, { target: { value: "North Bay Dairy" } });
+    pilotApiMocks.createPilotSupplier.mockRejectedValueOnce(new PilotApiError("Validation failed.", 400, { name: "Supplier name is required." }));
+    fireEvent.click(screen.getByRole("button", { name: "Create supplier" }));
+
+    await waitFor(() => expect(screen.getByText("Supplier name is required.")).toBeVisible());
+    expect(supplierNameInput).toHaveAttribute("aria-invalid", "true");
+    expect(supplierNameInput).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create supplier" }));
+    await waitFor(() => expect(document.getElementById("purchase-supplier")).toHaveValue("North Bay Dairy"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add line" }));
+    const lineCard = screen.getAllByTestId("purchase-line-card")[1];
+    fireEvent.change(within(lineCard).getByLabelText("Description"), { target: { value: "2% Milk" } });
+    fireEvent.click(within(lineCard).getByRole("button", { name: "Create inventory item" }));
+    await waitFor(() => expect(within(lineCard).getByText("Create inventory item from this line")).toBeVisible());
+
+    const itemNameInput = within(lineCard).getByText("Item name").parentElement?.querySelector("input") as HTMLInputElement;
+    fireEvent.change(itemNameInput, { target: { value: "2% Milk" } });
+    pilotApiMocks.createPilotInventoryItem.mockRejectedValueOnce(new PilotApiError("Validation failed.", 400, { name: "Inventory item name is required." }));
+    fireEvent.click(within(lineCard).getByRole("button", { name: "Create and map item" }));
+
+    await waitFor(() => expect(within(lineCard).getByText("Inventory item name is required.")).toBeVisible());
+    expect(itemNameInput).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("shows purchase save validation errors inline and focuses the first invalid field", async () => {
+    pilotApiMocks.fetchPilotPurchases.mockResolvedValueOnce({
+      ...emptyPurchases(),
+      suppliers: [
+        {
+          id: 20,
+          organizationId: 5,
+          name: "North Bay Dairy",
+          normalizedName: "north bay dairy",
+          categoryFocus: "Dairy",
+          contactName: "",
+          contactPhone: "",
+          contactEmail: "",
+          orderingNotes: "",
+          notes: "",
+          isActive: true,
+          inventoryItemCount: 0,
+          purchaseInvoiceCount: 0,
+          supplierItemMappingCount: 0,
+          latestInvoiceDate: null,
+          historicalReferenceCount: 0,
+          recentInvoices: [],
+          recentMappings: [],
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/app/purchases"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Capture invoices, confirm items, and move stock" });
+    fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "New purchase" })).toBeInTheDocument());
+
+    fireEvent.change(document.getElementById("purchase-supplier") as HTMLSelectElement, { target: { value: "North Bay Dairy" } });
+    const invoiceNumberInput = await screen.findByText("Invoice number").then((label) => {
+      const input = label.parentElement?.querySelector("input");
+      if (!input) {
+        throw new Error("Invoice number input not found.");
+      }
+      return input as HTMLInputElement;
+    });
+    fireEvent.change(invoiceNumberInput, { target: { value: "" } });
+    pilotApiMocks.createPilotPurchaseInvoice.mockRejectedValueOnce(new PilotApiError("Validation failed.", 400, { invoiceNumber: "Invoice number is required." }));
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() => expect(screen.getByTestId("purchase-validation-errors")).toBeVisible());
+    expect(invoiceNumberInput).toHaveAttribute("aria-invalid", "true");
+    expect(invoiceNumberInput).toHaveFocus();
   });
 });

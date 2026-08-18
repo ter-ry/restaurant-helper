@@ -7,6 +7,7 @@ import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import {
+  PilotApiError,
   createPilotInventoryItem,
   createPilotPurchaseInvoice,
   createPilotSupplier,
@@ -62,6 +63,8 @@ type InlineNotice = {
   title: string;
   message: string;
 };
+
+type ValidationErrors = Record<string, string>;
 
 type InlineSupplierDraft = {
   name: string;
@@ -166,6 +169,10 @@ function buildInlineInventoryDraft(line: DraftLine, supplierName: string): Inlin
     notes: "",
     active: true,
   };
+}
+
+function hasValidationError(errors: ValidationErrors, key: string) {
+  return Object.keys(errors).some((candidate) => candidate === key || candidate.startsWith(`${key}.`) || candidate.startsWith(`${key}[`));
 }
 
 function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
@@ -280,12 +287,20 @@ export function PilotPurchasesPage() {
   const [supplierCreateOpen, setSupplierCreateOpen] = useState(false);
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [supplierDraft, setSupplierDraft] = useState<InlineSupplierDraft>(() => buildBlankSupplierDraft());
+  const [supplierFieldErrors, setSupplierFieldErrors] = useState<ValidationErrors>({});
   const [inventoryCreateLineId, setInventoryCreateLineId] = useState<string | null>(null);
   const [inventorySavingLineId, setInventorySavingLineId] = useState<string | null>(null);
   const [inventoryDraft, setInventoryDraft] = useState<InlineInventoryDraft>(() => buildInlineInventoryDraft(blankLine(), ""));
+  const [inventoryFieldErrors, setInventoryFieldErrors] = useState<ValidationErrors>({});
+  const [draftFieldErrors, setDraftFieldErrors] = useState<ValidationErrors>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const supplierSelectRef = useRef<HTMLSelectElement | null>(null);
   const supplierInputRef = useRef<HTMLInputElement | null>(null);
+  const inventoryNameRef = useRef<HTMLInputElement | null>(null);
+  const invoiceNumberRef = useRef<HTMLInputElement | null>(null);
+  const invoiceDateRef = useRef<HTMLInputElement | null>(null);
+  const totalAmountRef = useRef<HTMLInputElement | null>(null);
+  const firstLineDescriptionRef = useRef<HTMLInputElement | null>(null);
   const editorPanelRef = useRef<HTMLDivElement | null>(null);
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
@@ -343,6 +358,9 @@ export function PilotPurchasesPage() {
   const load = async (preferredInvoiceId: number | null = requestedInvoiceId) => {
     setLoading(true);
     setError(null);
+    setDraftFieldErrors({});
+    setSupplierFieldErrors({});
+    setInventoryFieldErrors({});
 
     try {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
@@ -353,6 +371,9 @@ export function PilotPurchasesPage() {
       setInventoryCreateLineId(null);
       setInventorySavingLineId(null);
       setInventoryDraft(buildInlineInventoryDraft(blankLine(), ""));
+      setDraftFieldErrors({});
+      setSupplierFieldErrors({});
+      setInventoryFieldErrors({});
       setOcrMessage(null);
       const requestedInvoice = preferredInvoiceId ? purchases.invoices.find((invoice) => invoice.id === preferredInvoiceId) ?? null : null;
       const currentInvoice = requestedInvoice ?? (selectedId !== null ? purchases.invoices.find((invoice) => invoice.id === selectedId) ?? null : purchases.invoices[0] ?? null);
@@ -409,6 +430,36 @@ export function PilotPurchasesPage() {
     });
   };
 
+  const focusPurchaseValidationTarget = (errors: ValidationErrors) => {
+    window.requestAnimationFrame(() => {
+      if (hasValidationError(errors, "supplierName")) {
+        if (hasSuppliers && !supplierCreateOpen) {
+          supplierSelectRef.current?.focus();
+        } else {
+          supplierInputRef.current?.focus();
+        }
+        return;
+      }
+      if (hasValidationError(errors, "invoiceNumber")) {
+        invoiceNumberRef.current?.focus();
+        return;
+      }
+      if (hasValidationError(errors, "invoiceDate")) {
+        invoiceDateRef.current?.focus();
+        return;
+      }
+      if (hasValidationError(errors, "totalAmount")) {
+        totalAmountRef.current?.focus();
+        return;
+      }
+      if (hasValidationError(errors, "lineItems")) {
+        firstLineDescriptionRef.current?.focus();
+      }
+    });
+  };
+
+  const firstValidationMessage = Object.values(draftFieldErrors)[0] ?? null;
+
   const refreshCollections = async () => {
     const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
     setData(purchases);
@@ -464,6 +515,9 @@ export function PilotPurchasesPage() {
     setReceiveMessage(null);
     setError(null);
     setOcrMessage(null);
+    setDraftFieldErrors({});
+    setSupplierFieldErrors({});
+    setInventoryFieldErrors({});
     setCorrectionNote("");
     setDraft(buildBlankDraft());
     setSupplierDraft(buildBlankSupplierDraft());
@@ -484,11 +538,14 @@ export function PilotPurchasesPage() {
     const name = supplierDraft.name.trim();
     if (!name) {
       showNotice("error", "Supplier name required", "Enter a supplier name before creating the first vendor.");
+      setSupplierFieldErrors({ name: "Supplier name is required." });
+      supplierInputRef.current?.focus();
       return;
     }
 
     setSupplierSaving(true);
     setError(null);
+    setSupplierFieldErrors({});
 
     try {
       await createPilotSupplier({
@@ -515,9 +572,20 @@ export function PilotPurchasesPage() {
         supplierSelectRef.current?.focus();
       });
     } catch (err) {
+      const fieldErrors = err instanceof PilotApiError ? (err.errors ?? {}) : {};
       const message = err instanceof Error ? err.message : "Could not create the supplier.";
       setError(message);
+      setSupplierFieldErrors(fieldErrors);
       showNotice("error", "Supplier save failed", message);
+      if (Object.keys(fieldErrors).length > 0) {
+        window.requestAnimationFrame(() => {
+          if (fieldErrors.name) {
+            supplierInputRef.current?.focus();
+          } else {
+            supplierSelectRef.current?.focus();
+          }
+        });
+      }
     } finally {
       setSupplierSaving(false);
     }
@@ -543,11 +611,14 @@ export function PilotPurchasesPage() {
     const name = inventoryDraft.name.trim() || line.description.trim();
     if (!name) {
       showNotice("error", "Inventory item name required", "Enter a name before creating the first item.");
+      setInventoryFieldErrors({ name: "Inventory item name is required." });
+      inventoryNameRef.current?.focus();
       return;
     }
 
     setInventorySavingLineId(currentLineKey);
     setError(null);
+    setInventoryFieldErrors({});
 
     try {
       const saved = await createPilotInventoryItem({
@@ -587,9 +658,18 @@ export function PilotPurchasesPage() {
         scrollEditorIntoView("supplier-select");
       });
     } catch (err) {
+      const fieldErrors = err instanceof PilotApiError ? (err.errors ?? {}) : {};
       const message = err instanceof Error ? err.message : "Could not create the inventory item.";
       setError(message);
+      setInventoryFieldErrors(fieldErrors);
       showNotice("error", "Inventory save failed", message);
+      if (Object.keys(fieldErrors).length > 0) {
+        window.requestAnimationFrame(() => {
+          if (fieldErrors.name) {
+            inventoryNameRef.current?.focus();
+          }
+        });
+      }
     } finally {
       setInventorySavingLineId(null);
     }
@@ -599,6 +679,7 @@ export function PilotPurchasesPage() {
     setSaving(true);
     setReceiveMessage(null);
     setError(null);
+    setDraftFieldErrors({});
 
     try {
       if (status === "Ready" && unresolvedLineCount > 0) {
@@ -639,9 +720,14 @@ export function PilotPurchasesPage() {
       await load(saved.id);
       showNotice("success", "Purchase saved", `Invoice ${saved.invoiceNumber} saved successfully.`);
     } catch (err) {
+      const fieldErrors = err instanceof PilotApiError ? (err.errors ?? {}) : {};
       const message = err instanceof Error ? err.message : "Could not save the purchase.";
       setError(message);
+      setDraftFieldErrors(fieldErrors);
       showNotice("error", "Purchase save failed", message);
+      if (Object.keys(fieldErrors).length > 0) {
+        focusPurchaseValidationTarget(fieldErrors);
+      }
     } finally {
       setSaving(false);
     }
@@ -838,7 +924,19 @@ export function PilotPurchasesPage() {
           </div>
         </div>
 
-        {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+        {firstValidationMessage ? (
+          <div data-testid="purchase-validation-errors" className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
+            <p className="font-semibold">Please fix the highlighted fields.</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {Object.entries(draftFieldErrors).map(([field, message]) => (
+                <li key={field}>
+                  <span className="font-semibold">{field}:</span> {message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {error && !firstValidationMessage ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
         {!error && ocrLoading ? <div className="mt-5 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">Extracting invoice data from the selected file...</div> : null}
 
@@ -858,8 +956,8 @@ export function PilotPurchasesPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-        <div ref={editorPanelRef}>
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+        <div ref={editorPanelRef} className="scroll-mt-32">
           <Card className="p-6">
           <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
           <div className="space-y-3">
@@ -936,10 +1034,11 @@ export function PilotPurchasesPage() {
                   <select
                     ref={supplierSelectRef}
                     id="purchase-supplier"
-                    className="input mt-1"
+                    className={`input mt-1 ${draftFieldErrors.supplierName ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     value={draft.supplierName}
                     onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))}
                     disabled={finalizedStatus}
+                    aria-invalid={Boolean(draftFieldErrors.supplierName)}
                   >
                     <option value="">Choose supplier</option>
                     {data?.suppliers.map((supplier) => (
@@ -948,6 +1047,7 @@ export function PilotPurchasesPage() {
                       </option>
                     ))}
                   </select>
+                  {draftFieldErrors.supplierName ? <p className="text-xs leading-5 text-rose-700">{draftFieldErrors.supplierName}</p> : null}
                   {!draft.supplierName ? <p className="text-xs leading-5 text-muted">Choose an existing supplier or create a new one below.</p> : null}
                 </>
               ) : (
@@ -961,11 +1061,28 @@ export function PilotPurchasesPage() {
             </div>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Invoice number</span>
-              <input className="input mt-1" value={draft.invoiceNumber} onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
+              <input
+                ref={invoiceNumberRef}
+                className={`input mt-1 ${draftFieldErrors.invoiceNumber ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
+                value={draft.invoiceNumber}
+                onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))}
+                disabled={finalizedStatus}
+                aria-invalid={Boolean(draftFieldErrors.invoiceNumber)}
+              />
+              {draftFieldErrors.invoiceNumber ? <p className="mt-1 text-xs leading-5 text-rose-700">{draftFieldErrors.invoiceNumber}</p> : null}
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Invoice date</span>
-              <input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} />
+              <input
+                ref={invoiceDateRef}
+                className={`input mt-1 ${draftFieldErrors.invoiceDate ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
+                type="date"
+                value={draft.invoiceDate}
+                onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))}
+                disabled={finalizedStatus}
+                aria-invalid={Boolean(draftFieldErrors.invoiceDate)}
+              />
+              {draftFieldErrors.invoiceDate ? <p className="mt-1 text-xs leading-5 text-rose-700">{draftFieldErrors.invoiceDate}</p> : null}
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Status</span>
@@ -1005,36 +1122,43 @@ export function PilotPurchasesPage() {
                   <span className="text-xs font-bold uppercase tracking-wide text-muted">Supplier name</span>
                   <input
                     ref={supplierInputRef}
-                    className="input mt-1"
+                    className={`input mt-1 ${supplierFieldErrors.name ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     value={supplierDraft.name}
                     onChange={(event) => setSupplierDraft((current) => ({ ...current, name: event.target.value }))}
                     placeholder="Enter supplier name"
                     disabled={finalizedStatus || supplierSaving}
+                    aria-invalid={Boolean(supplierFieldErrors.name)}
                   />
+                  {supplierFieldErrors.name ? <p className="mt-1 text-xs leading-5 text-rose-700">{supplierFieldErrors.name}</p> : null}
                 </label>
                 <label className="block">
                   <span className="text-xs font-bold uppercase tracking-wide text-muted">Category focus</span>
                   <input
-                    className="input mt-1"
+                    className={`input mt-1 ${supplierFieldErrors.categoryFocus ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     value={supplierDraft.categoryFocus}
                     onChange={(event) => setSupplierDraft((current) => ({ ...current, categoryFocus: event.target.value }))}
                     placeholder="Dairy, produce, packaging..."
                     disabled={finalizedStatus || supplierSaving}
+                    aria-invalid={Boolean(supplierFieldErrors.categoryFocus)}
                   />
+                  {supplierFieldErrors.categoryFocus ? <p className="mt-1 text-xs leading-5 text-rose-700">{supplierFieldErrors.categoryFocus}</p> : null}
                 </label>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <label className="block">
                   <span className="text-xs font-bold uppercase tracking-wide text-muted">Contact name</span>
-                  <input className="input mt-1" value={supplierDraft.contactName} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactName: event.target.value }))} disabled={finalizedStatus || supplierSaving} />
+                  <input className={`input mt-1 ${supplierFieldErrors.contactName ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={supplierDraft.contactName} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactName: event.target.value }))} disabled={finalizedStatus || supplierSaving} aria-invalid={Boolean(supplierFieldErrors.contactName)} />
+                  {supplierFieldErrors.contactName ? <p className="mt-1 text-xs leading-5 text-rose-700">{supplierFieldErrors.contactName}</p> : null}
                 </label>
                 <label className="block">
                   <span className="text-xs font-bold uppercase tracking-wide text-muted">Contact phone</span>
-                  <input className="input mt-1" value={supplierDraft.contactPhone} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactPhone: event.target.value }))} disabled={finalizedStatus || supplierSaving} />
+                  <input className={`input mt-1 ${supplierFieldErrors.contactPhone ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={supplierDraft.contactPhone} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactPhone: event.target.value }))} disabled={finalizedStatus || supplierSaving} aria-invalid={Boolean(supplierFieldErrors.contactPhone)} />
+                  {supplierFieldErrors.contactPhone ? <p className="mt-1 text-xs leading-5 text-rose-700">{supplierFieldErrors.contactPhone}</p> : null}
                 </label>
                 <label className="block">
                   <span className="text-xs font-bold uppercase tracking-wide text-muted">Contact email</span>
-                  <input className="input mt-1" type="email" value={supplierDraft.contactEmail} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactEmail: event.target.value }))} disabled={finalizedStatus || supplierSaving} />
+                  <input className={`input mt-1 ${supplierFieldErrors.contactEmail ? "border-rose-400 ring-1 ring-rose-200" : ""}`} type="email" value={supplierDraft.contactEmail} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactEmail: event.target.value }))} disabled={finalizedStatus || supplierSaving} aria-invalid={Boolean(supplierFieldErrors.contactEmail)} />
+                  {supplierFieldErrors.contactEmail ? <p className="mt-1 text-xs leading-5 text-rose-700">{supplierFieldErrors.contactEmail}</p> : null}
                 </label>
               </div>
               <div className="mt-3 flex flex-wrap gap-3">
@@ -1091,17 +1215,25 @@ export function PilotPurchasesPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Description</span>
-                      <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(line.clientId, event.target.value)} disabled={finalizedStatus} />
+                      <input
+                        ref={index === 0 ? firstLineDescriptionRef : null}
+                        className={`input mt-1 ${draftFieldErrors["lineItems"] ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
+                        data-field="line-description"
+                        value={line.description}
+                        onChange={(event) => setLineDescription(line.clientId, event.target.value)}
+                        disabled={finalizedStatus}
+                        aria-invalid={Boolean(draftFieldErrors["lineItems"])}
+                      />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory item</span>
-                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(line.clientId, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus}>
+                      <select className={`input mt-1 ${draftFieldErrors["lineItems"] ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(line.clientId, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus} aria-invalid={Boolean(draftFieldErrors["lineItems"])}>
                         <option value="">Unmapped</option>
                         {inventoryItemOptions.map((item) => (
                           <option key={item.id} value={item.id}>{item.name}</option>
                         ))}
                       </select>
-                  {!line.inventoryItemId ? (
+                      {!line.inventoryItemId ? (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
@@ -1116,7 +1248,7 @@ export function PilotPurchasesPage() {
                       ) : null}
                     </label>
                   </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
                       <input className="input mt-1" list={`purchase-units-${line.clientId}`} value={line.purchaseUnit} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
@@ -1140,12 +1272,16 @@ export function PilotPurchasesPage() {
                       <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
                     </label>
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty / price / total</span>
-                      <div className="mt-1 grid grid-cols-3 gap-2">
-                        <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
-                        <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
-                        <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
-                      </div>
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty</span>
+                      <input className="input mt-1" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Unit price</span>
+                      <input className="input mt-1" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Line total</span>
+                      <input className="input mt-1" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
                     </label>
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
@@ -1193,52 +1329,62 @@ export function PilotPurchasesPage() {
                           Close
                         </button>
                       </div>
-                      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Item name</span>
-                          <input className="input mt-1" value={inventoryDraft.name} onChange={(event) => setInventoryDraft((current) => ({ ...current, name: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Stock unit</span>
-                          <input className="input mt-1" list={`inventory-units-create-${lineKey(line)}`} value={inventoryDraft.stockUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, stockUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                          <datalist id={`inventory-units-create-${lineKey(line)}`}>
-                            {commonUnits.map((unit) => (
-                              <option key={unit} value={unit} />
-                            ))}
-                          </datalist>
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Category</span>
-                          <input className="input mt-1" value={inventoryDraft.category} onChange={(event) => setInventoryDraft((current) => ({ ...current, category: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Preferred supplier</span>
-                          <input className="input mt-1" value={inventoryDraft.preferredSupplierName} onChange={(event) => setInventoryDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</span>
-                          <input className="input mt-1" type="number" step="0.01" value={inventoryDraft.latestPurchasePrice} onChange={(event) => setInventoryDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase unit</span>
-                          <input className="input mt-1" value={inventoryDraft.lastPurchaseUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion factor</span>
-                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.lastPurchaseConversionFactor} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Current on hand</span>
-                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.currentOnHand} onChange={(event) => setInventoryDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Min / PAR</span>
-                          <div className="mt-1 grid grid-cols-2 gap-2">
-                            <input className="input" type="number" step="0.0001" value={inventoryDraft.minQuantity} onChange={(event) => setInventoryDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                            <input className="input" type="number" step="0.0001" value={inventoryDraft.parLevel} onChange={(event) => setInventoryDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
-                          </div>
-                        </label>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Item name</span>
+                      <input ref={inventoryNameRef} className={`input mt-1 ${inventoryFieldErrors.name ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={inventoryDraft.name} onChange={(event) => setInventoryDraft((current) => ({ ...current, name: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.name)} />
+                      {inventoryFieldErrors.name ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.name}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Stock unit</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.stockUnit ? "border-rose-400 ring-1 ring-rose-200" : ""}`} list={`inventory-units-create-${lineKey(line)}`} value={inventoryDraft.stockUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, stockUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.stockUnit)} />
+                      <datalist id={`inventory-units-create-${lineKey(line)}`}>
+                        {commonUnits.map((unit) => (
+                          <option key={unit} value={unit} />
+                        ))}
+                      </datalist>
+                      {inventoryFieldErrors.stockUnit ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.stockUnit}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Category</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.category ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={inventoryDraft.category} onChange={(event) => setInventoryDraft((current) => ({ ...current, category: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.category)} />
+                      {inventoryFieldErrors.category ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.category}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Preferred supplier</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.preferredSupplierName ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={inventoryDraft.preferredSupplierName} onChange={(event) => setInventoryDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.preferredSupplierName)} />
+                      {inventoryFieldErrors.preferredSupplierName ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.preferredSupplierName}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.latestPurchasePrice ? "border-rose-400 ring-1 ring-rose-200" : ""}`} type="number" step="0.01" value={inventoryDraft.latestPurchasePrice} onChange={(event) => setInventoryDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.latestPurchasePrice)} />
+                      {inventoryFieldErrors.latestPurchasePrice ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.latestPurchasePrice}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase unit</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.lastPurchaseUnit ? "border-rose-400 ring-1 ring-rose-200" : ""}`} value={inventoryDraft.lastPurchaseUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.lastPurchaseUnit)} />
+                      {inventoryFieldErrors.lastPurchaseUnit ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.lastPurchaseUnit}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion factor</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.lastPurchaseConversionFactor ? "border-rose-400 ring-1 ring-rose-200" : ""}`} type="number" step="0.0001" value={inventoryDraft.lastPurchaseConversionFactor} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.lastPurchaseConversionFactor)} />
+                      {inventoryFieldErrors.lastPurchaseConversionFactor ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.lastPurchaseConversionFactor}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Current on hand</span>
+                      <input className={`input mt-1 ${inventoryFieldErrors.currentOnHand ? "border-rose-400 ring-1 ring-rose-200" : ""}`} type="number" step="0.0001" value={inventoryDraft.currentOnHand} onChange={(event) => setInventoryDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.currentOnHand)} />
+                      {inventoryFieldErrors.currentOnHand ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.currentOnHand}</p> : null}
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted">Min / PAR</span>
+                      <div className="mt-1 grid grid-cols-2 gap-2">
+                            <input className={`input ${inventoryFieldErrors.minQuantity ? "border-rose-400 ring-1 ring-rose-200" : ""}`} type="number" step="0.0001" value={inventoryDraft.minQuantity} onChange={(event) => setInventoryDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.minQuantity)} />
+                            <input className={`input ${inventoryFieldErrors.parLevel ? "border-rose-400 ring-1 ring-rose-200" : ""}`} type="number" step="0.0001" value={inventoryDraft.parLevel} onChange={(event) => setInventoryDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} aria-invalid={Boolean(inventoryFieldErrors.parLevel)} />
                       </div>
+                      {inventoryFieldErrors.minQuantity ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.minQuantity}</p> : null}
+                      {inventoryFieldErrors.parLevel ? <p className="mt-1 text-xs leading-5 text-rose-700">{inventoryFieldErrors.parLevel}</p> : null}
+                    </label>
+                  </div>
                       <div className="mt-3 flex flex-wrap gap-3">
                         <Button type="button" onClick={() => void createInventoryItemForLine(line, index)} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)}>
                           {inventorySavingLineId === lineKey(line) ? "Creating item..." : "Create and map item"}

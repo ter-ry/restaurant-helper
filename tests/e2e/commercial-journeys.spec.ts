@@ -1921,10 +1921,9 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(firstLine.getByLabel("Item name")).toHaveValue("2% Milk");
   await firstLine.getByLabel("Stock unit").fill("case");
   await firstLine.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("2");
-  const firstLineQuantityFields = firstLine.locator('label:has-text("Qty / price / total") input');
-  await firstLineQuantityFields.nth(0).fill("2");
-  await firstLineQuantityFields.nth(1).fill("4.5");
-  await firstLineQuantityFields.nth(2).fill("9");
+  await firstLine.getByLabel("Qty").fill("2");
+  await firstLine.getByLabel("Unit price").fill("4.5");
+  await firstLine.getByLabel("Line total").fill("9");
   await firstLine.getByRole("button", { name: "Create and map item" }).click();
 
   await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
@@ -1935,10 +1934,9 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(secondLine.getByLabel("Item name")).toHaveValue("Whole Milk");
   await secondLine.getByLabel("Stock unit").fill("bag");
   await secondLine.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("1");
-  const secondLineQuantityFields = secondLine.locator('label:has-text("Qty / price / total") input');
-  await secondLineQuantityFields.nth(0).fill("3");
-  await secondLineQuantityFields.nth(1).fill("2");
-  await secondLineQuantityFields.nth(2).fill("6");
+  await secondLine.getByLabel("Qty").fill("3");
+  await secondLine.getByLabel("Unit price").fill("2");
+  await secondLine.getByLabel("Line total").fill("6");
   await secondLine.getByRole("button", { name: "Create and map item" }).click();
 
   await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");

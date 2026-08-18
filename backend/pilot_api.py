@@ -62,6 +62,11 @@ MONEY = Decimal("0.01")
 QTY = Decimal("0.0001")
 
 
+def _commit_json(payload: Any, status_code: int = 200):
+    db.session.commit()
+    return jsonify(payload), status_code
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -765,12 +770,11 @@ def correct_purchase_invoice(invoice_id: int):
                 "affectedItemIds": sorted(affected_items),
             },
         )
-        db.session.commit()
+        response_payload = serialize_purchase_invoice(invoice)
+        return _commit_json(response_payload)
     except Exception:
         db.session.rollback()
         raise
-
-    return jsonify(serialize_purchase_invoice(invoice)), 200
 
 
 @bp.get("/api/pilot/bootstrap")
@@ -828,8 +832,8 @@ def set_current_location():
         actor_user_id=current_user.id,
         metadata={"source": "legacy-location-endpoint", "membershipRole": membership.role},
     )
-    db.session.commit()
-    return jsonify({"currentLocation": serialize_location(location)}), 200
+    response_payload = {"currentLocation": serialize_location(location)}
+    return _commit_json(response_payload)
 
 
 @bp.get("/api/pilot/dashboard")
@@ -1007,8 +1011,8 @@ def create_supplier():
         actor_user_id=current_user.id,
         metadata={"supplierName": supplier.name, "categoryFocus": supplier.category_focus, "isActive": supplier.is_active},
     )
-    db.session.commit()
-    return jsonify(_serialize_supplier_with_counts(supplier)), 201
+    response_payload = _serialize_supplier_with_counts(supplier)
+    return _commit_json(response_payload, 201)
 
 
 @bp.patch("/api/pilot/suppliers/<int:supplier_id>")
@@ -1066,8 +1070,8 @@ def update_supplier(supplier_id: int):
         actor_user_id=current_user.id,
         metadata={"supplierName": supplier.name, "isActive": supplier.is_active},
     )
-    db.session.commit()
-    return jsonify(_serialize_supplier_with_counts(supplier)), 200
+    response_payload = _serialize_supplier_with_counts(supplier)
+    return _commit_json(response_payload)
 
 
 @bp.get("/api/pilot/purchases/invoices/<int:invoice_id>")
@@ -1126,8 +1130,8 @@ def create_purchase_invoice():
         actor_user_id=current_user.id,
         metadata={"invoiceId": invoice.id, "invoiceNumber": invoice.invoice_number, "status": invoice.status},
     )
-    db.session.commit()
-    return jsonify(serialize_purchase_invoice(invoice)), 201
+    response_payload = serialize_purchase_invoice(invoice)
+    return _commit_json(response_payload, 201)
 
 
 @bp.patch("/api/pilot/purchases/invoices/<int:invoice_id>")
@@ -1172,8 +1176,8 @@ def update_purchase_invoice(invoice_id: int):
         actor_user_id=current_user.id,
         metadata={"invoiceNumber": invoice.invoice_number, "status": invoice.status},
     )
-    db.session.commit()
-    return jsonify(serialize_purchase_invoice(invoice)), 200
+    response_payload = serialize_purchase_invoice(invoice)
+    return _commit_json(response_payload)
 
 
 @bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/receive")
@@ -1202,13 +1206,13 @@ def receive_purchase_invoice(invoice_id: int):
             actor_user_id=current_user.id,
             metadata={"invoiceNumber": invoice.invoice_number, "status": invoice.status},
         )
-        db.session.commit()
+        response_payload = serialize_purchase_invoice(invoice)
+        return _commit_json(response_payload)
     except RequestValidationError as exc:
         db.session.rollback()
         if exc.message == "Invoice already received.":
             return json_error(exc.message, 409, errors=exc.errors)
         return json_error(exc.message, 400, errors=exc.errors)
-    return jsonify(serialize_purchase_invoice(invoice)), 200
 
 
 @bp.get("/api/pilot/inventory")
@@ -1390,8 +1394,8 @@ def create_inventory_item():
         actor_user_id=current_user.id,
         metadata={"itemName": item.name, "stockUnit": item.stock_unit, "active": item.active},
     )
-    db.session.commit()
-    return jsonify(serialize_inventory_item(item)), 201
+    response_payload = serialize_inventory_item(item)
+    return _commit_json(response_payload, 201)
 
 
 @bp.patch("/api/pilot/inventory/items/<int:item_id>")
@@ -1454,8 +1458,8 @@ def update_inventory_item(item_id: int):
         actor_user_id=current_user.id,
         metadata={"itemName": item.name, "stockUnit": item.stock_unit, "active": item.active},
     )
-    db.session.commit()
-    return jsonify(serialize_inventory_item(item)), 200
+    response_payload = serialize_inventory_item(item)
+    return _commit_json(response_payload)
 
 
 @bp.post("/api/pilot/inventory/items/<int:item_id>/adjustments")
@@ -1518,8 +1522,8 @@ def create_inventory_adjustment(item_id: int):
             "reason": reason,
         },
     )
-    db.session.commit()
-    return jsonify(serialize_inventory_movement(movement)), 201
+    response_payload = serialize_inventory_movement(movement)
+    return _commit_json(response_payload, 201)
 
 
 def _build_count_session_for_location(location: RestaurantLocation, organization_id: int):
@@ -1638,8 +1642,8 @@ def create_count_session():
         actor_user_id=current_user.id,
         metadata={"itemCount": session_record.item_count, "countedBy": session_record.counted_by},
     )
-    db.session.commit()
-    return jsonify(serialize_count_session(session_record)), 201
+    response_payload = serialize_count_session(session_record)
+    return _commit_json(response_payload, 201)
 
 
 @bp.get("/api/pilot/inventory/count-sessions/<int:session_id>")
@@ -1710,8 +1714,8 @@ def update_count_session(session_id: int):
         actor_user_id=current_user.id,
         metadata={"countedBy": session_record.counted_by, "status": session_record.status},
     )
-    db.session.commit()
-    return jsonify(serialize_count_session(session_record)), 200
+    response_payload = serialize_count_session(session_record)
+    return _commit_json(response_payload)
 
 
 @bp.post("/api/pilot/inventory/count-sessions/<int:session_id>/finalize")
@@ -1790,7 +1794,8 @@ def finalize_count_session(session_id: int):
             actor_user_id=current_user.id,
             metadata={"itemCount": session_record.item_count, "status": session_record.status},
         )
-        db.session.commit()
+        response_payload = serialize_count_session(session_record)
+        return _commit_json(response_payload)
     except IntegrityError:
         db.session.rollback()
         refreshed = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
@@ -1803,7 +1808,6 @@ def finalize_count_session(session_id: int):
     except Exception:
         db.session.rollback()
         return json_error("Could not finalize the stock count.", 500)
-    return jsonify(serialize_count_session(session_record)), 200
 
 
 @bp.post("/api/pilot/reorder-plan/<int:item_id>/ordered")
@@ -1852,8 +1856,8 @@ def mark_reorder_item_ordered(item_id: int):
         actor_user_id=current_user.id,
         metadata={"inventoryItemId": item.id, "status": intent.status},
     )
-    db.session.commit()
-    return jsonify(serialize_reorder_intent(intent)), 200
+    response_payload = serialize_reorder_intent(intent)
+    return _commit_json(response_payload)
 
 
 @bp.get("/api/pilot/reorder-plan")
@@ -2009,14 +2013,16 @@ def create_or_open_reorder_plan():
             actor_user_id=current_user.id,
             metadata={"status": plan.status, "name": plan.name},
         )
-        db.session.commit()
+        response_payload = serialize_reorder_plan(plan)
+        return _commit_json(response_payload, 200 if existing_draft is not None else 201)
     except IntegrityError:
         db.session.rollback()
         existing = ReorderPlan.query.filter_by(organization_id=organization.id, location_id=location.id, status="Draft").order_by(ReorderPlan.updated_at.desc()).first()
         if existing is None:
             return json_error("Could not start the reorder plan.", 500)
         plan = existing
-    return jsonify(serialize_reorder_plan(plan)), 200 if existing_draft is not None else 201
+        response_payload = serialize_reorder_plan(plan)
+        return jsonify(response_payload), 200 if existing_draft is not None else 201
 
 
 @bp.get("/api/pilot/reorder-plans/<int:plan_id>")
@@ -2080,8 +2086,8 @@ def update_reorder_plan(plan_id: int):
         actor_user_id=current_user.id,
         metadata={"status": plan.status, "name": plan.name},
     )
-    db.session.commit()
-    return jsonify(serialize_reorder_plan(plan)), 200
+    response_payload = serialize_reorder_plan(plan)
+    return _commit_json(response_payload)
 
 
 @bp.post("/api/pilot/reorder-plans/<int:plan_id>/prepare")
@@ -2112,8 +2118,8 @@ def prepare_reorder_plan(plan_id: int):
         actor_user_id=current_user.id,
         metadata={"status": plan.status},
     )
-    db.session.commit()
-    return jsonify(serialize_reorder_plan(plan)), 200
+    response_payload = serialize_reorder_plan(plan)
+    return _commit_json(response_payload)
 
 
 @bp.post("/api/pilot/reorder-plans/<int:plan_id>/complete")
@@ -2144,8 +2150,8 @@ def complete_reorder_plan(plan_id: int):
         actor_user_id=current_user.id,
         metadata={"status": plan.status},
     )
-    db.session.commit()
-    return jsonify(serialize_reorder_plan(plan)), 200
+    response_payload = serialize_reorder_plan(plan)
+    return _commit_json(response_payload)
 
 
 def _menu_costing_context():
@@ -2291,9 +2297,8 @@ def create_menu_costing_recipe():
         actor_user_id=current_user.id,
         metadata={"name": recipe.name},
     )
-    db.session.commit()
-    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
-    return jsonify(serialize_recipe(saved_recipe or recipe)), 201
+    response_payload = serialize_recipe(recipe)
+    return _commit_json(response_payload, 201)
 
 
 @bp.patch("/api/pilot/menu-costing/recipes/<int:recipe_id>")
@@ -2332,8 +2337,8 @@ def update_menu_costing_recipe(recipe_id: int):
         actor_user_id=current_user.id,
         metadata={"name": recipe.name},
     )
-    db.session.commit()
-    return jsonify(serialize_recipe(recipe)), 200
+    response_payload = serialize_recipe(recipe)
+    return _commit_json(response_payload)
 
 
 @bp.delete("/api/pilot/menu-costing/recipes/<int:recipe_id>")
@@ -2418,9 +2423,8 @@ def create_menu_costing_recipe_ingredient(recipe_id: int):
         actor_user_id=current_user.id,
         metadata={"recipeId": recipe.id, "inventoryItemId": inventory_item.id},
     )
-    db.session.commit()
-    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
-    return jsonify(serialize_recipe(saved_recipe or recipe)), 201
+    response_payload = serialize_recipe(recipe)
+    return _commit_json(response_payload, 201)
 
 
 @bp.patch("/api/pilot/menu-costing/recipes/<int:recipe_id>/ingredients/<int:ingredient_id>")
@@ -2476,9 +2480,8 @@ def update_menu_costing_recipe_ingredient(recipe_id: int, ingredient_id: int):
         actor_user_id=current_user.id,
         metadata={"recipeId": recipe.id, "inventoryItemId": ingredient.inventory_item_id},
     )
-    db.session.commit()
-    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
-    return jsonify(serialize_recipe(saved_recipe or recipe)), 200
+    response_payload = serialize_recipe(recipe)
+    return _commit_json(response_payload)
 
 
 @bp.delete("/api/pilot/menu-costing/recipes/<int:recipe_id>/ingredients/<int:ingredient_id>")
@@ -2504,9 +2507,8 @@ def delete_menu_costing_recipe_ingredient(recipe_id: int, ingredient_id: int):
         actor_user_id=current_user.id,
         metadata={"recipeId": recipe.id, "inventoryItemId": ingredient.inventory_item_id},
     )
-    db.session.commit()
-    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
-    return jsonify(serialize_recipe(saved_recipe or recipe)), 200
+    response_payload = serialize_recipe(recipe)
+    return _commit_json(response_payload)
 
 
 @bp.post("/api/pilot/menu-costing/menu-items")
@@ -2549,9 +2551,8 @@ def create_menu_costing_menu_item():
         actor_user_id=current_user.id,
         metadata={"name": menu_item.name, "recipeId": menu_item.recipe_id},
     )
-    db.session.commit()
-    saved_item = _require_menu_costing_menu_item(menu_item.id, organization.id, location.id)
-    return jsonify(serialize_menu_item(saved_item or menu_item)), 201
+    response_payload = serialize_menu_item(menu_item)
+    return _commit_json(response_payload, 201)
 
 
 @bp.patch("/api/pilot/menu-costing/menu-items/<int:menu_item_id>")
@@ -2594,8 +2595,8 @@ def update_menu_costing_menu_item(menu_item_id: int):
         actor_user_id=current_user.id,
         metadata={"name": menu_item.name, "recipeId": menu_item.recipe_id},
     )
-    db.session.commit()
-    return jsonify(serialize_menu_item(menu_item)), 200
+    response_payload = serialize_menu_item(menu_item)
+    return _commit_json(response_payload)
 
 
 @bp.delete("/api/pilot/menu-costing/menu-items/<int:menu_item_id>")

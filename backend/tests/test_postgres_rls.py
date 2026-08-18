@@ -40,6 +40,7 @@ from backend.models import (
     User,
 )
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD, seed_pilot_data
+from backend.tests.conftest import make_operational_organization
 from backend.utils import utc_now
 
 
@@ -2625,6 +2626,213 @@ def test_postgres_setup_console_mutations_materialize_before_commit(postgres_app
     assert dashboard_response.status_code == 200, dashboard_response.get_data(as_text=True)
     dashboard_body = dashboard_response.get_json()
     assert dashboard_body["currentLocation"]["id"] == org_a_location_id, dashboard_body
+
+
+def test_postgres_operational_mutations_materialize_before_commit(postgres_app):
+    owner_email = f"owner-{uuid4().hex[:8]}@example.com"
+    owner_password = f"PilotOwner-{uuid4().hex[:12]}!"
+    other_email = f"other-{uuid4().hex[:8]}@example.com"
+    other_password = f"PilotOther-{uuid4().hex[:12]}!"
+
+    with postgres_app.app_context():
+        owner = User(email=owner_email, is_active=True)
+        owner.set_password(owner_password)
+        db.session.add(owner)
+        db.session.flush()
+        org_a_name = f"Purchase Trial {uuid4().hex[:8]}"
+        org_a_location_name = f"Purchase Kitchen {uuid4().hex[:8]}"
+        _set_rls_context(access_scope="setup", user_id=owner.id)
+        make_operational_organization(
+            owner,
+            name=org_a_name,
+            location_name=org_a_location_name,
+            enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"),
+        )
+        _set_rls_context(access_scope="setup", user_id=owner.id)
+        organization_id = Organization.query.filter_by(name=org_a_name).first().id
+        location_id = RestaurantLocation.query.filter_by(organization_id=organization_id, name=org_a_location_name).first().id
+        db.session.remove()
+
+    with postgres_app.app_context():
+        other_owner = User(email=other_email, is_active=True)
+        other_owner.set_password(other_password)
+        db.session.add(other_owner)
+        db.session.flush()
+        other_org_name = f"Purchase Trial Other {uuid4().hex[:8]}"
+        other_location_name = f"Other Kitchen {uuid4().hex[:8]}"
+        _set_rls_context(access_scope="setup", user_id=other_owner.id)
+        make_operational_organization(
+            other_owner,
+            name=other_org_name,
+            location_name=other_location_name,
+            enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"),
+        )
+        db.session.remove()
+
+    client = postgres_app.test_client()
+    _login_user(client, owner_email, owner_password)
+
+    def csrf_headers() -> dict[str, str]:
+        return {"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]}
+
+    supplier_name = f"Trial Dairy {uuid4().hex[:8]}"
+    item_name = f"Trial Cream {uuid4().hex[:8]}"
+    invoice_number = f"TRIAL-{uuid4().hex[:8].upper()}"
+
+    supplier_response = client.post(
+        "/api/pilot/suppliers",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "name": supplier_name,
+            "categoryFocus": "Dairy",
+            "contactName": "Trial Buyer",
+            "contactPhone": "416-555-0144",
+            "contactEmail": "buyer@example.com",
+            "orderingNotes": "Call before noon.",
+            "notes": "Operational mutation regression.",
+            "isActive": True,
+        },
+    )
+    assert supplier_response.status_code == 201, supplier_response.get_data(as_text=True)
+    supplier = supplier_response.get_json()
+    assert supplier["name"] == supplier_name
+
+    supplier_list = client.get("/api/pilot/suppliers", base_url="http://127.0.0.1:5001")
+    assert supplier_list.status_code == 200, supplier_list.get_data(as_text=True)
+    assert any(entry["id"] == supplier["id"] for entry in supplier_list.get_json()["suppliers"])
+
+    inventory_response = client.post(
+        "/api/pilot/inventory/items",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "name": item_name,
+            "category": "Dairy",
+            "stockUnit": "case",
+            "currentOnHand": 0,
+            "minQuantity": 0,
+            "parLevel": 0,
+            "preferredSupplierName": supplier_name,
+            "latestPurchasePrice": 10.0,
+            "lastPurchaseUnit": "case",
+            "lastPurchaseConversionFactor": 1,
+            "averageDailyUsage": 0,
+            "notes": "Operational mutation regression.",
+            "active": True,
+        },
+    )
+    assert inventory_response.status_code == 201, inventory_response.get_data(as_text=True)
+    item = inventory_response.get_json()
+    assert item["name"] == item_name
+
+    purchase_response = client.post(
+        "/api/pilot/purchases/invoices",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-08-18",
+            "subtotal": 20.0,
+            "tax": 2.6,
+            "totalAmount": 22.6,
+            "notes": "Operational mutation regression.",
+            "status": "Draft",
+            "sourceFileName": "trial-invoice.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "Trial Cream 2 case $10.00",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item["id"],
+                    "purchaseUnit": "case",
+                    "inventoryUnit": "case",
+                    "conversionFactor": 1,
+                    "quantity": 2,
+                    "unitPrice": 10.0,
+                    "lineTotal": 20.0,
+                    "confidence": 0.98,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert purchase_response.status_code == 201, purchase_response.get_data(as_text=True)
+    invoice = purchase_response.get_json()
+    assert invoice["supplier"]["name"] == supplier_name
+    assert invoice["lineItems"][0]["inventoryItemId"] == item["id"]
+
+    invoice_update = client.patch(
+        f"/api/pilot/purchases/invoices/{invoice['id']}",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-08-18",
+            "subtotal": 20.0,
+            "tax": 2.6,
+            "totalAmount": 22.6,
+            "notes": "Updated operational mutation regression.",
+            "status": "Draft",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item["id"],
+                    "purchaseUnit": "case",
+                    "inventoryUnit": "case",
+                    "conversionFactor": 1,
+                    "quantity": 2,
+                    "unitPrice": 10.0,
+                    "lineTotal": 20.0,
+                    "confidence": 0.98,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert invoice_update.status_code == 200, invoice_update.get_data(as_text=True)
+    assert invoice_update.get_json()["notes"] == "Updated operational mutation regression."
+
+    receive_response = client.post(
+        f"/api/pilot/purchases/invoices/{invoice['id']}/receive",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+    )
+    assert receive_response.status_code == 200, receive_response.get_data(as_text=True)
+    received_invoice = receive_response.get_json()
+    assert received_invoice["status"] == "Completed"
+
+    item_detail = client.get(f"/api/pilot/inventory/items/{item['id']}", base_url="http://127.0.0.1:5001")
+    assert item_detail.status_code == 200, item_detail.get_data(as_text=True)
+    item_detail_body = item_detail.get_json()
+    assert item_detail_body["item"]["currentOnHand"] == 2, item_detail_body
+    assert len(item_detail_body["movementHistory"]) == 1, item_detail_body
+    assert item_detail_body["movementHistory"][0]["quantityAfter"] == 2, item_detail_body
+    assert item_detail_body["purchaseHistory"][0]["invoiceId"] == invoice["id"], item_detail_body
+
+    owner_suppliers = client.get("/api/pilot/suppliers", base_url="http://127.0.0.1:5001")
+    assert owner_suppliers.status_code == 200, owner_suppliers.get_data(as_text=True)
+    owner_suppliers_body = owner_suppliers.get_json()
+    assert any(entry["id"] == supplier["id"] for entry in owner_suppliers_body["suppliers"])
+    assert all(entry["organizationId"] == organization_id for entry in owner_suppliers_body["suppliers"])
+
+    other_client = postgres_app.test_client()
+    _login_user(other_client, other_email, other_password)
+    other_suppliers = other_client.get("/api/pilot/suppliers", base_url="http://127.0.0.1:5001")
+    assert other_suppliers.status_code == 200, other_suppliers.get_data(as_text=True)
+    assert other_suppliers.get_json()["suppliers"] == [], other_suppliers.get_data(as_text=True)
+    other_inventory = other_client.get("/api/pilot/inventory", base_url="http://127.0.0.1:5001")
+    assert other_inventory.status_code == 200, other_inventory.get_data(as_text=True)
+    assert other_inventory.get_json()["items"] == [], other_inventory.get_data(as_text=True)
+    other_purchases = other_client.get("/api/pilot/purchases", base_url="http://127.0.0.1:5001")
+    assert other_purchases.status_code == 200, other_purchases.get_data(as_text=True)
+    assert other_purchases.get_json()["invoices"] == [], other_purchases.get_data(as_text=True)
+    _github_warning("operational mutation regression: supplier, inventory, invoice, receive, and tenant isolation succeeded")
 
 
 def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgres_app):
