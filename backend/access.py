@@ -21,7 +21,6 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.correct_purchase_invoice": "PURCHASES",
     "pilot_api.bootstrap": "PURCHASES",
     "pilot_api.set_current_location": "PURCHASES",
-    "pilot_api.dashboard": "REPORTING",
     "pilot_api.purchases": "PURCHASES",
     "pilot_api.purchase_invoice_detail": "PURCHASES",
     "pilot_api.suppliers": "PURCHASES",

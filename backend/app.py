@@ -49,14 +49,6 @@ def create_app(test_config: dict | None = None) -> Flask:
         ensure_request_id()
 
     @app.before_request
-    def enforce_centralized_policy():
-        return enforce_endpoint_permission()
-
-    @app.before_request
-    def enforce_commercial_access():
-        return enforce_operational_access()
-
-    @app.before_request
     def enforce_split_origin_browser_boundary():
         if not app.config.get("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"):
             return None
@@ -121,6 +113,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.before_request
     def set_postgres_tenant_context():
         apply_request_tenant_context()
+
+    @app.before_request
+    def enforce_centralized_policy():
+        return enforce_endpoint_permission()
+
+    @app.before_request
+    def enforce_commercial_access():
+        return enforce_operational_access()
 
     @app.after_request
     def add_cors_headers(response: Response) -> Response:

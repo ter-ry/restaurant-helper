@@ -2614,6 +2614,115 @@ def test_postgres_setup_console_mutations_materialize_before_commit(postgres_app
         assert layout is not None
         assert layout.widgets_json == ["sales-today", "inventory-alerts"]
 
+    me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
+    assert me_response.status_code == 200, me_response.get_data(as_text=True)
+    me_body = me_response.get_json()
+    assert me_body["currentOrganizationId"] == org_a_id, me_body
+    assert me_body["currentLocationId"] == org_a_location_id, me_body
+    assert all(entry["organization"]["id"] != org_b_id for entry in me_body["organizations"]), me_body
+
+    dashboard_response = client.get("/api/pilot/dashboard", base_url="http://127.0.0.1:5001")
+    assert dashboard_response.status_code == 200, dashboard_response.get_data(as_text=True)
+    dashboard_body = dashboard_response.get_json()
+    assert dashboard_body["currentLocation"]["id"] == org_a_location_id, dashboard_body
+
+
+def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgres_app):
+    with postgres_app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+
+        organization = Organization(
+            name=f"Bootstrap Dashboard {int(time.time() * 1000)}",
+            lifecycle_status="ACTIVE",
+            setup_status="COMPLETE",
+            subscription_status="ACTIVE",
+            setup_template_key="GENERIC_RESTAURANT",
+            setup_fee_status="confirmed",
+            subscription_provider="manual",
+            is_prospect=False,
+            active_at=utc_now(),
+            setup_completed_at=utc_now(),
+        )
+        db.session.add(organization)
+        db.session.flush()
+        db.session.add(OrganizationMembership(user=owner, organization=organization, role="owner"))
+        location = RestaurantLocation(
+            organization=organization,
+            name="Bootstrap Kitchen",
+            address_line1="123 Test St",
+            city="Toronto",
+            region="ON",
+            postal_code="M5V 1A1",
+            country="Canada",
+            timezone="America/Toronto",
+        )
+        db.session.add(location)
+        db.session.add_all(
+            [
+                OrganizationModule(organization=organization, module_key="PURCHASES", status="ENABLED", enabled_at=utc_now()),
+                OrganizationModule(organization=organization, module_key="INVENTORY", status="ENABLED", enabled_at=utc_now()),
+                OrganizationModule(organization=organization, module_key="STOCK_COUNTS", status="ENABLED", enabled_at=utc_now()),
+                OrganizationModule(organization=organization, module_key="REORDER_PLANS", status="ENABLED", enabled_at=utc_now()),
+            ]
+        )
+        other_user = User(email=f"bootstrap-dashboard-other-{int(time.time() * 1000)}@example.com", is_active=True)
+        other_user.set_password("OtherOrg!123")
+        db.session.add(other_user)
+        db.session.flush()
+        other_organization = Organization(
+            name=f"Bootstrap Dashboard Other {int(time.time() * 1000)}",
+            lifecycle_status="ACTIVE",
+            setup_status="COMPLETE",
+            subscription_status="ACTIVE",
+            setup_template_key="GENERIC_RESTAURANT",
+            setup_fee_status="confirmed",
+            subscription_provider="manual",
+            is_prospect=False,
+            active_at=utc_now(),
+            setup_completed_at=utc_now(),
+        )
+        db.session.add(other_organization)
+        db.session.flush()
+        db.session.add(OrganizationMembership(user=other_user, organization=other_organization, role="owner"))
+        db.session.commit()
+        organization_id = organization.id
+        location_id = location.id
+        other_organization_id = other_organization.id
+
+    client = postgres_app.test_client()
+    _login_owner(client)
+
+    csrf_token = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"organizationId": organization_id},
+    )
+    assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
+
+    select_location_response = client.post(
+        "/api/locations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]},
+        json={"locationId": location_id},
+    )
+    assert select_location_response.status_code == 200, select_location_response.get_data(as_text=True)
+
+    me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
+    assert me_response.status_code == 200, me_response.get_data(as_text=True)
+    me_body = me_response.get_json()
+    assert me_body["currentOrganizationId"] == organization_id, me_body
+    assert me_body["currentLocationId"] == location_id, me_body
+    assert any(entry["organization"]["id"] == organization_id for entry in me_body["organizations"]), me_body
+    assert all(entry["organization"]["id"] != other_organization_id for entry in me_body["organizations"]), me_body
+
+    dashboard_response = client.get("/api/pilot/dashboard", base_url="http://127.0.0.1:5001")
+    assert dashboard_response.status_code == 200, dashboard_response.get_data(as_text=True)
+    dashboard_body = dashboard_response.get_json()
+    assert dashboard_body["currentLocation"]["id"] == location_id, dashboard_body
+
 
 @SUPPORT_ACCESS_DEFERRED
 def test_postgres_rls_probe_3_current_support_grant_id(postgres_app, postgres_rls_probe_context):

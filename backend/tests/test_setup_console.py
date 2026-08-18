@@ -67,7 +67,6 @@ def test_platform_setup_console_can_activate_an_organization(app, client):
                 {"moduleKey": "INVENTORY", "status": "ENABLED"},
                 {"moduleKey": "REORDER_PLANS", "status": "ENABLED"},
                 {"moduleKey": "STOCK_COUNTS", "status": "ENABLED"},
-                {"moduleKey": "REPORTING", "status": "ENABLED"},
             ]
         },
     )
@@ -131,11 +130,17 @@ def test_platform_setup_console_can_activate_an_organization(app, client):
     assert body["organization"]["setupStatus"] == "COMPLETE"
     assert body["organization"]["subscriptionStatus"] == "ACTIVE"
 
+    me_response = client.get("/api/auth/me")
+    assert me_response.status_code == 200
+    me_body = me_response.get_json()
+    assert me_body["currentOrganizationId"] == organization_id
+    assert me_body["currentLocationId"] == create_response.get_json()["currentLocationId"]
+
+    dashboard = client.get("/api/pilot/dashboard")
+    assert dashboard.status_code == 200
+
     with app.app_context():
         organization = Organization.query.filter_by(id=organization_id).first()
         assert organization is not None
         assert organization.lifecycle_status == "ACTIVE"
         assert organization.setup_status == "COMPLETE"
-
-    dashboard = client.get("/api/pilot/dashboard")
-    assert dashboard.status_code == 200
