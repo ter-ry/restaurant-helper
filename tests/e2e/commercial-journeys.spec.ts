@@ -1305,6 +1305,8 @@ test("setup admin can configure the organization and activate it", async ({ page
   await page.goto("/platform/setup");
   await expect(page.getByRole("heading", { level: 1, name: "Internal setup console" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Demo Bistro" })).toBeVisible();
+  await page.getByRole("button", { name: "Save modules" }).click();
+  await expect(page.locator("p", { hasText: "Modules saved" }).first()).toBeVisible();
   await page.getByRole("button", { name: "Approve review" }).first().click();
   state.currentOrganization = {
     ...(state.currentOrganization ?? makeOrganization()),

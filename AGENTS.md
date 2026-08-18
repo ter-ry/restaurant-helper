@@ -39,6 +39,7 @@ Positioning:
 - Avoid making the product look like a student project.
 - Keep mobile layout usable.
 - Prefer realistic restaurant and cafe sample data.
+- User-triggered server mutations must never feel silent: show in-progress, success, and failure states; re-fetch or otherwise reconcile with authoritative server state after success; refresh dependent UI; prevent accidental duplicate submissions; and avoid leaving stale client state that requires a manual browser reload.
 
 ## Verification
 

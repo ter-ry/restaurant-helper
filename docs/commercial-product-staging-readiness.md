@@ -311,6 +311,21 @@ Bootstrap approach:
 
 Keep the bootstrap path restricted to staff only.
 
+## Final mutation UX audit checklist
+
+Before first customer release, audit every customer-facing and operator-facing mutation surface for:
+
+- silent save buttons
+- stale state after successful writes
+- missing loading states
+- missing success confirmation
+- missing error states
+- duplicate-submit risk
+- UI values that only become correct after manual refresh
+- dependent cards, KPIs, and checklists that do not update after writes
+- stale data after returning to a tab or page
+- any place where a hard browser refresh is unnecessarily required
+
 ## Manual validation plan
 
 Use two separate tenant fixtures so cross-tenant denial is explicit rather than assumed.

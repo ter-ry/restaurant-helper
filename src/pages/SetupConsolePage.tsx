@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
@@ -29,6 +29,11 @@ import {
 } from "../lib/platformSetup";
 
 type LoadState = "loading" | "signedOut" | "permissionDenied" | "ready" | "error";
+type MutationNotice = {
+  kind: "success" | "error";
+  action: string;
+  message: string;
+};
 
 const templateOptions = ["GENERIC_RESTAURANT", "CAFE", "BAKERY", "QSR", "MULTI_LOCATION"];
 const lifecycleOptions = ["DEMO", "ONBOARDING", "READY_FOR_REVIEW", "ACTIVE", "SUSPENDED", "CANCELLED"];
@@ -74,20 +79,103 @@ export function SetupConsolePage() {
   const [supportGrants, setSupportGrants] = useState<PlatformSupportGrantSummary[]>([]);
   const [listSearch, setListSearch] = useState("");
   const [listState, setListState] = useState("ONBOARDING");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [savingAction, setSavingAction] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [notice, setNotice] = useState<MutationNotice | null>(null);
+  const [selectedRevision, setSelectedRevision] = useState(0);
   const [supportGrantEmail, setSupportGrantEmail] = useState("");
   const [supportGrantReason, setSupportGrantReason] = useState("");
   const [supportGrantCaseReference, setSupportGrantCaseReference] = useState("");
   const [supportGrantStartsAt, setSupportGrantStartsAt] = useState("");
   const [supportGrantExpiresAt, setSupportGrantExpiresAt] = useState("");
+  const noticeTimer = useRef<number | null>(null);
+  const selectedOrganizationIdRef = useRef<number | null>(null);
 
-  const currentOrg = useMemo(() => selected?.organization ?? null, [selected]);
-  const checklist = selected?.checklist ?? null;
   const configJson = (selected?.configuration as any)?.currentVersion?.configurationJson ?? {};
   const modules = selected?.modules ?? [];
   const locations = selected?.locations ?? [];
   const auditEvents = selected?.auditEvents ?? [];
+
+  const clearNotice = useCallback(() => {
+    if (noticeTimer.current !== null) {
+      window.clearTimeout(noticeTimer.current);
+      noticeTimer.current = null;
+    }
+    setNotice(null);
+  }, []);
+
+  const showSuccess = useCallback(
+    (action: string, message: string) => {
+      clearNotice();
+      setNotice({ kind: "success", action, message });
+      noticeTimer.current = window.setTimeout(() => {
+        setNotice((current) => (current?.kind === "success" && current.action === action ? null : current));
+      }, 2600);
+    },
+    [clearNotice],
+  );
+
+  const showError = useCallback(
+    (action: string, message: string) => {
+      clearNotice();
+      setNotice({ kind: "error", action, message });
+    },
+    [clearNotice],
+  );
+
+  const refreshConsole = useCallback(
+    async (options: { targetOrganizationId?: number | null; showBusy?: boolean } = {}) => {
+      if (options.showBusy) {
+        setRefreshing(true);
+      }
+      try {
+        const current = await fetchCustomerSession();
+        setSession(current);
+        if (current.platformRole !== "setup_admin" && current.platformRole !== "support") {
+          setState("permissionDenied");
+          setSelected(null);
+          setOrganizations([]);
+          setSupportGrants([]);
+          return;
+        }
+        const response = await fetchSetupOrganizations(listSearch, listState);
+        setOrganizations(response.organizations);
+        const targetId = options.targetOrganizationId ?? selectedOrganizationIdRef.current ?? response.organizations[0]?.organization.id ?? null;
+        if (targetId) {
+          setSelectedOrganizationId(targetId);
+          const detail = await fetchSetupOrganization(targetId);
+          setSelected(detail);
+          setSelectedRevision((value) => value + 1);
+          if (current.platformRole === "setup_admin") {
+            const grants = await fetchSupportGrants({ organizationId: targetId });
+            setSupportGrants(grants.grants);
+          } else {
+            setSupportGrants([]);
+          }
+        } else {
+          setSelected(null);
+          setSupportGrants([]);
+        }
+        setState("ready");
+      } catch (err) {
+        if (err instanceof CustomerApiError && err.status === 401) {
+          setState("signedOut");
+          throw err;
+        }
+        throw err;
+      } finally {
+        if (options.showBusy) {
+          setRefreshing(false);
+        }
+      }
+    },
+    [listSearch, listState],
+  );
+
+  useEffect(() => {
+    selectedOrganizationIdRef.current = selectedOrganizationId;
+  }, [selectedOrganizationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,10 +191,16 @@ export function SetupConsolePage() {
         const response = await fetchSetupOrganizations(listSearch, listState);
         if (cancelled) return;
         setOrganizations(response.organizations);
-        const targetId = selectedOrganizationId ?? response.organizations[0]?.organization.id ?? null;
+        const targetId = selectedOrganizationIdRef.current ?? response.organizations[0]?.organization.id ?? null;
         setSelectedOrganizationId(targetId);
         if (targetId) {
           setSelected(await fetchSetupOrganization(targetId));
+          setSelectedRevision((value) => value + 1);
+          if (current.platformRole === "setup_admin") {
+            const grants = await fetchSupportGrants({ organizationId: targetId });
+            if (cancelled) return;
+            setSupportGrants(grants.grants);
+          }
         }
         setState("ready");
       } catch (err) {
@@ -116,46 +210,52 @@ export function SetupConsolePage() {
           return;
         }
         setState("error");
-        setError(err instanceof Error ? err.message : "Could not load setup console.");
+        setLoadError(err instanceof Error ? err.message : "Could not load setup console.");
       }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [listSearch, listState, selectedOrganizationId]);
+  }, [listSearch, listState]);
 
-  async function refreshList() {
-    const response = await fetchSetupOrganizations(listSearch, listState);
-    setOrganizations(response.organizations);
-    const targetId = selectedOrganizationId ?? response.organizations[0]?.organization.id ?? null;
-    if (targetId) {
-      setSelectedOrganizationId(targetId);
-      setSelected(await fetchSetupOrganization(targetId));
-      if (session?.platformRole === "setup_admin") {
-        const grants = await fetchSupportGrants({ organizationId: targetId });
-        setSupportGrants(grants.grants);
+  useEffect(() => {
+    function handleVisibilityOrFocus() {
+      if (document.visibilityState === "visible" && state === "ready") {
+        void refreshConsole({ showBusy: false }).catch((err) => showError("refresh", err instanceof Error ? err.message : "Could not refresh setup data."));
       }
-    } else {
-      setSelected(null);
-      setSupportGrants([]);
     }
-  }
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [refreshConsole, showError, state]);
 
-  async function mutate(label: string, handler: () => Promise<PlatformSetupDetail>) {
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current !== null) {
+        window.clearTimeout(noticeTimer.current);
+      }
+    };
+  }, []);
+
+  async function mutate(action: string, successMessage: string, handler: () => Promise<void>) {
     if (!selected) {
       return;
     }
-    setSaving(label);
-    setError(null);
+    setSavingAction(action);
+    setLoadError(null);
     try {
-      const detail = await handler();
-      setSelected(detail);
-      await refreshList();
+      await handler();
+      await refreshConsole({ targetOrganizationId: selected.organization.id });
+      showSuccess(action, successMessage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save setup changes.");
+      showError(action, err instanceof Error ? err.message : "Could not save setup changes.");
+      setLoadError(err instanceof Error ? err.message : "Could not save setup changes.");
     } finally {
-      setSaving(null);
+      setSavingAction(null);
     }
   }
 
@@ -170,42 +270,46 @@ export function SetupConsolePage() {
 
   function saveState() {
     if (!selected) return;
-    return mutate("state", () =>
+    return mutate("state", "State saved", () =>
       updateSetupState(selected.organization.id, {
         lifecycleStatus: readValue("lifecycle", selected.organization.lifecycleStatus),
         setupStatus: readValue("setup", selected.organization.setupStatus),
         subscriptionStatus: readValue("subscription", selected.organization.subscriptionStatus),
         setupFeeStatus: readValue("fee", selected.organization.setupFeeStatus),
-      }),
+      }).then(() => undefined),
     );
   }
 
   function saveTemplate() {
     if (!selected) return;
-    return mutate("template", () => updateSetupTemplate(selected.organization.id, readValue("template", selected.organization.setupTemplateKey || "GENERIC_RESTAURANT")));
+    return mutate("template", "Template applied", () =>
+      updateSetupTemplate(selected.organization.id, readValue("template", selected.organization.setupTemplateKey || "GENERIC_RESTAURANT")).then(() => undefined),
+    );
   }
 
   function saveLocations() {
     if (!selected) return;
-    return mutate("locations", () => updateLocations(selected.organization.id, parseJson<Array<Record<string, unknown>>>(readValue("locations-json", prettyJson(locations)), [])));
+    return mutate("locations", "Locations saved", () =>
+      updateLocations(selected.organization.id, parseJson<Array<Record<string, unknown>>>(readValue("locations-json", prettyJson(locations)), [])).then(() => undefined),
+    );
   }
 
   function saveModules() {
     if (!selected) return;
-    return mutate("modules", () =>
+    return mutate("modules", "Modules saved", () =>
       updateModuleEntitlements(
         selected.organization.id,
         (modules.length ? modules : templateOptions.map((key) => ({ key, status: "DISABLED" }))).map((module) => ({
           moduleKey: String(module.key),
           status: readValue(`module-${String(module.key)}`, String(module.status)),
         })),
-      ),
+      ).then(() => undefined),
     );
   }
 
   function saveDashboard() {
     if (!selected) return;
-    return mutate("dashboard", () => {
+    return mutate("dashboard", "Dashboard layout saved", () => {
       const parsed = parseJson<{ layoutKey?: string; locationId?: number | null; widgets?: string[] }>(
         readValue("dashboard-layout-json", prettyJson((configJson as any).dashboardLayouts?.owner ?? { layoutKey: "owner", widgets: [] })),
         { layoutKey: "owner", widgets: [] },
@@ -214,54 +318,67 @@ export function SetupConsolePage() {
         layoutKey: parsed.layoutKey ?? "owner",
         locationId: parsed.locationId ?? null,
         widgets: parsed.widgets ?? [],
-      });
+      }).then(() => undefined);
     });
   }
 
   function saveCustomFields() {
     if (!selected) return;
-    return mutate("custom-fields", () => updateCustomFields(selected.organization.id, parseJson<Record<string, unknown>>(readValue("custom-fields-json", prettyJson((configJson as any).customFields ?? { supplier: [], inventoryItem: [], purchaseInvoice: [] })), {})));
+    return mutate("custom-fields", "Custom fields saved", () =>
+      updateCustomFields(selected.organization.id, parseJson<Record<string, unknown>>(readValue("custom-fields-json", prettyJson((configJson as any).customFields ?? { supplier: [], inventoryItem: [], purchaseInvoice: [] })), {})).then(() => undefined),
+    );
   }
 
   function saveBlockers() {
     if (!selected) return;
-    return mutate("blockers", () => updateLaunchBlockers(selected.organization.id, splitLines(readValue("blockers-text", ((configJson as any).launchBlockers ?? []).join("\n")))));
+    return mutate("blockers", "Blockers saved", () =>
+      updateLaunchBlockers(selected.organization.id, splitLines(readValue("blockers-text", ((configJson as any).launchBlockers ?? []).join("\n")))).then(() => undefined),
+    );
   }
 
   function saveNotes() {
     if (!selected) return;
-    return mutate("notes", () => updateInternalNotes(selected.organization.id, splitLines(readValue("notes-text", ((configJson as any).internalNotes ?? []).join("\n")))));
+    return mutate("notes", "Notes saved", () =>
+      updateInternalNotes(selected.organization.id, splitLines(readValue("notes-text", ((configJson as any).internalNotes ?? []).join("\n")))).then(() => undefined),
+    );
   }
 
   function saveImports() {
     if (!selected) return;
-    return mutate("imports", () => updateImports(selected.organization.id, parseJson<Array<Record<string, unknown>>>(readValue("imports-json", prettyJson((configJson as any).imports ?? [])), [])));
+    return mutate("imports", "Imports saved", () =>
+      updateImports(selected.organization.id, parseJson<Array<Record<string, unknown>>>(readValue("imports-json", prettyJson((configJson as any).imports ?? [])), [])).then(() => undefined),
+    );
   }
 
   function saveSquare() {
     if (!selected) return;
-    return mutate("square", () => updateSquareStatus(selected.organization.id, parseJson<Record<string, unknown>>(readValue("square-json", prettyJson((configJson as any).square ?? {})), {})));
+    return mutate("square", "Square status saved", () =>
+      updateSquareStatus(selected.organization.id, parseJson<Record<string, unknown>>(readValue("square-json", prettyJson((configJson as any).square ?? {})), {})).then(() => undefined),
+    );
   }
 
   function requestReview() {
     if (!selected) return;
-    return mutate("review", () => requestCustomerReview(selected.organization.id));
+    return mutate("review", "Review requested", () => requestCustomerReview(selected.organization.id).then(() => undefined));
   }
 
   function approveReview() {
     if (!selected) return;
-    return mutate("approve", () => approveCustomerReview(selected.organization.id));
+    return mutate("approve", "Review approved", () => approveCustomerReview(selected.organization.id).then(() => undefined));
   }
 
   function activateOrganization() {
     if (!selected) return;
-    return mutate("activate", () => activateSetupOrganization(selected.organization.id));
+    return mutate("activate", "Organization activated", () => activateSetupOrganization(selected.organization.id).then(() => undefined));
   }
 
   async function handleLoadOrganization(organizationId: number) {
     setSelectedOrganizationId(organizationId);
+    setLoadError(null);
+    clearNotice();
     const detail = await fetchSetupOrganization(organizationId);
     setSelected(detail);
+    setSelectedRevision((value) => value + 1);
     if (session?.platformRole === "setup_admin") {
       const grants = await fetchSupportGrants({ organizationId });
       setSupportGrants(grants.grants);
@@ -272,7 +389,8 @@ export function SetupConsolePage() {
     if (!selected) {
       return;
     }
-    setSaving("support-grant");
+    setSavingAction("support-grant");
+    setLoadError(null);
     try {
       await createSupportGrant({
         organizationId: selected.organization.id,
@@ -287,23 +405,28 @@ export function SetupConsolePage() {
       setSupportGrantCaseReference("");
       setSupportGrantStartsAt("");
       setSupportGrantExpiresAt("");
-      await refreshSupportGrantList();
+      await refreshConsole({ targetOrganizationId: selected.organization.id });
+      showSuccess("support-grant", "Support grant created");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create support grant.");
+      showError("support-grant", err instanceof Error ? err.message : "Could not create support grant.");
+      setLoadError(err instanceof Error ? err.message : "Could not create support grant.");
     } finally {
-      setSaving(null);
+      setSavingAction(null);
     }
   }
 
   async function revokeGrant(grantId: number) {
-    setSaving(`revoke-${grantId}`);
+    setSavingAction(`revoke-${grantId}`);
+    setLoadError(null);
     try {
       await revokeSupportGrant(grantId);
-      await refreshSupportGrantList();
+      await refreshConsole({ targetOrganizationId: selected?.organization.id ?? null });
+      showSuccess(`revoke-${grantId}`, "Support grant revoked");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not revoke support grant.");
+      showError(`revoke-${grantId}`, err instanceof Error ? err.message : "Could not revoke support grant.");
+      setLoadError(err instanceof Error ? err.message : "Could not revoke support grant.");
     } finally {
-      setSaving(null);
+      setSavingAction(null);
     }
   }
 
@@ -365,20 +488,42 @@ export function SetupConsolePage() {
             Load error
           </div>
           <h1 className="mt-3 text-2xl font-bold text-ink">We couldn’t load the setup console</h1>
-          <p className="mt-3 text-sm leading-6 text-muted">{error ?? "Try again in a moment."}</p>
+          <p className="mt-3 text-sm leading-6 text-muted">{loadError ?? "Try again in a moment."}</p>
         </Card>
       </PageLayout>
     );
   }
 
+  function mutationButtonLabel(action: string, normal: string, savingLabel: string, successLabel = "Saved") {
+    if (savingAction === action) {
+      return savingLabel;
+    }
+    if (notice?.kind === "success" && notice.action === action) {
+      return successLabel;
+    }
+    return normal;
+  }
+
   return (
     <PageLayout title="Internal setup console" eyebrow={`Flowtally platform · ${session?.platformRole ?? "platform"}`} description="Configure organizations before launch and track their readiness.">
+      {notice ? (
+        <Card className={`mb-6 border px-4 py-3 ${notice.kind === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"}`}>
+          <div className="flex items-start gap-3">
+            {notice.kind === "success" ? <CheckCircle2 className="mt-0.5 h-5 w-5" /> : <AlertTriangle className="mt-0.5 h-5 w-5" />}
+            <div className="min-w-0">
+              <p className="text-sm font-semibold uppercase tracking-wide">{notice.kind === "success" ? "Saved" : "Save failed"}</p>
+              <p className="mt-1 text-sm leading-6">{notice.message}</p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
         <Card className="p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-ink">Organizations</h2>
-            <button className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void refreshList()}>
-              <RefreshCw className="h-4 w-4" />
+            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void refreshConsole({ showBusy: true }).catch((err) => showError("refresh", err instanceof Error ? err.message : "Could not refresh setup data."))} disabled={refreshing || savingAction !== null}>
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Refreshing..." : "Refresh"}
             </button>
           </div>
           <div className="mt-4 grid gap-3">
@@ -416,7 +561,7 @@ export function SetupConsolePage() {
         </Card>
 
         {selected ? (
-          <div key={selected.organization.id} className="grid gap-6">
+          <div key={`${selected.organization.id}-${selectedRevision}`} className="grid gap-6">
             <Card className="p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -471,11 +616,11 @@ export function SetupConsolePage() {
                   </label>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveState()} disabled={saving === "state"}>
-                    {saving === "state" ? "Saving..." : "Save state"}
+                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveState()} disabled={savingAction !== null || refreshing}>
+                    {mutationButtonLabel("state", "Save state", "Saving...", "State saved")}
                   </button>
-                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveTemplate()}>
-                    Apply template
+                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveTemplate()} disabled={savingAction !== null || refreshing}>
+                    {mutationButtonLabel("template", "Apply template", "Applying...", "Template applied")}
                   </button>
                 </div>
               </Card>
@@ -489,17 +634,17 @@ export function SetupConsolePage() {
                   </select>
                 </label>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void requestReview()}>
+                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void requestReview()} disabled={savingAction !== null || refreshing}>
                     <ArrowDown className="h-4 w-4" />
-                    Request review
+                    {mutationButtonLabel("review", "Request review", "Requesting...", "Review requested")}
                   </button>
-                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void approveReview()}>
+                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void approveReview()} disabled={savingAction !== null || refreshing}>
                     <CheckCircle2 className="h-4 w-4" />
-                    Approve review
+                    {mutationButtonLabel("approve", "Approve review", "Approving...", "Review approved")}
                   </button>
-                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60" type="button" onClick={() => void activateOrganization()} disabled={!selected.checklist.readyForActivation}>
+                  <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60" type="button" onClick={() => void activateOrganization()} disabled={!selected.checklist.readyForActivation || savingAction !== null || refreshing}>
                     <ArrowUp className="h-4 w-4" />
-                    Activate organization
+                    {mutationButtonLabel("activate", "Activate organization", "Activating...", "Organization activated")}
                   </button>
                 </div>
                 <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
@@ -512,8 +657,8 @@ export function SetupConsolePage() {
               <Card className="p-6">
                 <h3 className="text-lg font-bold text-ink">Locations</h3>
                 <textarea id="locations-json" className="mt-4 min-h-48 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson(locations)} />
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveLocations()}>
-                  Save locations JSON
+                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveLocations()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("locations", "Save locations JSON", "Saving...", "Locations saved")}
                 </button>
               </Card>
 
@@ -532,8 +677,8 @@ export function SetupConsolePage() {
                     </div>
                   ))}
                 </div>
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void saveModules()}>
-                  Save modules
+                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveModules()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("modules", "Save modules", "Saving...", "Modules saved")}
                 </button>
               </Card>
             </div>
@@ -542,16 +687,16 @@ export function SetupConsolePage() {
               <Card className="p-6">
                 <h3 className="text-lg font-bold text-ink">Dashboard layout</h3>
                 <textarea id="dashboard-layout-json" className="mt-4 min-h-44 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson((configJson as any).dashboardLayouts?.owner ?? { layoutKey: "owner", widgets: [] })} />
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void saveDashboard()}>
-                  Save layout
+                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveDashboard()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("dashboard", "Save layout", "Saving...", "Dashboard layout saved")}
                 </button>
               </Card>
 
               <Card className="p-6">
                 <h3 className="text-lg font-bold text-ink">Custom fields</h3>
                 <textarea id="custom-fields-json" className="mt-4 min-h-44 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson((configJson as any).customFields ?? { supplier: [], inventoryItem: [], purchaseInvoice: [] })} />
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void saveCustomFields()}>
-                  Save custom fields
+                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveCustomFields()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("custom-fields", "Save custom fields", "Saving...", "Custom fields saved")}
                 </button>
               </Card>
             </div>
@@ -563,15 +708,15 @@ export function SetupConsolePage() {
                   <span className="text-sm font-semibold text-ink">Launch blockers</span>
                   <textarea id="blockers-text" className="mt-1 min-h-32 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" defaultValue={((configJson as any).launchBlockers ?? []).join("\n")} />
                 </label>
-                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void saveBlockers()}>
-                  Save blockers
+                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveBlockers()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("blockers", "Save blockers", "Saving...", "Blockers saved")}
                 </button>
                 <label className="mt-4 block">
                   <span className="text-sm font-semibold text-ink">Internal notes</span>
                   <textarea id="notes-text" className="mt-1 min-h-32 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" defaultValue={((configJson as any).internalNotes ?? []).join("\n")} />
                 </label>
-                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveNotes()}>
-                  Save notes
+                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveNotes()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("notes", "Save notes", "Saving...", "Notes saved")}
                 </button>
               </Card>
 
@@ -581,15 +726,15 @@ export function SetupConsolePage() {
                   <span className="text-sm font-semibold text-ink">Imports JSON</span>
                   <textarea id="imports-json" className="mt-1 min-h-32 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson((configJson as any).imports ?? [])} />
                 </label>
-                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void saveImports()}>
-                  Save imports
+                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveImports()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("imports", "Save imports", "Saving...", "Imports saved")}
                 </button>
                 <label className="mt-4 block">
                   <span className="text-sm font-semibold text-ink">Square JSON</span>
                   <textarea id="square-json" className="mt-1 min-h-32 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson((configJson as any).square ?? {})} />
                 </label>
-                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void saveSquare()}>
-                  Save Square status
+                <button className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveSquare()} disabled={savingAction !== null || refreshing}>
+                  {mutationButtonLabel("square", "Save Square status", "Saving...", "Square status saved")}
                 </button>
                 <Link className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
                   Open migration workspace
@@ -631,8 +776,8 @@ export function SetupConsolePage() {
                       <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantExpiresAt} onChange={(event) => setSupportGrantExpiresAt(event.target.value)} />
                     </label>
                   </div>
-                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void createGrant()} disabled={saving === "support-grant" || !supportGrantEmail || !supportGrantReason}>
-                    {saving === "support-grant" ? "Creating..." : "Create support grant"}
+                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void createGrant()} disabled={savingAction === "support-grant" || savingAction !== null || refreshing || !supportGrantEmail || !supportGrantReason}>
+                    {mutationButtonLabel("support-grant", "Create support grant", "Creating...", "Support grant created")}
                   </button>
                 </div>
                 <div className="grid gap-3">
@@ -643,8 +788,8 @@ export function SetupConsolePage() {
                           <p className="text-sm font-semibold text-ink">{grant.supportUserEmail}</p>
                           <p className="mt-1 text-xs text-muted">Org #{grant.organizationId} · {grant.status}</p>
                         </div>
-                        <button className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-slate-100 disabled:opacity-60" type="button" onClick={() => void revokeGrant(grant.id)} disabled={saving === `revoke-${grant.id}` || grant.status === "revoked"}>
-                          {saving === `revoke-${grant.id}` ? "Revoking..." : grant.status === "revoked" ? "Revoked" : "Revoke"}
+                        <button className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-slate-100 disabled:opacity-60" type="button" onClick={() => void revokeGrant(grant.id)} disabled={savingAction === `revoke-${grant.id}` || savingAction !== null || refreshing || grant.status === "revoked"}>
+                          {mutationButtonLabel(`revoke-${grant.id}`, "Revoke", "Revoking...", "Revoked")}
                         </button>
                       </div>
                       <p className="mt-3 text-sm leading-6 text-muted">{grant.reason}</p>
