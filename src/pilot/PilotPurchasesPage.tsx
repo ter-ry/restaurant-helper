@@ -210,6 +210,39 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
   };
 }
 
+function draftSignature(draft: PurchaseDraft) {
+  return JSON.stringify({
+    id: draft.id,
+    supplierName: draft.supplierName,
+    invoiceNumber: draft.invoiceNumber,
+    invoiceDate: draft.invoiceDate,
+    subtotal: draft.subtotal,
+    tax: draft.tax,
+    totalAmount: draft.totalAmount,
+    notes: draft.notes,
+    status: draft.status,
+    sourceFileName: draft.sourceFileName,
+    sourceFileType: draft.sourceFileType,
+    extractionStatus: draft.extractionStatus,
+    extractedText: draft.extractedText,
+    lineItems: draft.lineItems.map((line) => ({
+      clientId: line.clientId,
+      id: line.id ?? null,
+      description: line.description,
+      inventoryItemId: line.inventoryItemId,
+      purchaseUnit: line.purchaseUnit,
+      inventoryUnit: line.inventoryUnit,
+      conversionFactor: line.conversionFactor,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      lineTotal: line.lineTotal,
+      confidence: line.confidence,
+      needsReview: line.needsReview,
+      note: line.note,
+    })),
+  });
+}
+
 type MappingHint = {
   inventoryItemId: number;
   purchaseUnit: string;
@@ -271,10 +304,11 @@ function createDraftFromOcr(
 
 export function PilotPurchasesPage() {
   const location = useLocation();
+  const initialBlankDraft = useMemo(() => buildBlankDraft(), []);
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [draft, setDraft] = useState<PurchaseDraft>(buildBlankDraft());
+  const [draft, setDraft] = useState<PurchaseDraft>(initialBlankDraft);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -293,6 +327,7 @@ export function PilotPurchasesPage() {
   const [inventoryDraft, setInventoryDraft] = useState<InlineInventoryDraft>(() => buildInlineInventoryDraft(blankLine(), ""));
   const [inventoryFieldErrors, setInventoryFieldErrors] = useState<ValidationErrors>({});
   const [draftFieldErrors, setDraftFieldErrors] = useState<ValidationErrors>({});
+  const [authoritativeDraftSignature, setAuthoritativeDraftSignature] = useState(() => draftSignature(initialBlankDraft));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const supplierSelectRef = useRef<HTMLSelectElement | null>(null);
   const supplierInputRef = useRef<HTMLInputElement | null>(null);
@@ -379,9 +414,13 @@ export function PilotPurchasesPage() {
       const currentInvoice = requestedInvoice ?? (selectedId !== null ? purchases.invoices.find((invoice) => invoice.id === selectedId) ?? null : purchases.invoices[0] ?? null);
       if (currentInvoice) {
         setSelectedId(currentInvoice.id);
-        setDraft(invoiceToDraft(currentInvoice));
+        const nextDraft = invoiceToDraft(currentInvoice);
+        setDraft(nextDraft);
+        setAuthoritativeDraftSignature(draftSignature(nextDraft));
       } else {
-        setDraft(buildBlankDraft());
+        const nextDraft = buildBlankDraft();
+        setDraft(nextDraft);
+        setAuthoritativeDraftSignature(draftSignature(nextDraft));
         setSelectedId(null);
       }
     } catch (err) {
@@ -474,7 +513,9 @@ export function PilotPurchasesPage() {
 
   useEffect(() => {
     if (selectedInvoice) {
-      setDraft(invoiceToDraft(selectedInvoice));
+      const nextDraft = invoiceToDraft(selectedInvoice);
+      setDraft(nextDraft);
+      setAuthoritativeDraftSignature(draftSignature(nextDraft));
       setCorrectionNote("");
     }
   }, [selectedInvoice]);
@@ -485,6 +526,8 @@ export function PilotPurchasesPage() {
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
+  const draftHasUnsavedChanges = draftSignature(draft) !== authoritativeDraftSignature;
+  const receiveReadinessLabel = draftHasUnsavedChanges ? "Save changes before receiving" : readyToReceive ? "Ready to receive" : "Not ready to receive";
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
     const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
@@ -511,6 +554,7 @@ export function PilotPurchasesPage() {
   };
 
   const startBlankDraft = (message: string) => {
+    const nextDraft = buildBlankDraft();
     setSelectedId(null);
     setReceiveMessage(null);
     setError(null);
@@ -519,7 +563,8 @@ export function PilotPurchasesPage() {
     setSupplierFieldErrors({});
     setInventoryFieldErrors({});
     setCorrectionNote("");
-    setDraft(buildBlankDraft());
+    setDraft(nextDraft);
+    setAuthoritativeDraftSignature(draftSignature(nextDraft));
     setSupplierDraft(buildBlankSupplierDraft());
     setInventoryCreateLineId(null);
     setNotice({
@@ -675,8 +720,7 @@ export function PilotPurchasesPage() {
     }
   };
 
-  const saveDraft = async (status: string) => {
-    setSaving(true);
+  const persistDraft = async (status: string, options?: { quiet?: boolean }) => {
     setReceiveMessage(null);
     setError(null);
     setDraftFieldErrors({});
@@ -713,21 +757,36 @@ export function PilotPurchasesPage() {
         })),
       };
       const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
+      const nextDraft = invoiceToDraft(saved);
       setSelectedId(saved.id);
-      setDraft(invoiceToDraft(saved));
-      setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
+      setDraft(nextDraft);
+      setAuthoritativeDraftSignature(draftSignature(nextDraft));
       setOcrMessage(null);
       await load(saved.id);
-      showNotice("success", "Purchase saved", `Invoice ${saved.invoiceNumber} saved successfully.`);
+      if (!options?.quiet) {
+        setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
+        showNotice("success", "Purchase saved", `Invoice ${saved.invoiceNumber} saved successfully.`);
+      }
+      return saved;
     } catch (err) {
       const fieldErrors = err instanceof PilotApiError ? (err.errors ?? {}) : {};
       const message = err instanceof Error ? err.message : "Could not save the purchase.";
       setError(message);
       setDraftFieldErrors(fieldErrors);
-      showNotice("error", "Purchase save failed", message);
+      if (!options?.quiet) {
+        showNotice("error", "Purchase save failed", message);
+      }
       if (Object.keys(fieldErrors).length > 0) {
         focusPurchaseValidationTarget(fieldErrors);
       }
+      return null;
+    }
+  };
+
+  const saveDraft = async (status: string) => {
+    setSaving(true);
+    try {
+      await persistDraft(status);
     } finally {
       setSaving(false);
     }
@@ -737,18 +796,20 @@ export function PilotPurchasesPage() {
     if (!draft.id) {
       return;
     }
-    if (!readyToReceive) {
-      setError("Map every invoice line before receiving this purchase.");
-      return;
-    }
     setSaving(true);
     setReceiveMessage(null);
     setError(null);
 
     try {
-      const received = await receivePilotPurchaseInvoice(draft.id);
+      const saved = await persistDraft("Ready", { quiet: true });
+      if (!saved) {
+        return;
+      }
+      const received = await receivePilotPurchaseInvoice(saved.id);
       setSelectedId(received.id);
-      setDraft(invoiceToDraft(received));
+      const nextDraft = invoiceToDraft(received);
+      setDraft(nextDraft);
+      setAuthoritativeDraftSignature(draftSignature(nextDraft));
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
       setOcrMessage(null);
       await load(received.id);
@@ -1159,7 +1220,7 @@ export function PilotPurchasesPage() {
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               <Badge tone="neutral">{mappedLineCount} mapped</Badge>
               <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{unresolvedLineCount} need confirmation</Badge>
-              <Badge tone={readyToReceive ? "success" : "neutral"}>{readyToReceive ? "Ready to receive" : "Not ready to receive"}</Badge>
+              <Badge tone={draftHasUnsavedChanges ? "warning" : readyToReceive ? "success" : "neutral"}>{receiveReadinessLabel}</Badge>
             </div>
             <div className="mt-4 space-y-4">
               {draft.lineItems.map((line, index) => (
@@ -1365,12 +1426,12 @@ export function PilotPurchasesPage() {
               Save ready
             </Button>
             <Button
-              disabled={saving || !draft.id || finalizedStatus || !readyToReceive}
+              disabled={saving || !draft.id || finalizedStatus || (!readyToReceive && !draftHasUnsavedChanges)}
               icon={<CheckCircle2 className="h-4 w-4" />}
               type="button"
               onClick={() => void receiveInvoice()}
             >
-              Receive into inventory
+              {draftHasUnsavedChanges ? "Save & receive" : "Receive into inventory"}
             </Button>
           </div>
 

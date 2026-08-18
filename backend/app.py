@@ -135,7 +135,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 response.headers["Vary"] = "Origin"
                 response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRFToken, X-CSRF-Token")
-            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         return response
 
     @app.errorhandler(400)

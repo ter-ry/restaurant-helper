@@ -271,6 +271,85 @@ function buildEmptyPurchasesResponse(state: EmptyPurchaseFlowState) {
   };
 }
 
+function buildMockPurchaseInvoice(
+  state: EmptyPurchaseFlowState,
+  body: any,
+  invoiceId: number,
+  existingLineItems: any[] = [],
+) {
+  const supplierName = String(body.supplierName ?? "");
+  const supplier = state.suppliers.find((entry) => entry.name === supplierName) ?? null;
+  const invoiceLineItems = (Array.isArray(body.lineItems) ? body.lineItems : []).map((line: any, index: number) => ({
+    id: existingLineItems[index]?.id ?? state.nextLineId++,
+    invoiceId,
+    supplierName,
+    invoiceNumber: String(body.invoiceNumber ?? "FP-1000"),
+    invoiceDate: String(body.invoiceDate ?? "2026-08-18"),
+    inventoryItemId: line.inventoryItemId ?? null,
+    supplierItemMappingId: null,
+    lineIndex: index,
+    description: String(line.description ?? ""),
+    normalizedDescription: String(line.description ?? "").trim().toLowerCase(),
+    purchaseUnit: String(line.purchaseUnit ?? "each"),
+    inventoryUnit: String(line.inventoryUnit ?? "each"),
+    conversionFactor: Number(line.conversionFactor ?? 1),
+    quantity: Number(line.quantity ?? 1),
+    unitPrice: Number(line.unitPrice ?? 0),
+    lineTotal: Number(line.lineTotal ?? 0),
+    confidence: Number(line.confidence ?? 0.5),
+    needsReview: Boolean(line.needsReview ?? true),
+    previousUnitPrice: null,
+    priceChangePercent: null,
+    note: String(line.note ?? ""),
+    createdAt: existingLineItems[index]?.createdAt ?? null,
+    updatedAt: null,
+  }));
+
+  return {
+    id: invoiceId,
+    organizationId: 5,
+    locationId: 9,
+    supplierId: supplier?.id ?? 0,
+    supplier: supplier
+      ? {
+          id: supplier.id,
+          organizationId: 5,
+          name: supplier.name,
+          normalizedName: supplier.name.trim().toLowerCase(),
+          categoryFocus: supplier.categoryFocus,
+          contactName: supplier.contactName,
+          contactPhone: supplier.contactPhone,
+          contactEmail: supplier.contactEmail,
+          orderingNotes: supplier.orderingNotes,
+          notes: supplier.notes,
+          isActive: supplier.isActive,
+          createdAt: null,
+          updatedAt: null,
+        }
+      : null,
+    invoiceNumber: String(body.invoiceNumber ?? "FP-1000"),
+    invoiceDate: String(body.invoiceDate ?? "2026-08-18"),
+    subtotal: Number(body.subtotal ?? 0),
+    tax: Number(body.tax ?? 0),
+    totalAmount: Number(body.totalAmount ?? 0),
+    notes: String(body.notes ?? ""),
+    status: String(body.status ?? "Draft"),
+    sourceFileName: String(body.sourceFileName ?? ""),
+    sourceFileType: String(body.sourceFileType ?? ""),
+    sourceFileKey: "",
+    extractedText: String(body.extractedText ?? ""),
+    extractionStatus: String(body.extractionStatus ?? "manual"),
+    receivedAt: existingLineItems.length ? null : null,
+    receivedByUserId: null,
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    postedAt: null,
+    lineItems: invoiceLineItems,
+    createdAt: null,
+    updatedAt: null,
+  };
+}
+
 function buildEmptyInventoryResponse(state: EmptyPurchaseFlowState) {
   return {
     items: state.inventoryItems.map((item) => ({
@@ -693,76 +772,18 @@ async function installMockApi(page: Page, state: MockState) {
     }
 
     if (purchaseFlow && path === "/api/pilot/purchases/invoices" && method === "POST") {
-      const supplierName = String(body.supplierName ?? "");
-      const supplier = purchaseFlow.suppliers.find((entry) => entry.name === supplierName) ?? null;
-      const invoice = {
-        id: purchaseFlow.nextInvoiceId++,
-        organizationId: 5,
-        locationId: 9,
-        supplierId: supplier?.id ?? 0,
-        supplier: supplier
-          ? {
-              id: supplier.id,
-              organizationId: 5,
-              name: supplier.name,
-              normalizedName: supplier.name.trim().toLowerCase(),
-              categoryFocus: supplier.categoryFocus,
-              contactName: supplier.contactName,
-              contactPhone: supplier.contactPhone,
-              contactEmail: supplier.contactEmail,
-              orderingNotes: supplier.orderingNotes,
-              notes: supplier.notes,
-              isActive: supplier.isActive,
-              createdAt: null,
-              updatedAt: null,
-            }
-          : null,
-        invoiceNumber: String(body.invoiceNumber ?? "FP-1000"),
-        invoiceDate: String(body.invoiceDate ?? "2026-08-18"),
-        subtotal: Number(body.subtotal ?? 0),
-        tax: Number(body.tax ?? 0),
-        totalAmount: Number(body.totalAmount ?? 0),
-        notes: String(body.notes ?? ""),
-        status: String(body.status ?? "Draft"),
-        sourceFileName: String(body.sourceFileName ?? ""),
-        sourceFileType: String(body.sourceFileType ?? ""),
-        sourceFileKey: "",
-        extractedText: String(body.extractedText ?? ""),
-        extractionStatus: String(body.extractionStatus ?? "manual"),
-        receivedAt: null,
-        receivedByUserId: null,
-        createdByUserId: 1,
-        updatedByUserId: 1,
-        postedAt: null,
-        lineItems: (Array.isArray(body.lineItems) ? body.lineItems : []).map((line: any, index: number) => ({
-          id: purchaseFlow.nextLineId++,
-          invoiceId: purchaseFlow.nextInvoiceId - 1,
-          supplierName,
-          invoiceNumber: String(body.invoiceNumber ?? "FP-1000"),
-          invoiceDate: String(body.invoiceDate ?? "2026-08-18"),
-          inventoryItemId: line.inventoryItemId ?? null,
-          supplierItemMappingId: null,
-          lineIndex: index,
-          description: String(line.description ?? ""),
-          normalizedDescription: String(line.description ?? "").trim().toLowerCase(),
-          purchaseUnit: String(line.purchaseUnit ?? "each"),
-          inventoryUnit: String(line.inventoryUnit ?? "each"),
-          conversionFactor: Number(line.conversionFactor ?? 1),
-          quantity: Number(line.quantity ?? 1),
-          unitPrice: Number(line.unitPrice ?? 0),
-          lineTotal: Number(line.lineTotal ?? 0),
-          confidence: Number(line.confidence ?? 0.5),
-          needsReview: Boolean(line.needsReview ?? true),
-          previousUnitPrice: null,
-          priceChangePercent: null,
-          note: String(line.note ?? ""),
-          createdAt: null,
-          updatedAt: null,
-        })),
-        createdAt: null,
-        updatedAt: null,
-      };
+      const invoice = buildMockPurchaseInvoice(purchaseFlow, body, purchaseFlow.nextInvoiceId++);
       purchaseFlow.invoices = [invoice, ...purchaseFlow.invoices.filter((entry) => entry.id !== invoice.id)];
+      return jsonResponse(route, invoice);
+    }
+
+    if (purchaseFlow && path.startsWith("/api/pilot/purchases/invoices/") && method === "PATCH") {
+      const invoiceId = Number(path.split("/").at(-1));
+      const index = purchaseFlow.invoices.findIndex((entry) => entry.id === invoiceId);
+      const existingInvoice = index >= 0 ? purchaseFlow.invoices[index] : null;
+      const invoice = buildMockPurchaseInvoice(purchaseFlow, body, invoiceId, existingInvoice?.lineItems ?? []);
+      const nextInvoices = [...purchaseFlow.invoices.filter((entry) => entry.id !== invoice.id)];
+      purchaseFlow.invoices = [invoice, ...nextInvoices];
       return jsonResponse(route, invoice);
     }
 

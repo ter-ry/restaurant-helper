@@ -210,3 +210,39 @@ def test_cors_allows_trusted_frontend_with_credentials(client):
     assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == TRUSTED_FRONTEND_ORIGIN
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
+
+
+def test_cors_preflight_allows_patch_and_credentials_from_trusted_frontend(client):
+    response = client.options(
+        "/api/pilot/purchases/invoices/1",
+        base_url=API_BASE_URL,
+        headers={
+            "Origin": TRUSTED_FRONTEND_ORIGIN,
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "content-type,x-csrf-token",
+        },
+    )
+
+    assert response.status_code == 204
+    assert response.headers["Access-Control-Allow-Origin"] == TRUSTED_FRONTEND_ORIGIN
+    assert response.headers["Access-Control-Allow-Credentials"] == "true"
+    allowed_methods = {method.strip() for method in response.headers["Access-Control-Allow-Methods"].split(",")}
+    assert {"GET", "POST", "PATCH", "DELETE", "OPTIONS"} <= allowed_methods
+    allowed_headers = {header.strip().lower() for header in response.headers["Access-Control-Allow-Headers"].split(",")}
+    assert {"content-type", "x-csrftoken", "x-csrf-token"} & allowed_headers
+
+
+def test_cors_preflight_allows_post_and_rejects_untrusted_origin(client):
+    response = client.options(
+        "/api/onboarding/organizations",
+        base_url=API_BASE_URL,
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,x-csrf-token",
+        },
+    )
+
+    assert response.status_code == 204
+    assert "Access-Control-Allow-Origin" not in response.headers
+    assert "Access-Control-Allow-Credentials" not in response.headers

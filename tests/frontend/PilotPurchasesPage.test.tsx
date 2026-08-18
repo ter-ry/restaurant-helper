@@ -437,6 +437,158 @@ describe("PilotPurchasesPage", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeEnabled());
   });
 
+  it("saves dirty purchase edits before receiving and preserves the mapped invoice", async () => {
+    const invoice = {
+      id: 1,
+      organizationId: 5,
+      locationId: 9,
+      supplierId: 20,
+      supplier: {
+        id: 20,
+        organizationId: 5,
+        name: "Test Food Supplier",
+        normalizedName: "test food supplier",
+        categoryFocus: "Dairy",
+        contactName: "",
+        contactPhone: "",
+        contactEmail: "",
+        orderingNotes: "",
+        notes: "",
+        isActive: true,
+        inventoryItemCount: 0,
+        purchaseInvoiceCount: 0,
+        supplierItemMappingCount: 0,
+        latestInvoiceDate: null,
+        historicalReferenceCount: 0,
+        recentInvoices: [],
+        recentMappings: [],
+      },
+      invoiceNumber: "TEST-001",
+      invoiceDate: "2026-08-18",
+      subtotal: 20,
+      tax: 2.6,
+      totalAmount: 22.6,
+      notes: "Initial notes",
+      status: "Ready",
+      sourceFileName: "",
+      sourceFileType: "",
+      sourceFileKey: "",
+      extractedText: "",
+      extractionStatus: "manual",
+      receivedAt: null,
+      receivedByUserId: null,
+      createdByUserId: 1,
+      updatedByUserId: 1,
+      postedAt: null,
+      lineItems: [
+        {
+          id: 1,
+          invoiceId: 1,
+          supplierName: "Test Food Supplier",
+          invoiceNumber: "TEST-001",
+          invoiceDate: "2026-08-18",
+          inventoryItemId: 30,
+          supplierItemMappingId: null,
+          lineIndex: 0,
+          description: "Chicken Breast",
+          normalizedDescription: "chicken breast",
+          purchaseUnit: "case",
+          inventoryUnit: "case",
+          conversionFactor: 1,
+          quantity: 2,
+          unitPrice: 10,
+          lineTotal: 20,
+          confidence: 0.99,
+          needsReview: false,
+          previousUnitPrice: null,
+          priceChangePercent: null,
+          note: "",
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      createdAt: null,
+      updatedAt: null,
+    };
+
+    pilotApiMocks.fetchPilotPurchases.mockResolvedValueOnce({
+      ...emptyPurchases(),
+      invoices: [invoice],
+      suppliers: [invoice.supplier],
+      purchaseLines: invoice.lineItems,
+      summary: {
+        thisMonthSpend: 22.6,
+        uploadsNeedingReview: 0,
+        priceChangesFlagged: 0,
+        mappedItems: 1,
+        exportReady: 1,
+        needsMapping: 0,
+      },
+    });
+    pilotApiMocks.fetchPilotInventory.mockResolvedValueOnce({
+      ...emptyInventory(),
+      items: [
+        {
+          id: 30,
+          organizationId: 5,
+          locationId: 9,
+          supplierId: null,
+          name: "Chicken Breast",
+          normalizedName: "chicken breast",
+          category: "Poultry",
+          stockUnit: "case",
+          currentOnHand: 0,
+          minQuantity: 0,
+          parLevel: 0,
+          preferredSupplierName: "Test Food Supplier",
+          latestPurchasePrice: 10,
+          lastPurchaseUnit: "case",
+          lastPurchaseConversionFactor: 1,
+          lastReceivedAt: null,
+          lastCountedAt: null,
+          averageDailyUsage: null,
+          estimatedCostMethod: "latest_purchase_price",
+          active: true,
+          notes: "",
+          createdByUserId: 1,
+          updatedByUserId: 1,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+    });
+
+    pilotApiMocks.updatePilotPurchaseInvoice.mockImplementation(async (_id: number, payload: Record<string, unknown>) => ({
+      ...invoice,
+      notes: String(payload.notes ?? invoice.notes),
+      status: String(payload.status ?? invoice.status),
+    }));
+    pilotApiMocks.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => ({
+      ...invoice,
+      id: invoiceId,
+      status: "Completed",
+      receivedAt: new Date().toISOString(),
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/app/purchases"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Capture invoices, confirm items, and move stock" });
+    const editorCard = screen.getByTestId("purchase-editor-card");
+    fireEvent.change(within(editorCard).getByLabelText("Notes"), { target: { value: "Updated before receiving" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /receive/i }));
+    await waitFor(() => expect(pilotApiMocks.updatePilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(pilotApiMocks.receivePilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+    expect((pilotApiMocks.updatePilotPurchaseInvoice as any).mock.invocationCallOrder[0]).toBeLessThan(
+      (pilotApiMocks.receivePilotPurchaseInvoice as any).mock.invocationCallOrder[0],
+    );
+    await waitFor(() => expect(screen.getByTestId("purchase-mutation-toast").textContent).toContain("Purchase received"));
+  });
+
   it("shows field-level validation errors for supplier and inventory creation without losing the draft", async () => {
     let supplierNameInput: HTMLInputElement;
     render(
