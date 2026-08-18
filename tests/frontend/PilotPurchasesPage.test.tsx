@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotPurchasesPage } from "../../src/pilot/PilotPurchasesPage";
@@ -335,7 +335,7 @@ afterEach(() => {
 });
 
 describe("PilotPurchasesPage", () => {
-  it("makes the empty purchase editor visible and supports inline supplier and inventory creation", async () => {
+  it("keeps unsaved purchase lines independent while supporting inline supplier and inventory creation", async () => {
     render(
       <MemoryRouter initialEntries={["/app/purchases"]}>
         <PilotPurchasesPage />
@@ -355,6 +355,7 @@ describe("PilotPurchasesPage", () => {
 
     expect(screen.getByTestId("purchase-mutation-toast")).toHaveClass("fixed", "bottom-4");
     expect(screen.getByLabelText("Supplier name")).toBeVisible();
+    await waitFor(() => expect(screen.getAllByTestId("purchase-line-card")).toHaveLength(1));
 
     fireEvent.click(screen.getByRole("button", { name: "Blank draft" }));
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(2));
@@ -364,15 +365,50 @@ describe("PilotPurchasesPage", () => {
     await waitFor(() => expect(pilotApiMocks.createPilotSupplier).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByLabelText("Supplier")).toHaveValue("North Bay Dairy"));
 
-    const description = screen.getByLabelText("Description");
-    fireEvent.change(description, { target: { value: "2% Milk" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create inventory item" }));
-    await waitFor(() => expect(screen.getByText("Create inventory item from this line")).toBeVisible());
-    expect(screen.getByLabelText("Item name")).toHaveValue("2% Milk");
+    fireEvent.click(screen.getByRole("button", { name: "Add line" }));
+    await waitFor(() => expect(screen.getAllByTestId("purchase-line-card")).toHaveLength(2));
 
-    fireEvent.click(screen.getByRole("button", { name: "Create and map item" }));
+    const [firstLine, secondLine] = screen.getAllByTestId("purchase-line-card");
+    fireEvent.change(within(firstLine).getByLabelText("Description"), { target: { value: "2% Milk" } });
+    fireEvent.change(within(secondLine).getByLabelText("Description"), { target: { value: "Whole Milk" } });
+
+    fireEvent.click(within(firstLine).getByRole("button", { name: "Create inventory item" }));
+    await waitFor(() => expect(within(firstLine).getByText("Create inventory item from this line")).toBeVisible());
+    expect(within(firstLine).getByLabelText("Item name")).toHaveValue("2% Milk");
+
+    fireEvent.click(within(firstLine).getByRole("button", { name: "Create and map item" }));
     await waitFor(() => expect(pilotApiMocks.createPilotInventoryItem).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByLabelText("Inventory item")).toHaveValue("30"));
+    await waitFor(() => expect(within(firstLine).getByLabelText("Inventory item")).toHaveValue("30"));
+    expect(within(secondLine).getByLabelText("Inventory item")).toHaveValue("");
+
+    fireEvent.click(within(secondLine).getByRole("button", { name: "Create inventory item" }));
+    await waitFor(() => expect(within(secondLine).getByText("Create inventory item from this line")).toBeVisible());
+    expect(within(secondLine).getByLabelText("Item name")).toHaveValue("Whole Milk");
+    fireEvent.click(within(secondLine).getByRole("button", { name: "Create and map item" }));
+    await waitFor(() => expect(pilotApiMocks.createPilotInventoryItem).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(firstLine).getByLabelText("Inventory item")).toHaveValue("30"));
+    await waitFor(() => expect(within(secondLine).getByLabelText("Inventory item")).toHaveValue("31"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add line" }));
+    await waitFor(() => expect(screen.getAllByTestId("purchase-line-card")).toHaveLength(3));
+    const thirdLine = screen.getAllByTestId("purchase-line-card")[2];
+    fireEvent.click(within(thirdLine).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.getAllByTestId("purchase-line-card")).toHaveLength(2));
+    const [afterFirstLine, afterSecondLine] = screen.getAllByTestId("purchase-line-card");
+    expect(within(afterFirstLine).getByLabelText("Inventory item")).toHaveValue("30");
+    expect(within(afterSecondLine).getByLabelText("Inventory item")).toHaveValue("31");
+
+    const firstLineFields = within(afterFirstLine).getAllByRole("spinbutton");
+    fireEvent.change(firstLineFields[0], { target: { value: "2" } });
+    fireEvent.change(firstLineFields[1], { target: { value: "2" } });
+    fireEvent.change(firstLineFields[2], { target: { value: "4.5" } });
+    fireEvent.change(firstLineFields[3], { target: { value: "9" } });
+
+    const secondLineFields = within(afterSecondLine).getAllByRole("spinbutton");
+    fireEvent.change(secondLineFields[0], { target: { value: "1" } });
+    fireEvent.change(secondLineFields[1], { target: { value: "3" } });
+    fireEvent.change(secondLineFields[2], { target: { value: "2" } });
+    fireEvent.change(secondLineFields[3], { target: { value: "6" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save ready" }));
     await waitFor(() => expect(pilotApiMocks.createPilotPurchaseInvoice).toHaveBeenCalledTimes(1));

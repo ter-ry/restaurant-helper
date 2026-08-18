@@ -1840,28 +1840,61 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(page.getByRole("heading", { name: "Capture invoices, confirm items, and move stock" })).toBeVisible();
 
   const editorHeading = page.getByRole("heading", { name: "New purchase" });
+  const lineCards = page.getByTestId("purchase-line-card");
   await page.getByRole("button", { name: "New purchase" }).click();
   await expect(page.getByTestId("purchase-mutation-toast")).toBeVisible();
   await expect(editorHeading).toBeInViewport();
+  await expect(lineCards).toHaveCount(1);
 
   await page.getByLabel("Supplier name").fill("North Bay Dairy");
   await page.getByRole("button", { name: "Create supplier" }).click();
   await expect(page.getByRole("button", { name: "Add supplier" })).toBeVisible();
   await expect(page.getByLabel("Supplier")).toHaveValue("North Bay Dairy");
 
-  await page.getByLabel("Description").fill("2% Milk");
-  await page.getByRole("button", { name: "Create inventory item" }).click();
-  await expect(page.getByText("Create inventory item from this line")).toBeVisible();
-  await expect(page.getByLabel("Item name")).toHaveValue("2% Milk");
-  await page.getByLabel("Stock unit").fill("case");
-  await page.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("2");
-  const quantityFields = page.locator('label:has-text("Qty / price / total") input');
-  await quantityFields.nth(0).fill("2");
-  await quantityFields.nth(1).fill("4.5");
-  await quantityFields.nth(2).fill("9");
-  await page.getByRole("button", { name: "Create and map item" }).click();
+  await page.getByRole("button", { name: "Add line" }).click();
+  await expect(lineCards).toHaveCount(2);
 
-  await expect(page.getByLabel("Inventory item")).toHaveValue("30");
+  const firstLine = lineCards.nth(0);
+  const secondLine = lineCards.nth(1);
+
+  await firstLine.getByLabel("Description").fill("2% Milk");
+  await secondLine.getByLabel("Description").fill("Whole Milk");
+
+  await firstLine.getByRole("button", { name: "Create inventory item" }).click();
+  await expect(firstLine.getByText("Create inventory item from this line")).toBeVisible();
+  await expect(firstLine.getByLabel("Item name")).toHaveValue("2% Milk");
+  await firstLine.getByLabel("Stock unit").fill("case");
+  await firstLine.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("2");
+  const firstLineQuantityFields = firstLine.locator('label:has-text("Qty / price / total") input');
+  await firstLineQuantityFields.nth(0).fill("2");
+  await firstLineQuantityFields.nth(1).fill("4.5");
+  await firstLineQuantityFields.nth(2).fill("9");
+  await firstLine.getByRole("button", { name: "Create and map item" }).click();
+
+  await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
+  await expect(secondLine.getByLabel("Inventory item")).toHaveValue("");
+
+  await secondLine.getByRole("button", { name: "Create inventory item" }).click();
+  await expect(secondLine.getByText("Create inventory item from this line")).toBeVisible();
+  await expect(secondLine.getByLabel("Item name")).toHaveValue("Whole Milk");
+  await secondLine.getByLabel("Stock unit").fill("bag");
+  await secondLine.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("1");
+  const secondLineQuantityFields = secondLine.locator('label:has-text("Qty / price / total") input');
+  await secondLineQuantityFields.nth(0).fill("3");
+  await secondLineQuantityFields.nth(1).fill("2");
+  await secondLineQuantityFields.nth(2).fill("6");
+  await secondLine.getByRole("button", { name: "Create and map item" }).click();
+
+  await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
+  await expect(secondLine.getByLabel("Inventory item")).toHaveValue("31");
+
+  await page.getByRole("button", { name: "Add line" }).click();
+  await expect(lineCards).toHaveCount(3);
+  await lineCards.nth(2).getByRole("button", { name: "Remove" }).click();
+  await expect(lineCards).toHaveCount(2);
+  await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
+  await expect(secondLine.getByLabel("Inventory item")).toHaveValue("31");
+
   await page.getByRole("button", { name: "Save ready" }).click();
   await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled();
 

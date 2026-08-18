@@ -23,6 +23,7 @@ import {
 import { formatDate, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 interface DraftLine {
+  clientId: string;
   id?: number;
   description: string;
   inventoryItemId: number | null;
@@ -91,12 +92,20 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function createLineClientId() {
+  if (typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `line-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
 function normalizeLookup(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function blankLine(): DraftLine {
   return {
+    clientId: createLineClientId(),
     description: "",
     inventoryItemId: null,
     purchaseUnit: "each",
@@ -176,6 +185,7 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
     extractedText: invoice.extractedText,
     lineItems: invoice.lineItems.length
       ? invoice.lineItems.map((line) => ({
+          clientId: line.id != null ? `line-${line.id}` : createLineClientId(),
           id: line.id,
           description: line.description,
           inventoryItemId: line.inventoryItemId,
@@ -218,6 +228,7 @@ function createDraftFromOcr(
         const inventoryItem = inventoryItemId ? inventoryItems.find((candidate) => candidate.id === inventoryItemId) ?? null : null;
 
         return {
+          clientId: createLineClientId(),
           description,
           inventoryItemId,
           purchaseUnit: hint?.purchaseUnit ?? item.unit ?? inventoryItem?.lastPurchaseUnit ?? "each",
@@ -385,7 +396,7 @@ export function PilotPurchasesPage() {
   const showNotice = (kind: InlineNotice["kind"], title: string, message: string) => {
     setNotice({ kind, title, message });
   };
-  const lineKey = (line: DraftLine, index: number) => String(line.id ?? `line-${index}`);
+  const lineKey = (line: DraftLine) => line.clientId;
 
   const scrollEditorIntoView = (focusTarget?: "supplier-select" | "supplier-input") => {
     window.requestAnimationFrame(() => {
@@ -433,10 +444,10 @@ export function PilotPurchasesPage() {
     };
   };
 
-  const updateLine = (index: number, updater: (line: DraftLine) => DraftLine) => {
+  const updateLine = (clientId: string, updater: (line: DraftLine) => DraftLine) => {
     setDraft((current) => ({
       ...current,
-      ...recalculateTotals(current.lineItems.map((line, lineIndex) => (lineIndex === index ? updater(line) : line)), current.tax),
+      ...recalculateTotals(current.lineItems.map((line) => (line.clientId === clientId ? updater(line) : line)), current.tax),
     }));
   };
 
@@ -512,8 +523,8 @@ export function PilotPurchasesPage() {
     }
   };
 
-  const beginInventoryCreation = (line: DraftLine, index: number) => {
-    setInventoryCreateLineId(lineKey(line, index));
+  const beginInventoryCreation = (line: DraftLine, _index: number) => {
+    setInventoryCreateLineId(lineKey(line));
     setInventoryDraft(buildInlineInventoryDraft(line, draft.supplierName.trim()));
     showNotice("success", "Create inventory item", "Confirm the item details and save it below.");
   };
@@ -523,12 +534,12 @@ export function PilotPurchasesPage() {
     setInventoryDraft(buildInlineInventoryDraft(blankLine(), draft.supplierName.trim()));
   };
 
-  const createInventoryItemForLine = async (line: DraftLine, index: number) => {
+  const createInventoryItemForLine = async (line: DraftLine, _index: number) => {
     if (inventorySavingLineId) {
       return;
     }
 
-    const currentLineKey = lineKey(line, index);
+    const currentLineKey = lineKey(line);
     const name = inventoryDraft.name.trim() || line.description.trim();
     if (!name) {
       showNotice("error", "Inventory item name required", "Enter a name before creating the first item.");
@@ -557,7 +568,7 @@ export function PilotPurchasesPage() {
       setDraft((current) => ({
         ...current,
         lineItems: current.lineItems.map((entry) =>
-          entry.id === line.id
+          entry.clientId === line.clientId
             ? {
                 ...entry,
                 inventoryItemId: saved.id,
@@ -712,8 +723,8 @@ export function PilotPurchasesPage() {
     return hint ?? null;
   };
 
-  const setLineDescription = (index: number, description: string) => {
-    updateLine(index, (current) => {
+  const setLineDescription = (clientId: string, description: string) => {
+    updateLine(clientId, (current) => {
       const next = { ...current, description };
       const hint = applyMappingHint(draft.supplierName, description);
       if (hint && !current.inventoryItemId) {
@@ -729,10 +740,10 @@ export function PilotPurchasesPage() {
     });
   };
 
-  const setLineInventoryItem = (index: number, inventoryItemId: number | null, description: string) => {
+  const setLineInventoryItem = (clientId: string, inventoryItemId: number | null, description: string) => {
     const selectedItem = inventoryItems.find((item) => item.id === inventoryItemId) ?? null;
     const hint = description ? applyMappingHint(draft.supplierName, description) : null;
-    updateLine(index, (current) => ({
+    updateLine(clientId, (current) => ({
       ...current,
       inventoryItemId,
       inventoryUnit: hint?.inventoryUnit ?? selectedItem?.stockUnit ?? current.inventoryUnit,
@@ -1076,15 +1087,15 @@ export function PilotPurchasesPage() {
             </div>
             <div className="mt-4 space-y-4">
               {draft.lineItems.map((line, index) => (
-                <div key={line.id ?? index} className="rounded-2xl border border-line bg-white p-4">
+                <div key={line.clientId} data-testid="purchase-line-card" data-line-id={line.clientId} className="rounded-2xl border border-line bg-white p-4">
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Description</span>
-                      <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(index, event.target.value)} disabled={finalizedStatus} />
+                      <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(line.clientId, event.target.value)} disabled={finalizedStatus} />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory item</span>
-                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus}>
+                      <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(line.clientId, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus}>
                         <option value="">Unmapped</option>
                         {inventoryItemOptions.map((item) => (
                           <option key={item.id} value={item.id}>{item.name}</option>
@@ -1098,7 +1109,7 @@ export function PilotPurchasesPage() {
                             onClick={() => beginInventoryCreation(line, index)}
                             disabled={finalizedStatus}
                           >
-                            {inventoryCreateLineId === lineKey(line, index) ? "Creating item below" : "Create inventory item"}
+                            {inventoryCreateLineId === lineKey(line) ? "Creating item below" : "Create inventory item"}
                           </button>
                           {inventoryItems.length === 0 ? <span className="text-xs leading-5 text-muted">No inventory items yet.</span> : null}
                         </div>
@@ -1108,8 +1119,8 @@ export function PilotPurchasesPage() {
                   <div className="mt-3 grid gap-3 md:grid-cols-4">
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
-                      <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
-                      <datalist id={`purchase-units-${index}`}>
+                      <input className="input mt-1" list={`purchase-units-${line.clientId}`} value={line.purchaseUnit} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
+                      <datalist id={`purchase-units-${line.clientId}`}>
                         {commonUnits.map((unit) => (
                           <option key={unit} value={unit} />
                         ))}
@@ -1117,8 +1128,8 @@ export function PilotPurchasesPage() {
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory unit</span>
-                      <input className="input mt-1" list={`inventory-units-${index}`} value={line.inventoryUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={finalizedStatus} />
-                      <datalist id={`inventory-units-${index}`}>
+                      <input className="input mt-1" list={`inventory-units-${line.clientId}`} value={line.inventoryUnit} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={finalizedStatus} />
+                      <datalist id={`inventory-units-${line.clientId}`}>
                         {commonUnits.map((unit) => (
                           <option key={unit} value={unit} />
                         ))}
@@ -1126,14 +1137,14 @@ export function PilotPurchasesPage() {
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion</span>
-                      <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty / price / total</span>
                       <div className="mt-1 grid grid-cols-3 gap-2">
-                        <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
-                        <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
-                        <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
+                        <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
+                        <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
+                        <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
                       </div>
                     </label>
                   </div>
@@ -1148,7 +1159,7 @@ export function PilotPurchasesPage() {
                     </div>
                     <div className="flex items-center justify-between gap-3 text-sm md:justify-end">
                       <label className="inline-flex items-center gap-2 text-muted">
-                        <input checked={line.needsReview} disabled={finalizedStatus} type="checkbox" onChange={(event) => updateLine(index, (current) => ({ ...current, needsReview: event.target.checked }))} />
+                        <input checked={line.needsReview} disabled={finalizedStatus} type="checkbox" onChange={(event) => updateLine(line.clientId, (current) => ({ ...current, needsReview: event.target.checked }))} />
                         Needs review
                       </label>
                       <button
@@ -1156,7 +1167,7 @@ export function PilotPurchasesPage() {
                         type="button"
                         disabled={finalizedStatus || draft.lineItems.length === 1}
                         onClick={() => {
-                          const next = draft.lineItems.filter((_, lineIndex) => lineIndex !== index);
+                          const next = draft.lineItems.filter((entry) => entry.clientId !== line.clientId);
                           setDraft((current) => ({ ...current, ...recalculateTotals(next.length ? next : [blankLine()], current.tax) }));
                         }}
                       >
@@ -1169,7 +1180,7 @@ export function PilotPurchasesPage() {
                       Inventory unit {line.inventoryUnit || "each"} will receive {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} units from this line.
                     </p>
                   ) : null}
-                  {!line.inventoryItemId && inventoryCreateLineId === lineKey(line, index) ? (
+                  {!line.inventoryItemId && inventoryCreateLineId === lineKey(line) ? (
                     <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1185,12 +1196,12 @@ export function PilotPurchasesPage() {
                       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Item name</span>
-                          <input className="input mt-1" value={inventoryDraft.name} onChange={(event) => setInventoryDraft((current) => ({ ...current, name: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" value={inventoryDraft.name} onChange={(event) => setInventoryDraft((current) => ({ ...current, name: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Stock unit</span>
-                          <input className="input mt-1" list={`inventory-units-create-${lineKey(line, index)}`} value={inventoryDraft.stockUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, stockUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
-                          <datalist id={`inventory-units-create-${lineKey(line, index)}`}>
+                          <input className="input mt-1" list={`inventory-units-create-${lineKey(line)}`} value={inventoryDraft.stockUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, stockUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
+                          <datalist id={`inventory-units-create-${lineKey(line)}`}>
                             {commonUnits.map((unit) => (
                               <option key={unit} value={unit} />
                             ))}
@@ -1198,41 +1209,41 @@ export function PilotPurchasesPage() {
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Category</span>
-                          <input className="input mt-1" value={inventoryDraft.category} onChange={(event) => setInventoryDraft((current) => ({ ...current, category: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" value={inventoryDraft.category} onChange={(event) => setInventoryDraft((current) => ({ ...current, category: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Preferred supplier</span>
-                          <input className="input mt-1" value={inventoryDraft.preferredSupplierName} onChange={(event) => setInventoryDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" value={inventoryDraft.preferredSupplierName} onChange={(event) => setInventoryDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</span>
-                          <input className="input mt-1" type="number" step="0.01" value={inventoryDraft.latestPurchasePrice} onChange={(event) => setInventoryDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" type="number" step="0.01" value={inventoryDraft.latestPurchasePrice} onChange={(event) => setInventoryDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase unit</span>
-                          <input className="input mt-1" value={inventoryDraft.lastPurchaseUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" value={inventoryDraft.lastPurchaseUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion factor</span>
-                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.lastPurchaseConversionFactor} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.lastPurchaseConversionFactor} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Current on hand</span>
-                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.currentOnHand} onChange={(event) => setInventoryDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.currentOnHand} onChange={(event) => setInventoryDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Min / PAR</span>
                           <div className="mt-1 grid grid-cols-2 gap-2">
-                            <input className="input" type="number" step="0.0001" value={inventoryDraft.minQuantity} onChange={(event) => setInventoryDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
-                            <input className="input" type="number" step="0.0001" value={inventoryDraft.parLevel} onChange={(event) => setInventoryDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                            <input className="input" type="number" step="0.0001" value={inventoryDraft.minQuantity} onChange={(event) => setInventoryDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
+                            <input className="input" type="number" step="0.0001" value={inventoryDraft.parLevel} onChange={(event) => setInventoryDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)} />
                           </div>
                         </label>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-3">
-                        <Button type="button" onClick={() => void createInventoryItemForLine(line, index)} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)}>
-                          {inventorySavingLineId === lineKey(line, index) ? "Creating item..." : "Create and map item"}
+                        <Button type="button" onClick={() => void createInventoryItemForLine(line, index)} disabled={finalizedStatus || inventorySavingLineId === lineKey(line)}>
+                          {inventorySavingLineId === lineKey(line) ? "Creating item..." : "Create and map item"}
                         </Button>
-                        <Button type="button" variant="ghost" onClick={cancelInventoryCreation} disabled={inventorySavingLineId === lineKey(line, index)}>
+                        <Button type="button" variant="ghost" onClick={cancelInventoryCreation} disabled={inventorySavingLineId === lineKey(line)}>
                           Cancel
                         </Button>
                       </div>
