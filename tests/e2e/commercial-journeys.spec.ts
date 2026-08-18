@@ -1313,7 +1313,7 @@ async function installMockApi(page: Page, state: MockState) {
 }
 
 test("anonymous demo access stays open to the public demo", async ({ page }) => {
-  await page.goto("/demo/cafe/purchases");
+  await page.goto("/demo/cafe/purchases", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/demo\/cafe\/purchases/);
   await expect(page.locator("main")).toContainText("Purchases");
 });
@@ -1325,8 +1325,8 @@ test("local browser journeys do not request Google Analytics", async ({ page }) 
     await route.abort();
   });
 
-  await page.goto("/demo/cafe/purchases");
-  await page.goto("/auth/google/complete");
+  await page.goto("/demo/cafe/purchases", { waitUntil: "domcontentloaded" });
+  await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
 
   expect(analyticsRequests).toHaveLength(0);
 });
@@ -1343,7 +1343,7 @@ test("google login buttons launch the API start endpoint from the configured API
   });
 
   const requestPromise = page.waitForRequest((request) => request.url().includes("/api/auth/google/start?purpose=login"));
-  await page.goto("/auth/google/complete?status=error&message=Session%20expired.");
+  await page.goto("/auth/google/complete?status=error&message=Session%20expired.", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Try Google again" }).click();
   const request = await requestPromise;
 
@@ -1365,7 +1365,7 @@ test("unauthenticated app visitors land on the commercial Google login page with
   });
 
   const requestPromise = page.waitForRequest((request) => request.url().includes("/api/auth/google/start?purpose=login"));
-  await page.goto("/app/purchases");
+  await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/app\/login/);
   await expect(page.getByRole("heading", { name: "Sign in to Flowtally" })).toBeVisible();
   await expect(page.getByText("owner@flowtally.local")).not.toBeVisible();
@@ -1404,7 +1404,7 @@ test("active customer Google sign-in returns into the app dashboard", async ({ p
   };
   await installMockApi(page, state);
 
-  await page.goto("/auth/google/complete");
+  await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/app\/dashboard/);
   await expect(page.getByRole("heading", { name: "What the owner needs to know today" })).toBeVisible();
 });
@@ -1423,7 +1423,7 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
   };
   await installMockApi(page, state);
 
-  await page.goto("/auth/google/complete");
+  await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Set up your first restaurant" })).toBeVisible();
   await page.getByLabel("Business name").fill("Demo Bistro");
   await page.getByLabel("Location name").fill("Main Dining Room");
@@ -1462,7 +1462,7 @@ test("existing Google prospect sessions resume the workspace instead of recreati
   };
   await installMockApi(page, state);
 
-  await page.goto("/auth/google/complete");
+  await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Customer setup" })).toBeVisible();
   await expect(page.getByText("Logged-in prospect", { exact: true })).toBeVisible();
   await expect(page.getByText(/Prospect Cafe/)).toBeVisible();
@@ -1612,7 +1612,7 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
     throw new Error(`Unhandled API route: ${method} ${path}`);
   });
 
-  await page.goto("/app/menu-costing");
+  await page.goto("/app/menu-costing", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Recipe and menu pricing")).toBeVisible();
   await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
   await expect(page.getByText("Cost $2.00").first()).toBeVisible();
@@ -1633,7 +1633,7 @@ test("operational access is denied before activation", async ({ page }) => {
   };
   await installMockApi(page, state);
 
-  await page.goto("/imports");
+  await page.goto("/imports", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "You do not have access to this migration workspace" })).toBeVisible();
 });
 
@@ -1656,7 +1656,7 @@ test("setup admin can configure the organization and activate it", async ({ page
   };
   await installMockApi(page, state);
 
-  await page.goto("/platform/setup");
+  await page.goto("/platform/setup", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { level: 1, name: "Internal setup console" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Demo Bistro" })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -1687,7 +1687,7 @@ test("owner can invite a manager and see the invitation in the list", async ({ p
   };
   await installMockApi(page, state);
 
-  await page.goto("/owner/team");
+  await page.goto("/owner/team", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Invitation links" })).toBeVisible();
   await page.getByLabel("Invitee email").fill("manager@example.com");
   await page.getByRole("button", { name: "Create invitation" }).click();
@@ -1719,7 +1719,7 @@ test("migration preview and approval work for CSV and XLSX setup files", async (
   };
   await installMockApi(page, state);
 
-  await page.goto("/imports");
+  await page.goto("/imports", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Upload a migration file" })).toBeVisible();
   await expect(page.getByText("Support access active")).toBeVisible();
   await page.getByRole("button", { name: "Suggest mappings" }).click();
@@ -1764,7 +1764,7 @@ test("Square Sandbox connection and synchronization are visible to the owner", a
   };
   await installMockApi(page, state);
 
-  await page.goto("/integrations/square");
+  await page.goto("/integrations/square", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { level: 1, name: "Square Sandbox" })).toBeVisible();
   await page.getByRole("button", { name: "Sync locations" }).click();
   await page.getByRole("button", { name: "Sync catalog" }).click();
@@ -1808,7 +1808,7 @@ test("Square usage variance maps and clears variation links", async ({ page }) =
   };
   await installMockApi(page, state);
 
-  await page.goto("/app/square-usage");
+  await page.goto("/app/square-usage", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Inventory usage and variance" })).toBeVisible();
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
   await page.getByRole("button", { name: "Map" }).click();
@@ -1834,7 +1834,7 @@ test("owner audit history shows filtered organization activity", async ({ page }
   };
   await installMockApi(page, state);
 
-  await page.goto("/owner/audit");
+  await page.goto("/owner/audit", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Owner audit history" })).toBeVisible();
   await expect(page.getByText("invitation.created")).toBeVisible();
   await page.getByPlaceholder("Search event type, entity or metadata").fill("square");
@@ -1857,7 +1857,7 @@ test("owner reports and exports surface authenticated reporting data", async ({ 
   };
   await installMockApi(page, state);
 
-  await page.goto("/owner/reports");
+  await page.goto("/owner/reports", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
   await expect(page.getByText("Demo Bistro", { exact: true })).toBeVisible();
   await expect(page.getByText("Weekly invoice spend")).toBeVisible();
@@ -1892,8 +1892,22 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   enableEmptyPurchaseWorkflow(state, purchaseFlow);
   await installMockApi(page, state);
 
-  await page.goto("/app/purchases");
+  await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Capture invoices, confirm items, and move stock" })).toBeVisible();
+
+  const editorCard = page.getByTestId("purchase-editor-card");
+  const historyCard = page.getByTestId("purchase-history-card");
+  await expect(editorCard).toBeVisible();
+  await expect(historyCard).toBeVisible();
+  const editorBox = await editorCard.boundingBox();
+  const historyBox = await historyCard.boundingBox();
+  const mainBox = await page.locator("main").boundingBox();
+  expect(editorBox).not.toBeNull();
+  expect(historyBox).not.toBeNull();
+  expect(mainBox).not.toBeNull();
+  expect(editorBox!.width).toBeGreaterThan(mainBox!.width - 100);
+  expect(Math.abs(editorBox!.width - historyBox!.width)).toBeLessThan(32);
+  expect(historyBox!.y).toBeGreaterThan(editorBox!.y + editorBox!.height - 1);
 
   const editorHeading = page.getByRole("heading", { name: "New purchase" });
   const lineCards = page.getByTestId("purchase-line-card");

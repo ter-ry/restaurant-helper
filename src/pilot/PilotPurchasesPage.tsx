@@ -396,7 +396,7 @@ export function PilotPurchasesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedInvoiceId]);
 
-  const hasSuppliers = (data?.suppliers.length ?? 0) > 0;
+  const hasSuppliers = (data?.suppliers?.length ?? 0) > 0;
 
   useEffect(() => {
     if (!hasSuppliers) {
@@ -468,7 +468,7 @@ export function PilotPurchasesPage() {
   };
 
   const selectedInvoice = useMemo(
-    () => data?.invoices.find((invoice) => invoice.id === selectedId) ?? null,
+    () => data?.invoices?.find((invoice) => invoice.id === selectedId) ?? null,
     [data?.invoices, selectedId],
   );
 
@@ -942,7 +942,7 @@ export function PilotPurchasesPage() {
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
-            { label: "This month spend", value: formatMoney(data?.summary.thisMonthSpend ?? 0) },
+            { label: "This month spend", value: formatMoney(data?.summary?.thisMonthSpend ?? 0) },
             { label: "Uploads needing review", value: formatNumber(data?.summary.uploadsNeedingReview ?? 0) },
             { label: "Price changes flagged", value: formatNumber(data?.summary.priceChangesFlagged ?? 0) },
             { label: "Mapped items", value: formatNumber(data?.summary.mappedItems ?? 0) },
@@ -956,9 +956,9 @@ export function PilotPurchasesPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+      <div className="space-y-6">
         <div ref={editorPanelRef} className="scroll-mt-32">
-          <Card className="p-6">
+          <Card className="w-full p-6" data-testid="purchase-editor-card">
           <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
           <div className="space-y-3">
             {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
@@ -979,7 +979,7 @@ export function PilotPurchasesPage() {
             ))}
             {!invoiceRows.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No purchases yet. Create the first invoice to start tracking spend.</p> : null}
           </div>
-          {data?.invoices.length && data.invoices.length > 5 ? (
+          {data?.invoices?.length && data.invoices.length > 5 ? (
             <button type="button" className="mt-4 text-sm font-semibold text-brand-700" onClick={() => setShowAll((value) => !value)}>
               {showAll ? "Show fewer purchases" : "View all purchases"}
             </button>
@@ -1041,7 +1041,7 @@ export function PilotPurchasesPage() {
                     aria-invalid={Boolean(draftFieldErrors.supplierName)}
                   >
                     <option value="">Choose supplier</option>
-                    {data?.suppliers.map((supplier) => (
+                    {data?.suppliers?.map((supplier) => (
                       <option key={supplier.id} value={supplier.name}>
                         {supplier.name}
                       </option>
@@ -1448,6 +1448,53 @@ export function PilotPurchasesPage() {
           </div>
           </Card>
         </div>
+        <Card className="w-full p-6" data-testid="purchase-history-card">
+          <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
+          <div className="space-y-3">
+            {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
+            {invoiceRows.map((invoice) => (
+              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
+                    <p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p>
+                  </div>
+                  <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-sm text-muted">
+                  <span>{formatMoney(invoice.totalAmount)}</span>
+                  <span>{invoice.lineItems.length} line items</span>
+                </div>
+              </button>
+            ))}
+            {!invoiceRows.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No purchases yet. Create the first invoice to start tracking spend.</p> : null}
+          </div>
+          {data?.invoices?.length && data.invoices.length > 5 ? (
+            <button type="button" className="mt-4 text-sm font-semibold text-brand-700" onClick={() => setShowAll((value) => !value)}>
+              {showAll ? "Show fewer purchases" : "View all purchases"}
+            </button>
+          ) : null}
+
+          <div className="mt-6">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Price changes</p>
+            <div className="mt-3 space-y-2">
+              {priceChanges.map((change) => (
+                <div key={String(change.id)} className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{String(change.itemName ?? change.item ?? "")}</p>
+                      <p className="text-sm text-muted">{String(change.supplier ?? "")}</p>
+                    </div>
+                    <Badge tone={Number(change.changePercent ?? 0) >= 0 ? "orange" : "success"}>
+                      {Number(change.changePercent ?? 0) >= 0 ? "+" : ""}{formatNumber(Number(change.changePercent ?? 0))}%
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+              {!priceChanges.length ? <p className="text-sm text-muted">Price change alerts will appear after the first repeated supplier item.</p> : null}
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );
