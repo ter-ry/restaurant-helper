@@ -1353,6 +1353,62 @@ test("google login buttons launch the API start endpoint from the configured API
   expect(new URL(request.url()).searchParams.get("purpose")).toBe("login");
 });
 
+test("unauthenticated app visitors land on the commercial Google login page without seed credentials", async ({ page }) => {
+  const expectedApiOrigin = (
+    process.env.VITE_FLOWTALLY_API_BASE_URL ?? process.env.VITE_PILOT_API_BASE_URL ?? "http://127.0.0.1:4173"
+  ).replace(/\/+$/, "");
+  let requestUrl = "";
+
+  await page.route("**/api/auth/google/start**", async (route) => {
+    requestUrl = route.request().url();
+    await route.fulfill({ status: 200, contentType: "text/plain", body: "ok" });
+  });
+
+  const requestPromise = page.waitForRequest((request) => request.url().includes("/api/auth/google/start?purpose=login"));
+  await page.goto("/app/purchases");
+  await expect(page).toHaveURL(/\/app\/login/);
+  await expect(page.getByRole("heading", { name: "Sign in to Flowtally" })).toBeVisible();
+  await expect(page.getByText("owner@flowtally.local")).not.toBeVisible();
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  const request = await requestPromise;
+
+  expect(request.url()).toBe(requestUrl);
+  expect(new URL(request.url()).origin).toBe(expectedApiOrigin);
+  expect(new URL(request.url()).pathname).toBe("/api/auth/google/start");
+  expect(new URL(request.url()).searchParams.get("purpose")).toBe("login");
+});
+
+test("active customer Google sign-in returns into the app dashboard", async ({ page }) => {
+  const organization = makeOrganization({
+    id: 5,
+    name: "Starter Cafe",
+    lifecycleStatus: "ACTIVE",
+    setupStatus: "COMPLETE",
+    subscriptionStatus: "ACTIVE",
+    isProspect: false,
+  });
+  const state: MockState = {
+    session: makeActiveOwnerSession({
+      currentOrganizationId: organization.id,
+      currentLocationId: 7,
+      organizations: [{ organization, membershipRole: "owner", selected: true }],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: organization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+
+  await page.goto("/auth/google/complete");
+  await expect(page).toHaveURL(/\/app\/dashboard/);
+  await expect(page.getByRole("heading", { name: "What the owner needs to know today" })).toBeVisible();
+});
+
 test("mocked Google registration walks a prospect into onboarding", async ({ page }) => {
   const state: MockState = {
     session: makeProspectSession(),

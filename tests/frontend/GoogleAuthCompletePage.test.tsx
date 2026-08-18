@@ -1,6 +1,6 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { GoogleAuthCompletePage } from "../../src/pages/GoogleAuthCompletePage";
 
@@ -28,6 +28,18 @@ function renderPage(path = "/auth/google/complete") {
       <GoogleAuthCompletePage />
     </MemoryRouter>,
   );
+}
+
+function renderPageWithAppRoute(path = "/auth/google/complete") {
+  const router = createMemoryRouter(
+    [
+      { path: "/auth/google/complete", element: <GoogleAuthCompletePage /> },
+      { path: "/app", element: <div>App shell</div> },
+    ],
+    { initialEntries: [path] },
+  );
+
+  return render(<RouterProvider router={router} />);
 }
 
 describe("GoogleAuthCompletePage", () => {
@@ -81,29 +93,6 @@ describe("GoogleAuthCompletePage", () => {
     await waitFor(() => expect(authMocks.fetchCustomerSession).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Welcome back, owner@example.com")).toBeVisible();
     expect(screen.getByText("Logged-in prospect")).toBeVisible();
-  });
-
-  it("shows the logged-in prospect landing state when an organization already exists", async () => {
-    authMocks.fetchCustomerSession.mockResolvedValueOnce({
-      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
-      membershipRole: "owner",
-      currentOrganizationId: 11,
-      currentLocationId: 2,
-      organizations: [
-        {
-          organization: { id: 11, name: "Owner Cafe", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE" },
-          membershipRole: "owner",
-          selected: true,
-        },
-      ],
-      csrfToken: "csrf-2",
-    });
-
-    renderPage();
-
-    await screen.findByRole("heading", { name: "Customer setup" });
-    expect(screen.getByText(/Owner Cafe/)).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "Logout" })[0]).toBeVisible();
   });
 
   it("restores an existing organization session instead of showing the creation form", async () => {

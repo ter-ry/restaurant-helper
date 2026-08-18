@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Loader2, LogOut, MapPin, ShieldAlert, Sparkles, UserRound } from "lucide-react";
 import { SupportAccessBanner } from "../components/SupportAccessBanner";
 import {
   createCustomerProspectOrganization,
+  consumeLoginReturnTo,
   fetchCustomerSession,
   logoutCustomer,
   requestCustomerSetup,
@@ -319,6 +320,7 @@ function pickResumeOrganization(session: CustomerSessionResponse) {
 
 export function GoogleAuthCompletePage() {
   const query = useQueryParams();
+  const navigate = useNavigate();
   const [state, setState] = useState<AuthState>("loading");
   const [session, setSession] = useState<CustomerSessionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -353,7 +355,12 @@ export function GoogleAuthCompletePage() {
       try {
         const current = await loadSessionWithResume();
         if (cancelled) return;
+        const selectedOrganization = current.organizations?.find((entry) => entry.selected)?.organization ?? null;
         setSession(current);
+        if (current.currentOrganizationId && selectedOrganization?.lifecycleStatus === "ACTIVE") {
+          navigate(consumeLoginReturnTo() ?? "/app", { replace: true });
+          return;
+        }
         setState(current.currentOrganizationId ? "signedIn" : "needsOnboarding");
       } catch (err) {
         if (cancelled) return;
@@ -366,7 +373,7 @@ export function GoogleAuthCompletePage() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [navigate, query]);
 
   async function handleCreated() {
     const current = await loadSessionWithResume();

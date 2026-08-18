@@ -10,3 +10,6 @@ function normalizeBaseUrl(value: string | undefined, fallback: string) {
 
 export const pilotAppEnabled = isTruthy(import.meta.env.VITE_ENABLE_PILOT_APP);
 export const pilotApiBaseUrl = normalizeBaseUrl(import.meta.env.VITE_PILOT_API_BASE_URL, "http://127.0.0.1:5001");
+export function pilotSeedLoginEnabled() {
+  return isTruthy(import.meta.env.VITE_ENABLE_PILOT_SEED_LOGIN);
+}

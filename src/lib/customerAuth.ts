@@ -171,6 +171,39 @@ export function getGoogleLoginStartUrl() {
   return buildApiUrl("/api/auth/google/start?purpose=login");
 }
 
-export function startGoogleLogin() {
+const LOGIN_RETURN_TO_SESSION_KEY = "flowtally_login_return_to";
+
+export function rememberLoginReturnTo(returnTo: string | null | undefined) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const trimmed = returnTo?.trim();
+  if (!trimmed) {
+    window.sessionStorage.removeItem(LOGIN_RETURN_TO_SESSION_KEY);
+    return;
+  }
+
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) {
+    return;
+  }
+
+  window.sessionStorage.setItem(LOGIN_RETURN_TO_SESSION_KEY, trimmed);
+}
+
+export function consumeLoginReturnTo() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(LOGIN_RETURN_TO_SESSION_KEY);
+  window.sessionStorage.removeItem(LOGIN_RETURN_TO_SESSION_KEY);
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : null;
+}
+
+export function startGoogleLogin(arg?: unknown) {
+  if (arg && typeof arg === "object" && "returnTo" in arg) {
+    rememberLoginReturnTo((arg as { returnTo?: string }).returnTo);
+  }
   window.location.assign(getGoogleLoginStartUrl());
 }
