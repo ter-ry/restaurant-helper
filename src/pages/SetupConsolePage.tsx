@@ -507,15 +507,25 @@ export function SetupConsolePage() {
   return (
     <PageLayout title="Internal setup console" eyebrow={`Flowtally platform · ${session?.platformRole ?? "platform"}`} description="Configure organizations before launch and track their readiness.">
       {notice ? (
-        <Card className={`mb-6 border px-4 py-3 ${notice.kind === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"}`}>
-          <div className="flex items-start gap-3">
-            {notice.kind === "success" ? <CheckCircle2 className="mt-0.5 h-5 w-5" /> : <AlertTriangle className="mt-0.5 h-5 w-5" />}
-            <div className="min-w-0">
-              <p className="text-sm font-semibold uppercase tracking-wide">{notice.kind === "success" ? "Saved" : "Save failed"}</p>
-              <p className="mt-1 text-sm leading-6">{notice.message}</p>
+        <div
+          aria-atomic="true"
+          aria-live={notice.kind === "success" ? "polite" : "assertive"}
+          className="pointer-events-none fixed bottom-4 left-4 right-4 z-50 flex justify-end sm:left-auto sm:right-4 sm:max-w-sm"
+          data-testid="mutation-toast"
+          role={notice.kind === "success" ? "status" : "alert"}
+        >
+          <Card
+            className={`pointer-events-auto w-full border px-4 py-3 shadow-xl ${notice.kind === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"}`}
+          >
+            <div className="flex items-start gap-3">
+              {notice.kind === "success" ? <CheckCircle2 className="mt-0.5 h-5 w-5" /> : <AlertTriangle className="mt-0.5 h-5 w-5" />}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold uppercase tracking-wide">{notice.kind === "success" ? "Saved" : "Save failed"}</p>
+                <p className="mt-1 text-sm leading-6">{notice.message}</p>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       ) : null}
       <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
         <Card className="p-4">

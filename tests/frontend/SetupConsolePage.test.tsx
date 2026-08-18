@@ -218,7 +218,9 @@ describe("SetupConsolePage", () => {
     resolveUpdate(makeDetail([]));
 
     await waitFor(() => expect(platformSetupMocks.fetchSetupOrganization).toHaveBeenCalledTimes(2));
-    await screen.findByText("Modules saved", { selector: "p" });
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveClass("fixed");
+    expect(toast).toHaveTextContent("Modules saved");
     expect(screen.getByText("Missing modules").parentElement).toHaveTextContent("None");
     expect(screen.getByText("Ready").parentElement).toHaveTextContent("Yes");
     expect(screen.getByRole("button", { name: "Modules saved" })).toBeVisible();
@@ -241,7 +243,9 @@ describe("SetupConsolePage", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Saving..." })).toBeDisabled());
     rejectUpdate(new Error("Request failed with status 500"));
-    await screen.findByText("Request failed with status 500");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveClass("fixed");
+    expect(alert).toHaveTextContent("Request failed with status 500");
     expect(screen.queryByText("Modules saved")).not.toBeInTheDocument();
     expect(screen.getByText("Save failed")).toBeVisible();
   });
