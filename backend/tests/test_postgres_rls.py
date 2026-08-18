@@ -15,6 +15,7 @@ from sqlalchemy.pool import NullPool
 from backend.app import create_app
 from backend.extensions import db
 from backend.models import (
+    AuditEvent,
     DataImportChange,
     DataImportFile,
     DataImportJob,
@@ -2437,6 +2438,17 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         )
         assert select_response.status_code == 200, select_response.get_data(as_text=True)
 
+        with postgres_app.app_context():
+            _set_rls_context(access_scope="customer", organization_id=organization_id, user_id=zero_org_user_id)
+            organization_selected_events = AuditEvent.query.filter_by(
+                event_type="tenant.organization_selected",
+                entity_type="organization",
+                entity_id=str(organization_id),
+                organization_id=organization_id,
+                actor_user_id=zero_org_user_id,
+            ).all()
+            assert len(organization_selected_events) == 1
+
         with client.session_transaction(base_url="http://127.0.0.1:5001") as session:
             assert session["pilot_current_membership_id"] == membership_id
             assert session["pilot_current_organization_id"] == organization_id
@@ -2446,6 +2458,19 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
         assert follow_up.status_code == 200, follow_up.get_data(as_text=True)
         follow_up_body = follow_up.get_json()
         assert any(entry["organization"]["id"] == organization_id for entry in follow_up_body["organizations"])
+
+        with postgres_app.app_context():
+            _set_rls_context(access_scope="customer", organization_id=organization_id, user_id=zero_org_user_id)
+            assert (
+                AuditEvent.query.filter_by(
+                    event_type="tenant.organization_selected",
+                    entity_type="organization",
+                    entity_id=str(organization_id),
+                    organization_id=organization_id,
+                    actor_user_id=zero_org_user_id,
+                ).count()
+                == 1
+            )
         _github_warning("onboarding regression: follow-up onboarding list sees new organization")
 
 
@@ -2505,6 +2530,17 @@ def test_postgres_setup_console_mutations_materialize_before_commit(postgres_app
     assert module_statuses["REORDER_PLANS"] == "ENABLED"
     assert module_statuses["STOCK_COUNTS"] == "ENABLED"
     assert module_body["checklist"]["missingModules"] == []
+
+    assert (
+        AuditEvent.query.filter_by(
+            event_type="setup.modules_updated",
+            entity_type="organization",
+            entity_id=str(org_a_id),
+            organization_id=org_a_id,
+            actor_user_id=owner.id,
+        ).count()
+        == 1
+    )
 
     assert (
         client.post(

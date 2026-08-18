@@ -57,4 +57,5 @@ def record_audit_event(
         metadata_json=metadata or {},
     )
     db.session.add(event)
+    db.session.flush([event])
     return event
