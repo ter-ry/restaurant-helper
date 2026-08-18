@@ -959,54 +959,6 @@ export function PilotPurchasesPage() {
       <div className="space-y-6">
         <div ref={editorPanelRef} className="scroll-mt-32">
           <Card className="w-full p-6" data-testid="purchase-editor-card">
-          <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
-          <div className="space-y-3">
-            {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
-            {invoiceRows.map((invoice) => (
-              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
-                    <p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p>
-                  </div>
-                  <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
-                </div>
-                <div className="mt-3 flex items-center justify-between text-sm text-muted">
-                  <span>{formatMoney(invoice.totalAmount)}</span>
-                  <span>{invoice.lineItems.length} line items</span>
-                </div>
-              </button>
-            ))}
-            {!invoiceRows.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No purchases yet. Create the first invoice to start tracking spend.</p> : null}
-          </div>
-          {data?.invoices?.length && data.invoices.length > 5 ? (
-            <button type="button" className="mt-4 text-sm font-semibold text-brand-700" onClick={() => setShowAll((value) => !value)}>
-              {showAll ? "Show fewer purchases" : "View all purchases"}
-            </button>
-          ) : null}
-
-          <div className="mt-6">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Price changes</p>
-            <div className="mt-3 space-y-2">
-              {priceChanges.map((change) => (
-                <div key={String(change.id)} className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{String(change.itemName ?? change.item ?? "")}</p>
-                      <p className="text-sm text-muted">{String(change.supplier ?? "")}</p>
-                    </div>
-                    <Badge tone={Number(change.changePercent ?? 0) >= 0 ? "orange" : "success"}>
-                      {Number(change.changePercent ?? 0) >= 0 ? "+" : ""}{formatNumber(Number(change.changePercent ?? 0))}%
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-              {!priceChanges.length ? <p className="text-sm text-muted">Price change alerts will appear after the first repeated supplier item.</p> : null}
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
           <SectionHeader
             title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
             description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Edit the purchase, confirm the lines, then save or receive into inventory."}
@@ -1448,6 +1400,7 @@ export function PilotPurchasesPage() {
           </div>
           </Card>
         </div>
+
         <Card className="w-full p-6" data-testid="purchase-history-card">
           <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
           <div className="space-y-3">

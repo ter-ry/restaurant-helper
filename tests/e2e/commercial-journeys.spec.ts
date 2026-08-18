@@ -1899,6 +1899,13 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   const historyCard = page.getByTestId("purchase-history-card");
   await expect(editorCard).toBeVisible();
   await expect(historyCard).toBeVisible();
+  await expect(editorCard.getByRole("heading", { name: "New purchase" })).toBeVisible();
+  await expect(historyCard.getByRole("heading", { name: "Review queue and purchase history" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review queue and purchase history" })).toHaveCount(1);
+  await expect(editorCard.getByText("Supplier", { exact: true })).toBeVisible();
+  await expect(editorCard.getByLabel("Invoice number")).toHaveCount(1);
+  await expect(historyCard.getByLabel("Supplier")).toHaveCount(0);
+  await expect(historyCard.getByLabel("Invoice number")).toHaveCount(0);
   const editorBox = await editorCard.boundingBox();
   const historyBox = await historyCard.boundingBox();
   const mainBox = await page.locator("main").boundingBox();
@@ -1914,6 +1921,9 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await page.getByRole("button", { name: "New purchase" }).click();
   await expect(page.getByTestId("purchase-mutation-toast")).toBeVisible();
   await expect(editorHeading).toBeInViewport();
+  await expect(editorCard.getByRole("heading", { name: "New purchase" })).toBeVisible();
+  await expect(editorCard.getByLabel("Supplier")).toBeVisible();
+  await expect(editorCard.getByLabel("Invoice number")).toBeVisible();
   await expect(lineCards).toHaveCount(1);
 
   await page.getByLabel("Supplier name").fill("North Bay Dairy");

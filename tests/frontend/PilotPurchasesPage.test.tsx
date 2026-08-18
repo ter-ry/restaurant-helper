@@ -359,6 +359,18 @@ describe("PilotPurchasesPage", () => {
       value: scrollIntoView,
     });
 
+    const editorCard = screen.getByTestId("purchase-editor-card");
+    const historyCard = screen.getByTestId("purchase-history-card");
+    expect(editorCard).toBeVisible();
+    expect(historyCard).toBeVisible();
+    expect(within(editorCard).getByRole("heading", { name: "New purchase" })).toBeVisible();
+    expect(within(historyCard).getByRole("heading", { name: "Review queue and purchase history" })).toBeVisible();
+    expect(screen.getAllByRole("heading", { name: "Review queue and purchase history" })).toHaveLength(1);
+    expect(within(editorCard).getByText("Supplier")).toBeVisible();
+    expect(within(editorCard).getByLabelText("Invoice number")).toBeVisible();
+    expect(within(historyCard).queryByLabelText("Supplier")).not.toBeInTheDocument();
+    expect(within(historyCard).queryByLabelText("Invoice number")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
 
