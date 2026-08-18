@@ -44,6 +44,7 @@ type MockState = {
   session: Session | null;
   csrfToken: string;
   currentOrganization: OrganizationSummary | null;
+  pilotPurchaseFlow?: EmptyPurchaseFlowState;
   invitations: Array<{
     id: number;
     organizationId: number;
@@ -199,6 +200,110 @@ function createImportJob() {
         issues: [],
       },
     ],
+  };
+}
+
+type EmptyPurchaseFlowState = {
+  suppliers: Array<{ id: number; name: string; categoryFocus: string; contactName: string; contactPhone: string; contactEmail: string; orderingNotes: string; notes: string; isActive: boolean }>;
+  inventoryItems: Array<{ id: number; name: string; stockUnit: string }>;
+  invoices: any[];
+  nextSupplierId: number;
+  nextItemId: number;
+  nextInvoiceId: number;
+  nextLineId: number;
+};
+
+function makeEmptyPurchaseFlowState(): EmptyPurchaseFlowState {
+  return {
+    suppliers: [],
+    inventoryItems: [],
+    invoices: [],
+    nextSupplierId: 20,
+    nextItemId: 30,
+    nextInvoiceId: 100,
+    nextLineId: 1,
+  };
+}
+
+function enableEmptyPurchaseWorkflow(state: MockState, flowState: EmptyPurchaseFlowState) {
+  state.pilotPurchaseFlow = flowState;
+}
+
+function buildEmptyPurchasesResponse(state: EmptyPurchaseFlowState) {
+  return {
+    invoices: state.invoices,
+    suppliers: state.suppliers.map((supplier) => ({
+      id: supplier.id,
+      organizationId: 5,
+      name: supplier.name,
+      normalizedName: supplier.name.trim().toLowerCase(),
+      categoryFocus: supplier.categoryFocus,
+      contactName: supplier.contactName,
+      contactPhone: supplier.contactPhone,
+      contactEmail: supplier.contactEmail,
+      orderingNotes: supplier.orderingNotes,
+      notes: supplier.notes,
+      isActive: supplier.isActive,
+      inventoryItemCount: 0,
+      purchaseInvoiceCount: 0,
+      supplierItemMappingCount: 0,
+      latestInvoiceDate: null,
+      historicalReferenceCount: 0,
+      recentInvoices: [],
+      recentMappings: [],
+    })),
+    purchaseLines: state.invoices.flatMap((invoice) => invoice.lineItems ?? []),
+    priceChanges: [],
+    summary: {
+      thisMonthSpend: 0,
+      uploadsNeedingReview: 0,
+      priceChangesFlagged: 0,
+      mappedItems: state.invoices.flatMap((invoice) => invoice.lineItems ?? []).filter((line) => line.inventoryItemId).length,
+      exportReady: state.invoices.length,
+      needsMapping: state.invoices.flatMap((invoice) => invoice.lineItems ?? []).filter((line) => !line.inventoryItemId).length,
+    },
+    exportReadiness: {
+      readyForCsv: state.invoices.length,
+      needsReview: 0,
+      needsMapping: 0,
+      quickBooksFutureOnly: true,
+    },
+  };
+}
+
+function buildEmptyInventoryResponse(state: EmptyPurchaseFlowState) {
+  return {
+    items: state.inventoryItems.map((item) => ({
+      id: item.id,
+      organizationId: 5,
+      locationId: 9,
+      supplierId: null,
+      name: item.name,
+      normalizedName: item.name.trim().toLowerCase(),
+      category: "Other",
+      stockUnit: item.stockUnit,
+      currentOnHand: 0,
+      minQuantity: 0,
+      parLevel: 0,
+      preferredSupplierName: "",
+      latestPurchasePrice: 0,
+      lastPurchaseUnit: item.stockUnit,
+      lastPurchaseConversionFactor: 1,
+      lastReceivedAt: null,
+      lastCountedAt: null,
+      averageDailyUsage: null,
+      estimatedCostMethod: "latest_purchase_price",
+      active: true,
+      notes: "",
+      createdByUserId: 1,
+      updatedByUserId: 1,
+      createdAt: null,
+      updatedAt: null,
+    })),
+    movements: [],
+    countSessions: [],
+    reorderPlan: { suggestions: [], groupedBySupplier: [] },
+    summary: {},
   };
 }
 
@@ -399,7 +504,12 @@ async function installMockApi(page: Page, state: MockState) {
       });
     }
 
+    const purchaseFlow = state.pilotPurchaseFlow;
+
     if (path === "/api/pilot/purchases" && method === "GET") {
+      if (purchaseFlow) {
+        return jsonResponse(route, buildEmptyPurchasesResponse(purchaseFlow));
+      }
       return jsonResponse(route, {
         invoices: [
           {
@@ -478,6 +588,194 @@ async function installMockApi(page: Page, state: MockState) {
     }
 
     const menuState = state.menuState;
+    if (path === "/api/pilot/inventory" && method === "GET") {
+      if (purchaseFlow) {
+        return jsonResponse(route, buildEmptyInventoryResponse(purchaseFlow));
+      }
+      if (menuState) {
+        return jsonResponse(route, {
+          items: menuState.inventory.map((item: any) => ({
+            id: item.id,
+            organizationId: menuState.organizationId,
+            locationId: menuState.locationId,
+            supplierId: null,
+            name: item.name,
+            normalizedName: String(item.name).trim().toLowerCase(),
+            category: "Prepared",
+            stockUnit: item.stockUnit,
+            currentOnHand: 0,
+            minQuantity: 0,
+            parLevel: 0,
+            preferredSupplierName: "",
+            latestPurchasePrice: null,
+            lastPurchaseUnit: item.stockUnit,
+            lastPurchaseConversionFactor: 1,
+            lastReceivedAt: null,
+            lastCountedAt: null,
+            averageDailyUsage: null,
+            estimatedCostMethod: "latest_purchase_price",
+            active: true,
+            notes: "",
+            createdByUserId: null,
+            updatedByUserId: null,
+            createdAt: null,
+            updatedAt: null,
+          })),
+          movements: [],
+          countSessions: [],
+          reorderPlan: { suggestions: [], groupedBySupplier: [] },
+          summary: {},
+        });
+      }
+    }
+
+    if (purchaseFlow && path === "/api/pilot/suppliers" && method === "POST") {
+      const supplier = {
+        id: purchaseFlow.nextSupplierId++,
+        name: String(body.name ?? ""),
+        categoryFocus: String(body.categoryFocus ?? "Other"),
+        contactName: String(body.contactName ?? ""),
+        contactPhone: String(body.contactPhone ?? ""),
+        contactEmail: String(body.contactEmail ?? ""),
+        orderingNotes: String(body.orderingNotes ?? ""),
+        notes: String(body.notes ?? ""),
+        isActive: body.isActive !== false,
+      };
+      purchaseFlow.suppliers = [...purchaseFlow.suppliers, supplier];
+      return jsonResponse(route, {
+        ...supplier,
+        organizationId: 5,
+        normalizedName: supplier.name.trim().toLowerCase(),
+        inventoryItemCount: 0,
+        purchaseInvoiceCount: 0,
+        supplierItemMappingCount: 0,
+        latestInvoiceDate: null,
+        historicalReferenceCount: 0,
+        recentInvoices: [],
+        recentMappings: [],
+      });
+    }
+
+    if (purchaseFlow && path === "/api/pilot/inventory/items" && method === "POST") {
+      const item = {
+        id: purchaseFlow.nextItemId++,
+        name: String(body.name ?? ""),
+        stockUnit: String(body.stockUnit ?? "each"),
+      };
+      purchaseFlow.inventoryItems = [...purchaseFlow.inventoryItems, item];
+      return jsonResponse(route, {
+        id: item.id,
+        organizationId: 5,
+        locationId: 9,
+        supplierId: null,
+        name: item.name,
+        normalizedName: item.name.trim().toLowerCase(),
+        category: String(body.category ?? "Other"),
+        stockUnit: item.stockUnit,
+        currentOnHand: Number(body.currentOnHand ?? 0),
+        minQuantity: Number(body.minQuantity ?? 0),
+        parLevel: Number(body.parLevel ?? 0),
+        preferredSupplierName: String(body.preferredSupplierName ?? ""),
+        latestPurchasePrice: Number(body.latestPurchasePrice ?? 0),
+        lastPurchaseUnit: String(body.lastPurchaseUnit ?? "each"),
+        lastPurchaseConversionFactor: Number(body.lastPurchaseConversionFactor ?? 1),
+        lastReceivedAt: null,
+        lastCountedAt: null,
+        averageDailyUsage: null,
+        estimatedCostMethod: "latest_purchase_price",
+        active: Boolean(body.active ?? true),
+        notes: String(body.notes ?? ""),
+        createdByUserId: 1,
+        updatedByUserId: 1,
+        createdAt: null,
+        updatedAt: null,
+      });
+    }
+
+    if (purchaseFlow && path === "/api/pilot/purchases/invoices" && method === "POST") {
+      const supplierName = String(body.supplierName ?? "");
+      const supplier = purchaseFlow.suppliers.find((entry) => entry.name === supplierName) ?? null;
+      const invoice = {
+        id: purchaseFlow.nextInvoiceId++,
+        organizationId: 5,
+        locationId: 9,
+        supplierId: supplier?.id ?? 0,
+        supplier: supplier
+          ? {
+              id: supplier.id,
+              organizationId: 5,
+              name: supplier.name,
+              normalizedName: supplier.name.trim().toLowerCase(),
+              categoryFocus: supplier.categoryFocus,
+              contactName: supplier.contactName,
+              contactPhone: supplier.contactPhone,
+              contactEmail: supplier.contactEmail,
+              orderingNotes: supplier.orderingNotes,
+              notes: supplier.notes,
+              isActive: supplier.isActive,
+              createdAt: null,
+              updatedAt: null,
+            }
+          : null,
+        invoiceNumber: String(body.invoiceNumber ?? "FP-1000"),
+        invoiceDate: String(body.invoiceDate ?? "2026-08-18"),
+        subtotal: Number(body.subtotal ?? 0),
+        tax: Number(body.tax ?? 0),
+        totalAmount: Number(body.totalAmount ?? 0),
+        notes: String(body.notes ?? ""),
+        status: String(body.status ?? "Draft"),
+        sourceFileName: String(body.sourceFileName ?? ""),
+        sourceFileType: String(body.sourceFileType ?? ""),
+        sourceFileKey: "",
+        extractedText: String(body.extractedText ?? ""),
+        extractionStatus: String(body.extractionStatus ?? "manual"),
+        receivedAt: null,
+        receivedByUserId: null,
+        createdByUserId: 1,
+        updatedByUserId: 1,
+        postedAt: null,
+        lineItems: (Array.isArray(body.lineItems) ? body.lineItems : []).map((line: any, index: number) => ({
+          id: purchaseFlow.nextLineId++,
+          invoiceId: purchaseFlow.nextInvoiceId - 1,
+          supplierName,
+          invoiceNumber: String(body.invoiceNumber ?? "FP-1000"),
+          invoiceDate: String(body.invoiceDate ?? "2026-08-18"),
+          inventoryItemId: line.inventoryItemId ?? null,
+          supplierItemMappingId: null,
+          lineIndex: index,
+          description: String(line.description ?? ""),
+          normalizedDescription: String(line.description ?? "").trim().toLowerCase(),
+          purchaseUnit: String(line.purchaseUnit ?? "each"),
+          inventoryUnit: String(line.inventoryUnit ?? "each"),
+          conversionFactor: Number(line.conversionFactor ?? 1),
+          quantity: Number(line.quantity ?? 1),
+          unitPrice: Number(line.unitPrice ?? 0),
+          lineTotal: Number(line.lineTotal ?? 0),
+          confidence: Number(line.confidence ?? 0.5),
+          needsReview: Boolean(line.needsReview ?? true),
+          previousUnitPrice: null,
+          priceChangePercent: null,
+          note: String(line.note ?? ""),
+          createdAt: null,
+          updatedAt: null,
+        })),
+        createdAt: null,
+        updatedAt: null,
+      };
+      purchaseFlow.invoices = [invoice, ...purchaseFlow.invoices.filter((entry) => entry.id !== invoice.id)];
+      return jsonResponse(route, invoice);
+    }
+
+    if (purchaseFlow && path.endsWith("/receive") && path.startsWith("/api/pilot/purchases/invoices/") && method === "POST") {
+      const invoiceId = Number(path.split("/").at(-2));
+      const invoice = purchaseFlow.invoices.find((entry) => entry.id === invoiceId) ?? purchaseFlow.invoices[0];
+      return jsonResponse(route, {
+        ...invoice,
+        status: "Completed",
+        receivedAt: nowIso(),
+      });
+    }
+
     if (menuState && path === "/api/pilot/inventory" && method === "GET") {
       return jsonResponse(route, {
         items: menuState.inventory.map((item: any) => ({
@@ -1074,7 +1372,7 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
   await page.getByLabel("Business name").fill("Demo Bistro");
   await page.getByLabel("Location name").fill("Main Dining Room");
   await page.getByRole("button", { name: "Create your workspace" }).click();
-  await expect(page.getByText("Logged-in prospect")).toBeVisible();
+  await expect(page.getByText("Logged-in prospect", { exact: true })).toBeVisible();
   await expect(page.getByText("Welcome back, owner@example.com")).toBeVisible();
 });
 
@@ -1515,4 +1813,58 @@ test("owner reports and exports surface authenticated reporting data", async ({ 
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("flowtally-owner-report-demo-bistro.csv");
   expect(await download.path()).not.toBeNull();
+});
+
+test("empty purchases workspace supports supplier, inventory item, and first receipt setup", async ({ page }) => {
+  const organization = makeOrganization({ id: 5, name: "Starter Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({
+      currentOrganizationId: organization.id,
+      currentLocationId: 9,
+      organizations: [{ organization, membershipRole: "owner", selected: true }],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: organization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  const purchaseFlow = makeEmptyPurchaseFlowState();
+  enableEmptyPurchaseWorkflow(state, purchaseFlow);
+  await installMockApi(page, state);
+
+  await page.goto("/app/purchases");
+  await expect(page.getByRole("heading", { name: "Capture invoices, confirm items, and move stock" })).toBeVisible();
+
+  const editorHeading = page.getByRole("heading", { name: "New purchase" });
+  await page.getByRole("button", { name: "New purchase" }).click();
+  await expect(page.getByTestId("purchase-mutation-toast")).toBeVisible();
+  await expect(editorHeading).toBeInViewport();
+
+  await page.getByLabel("Supplier name").fill("North Bay Dairy");
+  await page.getByRole("button", { name: "Create supplier" }).click();
+  await expect(page.getByRole("button", { name: "Add supplier" })).toBeVisible();
+  await expect(page.getByLabel("Supplier")).toHaveValue("North Bay Dairy");
+
+  await page.getByLabel("Description").fill("2% Milk");
+  await page.getByRole("button", { name: "Create inventory item" }).click();
+  await expect(page.getByText("Create inventory item from this line")).toBeVisible();
+  await expect(page.getByLabel("Item name")).toHaveValue("2% Milk");
+  await page.getByLabel("Stock unit").fill("case");
+  await page.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("2");
+  const quantityFields = page.locator('label:has-text("Qty / price / total") input');
+  await quantityFields.nth(0).fill("2");
+  await quantityFields.nth(1).fill("4.5");
+  await quantityFields.nth(2).fill("9");
+  await page.getByRole("button", { name: "Create and map item" }).click();
+
+  await expect(page.getByLabel("Inventory item")).toHaveValue("30");
+  await page.getByRole("button", { name: "Save ready" }).click();
+  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Receive into inventory" }).click();
+  await expect(page.getByTestId("purchase-mutation-toast").getByText("Purchase received", { exact: true })).toBeVisible();
 });

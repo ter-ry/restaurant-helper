@@ -1,0 +1,381 @@
+import React from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PilotPurchasesPage } from "../../src/pilot/PilotPurchasesPage";
+
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+const pilotApiMocks = vi.hoisted(() => ({
+  fetchPilotPurchases: vi.fn(),
+  fetchPilotInventory: vi.fn(),
+  createPilotSupplier: vi.fn(),
+  createPilotInventoryItem: vi.fn(),
+  createPilotPurchaseInvoice: vi.fn(),
+  updatePilotPurchaseInvoice: vi.fn(),
+  receivePilotPurchaseInvoice: vi.fn(),
+  correctPilotPurchaseInvoice: vi.fn(),
+  fetchPilotPurchaseInvoice: vi.fn(),
+}));
+
+vi.mock("../../src/pilot/pilotApi", () => ({
+  fetchPilotPurchases: pilotApiMocks.fetchPilotPurchases,
+  fetchPilotInventory: pilotApiMocks.fetchPilotInventory,
+  createPilotSupplier: pilotApiMocks.createPilotSupplier,
+  createPilotInventoryItem: pilotApiMocks.createPilotInventoryItem,
+  createPilotPurchaseInvoice: pilotApiMocks.createPilotPurchaseInvoice,
+  updatePilotPurchaseInvoice: pilotApiMocks.updatePilotPurchaseInvoice,
+  receivePilotPurchaseInvoice: pilotApiMocks.receivePilotPurchaseInvoice,
+  correctPilotPurchaseInvoice: pilotApiMocks.correctPilotPurchaseInvoice,
+  fetchPilotPurchaseInvoice: pilotApiMocks.fetchPilotPurchaseInvoice,
+}));
+
+function emptyPurchases() {
+  return {
+    invoices: [],
+    suppliers: [],
+    purchaseLines: [],
+    priceChanges: [],
+    summary: {
+      thisMonthSpend: 0,
+      uploadsNeedingReview: 0,
+      priceChangesFlagged: 0,
+      mappedItems: 0,
+      exportReady: 0,
+      needsMapping: 0,
+    },
+    exportReadiness: {
+      readyForCsv: 0,
+      needsReview: 0,
+      needsMapping: 0,
+      quickBooksFutureOnly: false,
+    },
+  };
+}
+
+function emptyInventory() {
+  return {
+    items: [],
+    movements: [],
+    countSessions: [],
+    reorderPlan: { suggestions: [], groupedBySupplier: [] },
+    summary: {},
+  };
+}
+
+function createInvoice(state: TestState, payload: Record<string, unknown>) {
+  const supplierName = String(payload.supplierName ?? "");
+  const supplier = state.suppliers.find((entry) => entry.name === supplierName) ?? null;
+  const invoice = {
+    id: state.nextInvoiceId++,
+    organizationId: 5,
+    locationId: 9,
+    supplierId: supplier?.id ?? 0,
+    supplier,
+    invoiceNumber: String(payload.invoiceNumber ?? "FP-1000"),
+    invoiceDate: String(payload.invoiceDate ?? "2026-08-18"),
+    subtotal: Number(payload.subtotal ?? 0),
+    tax: Number(payload.tax ?? 0),
+    totalAmount: Number(payload.totalAmount ?? 0),
+    notes: String(payload.notes ?? ""),
+    status: String(payload.status ?? "Draft"),
+    sourceFileName: String(payload.sourceFileName ?? ""),
+    sourceFileType: String(payload.sourceFileType ?? ""),
+    sourceFileKey: "",
+    extractedText: String(payload.extractedText ?? ""),
+    extractionStatus: String(payload.extractionStatus ?? "manual"),
+    receivedAt: null,
+    receivedByUserId: null,
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    postedAt: null,
+    lineItems: (Array.isArray(payload.lineItems) ? payload.lineItems : []).map((line: any, index: number) => ({
+      id: state.nextLineId++,
+      invoiceId: state.nextInvoiceId - 1,
+      supplierName,
+      invoiceNumber: String(payload.invoiceNumber ?? "FP-1000"),
+      invoiceDate: String(payload.invoiceDate ?? "2026-08-18"),
+      inventoryItemId: line.inventoryItemId ?? null,
+      supplierItemMappingId: null,
+      lineIndex: index,
+      description: String(line.description ?? ""),
+      normalizedDescription: String(line.description ?? "").trim().toLowerCase(),
+      purchaseUnit: String(line.purchaseUnit ?? "each"),
+      inventoryUnit: String(line.inventoryUnit ?? "each"),
+      conversionFactor: Number(line.conversionFactor ?? 1),
+      quantity: Number(line.quantity ?? 1),
+      unitPrice: Number(line.unitPrice ?? 0),
+      lineTotal: Number(line.lineTotal ?? 0),
+      confidence: Number(line.confidence ?? 0.5),
+      needsReview: Boolean(line.needsReview ?? true),
+      previousUnitPrice: null,
+      priceChangePercent: null,
+      note: String(line.note ?? ""),
+      createdAt: null,
+      updatedAt: null,
+    })),
+    createdAt: null,
+    updatedAt: null,
+  };
+
+  state.invoices = [invoice, ...state.invoices.filter((entry) => entry.id !== invoice.id)];
+  return invoice;
+}
+
+type TestState = {
+  suppliers: Array<{ id: number; name: string; categoryFocus: string }>;
+  inventoryItems: Array<{ id: number; name: string; stockUnit: string }>;
+  invoices: Array<any>;
+  nextSupplierId: number;
+  nextItemId: number;
+  nextInvoiceId: number;
+  nextLineId: number;
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  const state: TestState = {
+    suppliers: [],
+    inventoryItems: [],
+    invoices: [],
+    nextSupplierId: 20,
+    nextItemId: 30,
+    nextInvoiceId: 100,
+    nextLineId: 1,
+  };
+
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callback(0);
+    return 0;
+  });
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    media: "(prefers-reduced-motion: reduce)",
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+
+  const nextPurchases = () => ({
+    ...emptyPurchases(),
+    invoices: state.invoices,
+    suppliers: state.suppliers.map((supplier) => ({
+      id: supplier.id,
+      organizationId: 5,
+      name: supplier.name,
+      normalizedName: supplier.name.trim().toLowerCase(),
+      categoryFocus: supplier.categoryFocus,
+      contactName: "",
+      contactPhone: "",
+      contactEmail: "",
+      orderingNotes: "",
+      notes: "",
+      isActive: true,
+      inventoryItemCount: 0,
+      purchaseInvoiceCount: 0,
+      supplierItemMappingCount: 0,
+      latestInvoiceDate: null,
+      historicalReferenceCount: 0,
+      recentInvoices: [],
+      recentMappings: [],
+    })),
+    purchaseLines: state.invoices.flatMap((invoice) => invoice.lineItems),
+    summary: {
+      thisMonthSpend: 0,
+      uploadsNeedingReview: 0,
+      priceChangesFlagged: 0,
+      mappedItems: state.invoices.flatMap((invoice) => invoice.lineItems).filter((line) => line.inventoryItemId).length,
+      exportReady: state.invoices.length,
+      needsMapping: state.invoices.flatMap((invoice) => invoice.lineItems).filter((line) => !line.inventoryItemId).length,
+    },
+  });
+
+  pilotApiMocks.fetchPilotPurchases.mockImplementation(async () => nextPurchases());
+  pilotApiMocks.fetchPilotInventory.mockImplementation(async () => ({
+    ...emptyInventory(),
+    items: state.inventoryItems.map((item) => ({
+      id: item.id,
+      organizationId: 5,
+      locationId: 9,
+      supplierId: null,
+      name: item.name,
+      normalizedName: item.name.trim().toLowerCase(),
+      category: "Other",
+      stockUnit: item.stockUnit,
+      currentOnHand: 0,
+      minQuantity: 0,
+      parLevel: 0,
+      preferredSupplierName: "",
+      latestPurchasePrice: 0,
+      lastPurchaseUnit: item.stockUnit,
+      lastPurchaseConversionFactor: 1,
+      lastReceivedAt: null,
+      lastCountedAt: null,
+      averageDailyUsage: null,
+      estimatedCostMethod: "latest_purchase_price",
+      active: true,
+      notes: "",
+      createdByUserId: 1,
+      updatedByUserId: 1,
+      createdAt: null,
+      updatedAt: null,
+    })),
+  }));
+  pilotApiMocks.createPilotSupplier.mockImplementation(async (payload: Record<string, unknown>) => {
+    const supplier = {
+      id: state.nextSupplierId++,
+      name: String(payload.name ?? ""),
+      categoryFocus: String(payload.categoryFocus ?? "Other"),
+    };
+    state.suppliers = [...state.suppliers, supplier];
+    return {
+      ...supplier,
+      organizationId: 5,
+      normalizedName: supplier.name.trim().toLowerCase(),
+      contactName: String(payload.contactName ?? ""),
+      contactPhone: String(payload.contactPhone ?? ""),
+      contactEmail: String(payload.contactEmail ?? ""),
+      orderingNotes: String(payload.orderingNotes ?? ""),
+      notes: String(payload.notes ?? ""),
+      isActive: true,
+      inventoryItemCount: 0,
+      purchaseInvoiceCount: 0,
+      supplierItemMappingCount: 0,
+      latestInvoiceDate: null,
+      historicalReferenceCount: 0,
+      recentInvoices: [],
+      recentMappings: [],
+    };
+  });
+  pilotApiMocks.createPilotInventoryItem.mockImplementation(async (payload: Record<string, unknown>) => {
+    const item = {
+      id: state.nextItemId++,
+      name: String(payload.name ?? ""),
+      stockUnit: String(payload.stockUnit ?? "each"),
+    };
+    state.inventoryItems = [...state.inventoryItems, item];
+    return {
+      id: item.id,
+      organizationId: 5,
+      locationId: 9,
+      supplierId: null,
+      name: item.name,
+      normalizedName: item.name.trim().toLowerCase(),
+      category: String(payload.category ?? "Other"),
+      stockUnit: item.stockUnit,
+      currentOnHand: Number(payload.currentOnHand ?? 0),
+      minQuantity: Number(payload.minQuantity ?? 0),
+      parLevel: Number(payload.parLevel ?? 0),
+      preferredSupplierName: String(payload.preferredSupplierName ?? ""),
+      latestPurchasePrice: Number(payload.latestPurchasePrice ?? 0),
+      lastPurchaseUnit: String(payload.lastPurchaseUnit ?? "each"),
+      lastPurchaseConversionFactor: Number(payload.lastPurchaseConversionFactor ?? 1),
+      lastReceivedAt: null,
+      lastCountedAt: null,
+      averageDailyUsage: null,
+      estimatedCostMethod: "latest_purchase_price",
+      active: Boolean(payload.active ?? true),
+      notes: String(payload.notes ?? ""),
+      createdByUserId: 1,
+      updatedByUserId: 1,
+      createdAt: null,
+      updatedAt: null,
+    };
+  });
+  pilotApiMocks.createPilotPurchaseInvoice.mockImplementation(async (payload: Record<string, unknown>) => createInvoice(state, payload));
+  pilotApiMocks.updatePilotPurchaseInvoice.mockImplementation(async (_id: number, payload: Record<string, unknown>) => createInvoice(state, payload));
+  pilotApiMocks.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => ({
+    ...(state.invoices.find((invoice) => invoice.id === invoiceId) ?? state.invoices[0]),
+    status: "Completed",
+    receivedAt: new Date().toISOString(),
+  }));
+  pilotApiMocks.correctPilotPurchaseInvoice.mockResolvedValue({
+    id: 999,
+    organizationId: 5,
+    locationId: 9,
+    supplierId: 0,
+    supplier: null,
+    invoiceNumber: "FP-9999",
+    invoiceDate: "2026-08-18",
+    subtotal: 0,
+    tax: 0,
+    totalAmount: 0,
+    notes: "",
+    status: "Corrected",
+    sourceFileName: "",
+    sourceFileType: "manual",
+    sourceFileKey: "",
+    extractedText: "",
+    extractionStatus: "manual",
+    receivedAt: null,
+    receivedByUserId: null,
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    postedAt: null,
+    lineItems: [],
+    createdAt: null,
+    updatedAt: null,
+  });
+  pilotApiMocks.fetchPilotPurchaseInvoice.mockImplementation(async (id: number) => state.invoices.find((invoice) => invoice.id === id) ?? state.invoices[0]);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  if (originalScrollIntoView) {
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: originalScrollIntoView,
+    });
+  } else {
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+  }
+});
+
+describe("PilotPurchasesPage", () => {
+  it("makes the empty purchase editor visible and supports inline supplier and inventory creation", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/purchases"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Capture invoices, confirm items, and move stock" });
+
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+
+    expect(screen.getByTestId("purchase-mutation-toast")).toHaveClass("fixed", "bottom-4");
+    expect(screen.getByLabelText("Supplier name")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Blank draft" }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(2));
+
+    fireEvent.change(screen.getByLabelText("Supplier name"), { target: { value: "North Bay Dairy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create supplier" }));
+    await waitFor(() => expect(pilotApiMocks.createPilotSupplier).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText("Supplier")).toHaveValue("North Bay Dairy"));
+
+    const description = screen.getByLabelText("Description");
+    fireEvent.change(description, { target: { value: "2% Milk" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create inventory item" }));
+    await waitFor(() => expect(screen.getByText("Create inventory item from this line")).toBeVisible());
+    expect(screen.getByLabelText("Item name")).toHaveValue("2% Milk");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create and map item" }));
+    await waitFor(() => expect(pilotApiMocks.createPilotInventoryItem).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText("Inventory item")).toHaveValue("30"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save ready" }));
+    await waitFor(() => expect(pilotApiMocks.createPilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeEnabled());
+  });
+});

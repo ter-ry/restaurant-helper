@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, FileText, FileUp, Plus, RefreshCcw, ShoppingBag, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileUp, Plus, RefreshCcw, Sparkles } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -7,7 +7,9 @@ import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import {
+  createPilotInventoryItem,
   createPilotPurchaseInvoice,
+  createPilotSupplier,
   correctPilotPurchaseInvoice,
   fetchPilotInventory,
   fetchPilotPurchases,
@@ -54,6 +56,37 @@ interface PurchaseDraft {
 
 const commonUnits = ["each", "bag", "bottle", "box", "case", "dozen", "kg", "lb", "L", "ml", "pack", "roll", "tray"];
 
+type InlineNotice = {
+  kind: "success" | "error";
+  title: string;
+  message: string;
+};
+
+type InlineSupplierDraft = {
+  name: string;
+  categoryFocus: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  orderingNotes: string;
+  notes: string;
+};
+
+type InlineInventoryDraft = {
+  name: string;
+  category: string;
+  stockUnit: string;
+  currentOnHand: number;
+  minQuantity: number;
+  parLevel: number;
+  preferredSupplierName: string;
+  latestPurchasePrice: number;
+  lastPurchaseUnit: string;
+  lastPurchaseConversionFactor: number;
+  notes: string;
+  active: boolean;
+};
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -78,11 +111,10 @@ function blankLine(): DraftLine {
   };
 }
 
-function buildBlankDraft(data?: PilotPurchasesResponse): PurchaseDraft {
-  const supplierName = data?.suppliers[0]?.name ?? "Fresh Dairy Toronto";
+function buildBlankDraft(): PurchaseDraft {
   return {
     id: null,
-    supplierName,
+    supplierName: "",
     invoiceNumber: `FP-${String(Math.floor(Math.random() * 9000) + 1000)}`,
     invoiceDate: todayIso(),
     subtotal: 0,
@@ -95,6 +127,35 @@ function buildBlankDraft(data?: PilotPurchasesResponse): PurchaseDraft {
     extractionStatus: "manual",
     extractedText: "",
     lineItems: [blankLine()],
+  };
+}
+
+function buildBlankSupplierDraft(): InlineSupplierDraft {
+  return {
+    name: "",
+    categoryFocus: "Other",
+    contactName: "",
+    contactPhone: "",
+    contactEmail: "",
+    orderingNotes: "",
+    notes: "",
+  };
+}
+
+function buildInlineInventoryDraft(line: DraftLine, supplierName: string): InlineInventoryDraft {
+  return {
+    name: line.description.trim() || "New inventory item",
+    category: "Other",
+    stockUnit: line.inventoryUnit || line.purchaseUnit || "each",
+    currentOnHand: 0,
+    minQuantity: 0,
+    parLevel: 0,
+    preferredSupplierName: supplierName,
+    latestPurchasePrice: Number.isFinite(line.unitPrice) ? Number(line.unitPrice.toFixed(2)) : 0,
+    lastPurchaseUnit: line.purchaseUnit || "each",
+    lastPurchaseConversionFactor: Number.isFinite(line.conversionFactor) && line.conversionFactor > 0 ? line.conversionFactor : 1,
+    notes: "",
+    active: true,
   };
 }
 
@@ -203,8 +264,18 @@ export function PilotPurchasesPage() {
   const [ocrMessage, setOcrMessage] = useState<string | null>(null);
   const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<InlineNotice | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [supplierCreateOpen, setSupplierCreateOpen] = useState(false);
+  const [supplierSaving, setSupplierSaving] = useState(false);
+  const [supplierDraft, setSupplierDraft] = useState<InlineSupplierDraft>(() => buildBlankSupplierDraft());
+  const [inventoryCreateLineId, setInventoryCreateLineId] = useState<string | null>(null);
+  const [inventorySavingLineId, setInventorySavingLineId] = useState<string | null>(null);
+  const [inventoryDraft, setInventoryDraft] = useState<InlineInventoryDraft>(() => buildInlineInventoryDraft(blankLine(), ""));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const supplierSelectRef = useRef<HTMLSelectElement | null>(null);
+  const supplierInputRef = useRef<HTMLInputElement | null>(null);
+  const editorPanelRef = useRef<HTMLDivElement | null>(null);
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
     const parsed = Number(value);
@@ -266,6 +337,11 @@ export function PilotPurchasesPage() {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
       setData(purchases);
       setInventoryItems(inventory.items);
+      setSupplierCreateOpen(purchases.suppliers.length === 0);
+      setSupplierDraft(buildBlankSupplierDraft());
+      setInventoryCreateLineId(null);
+      setInventorySavingLineId(null);
+      setInventoryDraft(buildInlineInventoryDraft(blankLine(), ""));
       setOcrMessage(null);
       const requestedInvoice = preferredInvoiceId ? purchases.invoices.find((invoice) => invoice.id === preferredInvoiceId) ?? null : null;
       const currentInvoice = requestedInvoice ?? (selectedId !== null ? purchases.invoices.find((invoice) => invoice.id === selectedId) ?? null : purchases.invoices[0] ?? null);
@@ -273,7 +349,7 @@ export function PilotPurchasesPage() {
         setSelectedId(currentInvoice.id);
         setDraft(invoiceToDraft(currentInvoice));
       } else {
-        setDraft(buildBlankDraft(purchases));
+        setDraft(buildBlankDraft());
         setSelectedId(null);
       }
     } catch (err) {
@@ -287,6 +363,47 @@ export function PilotPurchasesPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedInvoiceId]);
+
+  const hasSuppliers = (data?.suppliers.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!hasSuppliers) {
+      setSupplierCreateOpen(true);
+    }
+  }, [hasSuppliers]);
+
+  useEffect(() => {
+    if (!notice || notice.kind !== "success") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setNotice(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  const inventoryItemOptions = [...inventoryItems].sort((a, b) => a.name.localeCompare(b.name));
+  const showNotice = (kind: InlineNotice["kind"], title: string, message: string) => {
+    setNotice({ kind, title, message });
+  };
+  const lineKey = (line: DraftLine, index: number) => String(line.id ?? `line-${index}`);
+
+  const scrollEditorIntoView = (focusTarget?: "supplier-select" | "supplier-input") => {
+    window.requestAnimationFrame(() => {
+      editorPanelRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      if (focusTarget === "supplier-select" || (focusTarget === undefined && hasSuppliers && !supplierCreateOpen)) {
+        supplierSelectRef.current?.focus();
+      } else if (focusTarget === "supplier-input" || focusTarget === undefined) {
+        supplierInputRef.current?.focus();
+      }
+    });
+  };
+
+  const refreshCollections = async () => {
+    const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
+    setData(purchases);
+    setInventoryItems(inventory.items);
+    return { purchases, inventory };
+  };
 
   const selectedInvoice = useMemo(
     () => data?.invoices.find((invoice) => invoice.id === selectedId) ?? null,
@@ -331,6 +448,142 @@ export function PilotPurchasesPage() {
     }));
   };
 
+  const startBlankDraft = (message: string) => {
+    setSelectedId(null);
+    setReceiveMessage(null);
+    setError(null);
+    setOcrMessage(null);
+    setCorrectionNote("");
+    setDraft(buildBlankDraft());
+    setSupplierDraft(buildBlankSupplierDraft());
+    setInventoryCreateLineId(null);
+    setNotice({
+      kind: "success",
+      title: "Blank purchase draft ready",
+      message,
+    });
+    scrollEditorIntoView(hasSuppliers ? "supplier-select" : "supplier-input");
+  };
+
+  const createSupplier = async () => {
+    if (supplierSaving) {
+      return;
+    }
+
+    const name = supplierDraft.name.trim();
+    if (!name) {
+      showNotice("error", "Supplier name required", "Enter a supplier name before creating the first vendor.");
+      return;
+    }
+
+    setSupplierSaving(true);
+    setError(null);
+
+    try {
+      await createPilotSupplier({
+        name,
+        categoryFocus: supplierDraft.categoryFocus,
+        contactName: supplierDraft.contactName,
+        contactPhone: supplierDraft.contactPhone,
+        contactEmail: supplierDraft.contactEmail,
+        orderingNotes: supplierDraft.orderingNotes,
+        notes: supplierDraft.notes,
+        isActive: true,
+      });
+      const refreshed = await refreshCollections();
+      setDraft((current) => ({
+        ...current,
+        supplierName: name,
+      }));
+      setSupplierDraft(buildBlankSupplierDraft());
+      setSupplierCreateOpen(false);
+      const supplierCount = refreshed.purchases.suppliers.length;
+      showNotice("success", "Supplier created", `${name} is now available for this purchase${supplierCount > 1 ? " and the updated supplier list has been reloaded." : "."}`);
+      window.requestAnimationFrame(() => {
+        scrollEditorIntoView("supplier-select");
+        supplierSelectRef.current?.focus();
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not create the supplier.";
+      setError(message);
+      showNotice("error", "Supplier save failed", message);
+    } finally {
+      setSupplierSaving(false);
+    }
+  };
+
+  const beginInventoryCreation = (line: DraftLine, index: number) => {
+    setInventoryCreateLineId(lineKey(line, index));
+    setInventoryDraft(buildInlineInventoryDraft(line, draft.supplierName.trim()));
+    showNotice("success", "Create inventory item", "Confirm the item details and save it below.");
+  };
+
+  const cancelInventoryCreation = () => {
+    setInventoryCreateLineId(null);
+    setInventoryDraft(buildInlineInventoryDraft(blankLine(), draft.supplierName.trim()));
+  };
+
+  const createInventoryItemForLine = async (line: DraftLine, index: number) => {
+    if (inventorySavingLineId) {
+      return;
+    }
+
+    const currentLineKey = lineKey(line, index);
+    const name = inventoryDraft.name.trim() || line.description.trim();
+    if (!name) {
+      showNotice("error", "Inventory item name required", "Enter a name before creating the first item.");
+      return;
+    }
+
+    setInventorySavingLineId(currentLineKey);
+    setError(null);
+
+    try {
+      const saved = await createPilotInventoryItem({
+        name,
+        category: inventoryDraft.category,
+        stockUnit: inventoryDraft.stockUnit,
+        currentOnHand: inventoryDraft.currentOnHand,
+        minQuantity: inventoryDraft.minQuantity,
+        parLevel: inventoryDraft.parLevel,
+        preferredSupplierName: inventoryDraft.preferredSupplierName || draft.supplierName || "",
+        latestPurchasePrice: inventoryDraft.latestPurchasePrice,
+        lastPurchaseUnit: inventoryDraft.lastPurchaseUnit,
+        lastPurchaseConversionFactor: inventoryDraft.lastPurchaseConversionFactor,
+        notes: inventoryDraft.notes,
+        active: inventoryDraft.active,
+      });
+      await refreshCollections();
+      setDraft((current) => ({
+        ...current,
+        lineItems: current.lineItems.map((entry) =>
+          entry.id === line.id
+            ? {
+                ...entry,
+                inventoryItemId: saved.id,
+                inventoryUnit: saved.stockUnit || entry.inventoryUnit,
+                purchaseUnit: saved.lastPurchaseUnit || entry.purchaseUnit,
+                conversionFactor: saved.lastPurchaseConversionFactor || entry.conversionFactor,
+                needsReview: false,
+              }
+            : entry,
+        ),
+      }));
+      setInventoryCreateLineId(null);
+      setInventoryDraft(buildInlineInventoryDraft(blankLine(), draft.supplierName.trim()));
+      showNotice("success", "Inventory item created", `${saved.name} is now mapped to this line.`);
+      window.requestAnimationFrame(() => {
+        scrollEditorIntoView("supplier-select");
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not create the inventory item.";
+      setError(message);
+      showNotice("error", "Inventory save failed", message);
+    } finally {
+      setInventorySavingLineId(null);
+    }
+  };
+
   const saveDraft = async (status: string) => {
     setSaving(true);
     setReceiveMessage(null);
@@ -373,8 +626,11 @@ export function PilotPurchasesPage() {
       setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
       setOcrMessage(null);
       await load(saved.id);
+      showNotice("success", "Purchase saved", `Invoice ${saved.invoiceNumber} saved successfully.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the purchase.");
+      const message = err instanceof Error ? err.message : "Could not save the purchase.";
+      setError(message);
+      showNotice("error", "Purchase save failed", message);
     } finally {
       setSaving(false);
     }
@@ -399,8 +655,11 @@ export function PilotPurchasesPage() {
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
       setOcrMessage(null);
       await load(received.id);
+      showNotice("success", "Purchase received", `Invoice ${received.invoiceNumber} received into inventory.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not receive the purchase.");
+      const message = err instanceof Error ? err.message : "Could not receive the purchase.";
+      setError(message);
+      showNotice("error", "Receive failed", message);
     } finally {
       setSaving(false);
     }
@@ -424,8 +683,11 @@ export function PilotPurchasesPage() {
       setReceiveMessage(`Invoice ${corrected.invoiceNumber} corrected and inventory movements were reversed.`);
       setOcrMessage(null);
       await load(corrected.id);
+      showNotice("success", "Purchase corrected", `Invoice ${corrected.invoiceNumber} corrected and inventory movements were reversed.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not record the correction.");
+      const message = err instanceof Error ? err.message : "Could not record the correction.";
+      setError(message);
+      showNotice("error", "Correction failed", message);
     } finally {
       setSaving(false);
     }
@@ -481,6 +743,25 @@ export function PilotPurchasesPage() {
 
   return (
     <div className="space-y-6">
+      {notice ? (
+        <div
+          aria-atomic="true"
+          aria-live={notice.kind === "success" ? "polite" : "assertive"}
+          className="pointer-events-none fixed bottom-4 left-4 right-4 z-50 flex justify-end sm:left-auto sm:right-4 sm:max-w-sm"
+          data-testid="purchase-mutation-toast"
+          role={notice.kind === "success" ? "status" : "alert"}
+        >
+          <Card className={`pointer-events-auto w-full border px-4 py-3 shadow-xl ${notice.kind === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"}`}>
+            <div className="flex items-start gap-3">
+              {notice.kind === "success" ? <CheckCircle2 className="mt-0.5 h-5 w-5" /> : <AlertTriangle className="mt-0.5 h-5 w-5" />}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold uppercase tracking-wide">{notice.title}</p>
+                <p className="mt-1 text-sm leading-6">{notice.message}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
       <Card className="surface-panel p-6 sm:p-7">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
@@ -492,13 +773,8 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
-            onClick={() => {
-              setSelectedId(null);
-              setReceiveMessage(null);
-              setCorrectionNote("");
-              setDraft(buildBlankDraft(data ?? undefined));
-            }}
-          >
+              onClick={() => startBlankDraft("You can start entering supplier, line, and amount details right away.")}
+            >
               New purchase
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
@@ -524,12 +800,7 @@ export function PilotPurchasesPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => {
-                  setDraft(buildBlankDraft(data ?? undefined));
-                  setSelectedId(null);
-                  setReceiveMessage(null);
-                  setOcrMessage("Started a blank purchase draft.");
-                }}
+                onClick={() => startBlankDraft("Blank draft ready. Add the first supplier or line details below.")}
               >
                 Blank draft
               </Button>
@@ -577,7 +848,8 @@ export function PilotPurchasesPage() {
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-        <Card className="p-6">
+        <div ref={editorPanelRef}>
+          <Card className="p-6">
           <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
           <div className="space-y-3">
             {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
@@ -632,19 +904,50 @@ export function PilotPurchasesPage() {
           />
 
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-semibold text-ink">Supplier</span>
-              <select
-                className="input mt-1"
-                value={draft.supplierName}
-                onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))}
-                disabled={finalizedStatus}
-              >
-                {data?.suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
-                ))}
-              </select>
-            </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <label className="block text-sm font-semibold text-ink" htmlFor="purchase-supplier">
+                  Supplier
+                </label>
+                {hasSuppliers ? (
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-brand-700 transition hover:text-brand-800 disabled:opacity-60"
+                    onClick={() => setSupplierCreateOpen((current) => !current)}
+                    disabled={finalizedStatus}
+                  >
+                    {supplierCreateOpen ? "Hide create supplier" : "Add supplier"}
+                  </button>
+                ) : null}
+              </div>
+              {hasSuppliers ? (
+                <>
+                  <select
+                    ref={supplierSelectRef}
+                    id="purchase-supplier"
+                    className="input mt-1"
+                    value={draft.supplierName}
+                    onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))}
+                    disabled={finalizedStatus}
+                  >
+                    <option value="">Choose supplier</option>
+                    {data?.suppliers.map((supplier) => (
+                      <option key={supplier.id} value={supplier.name}>
+                        {supplier.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!draft.supplierName ? <p className="text-xs leading-5 text-muted">Choose an existing supplier or create a new one below.</p> : null}
+                </>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-brand-200 bg-brand-50/50 p-4">
+                  <p className="text-sm font-semibold text-ink">No suppliers yet</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">
+                    Create the first supplier in the inline form below, then it will be selected automatically for this purchase.
+                  </p>
+                </div>
+              )}
+            </div>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Invoice number</span>
               <input className="input mt-1" value={draft.invoiceNumber} onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
@@ -668,6 +971,81 @@ export function PilotPurchasesPage() {
               )}
             </label>
           </div>
+
+          {supplierCreateOpen || !hasSuppliers ? (
+            <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-ink">{hasSuppliers ? "Create a new supplier" : "Create the first supplier"}</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">
+                    {hasSuppliers
+                      ? "Add a vendor inline without leaving the purchase editor."
+                      : "There are no suppliers yet, so create one before you continue this purchase."}
+                  </p>
+                </div>
+                {hasSuppliers ? (
+                  <button type="button" className="text-sm font-semibold text-brand-700 transition hover:text-brand-800" onClick={() => setSupplierCreateOpen(false)}>
+                    Close
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Supplier name</span>
+                  <input
+                    ref={supplierInputRef}
+                    className="input mt-1"
+                    value={supplierDraft.name}
+                    onChange={(event) => setSupplierDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Enter supplier name"
+                    disabled={finalizedStatus || supplierSaving}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Category focus</span>
+                  <input
+                    className="input mt-1"
+                    value={supplierDraft.categoryFocus}
+                    onChange={(event) => setSupplierDraft((current) => ({ ...current, categoryFocus: event.target.value }))}
+                    placeholder="Dairy, produce, packaging..."
+                    disabled={finalizedStatus || supplierSaving}
+                  />
+                </label>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Contact name</span>
+                  <input className="input mt-1" value={supplierDraft.contactName} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactName: event.target.value }))} disabled={finalizedStatus || supplierSaving} />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Contact phone</span>
+                  <input className="input mt-1" value={supplierDraft.contactPhone} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactPhone: event.target.value }))} disabled={finalizedStatus || supplierSaving} />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Contact email</span>
+                  <input className="input mt-1" type="email" value={supplierDraft.contactEmail} onChange={(event) => setSupplierDraft((current) => ({ ...current, contactEmail: event.target.value }))} disabled={finalizedStatus || supplierSaving} />
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <Button type="button" onClick={() => void createSupplier()} disabled={finalizedStatus || supplierSaving}>
+                  {supplierSaving ? "Creating supplier..." : "Create supplier"}
+                </Button>
+                {hasSuppliers ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setSupplierCreateOpen(false);
+                      setSupplierDraft(buildBlankSupplierDraft());
+                    }}
+                    disabled={supplierSaving}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <label className="block">
@@ -708,10 +1086,23 @@ export function PilotPurchasesPage() {
                       <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory item</span>
                       <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus}>
                         <option value="">Unmapped</option>
-                        {inventoryItems.map((item) => (
+                        {inventoryItemOptions.map((item) => (
                           <option key={item.id} value={item.id}>{item.name}</option>
                         ))}
                       </select>
+                  {!line.inventoryItemId ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-sm font-semibold text-brand-700 transition hover:text-brand-800 disabled:opacity-60"
+                            onClick={() => beginInventoryCreation(line, index)}
+                            disabled={finalizedStatus}
+                          >
+                            {inventoryCreateLineId === lineKey(line, index) ? "Creating item below" : "Create inventory item"}
+                          </button>
+                          {inventoryItems.length === 0 ? <span className="text-xs leading-5 text-muted">No inventory items yet.</span> : null}
+                        </div>
+                      ) : null}
                     </label>
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-4">
@@ -778,6 +1169,75 @@ export function PilotPurchasesPage() {
                       Inventory unit {line.inventoryUnit || "each"} will receive {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} units from this line.
                     </p>
                   ) : null}
+                  {!line.inventoryItemId && inventoryCreateLineId === lineKey(line, index) ? (
+                    <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-ink">Create inventory item from this line</p>
+                          <p className="mt-1 text-sm leading-6 text-muted">
+                            We prefilled the name, unit, and price from the invoice line. Confirm the stock unit and PAR before saving.
+                          </p>
+                        </div>
+                        <button type="button" className="text-sm font-semibold text-brand-700 transition hover:text-brand-800" onClick={cancelInventoryCreation}>
+                          Close
+                        </button>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Item name</span>
+                          <input className="input mt-1" value={inventoryDraft.name} onChange={(event) => setInventoryDraft((current) => ({ ...current, name: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Stock unit</span>
+                          <input className="input mt-1" list={`inventory-units-create-${lineKey(line, index)}`} value={inventoryDraft.stockUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, stockUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          <datalist id={`inventory-units-create-${lineKey(line, index)}`}>
+                            {commonUnits.map((unit) => (
+                              <option key={unit} value={unit} />
+                            ))}
+                          </datalist>
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Category</span>
+                          <input className="input mt-1" value={inventoryDraft.category} onChange={(event) => setInventoryDraft((current) => ({ ...current, category: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Preferred supplier</span>
+                          <input className="input mt-1" value={inventoryDraft.preferredSupplierName} onChange={(event) => setInventoryDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</span>
+                          <input className="input mt-1" type="number" step="0.01" value={inventoryDraft.latestPurchasePrice} onChange={(event) => setInventoryDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase unit</span>
+                          <input className="input mt-1" value={inventoryDraft.lastPurchaseUnit} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion factor</span>
+                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.lastPurchaseConversionFactor} onChange={(event) => setInventoryDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Current on hand</span>
+                          <input className="input mt-1" type="number" step="0.0001" value={inventoryDraft.currentOnHand} onChange={(event) => setInventoryDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Min / PAR</span>
+                          <div className="mt-1 grid grid-cols-2 gap-2">
+                            <input className="input" type="number" step="0.0001" value={inventoryDraft.minQuantity} onChange={(event) => setInventoryDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                            <input className="input" type="number" step="0.0001" value={inventoryDraft.parLevel} onChange={(event) => setInventoryDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)} />
+                          </div>
+                        </label>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <Button type="button" onClick={() => void createInventoryItemForLine(line, index)} disabled={finalizedStatus || inventorySavingLineId === lineKey(line, index)}>
+                          {inventorySavingLineId === lineKey(line, index) ? "Creating item..." : "Create and map item"}
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={cancelInventoryCreation} disabled={inventorySavingLineId === lineKey(line, index)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -829,7 +1289,8 @@ export function PilotPurchasesPage() {
             <p className="font-semibold text-ink">Purchase status</p>
             <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Corrected purchases stay view-only and preserve the audit trail. Save ready is available only when every line is mapped.</p>
           </div>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );
