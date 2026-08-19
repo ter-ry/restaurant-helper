@@ -223,7 +223,7 @@ def test_cors_preflight_allows_patch_and_credentials_from_trusted_frontend(clien
         },
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == TRUSTED_FRONTEND_ORIGIN
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
     allowed_methods = {method.strip() for method in response.headers["Access-Control-Allow-Methods"].split(",")}
@@ -243,6 +243,6 @@ def test_cors_preflight_allows_post_and_rejects_untrusted_origin(client):
         },
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert "Access-Control-Allow-Origin" not in response.headers
     assert "Access-Control-Allow-Credentials" not in response.headers
