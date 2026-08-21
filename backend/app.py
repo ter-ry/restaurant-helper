@@ -1,14 +1,28 @@
 from __future__ import annotations
 
-from flask import Flask, Response, jsonify, request
+import click
+import os
+from urllib.parse import urlparse
+
+from flask import Flask, Response, g, jsonify, request, session
 from flask_wtf.csrf import CSRFError
+from flask_login import logout_user
 
 from .auth import bp as auth_bp
-from .config import choose_config
+from .commercial import bp as commercial_bp
+from .audit import ensure_request_id
+from .access import enforce_operational_access
+from .imports import bp as imports_bp
+from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 from .models import User
+from .ocr import bp as ocr_bp
+from .tenant_context import apply_request_tenant_context
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
+from .platform_admin import bp as platform_admin_bp
+from .square_integration import bp as square_integration_bp
+from .policy import enforce_endpoint_permission
 from .seed import seed_pilot_data
 from .validation import RequestValidationError
 from .utils import json_error
@@ -19,6 +33,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.config.from_mapping(choose_config().build())
     if test_config:
         app.config.update(test_config)
+    validate_runtime_config(app.config, environment=app.config.get("FLOWTALLY_ENV"))
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -29,18 +44,89 @@ def create_app(test_config: dict | None = None) -> Flask:
     login_manager.login_view = "auth.login"
     login_manager.session_protection = "strong"
 
+    @app.before_request
+    def assign_request_id() -> None:
+        ensure_request_id()
+
+    @app.before_request
+    def enforce_split_origin_browser_boundary():
+        if not app.config.get("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"):
+            return None
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.path.startswith("/api/"):
+            return None
+
+        allowed_origins = set(app.config.get("ALLOWED_ORIGINS", []))
+        frontend_origin = str(app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip().rstrip("/")
+        if frontend_origin:
+            allowed_origins.add(frontend_origin)
+
+        origin = request.headers.get("Origin", "").strip()
+        referer = request.headers.get("Referer", "").strip()
+
+        def _extract_origin(value: str) -> str:
+            parsed = urlparse(value)
+            if not parsed.scheme or not parsed.netloc:
+                return ""
+            return f"{parsed.scheme}://{parsed.netloc}"
+
+        if origin:
+            if origin not in allowed_origins:
+                return json_error("Origin does not match the configured frontend.", 403)
+            return None
+
+        if referer:
+            if _extract_origin(referer) not in allowed_origins:
+                return json_error("Referrer does not match the configured frontend.", 403)
+            return None
+
+        return json_error("Origin or referrer is required for browser API requests.", 403)
+
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:
         if not user_id:
             return None
-        return User.query.filter_by(id=int(user_id)).first()
+        user = User.query.filter_by(id=int(user_id)).first()
+        if user is None or not user.is_active:
+            return None
+        return user
 
     @login_manager.unauthorized_handler
     def unauthorized() -> tuple[object, int]:
         return json_error("Authentication required.", 401)
 
+    @app.before_request
+    def reject_inactive_sessions():
+        user_id = session.get("_user_id")
+        if not user_id:
+            return
+        try:
+            db.session.expire_all()
+            user = User.query.filter_by(id=int(user_id)).first()
+        except (TypeError, ValueError):
+            user = None
+        if user is None or not user.is_active:
+            logout_user()
+            return json_error("Authentication required.", 401)
+
+    @app.before_request
+    def set_postgres_tenant_context():
+        apply_request_tenant_context()
+
+    @app.before_request
+    def enforce_centralized_policy():
+        return enforce_endpoint_permission()
+
+    @app.before_request
+    def enforce_commercial_access():
+        return enforce_operational_access()
+
     @app.after_request
     def add_cors_headers(response: Response) -> Response:
+        request_id = getattr(g, "request_id", None)
+        if request_id:
+            response.headers.setdefault("X-Request-Id", str(request_id))
         if request.path.startswith("/api/"):
             origin = request.headers.get("Origin", "")
             allowed_origins = set(app.config.get("ALLOWED_ORIGINS", []))
@@ -49,7 +135,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 response.headers["Vary"] = "Origin"
                 response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRFToken, X-CSRF-Token")
-            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         return response
 
     @app.errorhandler(400)
@@ -83,21 +169,31 @@ def create_app(test_config: dict | None = None) -> Flask:
     def api_options(_path: str = "") -> Response:
         return Response(status=204)
 
+    @limiter.exempt
     @app.get("/api/health")
     def health() -> tuple[dict[str, object], int]:
         return (
             {
                 "status": "ok",
                 "service": "flowtally-pilot-backend",
+                "environment": app.config.get("FLOWTALLY_ENV", "development"),
                 "databaseUrlConfigured": bool(app.config.get("SQLALCHEMY_DATABASE_URI")),
-                "sessionCookieName": app.config.get("SESSION_COOKIE_NAME"),
                 "csrfEnabled": bool(app.config.get("WTF_CSRF_ENABLED", True)),
+                "ocrConfigured": bool(os.environ.get("OCR_SPACE_API_KEY", "").strip()),
+                "googleOidcEnabled": bool(app.config.get("GOOGLE_OIDC_ENABLED")),
+                "squareEnabled": bool(app.config.get("SQUARE_ENABLED")),
             },
             200,
         )
 
+    csrf.exempt(ocr_bp)
+    app.register_blueprint(ocr_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(commercial_bp)
+    app.register_blueprint(imports_bp)
     app.register_blueprint(organizations_bp)
+    app.register_blueprint(platform_admin_bp)
+    app.register_blueprint(square_integration_bp)
     app.register_blueprint(pilot_api_bp)
 
     @app.cli.group("seed")
@@ -105,16 +201,26 @@ def create_app(test_config: dict | None = None) -> Flask:
         """Seed local pilot data."""
 
     @seed_group.command("pilot")
-    def seed_pilot_command() -> None:
-        result = seed_pilot_data(reset=False)
+    @click.option(
+        "--confirm-production-seeding",
+        is_flag=True,
+        help="Required together with FLOWTALLY_ALLOW_PRODUCTION_SEEDING when seeding staging or production.",
+    )
+    def seed_pilot_command(confirm_production_seeding: bool) -> None:
+        result = seed_pilot_data(reset=False, confirm_production=confirm_production_seeding)
         print(
             "Seeded pilot data: "
             f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"
         )
 
     @seed_group.command("reset-pilot")
-    def reset_pilot_command() -> None:
-        result = seed_pilot_data(reset=True)
+    @click.option(
+        "--confirm-production-seeding",
+        is_flag=True,
+        help="Required together with FLOWTALLY_ALLOW_PRODUCTION_SEEDING when resetting staging or production.",
+    )
+    def reset_pilot_command(confirm_production_seeding: bool) -> None:
+        result = seed_pilot_data(reset=True, confirm_production=confirm_production_seeding)
         print(
             "Reset and seeded pilot data: "
             f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"

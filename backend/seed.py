@@ -3,19 +3,37 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import os
 
 from .extensions import db
 from .models import (
+    AuditEvent,
+    DashboardLayout,
+    ExternalIdentity,
     InventoryItem,
     InventoryMovement,
     Organization,
+    OrganizationConfiguration,
+    OrganizationConfigurationVersion,
+    OrganizationInvitation,
     OrganizationMembership,
+    OrganizationModule,
+    PlatformRole,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     ReorderIntent,
     RestaurantLocation,
+    SquareCatalogMapping,
+    SquareCatalogObject,
+    SquareConnection,
+    SquareLocation,
+    SquareLocationMapping,
+    SquareSyncCursor,
+    SquareSyncJob,
+    SquareWebhookEvent,
     StockCountSession,
     StockCountSessionLine,
+    SupportAccessGrant,
     Supplier,
     SupplierItemMapping,
     User,
@@ -39,12 +57,12 @@ class SeedResult:
 
 
 SUPPLIER_SEED = [
-    {"name": "Oak Valley Meat Co", "category_focus": "Chicken, protein, proteins"},
-    {"name": "Metro Packaging Co", "category_focus": "Cups, lids, straws, napkins"},
-    {"name": "GTA Beverage Supply", "category_focus": "Tea, tapioca, milk, drink base"},
-    {"name": "Fresh Dairy Toronto", "category_focus": "Cream, milk, eggs"},
-    {"name": "Northern Produce Market", "category_focus": "Lettuce, produce, vegetables"},
-    {"name": "Harbour Dry Goods", "category_focus": "Rice, noodles, pasta, sugar, oil"},
+    {"name": "Oak Valley Meat Co", "category_focus": "Chicken, protein, proteins", "contact_name": "Mina Patel", "contact_phone": "416-555-0188", "contact_email": "orders@oakvalleymeat.ca", "ordering_notes": "Order by 2pm for next-day delivery."},
+    {"name": "Metro Packaging Co", "category_focus": "Cups, lids, straws, napkins", "contact_name": "Jordan Lee", "contact_phone": "416-555-0144", "contact_email": "toronto@metropackaging.ca", "ordering_notes": "Case pack sizes only."},
+    {"name": "GTA Beverage Supply", "category_focus": "Tea, tapioca, milk, drink base", "contact_name": "Sofia Chen", "contact_phone": "416-555-0192", "contact_email": "hello@gtabeverage.ca", "ordering_notes": "Weekly delivery every Tuesday."},
+    {"name": "Fresh Dairy Toronto", "category_focus": "Cream, milk, eggs", "contact_name": "Noah Brown", "contact_phone": "416-555-0136", "contact_email": "orders@freshdairyto.ca", "ordering_notes": "Cooler delivery; confirm after 4pm."},
+    {"name": "Northern Produce Market", "category_focus": "Lettuce, produce, vegetables", "contact_name": "Ari Singh", "contact_phone": "416-555-0167", "contact_email": "produce@northernmarket.ca", "ordering_notes": "Harvest pricing changes daily."},
+    {"name": "Harbour Dry Goods", "category_focus": "Rice, noodles, pasta, sugar, oil", "contact_name": "Lena Gomez", "contact_phone": "416-555-0119", "contact_email": "orders@harbourdrygoods.ca", "ordering_notes": "Use replacement items when stock is tight."},
 ]
 
 INVENTORY_SEED = [
@@ -193,9 +211,53 @@ def _upsert_user(*, email: str, password: str, is_active: bool = True) -> User:
 def _upsert_organization() -> Organization:
     organization = Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).first()
     if organization is None:
-        organization = Organization(name=LOCAL_ORGANIZATION_NAME)
+        organization = Organization(
+            name=LOCAL_ORGANIZATION_NAME,
+            lifecycle_status="ACTIVE",
+            setup_status="COMPLETE",
+            subscription_status="ACTIVE",
+            setup_template_key="CAFE",
+            setup_fee_status="confirmed",
+            subscription_provider="manual",
+            external_customer_reference="seed-local-customer",
+            external_subscription_reference="seed-local-subscription",
+            is_prospect=False,
+            active_at=_now(),
+            setup_completed_at=_now(),
+        )
         db.session.add(organization)
+    else:
+        organization.lifecycle_status = "ACTIVE"
+        organization.setup_status = "COMPLETE"
+        organization.subscription_status = "ACTIVE"
+        organization.setup_template_key = "CAFE"
+        organization.setup_fee_status = "confirmed"
+        organization.subscription_provider = "manual"
+        organization.external_customer_reference = "seed-local-customer"
+        organization.external_subscription_reference = "seed-local-subscription"
+        organization.is_prospect = False
+        organization.active_at = organization.active_at or _now()
+        organization.setup_completed_at = organization.setup_completed_at or _now()
+        organization.suspended_at = None
+        organization.cancelled_at = None
     return organization
+
+
+def _upsert_module(organization: Organization, module_key: str, *, status: str = "ENABLED") -> OrganizationModule:
+    module = OrganizationModule.query.filter_by(organization_id=organization.id, module_key=module_key).first()
+    if module is None:
+        module = OrganizationModule(
+            organization_id=organization.id,
+            module_key=module_key,
+            status=status,
+            configuration_json={},
+            enabled_at=_now(),
+        )
+        db.session.add(module)
+    else:
+        module.status = status
+        module.enabled_at = module.enabled_at or _now()
+    return module
 
 
 def _upsert_membership(user: User, organization: Organization, role: str) -> OrganizationMembership:
@@ -232,6 +294,23 @@ def _normalize_name(value: str) -> str:
 
 def _clear_seed_data() -> None:
     for model in [
+        AuditEvent,
+        SquareWebhookEvent,
+        SquareSyncCursor,
+        SquareSyncJob,
+        SquareCatalogMapping,
+        SquareCatalogObject,
+        SquareLocationMapping,
+        SquareLocation,
+        SquareConnection,
+        DashboardLayout,
+        OrganizationConfigurationVersion,
+        OrganizationConfiguration,
+        OrganizationInvitation,
+        OrganizationModule,
+        SupportAccessGrant,
+        PlatformRole,
+        ExternalIdentity,
         InventoryMovement,
         SupplierItemMapping,
         PurchaseInvoiceLine,
@@ -259,12 +338,20 @@ def _get_or_create_supplier(organization: Organization, spec: dict[str, str]) ->
             name=spec["name"],
             normalized_name=normalized,
             category_focus=spec["category_focus"],
+            contact_name=spec.get("contact_name", ""),
+            contact_phone=spec.get("contact_phone", ""),
+            contact_email=spec.get("contact_email", ""),
+            ordering_notes=spec.get("ordering_notes", ""),
             notes="",
         )
         db.session.add(supplier)
     else:
         supplier.name = spec["name"]
         supplier.category_focus = spec["category_focus"]
+        supplier.contact_name = spec.get("contact_name", "")
+        supplier.contact_phone = spec.get("contact_phone", "")
+        supplier.contact_email = spec.get("contact_email", "")
+        supplier.ordering_notes = spec.get("ordering_notes", "")
     return supplier
 
 
@@ -550,7 +637,20 @@ def _seed_reorder_intents(organization: Organization, location: RestaurantLocati
             db.session.add(intent)
 
 
-def seed_pilot_data(*, reset: bool = False) -> SeedResult:
+def _current_environment() -> str:
+    return os.environ.get("FLOWTALLY_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
+
+
+def _allow_seed_reset_in_current_environment(*, confirm_production: bool) -> None:
+    if _current_environment() in {"staging", "production"}:
+        if not confirm_production:
+            raise RuntimeError("Pilot seed/reset is disabled in staging and production unless --confirm-production-seeding is provided.")
+        if os.environ.get("FLOWTALLY_ALLOW_PRODUCTION_SEEDING", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            raise RuntimeError("FLOWTALLY_ALLOW_PRODUCTION_SEEDING must be enabled to seed or reset in staging and production.")
+
+
+def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) -> SeedResult:
+    _allow_seed_reset_in_current_environment(confirm_production=confirm_production)
     if reset:
         _clear_seed_data()
 
@@ -566,6 +666,8 @@ def seed_pilot_data(*, reset: bool = False) -> SeedResult:
         _upsert_membership(owner, organization, "owner")
         _upsert_membership(manager, organization, "manager")
         location = _upsert_location(organization)
+        for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING"]:
+            _upsert_module(organization, module_key)
         db.session.commit()
         return SeedResult(organization_id=organization.id, owner_id=owner.id, manager_id=manager.id, location_id=location.id)
 
@@ -577,6 +679,8 @@ def seed_pilot_data(*, reset: bool = False) -> SeedResult:
     _upsert_membership(manager, organization, "manager")
     location = _upsert_location(organization)
     db.session.flush()
+    for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING"]:
+        _upsert_module(organization, module_key)
 
     suppliers = [_get_or_create_supplier(organization, spec) for spec in SUPPLIER_SEED]
     db.session.flush()

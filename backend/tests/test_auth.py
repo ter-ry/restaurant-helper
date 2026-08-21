@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from backend.extensions import db
 from backend.models import User
 from backend.seed import (
@@ -8,6 +10,7 @@ from backend.seed import (
     LOCAL_OWNER_EMAIL,
     LOCAL_OWNER_PASSWORD,
 )
+from backend import tenant_context
 
 
 def login(client, email: str, password: str):
@@ -34,6 +37,9 @@ def test_owner_login_and_me_returns_session(client):
     assert me_body["user"]["email"] == LOCAL_OWNER_EMAIL
     assert me_body["membershipRole"] == "owner"
     assert me_body["currentOrganizationId"] == body["currentOrganization"]["id"]
+    assert me_body["organizations"][0]["organization"]["name"] == "Flowtally Pilot Restaurant"
+    assert me_body["organizations"][0]["membershipRole"] == "owner"
+    assert me_body["organizations"][0]["selected"] is True
 
 
 def test_login_rejects_unknown_or_wrong_password(client):
@@ -74,3 +80,100 @@ def test_login_requires_csrf(client):
     response = client.post("/api/auth/login", json={"email": LOCAL_OWNER_EMAIL, "password": LOCAL_OWNER_PASSWORD})
     assert response.status_code == 400
     assert response.get_json()["error"]
+
+
+def test_disabled_support_access_does_not_set_tenant_scope(monkeypatch):
+    captured: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
+    monkeypatch.setattr(
+        tenant_context,
+        "_set_local_setting",
+        lambda name, value: captured.append((name, value or "")),
+    )
+    monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="pilot_api.dashboard"))
+    monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
+    monkeypatch.setattr(
+        tenant_context,
+        "get_current_organization_bundle",
+        lambda: (SimpleNamespace(id=42), SimpleNamespace(id=1), []),
+    )
+    monkeypatch.setattr(
+        tenant_context,
+        "get_platform_role",
+        lambda user_id: SimpleNamespace(is_active=True, role="support"),
+    )
+    monkeypatch.setattr(tenant_context, "support_grant_for_user", lambda *_args, **_kwargs: SimpleNamespace(id=99))
+
+    tenant_context.apply_request_tenant_context()
+
+    assert captured == [
+        ("flowtally.user_id", "77"),
+        ("flowtally.access_scope", "public"),
+        ("flowtally.organization_id", ""),
+        ("flowtally.support_grant_id", ""),
+    ]
+
+
+def test_explicit_setup_scope_is_preserved_for_onboarding_endpoint(monkeypatch):
+    captured: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
+    monkeypatch.setattr(
+        tenant_context,
+        "_set_local_setting",
+        lambda name, value: captured.append((name, value or "")),
+    )
+    monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="commercial.create_prospect_organization"))
+    monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
+    monkeypatch.setattr(
+        tenant_context,
+        "get_current_organization_bundle",
+        lambda: (None, None, []),
+    )
+    monkeypatch.setattr(tenant_context, "get_platform_role", lambda user_id: None)
+    monkeypatch.setattr(tenant_context, "support_grant_for_user", lambda *_args, **_kwargs: None)
+
+    tenant_context.apply_request_tenant_context(access_scope="setup")
+
+    assert captured == [
+        ("flowtally.user_id", "77"),
+        ("flowtally.access_scope", "setup"),
+        ("flowtally.organization_id", ""),
+        ("flowtally.support_grant_id", ""),
+    ]
+
+
+def test_authenticated_request_sets_user_identity_before_tenant_discovery(monkeypatch):
+    captured: list[tuple[str, str]] = []
+    discovery_calls: list[str] = []
+
+    monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
+    monkeypatch.setattr(
+        tenant_context,
+        "_set_local_setting",
+        lambda name, value: captured.append((name, value or "")),
+    )
+    monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="pilot_api.dashboard"))
+    monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
+    monkeypatch.setattr(tenant_context, "get_platform_role", lambda user_id: None)
+    monkeypatch.setattr(tenant_context, "support_grant_for_user", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tenant_context,
+        "get_current_organization_bundle",
+        lambda: (
+            discovery_calls.append("bundle") or SimpleNamespace(id=42),
+            SimpleNamespace(id=1),
+            [],
+        ),
+    )
+
+    tenant_context.apply_request_tenant_context()
+
+    assert discovery_calls == ["bundle"]
+    assert captured[0] == ("flowtally.user_id", "77")
+    assert captured[1:] == [
+        ("flowtally.access_scope", "customer"),
+        ("flowtally.organization_id", "42"),
+        ("flowtally.support_grant_id", ""),
+    ]

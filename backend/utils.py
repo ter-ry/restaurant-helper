@@ -9,10 +9,12 @@ from flask_login import current_user
 from sqlalchemy import and_
 
 from .models import (
+    AuditEvent,
     InventoryItem,
     InventoryMovement,
     Organization,
     OrganizationMembership,
+    PlatformRole,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     ReorderPlan,
@@ -64,6 +66,20 @@ def serialize_organization(organization: Organization) -> dict[str, Any]:
     return {
         "id": organization.id,
         "name": organization.name,
+        "lifecycleStatus": organization.lifecycle_status,
+        "onboardingStatus": organization.setup_status,
+        "setupStatus": organization.setup_status,
+        "subscriptionStatus": organization.subscription_status,
+        "setupTemplateKey": organization.setup_template_key,
+        "setupFeeStatus": organization.setup_fee_status,
+        "subscriptionProvider": organization.subscription_provider,
+        "externalCustomerReference": organization.external_customer_reference,
+        "externalSubscriptionReference": organization.external_subscription_reference,
+        "isProspect": bool(organization.is_prospect),
+        "activeAt": isoformat(organization.active_at),
+        "setupCompletedAt": isoformat(organization.setup_completed_at),
+        "suspendedAt": isoformat(organization.suspended_at),
+        "cancelledAt": isoformat(organization.cancelled_at),
         "createdAt": isoformat(organization.created_at),
         "updatedAt": isoformat(organization.updated_at),
     }
@@ -76,6 +92,30 @@ def serialize_membership(membership: OrganizationMembership) -> dict[str, Any]:
         "role": membership.role,
         "createdAt": isoformat(membership.created_at),
     }
+
+
+def serialize_membership_summary(membership: OrganizationMembership, *, selected: bool = False) -> dict[str, Any]:
+    return {
+        "organization": serialize_organization(membership.organization),
+        "membershipRole": membership.role,
+        "selected": selected,
+    }
+
+
+def serialize_membership_summaries(
+    memberships: list[OrganizationMembership],
+    *,
+    selected_organization_id: int | None = None,
+) -> list[dict[str, Any]]:
+    return [
+        serialize_membership_summary(membership, selected=selected_organization_id is not None and membership.organization_id == selected_organization_id)
+        for membership in memberships
+        if membership.organization is not None
+    ]
+
+
+def get_platform_role(user_id: int) -> PlatformRole | None:
+    return PlatformRole.query.filter_by(user_id=user_id, is_active=True).first()
 
 
 def serialize_location(location: RestaurantLocation) -> dict[str, Any]:
@@ -102,6 +142,10 @@ def serialize_supplier(supplier: Supplier) -> dict[str, Any]:
         "name": supplier.name,
         "normalizedName": supplier.normalized_name,
         "categoryFocus": supplier.category_focus,
+        "contactName": supplier.contact_name,
+        "contactPhone": supplier.contact_phone,
+        "contactEmail": supplier.contact_email,
+        "orderingNotes": supplier.ordering_notes,
         "notes": supplier.notes,
         "isActive": bool(supplier.is_active),
         "createdAt": isoformat(supplier.created_at),
@@ -370,23 +414,89 @@ def serialize_reorder_plan(plan: ReorderPlan) -> dict[str, Any]:
     }
 
 
+def serialize_audit_event(event: AuditEvent) -> dict[str, Any]:
+    return {
+        "id": event.id,
+        "organizationId": event.organization_id,
+        "locationId": event.location_id,
+        "actorUserId": event.actor_user_id,
+        "eventType": event.event_type,
+        "entityType": event.entity_type,
+        "entityId": event.entity_id,
+        "requestId": event.request_id,
+        "sourceIp": event.source_ip,
+        "userAgent": event.user_agent,
+        "metadata": event.metadata_json,
+        "createdAt": isoformat(event.created_at),
+    }
+
+
+def clear_pilot_context() -> None:
+    session.pop("pilot_current_membership_id", None)
+    session.pop("pilot_current_organization_id", None)
+    session.pop("pilot_current_location_id", None)
+
+
+def get_user_memberships(user_id: int) -> list[OrganizationMembership]:
+    return (
+        OrganizationMembership.query.filter_by(user_id=user_id)
+        .order_by(OrganizationMembership.created_at.asc(), OrganizationMembership.id.asc())
+        .all()
+    )
+
+
+def get_user_organizations(user_id: int) -> list[Organization]:
+    memberships = get_user_memberships(user_id)
+    organization_ids = [membership.organization_id for membership in memberships]
+    if not organization_ids:
+        return []
+    organizations = Organization.query.filter(Organization.id.in_(organization_ids)).order_by(Organization.created_at.asc(), Organization.id.asc()).all()
+    organization_by_id = {organization.id: organization for organization in organizations}
+    return [organization_by_id[organization_id] for organization_id in organization_ids if organization_id in organization_by_id]
+
+
 def get_current_membership() -> OrganizationMembership | None:
     if not current_user.is_authenticated:
         return None
 
-    membership_id = session.get("pilot_current_membership_id")
-    if membership_id:
-        membership = OrganizationMembership.query.filter_by(id=membership_id, user_id=current_user.id).first()
-        if membership is not None:
-            return membership
+    memberships = get_user_memberships(current_user.id)
+    if not memberships:
+        clear_pilot_context()
+        return None
 
-    membership = (
-        OrganizationMembership.query.filter_by(user_id=current_user.id)
-        .order_by(OrganizationMembership.created_at.asc(), OrganizationMembership.id.asc())
-        .first()
-    )
-    if membership is not None:
+    selected_membership_id = session.get("pilot_current_membership_id")
+    if selected_membership_id is not None:
+        try:
+            selected_membership_id = int(selected_membership_id)
+        except (TypeError, ValueError):
+            selected_membership_id = None
+
+    selected_organization_id = session.get("pilot_current_organization_id")
+    if selected_organization_id is not None:
+        try:
+            selected_organization_id = int(selected_organization_id)
+        except (TypeError, ValueError):
+            selected_organization_id = None
+
+    membership: OrganizationMembership | None = None
+    if selected_membership_id is not None:
+        membership = next((entry for entry in memberships if entry.id == selected_membership_id), None)
+    if membership is None and selected_organization_id is not None:
+        membership = next((entry for entry in memberships if entry.organization_id == selected_organization_id), None)
+    if membership is None and len(memberships) == 1:
+        membership = memberships[0]
+
+    if membership is None:
+        clear_pilot_context()
+        return None
+
+    membership_id = session.get("pilot_current_membership_id")
+    if membership_id != membership.id:
         session["pilot_current_membership_id"] = membership.id
+    organization_id = session.get("pilot_current_organization_id")
+    if organization_id != membership.organization_id:
+        session["pilot_current_organization_id"] = membership.organization_id
+        session.pop("pilot_current_location_id", None)
     return membership
 
 
@@ -396,14 +506,23 @@ def get_current_location() -> RestaurantLocation | None:
         return None
 
     location_id = session.get("pilot_current_location_id")
-    if location_id:
+    if location_id is not None:
+        try:
+            location_id = int(location_id)
+        except (TypeError, ValueError):
+            location_id = None
+    if location_id is not None:
         location = next((entry for entry in locations if entry.id == location_id), None)
         if location is not None:
             return location
 
-    location = locations[0]
-    session["pilot_current_location_id"] = location.id
-    return location
+    if len(locations) == 1:
+        location = locations[0]
+        session["pilot_current_location_id"] = location.id
+        return location
+
+    session.pop("pilot_current_location_id", None)
+    return None
 
 
 def get_current_organization_bundle() -> tuple[Organization | None, OrganizationMembership | None, list[RestaurantLocation]]:
@@ -413,6 +532,7 @@ def get_current_organization_bundle() -> tuple[Organization | None, Organization
 
     organization = Organization.query.filter_by(id=membership.organization_id).first()
     if organization is None:
+        clear_pilot_context()
         return None, None, []
 
     locations = (

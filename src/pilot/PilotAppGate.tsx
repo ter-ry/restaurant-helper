@@ -1,8 +1,9 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { usePilotSession } from "./PilotSessionProvider";
 
 export function PilotAppGate() {
   const { status } = usePilotSession();
+  const location = useLocation();
 
   if (status === "loading") {
     return (
@@ -13,7 +14,7 @@ export function PilotAppGate() {
   }
 
   if (status === "signedOut") {
-    return <Navigate to="/app/login" replace />;
+    return <Navigate to="/app/login" replace state={{ redirectTo: `${location.pathname}${location.search}` }} />;
   }
 
   if (status === "disabled") {

@@ -1,6 +1,5 @@
 import { buildDemoPath, defaultDemoProfileSlug, type DemoProfileSlug } from "../data/demoProfiles";
 import { summarizeInvoiceInventoryStatus } from "./invoiceInventory";
-import { formatCurrency } from "../utils/format";
 import type { InventoryInvoiceReceipt, PilotInvoiceRecord, PilotReconciliationRecord, PilotWorkspaceSummary } from "../types";
 
 export type DemoWalkthroughStep = {

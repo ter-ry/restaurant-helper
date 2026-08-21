@@ -18,6 +18,7 @@ import { Link } from "react-router-dom";
 import { FlowtallyMark } from "../components/FlowtallyMark";
 import { trackEvent } from "../lib/analytics";
 import { buildMailtoLink, PUBLIC_CONTACT_EMAIL } from "../lib/contactLinks";
+import { startGoogleLogin } from "../lib/customerAuth";
 
 const navLinks = [
   ["Overview", "#hero"],
@@ -317,6 +318,14 @@ export function LandingPage() {
             </div>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
+                type="button"
+                onClick={startGoogleLogin}
+              >
+                Continue with Google
+                <ArrowRight className="h-4 w-4" />
+              </button>
               <Link
                 to="/pilot"
                 onClick={() => trackEvent("cta_join_early_pilot_click", { location: "hero" })}

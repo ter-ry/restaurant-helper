@@ -116,8 +116,6 @@ export function InvoiceLineItemCard({
   selected?: boolean;
   onToggleSelected?: (index: number) => void;
 }) {
-  const totalState = getLineTotalReviewState(item);
-
   return (
     <div className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-soft">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

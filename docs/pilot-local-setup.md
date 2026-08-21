@@ -12,11 +12,17 @@
 6. Start the backend:
    - `flask --app backend.wsgi run --host 127.0.0.1 --port 5001`
 
+For staging-style settings, copy `backend/.env.staging.example` and keep `FLOWTALLY_ENV=staging` together with a managed Postgres URL and secure cookies.
+
+If an account has more than one organization membership, the pilot asks you to choose the active organization before it loads locations.
+
 ## Frontend
 
 1. Set `VITE_ENABLE_PILOT_APP=true` to open the private pilot routes.
 2. Set `VITE_PILOT_API_BASE_URL=http://127.0.0.1:5001` for local development.
 3. Start the Vite app with `npm.cmd run dev`.
+
+See [docs/pilot-backend-foundation.md](pilot-backend-foundation.md) for the application boundary, staging, and validation notes.
 
 ## Seed accounts
 

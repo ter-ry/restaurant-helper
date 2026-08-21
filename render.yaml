@@ -1,23 +1,11 @@
 services:
   - type: web
-    name: flowtally-backend
+    name: flowtally-legacy-root-app
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
     healthCheckPath: /api/health
     envVars:
-      - key: OCR_SPACE_API_KEY
-        sync: false
-      - key: OCR_SPACE_ENDPOINT
-        value: https://api.ocr.space/parse/image
-      - key: OCR_SPACE_LANGUAGE
-        value: eng
-      - key: OCR_SPACE_ENGINE
-        value: "2"
-      - key: OCR_SPACE_TIMEOUT
-        value: "90"
-      - key: FLOWTALLY_ALLOWED_ORIGINS
-        value: https://flowtally.ca
-      - key: MAX_CONTENT_LENGTH
-        value: "15728640"
+      - key: FLOWTALLY_ENV
+        value: development

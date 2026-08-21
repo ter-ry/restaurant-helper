@@ -1,0 +1,302 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: flowtally_test
+          POSTGRES_USER: flowtally
+          POSTGRES_PASSWORD: flowtally
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowtally -d flowtally_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FLOWTALLY_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg2://flowtally:flowtally@localhost:5432/flowtally_test
+      FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL: postgresql+psycopg2://flowtally_migrator:flowtally_migrator@localhost:5432/flowtally_test
+      FLOWTALLY_MIGRATION_DATABASE_URL: postgresql+psycopg2://flowtally_migrator:flowtally_migrator@localhost:5432/flowtally_test
+      FLOWTALLY_TEST_POSTGRES_URL: postgresql+psycopg2://flowtally_runtime:flowtally_runtime@localhost:5432/flowtally_test
+      DATABASE_URL: postgresql+psycopg2://flowtally_runtime:flowtally_runtime@localhost:5432/flowtally_test
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend and root dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r requirements.txt
+
+      - name: Ensure PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+
+      - name: Configure PostgreSQL roles
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -f scripts/provision_postgres_roles.sql -h localhost -p 5432 -U flowtally -d flowtally_test
+
+      - name: PostgreSQL role separation evidence
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          echo "BEFORE: role flags"
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select rolname, rolsuper, rolbypassrls, rolcanlogin from pg_roles where rolname in ('flowtally', 'flowtally_migrator', 'flowtally_runtime') order by rolname;" -h localhost -p 5432 -U flowtally -d flowtally_test
+          echo "AFTER: role flags"
+          echo "BEFORE: suppliers ownership"
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select c.relname, owner_role.rolname as table_owner, c.relrowsecurity, c.relforcerowsecurity from pg_class c join pg_roles owner_role on owner_role.oid = c.relowner where c.relname = 'suppliers';" -h localhost -p 5432 -U flowtally -d flowtally_test
+          echo "AFTER: suppliers ownership"
+
+      - name: Staging provisioning script acceptance test
+        timeout-minutes: 10
+        run: timeout 180s python -u -m pytest backend/tests/test_staging_postgres_roles.py -vv -x --durations=20
+
+      - name: Verify clean diff
+        run: git diff --check
+
+      - name: Fresh-database migration check
+        timeout-minutes: 10
+        run: timeout 60s python -u -m pytest backend/tests/test_seed.py::test_migrations_upgrade_and_seed_on_fresh_database -vv --durations=20
+
+      - name: PostgreSQL migration acceptance tests
+        timeout-minutes: 15
+        run: timeout 120s python -u -m pytest backend/tests/test_migrations_postgres.py -vv -x --durations=20
+
+      - name: PostgreSQL diagnostic connection sanity
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          for sql in \
+            "select 1;" \
+            "select now();" \
+            "select current_user, session_user;" \
+            "select current_database();" \
+            "select pg_backend_pid();" \
+            "show statement_timeout;" \
+            "show lock_timeout;"; do
+            echo "BEFORE: ${sql}"
+            timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; ${sql}" -h localhost -p 5432 -U flowtally -d flowtally_test
+            echo "AFTER: ${sql}"
+          done
+
+      - name: PostgreSQL diagnostic activity and lock snapshot
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          echo "BEFORE: pg_stat_activity"
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select pid, usename, state, wait_event_type, wait_event, query from pg_stat_activity where datname = current_database() order by pid;" -h localhost -p 5432 -U flowtally -d flowtally_test
+          echo "AFTER: pg_stat_activity"
+          echo "BEFORE: pg_locks"
+          timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '5s'; set lock_timeout = '3s'; select pid, locktype, relation::regclass::text as relation_name, mode, granted from pg_locks where relation in ('pg_proc'::regclass, 'pg_policy'::regclass, 'pg_class'::regclass, 'support_access_grants'::regclass, 'suppliers'::regclass) order by pid, relation_name, mode;" -h localhost -p 5432 -U flowtally -d flowtally_test
+          echo "AFTER: pg_locks"
+
+      - name: PostgreSQL direct psql catalog controls
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: flowtally
+        run: |
+          set +e
+          run_probe() {
+            local label="$1"
+            local sql="$2"
+            local started_at
+            started_at=$(date +%s)
+            echo "START: ${label}"
+            timeout 15s psql -X -v ON_ERROR_STOP=1 -Atqc "set statement_timeout = '15s'; set lock_timeout = '3s'; show statement_timeout; show lock_timeout; ${sql}" -h localhost -p 5432 -U flowtally -d flowtally_test
+            local status=$?
+            local finished_at
+            finished_at=$(date +%s)
+            local elapsed=$((finished_at - started_at))
+            if [ "$status" -eq 0 ]; then
+              echo "DONE: ${label} status=success elapsed=${elapsed}s"
+            elif [ "$status" -eq 124 ]; then
+              echo "DONE: ${label} status=timeout elapsed=${elapsed}s"
+            else
+              echo "DONE: ${label} status=error exit_code=${status} elapsed=${elapsed}s"
+            fi
+            return 0
+          }
+          run_probe "control select 1" "select 1;"
+          run_probe "control pg_proc count" "select count(*) from pg_catalog.pg_proc;"
+          run_probe "control flowtally_current_access_scope pg_proc lookup" "select oid, proname, pronargs from pg_catalog.pg_proc where proname = 'flowtally_current_access_scope';"
+          run_probe "control flowtally_current_access_scope namespace lookup" "select n.oid, n.nspname from pg_catalog.pg_namespace n where n.oid in (select pronamespace from pg_catalog.pg_proc where proname = 'flowtally_current_access_scope');"
+          set -e
+
+      - name: PostgreSQL RLS function metadata - current access scope
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_metadata_current_access_scope -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function metadata - current organization id
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_metadata_current_organization_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function metadata - current support grant id
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_metadata_current_support_grant_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function metadata - support access helper
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_metadata_support_has_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function metadata - org access helper
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_metadata_has_org_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function definition - current access scope
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_definition_current_access_scope -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function definition - current organization id
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_definition_current_organization_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function definition - current support grant id
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_definition_current_support_grant_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function definition - support access helper
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_definition_support_has_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS function definition - org access helper
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_function_definition_has_org_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS policy metadata - suppliers
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_policy_metadata_suppliers -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS policy metadata - support access grants
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_policy_metadata_support_access_grants -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 1 - access scope
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_1_access_scope -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 2 - current org id
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_2_current_organization_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 3 - current support grant
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_3_current_support_grant_id -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 4 - support grants count
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_4_support_access_grants_count -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 5 - support access helper
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_5_support_has_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 6 - org access helper
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_6_has_org_access -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS diagnostic probe 7 - supplier count
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_rls_probe_7_suppliers_count -vv -x -s --durations=20
+
+      - name: PostgreSQL onboarding bootstrap regression
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_onboarding_bootstrap_creates_prospect_organization -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_hides_other_tenant_rows -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - cross-tenant write
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_blocks_cross_tenant_insert_and_update -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - support grant
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_support_requires_active_grant -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - square sales
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_protects_square_sales_tables -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - imports
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_rls_covers_import_tables_and_selected_organization_views -vv -x -s --durations=20
+
+      - name: PostgreSQL RLS and security tests - setup scope
+        timeout-minutes: 5
+        run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_setup_scope_can_access_platform_data_across_organizations -vv -x -s --durations=20
+
+      - name: Remaining backend tests
+        timeout-minutes: 25
+        run: timeout 1200s python -u -m pytest backend/tests --ignore=backend/tests/test_migrations_postgres.py --ignore=backend/tests/test_postgres_rls.py -vv -x --durations=20
+
+      - name: Root Python tests
+        timeout-minutes: 10
+        run: timeout 300s python -u -m unittest discover -s tests -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: timeout 300s npm run lint
+
+      - name: Type-check frontend
+        run: |
+          timeout 300s npm run typecheck
+
+      - name: Frontend unit tests
+        run: timeout 300s npm test
+
+      - name: Install Playwright browsers
+        run: timeout 600s npx playwright install --with-deps chromium
+
+      - name: Frontend browser tests
+        run: timeout 600s npm run e2e
+
+      - name: Build frontend
+        run: timeout 600s npm run build

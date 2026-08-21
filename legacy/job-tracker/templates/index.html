@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Job Application Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Local-first workflow assistant</p>
+        <h1>Job Application Assistant</h1>
+      </div>
+      <nav class="tabs" aria-label="Sections">
+        <button class="tab active" data-tab="workflow" type="button">Workflow</button>
+        <button class="tab" data-tab="profile" type="button">Profile</button>
+        <button class="tab" data-tab="discovery" type="button">Discovery</button>
+        <a class="button secondary" href="/export.csv">Export CSV</a>
+      </nav>
+    </header>
+    <main class="layout">
+      <section class="dashboard" aria-label="Application dashboard">
+        <article><span id="jobs-saved">0</span><p>jobs saved</p></article>
+        <article><span id="applications-this-week">0</span><p>applied this week</p></article>
+        <article><span id="follow-ups-needed">0</span><p>need follow-up</p></article>
+        <article><span id="high-fit-jobs">0</span><p>high-fit jobs</p></article>
+        <article><span id="average-fit-score">0</span><p>average fit</p></article>
+        <article><span id="interview-rate">0%</span><p>interview rate</p></article>
+        <article><span id="missing-salary">0</span><p>missing salary</p></article>
+        <article><span id="high-coding-risk">0</span><p>coding-risk jobs</p></article>
+      </section>
+      <section id="workflow" class="tab-panel active">
+        <section class="workspace">
+          <form id="job-form" class="panel">
+            <div class="panel-header"><h2>Add or update a job</h2><button class="button ghost" type="button" id="reset-form">New</button></div>
+            <input type="hidden" id="job-id">
+            <div class="quick-import">
+              <label>Paste job description<textarea id="paste-description" rows="4" placeholder="Paste a posting here, then extract details"></textarea></label>
+              <div class="actions compact"><button class="button ghost" type="button" id="extract-description">Extract from paste</button></div>
+              <label>Save job URL<input id="import-url" type="url" placeholder="https://company.example/jobs/123"></label>
+              <div class="actions compact"><button class="button ghost" type="button" id="extract-url">Fetch public URL</button></div>
+            </div>
+            <div class="grid three">
+              <label>Company<input id="company" required></label>
+              <label>Title<input id="title" required></label>
+              <label>Location<input id="location" placeholder="Toronto, Remote, Hybrid"></label>
+              <label>URL<input id="url" type="url" placeholder="https://"></label>
+              <label>Application URL<input id="application-url" type="url" placeholder="https://"></label>
+              <label>Source<input id="source" placeholder="LinkedIn, Greenhouse, referral"></label>
+              <label>Salary<input id="salary" placeholder="$70k-$90k"></label>
+              <label>Deadline<input id="deadline" type="date"></label>
+              <label>Remote type<select id="remote-type"><option value="">Unspecified</option><option>Remote</option><option>Hybrid</option><option>On-site</option></select></label>
+              <label>Role type<select id="role-type">{% for role_type in role_types %}<option>{{ role_type }}</option>{% endfor %}</select></label>
+              <label>Seniority<input id="seniority-level" placeholder="Junior/New Grad"></label>
+              <label>Status<select id="status">{% for status in statuses %}<option>{{ status }}</option>{% endfor %}</select></label>
+              <label>Date applied<input id="date-applied" type="date"></label>
+              <label>Overall fit<input id="fit-score" type="number" min="0" max="100" value="0" readonly></label>
+            </div>
+            <details class="score-details" open>
+              <summary>Score breakdown</summary>
+              <div class="grid four score-inputs">
+                <label>Skills<input id="skills-match-score" type="number" readonly></label>
+                <label>Role<input id="role-match-score" type="number" readonly></label>
+                <label>Location<input id="location-score" type="number" readonly></label>
+                <label>Remote<input id="remote-score" type="number" readonly></label>
+                <label>Salary<input id="salary-score" type="number" readonly></label>
+                <label>Seniority<input id="seniority-score" type="number" readonly></label>
+                <label>Coding risk<input id="coding-risk-score" type="number" readonly></label>
+                <label>Effort<input id="application-effort-score" type="number" readonly></label>
+              </div>
+              <div id="score-notes" class="note-list muted">Save or generate to calculate detailed scoring.</div>
+            </details>
+            <div class="grid two">
+              <label>Required skills<textarea id="required-skills" rows="3"></textarea></label>
+              <label>Preferred skills<textarea id="preferred-skills" rows="3"></textarea></label>
+            </div>
+            <label>Responsibilities<textarea id="responsibilities" rows="3"></textarea></label>
+            <label>Notes<textarea id="notes" rows="3"></textarea></label>
+            <label>Job description<textarea id="job-description" rows="8"></textarea></label>
+            <div class="actions"><button class="button" type="button" id="generate">Generate tailored materials</button><button class="button" type="submit">Save job</button></div>
+          </form>
+          <section class="panel output-panel">
+            <div class="panel-header"><h2>Tailored output</h2><button class="button ghost" type="button" id="copy-output">Copy all</button></div>
+            <div id="generated-output" class="generated-output empty">Save your profile, paste a job, then generate tailored drafts.</div>
+          </section>
+        </section>
+        <section class="panel table-panel">
+          <div class="panel-header">
+            <h2>Applications</h2>
+            <div class="filter-row">
+              <input id="search" placeholder="Search company, title, notes">
+              <select id="status-filter"><option value="">All statuses</option>{% for status in statuses %}<option>{{ status }}</option>{% endfor %}</select>
+              <select id="fit-filter"><option value="">Any fit</option><option value="75">75+</option><option value="60">60+</option><option value="40">40+</option></select>
+              <select id="role-filter"><option value="">Any role</option>{% for role_type in role_types %}<option>{{ role_type }}</option>{% endfor %}</select>
+              <select id="remote-filter"><option value="">Any remote</option><option>Remote</option><option>Hybrid</option><option>On-site</option></select>
+              <select id="risk-filter"><option value="">Any risk</option><option value="high">High coding risk</option><option value="low">Low coding risk</option></select>
+              <select id="sort-by"><option value="fit">Sort: fit</option><option value="salary">Sort: salary</option><option value="date">Sort: date added</option><option value="deadline">Sort: deadline</option><option value="location">Sort: location</option></select>
+            </div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Company</th><th>Title</th><th>Location</th><th>Score</th><th>Risk</th><th>Status</th><th>Salary</th><th>Deadline</th><th>Actions</th></tr></thead><tbody id="jobs-table"></tbody></table></div>
+        </section>
+      </section>
+      <section id="profile" class="tab-panel">
+        <form id="profile-form" class="panel">
+          <div class="panel-header"><h2>Profile and base documents</h2><button class="button" type="submit">Save profile</button></div>
+          <div class="grid three">
+            <label>Name<input id="profile-name"></label><label>Email<input id="profile-email" type="email"></label><label>Phone<input id="profile-phone"></label>
+            <label>Location<input id="profile-location"></label><label>Preferred roles<input id="profile-preferred-roles"></label><label>Preferred locations<input id="profile-preferred-locations"></label>
+          </div>
+          <label>Work authorization<input id="profile-work-authorization" placeholder="Legally authorized to work in Canada"></label>
+          <label>Key skills<textarea id="profile-key-skills" rows="3"></textarea></label>
+          <label>Projects<textarea id="profile-projects" rows="4"></textarea></label>
+          <label>Education<textarea id="profile-education" rows="3"></textarea></label>
+          <label>Work experience<textarea id="profile-work-experience" rows="4"></textarea></label>
+          <label>Upload base resume (.txt, .docx, basic text-readable .pdf)<input id="resume-upload" type="file" accept=".txt,.docx,.pdf"></label>
+          <label>Extracted resume/profile text<textarea id="profile-resume-text" rows="8"></textarea></label>
+          <label>Base cover letter template<textarea id="profile-cover-letter-template" rows="6"></textarea></label>
+        </form>
+      </section>
+      <section id="discovery" class="tab-panel">
+        <section class="workspace narrow">
+          <form id="saved-search-form" class="panel"><div class="panel-header"><h2>Saved JobSpy search</h2><button class="button ghost" type="button" id="reset-search">New search</button></div><input type="hidden" id="saved-search-id"><div class="grid two"><label>Search name<input id="search-name" placeholder="Junior dev Toronto"></label><label>Keywords<input id="saved-keywords" placeholder="junior software developer"></label><label>Location<input id="saved-location" placeholder="Toronto, Ontario"></label><label>Distance km<input id="saved-distance" type="number" value="50"></label><label>Remote preference<select id="saved-remote"><option value="">Any</option><option>Remote</option><option>Hybrid</option><option>On-site</option></select></label><label>Minimum salary<input id="saved-min-salary" type="number" value="0"></label><label>Target roles<input id="saved-target-roles" placeholder="software developer,analyst"></label><label>Excluded title keywords<input id="saved-excluded" value="senior,staff,principal,director,lead,architect,manager"></label><label>Maximum experience<input id="saved-max-exp" type="number" value="3"></label><label>Posted within days<input id="saved-days" type="number" value="7"></label><label>Max results/source<input id="saved-max-results" type="number" value="10"></label><label>Indeed country<input id="saved-country" value="Canada"></label></div><fieldset class="source-options"><legend>Enabled sources</legend><label><input type="checkbox" class="source-check" value="linkedin" checked> LinkedIn</label><label><input type="checkbox" class="source-check" value="indeed" checked> Indeed</label><label><input type="checkbox" class="source-check" value="google" checked> Google Jobs</label><label><input type="checkbox" class="source-check" value="zip_recruiter" checked> ZipRecruiter</label></fieldset><div class="actions"><button class="button" type="submit">Save search</button></div></form>
+          <form id="csv-import-form" class="panel"><div class="panel-header"><h2>CSV import</h2></div><label>Import job links from external searches<input id="csv-file" type="file" accept=".csv"></label><div class="actions"><button class="button" type="submit">Import CSV</button></div><p class="muted helper">Accepted headers include company, title, location, url, source, salary, and description.</p></form>
+        </section>
+        <section class="panel"><div class="panel-header"><h2>Saved searches</h2></div><div id="saved-searches-list" class="generated-output empty">No saved searches yet.</div></section>
+        <section class="panel"><div class="panel-header"><h2>Discovery results</h2><div class="filter-row"><select id="result-search-filter"><option value="">All searches</option></select><select id="result-status-filter"><option value="">Any status</option><option>new</option><option>reviewed</option><option>ignored</option><option>saved</option><option>rejected</option><option>closed</option></select><input id="result-rejection-filter" placeholder="Rejection reason"></div></div><div id="discovery-results" class="generated-output empty">Run a saved search to collect JobSpy results.</div></section>
+      </section>
+    </main>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

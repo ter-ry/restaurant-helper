@@ -1,0 +1,32 @@
+Archived Flowtally job tracker file manifest
+
+This archive captures the unrelated local job-tracker application that previously lived at the repository root.
+
+Contents:
+
+- app.py
+- invoice_ocr.py
+- reconciliation_ocr.py
+- Procfile
+- render.yaml
+- requirements.txt
+- README.md
+- LAST_ACTIVE_COMMIT.txt
+- STARTUP.md
+- sources/__init__.py
+- sources/jobspy_source.py
+- static/app.js
+- static/styles.css
+- templates/index.html
+- tests/__init__.py
+- tests/inventory_workspace_ui.test.tsx
+- tests/invoice_line_item_ui.test.tsx
+- tests/invoice_upload_page_ui.test.tsx
+- tests/owner_dashboard_ui.test.tsx
+- tests/reconciliation_workflow_ui.test.tsx
+- tests/test_app.py
+- tests/test_invoice_ocr.py
+- tests/test_jobspy_integration.py
+- tests/test_reconciliation_ocr.py
+
+Active Flowtally runtime files are not part of this archive.
