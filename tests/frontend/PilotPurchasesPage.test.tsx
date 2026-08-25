@@ -68,6 +68,175 @@ function emptyInventory() {
   };
 }
 
+function createReadOnlyPurchasesResponse() {
+  const completedInvoice = {
+    id: 1,
+    organizationId: 5,
+    locationId: 9,
+    supplierId: 20,
+    supplier: {
+      id: 20,
+      organizationId: 5,
+      name: "Heritage Dairy",
+      normalizedName: "heritage dairy",
+      categoryFocus: "Dairy",
+      contactName: "",
+      contactPhone: "",
+      contactEmail: "",
+      orderingNotes: "",
+      notes: "",
+      isActive: true,
+      inventoryItemCount: 0,
+      purchaseInvoiceCount: 1,
+      supplierItemMappingCount: 0,
+      latestInvoiceDate: "2026-08-18",
+      historicalReferenceCount: 1,
+      recentInvoices: [],
+      recentMappings: [],
+    },
+    invoiceNumber: "HD-9001",
+    invoiceDate: "2026-08-18",
+    subtotal: 40,
+    tax: 5.2,
+    totalAmount: 45.2,
+    notes: "Completed invoice",
+    status: "Completed",
+    sourceFileName: "heritage.pdf",
+    sourceFileType: "application/pdf",
+    sourceFileKey: "",
+    extractedText: "Completed invoice text",
+    extractionStatus: "ocr",
+    receivedAt: "2026-08-18T10:30:00.000Z",
+    receivedByUserId: 1,
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    postedAt: "2026-08-18T10:35:00.000Z",
+    lineItems: [
+      {
+        id: 1,
+        invoiceId: 1,
+        supplierName: "Heritage Dairy",
+        invoiceNumber: "HD-9001",
+        invoiceDate: "2026-08-18",
+        inventoryItemId: 30,
+        supplierItemMappingId: null,
+        lineIndex: 0,
+        description: "Milk 2L",
+        normalizedDescription: "milk 2l",
+        purchaseUnit: "case",
+        inventoryUnit: "carton",
+        conversionFactor: 6,
+        quantity: 2,
+        unitPrice: 20,
+        lineTotal: 40,
+        confidence: 0.97,
+        needsReview: false,
+        previousUnitPrice: null,
+        priceChangePercent: null,
+        note: "",
+        createdAt: "2026-08-18T10:10:00.000Z",
+        updatedAt: "2026-08-18T10:10:00.000Z",
+      },
+    ],
+    createdAt: "2026-08-18T10:00:00.000Z",
+    updatedAt: "2026-08-18T10:20:00.000Z",
+  };
+
+  const draftInvoice = {
+    id: 2,
+    organizationId: 5,
+    locationId: 9,
+    supplierId: 21,
+    supplier: {
+      id: 21,
+      organizationId: 5,
+      name: "Fresh Dairy Toronto",
+      normalizedName: "fresh dairy toronto",
+      categoryFocus: "Dairy",
+      contactName: "",
+      contactPhone: "",
+      contactEmail: "",
+      orderingNotes: "",
+      notes: "",
+      isActive: true,
+      inventoryItemCount: 0,
+      purchaseInvoiceCount: 1,
+      supplierItemMappingCount: 0,
+      latestInvoiceDate: "2026-08-19",
+      historicalReferenceCount: 1,
+      recentInvoices: [],
+      recentMappings: [],
+    },
+    invoiceNumber: "FD-1002",
+    invoiceDate: "2026-08-19",
+    subtotal: 22,
+    tax: 2.86,
+    totalAmount: 24.86,
+    notes: "Draft invoice",
+    status: "Draft",
+    sourceFileName: "fresh.pdf",
+    sourceFileType: "application/pdf",
+    sourceFileKey: "",
+    extractedText: "Draft invoice text",
+    extractionStatus: "manual",
+    receivedAt: null,
+    receivedByUserId: null,
+    createdByUserId: 1,
+    updatedByUserId: 1,
+    postedAt: null,
+    lineItems: [
+      {
+        id: 2,
+        invoiceId: 2,
+        supplierName: "Fresh Dairy Toronto",
+        invoiceNumber: "FD-1002",
+        invoiceDate: "2026-08-19",
+        inventoryItemId: 31,
+        supplierItemMappingId: null,
+        lineIndex: 0,
+        description: "Cream",
+        normalizedDescription: "cream",
+        purchaseUnit: "case",
+        inventoryUnit: "carton",
+        conversionFactor: 6,
+        quantity: 1,
+        unitPrice: 22,
+        lineTotal: 22,
+        confidence: 0.95,
+        needsReview: false,
+        previousUnitPrice: null,
+        priceChangePercent: null,
+        note: "",
+        createdAt: "2026-08-19T10:10:00.000Z",
+        updatedAt: "2026-08-19T10:10:00.000Z",
+      },
+    ],
+    createdAt: "2026-08-19T10:00:00.000Z",
+    updatedAt: "2026-08-19T10:20:00.000Z",
+  };
+
+  return {
+    invoices: [completedInvoice, draftInvoice],
+    suppliers: [completedInvoice.supplier, draftInvoice.supplier],
+    purchaseLines: [...completedInvoice.lineItems, ...draftInvoice.lineItems],
+    priceChanges: [],
+    summary: {
+      thisMonthSpend: 69.86,
+      uploadsNeedingReview: 1,
+      priceChangesFlagged: 0,
+      mappedItems: 2,
+      exportReady: 1,
+      needsMapping: 0,
+    },
+    exportReadiness: {
+      readyForCsv: 1,
+      needsReview: 0,
+      needsMapping: 0,
+      quickBooksFutureOnly: false,
+    },
+  };
+}
+
 function createInvoice(state: TestState, payload: Record<string, unknown>) {
   const supplierName = String(payload.supplierName ?? "");
   const supplier = state.suppliers.find((entry) => entry.name === supplierName) ?? null;
@@ -344,6 +513,63 @@ afterEach(() => {
 });
 
 describe("PilotPurchasesPage", () => {
+  it("starts on a blank draft even when purchase history already contains completed invoices", async () => {
+    pilotApiMocks.fetchPilotPurchases.mockResolvedValueOnce(createReadOnlyPurchasesResponse());
+
+    render(
+      <MemoryRouter initialEntries={["/app/purchases"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Capture invoices, confirm items, and move stock" });
+
+    expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible();
+    expect(screen.getByTestId("purchase-editor-card")).toBeVisible();
+    expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Heritage Dairy/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Fresh Dairy Toronto/ })).toBeVisible();
+  });
+
+  it("opens a completed purchase from history in read-only mode", async () => {
+    pilotApiMocks.fetchPilotPurchases.mockResolvedValueOnce(createReadOnlyPurchasesResponse());
+
+    render(
+      <MemoryRouter initialEntries={["/app/purchases"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Capture invoices, confirm items, and move stock" });
+    fireEvent.click(screen.getByRole("button", { name: /Heritage Dairy/ }));
+
+    const modal = await screen.findByTestId("purchase-detail-modal");
+    expect(modal).toBeVisible();
+    expect(within(modal).getByText("Purchase history")).toBeVisible();
+    expect(within(modal).getByRole("heading", { name: "Heritage Dairy" })).toBeVisible();
+    expect(within(modal).getByText("Read-only")).toBeVisible();
+    expect(within(modal).getByText("Completed invoice")).toBeVisible();
+    expect(within(modal).queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
+    expect(within(modal).queryByRole("button", { name: "Receive into inventory" })).not.toBeInTheDocument();
+  });
+
+  it("opens a requested completed invoice as read-only details", async () => {
+    pilotApiMocks.fetchPilotPurchases.mockResolvedValueOnce(createReadOnlyPurchasesResponse());
+
+    render(
+      <MemoryRouter initialEntries={["/app/purchases?invoiceId=1"]}>
+        <PilotPurchasesPage />
+      </MemoryRouter>,
+    );
+
+    const modal = await screen.findByTestId("purchase-detail-modal");
+    expect(modal).toBeVisible();
+    expect(within(modal).getByRole("heading", { name: "Heritage Dairy" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "New purchase" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Receive into inventory" })).not.toBeInTheDocument();
+  });
+
   it("keeps unsaved purchase lines independent while supporting inline supplier and inventory creation", async () => {
     render(
       <MemoryRouter initialEntries={["/app/purchases"]}>
@@ -571,7 +797,7 @@ describe("PilotPurchasesPage", () => {
     }));
 
     render(
-      <MemoryRouter initialEntries={["/app/purchases"]}>
+      <MemoryRouter initialEntries={["/app/purchases?invoiceId=1"]}>
         <PilotPurchasesPage />
       </MemoryRouter>,
     );
@@ -587,6 +813,9 @@ describe("PilotPurchasesPage", () => {
       (pilotApiMocks.receivePilotPurchaseInvoice as any).mock.invocationCallOrder[0],
     );
     await waitFor(() => expect(screen.getByTestId("purchase-mutation-toast").textContent).toContain("Purchase received"));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible());
+    expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeDisabled();
   });
 
   it("shows field-level validation errors for supplier and inventory creation without losing the draft", async () => {

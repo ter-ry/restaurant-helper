@@ -131,6 +131,20 @@ def _json_body() -> dict[str, Any]:
     return payload
 
 
+def _parse_utc_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _current_context():
     organization, membership, locations = get_current_organization_bundle()
     location = get_current_location()
@@ -1679,9 +1693,9 @@ def update_count_session(session_id: int):
         return json_error("Completed stock counts are read-only.", 409)
     payload = _json_body()
     if "updatedAt" in payload and payload.get("updatedAt") and session_record.updated_at is not None:
-        expected_updated_at = str(payload.get("updatedAt") or "").strip()
-        current_updated_at = session_record.updated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-        if expected_updated_at not in {current_updated_at, session_record.updated_at.isoformat()}:
+        expected_updated_at = _parse_utc_datetime(payload.get("updatedAt"))
+        current_updated_at = session_record.updated_at.astimezone(timezone.utc)
+        if expected_updated_at != current_updated_at:
             return json_error("This stock count has changed since it was opened.", 409, errors={"updatedAt": "Reload the count before saving again."})
     if "countedBy" in payload:
         session_record.counted_by = str(payload.get("countedBy") or "").strip()
@@ -2597,6 +2611,480 @@ def update_menu_costing_menu_item(menu_item_id: int):
     )
     response_payload = serialize_menu_item(menu_item)
     return _commit_json(response_payload)
+
+
+@bp.delete("/api/pilot/menu-costing/menu-items/<int:menu_item_id>")
+@login_required
+def delete_menu_costing_menu_item(menu_item_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    menu_item = _require_menu_costing_menu_item(menu_item_id, organization.id, location.id)
+    if menu_item is None:
+        return json_error("Menu item not found.", 404)
+    db.session.delete(menu_item)
+    record_audit_event(
+        event_type="menu_costing.menu_item_deleted",
+        entity_type="menu_item",
+        entity_id=menu_item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": menu_item.name, "recipeId": menu_item.recipe_id},
+    )
+    db.session.commit()
+    return jsonify({"ok": True}), 200
+
+
+def _menu_costing_context():
+    context = _require_context()
+    if context is None:
+        return None
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "menu_costing.manage")
+    if permission_error is not None:
+        return permission_error
+    return organization, location
+
+
+def _menu_costing_recipe_response(organization_id: int, location_id: int):
+    recipes = (
+        Recipe.query.filter_by(organization_id=organization_id, location_id=location_id)
+        .order_by(Recipe.active.desc(), Recipe.name.asc(), Recipe.id.asc())
+        .all()
+    )
+    return [serialize_recipe(recipe) for recipe in recipes]
+
+
+def _menu_costing_menu_item_response(organization_id: int, location_id: int):
+    menu_items = (
+        MenuItem.query.filter_by(organization_id=organization_id, location_id=location_id)
+        .order_by(MenuItem.active.desc(), MenuItem.category.asc(), MenuItem.name.asc(), MenuItem.id.asc())
+        .all()
+    )
+    return [serialize_menu_item(menu_item) for menu_item in menu_items]
+
+
+def _require_menu_costing_recipe(recipe_id: int, organization_id: int, location_id: int) -> Recipe | None:
+    return Recipe.query.filter_by(id=recipe_id, organization_id=organization_id, location_id=location_id).first()
+
+
+def _require_menu_costing_menu_item(menu_item_id: int, organization_id: int, location_id: int) -> MenuItem | None:
+    return MenuItem.query.filter_by(id=menu_item_id, organization_id=organization_id, location_id=location_id).first()
+
+
+def _menu_costing_recipe_payload(payload: dict[str, Any], recipe: Recipe | None = None) -> dict[str, Any]:
+    name = str(payload.get("name", recipe.name if recipe else "")).strip()
+    if not name:
+        raise RequestValidationError("Validation failed.", {"name": "This field is required."})
+
+    yield_quantity_raw = payload.get("yieldQuantity", recipe.yield_quantity if recipe else 1)
+    try:
+        yield_quantity = _to_quantity(yield_quantity_raw, field="yieldQuantity")
+    except RequestValidationError:
+        raise
+
+    if yield_quantity <= 0:
+        raise RequestValidationError("Validation failed.", {"yieldQuantity": "Yield quantity must be greater than zero."})
+
+    yield_unit = str(payload.get("yieldUnit", recipe.yield_unit if recipe else "servings")).strip() or "servings"
+    return {
+        "name": name,
+        "normalized_name": _normalize_name(name),
+        "description": str(payload.get("description", recipe.description if recipe else "")).strip(),
+        "yield_quantity": yield_quantity,
+        "yield_unit": yield_unit,
+        "active": bool(payload.get("active", recipe.active if recipe else True)),
+        "notes": str(payload.get("notes", recipe.notes if recipe else "")).strip(),
+    }
+
+
+def _menu_costing_menu_item_payload(payload: dict[str, Any], menu_item: MenuItem | None = None) -> dict[str, Any]:
+    name = str(payload.get("name", menu_item.name if menu_item else "")).strip()
+    if not name:
+        raise RequestValidationError("Validation failed.", {"name": "This field is required."})
+
+    selling_price_raw = payload.get("sellingPrice", menu_item.selling_price if menu_item else 0)
+    selling_price = _to_decimal(selling_price_raw, field="sellingPrice", required=False)
+    if selling_price < 0:
+        raise RequestValidationError("Validation failed.", {"sellingPrice": "Selling price cannot be negative."})
+
+    recipe_id = payload.get("recipeId", menu_item.recipe_id if menu_item else None)
+    if recipe_id in (None, ""):
+        raise RequestValidationError("Validation failed.", {"recipeId": "This field is required."})
+    try:
+        recipe_id_int = int(recipe_id)
+    except (TypeError, ValueError):
+        raise RequestValidationError("Validation failed.", {"recipeId": "Enter a valid whole number."}) from None
+
+    category = str(payload.get("category", menu_item.category if menu_item else "Other")).strip() or "Other"
+    return {
+        "name": name,
+        "normalized_name": _normalize_name(name),
+        "category": category,
+        "selling_price": selling_price,
+        "recipe_id": recipe_id_int,
+        "active": bool(payload.get("active", menu_item.active if menu_item else True)),
+        "notes": str(payload.get("notes", menu_item.notes if menu_item else "")).strip(),
+    }
+
+
+@bp.get("/api/pilot/menu-costing")
+@login_required
+def menu_costing():
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    return (
+        jsonify(
+            {
+                "organizationId": organization.id,
+                "locationId": location.id,
+                "recipes": _menu_costing_recipe_response(organization.id, location.id),
+                "menuItems": _menu_costing_menu_item_response(organization.id, location.id),
+            }
+        ),
+        200,
+    )
+
+
+@bp.post("/api/pilot/menu-costing/recipes")
+@login_required
+def create_menu_costing_recipe():
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    payload = _json_body()
+    recipe_data = _menu_costing_recipe_payload(payload)
+
+    existing = Recipe.query.filter_by(
+        organization_id=organization.id,
+        location_id=location.id,
+        normalized_name=recipe_data["normalized_name"],
+    ).first()
+    if existing is not None:
+        return json_error("A recipe with that name already exists in this location.", 409)
+
+    recipe = Recipe(organization_id=organization.id, location_id=location.id, created_by_user_id=current_user.id, updated_by_user_id=current_user.id, **recipe_data)
+    db.session.add(recipe)
+    db.session.flush()
+    record_audit_event(
+        event_type="menu_costing.recipe_created",
+        entity_type="recipe",
+        entity_id=recipe.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": recipe.name},
+    )
+    db.session.commit()
+    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
+    return jsonify(serialize_recipe(saved_recipe or recipe)), 201
+
+
+@bp.patch("/api/pilot/menu-costing/recipes/<int:recipe_id>")
+@login_required
+def update_menu_costing_recipe(recipe_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    recipe = _require_menu_costing_recipe(recipe_id, organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+
+    payload = _json_body()
+    recipe_data = _menu_costing_recipe_payload(payload, recipe)
+
+    if recipe_data["normalized_name"] != recipe.normalized_name:
+        existing = Recipe.query.filter(
+            Recipe.organization_id == organization.id,
+            Recipe.location_id == location.id,
+            Recipe.normalized_name == recipe_data["normalized_name"],
+            Recipe.id != recipe.id,
+        ).first()
+        if existing is not None:
+            return json_error("A recipe with that name already exists in this location.", 409)
+
+    for field, value in recipe_data.items():
+        setattr(recipe, field, value)
+    recipe.updated_by_user_id = current_user.id
+    record_audit_event(
+        event_type="menu_costing.recipe_updated",
+        entity_type="recipe",
+        entity_id=recipe.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": recipe.name},
+    )
+    db.session.commit()
+    return jsonify(serialize_recipe(recipe)), 200
+
+
+@bp.delete("/api/pilot/menu-costing/recipes/<int:recipe_id>")
+@login_required
+def delete_menu_costing_recipe(recipe_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    recipe = _require_menu_costing_recipe(recipe_id, organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+    db.session.delete(recipe)
+    record_audit_event(
+        event_type="menu_costing.recipe_deleted",
+        entity_type="recipe",
+        entity_id=recipe.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": recipe.name},
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("Remove any menu items linked to this recipe before deleting it.", 409)
+    return jsonify({"ok": True}), 200
+
+
+@bp.post("/api/pilot/menu-costing/recipes/<int:recipe_id>/ingredients")
+@login_required
+def create_menu_costing_recipe_ingredient(recipe_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    recipe = _require_menu_costing_recipe(recipe_id, organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+
+    payload = _json_body()
+    inventory_item_id = payload.get("inventoryItemId")
+    if inventory_item_id in (None, ""):
+        raise RequestValidationError("Validation failed.", {"inventoryItemId": "This field is required."})
+    try:
+        inventory_item_id_int = int(inventory_item_id)
+    except (TypeError, ValueError):
+        raise RequestValidationError("Validation failed.", {"inventoryItemId": "Enter a valid whole number."}) from None
+
+    inventory_item = InventoryItem.query.filter_by(id=inventory_item_id_int, organization_id=organization.id, location_id=location.id).first()
+    if inventory_item is None:
+        return json_error("Inventory item not found.", 404)
+
+    existing = RecipeIngredient.query.filter_by(recipe_id=recipe.id, inventory_item_id=inventory_item.id).first()
+    if existing is not None:
+        return json_error("That ingredient is already linked to this recipe.", 409)
+
+    quantity_required = _to_quantity(payload.get("quantityRequired", 0), field="quantityRequired")
+    if quantity_required <= 0:
+        raise RequestValidationError("Validation failed.", {"quantityRequired": "Ingredient quantity must be greater than zero."})
+
+    ingredient = RecipeIngredient(
+        organization_id=organization.id,
+        recipe_id=recipe.id,
+        inventory_item_id=inventory_item.id,
+        quantity_required=quantity_required,
+        unit=str(payload.get("unit", inventory_item.stock_unit or "each")).strip() or (inventory_item.stock_unit or "each"),
+        notes=str(payload.get("notes", "")).strip(),
+        sort_order=_to_int(payload.get("sortOrder", 0), field="sortOrder", required=False),
+        created_by_user_id=current_user.id,
+        updated_by_user_id=current_user.id,
+    )
+    db.session.add(ingredient)
+    db.session.flush()
+    record_audit_event(
+        event_type="menu_costing.recipe_ingredient_created",
+        entity_type="recipe_ingredient",
+        entity_id=ingredient.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"recipeId": recipe.id, "inventoryItemId": inventory_item.id},
+    )
+    db.session.commit()
+    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
+    return jsonify(serialize_recipe(saved_recipe or recipe)), 201
+
+
+@bp.patch("/api/pilot/menu-costing/recipes/<int:recipe_id>/ingredients/<int:ingredient_id>")
+@login_required
+def update_menu_costing_recipe_ingredient(recipe_id: int, ingredient_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    recipe = _require_menu_costing_recipe(recipe_id, organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+    ingredient = RecipeIngredient.query.filter_by(id=ingredient_id, recipe_id=recipe.id, organization_id=organization.id).first()
+    if ingredient is None:
+        return json_error("Ingredient not found.", 404)
+
+    payload = _json_body()
+    if "inventoryItemId" in payload:
+        try:
+            inventory_item_id = int(payload["inventoryItemId"])
+        except (TypeError, ValueError):
+            raise RequestValidationError("Validation failed.", {"inventoryItemId": "Enter a valid whole number."}) from None
+        inventory_item = InventoryItem.query.filter_by(
+            id=inventory_item_id,
+            organization_id=organization.id,
+            location_id=location.id,
+        ).first()
+        if inventory_item is None:
+            return json_error("Inventory item not found.", 404)
+        ingredient.inventory_item_id = inventory_item.id
+        ingredient.unit = str(payload.get("unit", inventory_item.stock_unit or ingredient.unit)).strip() or (inventory_item.stock_unit or ingredient.unit)
+
+    if "quantityRequired" in payload:
+        quantity_required = _to_quantity(payload.get("quantityRequired"), field="quantityRequired")
+        if quantity_required <= 0:
+            raise RequestValidationError("Validation failed.", {"quantityRequired": "Ingredient quantity must be greater than zero."})
+        ingredient.quantity_required = quantity_required
+
+    if "unit" in payload:
+        ingredient.unit = str(payload.get("unit", ingredient.unit)).strip() or ingredient.unit
+    if "notes" in payload:
+        ingredient.notes = str(payload.get("notes", ingredient.notes)).strip()
+    if "sortOrder" in payload:
+        ingredient.sort_order = _to_int(payload.get("sortOrder"), field="sortOrder", required=False)
+
+    ingredient.updated_by_user_id = current_user.id
+    record_audit_event(
+        event_type="menu_costing.recipe_ingredient_updated",
+        entity_type="recipe_ingredient",
+        entity_id=ingredient.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"recipeId": recipe.id, "inventoryItemId": ingredient.inventory_item_id},
+    )
+    db.session.commit()
+    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
+    return jsonify(serialize_recipe(saved_recipe or recipe)), 200
+
+
+@bp.delete("/api/pilot/menu-costing/recipes/<int:recipe_id>/ingredients/<int:ingredient_id>")
+@login_required
+def delete_menu_costing_recipe_ingredient(recipe_id: int, ingredient_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    recipe = _require_menu_costing_recipe(recipe_id, organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+    ingredient = RecipeIngredient.query.filter_by(id=ingredient_id, recipe_id=recipe.id, organization_id=organization.id).first()
+    if ingredient is None:
+        return json_error("Ingredient not found.", 404)
+    db.session.delete(ingredient)
+    record_audit_event(
+        event_type="menu_costing.recipe_ingredient_deleted",
+        entity_type="recipe_ingredient",
+        entity_id=ingredient.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"recipeId": recipe.id, "inventoryItemId": ingredient.inventory_item_id},
+    )
+    db.session.commit()
+    saved_recipe = _require_menu_costing_recipe(recipe.id, organization.id, location.id)
+    return jsonify(serialize_recipe(saved_recipe or recipe)), 200
+
+
+@bp.post("/api/pilot/menu-costing/menu-items")
+@login_required
+def create_menu_costing_menu_item():
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    payload = _json_body()
+    item_data = _menu_costing_menu_item_payload(payload)
+
+    recipe = _require_menu_costing_recipe(item_data["recipe_id"], organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+
+    existing = MenuItem.query.filter_by(
+        organization_id=organization.id,
+        location_id=location.id,
+        normalized_name=item_data["normalized_name"],
+    ).first()
+    if existing is not None:
+        return json_error("A menu item with that name already exists in this location.", 409)
+
+    menu_item = MenuItem(
+        organization_id=organization.id,
+        location_id=location.id,
+        created_by_user_id=current_user.id,
+        updated_by_user_id=current_user.id,
+        **item_data,
+    )
+    db.session.add(menu_item)
+    db.session.flush()
+    record_audit_event(
+        event_type="menu_costing.menu_item_created",
+        entity_type="menu_item",
+        entity_id=menu_item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": menu_item.name, "recipeId": menu_item.recipe_id},
+    )
+    db.session.commit()
+    saved_item = _require_menu_costing_menu_item(menu_item.id, organization.id, location.id)
+    return jsonify(serialize_menu_item(saved_item or menu_item)), 201
+
+
+@bp.patch("/api/pilot/menu-costing/menu-items/<int:menu_item_id>")
+@login_required
+def update_menu_costing_menu_item(menu_item_id: int):
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    menu_item = _require_menu_costing_menu_item(menu_item_id, organization.id, location.id)
+    if menu_item is None:
+        return json_error("Menu item not found.", 404)
+
+    payload = _json_body()
+    item_data = _menu_costing_menu_item_payload(payload, menu_item)
+    recipe = _require_menu_costing_recipe(item_data["recipe_id"], organization.id, location.id)
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+
+    if item_data["normalized_name"] != menu_item.normalized_name:
+        existing = MenuItem.query.filter(
+            MenuItem.organization_id == organization.id,
+            MenuItem.location_id == location.id,
+            MenuItem.normalized_name == item_data["normalized_name"],
+            MenuItem.id != menu_item.id,
+        ).first()
+        if existing is not None:
+            return json_error("A menu item with that name already exists in this location.", 409)
+
+    for field, value in item_data.items():
+        setattr(menu_item, field, value)
+    menu_item.recipe_id = recipe.id
+    menu_item.updated_by_user_id = current_user.id
+    record_audit_event(
+        event_type="menu_costing.menu_item_updated",
+        entity_type="menu_item",
+        entity_id=menu_item.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"name": menu_item.name, "recipeId": menu_item.recipe_id},
+    )
+    db.session.commit()
+    return jsonify(serialize_menu_item(menu_item)), 200
 
 
 @bp.delete("/api/pilot/menu-costing/menu-items/<int:menu_item_id>")

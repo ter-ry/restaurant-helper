@@ -620,7 +620,6 @@ def test_count_session_finalize_updates_inventory(app, client):
 
     inventory = client.get("/api/pilot/inventory").get_json()
     chicken = next(item for item in inventory["items"] if item["name"] == "Chicken Breast")
-    cups = next(item for item in inventory["items"] if item["name"] == "Cups")
 
     create_response = client.post(
         "/api/pilot/inventory/count-sessions",
@@ -628,30 +627,40 @@ def test_count_session_finalize_updates_inventory(app, client):
         json={
             "countedBy": "Manager on duty",
             "notes": "Evening count",
-            "itemIds": [chicken["id"], cups["id"]],
+            "itemIds": [chicken["id"]],
         },
     )
     assert create_response.status_code == 201
-    session_id = create_response.get_json()["id"]
-    stale_updated_at = create_response.get_json()["updatedAt"]
+    created = create_response.get_json()
+    session_id = created["id"]
+    exact_updated_at = created["updatedAt"]
+    line_id = created["lines"][0]["id"]
+    assert created["lines"][0]["expectedQuantity"] == 30
+    assert exact_updated_at is not None
 
     update_response = client.patch(
         f"/api/pilot/inventory/count-sessions/{session_id}",
         headers=csrf_headers(client),
         json={
+            "updatedAt": exact_updated_at,
             "countedBy": "Manager on duty",
             "notes": "Evening count",
             "lines": [
-                {"id": create_response.get_json()["lines"][0]["id"], "countedQuantity": 0.0, "note": "Counted on shelf"},
-                {"id": create_response.get_json()["lines"][1]["id"], "countedQuantity": 31.0, "note": "Good"},
+                {"id": line_id, "countedQuantity": 4.0, "note": "Counted on shelf"},
             ],
         },
     )
     assert update_response.status_code == 200
+    saved = update_response.get_json()
+    assert saved["countedLineCount"] == 1
+    assert saved["uncountedLineCount"] == 0
+    assert saved["lines"][0]["variance"] == -26.0
+    assert saved["lines"][0]["resultingQuantity"] == 4.0
 
     finalize = client.post(f"/api/pilot/inventory/count-sessions/{session_id}/finalize", headers=csrf_headers(client))
     assert finalize.status_code == 200
-    assert finalize.get_json()["status"] == "Completed"
+    finalized = finalize.get_json()
+    assert finalized["status"] == "Completed"
 
     duplicate_finalize = client.post(f"/api/pilot/inventory/count-sessions/{session_id}/finalize", headers=csrf_headers(client))
     assert duplicate_finalize.status_code == 409
@@ -670,10 +679,14 @@ def test_count_session_finalize_updates_inventory(app, client):
 
     with app.app_context():
         chicken_item = InventoryItem.query.filter_by(name="Chicken Breast").first()
-        cups_item = InventoryItem.query.filter_by(name="Cups").first()
-        assert chicken_item is not None and cups_item is not None
-        assert float(chicken_item.current_on_hand) == 0.0
-        assert float(cups_item.current_on_hand) == 31.0
+        assert chicken_item is not None
+        assert float(chicken_item.current_on_hand) == 4.0
+        assert InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").count() == 1
+        movement = InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").first()
+        assert movement is not None
+        assert float(movement.quantity_delta) == -26.0
+        assert float(movement.quantity_before) == 30.0
+        assert float(movement.quantity_after) == 4.0
         assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
 
 
@@ -731,18 +744,21 @@ def test_count_session_save_resume_and_concurrency_confirmation(app, client):
         },
     )
     assert create_response.status_code == 201
-    session_id = create_response.get_json()["id"]
-    stale_updated_at = create_response.get_json()["updatedAt"]
+    created = create_response.get_json()
+    session_id = created["id"]
+    exact_updated_at = created["updatedAt"]
+    stale_updated_at = created["updatedAt"]
 
     update_response = client.patch(
         f"/api/pilot/inventory/count-sessions/{session_id}",
         headers=csrf_headers(client),
         json={
+            "updatedAt": exact_updated_at,
             "countedBy": "Closer",
             "notes": "Draft count",
             "lines": [
                 {
-                    "id": create_response.get_json()["lines"][0]["id"],
+                    "id": created["lines"][0]["id"],
                     "countedQuantity": original,
                     "note": "Shelf count",
                 }
@@ -764,7 +780,7 @@ def test_count_session_save_resume_and_concurrency_confirmation(app, client):
             "notes": "Draft count",
             "lines": [
                 {
-                    "id": create_response.get_json()["lines"][0]["id"],
+                    "id": created["lines"][0]["id"],
                     "countedQuantity": original,
                     "note": "Stale retry",
                 }
