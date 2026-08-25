@@ -635,7 +635,8 @@ def test_count_session_finalize_updates_inventory(app, client):
     session_id = created["id"]
     exact_updated_at = created["updatedAt"]
     line_id = created["lines"][0]["id"]
-    assert created["lines"][0]["expectedQuantity"] == 30
+    starting_quantity = float(chicken["currentOnHand"])
+    assert created["lines"][0]["expectedQuantity"] == starting_quantity
     assert exact_updated_at is not None
 
     update_response = client.patch(
@@ -684,8 +685,8 @@ def test_count_session_finalize_updates_inventory(app, client):
         assert InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").count() == 1
         movement = InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").first()
         assert movement is not None
-        assert float(movement.quantity_delta) == -26.0
-        assert float(movement.quantity_before) == 30.0
+        assert float(movement.quantity_delta) == 4.0 - starting_quantity
+        assert float(movement.quantity_before) == starting_quantity
         assert float(movement.quantity_after) == 4.0
         assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
 
