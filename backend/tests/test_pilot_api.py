@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from backend.extensions import db
 from backend.models import InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
 from backend.seed import (
@@ -656,7 +658,7 @@ def test_count_session_finalize_updates_inventory(app, client):
     expected_variance = 4.0 - starting_quantity
     assert saved["countedLineCount"] == 1
     assert saved["uncountedLineCount"] == 0
-    assert saved["lines"][0]["variance"] == expected_variance
+    assert saved["lines"][0]["variance"] == pytest.approx(expected_variance)
     assert saved["lines"][0]["resultingQuantity"] == 4.0
 
     finalize = client.post(f"/api/pilot/inventory/count-sessions/{session_id}/finalize", headers=csrf_headers(client))
@@ -686,7 +688,7 @@ def test_count_session_finalize_updates_inventory(app, client):
         assert InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").count() == 1
         movement = InventoryMovement.query.filter_by(source_record_id=str(session_id), source_type="stock count reconciliation").first()
         assert movement is not None
-        assert float(movement.quantity_delta) == expected_variance
+        assert float(movement.quantity_delta) == pytest.approx(expected_variance)
         assert float(movement.quantity_before) == starting_quantity
         assert float(movement.quantity_after) == 4.0
         assert StockCountSession.query.filter_by(id=session_id, status="Completed").count() == 1
