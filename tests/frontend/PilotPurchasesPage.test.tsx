@@ -526,6 +526,7 @@ describe("PilotPurchasesPage", () => {
 
     expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible();
     expect(screen.getByTestId("purchase-editor-card")).toBeVisible();
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("");
     expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Heritage Dairy/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /Fresh Dairy Toronto/ })).toBeVisible();

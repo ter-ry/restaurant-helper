@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Plus, RefreshCcw, Save, ClipboardList, Search } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -8,6 +8,7 @@ import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotCountSession,
   fetchPilotCountSessions,
+  fetchPilotCountSession,
   fetchPilotInventory,
   finalizePilotCountSession,
   updatePilotCountSession,
@@ -72,6 +73,7 @@ function sessionToDraft(session: PilotCountSession): CountSessionDraft {
 
 export function PilotStockCountsPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState<PilotCountSession[]>([]);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -93,27 +95,37 @@ export function PilotStockCountsPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
-  const load = async () => {
+  const load = async (preferredSessionId: number | null = requestedSessionId) => {
     setLoading(true);
     setError(null);
 
     try {
       const [sessionList, inventory] = await Promise.all([fetchPilotCountSessions(), fetchPilotInventory()]);
-      setSessions(sessionList.countSessions);
       setInventoryItems(inventory.items);
+      let nextSessions = sessionList.countSessions;
+      let current: PilotCountSession | null = null;
+
+      const targetSessionId = preferredSessionId ?? selectedId;
+      if (targetSessionId) {
+        try {
+          current = await fetchPilotCountSession(targetSessionId);
+          const currentId = current.id;
+          nextSessions = [current, ...nextSessions.filter((entry) => entry.id !== currentId)];
+        } catch {
+          current = sessionList.countSessions.find((entry) => entry.id === targetSessionId) ?? null;
+        }
+      }
+
+      setSessions(nextSessions);
       if (!selectionSeeded) {
         setSelectedItemIds(inventory.items.filter((item) => item.active).map((item) => item.id));
         setSelectionSeeded(true);
       }
-      const current = requestedSessionId
-        ? sessionList.countSessions.find((entry) => entry.id === requestedSessionId) ?? null
-        : selectedId
-          ? sessionList.countSessions.find((entry) => entry.id === selectedId) ?? null
-          : sessionList.countSessions[0] ?? null;
-      if (current) {
-        setSelectedId(current.id);
-        setDraft(sessionToDraft(current));
-        setSavedDraftSignature(JSON.stringify(sessionToDraft(current)));
+      const activeSession = current ?? nextSessions[0] ?? null;
+      if (activeSession) {
+        setSelectedId(activeSession.id);
+        setDraft(sessionToDraft(activeSession));
+        setSavedDraftSignature(JSON.stringify(sessionToDraft(activeSession)));
         setConfirmConcurrency(false);
       } else {
         setDraft(null);
@@ -180,6 +192,11 @@ export function PilotStockCountsPage() {
 
   const selectedItemCount = selectedItemIds.length;
   const activeItemCount = inventoryItems.filter((item) => item.active).length;
+  const openSession = (sessionId: number) => {
+    setSelectedId(sessionId);
+    setConfirmConcurrency(false);
+    navigate(`${location.pathname}?sessionId=${sessionId}`, { replace: true });
+  };
 
   const createSession = async () => {
     if (creating || saving || loading) {
@@ -201,8 +218,8 @@ export function PilotStockCountsPage() {
       setSavedDraftSignature(JSON.stringify(sessionToDraft(created)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${created.id} started.`);
-      await load();
-      setSelectedId(created.id);
+      navigate(`${location.pathname}?sessionId=${created.id}`, { replace: true });
+      await load(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a stock count.");
     } finally {
@@ -232,8 +249,8 @@ export function PilotStockCountsPage() {
       setDraft(sessionToDraft(saved));
       setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
       setMessage(`Stock count ${saved.id} saved.`);
-      await load();
-      setSelectedId(saved.id);
+      navigate(`${location.pathname}?sessionId=${saved.id}`, { replace: true });
+      await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this stock count.");
     } finally {
@@ -259,8 +276,8 @@ export function PilotStockCountsPage() {
       setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
-      await load();
-      setSelectedId(finalized.id);
+      navigate(`${location.pathname}?sessionId=${finalized.id}`, { replace: true });
+      await load(finalized.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
     } finally {
@@ -378,7 +395,7 @@ export function PilotStockCountsPage() {
           <SectionHeader title="Sessions" description="Latest count sessions first." />
           <div className="space-y-2">
             {draftSessions.map((session) => (
-              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { setSelectedId(session.id); setDraft(sessionToDraft(session)); setConfirmConcurrency(false); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">Draft #{session.id}</p>
@@ -393,7 +410,7 @@ export function PilotStockCountsPage() {
               </button>
             ))}
             {completedSessions.map((session) => (
-              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { setSelectedId(session.id); setDraft(sessionToDraft(session)); setConfirmConcurrency(false); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">Completed #{session.id}</p>
@@ -459,6 +476,31 @@ export function PilotStockCountsPage() {
                 </div>
               ) : null}
 
+              {draft.status !== "Completed" && draft.countedLineCount > 0 ? (
+                <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
+                  <p className="text-sm font-semibold text-ink">Ready to apply this count?</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">Finalizing will write reconciliation movements into inventory and update the on-hand quantities for every counted line.</p>
+                  <div className="mt-3 space-y-2">
+                    {draft.lines
+                      .filter((line) => line.countedQuantity !== null)
+                      .slice(0, 3)
+                      .map((line) => (
+                        <div key={line.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm">
+                          <div className="min-w-0">
+                            <p className="font-medium text-ink">{line.itemNameSnapshot}</p>
+                            <p className="text-xs text-muted">
+                              {formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot} expected to {formatNumber(line.countedQuantity ?? 0)} counted
+                            </p>
+                          </div>
+                          <Badge tone={line.countedQuantity !== null && line.countedQuantity >= line.expectedQuantity ? "success" : "warning"}>
+                            {line.countedQuantity !== null && line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}{formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} variance
+                          </Badge>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+
               <label className="mt-4 block">
                 <span className="text-sm font-semibold text-ink">Notes</span>
                 <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
@@ -514,10 +556,10 @@ export function PilotStockCountsPage() {
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <Button disabled={creating || saving || draft.status === "Completed"} icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
-                  Save count
+                  Save draft
                 </Button>
                 <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
-                  {draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Finalize count"}
+                  {draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Apply count to inventory"}
                 </Button>
               </div>
 
