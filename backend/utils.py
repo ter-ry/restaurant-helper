@@ -46,6 +46,12 @@ def isoformat(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def isoformat_precise(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def decimal_to_float(value: Decimal | None) -> float | None:
     if value is None:
         return None
@@ -309,8 +315,8 @@ def serialize_count_session_line(line: StockCountSessionLine) -> dict[str, Any]:
         "status": line.status,
         "movementCountSinceStart": movement_count_since_start,
         "hasMovementSinceStart": movement_count_since_start > 0,
-        "createdAt": isoformat(line.created_at),
-        "updatedAt": isoformat(line.updated_at),
+        "createdAt": isoformat_precise(line.created_at),
+        "updatedAt": isoformat_precise(line.updated_at),
     }
 
 
@@ -325,8 +331,8 @@ def serialize_count_session(session_record: StockCountSession) -> dict[str, Any]
         "organizationId": session_record.organization_id,
         "locationId": session_record.location_id,
         "status": session_record.status,
-        "startedAt": isoformat(session_record.started_at),
-        "completedAt": isoformat(session_record.completed_at),
+        "startedAt": isoformat_precise(session_record.started_at),
+        "completedAt": isoformat_precise(session_record.completed_at),
         "countedBy": session_record.counted_by,
         "notes": session_record.notes,
         "itemCount": session_record.item_count,
@@ -338,8 +344,8 @@ def serialize_count_session(session_record: StockCountSession) -> dict[str, Any]
         "createdByUserId": session_record.created_by_user_id,
         "finalizedByUserId": session_record.finalized_by_user_id,
         "lines": line_payloads,
-        "createdAt": isoformat(session_record.created_at),
-        "updatedAt": isoformat(session_record.updated_at),
+        "createdAt": isoformat_precise(session_record.created_at),
+        "updatedAt": isoformat_precise(session_record.updated_at),
     }
 
 

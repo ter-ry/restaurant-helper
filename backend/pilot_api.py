@@ -131,6 +131,20 @@ def _json_body() -> dict[str, Any]:
     return payload
 
 
+def _parse_utc_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _current_context():
     organization, membership, locations = get_current_organization_bundle()
     location = get_current_location()
@@ -1679,9 +1693,9 @@ def update_count_session(session_id: int):
         return json_error("Completed stock counts are read-only.", 409)
     payload = _json_body()
     if "updatedAt" in payload and payload.get("updatedAt") and session_record.updated_at is not None:
-        expected_updated_at = str(payload.get("updatedAt") or "").strip()
-        current_updated_at = session_record.updated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-        if expected_updated_at not in {current_updated_at, session_record.updated_at.isoformat()}:
+        expected_updated_at = _parse_utc_datetime(payload.get("updatedAt"))
+        current_updated_at = session_record.updated_at.astimezone(timezone.utc)
+        if expected_updated_at != current_updated_at:
             return json_error("This stock count has changed since it was opened.", 409, errors={"updatedAt": "Reload the count before saving again."})
     if "countedBy" in payload:
         session_record.counted_by = str(payload.get("countedBy") or "").strip()
