@@ -24,7 +24,7 @@ from .google_oidc import (
 from .extensions import db, limiter
 from .models import ExternalIdentity, Organization, OrganizationMembership, User
 from .validation import RequestValidationError, clean_email, parse_login_payload
-from .utils import clear_pilot_context, get_current_location, get_current_organization_bundle, get_platform_role, get_user_memberships, json_error, serialize_membership_summaries, serialize_organization, serialize_user
+from .utils import clear_pilot_context, enabled_module_keys_for_organization, get_current_location, get_current_organization_bundle, get_platform_role, get_user_memberships, json_error, serialize_membership_summaries, serialize_organization, serialize_user
 
 bp = Blueprint("auth", __name__)
 INVALID_LOGIN_MESSAGE = "Invalid email or password."
@@ -76,6 +76,7 @@ def _login_payload(user: User, memberships: list[OrganizationMembership], member
         "membershipRole": membership.role if membership else None,
         "currentOrganization": serialize_organization(organization) if organization else None,
         "currentLocationId": current_location.id if current_location else None,
+        "enabledModuleKeys": enabled_module_keys_for_organization(organization.id) if organization is not None else [],
         "supportAccessGrant": {
             "id": support_grant.id,
             "organizationId": support_grant.organization_id,
@@ -285,6 +286,7 @@ def me() -> tuple[object, int]:
                 "membershipRole": membership.role if membership else None,
                 "currentOrganizationId": organization.id if organization else None,
                 "currentLocationId": current_location.id if current_location else None,
+                "enabledModuleKeys": enabled_module_keys_for_organization(organization.id) if organization else [],
                 "supportAccessGrant": {
                     "id": support_grant.id,
                     "organizationId": support_grant.organization_id,

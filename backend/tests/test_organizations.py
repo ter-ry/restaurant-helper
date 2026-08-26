@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import AuditEvent, Organization, OrganizationMembership, RestaurantLocation, User
+from backend.models import AuditEvent, OrganizationModule, RestaurantLocation, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.tests.conftest import make_operational_organization
 
@@ -25,8 +25,69 @@ def test_current_organization_bundle(client):
     body = response.get_json()
     assert body["organization"]["name"] == "Flowtally Pilot Restaurant"
     assert body["membershipRole"] == "owner"
+    assert "enabledModuleKeys" in body
     assert len(body["restaurantLocations"]) == 1
     assert body["currentLocation"]["name"] == "Flowtally Pilot Kitchen"
+
+
+def test_enabled_module_keys_track_current_organization_and_ignore_disabled_rows(app, client):
+    assert login(client).status_code == 200
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        enabled_org = make_operational_organization(
+            owner,
+            name="Enabled Module Cafe",
+            location_name="Enabled Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS"),
+        )
+        disabled_org = make_operational_organization(
+            owner,
+            name="Disabled Module Cafe",
+            location_name="Disabled Kitchen",
+        )
+        db.session.add(
+            OrganizationModule(
+                organization=disabled_org,
+                module_key="MENU_COSTING",
+                status="DISABLED",
+            )
+        )
+        db.session.commit()
+        enabled_org_id = enabled_org.id
+        disabled_org_id = disabled_org.id
+
+    select_enabled = client.post(
+        "/api/organizations/select",
+        headers={"X-CSRFToken": client.get("/api/auth/csrf").get_json()["csrfToken"]},
+        json={"organizationId": enabled_org_id},
+    )
+    assert select_enabled.status_code == 200
+    enabled_bundle = client.get("/api/organizations/current")
+    assert enabled_bundle.status_code == 200
+    enabled_bundle_body = enabled_bundle.get_json()
+    assert "MENU_COSTING" in enabled_bundle_body["enabledModuleKeys"]
+    assert enabled_bundle_body["enabledModuleKeys"].count("MENU_COSTING") == 1
+
+    me_enabled = client.get("/api/auth/me")
+    assert me_enabled.status_code == 200
+    assert "MENU_COSTING" in me_enabled.get_json()["enabledModuleKeys"]
+
+    select_disabled = client.post(
+        "/api/organizations/select",
+        headers={"X-CSRFToken": client.get("/api/auth/csrf").get_json()["csrfToken"]},
+        json={"organizationId": disabled_org_id},
+    )
+    assert select_disabled.status_code == 200
+    disabled_bundle = client.get("/api/organizations/current")
+    assert disabled_bundle.status_code == 200
+    disabled_bundle_body = disabled_bundle.get_json()
+    assert "MENU_COSTING" not in disabled_bundle_body["enabledModuleKeys"]
+
+    me_disabled = client.get("/api/auth/me")
+    assert me_disabled.status_code == 200
+    assert "MENU_COSTING" not in me_disabled.get_json()["enabledModuleKeys"]
 
 
 def test_organization_detail_isolated_by_membership(app, client):

@@ -14,6 +14,7 @@ from .models import (
     InventoryMovement,
     Organization,
     OrganizationMembership,
+    OrganizationModule,
     PlatformRole,
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -117,6 +118,18 @@ def serialize_membership_summaries(
         serialize_membership_summary(membership, selected=selected_organization_id is not None and membership.organization_id == selected_organization_id)
         for membership in memberships
         if membership.organization is not None
+    ]
+
+
+def enabled_module_keys_for_organization(organization_id: int) -> list[str]:
+    return [
+        module.module_key
+        for module in (
+            OrganizationModule.query.filter_by(organization_id=organization_id)
+            .order_by(OrganizationModule.module_key.asc())
+            .all()
+        )
+        if module.status == "ENABLED"
     ]
 
 

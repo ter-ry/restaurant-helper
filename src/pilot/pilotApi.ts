@@ -34,6 +34,7 @@ export interface PilotOrganizationBundle {
   organization: PilotOrganization;
   restaurantLocations: PilotLocation[];
   currentLocation: PilotLocation | null;
+  enabledModuleKeys: string[];
   membershipRole?: "owner" | "manager" | string;
 }
 
@@ -54,6 +55,7 @@ export interface PilotAuthMeResponse {
   membershipRole: "owner" | "manager" | string | null;
   currentOrganizationId: number | null;
   currentLocationId: number | null;
+  enabledModuleKeys: string[];
   organizations?: PilotOrganizationMembershipSummary[];
   csrfToken: string;
 }
@@ -63,6 +65,7 @@ export interface PilotLoginResponse {
   membershipRole: "owner" | "manager" | string | null;
   currentOrganization: PilotOrganization | null;
   currentLocationId: number | null;
+  enabledModuleKeys: string[];
   organizations?: PilotOrganizationMembershipSummary[];
   csrfToken: string;
 }

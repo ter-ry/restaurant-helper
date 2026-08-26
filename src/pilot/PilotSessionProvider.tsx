@@ -22,6 +22,7 @@ interface PilotSessionValue {
   error: string | null;
   user: PilotUser | null;
   organization: PilotOrganization | null;
+  enabledModuleKeys: string[];
   organizations: PilotOrganizationMembershipSummary[];
   locations: PilotLocation[];
   currentLocation: PilotLocation | null;
@@ -65,6 +66,7 @@ async function loadCurrentSession() {
     user: session.user,
     organizations,
     organization: organizationBundle?.organization ?? null,
+    enabledModuleKeys: organizationBundle?.enabledModuleKeys ?? [],
     locations: organizationBundle?.restaurantLocations ?? [],
     currentLocation: organizationBundle?.currentLocation ?? null,
     membershipRole: organizationBundle?.membershipRole ?? session.membershipRole ?? null,
@@ -77,6 +79,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<PilotUser | null>(null);
   const [organization, setOrganization] = useState<PilotOrganization | null>(null);
+  const [enabledModuleKeys, setEnabledModuleKeys] = useState<string[]>([]);
   const [organizations, setOrganizations] = useState<PilotOrganizationMembershipSummary[]>([]);
   const [locations, setLocations] = useState<PilotLocation[]>([]);
   const [currentLocation, setCurrentLocation] = useState<PilotLocation | null>(null);
@@ -97,6 +100,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setUser(current.user);
       setOrganizations(current.organizations);
       setOrganization(current.organization);
+      setEnabledModuleKeys(current.enabledModuleKeys);
       setLocations(current.locations);
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
@@ -112,6 +116,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       }
       setUser(null);
       setOrganization(null);
+      setEnabledModuleKeys([]);
       setOrganizations([]);
       setLocations([]);
       setCurrentLocation(null);
@@ -134,6 +139,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setUser(login.user);
       setOrganizations(login.organizations ?? current.organizations);
       setOrganization(current.organization);
+      setEnabledModuleKeys(current.enabledModuleKeys);
       setLocations(current.locations);
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole ?? login.membershipRole ?? null);
@@ -167,6 +173,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setUser(current.user);
       setOrganizations(current.organizations);
       setOrganization(current.organization);
+      setEnabledModuleKeys(current.enabledModuleKeys);
       setLocations(current.locations);
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
@@ -193,6 +200,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setUser(current.user);
       setOrganizations(current.organizations);
       setOrganization(current.organization);
+      setEnabledModuleKeys(current.enabledModuleKeys);
       setLocations(current.locations);
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
@@ -220,6 +228,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     setStatus("signedOut");
     setUser(null);
     setOrganization(null);
+    setEnabledModuleKeys([]);
     setOrganizations([]);
     setLocations([]);
     setCurrentLocation(null);
@@ -234,6 +243,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       error,
       user,
       organization,
+      enabledModuleKeys,
       organizations,
       locations,
       currentLocation,
@@ -245,7 +255,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       switchLocation,
       signOut,
     }),
-    [csrfToken, currentLocation, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, status, switchLocation, switchOrganization, user],
+    [csrfToken, currentLocation, enabledModuleKeys, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, status, switchLocation, switchOrganization, user],
   );
 
   return <PilotSessionContext.Provider value={value}>{children}</PilotSessionContext.Provider>;

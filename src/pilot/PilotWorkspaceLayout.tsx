@@ -8,8 +8,8 @@ const navItems = [
   { to: "/app/dashboard", label: "Dashboard" },
   { to: "/app/purchases", label: "Purchases" },
   { to: "/app/inventory", label: "Inventory" },
-  { to: "/app/menu-costing", label: "Menu Costing" },
-  { to: "/app/square-usage", label: "Usage / Variance" },
+  { to: "/app/menu-costing", label: "Menu Costing", moduleKey: "MENU_COSTING" },
+  { to: "/app/square-usage", label: "Usage / Variance", moduleKey: "SQUARE_INTEGRATION" },
   { to: "/app/stock-counts", label: "Stock Counts" },
   { to: "/app/reorder-plan", label: "Reorder Plan" },
 ];
@@ -54,11 +54,16 @@ function NavItem({
 }
 
 export function PilotWorkspaceLayout() {
-  const { error, user, organization, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
+  const { error, user, organization, enabledModuleKeys, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const activeOrganizationId = organization?.id ?? "";
   const activeLocationId = currentLocation?.id ?? "";
+  const enabledModuleKeySet = useMemo(() => new Set(enabledModuleKeys), [enabledModuleKeys]);
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => !item.moduleKey || enabledModuleKeySet.has(item.moduleKey)),
+    [enabledModuleKeySet],
+  );
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -323,11 +328,11 @@ export function PilotWorkspaceLayout() {
           </div>
 
           <nav className="mt-6 space-y-2">
-            {navItems.map((item) => (
-              <NavItem key={item.to} to={item.to}>
-                {item.label}
-              </NavItem>
-            ))}
+                {visibleNavItems.map((item) => (
+                  <NavItem key={item.to} to={item.to}>
+                    {item.label}
+                  </NavItem>
+                ))}
           </nav>
 
           <div className="mt-auto space-y-3 border-t border-line pt-5 text-sm text-muted">
@@ -490,11 +495,11 @@ export function PilotWorkspaceLayout() {
             </div>
 
             <nav className="mt-6 space-y-2">
-              {navItems.map((item) => (
-                <NavItem key={item.to} to={item.to} onClick={() => setMobileNavOpen(false)}>
-                  {item.label}
-                </NavItem>
-              ))}
+            {visibleNavItems.map((item) => (
+              <NavItem key={item.to} to={item.to} onClick={() => setMobileNavOpen(false)}>
+                {item.label}
+              </NavItem>
+            ))}
             </nav>
 
             <div className="mt-6 space-y-2 border-t border-line pt-5">
