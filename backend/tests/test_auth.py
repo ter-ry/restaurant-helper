@@ -30,6 +30,8 @@ def test_owner_login_and_me_returns_session(client):
     assert body["user"]["email"] == LOCAL_OWNER_EMAIL
     assert body["membershipRole"] == "owner"
     assert body["currentOrganization"]["name"] == "Flowtally Pilot Restaurant"
+    assert "enabledModuleKeys" in body
+    assert "MENU_COSTING" not in body["enabledModuleKeys"]
 
     me = client.get("/api/auth/me")
     assert me.status_code == 200
@@ -37,6 +39,8 @@ def test_owner_login_and_me_returns_session(client):
     assert me_body["user"]["email"] == LOCAL_OWNER_EMAIL
     assert me_body["membershipRole"] == "owner"
     assert me_body["currentOrganizationId"] == body["currentOrganization"]["id"]
+    assert "enabledModuleKeys" in me_body
+    assert "MENU_COSTING" not in me_body["enabledModuleKeys"]
     assert me_body["organizations"][0]["organization"]["name"] == "Flowtally Pilot Restaurant"
     assert me_body["organizations"][0]["membershipRole"] == "owner"
     assert me_body["organizations"][0]["selected"] is True

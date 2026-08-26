@@ -8,6 +8,7 @@ import { buildDemoPath, defaultDemoProfileSlug, isDemoProfileSlug } from "./data
 import { initAnalytics, trackPageView } from "./lib/analytics";
 import { PilotSessionProvider } from "./pilot/PilotSessionProvider";
 import { PilotAppGate } from "./pilot/PilotAppGate";
+import { PilotModuleGate } from "./pilot/PilotModuleGate";
 import { PilotWorkspaceLayout } from "./pilot/PilotWorkspaceLayout";
 import { pilotAppEnabled } from "./pilot/pilotConfig";
 
@@ -209,8 +210,22 @@ const pilotAppRoutes = pilotAppEnabled
               { path: "dashboard", element: <PilotDashboardPage /> },
               { path: "purchases", element: <PilotPurchasesPage /> },
               { path: "inventory", element: <PilotInventoryPage /> },
-              { path: "menu-costing", element: <PilotMenuCostingPage /> },
-              { path: "square-usage", element: <PilotSquareUsagePage /> },
+              {
+                path: "menu-costing",
+                element: (
+                  <PilotModuleGate moduleKey="MENU_COSTING" moduleName="Menu Costing">
+                    <PilotMenuCostingPage />
+                  </PilotModuleGate>
+                ),
+              },
+              {
+                path: "square-usage",
+                element: (
+                  <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
+                    <PilotSquareUsagePage />
+                  </PilotModuleGate>
+                ),
+              },
               { path: "stock-counts", element: <PilotStockCountsPage /> },
               { path: "reorder-plan", element: <PilotReorderPlanPage /> },
             ],
@@ -230,7 +245,16 @@ const routes = [
   { path: "/owner/audit", element: <PageWithHashScroll><OwnerAuditPage /></PageWithHashScroll> },
   { path: "/platform/setup", element: <PageWithHashScroll><SetupConsolePage /></PageWithHashScroll> },
   { path: "/imports", element: <PageWithHashScroll><DataMigrationPage /></PageWithHashScroll> },
-  { path: "/integrations/square", element: <PageWithHashScroll><SquareIntegrationPage /></PageWithHashScroll> },
+  {
+    path: "/integrations/square",
+    element: (
+      <PageWithHashScroll>
+        <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
+          <SquareIntegrationPage />
+        </PilotModuleGate>
+      </PageWithHashScroll>
+    ),
+  },
   { path: "/pilot", element: <PageWithHashScroll><PilotPage /></PageWithHashScroll> },
   { path: "/pilot/invoices", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },
   { path: "/pilot/purchases", element: <Navigate to={buildDemoPath(defaultDemoProfileSlug, "purchases")} replace /> },

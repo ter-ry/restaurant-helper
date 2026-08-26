@@ -655,6 +655,7 @@ export function PilotPurchasesPage() {
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
   const priceChanges = (data?.priceChanges ?? []).slice(0, 3);
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
+  const readOnlyPurchase = draft.id !== null && finalizedStatus;
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
@@ -896,8 +897,9 @@ export function PilotPurchasesPage() {
       setOcrMessage(null);
       await load(saved.id);
       if (!options?.quiet) {
-        setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
-        showNotice("success", "Purchase saved", `Invoice ${saved.invoiceNumber} saved successfully.`);
+        const savedMessage = `Draft saved for invoice ${saved.invoiceNumber}. You can keep editing or receive it into inventory when ready.`;
+        setReceiveMessage(savedMessage);
+        showNotice("success", "Purchase saved", savedMessage);
       }
       return saved;
     } catch (err) {
@@ -943,11 +945,11 @@ export function PilotPurchasesPage() {
       const nextDraft = buildBlankDraft();
       setDraft(nextDraft);
       setAuthoritativeDraftSignature(draftSignature(nextDraft));
-      setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
+      setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory. A fresh blank purchase is ready.`);
       setOcrMessage(null);
       navigate(location.pathname, { replace: true });
       await load(null);
-      showNotice("success", "Purchase received", `Invoice ${received.invoiceNumber} received into inventory.`);
+      showNotice("success", "Purchase received", `Invoice ${received.invoiceNumber} received into inventory. A fresh blank purchase is ready.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not receive the purchase.";
       setError(message);
@@ -1162,11 +1164,40 @@ export function PilotPurchasesPage() {
 
       <div className="space-y-6">
         <div ref={editorPanelRef} className="scroll-mt-32">
-          <Card hidden={!!detailInvoice} aria-hidden={detailInvoice ? "true" : undefined} className={detailInvoice ? "hidden" : "w-full p-6"} data-testid="purchase-editor-card">
-          <SectionHeader
-            title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
-            description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Edit the purchase, confirm the lines, then save or receive into inventory."}
-          />
+          <Card
+            hidden={!!detailInvoice}
+            aria-hidden={detailInvoice ? "true" : undefined}
+            className={detailInvoice ? "hidden" : `w-full p-6 ${readOnlyPurchase ? "border-brand-200 bg-brand-50/50" : ""}`}
+            data-testid="purchase-editor-card"
+          >
+            <SectionHeader
+              title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
+              description={draft.status === "Corrected" ? "This purchase has been corrected and is locked for review." : draft.status === "Completed" ? "This purchase is completed, read-only, and ready for audit review." : "Edit the purchase, confirm the lines, then save or receive into inventory."}
+            />
+
+            {readOnlyPurchase ? (
+              <div className="mb-5 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
+                  <Badge tone="neutral">Read-only purchase</Badge>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  {draft.status === "Corrected"
+                    ? "This corrected invoice is locked to preserve the audit trail."
+                    : "This completed invoice is locked for review and can no longer be edited or received again."}
+                </p>
+              </div>
+            ) : (
+              <div className="mb-5 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={draft.id ? statusTone(draft.status) : "neutral"}>{draft.id ? draft.status : "New purchase draft"}</Badge>
+                  <Badge tone={draftHasUnsavedChanges ? "warning" : readyToReceive ? "success" : "neutral"}>{receiveReadinessLabel}</Badge>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  Save draft keeps this purchase editable. Receive into inventory posts it and starts a fresh blank purchase for the next invoice.
+                </p>
+              </div>
+            )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
@@ -1562,7 +1593,7 @@ export function PilotPurchasesPage() {
           </label>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <Button disabled={saving || finalizedStatus} type="button" onClick={() => void saveDraft("Draft")}>
+            <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Draft")}>
               {saving ? "Saving..." : "Save draft"}
             </Button>
             <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Ready")}>
@@ -1577,6 +1608,9 @@ export function PilotPurchasesPage() {
               {draftHasUnsavedChanges ? "Save & receive" : "Receive into inventory"}
             </Button>
           </div>
+          <p className="mt-3 text-xs leading-5 text-muted">
+            Save draft keeps the current invoice editable. Receive into inventory posts it and automatically clears the editor to a fresh blank purchase.
+          </p>
 
           {draft.status === "Completed" ? (
             <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">

@@ -8,6 +8,7 @@ from .extensions import db
 from .models import Organization, RestaurantLocation
 from .utils import (
     clear_pilot_context,
+    enabled_module_keys_for_organization,
     get_current_location,
     get_current_organization_bundle,
     get_user_memberships,
@@ -27,6 +28,7 @@ def _serialize_bundle(organization: Organization, locations: list[RestaurantLoca
         "organization": serialize_organization(organization),
         "restaurantLocations": [serialize_location(location) for location in locations],
         "currentLocation": serialize_location(current_location) if current_location else None,
+        "enabledModuleKeys": enabled_module_keys_for_organization(organization.id),
     }
     if role is not None:
         payload["membershipRole"] = role

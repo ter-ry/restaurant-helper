@@ -815,6 +815,7 @@ describe("PilotPurchasesPage", () => {
     );
     await waitFor(() => expect(screen.getByTestId("purchase-mutation-toast").textContent).toContain("Purchase received"));
     await waitFor(() => expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible());
+    expect(screen.getAllByText(/A fresh blank purchase is ready\./)).toHaveLength(2);
     expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeDisabled();
   });

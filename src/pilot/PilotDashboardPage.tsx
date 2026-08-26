@@ -8,10 +8,10 @@ import { fetchPilotDashboard, type PilotDashboardResponse } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 const attentionOrder = [
-  ["invoiceReviewQueueCount", "Invoices need review", "Review"],
+  ["invoiceReviewQueueCount", "Invoices to review", "Review"],
   ["recentPriceChangeCount", "Supplier price changes", "Prices"],
-  ["inventoryLowStockCount", "Low stock items", "Stock"],
-  ["inventoryReorderNowCount", "Reorder now items", "Reorder"],
+  ["inventoryLowStockCount", "Low stock", "Stock"],
+  ["inventoryReorderNowCount", "Reorder now", "Reorder"],
 ];
 
 export function PilotDashboardPage() {
@@ -48,7 +48,7 @@ export function PilotDashboardPage() {
         to: "/app/purchases",
       },
       {
-        label: "Total purchasing spend",
+        label: "Month-to-date spend",
         value: dashboardLoading ? "—" : formatMoney(data?.summary.monthlyInvoiceSpend),
         helper: dashboardLoading ? "Loading month-to-date spend" : `${formatNumber(data?.summary.monthlyInvoiceCount)} invoices this month`,
         to: "/app/purchases",
@@ -60,13 +60,13 @@ export function PilotDashboardPage() {
         to: "/app/inventory",
       },
       {
-        label: "Items needing reorder",
+        label: "Reorder now",
         value: dashboardLoading ? "—" : formatNumber(data?.summary.inventoryReorderNowCount),
         helper: dashboardLoading ? "Loading reorder status" : `${formatNumber(data?.summary.inventoryLowStockCount)} low stock`,
         to: "/app/reorder-plan",
       },
       {
-        label: "Invoices needing review",
+        label: "Invoices to review",
         value: dashboardLoading ? "—" : formatNumber(data?.summary.invoiceReviewQueueCount),
         helper: dashboardLoading ? "Loading review queue" : `${formatNumber(data?.summary.inventoryCountNeededCount)} count checks due`,
         to: "/app/purchases",
@@ -154,7 +154,16 @@ export function PilotDashboardPage() {
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy={dashboardLoading}>
           {topMetrics.map((metric) => (
-            <button key={metric.label} type="button" className="group rounded-2xl border border-line bg-white p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft" onClick={() => navigate(metric.to)}>
+            <button
+              key={metric.label}
+              type="button"
+              className={`group rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
+                metric.label === "Reorder now" || metric.label === "Invoices to review"
+                  ? "border-brand-200 bg-brand-50/70"
+                  : "border-line bg-white"
+              }`}
+              onClick={() => navigate(metric.to)}
+            >
               <p className="text-xs font-bold uppercase tracking-wide text-muted group-hover:text-brand-700">{metric.label}</p>
               <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
               <p className="mt-1 text-sm text-muted">{metric.helper}</p>
@@ -187,10 +196,10 @@ export function PilotDashboardPage() {
       </Card>
 
       <Card className="p-6">
-        <SectionHeader title="Continue draft work" description="Reopen the exact invoice, count, or reorder draft you last touched." />
+        <SectionHeader title="Continue draft work" description="These are unfinished records, not history. Reopen the exact invoice, count, or reorder draft you last touched." />
         <div className="grid gap-4 xl:grid-cols-3">
           {draftCards.map((card) => (
-            <div key={card.title} className="rounded-3xl border border-line bg-slate-50 p-4">
+            <div key={card.title} className="rounded-3xl border border-brand-100 bg-brand-50/40 p-4">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-bold text-ink">{card.title}</p>
                 <button className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 transition hover:text-brand-800" type="button" onClick={card.fallback}>
@@ -239,7 +248,7 @@ export function PilotDashboardPage() {
         </Card>
 
         <Card className="p-6">
-          <SectionHeader title="Needs attention" description="Compact signals for the next 15 seconds." />
+          <SectionHeader title="Needs attention" description="Compact signals for the next 15 seconds, with reorder urgency first." />
           <div className="space-y-3">
             {attentionOrder.map(([key, label]) => {
               const value = summary[key] ?? 0;
@@ -264,7 +273,7 @@ export function PilotDashboardPage() {
           <SectionHeader title="Recent activity" description="New purchases, inventory moves, and count updates." />
           <div className="space-y-3">
             {(data?.recentMovements ?? []).slice(0, 5).map((movement) => (
-              <div key={movement.id} className="flex items-center justify-between rounded-2xl border border-line bg-slate-50 px-4 py-3">
+              <div key={movement.id} className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-slate-50 px-4 py-3">
                 <div>
                   <p className="font-semibold text-ink">{movement.inventoryItemName}</p>
                   <p className="text-sm text-muted">{movement.reason}</p>
@@ -280,7 +289,7 @@ export function PilotDashboardPage() {
         </Card>
 
         <Card className="p-6">
-          <SectionHeader title="Reorder plan preview" description="The items that need attention now." />
+          <SectionHeader title="Reorder plan preview" description="The items that need attention now, from low stock through urgent reorder." />
           <div className="space-y-3">
             {(data?.reorderSuggestions ?? []).slice(0, 5).map((item) => (
               <div key={item.id} className="rounded-2xl border border-line bg-slate-50 p-4">
