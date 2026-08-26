@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import Organization, PlatformRole, User
+from backend.models import Organization, OrganizationModule, PlatformRole, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
@@ -144,3 +144,77 @@ def test_platform_setup_console_can_activate_an_organization(app, client):
         assert organization is not None
         assert organization.lifecycle_status == "ACTIVE"
         assert organization.setup_status == "COMPLETE"
+
+
+def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, client):
+    login(client)
+
+    with app.app_context():
+        user = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert user is not None
+        if PlatformRole.query.filter_by(user_id=user.id).first() is None:
+            db.session.add(PlatformRole(user_id=user.id, role="setup_admin", is_active=True))
+            db.session.commit()
+
+    create_response = client.post(
+        "/api/onboarding/organizations",
+        headers=csrf_headers(client),
+        json={
+            "name": f"Setup Org {uuid4().hex[:6]}",
+            "templateKey": "CAFE",
+            "locationName": "Setup Kitchen",
+            "city": "Toronto",
+        },
+    )
+    assert create_response.status_code == 201
+    organization_id = create_response.get_json()["organization"]["id"]
+
+    with app.app_context():
+        menu_costing = OrganizationModule.query.filter_by(organization_id=organization_id, module_key="MENU_COSTING").first()
+        assert menu_costing is None
+
+    detail_response = client.get(f"/api/platform/setup/organizations/{organization_id}")
+    assert detail_response.status_code == 200
+    detail_body = detail_response.get_json()
+    menu_costing = next(entry for entry in detail_body["modules"] if entry["key"] == "MENU_COSTING")
+    assert menu_costing["status"] == "DISABLED"
+    assert menu_costing["hasOrganizationRow"] is False
+    assert menu_costing["backendReady"] is True
+    reporting = next(entry for entry in detail_body["modules"] if entry["key"] == "REPORTING")
+    assert reporting["status"] == "DISABLED"
+    assert reporting["backendReady"] is False
+
+    enable_response = client.post(
+        f"/api/platform/setup/organizations/{organization_id}/modules",
+        headers=csrf_headers(client),
+        json={
+            "modules": [
+                {"moduleKey": "PURCHASES", "status": "ENABLED"},
+                {"moduleKey": "INVENTORY", "status": "ENABLED"},
+                {"moduleKey": "MENU_COSTING", "status": "ENABLED"},
+            ]
+        },
+    )
+    assert enable_response.status_code == 200
+    enable_body = enable_response.get_json()
+    menu_costing = next(entry for entry in enable_body["modules"] if entry["key"] == "MENU_COSTING")
+    assert menu_costing["status"] == "ENABLED"
+    assert menu_costing["hasOrganizationRow"] is True
+    assert menu_costing["enabledAt"] is not None
+
+    disable_response = client.post(
+        f"/api/platform/setup/organizations/{organization_id}/modules",
+        headers=csrf_headers(client),
+        json={
+            "modules": [
+                {"moduleKey": "PURCHASES", "status": "ENABLED"},
+                {"moduleKey": "INVENTORY", "status": "ENABLED"},
+                {"moduleKey": "MENU_COSTING", "status": "DISABLED"},
+            ]
+        },
+    )
+    assert disable_response.status_code == 200
+    disable_body = disable_response.get_json()
+    menu_costing = next(entry for entry in disable_body["modules"] if entry["key"] == "MENU_COSTING")
+    assert menu_costing["status"] == "DISABLED"
+    assert menu_costing["hasOrganizationRow"] is True
