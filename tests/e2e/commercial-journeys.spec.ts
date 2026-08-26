@@ -24,6 +24,7 @@ type Session = {
   currentOrganizationId: number | null;
   currentLocationId: number | null;
   csrfToken: string;
+  enabledModuleKeys?: string[];
   supportAccessGrant?: {
     id: number;
     organizationId: number;
@@ -447,6 +448,7 @@ async function installMockApi(page: Page, state: MockState) {
           restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
           currentLocation: state.session?.currentLocationId ? { id: state.session.currentLocationId, name: "Main Dining Room" } : null,
           membershipRole: state.session?.membershipRole ?? "owner",
+          enabledModuleKeys: state.session?.enabledModuleKeys ?? [],
         },
         restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
       });
@@ -478,6 +480,7 @@ async function installMockApi(page: Page, state: MockState) {
         restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
         currentLocation: { id: 7, name: "Main Dining Room" },
         membershipRole: state.session?.membershipRole ?? "owner",
+        enabledModuleKeys: state.session?.enabledModuleKeys ?? [],
       });
     }
 
@@ -842,6 +845,7 @@ async function installMockApi(page: Page, state: MockState) {
         restaurantLocations: [{ id: 7, name: "Main Dining Room", city: "Toronto", region: "ON" }],
         currentLocation: { id: 7, name: "Main Dining Room" },
         membershipRole: "owner",
+        enabledModuleKeys: state.session?.enabledModuleKeys ?? [],
       });
     }
 
@@ -1498,6 +1502,7 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
   const session = makeActiveOwnerSession({
     currentOrganizationId: organization.id,
     currentLocationId: 7,
+    enabledModuleKeys: ["MENU_COSTING"],
     organizations: [{ organization, membershipRole: "owner", selected: true }],
   });
 
@@ -1518,6 +1523,7 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
         restaurantLocations: [{ id: 7, name: "Line Kitchen", city: "Toronto", region: "ON" }],
         currentLocation: { id: 7, name: "Line Kitchen" },
         membershipRole: "owner",
+        enabledModuleKeys: ["MENU_COSTING"],
       });
     }
     if (path === "/api/pilot/inventory" && method === "GET") {
@@ -1696,7 +1702,9 @@ test("setup admin can configure the organization and activate it", async ({ page
 
 test("owner can invite a manager and see the invitation in the list", async ({ page }) => {
   const state: MockState = {
-    session: makeActiveOwnerSession(),
+    session: makeActiveOwnerSession({
+      enabledModuleKeys: ["SQUARE_INTEGRATION"],
+    }),
     csrfToken: "csrf-token",
     currentOrganization: makeOrganization(),
     invitations: [],
@@ -1751,7 +1759,9 @@ test("migration preview and approval work for CSV and XLSX setup files", async (
 
 test("Square Sandbox connection and synchronization are visible to the owner", async ({ page }) => {
   const state: MockState = {
-    session: makeActiveOwnerSession(),
+    session: makeActiveOwnerSession({
+      enabledModuleKeys: ["SQUARE_INTEGRATION"],
+    }),
     csrfToken: "csrf-token",
     currentOrganization: makeOrganization(),
     invitations: [],
@@ -1795,7 +1805,9 @@ test("Square Sandbox connection and synchronization are visible to the owner", a
 
 test("Square usage variance maps and clears variation links", async ({ page }) => {
   const state: MockState = {
-    session: makeActiveOwnerSession(),
+    session: makeActiveOwnerSession({
+      enabledModuleKeys: ["SQUARE_INTEGRATION"],
+    }),
     csrfToken: "csrf-token",
     currentOrganization: makeOrganization(),
     invitations: [],
