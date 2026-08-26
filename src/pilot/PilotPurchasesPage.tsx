@@ -127,7 +127,7 @@ function buildBlankDraft(): PurchaseDraft {
   return {
     id: null,
     supplierName: "",
-    invoiceNumber: `FP-${String(Math.floor(Math.random() * 9000) + 1000)}`,
+    invoiceNumber: "",
     invoiceDate: todayIso(),
     subtotal: 0,
     tax: 0,
