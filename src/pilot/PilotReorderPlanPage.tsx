@@ -41,10 +41,12 @@ export function PilotReorderPlanPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
-  const load = async () => {
+  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean }) => {
     setLoading(true);
     setError(null);
-    setMessage(null);
+    if (!options?.preserveMessage) {
+      setMessage(null);
+    }
     setPlans([]);
     setCurrentSuggestions([]);
     setCurrentGroups([]);
@@ -56,9 +58,11 @@ export function PilotReorderPlanPage() {
       setCurrentSuggestions(suggestionsResponse.suggestions);
       setCurrentGroups(suggestionsResponse.groupedBySupplier);
       setPlans(plansResponse.plans);
-      const selected = requestedPlanId
-        ? plansResponse.plans.find((plan) => plan.id === requestedPlanId) ?? null
-        : plansResponse.plans.find((plan) => plan.id === selectedPlanId) ?? plansResponse.plans.find((plan) => plan.id === plansResponse.activeDraftPlanId) ?? plansResponse.plans[0] ?? null;
+      const selected = preferredPlanId
+        ? plansResponse.plans.find((plan) => plan.id === preferredPlanId) ?? null
+        : selectedPlanId !== null
+          ? plansResponse.plans.find((plan) => plan.id === selectedPlanId && plan.status !== "Completed") ?? null
+          : null;
       if (selected) {
         setSelectedPlanId(selected.id);
         setDraft(selected);
@@ -108,6 +112,7 @@ export function PilotReorderPlanPage() {
       const plan = await fetchPilotReorderPlanDetail(planId);
       setSelectedPlanId(plan.id);
       setDraft(plan);
+      setMessage(plan.status === "Draft" ? "Draft reorder plan opened." : "Read-only reorder snapshot opened.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open the reorder plan.");
     } finally {
@@ -124,12 +129,10 @@ export function PilotReorderPlanPage() {
     setError(null);
     try {
       const plan = await createPilotReorderPlan();
+      await load(plan.id, { preserveMessage: true });
       setSelectedPlanId(plan.id);
       setDraft(plan);
       setMessage(plan.lineCount ? "Draft reorder plan opened." : "Draft reorder plan created.");
-      await load();
-      setSelectedPlanId(plan.id);
-      setDraft(plan);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a reorder plan.");
     } finally {
@@ -167,12 +170,10 @@ export function PilotReorderPlanPage() {
           supplierNameSnapshot: line.supplierName,
         })),
       });
-      setDraft(saved);
-      setSelectedPlanId(saved.id);
-      setMessage(`Saved reorder plan ${saved.name}.`);
-      await load();
+      await load(saved.id, { preserveMessage: true });
       setSelectedPlanId(saved.id);
       setDraft(saved);
+      setMessage(`Saved draft ${saved.name}. It remains editable until you prepare it.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reorder plan.");
     } finally {
@@ -199,12 +200,10 @@ export function PilotReorderPlanPage() {
         })),
       });
       const prepared = await preparePilotReorderPlan(saved.id);
-      setDraft(prepared);
-      setSelectedPlanId(prepared.id);
-      setMessage(`Prepared reorder plan ${prepared.name}.`);
-      await load();
+      await load(prepared.id, { preserveMessage: true });
       setSelectedPlanId(prepared.id);
       setDraft(prepared);
+      setMessage(`Prepared reorder plan ${prepared.name}. It is now review-only until completed.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not prepare the reorder plan.");
     } finally {
@@ -231,12 +230,10 @@ export function PilotReorderPlanPage() {
         })),
       });
       const completed = await completePilotReorderPlan(saved.id);
-      setDraft(completed);
-      setSelectedPlanId(completed.id);
-      setMessage(`Completed reorder plan ${completed.name}.`);
-      await load();
-      setSelectedPlanId(completed.id);
-      setDraft(completed);
+      await load(null, { preserveMessage: true });
+      setSelectedPlanId(null);
+      setDraft(null);
+      setMessage(`Completed reorder plan ${completed.name}. It is now locked in history.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
     } finally {
@@ -266,7 +263,13 @@ export function PilotReorderPlanPage() {
             <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
               {creating ? "Starting..." : "Start / reopen draft"}
             </Button>
-            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading || saving || creating}>
+            <Button
+              variant="secondary"
+              icon={<RefreshCcw className="h-4 w-4" />}
+              type="button"
+              onClick={() => void load(draft?.status === "Draft" ? selectedPlanId : null)}
+              disabled={loading || saving || creating}
+            >
               Refresh
             </Button>
           </div>
@@ -283,7 +286,7 @@ export function PilotReorderPlanPage() {
             { label: "Draft plans", value: formatNumber(draftPlanCount), helper: `${formatNumber(preparedPlanCount)} prepared` },
             { label: "Completed plans", value: formatNumber(completedPlanCount), helper: "history preserved" },
           ].map((metric) => (
-            <div key={metric.label} className="rounded-2xl border border-line bg-white p-4">
+            <div key={metric.label} className={`rounded-2xl border p-4 ${metric.label === "Current suggestions" || metric.label === "Draft plans" ? "border-brand-200 bg-brand-50/50" : "border-line bg-white"}`}>
               <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
               <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
               <p className="mt-1 text-sm text-muted">{metric.helper}</p>
@@ -365,7 +368,13 @@ export function PilotReorderPlanPage() {
                 disabled={creating || saving || loading}
                 onClick={() => void openPlan(plan.id)}
                 className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
-                  selectedPlanId === plan.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"
+                  selectedPlanId === plan.id
+                    ? "border-brand-200 bg-brand-50"
+                    : plan.status === "Draft"
+                      ? "border-brand-100 bg-brand-50/50"
+                      : plan.status === "Prepared"
+                        ? "border-amber-200 bg-amber-50/70"
+                        : "border-line bg-slate-50"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -379,6 +388,13 @@ export function PilotReorderPlanPage() {
                   <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
                   <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                 </div>
+                <p className="mt-2 text-xs text-muted">
+                  {plan.status === "Draft"
+                    ? "Editable draft"
+                    : plan.status === "Prepared"
+                      ? "Prepared snapshot"
+                      : "Completed history"}
+                </p>
               </button>
             ))}
             {!plans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No reorder plans yet. Start a draft when you are ready.</p> : null}
@@ -389,15 +405,28 @@ export function PilotReorderPlanPage() {
       <Card className="p-6">
         <SectionHeader
           title={selectedPlan ? `${selectedPlan.name}` : "Open a reorder plan"}
-          description={selectedPlan ? "Adjust quantities, exclude items, add notes, then prepare or complete the plan." : "Start or reopen a draft to begin planning."}
+          description={selectedPlan ? "Drafts stay editable. Prepared and completed plans open as read-only snapshots." : "Start or reopen a draft to begin planning."}
         />
 
         {draft ? (
           <>
+            <div className={`mb-5 rounded-2xl border px-4 py-3 ${draft.status === "Draft" ? "border-brand-100 bg-brand-50" : draft.status === "Prepared" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
+                <Badge tone="neutral">{draft.status === "Draft" ? "Editable draft" : draft.status === "Prepared" ? "Review-only snapshot" : "Locked history"}</Badge>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {draft.status === "Draft"
+                  ? "Keep shaping quantities, then mark it prepared when you are ready."
+                  : draft.status === "Prepared"
+                    ? "Prepared plans are frozen for review. Complete them from this snapshot when the order is final."
+                    : "This completed plan is locked for history and cannot be edited."}
+              </p>
+            </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Plan name</span>
-                <input className="input mt-1" value={draft.name} onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))} disabled={draft.status === "Completed"} />
+                <input className="input mt-1" value={draft.name} onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Status</span>
@@ -405,7 +434,7 @@ export function PilotReorderPlanPage() {
               </label>
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-ink">Plan notes</span>
-                <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
+                <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
             </div>
 
@@ -418,13 +447,13 @@ export function PilotReorderPlanPage() {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
-              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
+              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
                 {saving ? "Saving..." : "Save draft"}
               </Button>
-              <Button disabled={creating || saving || loading || draft.status === "Completed"} variant="secondary" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
+              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
                 Mark prepared
               </Button>
-              <Button disabled={creating || saving || loading || draft.status === "Completed"} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void completeDraft()}>
+              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void completeDraft()}>
                 Complete plan
               </Button>
             </div>
@@ -468,18 +497,18 @@ export function PilotReorderPlanPage() {
                         <div className="mt-4 grid gap-3 md:grid-cols-4">
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty</span>
-                            <input className="input mt-1" min="0" step="0.0001" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status === "Completed"} />
+                            <input className="input mt-1" min="0" step="0.0001" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Exclude</span>
                             <div className="mt-1 flex h-10 items-center rounded-2xl border border-line bg-slate-50 px-4">
-                              <input checked={line.excluded} disabled={draft.status === "Completed"} type="checkbox" onChange={(event) => updateLine(line.id, (current) => ({ ...current, excluded: event.target.checked }))} />
+                              <input checked={line.excluded} disabled={draft.status !== "Draft"} type="checkbox" onChange={(event) => updateLine(line.id, (current) => ({ ...current, excluded: event.target.checked }))} />
                               <span className="ml-2 text-sm text-muted">Do not include in this order</span>
                             </div>
                           </label>
                           <label className="block md:col-span-2">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Line notes</span>
-                            <input className="input mt-1" value={line.notes} onChange={(event) => updateLine(line.id, (current) => ({ ...current, notes: event.target.value }))} disabled={draft.status === "Completed"} />
+                            <input className="input mt-1" value={line.notes} onChange={(event) => updateLine(line.id, (current) => ({ ...current, notes: event.target.value }))} disabled={draft.status !== "Draft"} />
                           </label>
                         </div>
 

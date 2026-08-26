@@ -174,17 +174,19 @@ describe("PilotStockCountsPage", () => {
     expect(screen.getByRole("button", { name: /Draft #7/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /Draft #7/ })).toHaveTextContent("0/1 counted");
 
-    fireEvent.change(screen.getByLabelText("Counted"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Counted quantity"), { target: { value: "4" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(pilotApiMocks.updatePilotCountSession).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole("button", { name: /Draft #7/ })).toHaveTextContent("1/1 counted"));
     expect(screen.getByText("Ready to apply this count?")).toBeVisible();
     expect(screen.getByText("Finalizing will write reconciliation movements into inventory and update the on-hand quantities for every counted line.")).toBeVisible();
+    expect(screen.getByText("3.3 kg expected → 4 counted")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Apply count to inventory" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotCountSession).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByLabelText("Status")).toHaveValue("Completed"));
     expect(screen.getByText("Count sessions that turn into real stock adjustments")).toBeVisible();
+    expect(screen.getByText("Count applied")).toBeVisible();
   });
 });
