@@ -373,6 +373,9 @@ export function PilotMenuCostingPage() {
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
             Live menu costing reads the current inventory price for each ingredient, so recipe and menu margins stay current as purchase prices change.
           </p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
+            Use the left rail to scan the live catalog, then open a recipe or menu item when you want to edit details.
+          </p>
         </div>
         <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted shadow-soft">
           <div><span className="font-semibold text-ink">Organization:</span> {organization.name}</div>
@@ -428,7 +431,7 @@ export function PilotMenuCostingPage() {
         </Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.05fr_1.25fr]">
+      <div className="grid gap-6 xl:grid-cols-[0.98fr_1.22fr]">
         <Card className="p-5">
           <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
           {filteredRecipes.length ? (

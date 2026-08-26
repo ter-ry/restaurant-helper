@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
@@ -72,6 +72,7 @@ vi.mock("../../src/lib/squareIntegration", async (importOriginal) => {
 describe("Pilot module access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     sessionMock.usePilotSession.mockReturnValue({
       status: "signedIn",
       error: null,
@@ -102,6 +103,21 @@ describe("Pilot module access", () => {
     expect(screen.getByRole("link", { name: "Inventory" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Menu Costing" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Usage / Variance" })).not.toBeInTheDocument();
+  });
+
+  it("remembers the desktop sidebar preference", async () => {
+    window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", "true");
+
+    render(
+      <MemoryRouter initialEntries={["/app/dashboard"]}>
+        <PilotWorkspaceLayout />
+      </MemoryRouter>,
+    );
+
+    const expandButtons = await screen.findAllByRole("button", { name: "Expand sidebar" });
+    fireEvent.click(expandButtons[0]);
+    expect((await screen.findAllByRole("button", { name: "Collapse sidebar" }))[0]).toBeVisible();
+    expect(window.localStorage.getItem("flowtally:pilot-sidebar-collapsed")).toBe("false");
   });
 
   it("shows a module unavailable state for menu costing without mounting the page", async () => {

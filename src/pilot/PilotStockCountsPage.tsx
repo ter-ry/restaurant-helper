@@ -585,15 +585,15 @@ export function PilotStockCountsPage() {
                 <Button disabled={creating || saving || draft.status === "Completed"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
                   Save draft
                 </Button>
-                <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="secondary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
+                <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="primary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
                   {draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Apply count to inventory"}
                 </Button>
               </div>
 
               {draft.status === "Completed" ? (
-                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                  <p className="text-sm font-semibold text-ink">Count applied</p>
-                  <p className="mt-1 text-sm leading-6 text-muted">This count has been finalized and the inventory snapshot above is now read-only.</p>
+                <div className="mt-4 rounded-2xl border border-emerald-600 bg-emerald-600 px-4 py-3 text-white shadow-soft">
+                  <p className="text-sm font-semibold">Count applied</p>
+                  <p className="mt-1 text-sm leading-6 text-emerald-50">This count has been finalized and the inventory snapshot above is now read-only.</p>
                 </div>
               ) : null}
 

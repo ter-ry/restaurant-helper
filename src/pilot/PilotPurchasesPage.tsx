@@ -1176,19 +1176,19 @@ export function PilotPurchasesPage() {
             />
 
             {readOnlyPurchase ? (
-              <div className="mb-5 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3">
+              <div className="mb-5 rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3 text-white shadow-soft">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
                   <Badge tone="neutral">Read-only purchase</Badge>
                 </div>
-                <p className="mt-2 text-sm leading-6 text-muted">
+                <p className="mt-2 text-sm leading-6 text-slate-200">
                   {draft.status === "Corrected"
                     ? "This corrected invoice is locked to preserve the audit trail."
                     : "This completed invoice is locked for review and can no longer be edited or received again."}
                 </p>
               </div>
             ) : (
-              <div className="mb-5 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+              <div className="mb-5 rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={draft.id ? statusTone(draft.status) : "neutral"}>{draft.id ? draft.status : "New purchase draft"}</Badge>
                   <Badge tone={draftHasUnsavedChanges ? "warning" : readyToReceive ? "success" : "neutral"}>{receiveReadinessLabel}</Badge>
@@ -1592,19 +1592,20 @@ export function PilotPurchasesPage() {
             <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={finalizedStatus} />
           </label>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Draft")}>
-              {saving ? "Saving..." : "Save draft"}
-            </Button>
-            <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Ready")}>
-              Save ready
-            </Button>
-            <Button
-              disabled={saving || !draft.id || finalizedStatus || (!readyToReceive && !draftHasUnsavedChanges)}
-              icon={<CheckCircle2 className="h-4 w-4" />}
-              type="button"
-              onClick={() => void receiveInvoice()}
-            >
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Draft")}>
+                  {saving ? "Saving..." : "Save draft"}
+                </Button>
+                <Button disabled={saving || finalizedStatus} variant="ghost" type="button" onClick={() => void saveDraft("Ready")}>
+                  Save ready
+                </Button>
+                <Button
+                  disabled={saving || !draft.id || finalizedStatus || (!readyToReceive && !draftHasUnsavedChanges)}
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  variant="primary"
+                  type="button"
+                  onClick={() => void receiveInvoice()}
+                >
               {draftHasUnsavedChanges ? "Save & receive" : "Receive into inventory"}
             </Button>
           </div>

@@ -415,6 +415,22 @@ export function PilotReorderPlanPage() {
                 <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
                 <Badge tone="neutral">{draft.status === "Draft" ? "Editable draft" : draft.status === "Prepared" ? "Review-only snapshot" : "Locked history"}</Badge>
               </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {[
+                  { label: "Draft", active: draft.status === "Draft" },
+                  { label: "Prepared", active: draft.status === "Prepared" },
+                  { label: "Completed", active: draft.status === "Completed" },
+                ].map((step) => (
+                  <div
+                    key={step.label}
+                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
+                      step.active ? "border-ink bg-ink text-white" : "border-line bg-white text-muted"
+                    }`}
+                  >
+                    {step.label}
+                  </div>
+                ))}
+              </div>
               <p className="mt-2 text-sm leading-6 text-muted">
                 {draft.status === "Draft"
                   ? "Keep shaping quantities, then mark it prepared when you are ready."
@@ -450,10 +466,10 @@ export function PilotReorderPlanPage() {
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
                 {saving ? "Saving..." : "Save draft"}
               </Button>
-              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
+              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
                 Mark prepared
               </Button>
-              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void completeDraft()}>
+              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => void completeDraft()}>
                 Complete plan
               </Button>
             </div>

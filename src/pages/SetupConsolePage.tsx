@@ -675,6 +675,9 @@ export function SetupConsolePage() {
 
               <Card className="p-6">
                 <h3 className="text-lg font-bold text-ink">Module entitlements</h3>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  Registered modules are shown even when the organization has no entitlement row yet. Backend-ready modules can be enabled; planning-only modules stay visibly locked.
+                </p>
                 <div className="mt-4 space-y-3">
                   {modules.map((module) => {
                     const missingDependencies = module.missingDependencies ?? [];

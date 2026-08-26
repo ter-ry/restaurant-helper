@@ -170,6 +170,9 @@ export function PilotDashboardPage() {
             </button>
           ))}
         </div>
+        <p className="mt-3 text-xs leading-5 text-muted">
+          Low stock is a watchlist signal. Reorder now means the item is already urgent and should move into a draft plan or purchase flow.
+        </p>
       </Card>
 
       <Card className="p-6">

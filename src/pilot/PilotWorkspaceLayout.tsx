@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, Building2, ChevronDown, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Building2, ChevronLeft, ChevronRight, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
 import { usePilotSession } from "./PilotSessionProvider";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
@@ -30,25 +30,35 @@ function AnalyticsTracker() {
 
 function NavItem({
   to,
+  label,
+  collapsed = false,
   children,
   onClick,
 }: {
   to: string;
+  label: string;
+  collapsed?: boolean;
   children: ReactNode;
   onClick?: () => void;
 }) {
   return (
     <NavLink
       to={to}
+      aria-label={label}
+      title={label}
       className={({ isActive }) =>
         [
-          "flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-semibold transition",
+          "flex items-center gap-3 rounded-2xl py-3 text-sm font-semibold transition",
+          collapsed ? "justify-center px-2" : "justify-between px-4",
           isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100 hover:text-ink",
         ].join(" ")
       }
       onClick={onClick}
     >
-      {children}
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-[11px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
+        {label.slice(0, 1)}
+      </span>
+      <span className={collapsed ? "sr-only" : "truncate"}>{children}</span>
     </NavLink>
   );
 }
@@ -57,6 +67,12 @@ export function PilotWorkspaceLayout() {
   const { error, user, organization, enabledModuleKeys, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem("flowtally:pilot-sidebar-collapsed") === "true";
+  });
   const activeOrganizationId = organization?.id ?? "";
   const activeLocationId = currentLocation?.id ?? "";
   const enabledModuleKeySet = useMemo(() => new Set(enabledModuleKeys), [enabledModuleKeys]);
@@ -64,6 +80,10 @@ export function PilotWorkspaceLayout() {
     () => navItems.filter((item) => !item.moduleKey || enabledModuleKeySet.has(item.moduleKey)),
     [enabledModuleKeySet],
   );
+
+  useEffect(() => {
+    window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", String(desktopSidebarCollapsed));
+  }, [desktopSidebarCollapsed]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -284,77 +304,106 @@ export function PilotWorkspaceLayout() {
     <div className="min-h-screen bg-slate-50 text-ink">
       <AnalyticsTracker />
       <div className="lg:flex">
-        <aside className="sticky top-0 hidden h-screen w-80 shrink-0 border-r border-line bg-white px-5 py-6 shadow-sm lg:flex lg:flex-col">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
-              <Building2 className="h-6 w-6" />
+        <aside
+          className={`sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-5 shadow-sm transition-[width] duration-200 lg:flex lg:flex-col ${
+            desktopSidebarCollapsed ? "lg:w-24" : "lg:w-80"
+          }`}
+        >
+          <div className={`flex items-start ${desktopSidebarCollapsed ? "justify-center" : "justify-between gap-3"}`}>
+            <div className={`flex items-center gap-3 ${desktopSidebarCollapsed ? "flex-col text-center" : ""}`}>
+              <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <div className={desktopSidebarCollapsed ? "sr-only" : "min-w-0"}>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Private pilot</p>
+                <h1 className="truncate text-lg font-bold">{organization?.name ?? "Flowtally pilot"}</h1>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Private pilot</p>
-              <h1 className="truncate text-lg font-bold">{organization?.name ?? "Flowtally pilot"}</h1>
-            </div>
+            <button
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-ink transition hover:bg-slate-50"
+              type="button"
+              aria-label={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setDesktopSidebarCollapsed((current) => !current)}
+            >
+              {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </button>
           </div>
 
-          <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
-            {organizations.length > 1 ? (
-              <div className="mb-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
-                <select className="input mt-2" value={organization.id} onChange={handleOrganizationChange}>
-                  {organizations.map((entry) => (
-                    <option key={entry.organization.id} value={entry.organization.id}>
-                      {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Current location</p>
-            {locations.length > 1 ? (
-              <select className="input mt-2" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
-                {!currentLocation ? (
-                  <option value="" disabled>
-                    Select a location
-                  </option>
+          <div className={`mt-5 rounded-2xl border border-line bg-slate-50 ${desktopSidebarCollapsed ? "p-3" : "p-4"}`}>
+            {!desktopSidebarCollapsed ? (
+              <>
+                {organizations.length > 1 ? (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
+                    <select className="input mt-2" value={organization.id} onChange={handleOrganizationChange}>
+                      {organizations.map((entry) => (
+                        <option key={entry.organization.id} value={entry.organization.id}>
+                          {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 ) : null}
-                {locations.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.name}
-                  </option>
-                ))}
-              </select>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Current location</p>
+                {locations.length > 1 ? (
+                  <select className="input mt-2" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
+                    {!currentLocation ? (
+                      <option value="" disabled>
+                        Select a location
+                      </option>
+                    ) : null}
+                    {locations.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="mt-2 font-semibold text-ink">{locationLabel}</p>
+                )}
+              </>
             ) : (
-              <p className="mt-2 font-semibold text-ink">{locationLabel}</p>
+              <div className="space-y-2 text-center">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Workspace</p>
+                <p className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm">{organization?.name ?? "Pilot"}</p>
+                <p className="rounded-2xl bg-white px-3 py-2 text-xs text-muted shadow-sm">{locationLabel}</p>
+              </div>
             )}
           </div>
 
-          <nav className="mt-6 space-y-2">
+          <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-1" : ""}`}>
                 {visibleNavItems.map((item) => (
-                  <NavItem key={item.to} to={item.to}>
+                  <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed}>
                     {item.label}
                   </NavItem>
                 ))}
           </nav>
 
-          <div className="mt-auto space-y-3 border-t border-line pt-5 text-sm text-muted">
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Signed in as</p>
-              <p className="mt-1 truncate font-semibold text-ink">{user?.email ?? "Unknown user"}</p>
-              <p className="mt-1">Working with an explicit organization context.</p>
-            </div>
-            <div className="flex flex-col gap-2">
+          <div className={`mt-auto space-y-3 border-t border-line pt-5 text-sm text-muted ${desktopSidebarCollapsed ? "items-center" : ""}`}>
+            {!desktopSidebarCollapsed ? (
+              <div className="rounded-2xl border border-line bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Signed in as</p>
+                <p className="mt-1 truncate font-semibold text-ink">{user?.email ?? "Unknown user"}</p>
+                <p className="mt-1">Working with an explicit organization context.</p>
+              </div>
+            ) : null}
+            <div className={`flex ${desktopSidebarCollapsed ? "flex-col" : "flex-col"} gap-2`}>
               <button
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                 type="button"
                 onClick={() => void signOut()}
+                title="Sign out"
               >
                 <LogOut className="h-4 w-4" />
-                Sign out
+                <span className={desktopSidebarCollapsed ? "sr-only" : ""}>Sign out</span>
               </button>
               <Link
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
                 to="/"
+                title="Public site"
               >
-                Public site
+                <span className={desktopSidebarCollapsed ? "sr-only" : ""}>Public site</span>
               </Link>
             </div>
           </div>
@@ -374,11 +423,7 @@ export function PilotWorkspaceLayout() {
                 <p className="truncate text-sm font-semibold text-ink">{organization?.name ?? "Flowtally pilot"}</p>
                 <p className="truncate text-xs text-muted">{locationLabel}</p>
               </div>
-              <button
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-ink"
-                type="button"
-                onClick={() => void signOut()}
-              >
+              <button className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-ink" type="button" onClick={() => void signOut()}>
                 <LogOut className="h-4 w-4" />
               </button>
             </div>
@@ -389,6 +434,15 @@ export function PilotWorkspaceLayout() {
                 <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink">End-to-end purchasing and inventory control</h2>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setDesktopSidebarCollapsed((current) => !current)}
+                  title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                >
+                  {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                  {desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                </button>
                 <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
                   {locations.length > 1 ? (
@@ -418,7 +472,7 @@ export function PilotWorkspaceLayout() {
             </div>
           </header>
 
-          <main className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+          <main className="mx-auto w-full max-w-[1800px] px-4 py-5 sm:px-6 lg:px-8">
             {error ? (
               <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert" aria-live="polite">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -495,11 +549,11 @@ export function PilotWorkspaceLayout() {
             </div>
 
             <nav className="mt-6 space-y-2">
-            {visibleNavItems.map((item) => (
-              <NavItem key={item.to} to={item.to} onClick={() => setMobileNavOpen(false)}>
-                {item.label}
-              </NavItem>
-            ))}
+              {visibleNavItems.map((item) => (
+                <NavItem key={item.to} to={item.to} label={item.label} onClick={() => setMobileNavOpen(false)}>
+                  {item.label}
+                </NavItem>
+              ))}
             </nav>
 
             <div className="mt-6 space-y-2 border-t border-line pt-5">
