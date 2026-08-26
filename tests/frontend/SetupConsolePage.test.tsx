@@ -91,7 +91,98 @@ function makeSession() {
   };
 }
 
-function makeDetail(missingModules: string[] = ["PURCHASES"]) {
+type ModuleDetail = {
+  key: string;
+  displayName: string;
+  description: string;
+  backendReady: boolean;
+  dependencies: string[];
+  status: string;
+  configuration: Record<string, unknown>;
+  enabledAt: string | null;
+  hasOrganizationRow: boolean;
+  missingDependencies: string[];
+};
+
+function makeDetail(
+  missingModules: string[] = ["PURCHASES"],
+  moduleOverrides: Record<string, Partial<ModuleDetail>> = {},
+) {
+  const missingDependenciesFor = (dependencies: string[]) => dependencies.filter((dependency) => missingModules.includes(dependency));
+  const modules: ModuleDetail[] = [
+    {
+      key: "PURCHASES",
+      displayName: "Purchasing",
+      description: "Supplier invoices, receipts, and purchase control.",
+      backendReady: true,
+      dependencies: [],
+      status: missingModules.includes("PURCHASES") ? "SETUP_REQUIRED" : "ENABLED",
+      configuration: {},
+      enabledAt: null,
+      hasOrganizationRow: true,
+      missingDependencies: [],
+    },
+    {
+      key: "INVENTORY",
+      displayName: "Inventory",
+      description: "Inventory items, usage, adjustments, and stock status.",
+      backendReady: true,
+      dependencies: ["PURCHASES"],
+      status: missingModules.includes("INVENTORY") ? "SETUP_REQUIRED" : "ENABLED",
+      configuration: {},
+      enabledAt: null,
+      hasOrganizationRow: true,
+      missingDependencies: missingDependenciesFor(["PURCHASES"]),
+    },
+    {
+      key: "STOCK_COUNTS",
+      displayName: "Stock Counts",
+      description: "Count sessions and variance tracking.",
+      backendReady: true,
+      dependencies: ["INVENTORY"],
+      status: missingModules.includes("STOCK_COUNTS") ? "SETUP_REQUIRED" : "ENABLED",
+      configuration: {},
+      enabledAt: null,
+      hasOrganizationRow: true,
+      missingDependencies: missingDependenciesFor(["INVENTORY"]),
+    },
+    {
+      key: "REORDER_PLANS",
+      displayName: "Reorder Plans",
+      description: "Guided order planning from current inventory and supplier history.",
+      backendReady: true,
+      dependencies: ["INVENTORY", "PURCHASES"],
+      status: missingModules.includes("REORDER_PLANS") ? "SETUP_REQUIRED" : "ENABLED",
+      configuration: {},
+      enabledAt: null,
+      hasOrganizationRow: true,
+      missingDependencies: missingDependenciesFor(["INVENTORY", "PURCHASES"]),
+    },
+    {
+      key: "MENU_COSTING",
+      displayName: "Menu Costing",
+      description: "Menu and recipe costing support.",
+      backendReady: true,
+      dependencies: ["PURCHASES", "INVENTORY"],
+      status: "DISABLED",
+      configuration: {},
+      enabledAt: null,
+      hasOrganizationRow: false,
+      missingDependencies: missingDependenciesFor(["PURCHASES", "INVENTORY"]),
+    },
+    {
+      key: "REPORTING",
+      displayName: "Reporting",
+      description: "Operational reporting and summaries.",
+      backendReady: false,
+      dependencies: ["PURCHASES", "INVENTORY"],
+      status: "DISABLED",
+      configuration: {},
+      enabledAt: null,
+      hasOrganizationRow: false,
+      missingDependencies: missingDependenciesFor(["PURCHASES", "INVENTORY"]),
+    },
+  ];
   return {
     organization: {
       id: 42,
@@ -122,12 +213,10 @@ function makeDetail(missingModules: string[] = ["PURCHASES"]) {
       readyForActivation: missingModules.length === 0,
     },
     locations: [{ id: 7, name: "Main Dining Room", city: "Toronto" }],
-    modules: [
-      { key: "PURCHASES", status: missingModules.includes("PURCHASES") ? "SETUP_REQUIRED" : "ENABLED", configuration: {}, enabledAt: null },
-      { key: "INVENTORY", status: missingModules.includes("INVENTORY") ? "SETUP_REQUIRED" : "ENABLED", configuration: {}, enabledAt: null },
-      { key: "REORDER_PLANS", status: missingModules.includes("REORDER_PLANS") ? "SETUP_REQUIRED" : "ENABLED", configuration: {}, enabledAt: null },
-      { key: "STOCK_COUNTS", status: missingModules.includes("STOCK_COUNTS") ? "SETUP_REQUIRED" : "ENABLED", configuration: {}, enabledAt: null },
-    ],
+    modules: modules.map((module) => ({
+      ...module,
+      ...(moduleOverrides[module.key] ?? {}),
+    })),
     memberships: [
       {
         id: 1,
@@ -227,6 +316,68 @@ describe("SetupConsolePage", () => {
     expect(platformSetupMocks.fetchSupportGrants).toHaveBeenCalledTimes(2);
   });
 
+  it("shows absent optional modules as disabled and locks backend-not-ready modules", async () => {
+    platformSetupMocks.fetchSetupOrganization.mockResolvedValueOnce(makeDetail([]));
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    expect(screen.getByRole("combobox", { name: "Menu Costing status" })).toHaveValue("DISABLED");
+    expect(screen.getByRole("combobox", { name: "Menu Costing status" })).not.toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Reporting status" })).toBeDisabled();
+    expect(screen.getByText("Backend not ready")).toBeVisible();
+  });
+
+  it("creates, reloads, and persists MENU_COSTING without changing core module behavior", async () => {
+    platformSetupMocks.fetchSetupOrganization
+      .mockResolvedValueOnce(makeDetail([]))
+      .mockResolvedValueOnce(
+        makeDetail([], {
+          MENU_COSTING: {
+            status: "ENABLED",
+            hasOrganizationRow: true,
+            enabledAt: "2026-08-26T10:00:00Z",
+            missingDependencies: [],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeDetail([], {
+          MENU_COSTING: {
+            status: "DISABLED",
+            hasOrganizationRow: true,
+            enabledAt: "2026-08-26T10:00:00Z",
+            missingDependencies: [],
+          },
+        }),
+      );
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    setModuleStatus("MENU_COSTING", "ENABLED");
+    const saveButton = screen.getByRole("button", { name: "Save modules" });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(platformSetupMocks.updateModuleEntitlements).toHaveBeenCalledTimes(1));
+    expect(platformSetupMocks.updateModuleEntitlements.mock.calls[0][1]).toEqual(
+      expect.arrayContaining([{ moduleKey: "MENU_COSTING", status: "ENABLED" }]),
+    );
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Menu Costing status" })).toHaveValue("ENABLED"));
+
+    setModuleStatus("MENU_COSTING", "DISABLED");
+    fireEvent.click(screen.getByRole("button", { name: "Modules saved" }));
+
+    await waitFor(() => expect(platformSetupMocks.updateModuleEntitlements).toHaveBeenCalledTimes(2));
+    expect(platformSetupMocks.updateModuleEntitlements.mock.calls[1][1]).toEqual(
+      expect.arrayContaining([{ moduleKey: "MENU_COSTING", status: "DISABLED" }]),
+    );
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Menu Costing status" })).toHaveValue("DISABLED"));
+    expect(screen.getByRole("combobox", { name: "Purchasing status" })).toHaveValue("ENABLED");
+    expect(screen.getByRole("combobox", { name: "Inventory status" })).toHaveValue("ENABLED");
+  });
+
   it("shows visible failure feedback and does not leave a false saved state on error", async () => {
     let rejectUpdate!: (reason?: unknown) => void;
     const updatePromise = new Promise((_, reject) => {
@@ -250,3 +401,4 @@ describe("SetupConsolePage", () => {
     expect(screen.getByText("Save failed")).toBeVisible();
   });
 });
+

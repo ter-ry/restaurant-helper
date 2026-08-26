@@ -10,7 +10,7 @@ from flask_login import current_user, login_required
 from .audit import record_audit_event
 from .extensions import db
 from .models import AuditEvent, DashboardLayout, DataImportJob, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, SupportAccessGrant, User
-from .modules import MODULE_REGISTRY
+from .modules import MODULE_REGISTRY, module_dependency_keys
 from .tenant_context import apply_request_tenant_context
 from .utils import get_platform_role, get_user_memberships, json_error, isoformat, serialize_location, serialize_organization, serialize_user, serialize_audit_event
 from .validation import clean_email
@@ -130,15 +130,29 @@ def _current_configuration(configuration: OrganizationConfiguration) -> Organiza
 
 
 def _serialized_modules(organization: Organization) -> list[dict[str, Any]]:
-    return [
-        {
-            "key": module.module_key,
-            "status": module.status,
-            "configuration": module.configuration_json,
-            "enabledAt": module.enabled_at.isoformat() if module.enabled_at else None,
-        }
-        for module in OrganizationModule.query.filter_by(organization_id=organization.id).order_by(OrganizationModule.module_key.asc()).all()
-    ]
+    modules = {
+        entry.module_key: entry
+        for entry in OrganizationModule.query.filter_by(organization_id=organization.id).all()
+    }
+    enabled_module_keys = {module_key for module_key, entry in modules.items() if entry.status == "ENABLED"}
+    catalog: list[dict[str, Any]] = []
+    for module_key, module in MODULE_REGISTRY.items():
+        organization_module = modules.get(module_key)
+        catalog.append(
+            {
+                "key": module_key,
+                "displayName": module["displayName"],
+                "description": module["description"],
+                "backendReady": bool(module.get("backendReady")),
+                "dependencies": list(module_dependency_keys(module_key)),
+                "status": organization_module.status if organization_module is not None else "DISABLED",
+                "configuration": organization_module.configuration_json if organization_module is not None else {},
+                "enabledAt": organization_module.enabled_at.isoformat() if organization_module and organization_module.enabled_at else None,
+                "hasOrganizationRow": organization_module is not None,
+                "missingDependencies": [dependency_key for dependency_key in module_dependency_keys(module_key) if dependency_key not in enabled_module_keys],
+            }
+        )
+    return catalog
 
 
 def _serialized_locations(organization: Organization) -> list[dict[str, Any]]:
@@ -415,8 +429,34 @@ def update_module_entitlements(organization_id: int):
         if status not in {"DISABLED", "SETUP_REQUIRED", "CONFIGURING", "READY_FOR_REVIEW", "ENABLED", "SUSPENDED"}:
             continue
         normalized[module_key] = status
+    existing_modules = {
+        entry.module_key: entry
+        for entry in OrganizationModule.query.filter_by(organization_id=organization.id).all()
+    }
+    effective_statuses = {module_key: entry.status for module_key, entry in existing_modules.items()}
+    effective_statuses.update(normalized)
     for module_key, status in normalized.items():
-        module = OrganizationModule.query.filter_by(organization_id=organization.id, module_key=module_key).first()
+        if status != "ENABLED":
+            continue
+        module_definition = MODULE_REGISTRY[module_key]
+        if not module_definition.get("backendReady"):
+            return json_error(
+                f"{module_definition['displayName']} is not backend ready yet.",
+                409,
+                errors={"module": module_definition["displayName"]},
+            )
+        missing_dependencies = [dependency_key for dependency_key in module_dependency_keys(module_key) if effective_statuses.get(dependency_key) != "ENABLED"]
+        if missing_dependencies:
+            return json_error(
+                f"{module_definition['displayName']} needs its dependencies enabled first.",
+                409,
+                errors={
+                    "module": module_definition["displayName"],
+                    "dependencies": ", ".join(missing_dependencies),
+                },
+            )
+    for module_key, status in normalized.items():
+        module = existing_modules.get(module_key)
         if module is None:
             module = OrganizationModule(organization_id=organization.id, module_key=module_key, status=status, configuration_json={})
             db.session.add(module)

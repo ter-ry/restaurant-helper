@@ -296,14 +296,15 @@ export function SetupConsolePage() {
 
   function saveModules() {
     if (!selected) return;
+    const modulePayload = modules.flatMap((module) => {
+      const status = readValue(`module-${String(module.key)}`, String(module.status));
+      if (!module.hasOrganizationRow && status === "DISABLED") {
+        return [];
+      }
+      return [{ moduleKey: String(module.key), status }];
+    });
     return mutate("modules", "Modules saved", () =>
-      updateModuleEntitlements(
-        selected.organization.id,
-        (modules.length ? modules : templateOptions.map((key) => ({ key, status: "DISABLED" }))).map((module) => ({
-          moduleKey: String(module.key),
-          status: readValue(`module-${String(module.key)}`, String(module.status)),
-        })),
-      ).then(() => undefined),
+      updateModuleEntitlements(selected.organization.id, modulePayload).then(() => undefined),
     );
   }
 
@@ -675,17 +676,58 @@ export function SetupConsolePage() {
               <Card className="p-6">
                 <h3 className="text-lg font-bold text-ink">Module entitlements</h3>
                 <div className="mt-4 space-y-3">
-                  {(modules.length ? modules : templateOptions.map((key) => ({ key, status: "DISABLED" }))).map((module) => (
-                    <div key={String(module.key)} className="grid gap-3 rounded-2xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_220px]">
-                      <div>
-                        <p className="text-sm font-semibold text-ink">{String(module.key)}</p>
-                        <p className="text-xs text-muted">{String(module.status)}</p>
+                  {modules.map((module) => {
+                    const missingDependencies = module.missingDependencies ?? [];
+                    const selectDisabled = !module.backendReady || missingDependencies.length > 0;
+                    return (
+                      <div key={`${String(module.key)}-${selectedRevision}`} className="rounded-2xl border border-line bg-slate-50 p-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
+                              <span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${module.backendReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>
+                                {module.backendReady ? "Backend ready" : "Backend not ready"}
+                              </span>
+                              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                                {module.hasOrganizationRow ? "Existing row" : "No org row"}
+                              </span>
+                              <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                                {String(module.status)}
+                              </span>
+                            </div>
+                            <p className="text-xs leading-5 text-muted">{String(module.description ?? "")}</p>
+                            <p className="text-xs text-muted">
+                              Dependencies: {module.dependencies?.length ? module.dependencies.join(", ") : "None"}.
+                            </p>
+                            {missingDependencies.length ? (
+                              <p className="text-xs font-semibold text-amber-700">
+                                Enable {missingDependencies.join(", ")} first.
+                              </p>
+                            ) : null}
+                            {!module.backendReady ? (
+                              <p className="text-xs text-muted">
+                                Listed for planning only until the backend is ready.
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="sm:w-64">
+                            <label className="sr-only" htmlFor={`module-${String(module.key)}`}>
+                              {String(module.displayName ?? module.key)} status
+                            </label>
+                            <select
+                              aria-label={`${String(module.displayName ?? module.key)} status`}
+                              className="w-full rounded-2xl border border-line bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted"
+                              defaultValue={String(module.status)}
+                              disabled={selectDisabled}
+                              id={`module-${String(module.key)}`}
+                            >
+                              {moduleStatuses.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </div>
+                        </div>
                       </div>
-                      <select className="w-full rounded-2xl border border-line bg-white px-3 py-2 text-sm outline-none" defaultValue={String(module.status)} id={`module-${String(module.key)}`}>
-                        {moduleStatuses.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </select>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveModules()} disabled={savingAction !== null || refreshing}>
                   {mutationButtonLabel("modules", "Save modules", "Saving...", "Modules saved")}

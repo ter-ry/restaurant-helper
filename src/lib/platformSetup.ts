@@ -1,6 +1,19 @@
 import { buildApiUrl } from "./apiBase";
 import { CustomerApiError, getCustomerCsrfToken } from "./customerAuth";
 
+export interface PlatformModuleEntitlement {
+  key: string;
+  displayName: string;
+  description: string;
+  backendReady: boolean;
+  dependencies: string[];
+  status: string;
+  configuration: Record<string, unknown>;
+  enabledAt: string | null;
+  hasOrganizationRow: boolean;
+  missingDependencies: string[];
+}
+
 export interface PlatformSetupOrganizationSummary {
   organization: {
     id: number;
@@ -31,7 +44,7 @@ export interface PlatformSetupOrganizationSummary {
     readyForActivation: boolean;
   };
   locations: Array<Record<string, unknown>>;
-  modules: Array<Record<string, unknown>>;
+  modules: PlatformModuleEntitlement[];
 }
 
 export interface PlatformSetupDetail extends PlatformSetupOrganizationSummary {
