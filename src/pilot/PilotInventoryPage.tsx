@@ -28,6 +28,7 @@ interface InventoryDraft {
   category: string;
   stockUnit: string;
   currentOnHand: number;
+  averageUnitCost: number;
   minQuantity: number;
   parLevel: number;
   preferredSupplierName: string;
@@ -60,6 +61,7 @@ function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
     category: "Other",
     stockUnit: "each",
     currentOnHand: 0,
+    averageUnitCost: 0,
     minQuantity: 0,
     parLevel: 0,
     preferredSupplierName: "",
@@ -94,6 +96,7 @@ function draftFromItem(item: PilotInventoryItem): InventoryDraft {
     category: item.category,
     stockUnit: item.stockUnit,
     currentOnHand: item.currentOnHand,
+    averageUnitCost: item.averageUnitCost ?? 0,
     minQuantity: item.minQuantity,
     parLevel: item.parLevel,
     preferredSupplierName: item.preferredSupplierName,
@@ -363,6 +366,8 @@ export function PilotInventoryPage() {
   const reorderCount = data?.summary.inventoryReorderNowCount ?? 0;
   const inventoryModeLabel = editorMode === "create" ? "Create item" : editorMode === "edit" ? "Edit item" : "Browse catalog";
   const showItemEditor = editorMode !== "hidden" || selectedId !== null;
+  const averageCost = draft.averageUnitCost > 0 ? draft.averageUnitCost : null;
+  const estimatedInventoryValue = averageCost !== null ? draft.currentOnHand * averageCost : null;
   const openItem = (itemId: number) => {
     setSelectedId(itemId);
     setEditorMode("edit");
@@ -642,7 +647,14 @@ export function PilotInventoryPage() {
                         <td className="px-4 py-3 text-muted">{item.stockUnit}</td>
                         <td className="px-4 py-3 text-muted">{formatNumber(item.minQuantity)}</td>
                         <td className="px-4 py-3 text-muted">{formatNumber(item.parLevel)}</td>
-                        <td className="px-4 py-3 text-muted">{formatMoney(item.latestPurchasePrice)}</td>
+                        <td className="px-4 py-3 text-muted">
+                          <div className="space-y-1">
+                            <p className="font-medium text-ink">{formatMoney(item.latestPurchasePrice)}</p>
+                            <p className="text-xs text-muted">
+                              Avg {item.averageUnitCost && item.averageUnitCost > 0 ? formatMoney(item.averageUnitCost) : "not set"}
+                            </p>
+                          </div>
+                        </td>
                         <td className="px-4 py-3">
                           <Badge tone={statusTone(status)}>{status}</Badge>
                         </td>
@@ -766,7 +778,7 @@ export function PilotInventoryPage() {
           </label>
 
           <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
+            <div className="rounded-2xl border border-line bg-slate-50 p-4" data-testid="inventory-live-preview">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Live preview</p>
               <div className="mt-3 space-y-2">
                 <p className="text-2xl font-bold text-ink">{draft.name || "New inventory item"}</p>
@@ -791,16 +803,20 @@ export function PilotInventoryPage() {
                     <p className="mt-1 text-ink">{draft.preferredSupplierName || "Unassigned"}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Latest price</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Average cost</p>
+                    <p className="mt-1 text-ink">{averageCost !== null ? formatMoney(averageCost) : "Not yet available"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Latest cost</p>
                     <p className="mt-1 text-ink">{formatMoney(draft.latestPurchasePrice)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimated inventory value</p>
+                    <p className="mt-1 text-ink">{estimatedInventoryValue !== null ? formatMoney(estimatedInventoryValue) : "Not yet available"}</p>
                   </div>
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-muted">Last purchase</p>
                     <p className="mt-1 text-ink">{draft.lastPurchaseUnit || "each"} · x{formatNumber(draft.lastPurchaseConversionFactor)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimated value</p>
-                    <p className="mt-1 text-ink">{formatMoney((draft.currentOnHand || 0) * (draft.latestPurchasePrice || 0))}</p>
                   </div>
                 </div>
                 <p className="text-xs text-muted">Base unit changes are blocked once an item has invoice or movement history.</p>

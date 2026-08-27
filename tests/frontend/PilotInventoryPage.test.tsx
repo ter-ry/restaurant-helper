@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotInventoryPage } from "../../src/pilot/PilotInventoryPage";
@@ -187,5 +187,102 @@ describe("PilotInventoryPage", () => {
     await waitFor(() => expect(screen.getByText("Edit Chicken Breast")).toBeVisible());
     expect(screen.getByLabelText("Item name")).toHaveValue("Chicken Breast");
     expect(screen.getByText("Initial receipt")).toBeVisible();
+  });
+
+  it("shows average cost and estimated inventory value from the weighted-average basis", async () => {
+    inventoryMocks.fetchPilotInventory.mockResolvedValue({
+      items: [
+        {
+          id: 30,
+          organizationId: 42,
+          locationId: 7,
+          supplierId: null,
+          name: "Chicken Breast",
+          normalizedName: "chicken breast",
+          category: "Poultry",
+          stockUnit: "kg",
+          currentOnHand: 100,
+          averageUnitCost: 8.88,
+          minQuantity: 1,
+          parLevel: 5,
+          preferredSupplierName: "Dairy Co",
+          latestPurchasePrice: 9,
+          lastPurchaseUnit: "kg",
+          lastPurchaseConversionFactor: 1,
+          lastReceivedAt: null,
+          lastCountedAt: null,
+          averageDailyUsage: 0.8,
+          estimatedCostMethod: "latest_purchase_price",
+          active: true,
+          notes: "",
+          createdByUserId: 1,
+          updatedByUserId: 1,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      movements: [],
+      countSessions: [],
+      reorderPlan: { suggestions: [], groupedBySupplier: [] },
+      summary: {
+        inventoryItemCount: 1,
+        inventoryOutOfStockCount: 0,
+        inventoryReorderNowCount: 0,
+        inventoryLowStockCount: 0,
+        inventoryValue: 888,
+      },
+    });
+    inventoryMocks.updatePilotInventoryItem.mockResolvedValue({
+      id: 30,
+      organizationId: 42,
+      locationId: 7,
+      supplierId: null,
+      name: "Chicken Breast",
+      normalizedName: "chicken breast",
+      category: "Poultry",
+      stockUnit: "kg",
+      currentOnHand: 100,
+      averageUnitCost: 8.88,
+      minQuantity: 1,
+      parLevel: 5,
+      preferredSupplierName: "Dairy Co",
+      latestPurchasePrice: 9,
+      lastPurchaseUnit: "kg",
+      lastPurchaseConversionFactor: 1,
+      lastReceivedAt: null,
+      lastCountedAt: null,
+      averageDailyUsage: 0.8,
+      estimatedCostMethod: "latest_purchase_price",
+      active: true,
+      notes: "Updated notes",
+      createdByUserId: 1,
+      updatedByUserId: 1,
+      createdAt: null,
+      updatedAt: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Keep stock, counts, and reorder logic aligned" })).toBeVisible();
+    fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
+    await waitFor(() => expect(screen.getByText("Edit Chicken Breast")).toBeVisible());
+
+    const preview = screen.getByTestId("inventory-live-preview");
+    expect(within(preview).getByText("Average cost")).toBeVisible();
+    expect(within(preview).getByText("$8.88")).toBeVisible();
+    expect(within(preview).getByText("Latest cost")).toBeVisible();
+    expect(within(preview).getByText("$9.00")).toBeVisible();
+    expect(within(preview).getByText("Estimated inventory value")).toBeVisible();
+    expect(within(preview).getByText("$888.00")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Updated notes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update item" }));
+
+    await waitFor(() => expect(inventoryMocks.updatePilotInventoryItem).toHaveBeenCalled());
+    expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).not.toHaveProperty("averageUnitCost");
   });
 });
