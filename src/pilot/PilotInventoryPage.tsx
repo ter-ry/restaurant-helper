@@ -51,6 +51,8 @@ interface SupplierDraft {
   isActive: boolean;
 }
 
+type InventoryEditorMode = "hidden" | "create" | "edit";
+
 function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
   return {
     id: null,
@@ -123,6 +125,7 @@ export function PilotInventoryPage() {
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [editorMode, setEditorMode] = useState<InventoryEditorMode>("hidden");
   const [draft, setDraft] = useState<InventoryDraft>(blankDraft());
   const [itemDetail, setItemDetail] = useState<PilotInventoryItemDetail | null>(null);
   const [itemDetailLoading, setItemDetailLoading] = useState(false);
@@ -147,10 +150,6 @@ export function PilotInventoryPage() {
       const [response, supplierResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers()]);
       setData(response);
       setSuppliers(supplierResponse.suppliers);
-      if (selectedId === null && response.items[0]) {
-        setSelectedId(response.items[0].id);
-        setDraft(draftFromItem(response.items[0]));
-      }
       if (!selectedId && !response.items.length) {
         setDraft(blankDraft(supplierResponse.suppliers));
       }
@@ -202,6 +201,12 @@ export function PilotInventoryPage() {
       setDraft(draftFromItem(selectedItem));
     }
   }, [selectedItem]);
+
+  useEffect(() => {
+    if (!selectedItem && editorMode === "edit") {
+      setEditorMode("hidden");
+    }
+  }, [editorMode, selectedItem]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -272,6 +277,7 @@ export function PilotInventoryPage() {
       };
       const saved = draft.id ? await updatePilotInventoryItem(draft.id, payload) : await createPilotInventoryItem(payload);
       setSelectedId(saved.id);
+      setEditorMode("edit");
       setDraft(draftFromItem(saved));
       setMessage(`Inventory item ${saved.name} saved.`);
       await load();
@@ -355,6 +361,23 @@ export function PilotInventoryPage() {
   };
 
   const reorderCount = data?.summary.inventoryReorderNowCount ?? 0;
+  const inventoryModeLabel = editorMode === "create" ? "Create item" : editorMode === "edit" ? "Edit item" : "Browse catalog";
+  const showItemEditor = editorMode !== "hidden" || selectedId !== null;
+  const openItem = (itemId: number) => {
+    setSelectedId(itemId);
+    setEditorMode("edit");
+  };
+  const startNewItem = () => {
+    setSelectedId(null);
+    setEditorMode("create");
+    setDraft(blankDraft(suppliers));
+    setItemDetail(null);
+  };
+  const closeItemEditor = () => {
+    setSelectedId(null);
+    setEditorMode("hidden");
+    setItemDetail(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -366,7 +389,7 @@ export function PilotInventoryPage() {
             <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Manage the item list, current on-hand quantities, adjustments, and the stock-count backbone that keeps the pilot realistic.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => { setSelectedId(null); setDraft(blankDraft()); setMessage(null); }}>
+            <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => { startNewItem(); setMessage(null); }}>
               New item
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
@@ -574,42 +597,62 @@ export function PilotInventoryPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
         <Card className="p-6">
           <SectionHeader title="Items" description="Search, open, and keep the stock list current." />
-          <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-slate-50 px-4 py-3">
               <Search className="h-4 w-4 text-muted" />
-              <input className="w-full bg-transparent text-sm outline-none" placeholder="Search item, supplier, or category" value={search} onChange={(event) => setSearch(event.target.value)} />
+              <input className="w-full bg-transparent text-sm outline-none" placeholder="Search item, supplier, category, or unit" value={search} onChange={(event) => setSearch(event.target.value)} />
             </div>
+            <Badge tone="neutral">{filteredItems.length} visible</Badge>
+            <Badge tone="neutral">{data?.items.length ?? 0} total</Badge>
           </div>
 
-          <div className="mt-4 space-y-2">
-            {filteredItems.map((item) => {
-              const status = stockStatus(item);
-              return (
-                <button key={item.id} type="button" onClick={() => { setSelectedId(item.id); setDraft(draftFromItem(item)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedId === item.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{item.name}</p>
-                      <p className="text-sm text-muted">{item.category} • {item.preferredSupplierName || "No supplier"}</p>
-                    </div>
-                    <Badge tone={statusTone(status)}>{status}</Badge>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-muted">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">On hand</p>
-                      <p className="mt-1 text-ink">{formatNumber(item.currentOnHand)} {item.stockUnit}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">PAR / Min</p>
-                      <p className="mt-1 text-ink">{formatNumber(item.parLevel)} / {formatNumber(item.minQuantity)}</p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-            {!filteredItems.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No inventory items match this search.</p> : null}
+          <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
+            <div className="max-h-[62vh] overflow-y-auto">
+              <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-muted">
+                  <tr>
+                    {["Item", "Category", "On hand", "Unit", "Minimum", "PAR", "Latest cost", "Reorder status"].map((heading) => (
+                      <th key={heading} className="border-b border-line px-4 py-3 font-bold">
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item) => {
+                    const status = stockStatus(item);
+                    const selected = selectedId === item.id;
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`cursor-pointer border-b border-line transition hover:bg-brand-50/60 ${selected ? "bg-brand-50" : "bg-white"}`}
+                        onClick={() => openItem(item.id)}
+                      >
+                        <td className="px-4 py-3 font-semibold text-ink">
+                          <div>
+                            <p>{item.name}</p>
+                            <p className="mt-1 text-xs text-muted">{item.preferredSupplierName || "No supplier"}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-muted">{item.category}</td>
+                        <td className="px-4 py-3 font-medium text-ink">{formatNumber(item.currentOnHand)}</td>
+                        <td className="px-4 py-3 text-muted">{item.stockUnit}</td>
+                        <td className="px-4 py-3 text-muted">{formatNumber(item.minQuantity)}</td>
+                        <td className="px-4 py-3 text-muted">{formatNumber(item.parLevel)}</td>
+                        <td className="px-4 py-3 text-muted">{formatMoney(item.latestPurchasePrice)}</td>
+                        <td className="px-4 py-3">
+                          <Badge tone={statusTone(status)}>{status}</Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {!filteredItems.length ? <p className="px-4 py-8 text-sm text-muted">No inventory items match this search.</p> : null}
+            </div>
           </div>
 
           <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
@@ -619,8 +662,8 @@ export function PilotInventoryPage() {
 
           <div className="mt-5">
             <SectionHeader title="Recent movements" description="What changed most recently." />
-            <div className="space-y-2">
-              {(data?.movements ?? []).slice(0, 5).map((movement) => (
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {(data?.movements ?? []).slice(0, 8).map((movement) => (
                 <div key={movement.id} className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -637,8 +680,14 @@ export function PilotInventoryPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
-          <SectionHeader title={draft.id ? `Edit ${draft.name || "inventory item"}` : "New inventory item"} description="Keep the live preview aligned with the form." />
+        <Card className="p-6 lg:sticky lg:top-4">
+          {showItemEditor ? (
+            <>
+              <SectionHeader
+                title={draft.id ? `Edit ${draft.name || "inventory item"}` : editorMode === "create" ? "Create inventory item" : "Inventory item"}
+                description={draft.id ? "Keep the live preview aligned with the form." : editorMode === "create" ? "Add the new item deliberately, then save it into the catalog." : "Select an item from the catalog to edit it, or start a new one."}
+                action={<Button variant="secondary" type="button" onClick={closeItemEditor}>Close</Button>}
+              />
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
@@ -840,6 +889,24 @@ export function PilotInventoryPage() {
               </div>
             </div>
           </div>
+          </>
+          ) : (
+            <div className="flex min-h-[44rem] flex-col justify-center rounded-2xl border border-dashed border-line bg-slate-50 p-8">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory workspace</p>
+              <h2 className="mt-2 text-2xl font-bold text-ink">Select an item or create one deliberately</h2>
+              <p className="mt-3 max-w-md text-sm leading-6 text-muted">
+                The catalog stays visible on the left. Open an item to edit its details, or start a new item when you are ready to add one.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button type="button" onClick={startNewItem}>
+                  New item
+                </Button>
+                <Button variant="secondary" type="button" onClick={() => navigate("/app/reorder-plan")}>
+                  Reorder list
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
 

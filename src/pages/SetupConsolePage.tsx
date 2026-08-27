@@ -94,6 +94,8 @@ export function SetupConsolePage() {
 
   const configJson = (selected?.configuration as any)?.currentVersion?.configurationJson ?? {};
   const modules = selected?.modules ?? [];
+  const readyModules = modules.filter((module) => module.backendReady);
+  const lockedModules = modules.filter((module) => !module.backendReady);
   const locations = selected?.locations ?? [];
   const auditEvents = selected?.auditEvents ?? [];
 
@@ -678,59 +680,58 @@ export function SetupConsolePage() {
                 <p className="mt-2 text-sm leading-6 text-muted">
                   Registered modules are shown even when the organization has no entitlement row yet. Backend-ready modules can be enabled; planning-only modules stay visibly locked.
                 </p>
-                <div className="mt-4 space-y-3">
-                  {modules.map((module) => {
-                    const missingDependencies = module.missingDependencies ?? [];
-                    const selectDisabled = !module.backendReady || missingDependencies.length > 0;
-                    return (
-                      <div key={`${String(module.key)}-${selectedRevision}`} className="rounded-2xl border border-line bg-slate-50 p-4">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
-                              <span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${module.backendReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>
-                                {module.backendReady ? "Backend ready" : "Backend not ready"}
-                              </span>
-                              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
-                                {module.hasOrganizationRow ? "Existing row" : "No org row"}
-                              </span>
-                              <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
-                                {String(module.status)}
-                              </span>
+                <div className="mt-4 space-y-5">
+                  {[
+                    ["Backend ready", readyModules],
+                    ["Locked / planning only", lockedModules],
+                  ].map(([label, groupedModules]) => (
+                    <div key={label as string} className="rounded-2xl border border-line bg-slate-50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">{label as string}</p>
+                      <div className="mt-3 space-y-2">
+                        {(groupedModules as typeof modules).map((module) => {
+                          const missingDependencies = module.missingDependencies ?? [];
+                          const selectDisabled = !module.backendReady || missingDependencies.length > 0;
+                          return (
+                            <div key={`${String(module.key)}-${selectedRevision}`} className="grid gap-3 rounded-2xl border border-line bg-white p-3 md:grid-cols-[1.1fr_1fr_auto] md:items-start">
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
+                                  <span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${module.backendReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>
+                                    {module.backendReady ? "Backend ready" : "Backend not ready"}
+                                  </span>
+                                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                                    {module.hasOrganizationRow ? "Existing row" : "No org row"}
+                                  </span>
+                                  <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                                    {String(module.status)}
+                                  </span>
+                                </div>
+                                <p className="text-xs leading-5 text-muted">{String(module.description ?? "")}</p>
+                              </div>
+                              <div className="space-y-1 text-xs text-muted">
+                                <p>Dependencies: {module.dependencies?.length ? module.dependencies.join(", ") : "None"}.</p>
+                                {missingDependencies.length ? <p className="font-semibold text-amber-700">Enable {missingDependencies.join(", ")} first.</p> : null}
+                              </div>
+                              <div className="sm:w-56">
+                                <label className="sr-only" htmlFor={`module-${String(module.key)}`}>
+                                  {String(module.displayName ?? module.key)} status
+                                </label>
+                                <select
+                                  aria-label={`${String(module.displayName ?? module.key)} status`}
+                                  className="w-full rounded-2xl border border-line bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted"
+                                  defaultValue={String(module.status)}
+                                  disabled={selectDisabled}
+                                  id={`module-${String(module.key)}`}
+                                >
+                                  {moduleStatuses.map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                              </div>
                             </div>
-                            <p className="text-xs leading-5 text-muted">{String(module.description ?? "")}</p>
-                            <p className="text-xs text-muted">
-                              Dependencies: {module.dependencies?.length ? module.dependencies.join(", ") : "None"}.
-                            </p>
-                            {missingDependencies.length ? (
-                              <p className="text-xs font-semibold text-amber-700">
-                                Enable {missingDependencies.join(", ")} first.
-                              </p>
-                            ) : null}
-                            {!module.backendReady ? (
-                              <p className="text-xs text-muted">
-                                Listed for planning only until the backend is ready.
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="sm:w-64">
-                            <label className="sr-only" htmlFor={`module-${String(module.key)}`}>
-                              {String(module.displayName ?? module.key)} status
-                            </label>
-                            <select
-                              aria-label={`${String(module.displayName ?? module.key)} status`}
-                              className="w-full rounded-2xl border border-line bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted"
-                              defaultValue={String(module.status)}
-                              disabled={selectDisabled}
-                              id={`module-${String(module.key)}`}
-                            >
-                              {moduleStatuses.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </select>
-                          </div>
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
                 <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveModules()} disabled={savingAction !== null || refreshing}>
                   {mutationButtonLabel("modules", "Save modules", "Saving...", "Modules saved")}

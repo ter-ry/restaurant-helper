@@ -394,7 +394,7 @@ export function PilotStockCountsPage() {
       <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
         <Card className="p-6">
           <SectionHeader title="Sessions" description="Latest count sessions first." />
-          <div className="space-y-2">
+          <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
             {draftSessions.map((session) => (
               <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">

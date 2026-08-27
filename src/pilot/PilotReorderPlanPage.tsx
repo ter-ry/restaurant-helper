@@ -298,7 +298,7 @@ export function PilotReorderPlanPage() {
       <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
         <Card className="p-6">
           <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
-          <div className="space-y-3">
+          <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
             {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
               <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -360,7 +360,7 @@ export function PilotReorderPlanPage() {
 
         <Card className="p-6">
           <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
-          <div className="space-y-2">
+          <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
             {plans.map((plan) => (
               <button
                 key={plan.id}

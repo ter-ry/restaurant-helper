@@ -1273,17 +1273,9 @@ export function PilotPurchasesPage() {
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Status</span>
-              {finalizedStatus ? (
-                <div className="mt-1 rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                  <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
-                </div>
-              ) : (
-                <select className="input mt-1" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
-                  <option value="Draft">Needs review</option>
-                  <option value="Ready">Ready</option>
-                  <option value="Completed">Completed</option>
-                </select>
-              )}
+              <div className="mt-1 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+                <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
+              </div>
             </label>
           </div>
 
@@ -1642,10 +1634,10 @@ export function PilotPurchasesPage() {
 
         <Card className="w-full p-6" data-testid="purchase-history-card">
           <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
-          <div className="space-y-3">
+          <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
             {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
             {invoiceRows.map((invoice) => (
-              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
@@ -1653,7 +1645,7 @@ export function PilotPurchasesPage() {
                   </div>
                   <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-sm text-muted">
+                <div className="mt-2 flex items-center justify-between text-xs text-muted">
                   <span>{formatMoney(invoice.totalAmount)}</span>
                   <span>{invoice.lineItems.length} line items</span>
                 </div>

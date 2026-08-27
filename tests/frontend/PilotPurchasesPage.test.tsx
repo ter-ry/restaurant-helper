@@ -550,6 +550,7 @@ describe("PilotPurchasesPage", () => {
     expect(within(modal).getByRole("heading", { name: "Heritage Dairy" })).toBeVisible();
     expect(within(modal).getByText("Read-only")).toBeVisible();
     expect(within(modal).getByText("Completed invoice")).toBeVisible();
+    expect(within(modal).queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();
     expect(within(modal).queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
     expect(within(modal).queryByRole("button", { name: "Receive into inventory" })).not.toBeInTheDocument();
   });
