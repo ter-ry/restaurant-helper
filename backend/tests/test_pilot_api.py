@@ -183,6 +183,11 @@ def test_pilot_operational_journey_persists_across_refetches(app, client):
     assert item_update.status_code == 200
     assert item_update.get_json()["notes"] == "Used for the pilot readiness pass"
 
+    with app.app_context():
+        item_after_update = InventoryItem.query.filter_by(id=item["id"]).first()
+        assert item_after_update is not None
+        assert float(item_after_update.average_unit_cost) == pytest.approx(18.5)
+
     inventory = client.get("/api/pilot/inventory")
     assert inventory.status_code == 200
     inventory_body = inventory.get_json()

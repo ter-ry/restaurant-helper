@@ -180,3 +180,4 @@ def test_multi_membership_login_requires_explicit_selection(app, client):
     organizations_body = organizations_response.get_json()
     assert organizations_body["currentOrganizationId"] is None
     assert any(entry["organization"]["id"] == secondary_org_id for entry in organizations_body["organizations"])
+    assert all(entry["selected"] is False for entry in organizations_body["organizations"])

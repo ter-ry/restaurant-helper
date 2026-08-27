@@ -11,10 +11,11 @@ import {
   requestCustomerSetup,
   selectCustomerOrganization,
   startGoogleLogin,
+  type CustomerOrganizationMembershipSummary,
   type CustomerSessionResponse,
 } from "../lib/customerAuth";
 
-type AuthState = "loading" | "error" | "signedOut" | "signedIn" | "needsOnboarding";
+type AuthState = "loading" | "error" | "signedOut" | "signedIn" | "needsOnboarding" | "chooseOrganization";
 
 function useQueryParams() {
   const location = useLocation();
@@ -309,12 +310,72 @@ function LoggedInProspectView({
   );
 }
 
-function pickResumeOrganization(session: CustomerSessionResponse) {
+function OrganizationSelectionView({
+  organizations,
+  onChoose,
+}: {
+  organizations: CustomerOrganizationMembershipSummary[];
+  onChoose: (organizationId: number) => Promise<void>;
+}) {
+  const [organizationId, setOrganizationId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (organizationId === null) {
+      setError("Choose an organization to continue.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onChoose(organizationId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not continue with the selected organization.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    session.organizations?.find((entry) => entry.selected)?.organization ??
-    session.organizations?.find((entry) => entry.organization.isProspect)?.organization ??
-    session.organizations?.[0]?.organization ??
-    null
+    <form className="mt-6 rounded-3xl border border-line bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+      <p className="text-xs font-bold uppercase tracking-wide text-muted">Choose organization</p>
+      <h2 className="mt-1 text-2xl font-bold text-ink">Pick the workspace to continue</h2>
+      <p className="mt-2 text-sm leading-6 text-muted">
+        This account can access multiple restaurant workspaces. Choose the correct one before Flowtally continues.
+      </p>
+
+      <label className="mt-5 block">
+        <span className="text-sm font-semibold text-ink">Available organizations</span>
+        <select className="input mt-1" value={organizationId ?? ""} onChange={(event) => setOrganizationId(event.target.value ? Number(event.target.value) : null)}>
+          <option value="" disabled>
+            Select an organization
+          </option>
+          {organizations.map((entry) => (
+            <option key={entry.organization.id} value={entry.organization.id}>
+              {entry.organization.name}
+              {entry.membershipRole ? ` · ${entry.membershipRole}` : ""}
+              {entry.organization.lifecycleStatus ? ` · ${entry.organization.lifecycleStatus}` : ""}
+              {entry.organization.setupStatus ? ` / ${entry.organization.setupStatus}` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+        Choose the organization that matches the restaurant you want to enter. If you are not sure, stop here and confirm the correct workspace before continuing.
+      </div>
+
+      {error ? <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="submit" disabled={submitting || organizationId === null}>
+          {submitting ? "Continuing..." : "Continue"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -331,14 +392,37 @@ export function GoogleAuthCompletePage() {
       return current;
     }
 
-    const organization = pickResumeOrganization(current);
-    if (!organization) {
-      return current;
+    if (current.organizations.length === 1) {
+      await selectCustomerOrganization(current.organizations[0].organization.id);
+      return fetchCustomerSession();
     }
 
-    await selectCustomerOrganization(organization.id);
-    return fetchCustomerSession();
+    return current;
   }, []);
+
+  const applySession = useCallback(
+    (current: CustomerSessionResponse) => {
+      setSession(current);
+      const currentOrganization =
+        current.organizations?.find((entry) => entry.organization.id === current.currentOrganizationId)?.organization ??
+        current.organizations?.find((entry) => entry.selected)?.organization ??
+        null;
+      if (current.currentOrganizationId && currentOrganization?.lifecycleStatus === "ACTIVE") {
+        navigate(consumeLoginReturnTo() ?? "/app", { replace: true });
+        return;
+      }
+      if (current.currentOrganizationId) {
+        setState("signedIn");
+        return;
+      }
+      if ((current.organizations?.length ?? 0) > 1) {
+        setState("chooseOrganization");
+        return;
+      }
+      setState("needsOnboarding");
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     const queryStatus = query.get("status");
@@ -355,13 +439,7 @@ export function GoogleAuthCompletePage() {
       try {
         const current = await loadSessionWithResume();
         if (cancelled) return;
-        const selectedOrganization = current.organizations?.find((entry) => entry.selected)?.organization ?? null;
-        setSession(current);
-        if (current.currentOrganizationId && selectedOrganization?.lifecycleStatus === "ACTIVE") {
-          navigate(consumeLoginReturnTo() ?? "/app", { replace: true });
-          return;
-        }
-        setState(current.currentOrganizationId ? "signedIn" : "needsOnboarding");
+        applySession(current);
       } catch (err) {
         if (cancelled) return;
         setState("signedOut");
@@ -373,12 +451,17 @@ export function GoogleAuthCompletePage() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, query]);
+  }, [applySession, loadSessionWithResume, query]);
 
   async function handleCreated() {
     const current = await loadSessionWithResume();
-    setSession(current);
-    setState(current.currentOrganizationId ? "signedIn" : "needsOnboarding");
+    applySession(current);
+  }
+
+  async function handleOrganizationChoice(organizationId: number) {
+    await selectCustomerOrganization(organizationId);
+    const current = await fetchCustomerSession();
+    applySession(current);
   }
 
   async function handleLogout() {
@@ -469,11 +552,13 @@ export function GoogleAuthCompletePage() {
 
         {state === "needsOnboarding" ? (
           <ProspectOnboardingForm session={session} onCreated={handleCreated} />
+        ) : state === "chooseOrganization" ? (
+          <OrganizationSelectionView organizations={session.organizations ?? []} onChoose={handleOrganizationChoice} />
         ) : (
           <div className="mt-6">
-          <LoggedInProspectView session={session} onLogout={handleLogout} onRequestSetup={handleCreated} />
-        </div>
-      )}
+            <LoggedInProspectView session={session} onLogout={handleLogout} onRequestSetup={handleCreated} />
+          </div>
+        )}
 
         <div className="mt-6 rounded-3xl border border-line bg-white p-6 shadow-soft">
           <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted">
