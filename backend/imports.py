@@ -18,6 +18,7 @@ from sqlalchemy import or_
 
 from .access import support_access_is_active_for_current_user
 from .audit import record_audit_event
+from .costing import stock_unit_cost_from_purchase
 from .extensions import csrf, db
 from .models import (
     AuditEvent,
@@ -846,6 +847,10 @@ def _restore_inventory_item(payload: dict[str, Any], item: InventoryItem) -> Non
     item.latest_purchase_price = Decimal(str(payload.get("latestPurchasePrice") or 0))
     item.last_purchase_unit = str(payload.get("lastPurchaseUnit") or "each")
     item.last_purchase_conversion_factor = Decimal(str(payload.get("lastPurchaseConversionFactor") or 1))
+    if payload.get("averageUnitCost") not in (None, ""):
+        item.average_unit_cost = Decimal(str(payload.get("averageUnitCost") or 0))
+    else:
+        item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
     item.active = bool(payload.get("active", True))
     item.notes = str(payload.get("notes") or "")
     item.supplier_id = payload.get("supplierId")
@@ -933,6 +938,7 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
             latest_purchase_price = _to_decimal(normalized.get("latestPurchasePrice"), field_name="latestPurchasePrice") if normalized.get("latestPurchasePrice") not in (None, "") else None
             if latest_purchase_price is not None:
                 item.latest_purchase_price = latest_purchase_price
+            item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
             applied_json = serialize_inventory_item(item)
             return "create", item, previous_json, applied_json, rollbackable
         previous_json = serialize_inventory_item(item)
@@ -947,6 +953,10 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
         for field_name, attr_name in [("currentOnHand", "current_on_hand"), ("minQuantity", "min_quantity"), ("parLevel", "par_level"), ("latestPurchasePrice", "latest_purchase_price")]:
             if normalized.get(field_name) not in (None, ""):
                 setattr(item, attr_name, _to_decimal(normalized.get(field_name), field_name=field_name))
+        if normalized.get("averageUnitCost") not in (None, ""):
+            item.average_unit_cost = _to_decimal(normalized.get("averageUnitCost"), field_name="averageUnitCost")
+        else:
+            item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
         applied_json = serialize_inventory_item(item)
         return "update", item, previous_json, applied_json, rollbackable
 

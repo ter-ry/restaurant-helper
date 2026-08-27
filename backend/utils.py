@@ -183,6 +183,7 @@ def serialize_inventory_item(item: InventoryItem) -> dict[str, Any]:
         "category": item.category,
         "stockUnit": item.stock_unit,
         "currentOnHand": decimal_to_float(item.current_on_hand) or 0,
+        "averageUnitCost": decimal_to_float(item.average_unit_cost) or 0,
         "minQuantity": decimal_to_float(item.min_quantity) or 0,
         "parLevel": decimal_to_float(item.par_level) or 0,
         "preferredSupplierName": item.preferred_supplier_name,

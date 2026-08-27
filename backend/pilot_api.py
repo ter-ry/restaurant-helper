@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
+from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, weighted_average_inventory_cost
 from .extensions import db
 from .models import (
     AuditEvent,
@@ -145,6 +146,10 @@ def _parse_utc_datetime(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _receipt_stock_unit_cost(line: PurchaseInvoiceLine) -> Decimal:
+    return stock_unit_cost_from_purchase(line.unit_price, line.conversion_factor)
+
+
 def _current_context():
     organization, membership, locations = get_current_organization_bundle()
     location = get_current_location()
@@ -229,7 +234,7 @@ def _inventory_summary(location_id: int):
     reorder = sum(1 for status in statuses if status == "Reorder now")
     out = sum(1 for status in statuses if status == "Out of stock")
     count_needed = sum(1 for item in items if item.last_counted_at is None or (_now() - _aware_datetime(item.last_counted_at)).days > 14)
-    value = sum((decimal_to_float(item.current_on_hand) or 0) * (decimal_to_float(item.latest_purchase_price) or 0) for item in items)
+    value = sum((decimal_to_float(item.current_on_hand) or 0) * (decimal_to_float(item.average_unit_cost) or 0) for item in items)
     return {
         "inventoryItemCount": len(items),
         "inventoryLowStockCount": low,
@@ -543,6 +548,7 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
         if item is None:
             continue
         quantity_delta = (Decimal(line.quantity) * Decimal(line.conversion_factor)).quantize(QTY)
+        receipt_unit_cost = _receipt_stock_unit_cost(line)
         before = Decimal(item.current_on_hand)
         after = (before + quantity_delta).quantize(QTY)
         if after < 0:
@@ -576,6 +582,7 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
         item.latest_purchase_price = line.unit_price
         item.last_purchase_unit = line.purchase_unit
         item.last_purchase_conversion_factor = line.conversion_factor
+        item.average_unit_cost = weighted_average_inventory_cost(before, item.average_unit_cost, quantity_delta, receipt_unit_cost)
         item.preferred_supplier_name = invoice.supplier.name
         item.last_received_at = now
         item.updated_by_user_id = actor_id
@@ -730,6 +737,7 @@ def correct_purchase_invoice(invoice_id: int):
             correction_delta = Decimal(receipt_movement.quantity_delta) * Decimal("-1")
             before = Decimal(item.current_on_hand)
             after = (before + correction_delta).quantize(QTY)
+            receipt_unit_cost = _receipt_stock_unit_cost(line)
             if after < 0:
                 return json_error(
                     "This invoice cannot be corrected because stock has already moved.",
@@ -752,6 +760,7 @@ def correct_purchase_invoice(invoice_id: int):
                 actor_user_id=current_user.id,
             )
             item.current_on_hand = after
+            item.average_unit_cost = reverse_weighted_average_inventory_cost(before, item.average_unit_cost, Decimal(receipt_movement.quantity_delta), receipt_unit_cost)
             affected_items.add(item.id)
             db.session.add(movement)
 
@@ -1376,6 +1385,8 @@ def create_inventory_item():
         return json_error("An inventory item with that name already exists.", 409)
     supplier_name = str(payload.get("preferredSupplierName") or payload.get("preferredSupplier") or "").strip()
     supplier = _get_supplier_by_name(organization.id, supplier_name) if supplier_name else None
+    latest_purchase_price = _to_decimal(payload.get("latestPurchasePrice", 0), field="latestPurchasePrice", required=False)
+    last_purchase_conversion_factor = _to_quantity(payload.get("lastPurchaseConversionFactor", 1), field="lastPurchaseConversionFactor", required=False)
     item = InventoryItem(
         organization_id=organization.id,
         location_id=location.id,
@@ -1388,9 +1399,10 @@ def create_inventory_item():
         min_quantity=_to_quantity(payload.get("minQuantity", 0), field="minQuantity", required=False),
         par_level=_to_quantity(payload.get("parLevel", 0), field="parLevel", required=False),
         preferred_supplier_name=supplier_name,
-        latest_purchase_price=_to_decimal(payload.get("latestPurchasePrice", 0), field="latestPurchasePrice", required=False),
+        latest_purchase_price=latest_purchase_price,
         last_purchase_unit=str(payload.get("lastPurchaseUnit") or payload.get("stockUnit") or payload.get("unit") or "each"),
-        last_purchase_conversion_factor=_to_quantity(payload.get("lastPurchaseConversionFactor", 1), field="lastPurchaseConversionFactor", required=False),
+        last_purchase_conversion_factor=last_purchase_conversion_factor,
+        average_unit_cost=stock_unit_cost_from_purchase(latest_purchase_price, last_purchase_conversion_factor),
         average_daily_usage=_to_quantity(payload.get("averageDailyUsage"), field="averageDailyUsage", required=False) if payload.get("averageDailyUsage") not in (None, "") else None,
         active=bool(payload.get("active", True)),
         notes=str(payload.get("notes") or "").strip(),

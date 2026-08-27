@@ -128,9 +128,9 @@ def test_menu_costing_persists_and_tracks_live_costs(client):
     refreshed = client.get("/api/pilot/menu-costing")
     assert refreshed.status_code == 200
     body = refreshed.get_json()
-    assert body["recipes"][0]["costPerYield"] == 3.0
-    assert body["menuItems"][0]["recipeCostPerYield"] == 3.0
-    assert body["menuItems"][0]["grossProfit"] == 9.0
+    assert body["recipes"][0]["costPerYield"] == 2.0
+    assert body["menuItems"][0]["recipeCostPerYield"] == 2.0
+    assert body["menuItems"][0]["grossProfit"] == 10.0
 
     select_org(client, other_organization.id)
     other_body = client.get("/api/pilot/menu-costing").get_json()

@@ -138,6 +138,7 @@ class InventoryItem(TimestampMixin, db.Model):
     category = db.Column(db.String(120), nullable=False, default="Other")
     stock_unit = db.Column(db.String(60), nullable=False, default="each")
     current_on_hand = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    average_unit_cost = db.Column(db.Numeric(14, 6), nullable=False, default=Decimal("0"))
     min_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
     par_level = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
     preferred_supplier_name = db.Column(db.String(255), nullable=False, default="")

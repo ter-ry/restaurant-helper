@@ -760,6 +760,7 @@ function createSeedInventoryItems(): InventoryItem[] {
       parLevel: item.parLevel,
       preferredSupplier: item.preferredSupplier,
       latestPurchasePrice: clampMoney(item.latestPurchasePrice),
+      averageUnitCost: clampMoney(item.latestPurchasePrice),
       latestPurchaseUnit: item.latestPurchaseUnit,
       latestPurchaseConversionFactor: item.latestPurchaseConversionFactor,
       lastReceivedAt: item.lastReceivedAt,
@@ -884,6 +885,7 @@ function ensureInventoryItemShape(item: InventoryItem): InventoryItem {
     parLevel: Math.max(parLevel, minQuantity),
     preferredSupplier: item.preferredSupplier.trim(),
     latestPurchasePrice: clampMoney(item.latestPurchasePrice),
+    averageUnitCost: typeof item.averageUnitCost === "number" && Number.isFinite(item.averageUnitCost) ? clampMoney(item.averageUnitCost) : clampMoney(item.latestPurchasePrice),
     latestPurchaseUnit: item.latestPurchaseUnit?.trim() || item.unit.trim() || "each",
     latestPurchaseConversionFactor: typeof item.latestPurchaseConversionFactor === "number" && Number.isFinite(item.latestPurchaseConversionFactor) ? Number(item.latestPurchaseConversionFactor.toFixed(4)) : undefined,
     lastReceivedAt,
@@ -981,7 +983,7 @@ export function buildInventorySummary(state: PilotInventoryState): Pick<PilotWor
       if (status === "Reorder now") acc.reorderNow += 1;
       if (status === "Out of stock") acc.outOfStock += 1;
       if (status === "Count needed") acc.countNeeded += 1;
-      acc.value += item.currentQuantity * item.latestPurchasePrice;
+      acc.value += item.currentQuantity * (item.averageUnitCost ?? item.latestPurchasePrice);
       return acc;
     },
     { lowStock: 0, reorderNow: 0, outOfStock: 0, countNeeded: 0, value: 0 },
@@ -1022,7 +1024,8 @@ export function upsertInventoryItem(items: InventoryItem[], draft: PilotInventor
     minQuantity: draft.minQuantity,
     parLevel: draft.parLevel,
     preferredSupplier: draft.preferredSupplier,
-    latestPurchasePrice: draft.latestPurchasePrice,
+      latestPurchasePrice: draft.latestPurchasePrice,
+      averageUnitCost: draft.latestPurchasePrice,
     latestPurchaseUnit: existing?.latestPurchaseUnit || draft.unit,
     latestPurchaseConversionFactor: existing?.latestPurchaseConversionFactor,
     lastReceivedAt: existing?.lastReceivedAt || createdAt.slice(0, 10),
@@ -1061,6 +1064,7 @@ export function createInventoryDraft(item?: InventoryItem): PilotInventoryDraft 
       parLevel: 0,
       preferredSupplier: "",
       latestPurchasePrice: 0,
+      averageUnitCost: 0,
       averageDailyUsage: undefined,
       notes: "",
       active: true,
@@ -1077,6 +1081,7 @@ export function createInventoryDraft(item?: InventoryItem): PilotInventoryDraft 
     parLevel: item.parLevel,
     preferredSupplier: item.preferredSupplier,
     latestPurchasePrice: item.latestPurchasePrice,
+    averageUnitCost: item.averageUnitCost,
     averageDailyUsage: item.averageDailyUsage,
     notes: item.notes,
     active: item.active,
@@ -1155,6 +1160,6 @@ export function describeInventoryStatus(item: InventoryItem) {
   return {
     status,
     daysRemaining,
-    inventoryValue: formatCurrency(item.currentQuantity * item.latestPurchasePrice),
+    inventoryValue: formatCurrency(item.currentQuantity * (item.averageUnitCost ?? item.latestPurchasePrice)),
   };
 }

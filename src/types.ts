@@ -230,6 +230,7 @@ export interface InventoryItem {
   parLevel: number;
   preferredSupplier: string;
   latestPurchasePrice: number;
+  averageUnitCost?: number;
   latestPurchaseUnit: string;
   latestPurchaseConversionFactor?: number;
   lastReceivedAt: string;
@@ -375,6 +376,7 @@ export interface PilotInventoryDraft {
   parLevel: number;
   preferredSupplier: string;
   latestPurchasePrice: number;
+  averageUnitCost?: number;
   averageDailyUsage?: number;
   notes: string;
   active: boolean;

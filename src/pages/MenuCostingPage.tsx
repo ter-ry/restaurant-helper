@@ -265,13 +265,13 @@ function resolveIngredient(item: MenuIngredient, inventoryItems: InventoryItem[]
 
   const currentUnitCost =
     inventoryItem && item.purchaseYield && item.purchaseYield > 0
-      ? inventoryItem.latestPurchasePrice / item.purchaseYield
+      ? (inventoryItem.averageUnitCost ?? (inventoryItem.latestPurchasePrice / item.purchaseYield))
       : item.fallbackUnitCost;
 
   const lineCost = Number((item.quantity * currentUnitCost).toFixed(2));
   let sourceLabel = "Fallback demo cost";
   if (inventoryItem && item.purchaseYield && item.purchaseYield > 0) {
-    sourceLabel = priceChange && priceChange.changePercent > 0 ? "Supplier price change" : "Recent purchase price";
+    sourceLabel = priceChange && priceChange.changePercent > 0 ? "Supplier price change" : "Weighted average cost";
   } else if (inventoryItem) {
     sourceLabel = "Inventory item cost";
   }
