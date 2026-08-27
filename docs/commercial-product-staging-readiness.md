@@ -40,9 +40,9 @@ Current intentional state:
 
 ### Backend service
 
-`render.pilot-staging.yaml` now deploys only the authenticated commercial backend:
+`render.pilot-staging.yaml` now deploys only the authenticated commercial backend and runs migrations before starting Gunicorn:
 
-- start command: `gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
+- start command: `flask --app backend.wsgi:app db upgrade && gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
 - health check: `/api/health`
 - no legacy root app in the staging blueprint
 
@@ -263,13 +263,14 @@ The safe staging order is:
 4. Confirm `/api/health`.
 
 Do not run migrations under the runtime role.
+For staging or any similar production-like deployment, chain `db upgrade` before Gunicorn so a new release does not boot against an older schema.
 
 ## Exact Render configuration summary
 
 ### Backend Render service
 
 - Build command: `pip install -r backend/requirements.txt`
-- Start command: `gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
+- Start command: `flask --app backend.wsgi:app db upgrade && gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -`
 - Health check: `/api/health`
 - `FLOWTALLY_ENV=staging`
 - `SESSION_COOKIE_SECURE=true`

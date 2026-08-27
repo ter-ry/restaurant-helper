@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from backend.app import create_app
@@ -203,6 +205,19 @@ def test_create_app_rejects_unsafe_staging_startup(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(ConfigurationError, match="SECRET_KEY is too weak"):
         create_app()
+
+
+def test_staging_render_config_runs_migrations_before_backend_startup():
+    root = Path(__file__).resolve().parents[2]
+    render_config = (root / "render.pilot-staging.yaml").read_text(encoding="utf-8")
+    procfile = (root / "Procfile").read_text(encoding="utf-8").strip()
+
+    assert (
+        "startCommand: flask --app backend.wsgi:app db upgrade && gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -"
+        in render_config
+    )
+    assert "FLOWTALLY_MIGRATION_DATABASE_URL" in render_config
+    assert procfile == "web: gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -"
 
 
 def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.MonkeyPatch):
