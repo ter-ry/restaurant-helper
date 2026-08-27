@@ -298,7 +298,7 @@ export function PilotReorderPlanPage() {
       <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
         <Card className="p-6">
           <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
-          <div className="space-y-3">
+          <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
             {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
               <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -360,7 +360,7 @@ export function PilotReorderPlanPage() {
 
         <Card className="p-6">
           <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
-          <div className="space-y-2">
+          <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
             {plans.map((plan) => (
               <button
                 key={plan.id}
@@ -415,6 +415,22 @@ export function PilotReorderPlanPage() {
                 <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
                 <Badge tone="neutral">{draft.status === "Draft" ? "Editable draft" : draft.status === "Prepared" ? "Review-only snapshot" : "Locked history"}</Badge>
               </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {[
+                  { label: "Draft", active: draft.status === "Draft" },
+                  { label: "Prepared", active: draft.status === "Prepared" },
+                  { label: "Completed", active: draft.status === "Completed" },
+                ].map((step) => (
+                  <div
+                    key={step.label}
+                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
+                      step.active ? "border-ink bg-ink text-white" : "border-line bg-white text-muted"
+                    }`}
+                  >
+                    {step.label}
+                  </div>
+                ))}
+              </div>
               <p className="mt-2 text-sm leading-6 text-muted">
                 {draft.status === "Draft"
                   ? "Keep shaping quantities, then mark it prepared when you are ready."
@@ -450,10 +466,10 @@ export function PilotReorderPlanPage() {
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
                 {saving ? "Saving..." : "Save draft"}
               </Button>
-              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
+              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
                 Mark prepared
               </Button>
-              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void completeDraft()}>
+              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => void completeDraft()}>
                 Complete plan
               </Button>
             </div>

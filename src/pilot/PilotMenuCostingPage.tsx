@@ -125,6 +125,8 @@ export function PilotMenuCostingPage() {
   const [selectedRecipeId, setSelectedRecipeId] = useState<number | null>(null);
   const [selectedIngredientId, setSelectedIngredientId] = useState<number | null>(null);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<number | null>(null);
+  const [recipeEditorMode, setRecipeEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
+  const [menuItemEditorMode, setMenuItemEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
   const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(blankIngredientDraft());
   const [menuItemDraft, setMenuItemDraft] = useState<MenuItemDraft>(blankMenuItemDraft());
@@ -144,20 +146,16 @@ export function PilotMenuCostingPage() {
       const [menuCosting, inventory] = await Promise.all([fetchPilotMenuCosting(), fetchPilotInventory()]);
       setData(menuCosting);
       setInventoryItems(inventory.items);
-      if (selectedRecipeId === null && menuCosting.recipes[0]) {
-        setSelectedRecipeId(menuCosting.recipes[0].id);
-      }
-      if (selectedMenuItemId === null && menuCosting.menuItems[0]) {
-        setSelectedMenuItemId(menuCosting.menuItems[0].id);
-      }
       if (!menuCosting.recipes.length) {
         setSelectedRecipeId(null);
         setSelectedIngredientId(null);
         setRecipeDraft(blankRecipeDraft());
+        setRecipeEditorMode("hidden");
       }
       if (!menuCosting.menuItems.length) {
         setSelectedMenuItemId(null);
         setMenuItemDraft(blankMenuItemDraft());
+        setMenuItemEditorMode("hidden");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load menu costing.");
@@ -186,6 +184,7 @@ export function PilotMenuCostingPage() {
       setRecipeDraft(draftFromRecipe(selectedRecipe));
       setSelectedIngredientId(null);
       setIngredientDraft(blankIngredientDraft());
+      setRecipeEditorMode("edit");
     }
   }, [selectedRecipe]);
 
@@ -200,6 +199,7 @@ export function PilotMenuCostingPage() {
   useEffect(() => {
     if (selectedMenuItem) {
       setMenuItemDraft(draftFromMenuItem(selectedMenuItem));
+      setMenuItemEditorMode("edit");
     } else {
       setMenuItemDraft(blankMenuItemDraft());
     }
@@ -213,6 +213,8 @@ export function PilotMenuCostingPage() {
     () => menuItems.filter((menuItem) => `${menuItem.name} ${menuItem.category} ${menuItem.notes}`.toLowerCase().includes(search.toLowerCase())),
     [menuItems, search],
   );
+  const showRecipeEditor = recipeEditorMode !== "hidden" || selectedRecipeId !== null;
+  const showMenuItemEditor = menuItemEditorMode !== "hidden" || selectedMenuItemId !== null;
 
   const saveRecipe = async () => {
     setSavingRecipe(true);
@@ -229,6 +231,7 @@ export function PilotMenuCostingPage() {
       };
       const saved = recipeDraft.id ? await updatePilotMenuCostingRecipe(recipeDraft.id, payload) : await createPilotMenuCostingRecipe(payload);
       setSelectedRecipeId(saved.id);
+      setRecipeEditorMode("edit");
       setMessage(`Recipe ${saved.name} saved.`);
       await load();
       setSelectedRecipeId(saved.id);
@@ -293,6 +296,7 @@ export function PilotMenuCostingPage() {
       };
       const saved = menuItemDraft.id ? await updatePilotMenuCostingMenuItem(menuItemDraft.id, payload) : await createPilotMenuCostingMenuItem(payload);
       setSelectedMenuItemId(saved.id);
+      setMenuItemEditorMode("edit");
       setMessage(`Menu item ${saved.name} saved.`);
       await load();
       setSelectedMenuItemId(saved.id);
@@ -315,6 +319,7 @@ export function PilotMenuCostingPage() {
       await load();
       setSelectedRecipeId(null);
       setRecipeDraft(blankRecipeDraft());
+      setRecipeEditorMode("hidden");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the recipe.");
     }
@@ -349,6 +354,7 @@ export function PilotMenuCostingPage() {
       await load();
       setSelectedMenuItemId(null);
       setMenuItemDraft(blankMenuItemDraft());
+      setMenuItemEditorMode("hidden");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the menu item.");
     }
@@ -372,6 +378,9 @@ export function PilotMenuCostingPage() {
           <h1 className="mt-1 text-3xl font-bold text-ink">Recipe and menu pricing</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
             Live menu costing reads the current inventory price for each ingredient, so recipe and menu margins stay current as purchase prices change.
+          </p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
+            Use the left rail to scan the live catalog, then open a recipe or menu item when you want to edit details.
           </p>
         </div>
         <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted shadow-soft">
@@ -428,11 +437,11 @@ export function PilotMenuCostingPage() {
         </Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.05fr_1.25fr]">
+      <div className="grid gap-6 xl:grid-cols-[0.98fr_1.22fr]">
         <Card className="p-5">
-          <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
-          {filteredRecipes.length ? (
-            <div className="space-y-3">
+              <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
+              {filteredRecipes.length ? (
+            <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
               {filteredRecipes.map((recipe) => {
                 const active = recipe.id === selectedRecipeId;
                 return (
@@ -440,7 +449,10 @@ export function PilotMenuCostingPage() {
                     key={recipe.id}
                     className={`w-full rounded-2xl border p-4 text-left transition ${active ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
                     type="button"
-                    onClick={() => setSelectedRecipeId(recipe.id)}
+                    onClick={() => {
+                      setSelectedRecipeId(recipe.id);
+                      setRecipeEditorMode("edit");
+                    }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -465,10 +477,12 @@ export function PilotMenuCostingPage() {
 
         <Card className="p-5">
           <SectionHeader
-            title={recipeDraft.id ? "Edit recipe" : "New recipe"}
-            description="Recipes stay linked to the current location and inherit live inventory costs."
-            action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); }} type="button" variant="secondary">New recipe</Button>}
+            title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"}
+            description={recipeDraft.id ? "Recipes stay linked to the current location and inherit live inventory costs." : recipeEditorMode === "create" ? "Build the new recipe and save it deliberately." : "Select an existing recipe or start a new one."}
+            action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button" variant="secondary">New recipe</Button>}
           />
+          {showRecipeEditor ? (
+            <>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-ink">Name</span>
@@ -518,6 +532,12 @@ export function PilotMenuCostingPage() {
               </Button>
             ) : null}
           </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-6 text-sm leading-6 text-muted">
+              Start a new recipe or select one from the catalog to edit its ingredients and live costing.
+            </div>
+          )}
 
           <div className="mt-6 border-t border-line pt-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -627,16 +647,19 @@ export function PilotMenuCostingPage() {
       </div>
 
       <Card className="p-5">
-        <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); }} type="button">New menu item</Button>} />
+        <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
         <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr]">
-          <div className="space-y-3">
+          <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
             {filteredMenuItems.length ? (
               filteredMenuItems.map((menuItem) => (
                 <button
                   key={menuItem.id}
                   type="button"
                   className={`w-full rounded-2xl border p-4 text-left transition ${menuItem.id === selectedMenuItemId ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
-                  onClick={() => setSelectedMenuItemId(menuItem.id)}
+                  onClick={() => {
+                    setSelectedMenuItemId(menuItem.id);
+                    setMenuItemEditorMode("edit");
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -658,7 +681,7 @@ export function PilotMenuCostingPage() {
           </div>
 
           <div className="rounded-2xl border border-line bg-white p-4">
-            <h3 className="text-base font-semibold text-ink">{menuItemDraft.id ? "Edit menu item" : "New menu item"}</h3>
+            <h3 className="text-base font-semibold text-ink">{menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"}</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm font-medium text-ink">Name</span>
@@ -695,6 +718,8 @@ export function PilotMenuCostingPage() {
               <span className="text-sm font-medium text-ink">Notes</span>
               <textarea className="input mt-1 min-h-20" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} />
             </label>
+            {showMenuItemEditor ? (
+              <>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveMenuItem()} type="button" disabled={savingMenuItem}>
                 {savingMenuItem ? "Saving…" : menuItemDraft.id ? "Update menu item" : "Create menu item"}
@@ -715,6 +740,12 @@ export function PilotMenuCostingPage() {
                 </Button>
               ) : null}
             </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-line bg-slate-50 p-6 text-sm leading-6 text-muted">
+                Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.
+              </div>
+            )}
             {selectedMenuItem ? (
               <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
                 <div className="flex flex-wrap gap-4">

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
 
@@ -177,5 +177,25 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getAllByText("Cost $2.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Food cost 16.7%").length).toBeGreaterThan(0);
     expect(screen.getByText("Line Kitchen")).toBeVisible();
+  });
+
+  it("starts in browse mode and opens deliberate recipe and menu-item editors", async () => {
+    render(<PilotMenuCostingPage />);
+
+    await screen.findByText("Menu costing");
+    expect(screen.getByText("Start a new recipe or select one from the catalog to edit its ingredients and live costing.")).toBeVisible();
+    expect(screen.getByText("Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "New recipe" }));
+    expect(screen.getByRole("heading", { name: "New recipe" })).toBeVisible();
+    expect(screen.getAllByLabelText("Name")[0]).toHaveValue("");
+
+    fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Edit recipe" })).toBeVisible());
+    expect(screen.getAllByLabelText("Name")[0]).toHaveValue("Cheesy Toast");
+
+    fireEvent.click(screen.getByRole("button", { name: "New menu item" }));
+    expect(screen.getByRole("heading", { name: "New menu item" })).toBeVisible();
+    expect(screen.getAllByLabelText("Name").at(-1)).toHaveValue("");
   });
 });

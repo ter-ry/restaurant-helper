@@ -17,7 +17,7 @@ const variants: Record<Variant, string> = {
 export function Button({ children, variant = "primary", icon, className = "", ...props }: ButtonProps) {
   return (
     <button
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${variants[variant]} ${className}`}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition ${variants[variant]} ${className}`}
       {...props}
     >
       {icon}

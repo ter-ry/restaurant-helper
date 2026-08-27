@@ -1176,19 +1176,19 @@ export function PilotPurchasesPage() {
             />
 
             {readOnlyPurchase ? (
-              <div className="mb-5 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3">
+              <div className="mb-5 rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3 text-white shadow-soft">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
                   <Badge tone="neutral">Read-only purchase</Badge>
                 </div>
-                <p className="mt-2 text-sm leading-6 text-muted">
+                <p className="mt-2 text-sm leading-6 text-slate-200">
                   {draft.status === "Corrected"
                     ? "This corrected invoice is locked to preserve the audit trail."
                     : "This completed invoice is locked for review and can no longer be edited or received again."}
                 </p>
               </div>
             ) : (
-              <div className="mb-5 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+              <div className="mb-5 rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={draft.id ? statusTone(draft.status) : "neutral"}>{draft.id ? draft.status : "New purchase draft"}</Badge>
                   <Badge tone={draftHasUnsavedChanges ? "warning" : readyToReceive ? "success" : "neutral"}>{receiveReadinessLabel}</Badge>
@@ -1273,17 +1273,9 @@ export function PilotPurchasesPage() {
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Status</span>
-              {finalizedStatus ? (
-                <div className="mt-1 rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                  <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
-                </div>
-              ) : (
-                <select className="input mt-1" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
-                  <option value="Draft">Needs review</option>
-                  <option value="Ready">Ready</option>
-                  <option value="Completed">Completed</option>
-                </select>
-              )}
+              <div className="mt-1 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+                <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
+              </div>
             </label>
           </div>
 
@@ -1592,19 +1584,20 @@ export function PilotPurchasesPage() {
             <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={finalizedStatus} />
           </label>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Draft")}>
-              {saving ? "Saving..." : "Save draft"}
-            </Button>
-            <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Ready")}>
-              Save ready
-            </Button>
-            <Button
-              disabled={saving || !draft.id || finalizedStatus || (!readyToReceive && !draftHasUnsavedChanges)}
-              icon={<CheckCircle2 className="h-4 w-4" />}
-              type="button"
-              onClick={() => void receiveInvoice()}
-            >
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Draft")}>
+                  {saving ? "Saving..." : "Save draft"}
+                </Button>
+                <Button disabled={saving || finalizedStatus} variant="ghost" type="button" onClick={() => void saveDraft("Ready")}>
+                  Save ready
+                </Button>
+                <Button
+                  disabled={saving || !draft.id || finalizedStatus || (!readyToReceive && !draftHasUnsavedChanges)}
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  variant="primary"
+                  type="button"
+                  onClick={() => void receiveInvoice()}
+                >
               {draftHasUnsavedChanges ? "Save & receive" : "Receive into inventory"}
             </Button>
           </div>
@@ -1641,10 +1634,10 @@ export function PilotPurchasesPage() {
 
         <Card className="w-full p-6" data-testid="purchase-history-card">
           <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
-          <div className="space-y-3">
+          <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
             {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
             {invoiceRows.map((invoice) => (
-              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
@@ -1652,7 +1645,7 @@ export function PilotPurchasesPage() {
                   </div>
                   <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-sm text-muted">
+                <div className="mt-2 flex items-center justify-between text-xs text-muted">
                   <span>{formatMoney(invoice.totalAmount)}</span>
                   <span>{invoice.lineItems.length} line items</span>
                 </div>
