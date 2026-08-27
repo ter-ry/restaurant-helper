@@ -68,6 +68,13 @@ def _migration_engine():
     return create_engine(migration_url, poolclass=NullPool)
 
 
+def _set_setup_migration_context(connection) -> None:
+    connection.execute(text("select set_config('flowtally.access_scope', 'setup', true)"))
+    connection.execute(text("select set_config('flowtally.organization_id', '', true)"))
+    connection.execute(text("select set_config('flowtally.user_id', '', true)"))
+    connection.execute(text("select set_config('flowtally.support_grant_id', '', true)"))
+
+
 def _create_app():
     runtime_url = _runtime_postgres_url() or POSTGRES_URL
     return create_app(
@@ -449,7 +456,14 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
         migration_engine = _migration_engine()
         with migration_engine.begin() as connection:
             identity = connection.execute(text("select current_user, session_user, current_role")).one()
-            assert identity[0] == identity[1] == identity[2], f"expected migrator identity, got {identity!r}"
+            assert identity[0] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+            assert identity[1] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+            assert identity[2] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+            _set_setup_migration_context(connection)
+            assert (
+                connection.execute(text("select current_setting('flowtally.access_scope', true)")).scalar_one()
+                == "setup"
+            )
 
             connection.execute(
                 text(
@@ -625,6 +639,8 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
         assert _current_revision() == "0015_weighted_average_inventory_cost"
 
     with _migration_engine().begin() as connection:
+        _set_setup_migration_context(connection)
+        assert connection.execute(text("select current_setting('flowtally.access_scope', true)")).scalar_one() == "setup"
         data_type, nullable, precision, scale = (
             connection.execute(
                 text(
