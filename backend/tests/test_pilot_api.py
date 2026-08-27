@@ -41,6 +41,11 @@ def csrf_headers(client):
     return {"X-CSRFToken": client.get("/api/auth/csrf").get_json()["csrfToken"]}
 
 
+def select_org(client, organization_id: int):
+    response = client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization_id})
+    assert response.status_code == 200
+
+
 def test_pilot_dashboard_and_inventory_smoke(client):
     login(client)
 
@@ -419,6 +424,7 @@ def test_received_invoice_correction_reverses_inventory_and_blocks_repeat(app, c
         cream = InventoryItem.query.filter_by(name="Cream").first()
         assert cream is not None
         before = float(cream.current_on_hand)
+        before_average = float(cream.average_unit_cost)
         cream_stock_unit = cream.stock_unit
 
     supplier_name = f"Correction Dairy {uuid4().hex[:8]}"
@@ -502,6 +508,7 @@ def test_received_invoice_correction_reverses_inventory_and_blocks_repeat(app, c
         cream_after = InventoryItem.query.filter_by(name="Cream").first()
         assert cream_after is not None
         assert float(cream_after.current_on_hand) == before
+        assert float(cream_after.average_unit_cost) == pytest.approx(before_average)
         correction_movements = InventoryMovement.query.filter_by(
             organization_id=invoice["organizationId"],
             location_id=invoice["locationId"],
@@ -511,6 +518,355 @@ def test_received_invoice_correction_reverses_inventory_and_blocks_repeat(app, c
         assert correction_movements == 1
         stored_invoice = PurchaseInvoice.query.filter_by(id=invoice["id"]).first()
         assert stored_invoice is not None and stored_invoice.status == "Corrected"
+
+
+def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costing(app, client):
+    login(client)
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = make_operational_organization(
+            owner,
+            name=f"Weighted Average Org {uuid4().hex[:8]}",
+            location_name="Weighted Average Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS"),
+        )
+        organization_id = organization.id
+    select_org(client, organization_id)
+
+    item_name = f"Weighted Avg Chicken {uuid4().hex[:8]}"
+    supplier_name = f"Weighted Avg Supplier {uuid4().hex[:8]}"
+    first_invoice_number = f"WA-{uuid4().hex[:8].upper()}"
+    second_invoice_number = f"WA-{uuid4().hex[:8].upper()}"
+
+    item_create = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": item_name,
+            "category": "Protein",
+            "stockUnit": "kg",
+            "currentOnHand": 100,
+            "minQuantity": 90,
+            "parLevel": 110,
+            "preferredSupplierName": supplier_name,
+            "latestPurchasePrice": 7,
+            "lastPurchaseUnit": "kg",
+            "lastPurchaseConversionFactor": 1,
+            "averageDailyUsage": 1.5,
+            "notes": "Weighted average test item",
+            "active": True,
+        },
+    )
+    assert item_create.status_code == 201
+    item = item_create.get_json()
+    item_id = item["id"]
+    assert item["averageUnitCost"] == pytest.approx(7.0)
+
+    initial_inventory = client.get("/api/pilot/inventory").get_json()
+    inventory_value_before_receipts = initial_inventory["summary"]["inventoryValue"]
+
+    first_invoice = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": first_invoice_number,
+            "invoiceDate": "2027-01-15",
+            "subtotal": 7,
+            "tax": 0,
+            "totalAmount": 7,
+            "notes": "Initial receipt at current cost",
+            "status": "Draft",
+            "sourceFileName": "weighted-average-initial.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item_id,
+                    "purchaseUnit": "kg",
+                    "inventoryUnit": "kg",
+                    "conversionFactor": 1,
+                    "quantity": 1,
+                    "unitPrice": 7,
+                    "lineTotal": 7,
+                    "confidence": 1,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert first_invoice.status_code == 201
+    first_invoice_body = first_invoice.get_json()
+    first_receive = client.post(f"/api/pilot/purchases/invoices/{first_invoice_body['id']}/receive", headers=csrf_headers(client))
+    assert first_receive.status_code == 200
+
+    with app.app_context():
+        item_after_first = InventoryItem.query.filter_by(id=item_id).first()
+        assert item_after_first is not None
+        assert float(item_after_first.current_on_hand) == 101
+        assert float(item_after_first.latest_purchase_price) == pytest.approx(7.0)
+        assert float(item_after_first.average_unit_cost) == pytest.approx(7.0)
+
+    inventory_value_after_first_receipt = client.get("/api/pilot/inventory").get_json()["summary"]["inventoryValue"]
+    assert inventory_value_after_first_receipt - inventory_value_before_receipts == pytest.approx(7.0)
+
+    count_session = client.post(
+        "/api/pilot/inventory/count-sessions",
+        headers=csrf_headers(client),
+        json={
+            "countedBy": "Floor manager",
+            "notes": "Reset to a round stock count",
+            "itemIds": [item_id],
+        },
+    )
+    assert count_session.status_code == 201
+    count_session_body = count_session.get_json()
+    count_session_id = count_session_body["id"]
+    count_line_id = count_session_body["lines"][0]["id"]
+    exact_updated_at = client.get(f"/api/pilot/inventory/count-sessions/{count_session_id}").get_json()["updatedAt"]
+
+    count_save = client.patch(
+        f"/api/pilot/inventory/count-sessions/{count_session_id}",
+        headers=csrf_headers(client),
+        json={
+            "updatedAt": exact_updated_at,
+            "countedBy": "Floor manager",
+            "notes": "Reset to a round stock count",
+            "lines": [
+                {
+                    "id": count_line_id,
+                    "countedQuantity": 100,
+                    "note": "Physical count",
+                }
+            ],
+        },
+    )
+    assert count_save.status_code == 200
+    count_save_body = count_save.get_json()
+    assert count_save_body["lines"][0]["variance"] == pytest.approx(-1.0)
+    assert count_save_body["lines"][0]["resultingQuantity"] == 100
+
+    finalize_count = client.post(f"/api/pilot/inventory/count-sessions/{count_session_id}/finalize", headers=csrf_headers(client))
+    assert finalize_count.status_code == 200
+    assert finalize_count.get_json()["status"] == "Completed"
+
+    with app.app_context():
+        item_after_count = InventoryItem.query.filter_by(id=item_id).first()
+        assert item_after_count is not None
+        assert float(item_after_count.current_on_hand) == 100
+        assert float(item_after_count.average_unit_cost) == pytest.approx(7.0)
+        reconciliation_count = InventoryMovement.query.filter_by(
+            source_record_id=str(count_session_id),
+            source_type="stock count reconciliation",
+        ).count()
+        assert reconciliation_count == 1
+
+    inventory_value_before_second_receipt = client.get("/api/pilot/inventory").get_json()["summary"]["inventoryValue"]
+    assert inventory_value_before_second_receipt == pytest.approx(inventory_value_before_receipts)
+
+    second_invoice = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": second_invoice_number,
+            "invoiceDate": "2027-01-16",
+            "subtotal": 8,
+            "tax": 0,
+            "totalAmount": 8,
+            "notes": "Higher-cost receipt",
+            "status": "Draft",
+            "sourceFileName": "weighted-average-followup.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item_id,
+                    "purchaseUnit": "kg",
+                    "inventoryUnit": "kg",
+                    "conversionFactor": 1,
+                    "quantity": 1,
+                    "unitPrice": 8,
+                    "lineTotal": 8,
+                    "confidence": 1,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert second_invoice.status_code == 201
+    second_invoice_body = second_invoice.get_json()
+    second_receive = client.post(f"/api/pilot/purchases/invoices/{second_invoice_body['id']}/receive", headers=csrf_headers(client))
+    assert second_receive.status_code == 200
+
+    with app.app_context():
+        item_after_second = InventoryItem.query.filter_by(id=item_id).first()
+        assert item_after_second is not None
+        assert float(item_after_second.current_on_hand) == 101
+        assert float(item_after_second.latest_purchase_price) == pytest.approx(8.0)
+        assert float(item_after_second.average_unit_cost) == pytest.approx((100 * 7 + 8) / 101, rel=1e-6)
+
+    inventory_value_after_second_receipt = client.get("/api/pilot/inventory").get_json()["summary"]["inventoryValue"]
+    assert inventory_value_after_second_receipt - inventory_value_before_second_receipt == pytest.approx(8.0)
+
+    dashboard = client.get("/api/pilot/dashboard").get_json()
+    assert any(
+        change["supplier"] == supplier_name
+        and change["itemName"] == item_name
+        and change["previousPrice"] == pytest.approx(7.0)
+        and change["currentPrice"] == pytest.approx(8.0)
+        for change in dashboard["recentPriceChanges"]
+    )
+
+    inventory_summary = client.get("/api/pilot/inventory").get_json()
+    reorder_suggestion = next(
+        suggestion
+        for suggestion in inventory_summary["reorderPlan"]["suggestions"]
+        if suggestion["inventoryItemId"] == item_id
+    )
+    assert float(reorder_suggestion["estimatedCost"]) == pytest.approx(72.0)
+    assert reorder_suggestion["latestPurchasePrice"] == pytest.approx(8.0)
+
+    menu_recipe = client.post(
+        "/api/pilot/menu-costing/recipes",
+        headers=csrf_headers(client),
+        json={
+            "name": f"Weighted Avg Bowl {uuid4().hex[:8]}",
+            "description": "Recipe priced from weighted average cost",
+            "yieldQuantity": 1,
+            "yieldUnit": "servings",
+            "active": True,
+            "notes": "Weighted average costing test",
+        },
+    )
+    assert menu_recipe.status_code == 201
+    recipe_id = menu_recipe.get_json()["id"]
+
+    ingredient_response = client.post(
+        f"/api/pilot/menu-costing/recipes/{recipe_id}/ingredients",
+        headers=csrf_headers(client),
+        json={
+            "inventoryItemId": item_id,
+            "quantityRequired": 0.2,
+            "unit": "kg",
+            "sortOrder": 1,
+            "notes": "Two-tenths of a kilogram",
+        },
+    )
+    assert ingredient_response.status_code == 201
+    ingredient_body = ingredient_response.get_json()
+    assert ingredient_body["ingredients"][0]["inventoryItemCostPerStockUnit"] == pytest.approx(7.01)
+    assert ingredient_body["ingredients"][0]["lineCost"] == pytest.approx(1.4)
+    assert ingredient_body["costPerYield"] == pytest.approx(1.4)
+
+    menu_item = client.post(
+        "/api/pilot/menu-costing/menu-items",
+        headers=csrf_headers(client),
+        json={
+            "name": f"Weighted Avg Bowl {uuid4().hex[:8]}",
+            "category": "Bowls",
+            "recipeId": recipe_id,
+            "sellingPrice": 10,
+            "active": True,
+            "notes": "Menu item priced from weighted average recipe cost",
+        },
+    )
+    assert menu_item.status_code == 201
+    menu_item_body = menu_item.get_json()
+    assert menu_item_body["recipeCostPerYield"] == pytest.approx(1.4)
+    assert menu_item_body["foodCostPercent"] == pytest.approx(14.0)
+    assert menu_item_body["grossProfit"] == pytest.approx(8.6)
+
+
+def test_receipt_initializes_weighted_average_when_inventory_starts_at_zero(app, client):
+    login(client)
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = make_operational_organization(
+            owner,
+            name=f"Zero Start Org {uuid4().hex[:8]}",
+            location_name="Zero Start Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS"),
+        )
+        organization_id = organization.id
+    select_org(client, organization_id)
+
+    item_name = f"Zero Start Item {uuid4().hex[:8]}"
+    supplier_name = f"Zero Start Supplier {uuid4().hex[:8]}"
+    invoice_number = f"ZS-{uuid4().hex[:8].upper()}"
+
+    item_create = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": item_name,
+            "category": "Dairy",
+            "stockUnit": "kg",
+            "currentOnHand": 0,
+            "latestPurchasePrice": 0,
+            "lastPurchaseUnit": "kg",
+            "lastPurchaseConversionFactor": 1,
+            "active": True,
+        },
+    )
+    assert item_create.status_code == 201
+    item_id = item_create.get_json()["id"]
+
+    invoice = client.post(
+        "/api/pilot/purchases/invoices",
+        headers=csrf_headers(client),
+        json={
+            "supplierName": supplier_name,
+            "invoiceNumber": invoice_number,
+            "invoiceDate": "2026-07-17",
+            "subtotal": 8,
+            "tax": 0,
+            "totalAmount": 8,
+            "notes": "First-ever receipt",
+            "status": "Draft",
+            "sourceFileName": "zero-start.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "manual",
+            "extractedText": "",
+            "lineItems": [
+                {
+                    "description": item_name,
+                    "inventoryItemId": item_id,
+                    "purchaseUnit": "kg",
+                    "inventoryUnit": "kg",
+                    "conversionFactor": 1,
+                    "quantity": 1,
+                    "unitPrice": 8,
+                    "lineTotal": 8,
+                    "confidence": 1,
+                    "needsReview": False,
+                    "note": "",
+                }
+            ],
+        },
+    )
+    assert invoice.status_code == 201
+    invoice_body = invoice.get_json()
+
+    receive = client.post(f"/api/pilot/purchases/invoices/{invoice_body['id']}/receive", headers=csrf_headers(client))
+    assert receive.status_code == 200
+
+    with app.app_context():
+        item = InventoryItem.query.filter_by(id=item_id).first()
+        assert item is not None
+        assert float(item.current_on_hand) == 1
+        assert float(item.latest_purchase_price) == pytest.approx(8.0)
+        assert float(item.average_unit_cost) == pytest.approx(8.0)
 
 
 def test_mapped_invoice_save_syncs_supplier_mapping_and_receipt_uses_conversion(app, client):
@@ -635,10 +991,10 @@ def test_count_session_finalize_updates_inventory(app, client):
     assert create_response.status_code == 201
     created = create_response.get_json()
     session_id = created["id"]
-    exact_updated_at = created["updatedAt"]
     line_id = created["lines"][0]["id"]
     starting_quantity = float(chicken["currentOnHand"])
     assert created["lines"][0]["expectedQuantity"] == starting_quantity
+    exact_updated_at = client.get(f"/api/pilot/inventory/count-sessions/{session_id}").get_json()["updatedAt"]
     assert exact_updated_at is not None
 
     update_response = client.patch(
@@ -750,8 +1106,8 @@ def test_count_session_save_resume_and_concurrency_confirmation(app, client):
     assert create_response.status_code == 201
     created = create_response.get_json()
     session_id = created["id"]
-    exact_updated_at = created["updatedAt"]
-    stale_updated_at = created["updatedAt"]
+    exact_updated_at = client.get(f"/api/pilot/inventory/count-sessions/{session_id}").get_json()["updatedAt"]
+    stale_updated_at = exact_updated_at
 
     update_response = client.patch(
         f"/api/pilot/inventory/count-sessions/{session_id}",

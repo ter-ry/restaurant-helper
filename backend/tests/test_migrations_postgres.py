@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import os
 from pathlib import Path
 
@@ -58,6 +59,20 @@ def _migration_postgres_url() -> str:
 
 def _admin_postgres_url() -> str:
     return _postgres_url("FLOWTALLY_TEST_POSTGRES_ADMIN_URL", "DATABASE_URL")
+
+
+def _migration_engine():
+    migration_url = _migration_postgres_url()
+    if not migration_url:
+        raise RuntimeError("A PostgreSQL migration URL is required for migration acceptance tests")
+    return create_engine(migration_url, poolclass=NullPool)
+
+
+def _set_setup_migration_context(connection) -> None:
+    connection.execute(text("select set_config('flowtally.access_scope', 'setup', true)"))
+    connection.execute(text("select set_config('flowtally.organization_id', '', true)"))
+    connection.execute(text("select set_config('flowtally.user_id', '', true)"))
+    connection.execute(text("select set_config('flowtally.support_grant_id', '', true)"))
 
 
 def _create_app():
@@ -311,6 +326,27 @@ def _assert_table_owned_by_migrator(table_name: str) -> None:
         assert _table_owner(connection, table_name) == "flowtally_migrator"
 
 
+def _column_info(table_name: str, column_name: str) -> tuple[str, bool, int | None, int | None]:
+    row = db.session.execute(
+        text(
+            """
+            select
+                data_type,
+                is_nullable,
+                numeric_precision,
+                numeric_scale
+            from information_schema.columns
+            where table_schema = current_schema()
+              and table_name = :table_name
+              and column_name = :column_name
+            """
+        ),
+        {"table_name": table_name, "column_name": column_name},
+    ).one()
+    data_type, is_nullable, numeric_precision, numeric_scale = row
+    return data_type, is_nullable == "YES", numeric_precision, numeric_scale
+
+
 def test_postgres_migrations_upgrade_from_fresh_database():
     application = _create_app()
     _reset_public_schema(application)
@@ -318,12 +354,17 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0014_authenticated_membership_discovery"
+        assert _current_revision() == "0015_weighted_average_inventory_cost"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
         _assert_table_owned_by_migrator("recipe_ingredients")
         _assert_table_owned_by_migrator("menu_items")
+        data_type, nullable, precision, scale = _column_info("inventory_items", "average_unit_cost")
+        assert data_type == "numeric"
+        assert nullable is False
+        assert precision == 14
+        assert scale == 6
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
         _assert_policy_exists("flowtally_organizations_write_access", "organizations")
         _assert_policy_absent("flowtally_organizations_tenant_access", "organizations")
@@ -352,7 +393,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0014_authenticated_membership_discovery"
+        assert _current_revision() == "0015_weighted_average_inventory_cost"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
@@ -375,7 +416,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0014_authenticated_membership_discovery"
+        assert _current_revision() == "0015_weighted_average_inventory_cost"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
@@ -393,10 +434,251 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0014_authenticated_membership_discovery"
+        assert _current_revision() == "0015_weighted_average_inventory_cost"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
         _assert_policy_exists("flowtally_organizations_write_access", "organizations")
         _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
         _assert_policy_exists("flowtally_organization_memberships_write_access", "organization_memberships")
+
+
+def test_postgres_migrations_backfill_weighted_average_inventory_cost():
+    application = _create_app()
+    _reset_public_schema(application)
+
+    migration_config = _upgrade_to(application, "0014_authenticated_membership_discovery")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        _assert_runtime_connection()
+        assert _current_revision() == "0014_authenticated_membership_discovery"
+
+        migration_engine = _migration_engine()
+        with migration_engine.begin() as connection:
+            identity = connection.execute(text("select current_user, session_user, current_role")).one()
+            assert identity[0] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+            assert identity[1] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+            assert identity[2] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+            _set_setup_migration_context(connection)
+            assert (
+                connection.execute(text("select current_setting('flowtally.access_scope', true)")).scalar_one()
+                == "setup"
+            )
+
+            connection.execute(
+                text(
+                    """
+                    insert into organizations (
+                        id,
+                        name,
+                        lifecycle_status,
+                        setup_status,
+                        subscription_status,
+                        setup_template_key,
+                        setup_fee_status,
+                        subscription_provider,
+                        external_customer_reference,
+                        external_subscription_reference,
+                        is_prospect,
+                        active_at,
+                        setup_completed_at,
+                        created_at,
+                        updated_at
+                    ) values (
+                        1,
+                        'Demo Bistro',
+                        'ACTIVE',
+                        'COMPLETE',
+                        'ACTIVE',
+                        'GENERIC_RESTAURANT',
+                        'confirmed',
+                        '',
+                        '',
+                        '',
+                        false,
+                        current_timestamp,
+                        current_timestamp,
+                        current_timestamp,
+                        current_timestamp
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    insert into restaurant_locations (
+                        id,
+                        organization_id,
+                        name,
+                        address_line1,
+                        address_line2,
+                        city,
+                        region,
+                        postal_code,
+                        country,
+                        timezone,
+                        created_at,
+                        updated_at
+                    ) values (
+                        7,
+                        1,
+                        'Main Dining Room',
+                        '',
+                        '',
+                        'Toronto',
+                        'ON',
+                        '',
+                        'Canada',
+                        'America/Toronto',
+                        current_timestamp,
+                        current_timestamp
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    insert into inventory_items (
+                        id,
+                        organization_id,
+                        location_id,
+                        name,
+                        normalized_name,
+                        category,
+                        stock_unit,
+                        current_on_hand,
+                        min_quantity,
+                        par_level,
+                        preferred_supplier_name,
+                        latest_purchase_price,
+                        last_purchase_unit,
+                        last_purchase_conversion_factor,
+                        estimated_cost_method,
+                        active,
+                        notes,
+                        created_at,
+                        updated_at
+                    ) values (
+                        11,
+                        1,
+                        7,
+                        'Chicken Breast',
+                        'chicken breast',
+                        'Protein',
+                        'kg',
+                        100,
+                        0,
+                        0,
+                        'Local Foods',
+                        7,
+                        'kg',
+                        2,
+                        'latest_purchase_price',
+                        true,
+                        '',
+                        current_timestamp,
+                        current_timestamp
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    insert into inventory_items (
+                        id,
+                        organization_id,
+                        location_id,
+                        name,
+                        normalized_name,
+                        category,
+                        stock_unit,
+                        current_on_hand,
+                        min_quantity,
+                        par_level,
+                        preferred_supplier_name,
+                        latest_purchase_price,
+                        last_purchase_unit,
+                        last_purchase_conversion_factor,
+                        estimated_cost_method,
+                        active,
+                        notes,
+                        created_at,
+                        updated_at
+                    ) values (
+                        12,
+                        1,
+                        7,
+                        'Salt',
+                        'salt',
+                        'Dry goods',
+                        'kg',
+                        0,
+                        0,
+                        0,
+                        '',
+                        7,
+                        'kg',
+                        0,
+                        'latest_purchase_price',
+                        true,
+                        '',
+                        current_timestamp,
+                        current_timestamp
+                    )
+                    """
+                )
+            )
+
+    migration_config = _upgrade_to(application, "head")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        _assert_runtime_connection()
+        assert _current_revision() == "0015_weighted_average_inventory_cost"
+
+    with _migration_engine().begin() as connection:
+        _set_setup_migration_context(connection)
+        assert connection.execute(text("select current_setting('flowtally.access_scope', true)")).scalar_one() == "setup"
+        data_type, nullable, precision, scale = (
+            connection.execute(
+                text(
+                    """
+                    select
+                        data_type,
+                        is_nullable,
+                        numeric_precision,
+                        numeric_scale
+                    from information_schema.columns
+                    where table_schema = current_schema()
+                      and table_name = :table_name
+                      and column_name = :column_name
+                    """
+                ),
+                {"table_name": "inventory_items", "column_name": "average_unit_cost"},
+            )
+            .one()
+        )
+        assert data_type == "numeric"
+        assert nullable == "NO"
+        assert precision == 14
+        assert scale == 6
+
+        rows = connection.execute(
+            text(
+                """
+                select name, latest_purchase_price, last_purchase_conversion_factor, average_unit_cost
+                from inventory_items
+                order by id
+                """
+            )
+        ).mappings().all()
+        assert rows[0]["name"] == "Chicken Breast"
+        assert rows[0]["latest_purchase_price"] == Decimal("7.00")
+        assert rows[0]["last_purchase_conversion_factor"] == Decimal("2.0000")
+        assert rows[0]["average_unit_cost"] == Decimal("3.500000")
+        assert rows[1]["name"] == "Salt"
+        assert rows[1]["latest_purchase_price"] == Decimal("7.00")
+        assert rows[1]["last_purchase_conversion_factor"] == Decimal("0.0000")
+        assert rows[1]["average_unit_cost"] == Decimal("7.000000")

@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import os
 
+from .costing import stock_unit_cost_from_purchase, weighted_average_inventory_cost
 from .extensions import db
 from .models import (
     AuditEvent,
@@ -375,6 +376,7 @@ def _get_or_create_inventory_item(organization: Organization, location: Restaura
             latest_purchase_price=Decimal(str(spec["latest_purchase_price"])),
             last_purchase_unit=str(spec["stock_unit"]),
             last_purchase_conversion_factor=Decimal("1"),
+            average_unit_cost=stock_unit_cost_from_purchase(Decimal(str(spec["latest_purchase_price"])), Decimal("1")),
             last_received_at=None,
             last_counted_at=None,
             average_daily_usage=Decimal(str(spec["average_daily_usage"])),
@@ -396,6 +398,7 @@ def _get_or_create_inventory_item(organization: Organization, location: Restaura
         item.latest_purchase_price = Decimal(str(spec["latest_purchase_price"]))
         item.last_purchase_unit = str(spec["stock_unit"])
         item.last_purchase_conversion_factor = Decimal("1")
+        item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
         item.average_daily_usage = Decimal(str(spec["average_daily_usage"]))
         item.active = True
         item.notes = ""
@@ -509,6 +512,7 @@ def _apply_invoice_receipt(invoice: PurchaseInvoice, actor_id: int) -> None:
           continue
 
         quantity_delta = (Decimal(line.quantity) * Decimal(line.conversion_factor)).quantize(Decimal("0.0001"))
+        receipt_unit_cost = stock_unit_cost_from_purchase(line.unit_price, line.conversion_factor)
         before = Decimal(item.current_on_hand)
         after = (before + quantity_delta).quantize(Decimal("0.0001"))
         movement = InventoryMovement(
@@ -530,6 +534,7 @@ def _apply_invoice_receipt(invoice: PurchaseInvoice, actor_id: int) -> None:
         item.latest_purchase_price = line.unit_price
         item.last_purchase_unit = line.purchase_unit
         item.last_purchase_conversion_factor = line.conversion_factor
+        item.average_unit_cost = weighted_average_inventory_cost(before, item.average_unit_cost, quantity_delta, receipt_unit_cost)
         item.preferred_supplier_name = invoice.supplier.name
         item.last_received_at = now
         item.updated_by_user_id = actor_id

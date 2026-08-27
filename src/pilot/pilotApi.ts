@@ -243,6 +243,7 @@ export interface PilotInventoryItem {
   parLevel: number;
   preferredSupplierName: string;
   latestPurchasePrice: number;
+  averageUnitCost?: number;
   lastPurchaseUnit: string;
   lastPurchaseConversionFactor: number;
   lastReceivedAt: string | null;

@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from .models import InventoryItem, MenuItem, Recipe, RecipeIngredient
+from .costing import stock_unit_cost_from_purchase
 from .utils import decimal_to_float, serialize_inventory_item
 
 
@@ -15,15 +16,14 @@ def _decimal(value: Decimal | None, default: str = "0") -> Decimal:
 
 
 def current_inventory_unit_cost(item: InventoryItem) -> Decimal | None:
-    latest_price = _decimal(item.latest_purchase_price, "0")
-    if latest_price <= 0:
-        return None
+    average_cost = _decimal(item.average_unit_cost, "0")
+    if average_cost > 0:
+        return average_cost.quantize(MONEY)
 
-    conversion_factor = _decimal(item.last_purchase_conversion_factor, "1")
-    if conversion_factor <= 0:
+    latest_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
+    if latest_cost <= 0:
         return None
-
-    return (latest_price / conversion_factor).quantize(MONEY)
+    return latest_cost.quantize(MONEY)
 
 
 def _ingredient_snapshot(ingredient: RecipeIngredient) -> dict[str, Any]:
