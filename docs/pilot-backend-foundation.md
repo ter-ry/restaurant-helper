@@ -62,6 +62,7 @@
 ## Staging readiness
 
 - Repository staging config lives in `render.pilot-staging.yaml`.
+- The staging Render start command runs `flask --app backend.wsgi:app db upgrade` before Gunicorn so a new deploy does not boot against an older schema.
 - Use a managed PostgreSQL `DATABASE_URL` and explicit staging origins.
 - Do not deploy from the repository unless the owner has asked for deployment.
 
