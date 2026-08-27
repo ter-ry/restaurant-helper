@@ -17,11 +17,27 @@ branch_labels = None
 depends_on = None
 
 
+def _is_postgres() -> bool:
+    try:
+        return op.get_context().dialect.name == "postgresql"
+    except Exception:
+        return False
+
+
+def _set_setup_context(connection) -> None:
+    connection.exec_driver_sql("select set_config('flowtally.access_scope', 'setup', true)")
+    connection.exec_driver_sql("select set_config('flowtally.organization_id', '', true)")
+    connection.exec_driver_sql("select set_config('flowtally.user_id', '', true)")
+    connection.exec_driver_sql("select set_config('flowtally.support_grant_id', '', true)")
+
+
 def upgrade() -> None:
     op.add_column(
         "inventory_items",
         sa.Column("average_unit_cost", sa.Numeric(14, 6), nullable=False, server_default="0"),
     )
+    if _is_postgres():
+        _set_setup_context(op.get_bind())
     op.execute(
         """
         UPDATE inventory_items
