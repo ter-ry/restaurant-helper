@@ -82,6 +82,14 @@ function createPlan(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe("PilotReorderPlanPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,6 +97,7 @@ describe("PilotReorderPlanPage", () => {
 
   it("keeps completed plans out of the editor on refresh while opening drafts and clearing after completion", async () => {
     let draftPlan = createPlan();
+    const completeDeferred = createDeferred<void>();
     const completedPlan = createPlan({
       id: 12,
       name: "Completed Service Plan",
@@ -189,6 +198,7 @@ describe("PilotReorderPlanPage", () => {
       return clonePlan(draftPlan);
     });
     pilotApiMocks.completePilotReorderPlan.mockImplementation(async () => {
+      await completeDeferred.promise;
       draftPlan = {
         ...draftPlan,
         status: "Completed",
@@ -224,6 +234,9 @@ describe("PilotReorderPlanPage", () => {
     expect(screen.getByRole("button", { name: "Complete plan" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Complete plan" }));
+    await waitFor(() => expect(pilotApiMocks.completePilotReorderPlan).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Completing..." })).toBeVisible();
+    completeDeferred.resolve();
     await waitFor(() => expect(screen.getByText("Completed reorder plan Harvest Draft. It is now locked in history.")).toBeVisible());
     expect(screen.getByText("Open a reorder plan")).toBeVisible();
     expect(screen.queryByLabelText("Plan name")).not.toBeInTheDocument();

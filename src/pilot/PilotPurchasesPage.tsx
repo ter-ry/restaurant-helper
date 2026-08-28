@@ -436,6 +436,7 @@ export function PilotPurchasesPage() {
   const [detailInvoice, setDetailInvoice] = useState<PilotPurchaseInvoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save-draft" | "save-ready" | "receive" | "correct" | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [ocrMessage, setOcrMessage] = useState<string | null>(null);
@@ -919,10 +920,12 @@ export function PilotPurchasesPage() {
 
   const saveDraft = async (status: string) => {
     setSaving(true);
+    setPendingAction(status === "Ready" ? "save-ready" : "save-draft");
     try {
       await persistDraft(status);
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -931,6 +934,7 @@ export function PilotPurchasesPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("receive");
     setReceiveMessage(null);
     setError(null);
 
@@ -956,6 +960,7 @@ export function PilotPurchasesPage() {
       showNotice("error", "Receive failed", message);
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -964,6 +969,7 @@ export function PilotPurchasesPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("correct");
     setReceiveMessage(null);
     setError(null);
 
@@ -984,6 +990,7 @@ export function PilotPurchasesPage() {
       showNotice("error", "Correction failed", message);
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -1586,10 +1593,10 @@ export function PilotPurchasesPage() {
 
               <div className="mt-5 flex flex-wrap gap-3">
                 <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Draft")}>
-                  {saving ? "Saving..." : "Save draft"}
+                  {saving && pendingAction === "save-draft" ? "Saving draft..." : "Save draft"}
                 </Button>
                 <Button disabled={saving || finalizedStatus} variant="ghost" type="button" onClick={() => void saveDraft("Ready")}>
-                  Save ready
+                  {saving && pendingAction === "save-ready" ? "Saving ready..." : "Save ready"}
                 </Button>
                 <Button
                   disabled={saving || !draft.id || finalizedStatus || (!readyToReceive && !draftHasUnsavedChanges)}
@@ -1598,11 +1605,11 @@ export function PilotPurchasesPage() {
                   type="button"
                   onClick={() => void receiveInvoice()}
                 >
-              {draftHasUnsavedChanges ? "Save & receive" : "Receive into inventory"}
+              {saving && pendingAction === "receive" ? "Receiving..." : draftHasUnsavedChanges ? "Save & receive" : "Receive into inventory"}
             </Button>
           </div>
           <p className="mt-3 text-xs leading-5 text-muted">
-            Save draft keeps the current invoice editable. Receive into inventory posts it and automatically clears the editor to a fresh blank purchase.
+            Save draft keeps the current invoice editable. Receive into inventory posts it, locks the completed record, and automatically clears the editor to a fresh blank purchase.
           </p>
 
           {draft.status === "Completed" ? (
@@ -1612,7 +1619,7 @@ export function PilotPurchasesPage() {
               <textarea className="input mt-3" rows={3} value={correctionNote} onChange={(event) => setCorrectionNote(event.target.value)} placeholder="Why is this receipt being corrected?" />
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button disabled={saving || !correctionNote.trim()} variant="secondary" type="button" onClick={() => void correctInvoice()}>
-                  {saving ? "Saving..." : "Record correction"}
+                  {saving && pendingAction === "correct" ? "Recording correction..." : "Record correction"}
                 </Button>
               </div>
             </div>

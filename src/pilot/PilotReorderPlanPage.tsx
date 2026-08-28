@@ -32,6 +32,7 @@ export function PilotReorderPlanPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "prepare" | "complete" | null>(null);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +107,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction(null);
     setMessage(null);
     setError(null);
     try {
@@ -125,6 +127,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setCreating(true);
+    setPendingAction(null);
     setMessage(null);
     setError(null);
     try {
@@ -156,6 +159,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("save");
     setMessage(null);
     setError(null);
     try {
@@ -178,6 +182,7 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not save the reorder plan.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -186,6 +191,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("prepare");
     setMessage(null);
     setError(null);
     try {
@@ -208,6 +214,7 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not prepare the reorder plan.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -216,6 +223,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("complete");
     setMessage(null);
     setError(null);
     try {
@@ -238,6 +246,7 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -464,13 +473,13 @@ export function PilotReorderPlanPage() {
 
             <div className="mt-5 flex flex-wrap gap-2">
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
-                {saving ? "Saving..." : "Save draft"}
+                {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
               </Button>
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
-                Mark prepared
+                {saving && pendingAction === "prepare" ? "Preparing..." : "Mark prepared"}
               </Button>
               <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => void completeDraft()}>
-                Complete plan
+                {saving && pendingAction === "complete" ? "Completing..." : "Complete plan"}
               </Button>
             </div>
 

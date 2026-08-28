@@ -81,6 +81,7 @@ export function PilotStockCountsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "finalize" | null>(null);
   const [confirmConcurrency, setConfirmConcurrency] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [lineSearch, setLineSearch] = useState("");
@@ -204,6 +205,7 @@ export function PilotStockCountsPage() {
       return;
     }
     setCreating(true);
+    setPendingAction(null);
     setMessage(null);
     setError(null);
 
@@ -233,6 +235,7 @@ export function PilotStockCountsPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("save");
     setMessage(null);
     setError(null);
 
@@ -256,6 +259,7 @@ export function PilotStockCountsPage() {
       setError(err instanceof Error ? err.message : "Could not save this stock count.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -268,6 +272,7 @@ export function PilotStockCountsPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("finalize");
     setMessage(null);
     setError(null);
 
@@ -283,6 +288,7 @@ export function PilotStockCountsPage() {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -583,10 +589,10 @@ export function PilotStockCountsPage() {
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <Button disabled={creating || saving || draft.status === "Completed"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
-                  Save draft
+                  {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
                 </Button>
                 <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="primary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
-                  {draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Apply count to inventory"}
+                  {saving && pendingAction === "finalize" ? "Applying count..." : draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Apply count to inventory"}
                 </Button>
               </div>
 

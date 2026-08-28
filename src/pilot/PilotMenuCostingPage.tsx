@@ -377,7 +377,7 @@ export function PilotMenuCostingPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-muted">Menu costing</p>
           <h1 className="mt-1 text-3xl font-bold text-ink">Recipe and menu pricing</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            Live menu costing reads the current inventory price for each ingredient, so recipe and menu margins stay current as purchase prices change.
+            Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons.
           </p>
           <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
             Use the left rail to scan the live catalog, then open a recipe or menu item when you want to edit details.
@@ -543,7 +543,7 @@ export function PilotMenuCostingPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-semibold text-ink">Ingredients</h3>
-                <p className="mt-1 text-sm text-muted">Each line uses the current inventory price, so the recipe total stays current when supplier prices change.</p>
+                <p className="mt-1 text-sm text-muted">Each line uses average inventory cost as the recipe basis. Latest purchase price stays visible for comparison when supplier costs change.</p>
               </div>
               <Badge tone={selectedRecipe?.costAvailable ? "success" : "warning"}>{selectedRecipe?.costAvailable ? "Cost available" : "Cost needs review"}</Badge>
             </div>
@@ -557,7 +557,7 @@ export function PilotMenuCostingPage() {
                       <option value="">Choose an inventory item</option>
                       {activeInventoryItems.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name} — {item.stockUnit} @ {formatMoney(item.latestPurchasePrice)}
+                          {item.name} — {item.stockUnit} · Avg {item.averageUnitCost && item.averageUnitCost > 0 ? formatMoney(item.averageUnitCost) : "not set"} · Latest {formatMoney(item.latestPurchasePrice)}
                         </option>
                       ))}
                     </select>
@@ -592,6 +592,7 @@ export function PilotMenuCostingPage() {
 
                 <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
                   <div className="flex flex-wrap gap-4">
+                    <span>Cost basis: <strong>Average inventory cost</strong></span>
                     <span>Recipe cost: <strong>{formatMoney(selectedRecipe.totalCost)}</strong></span>
                     <span>Per yield: <strong>{formatMoney(selectedRecipe.costPerYield)}</strong></span>
                     <span>Yield: <strong>{formatNumber(selectedRecipe.yieldQuantity)}</strong> {selectedRecipe.yieldUnit}</span>

@@ -68,6 +68,14 @@ function emptyInventory() {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function createReadOnlyPurchasesResponse() {
   const completedInvoice = {
     id: 1,
@@ -791,12 +799,16 @@ describe("PilotPurchasesPage", () => {
       notes: String(payload.notes ?? invoice.notes),
       status: String(payload.status ?? invoice.status),
     }));
-    pilotApiMocks.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => ({
-      ...invoice,
-      id: invoiceId,
-      status: "Completed",
-      receivedAt: new Date().toISOString(),
-    }));
+    const receiveDeferred = createDeferred<void>();
+    pilotApiMocks.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
+      await receiveDeferred.promise;
+      return {
+        ...invoice,
+        id: invoiceId,
+        status: "Completed",
+        receivedAt: new Date().toISOString(),
+      };
+    });
 
     render(
       <MemoryRouter initialEntries={["/app/purchases?invoiceId=1"]}>
@@ -811,6 +823,8 @@ describe("PilotPurchasesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /receive/i }));
     await waitFor(() => expect(pilotApiMocks.updatePilotPurchaseInvoice).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(pilotApiMocks.receivePilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Receiving..." })).toBeVisible();
+    receiveDeferred.resolve();
     expect((pilotApiMocks.updatePilotPurchaseInvoice as any).mock.invocationCallOrder[0]).toBeLessThan(
       (pilotApiMocks.receivePilotPurchaseInvoice as any).mock.invocationCallOrder[0],
     );

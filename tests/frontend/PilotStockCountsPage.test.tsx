@@ -30,6 +30,14 @@ function cloneSession(session: any) {
   return JSON.parse(JSON.stringify(session));
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe("PilotStockCountsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,6 +86,8 @@ describe("PilotStockCountsPage", () => {
     };
 
     let currentSession = cloneSession(baseSession);
+    const saveDeferred = createDeferred<void>();
+    const finalizeDeferred = createDeferred<void>();
 
     pilotApiMocks.fetchPilotCountSessions.mockResolvedValue({
       countSessions: [cloneSession(baseSession)],
@@ -125,6 +135,7 @@ describe("PilotStockCountsPage", () => {
         countedBy: "Floor lead",
         notes: "Quick pilot count",
       });
+      await saveDeferred.promise;
       const updatedSession = {
         ...cloneSession(baseSession),
         countedLineCount: 1,
@@ -146,6 +157,7 @@ describe("PilotStockCountsPage", () => {
       return cloneSession(updatedSession);
     });
     pilotApiMocks.finalizePilotCountSession.mockImplementation(async () => {
+      await finalizeDeferred.promise;
       const finalizedSession = {
         ...cloneSession(currentSession),
         status: "Completed",
@@ -178,6 +190,8 @@ describe("PilotStockCountsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(pilotApiMocks.updatePilotCountSession).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Saving draft..." })).toBeVisible();
+    saveDeferred.resolve();
     await waitFor(() => expect(screen.getByRole("button", { name: /Draft #7/ })).toHaveTextContent("1/1 counted"));
     expect(screen.getByText("Ready to apply this count?")).toBeVisible();
     expect(screen.getByText("Finalizing will write reconciliation movements into inventory and update the on-hand quantities for every counted line.")).toBeVisible();
@@ -185,6 +199,8 @@ describe("PilotStockCountsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Apply count to inventory" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotCountSession).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Applying count..." })).toBeVisible();
+    finalizeDeferred.resolve();
     await waitFor(() => expect(screen.getByLabelText("Status")).toHaveValue("Completed"));
     expect(screen.getByText("Count sessions that turn into real stock adjustments")).toBeVisible();
     expect(screen.getByText("Count applied")).toBeVisible();
