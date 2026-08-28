@@ -773,7 +773,7 @@ export function PilotInventoryPage() {
           </div>
 
           <label className="mt-4 block">
-            <span className="text-sm font-semibold text-ink">Notes</span>
+            <span className="text-sm font-semibold text-ink">Item notes</span>
             <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} />
           </label>
 
@@ -824,7 +824,7 @@ export function PilotInventoryPage() {
             </div>
 
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Adjustment</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory adjustment</p>
               <div className="mt-3 grid gap-4 md:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Quantity delta</span>
@@ -836,11 +836,11 @@ export function PilotInventoryPage() {
                 </label>
               </div>
               <label className="mt-3 block">
-                <span className="text-sm font-semibold text-ink">Note</span>
+                <span className="text-sm font-semibold text-ink">Movement note (optional)</span>
                 <textarea className="input mt-1" value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} />
               </label>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button disabled={saving} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
+                <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
                   Save stock movement
                 </Button>
                 <Button variant="secondary" disabled={saving || !draft.id} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
