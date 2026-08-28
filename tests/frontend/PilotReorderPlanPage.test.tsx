@@ -3,8 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotReorderPlanPage } from "../../src/pilot/PilotReorderPlanPage";
+import type { PilotReorderPlan, PilotReorderSuggestion } from "../../src/pilot/pilotApi";
 
-const pilotApiMocks = vi.hoisted(() => ({
+const mockApi = vi.hoisted(() => ({
   fetchPilotReorderPlan: vi.fn(),
   fetchPilotReorderPlans: vi.fn(),
   fetchPilotReorderPlanDetail: vi.fn(),
@@ -14,231 +15,172 @@ const pilotApiMocks = vi.hoisted(() => ({
   completePilotReorderPlan: vi.fn(),
 }));
 
-vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
-  const actual = (await importOriginal()) as any;
+vi.mock("../../src/pilot/pilotApi", async () => {
+  const actual = await vi.importActual<typeof import("../../src/pilot/pilotApi")>("../../src/pilot/pilotApi");
   return {
     ...actual,
-    fetchPilotReorderPlan: pilotApiMocks.fetchPilotReorderPlan,
-    fetchPilotReorderPlans: pilotApiMocks.fetchPilotReorderPlans,
-    fetchPilotReorderPlanDetail: pilotApiMocks.fetchPilotReorderPlanDetail,
-    createPilotReorderPlan: pilotApiMocks.createPilotReorderPlan,
-    updatePilotReorderPlan: pilotApiMocks.updatePilotReorderPlan,
-    preparePilotReorderPlan: pilotApiMocks.preparePilotReorderPlan,
-    completePilotReorderPlan: pilotApiMocks.completePilotReorderPlan,
+    fetchPilotReorderPlan: mockApi.fetchPilotReorderPlan,
+    fetchPilotReorderPlans: mockApi.fetchPilotReorderPlans,
+    fetchPilotReorderPlanDetail: mockApi.fetchPilotReorderPlanDetail,
+    createPilotReorderPlan: mockApi.createPilotReorderPlan,
+    updatePilotReorderPlan: mockApi.updatePilotReorderPlan,
+    preparePilotReorderPlan: mockApi.preparePilotReorderPlan,
+    completePilotReorderPlan: mockApi.completePilotReorderPlan,
   };
 });
 
-function clonePlan(plan: any) {
-  return JSON.parse(JSON.stringify(plan));
+function createSuggestion(overrides: Partial<PilotReorderSuggestion> = {}): PilotReorderSuggestion {
+  return {
+    id: 101,
+    inventoryItemId: 301,
+    inventoryItemName: "Chicken Breast",
+    category: "Proteins",
+    supplier: "Fresh Foods",
+    currentQuantity: 12,
+    unit: "kg",
+    minimumQuantity: 4,
+    parLevel: 10,
+    suggestedQuantity: 8,
+    adjustedQuantity: 8,
+    latestPurchasePrice: 9,
+    estimatedCost: 72,
+    stockStatus: "Reorder now",
+    status: "Needs review",
+    daysRemaining: 1.5,
+    ...overrides,
+  };
 }
 
-function createPlan(overrides: Record<string, unknown> = {}) {
+function createPlan(status: "Draft" | "Prepared" | "Completed", id: number): PilotReorderPlan {
   return {
-    id: 11,
-    organizationId: 5,
-    locationId: 9,
-    name: "Harvest Draft",
-    status: "Draft",
-    notes: "Draft reorder plan",
-    createdByUserId: 1,
-    preparedByUserId: null,
-    completedByUserId: null,
-    preparedAt: null,
-    completedAt: null,
+    id,
+    organizationId: 42,
+    locationId: 7,
+    name: status === "Completed" ? "Week 1 completed" : "Week 1 draft",
+    status,
+    notes: "Plan notes",
+    createdByUserId: 7,
+    preparedByUserId: status === "Prepared" || status === "Completed" ? 8 : null,
+    completedByUserId: status === "Completed" ? 9 : null,
+    preparedAt: status === "Prepared" || status === "Completed" ? "2026-08-28T10:00:00.000Z" : null,
+    completedAt: status === "Completed" ? "2026-08-28T11:00:00.000Z" : null,
     lineCount: 1,
     supplierCount: 1,
-    estimatedCost: 120,
-    includedCost: 120,
+    estimatedCost: 72,
+    includedCost: 72,
     excludedCount: 0,
     lines: [
       {
-        id: 111,
-        planId: 11,
-        inventoryItemId: 30,
-        supplierId: 21,
+        id: id * 10 + 1,
+        planId: id,
+        inventoryItemId: 301,
+        supplierId: 501,
         lineIndex: 0,
-        inventoryItemName: "Butter",
-        supplierName: "Dairy Co",
-        category: "Dairy",
+        inventoryItemName: "Chicken Breast",
+        supplierName: "Fresh Foods",
+        category: "Proteins",
         purchaseUnit: "case",
         inventoryUnit: "kg",
-        conversionFactor: 4,
-        currentOnHand: 2,
-        minimumQuantity: 5,
-        parLevel: 8,
-        suggestedQuantity: 6,
-        orderQuantity: 6,
+        conversionFactor: 2,
+        currentOnHand: 12,
+        minimumQuantity: 4,
+        parLevel: 10,
+        suggestedQuantity: 8,
+        orderQuantity: 8,
         excluded: false,
-        estimatedUnitCost: 8,
-        estimatedLineCost: 48,
-        notes: "",
-        createdAt: "2026-08-26T09:00:00.000Z",
-        updatedAt: "2026-08-26T09:00:00.000Z",
+        estimatedUnitCost: 9,
+        estimatedLineCost: 72,
+        notes: "Order if under par",
+        createdAt: "2026-08-28T09:00:00.000Z",
+        updatedAt: "2026-08-28T10:00:00.000Z",
       },
     ],
-    createdAt: "2026-08-26T09:00:00.000Z",
-    updatedAt: "2026-08-26T09:00:00.000Z",
-    ...overrides,
-  } as any;
+    createdAt: "2026-08-28T09:00:00.000Z",
+    updatedAt: "2026-08-28T10:00:00.000Z",
+  };
 }
 
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
+function renderPage(path = "/app/reorder-plan") {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <PilotReorderPlanPage />
+    </MemoryRouter>,
+  );
 }
 
 describe("PilotReorderPlanPage", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-  });
+    const draftPlan = createPlan("Draft", 1);
+    const completedPlan = createPlan("Completed", 2);
 
-  it("keeps completed plans out of the editor on refresh while opening drafts and clearing after completion", async () => {
-    let draftPlan = createPlan();
-    const completeDeferred = createDeferred<void>();
-    const completedPlan = createPlan({
-      id: 12,
-      name: "Completed Service Plan",
-      status: "Completed",
-      completedAt: "2026-08-26T12:00:00.000Z",
-      completedByUserId: 1,
-      preparedAt: "2026-08-26T11:30:00.000Z",
-      preparedByUserId: 1,
-      notes: "Completed reorder history",
-      updatedAt: "2026-08-26T12:00:00.000Z",
-      lines: [
-        {
-          id: 121,
-          planId: 12,
-          inventoryItemId: 31,
-          supplierId: 21,
-          lineIndex: 0,
-          inventoryItemName: "Cheese",
-          supplierName: "Dairy Co",
-          category: "Dairy",
-          purchaseUnit: "case",
-          inventoryUnit: "kg",
-          conversionFactor: 4,
-          currentOnHand: 1,
-          minimumQuantity: 4,
-          parLevel: 6,
-          suggestedQuantity: 5,
-          orderQuantity: 5,
-          excluded: false,
-          estimatedUnitCost: 10,
-          estimatedLineCost: 50,
-          notes: "",
-          createdAt: "2026-08-25T09:00:00.000Z",
-          updatedAt: "2026-08-25T09:00:00.000Z",
-        },
-      ],
-    });
-
-    pilotApiMocks.fetchPilotReorderPlan.mockResolvedValue({
-      suggestions: [
-        {
-          id: 1,
-          inventoryItemId: 30,
-          inventoryItemName: "Butter",
-          category: "Dairy",
-          supplier: "Dairy Co",
-          currentQuantity: 2,
-          unit: "kg",
-          minimumQuantity: 5,
-          parLevel: 8,
-          suggestedQuantity: 6,
-          adjustedQuantity: 6,
-          latestPurchasePrice: 8,
-          estimatedCost: 48,
-          stockStatus: "Reorder now",
-          status: "Urgent",
-          daysRemaining: 1,
-        },
-      ],
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({
+      suggestions: [createSuggestion()],
       groupedBySupplier: [
         {
-          supplier: "Dairy Co",
+          supplier: "Fresh Foods",
+          lines: [createSuggestion()],
           itemCount: 1,
-          estimatedOrderTotal: 48,
-          lines: [
-            {
-              id: 111,
-              inventoryItemName: "Butter",
-              adjustedQuantity: 6,
-              unit: "kg",
-            },
-          ],
+          estimatedOrderTotal: 72,
         },
       ],
     });
-    pilotApiMocks.fetchPilotReorderPlans.mockImplementation(async () => ({
-      plans: [clonePlan(draftPlan), clonePlan(completedPlan)],
-      activeDraftPlanId: 11,
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [draftPlan, completedPlan], activeDraftPlanId: 1 });
+    mockApi.fetchPilotReorderPlanDetail.mockImplementation(async (planId: number) => {
+      if (planId === 1) {
+        return draftPlan;
+      }
+      if (planId === 2) {
+        return completedPlan;
+      }
+      throw new Error("Plan not found");
+    });
+    mockApi.createPilotReorderPlan.mockResolvedValue(draftPlan);
+    mockApi.updatePilotReorderPlan.mockImplementation(async (_planId: number, payload: Record<string, unknown>) => ({
+      ...draftPlan,
+      name: (payload.name as string) ?? draftPlan.name,
+      notes: (payload.notes as string) ?? draftPlan.notes,
     }));
-    pilotApiMocks.fetchPilotReorderPlanDetail.mockImplementation(async (planId: number) => clonePlan(planId === 11 ? draftPlan : completedPlan));
-    pilotApiMocks.updatePilotReorderPlan.mockImplementation(async (_planId: number, payload: Record<string, unknown>) => {
-      draftPlan = {
-        ...draftPlan,
-        name: String(payload.name ?? draftPlan.name),
-        notes: String(payload.notes ?? draftPlan.notes),
-        updatedAt: "2026-08-26T10:00:00.000Z",
-      };
-      return clonePlan(draftPlan);
+    mockApi.preparePilotReorderPlan.mockResolvedValue({
+      ...draftPlan,
+      status: "Prepared",
+      preparedAt: "2026-08-28T10:15:00.000Z",
     });
-    pilotApiMocks.preparePilotReorderPlan.mockImplementation(async () => {
-      draftPlan = {
-        ...draftPlan,
-        status: "Prepared",
-        preparedAt: "2026-08-26T10:30:00.000Z",
-        preparedByUserId: 1,
-        updatedAt: "2026-08-26T10:30:00.000Z",
-      };
-      return clonePlan(draftPlan);
+    mockApi.completePilotReorderPlan.mockResolvedValue({
+      ...completedPlan,
+      status: "Completed",
+      completedAt: "2026-08-28T11:15:00.000Z",
     });
-    pilotApiMocks.completePilotReorderPlan.mockImplementation(async () => {
-      await completeDeferred.promise;
-      draftPlan = {
-        ...draftPlan,
-        status: "Completed",
-        completedAt: "2026-08-26T11:00:00.000Z",
-        completedByUserId: 1,
-        updatedAt: "2026-08-26T11:00:00.000Z",
-      };
-      return clonePlan(draftPlan);
-    });
-    pilotApiMocks.createPilotReorderPlan.mockImplementation(async () => clonePlan(draftPlan));
+  });
 
-    render(
-      <MemoryRouter initialEntries={["/app/reorder-plan"]}>
-        <PilotReorderPlanPage />
-      </MemoryRouter>,
-    );
+  it("separates live planning from completed history and keeps the draft actions clear", async () => {
+    renderPage();
 
-    await screen.findByRole("heading", { name: "Plan what needs ordering and preserve the snapshot" });
-    expect(screen.getByText("Open a reorder plan")).toBeVisible();
-    expect(screen.getByRole("button", { name: /Completed Service Plan/ })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Plan what needs ordering and preserve the snapshot" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Live planning/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Current reorder pressure")).toBeVisible();
+    expect(screen.getByText("Supplier groups")).toBeVisible();
+    expect(screen.getByText("Saved plans")).toBeVisible();
+    expect(screen.getByText("Drafts stay editable. Completed plans preserve their snapshots.")).toBeVisible();
+    expect(screen.getAllByText("Week 1 draft").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Week 1 completed")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Completed Service Plan/ }));
-    await waitFor(() => expect(screen.getByText("Read-only reorder snapshot opened.")).toBeVisible());
-    expect(screen.getByLabelText("Plan name")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Week 1 draft/ }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(screen.getByText("Open a reorder plan")).toBeVisible());
-    expect(screen.queryByLabelText("Plan name")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Mark prepared" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Complete plan" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /Harvest Draft/ }));
-    await waitFor(() => expect(screen.getByLabelText("Plan name")).toHaveValue("Harvest Draft"));
-    expect(screen.getByText("Draft reorder plan opened.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Complete plan" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Complete plan" }));
-    await waitFor(() => expect(pilotApiMocks.completePilotReorderPlan).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Completing..." })).toBeVisible();
-    completeDeferred.resolve();
-    await waitFor(() => expect(screen.getByText("Completed reorder plan Harvest Draft. It is now locked in history.")).toBeVisible());
-    expect(screen.getByText("Open a reorder plan")).toBeVisible();
-    expect(screen.queryByLabelText("Plan name")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /History/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByText("Completed plan history").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Current reorder pressure")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Week 1 completed").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Week 1 completed/ }));
+
+    await waitFor(() => expect(screen.getByText("Drafts stay editable. Prepared and completed plans open as read-only snapshots.")).toBeVisible());
+    expect(screen.getByText("Read-only reorder snapshot opened.")).toBeVisible();
   });
 });

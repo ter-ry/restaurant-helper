@@ -173,9 +173,9 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Keep stock, counts, and reorder logic aligned" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
-    expect(screen.getByRole("columnheader", { name: "Reorder status" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Latest cost" })).toBeVisible();
     expect(screen.getByText("Select an item or create one deliberately")).toBeVisible();
     expect(screen.queryByLabelText("Item name")).not.toBeInTheDocument();
 
@@ -238,7 +238,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Keep stock, counts, and reorder logic aligned" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByText("Edit Chicken Breast")).toBeVisible());
 
@@ -312,7 +312,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Keep stock, counts, and reorder logic aligned" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByText("Edit Chicken Breast")).toBeVisible());
 

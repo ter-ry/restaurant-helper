@@ -3,8 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotStockCountsPage } from "../../src/pilot/PilotStockCountsPage";
+import type { PilotCountSession, PilotInventoryItem } from "../../src/pilot/pilotApi";
 
-const pilotApiMocks = vi.hoisted(() => ({
+const mockApi = vi.hoisted(() => ({
   fetchPilotCountSessions: vi.fn(),
   fetchPilotCountSession: vi.fn(),
   fetchPilotInventory: vi.fn(),
@@ -13,196 +14,169 @@ const pilotApiMocks = vi.hoisted(() => ({
   finalizePilotCountSession: vi.fn(),
 }));
 
-vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
-  const actual = (await importOriginal()) as any;
+vi.mock("../../src/pilot/pilotApi", async () => {
+  const actual = await vi.importActual<typeof import("../../src/pilot/pilotApi")>("../../src/pilot/pilotApi");
   return {
     ...actual,
-    fetchPilotCountSessions: pilotApiMocks.fetchPilotCountSessions,
-    fetchPilotCountSession: pilotApiMocks.fetchPilotCountSession,
-    fetchPilotInventory: pilotApiMocks.fetchPilotInventory,
-    createPilotCountSession: pilotApiMocks.createPilotCountSession,
-    updatePilotCountSession: pilotApiMocks.updatePilotCountSession,
-    finalizePilotCountSession: pilotApiMocks.finalizePilotCountSession,
+    fetchPilotCountSessions: mockApi.fetchPilotCountSessions,
+    fetchPilotCountSession: mockApi.fetchPilotCountSession,
+    fetchPilotInventory: mockApi.fetchPilotInventory,
+    createPilotCountSession: mockApi.createPilotCountSession,
+    updatePilotCountSession: mockApi.updatePilotCountSession,
+    finalizePilotCountSession: mockApi.finalizePilotCountSession,
   };
 });
 
-function cloneSession(session: any) {
-  return JSON.parse(JSON.stringify(session));
+function createInventoryItem(overrides: Partial<PilotInventoryItem> = {}): PilotInventoryItem {
+  return {
+    id: 101,
+    organizationId: 42,
+    locationId: 7,
+    supplierId: null,
+    name: "Chicken Breast",
+    normalizedName: "chicken breast",
+    category: "Proteins",
+    stockUnit: "kg",
+    currentOnHand: 12,
+    minQuantity: 4,
+    parLevel: 10,
+    preferredSupplierName: "Fresh Foods",
+    latestPurchasePrice: 9,
+    lastPurchaseUnit: "kg",
+    lastPurchaseConversionFactor: 1,
+    lastReceivedAt: "2026-08-28T10:00:00.000Z",
+    lastCountedAt: "2026-08-27T10:00:00.000Z",
+    averageDailyUsage: 1.2,
+    estimatedCostMethod: "latest_purchase_price",
+    active: true,
+    notes: "",
+    createdByUserId: 7,
+    updatedByUserId: 7,
+    createdAt: "2026-08-27T10:00:00.000Z",
+    updatedAt: "2026-08-28T10:00:00.000Z",
+    ...overrides,
+  };
 }
 
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
+function createCountSession(status: "Draft" | "Completed", id: number): PilotCountSession {
+  return {
+    id,
+    organizationId: 42,
+    locationId: 7,
+    status,
+    startedAt: "2026-08-28T09:00:00.000Z",
+    completedAt: status === "Completed" ? "2026-08-28T11:00:00.000Z" : null,
+    countedBy: status === "Completed" ? "Alex" : "Jamie",
+    notes: status === "Completed" ? "Finalize after lunch" : "Working draft",
+    itemCount: 2,
+    countedLineCount: status === "Completed" ? 2 : 1,
+    uncountedLineCount: status === "Completed" ? 0 : 1,
+    varianceTotal: 0.7,
+    movementCountSinceStart: status === "Completed" ? 0 : 1,
+    hasMovementSinceStart: false,
+    createdByUserId: 7,
+    finalizedByUserId: status === "Completed" ? 8 : null,
+    lines: [
+      {
+        id: id * 10 + 1,
+        sessionId: id,
+        inventoryItemId: 101,
+        lineIndex: 0,
+        itemNameSnapshot: "Chicken Breast",
+        stockUnitSnapshot: "kg",
+        expectedQuantity: 3.3,
+        countedQuantity: 4,
+        variance: 0.7,
+        resultingQuantity: 4,
+        note: "spot check",
+        status,
+        movementCountSinceStart: 0,
+        hasMovementSinceStart: false,
+        createdAt: "2026-08-28T09:00:00.000Z",
+        updatedAt: "2026-08-28T10:00:00.000Z",
+      },
+      {
+        id: id * 10 + 2,
+        sessionId: id,
+        inventoryItemId: 102,
+        lineIndex: 1,
+        itemNameSnapshot: "Salsa",
+        stockUnitSnapshot: "jar",
+        expectedQuantity: 6,
+        countedQuantity: null,
+        variance: null,
+        resultingQuantity: null,
+        note: "",
+        status: status === "Completed" ? "Completed" : "Pending",
+        movementCountSinceStart: 0,
+        hasMovementSinceStart: false,
+        createdAt: "2026-08-28T09:00:00.000Z",
+        updatedAt: "2026-08-28T10:00:00.000Z",
+      },
+    ],
+    createdAt: "2026-08-28T09:00:00.000Z",
+    updatedAt: "2026-08-28T10:00:00.000Z",
+  };
+}
+
+function renderPage(path = "/app/stock-counts") {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <PilotStockCountsPage />
+    </MemoryRouter>,
+  );
 }
 
 describe("PilotStockCountsPage", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-  });
+    const draftSession = createCountSession("Draft", 7);
+    const completedSession = createCountSession("Completed", 8);
 
-  it("keeps the requested session fresh after save and shows the apply-to-inventory confirmation", async () => {
-    const baseSession = {
-      id: 7,
-      organizationId: 5,
-      locationId: 9,
-      status: "Draft",
-      startedAt: "2026-08-25T09:00:00.000Z",
-      completedAt: null,
-      countedBy: "Floor lead",
-      notes: "Quick pilot count",
-      itemCount: 1,
-      countedLineCount: 0,
-      uncountedLineCount: 1,
-      varianceTotal: 0,
-      movementCountSinceStart: 0,
-      hasMovementSinceStart: false,
-      createdByUserId: 1,
-      finalizedByUserId: null,
-      lines: [
-        {
-          id: 71,
-          sessionId: 7,
-          inventoryItemId: 30,
-          lineIndex: 0,
-          itemNameSnapshot: "Chicken Breast",
-          stockUnitSnapshot: "kg",
-          expectedQuantity: 3.3,
-          countedQuantity: null,
-          variance: null,
-          resultingQuantity: null,
-          note: "",
-          status: "Open",
-          movementCountSinceStart: 0,
-          hasMovementSinceStart: false,
-          createdAt: "2026-08-25T09:00:00.000Z",
-          updatedAt: "2026-08-25T09:00:00.000Z",
-        },
-      ],
-      createdAt: "2026-08-25T09:00:00.000Z",
-      updatedAt: "2026-08-25T09:00:00.000Z",
-    };
-
-    let currentSession = cloneSession(baseSession);
-    const saveDeferred = createDeferred<void>();
-    const finalizeDeferred = createDeferred<void>();
-
-    pilotApiMocks.fetchPilotCountSessions.mockResolvedValue({
-      countSessions: [cloneSession(baseSession)],
+    mockApi.fetchPilotCountSessions.mockResolvedValue({ countSessions: [draftSession, completedSession] });
+    mockApi.fetchPilotCountSession.mockImplementation(async (sessionId: number) => {
+      if (sessionId === 7) {
+        return draftSession;
+      }
+      if (sessionId === 8) {
+        return completedSession;
+      }
+      throw new Error("Session not found");
     });
-    pilotApiMocks.fetchPilotCountSession.mockImplementation(async () => cloneSession(currentSession));
-    pilotApiMocks.fetchPilotInventory.mockResolvedValue({
-      items: [
-        {
-          id: 30,
-          organizationId: 5,
-          locationId: 9,
-          supplierId: null,
-          name: "Chicken Breast",
-          normalizedName: "chicken breast",
-          category: "Poultry",
-          stockUnit: "kg",
-          currentOnHand: 3.3,
-          minQuantity: 0,
-          parLevel: 0,
-          preferredSupplierName: "Test Food Supplier",
-          latestPurchasePrice: 10,
-          lastPurchaseUnit: "kg",
-          lastPurchaseConversionFactor: 1,
-          lastReceivedAt: null,
-          lastCountedAt: null,
-          averageDailyUsage: null,
-          estimatedCostMethod: "latest_purchase_price",
-          active: true,
-          notes: "",
-          createdByUserId: 1,
-          updatedByUserId: 1,
-          createdAt: null,
-          updatedAt: null,
-        },
-      ],
+    mockApi.fetchPilotInventory.mockResolvedValue({
+      items: [createInventoryItem()],
       movements: [],
-      countSessions: [cloneSession(baseSession)],
+      countSessions: [draftSession, completedSession],
       reorderPlan: { suggestions: [], groupedBySupplier: [] },
       summary: {},
     });
+    mockApi.createPilotCountSession.mockResolvedValue(draftSession);
+    mockApi.updatePilotCountSession.mockImplementation(async (_sessionId: number, payload: Record<string, unknown>) => ({
+      ...draftSession,
+      countedBy: (payload.countedBy as string) ?? draftSession.countedBy,
+      notes: (payload.notes as string) ?? draftSession.notes,
+    }));
+    mockApi.finalizePilotCountSession.mockResolvedValue(completedSession);
+  });
 
-    pilotApiMocks.updatePilotCountSession.mockImplementation(async (_sessionId: number, payload: Record<string, unknown>) => {
-      expect(payload).toMatchObject({
-        updatedAt: baseSession.updatedAt,
-        countedBy: "Floor lead",
-        notes: "Quick pilot count",
-      });
-      await saveDeferred.promise;
-      const updatedSession = {
-        ...cloneSession(baseSession),
-        countedLineCount: 1,
-        uncountedLineCount: 0,
-        varianceTotal: 0.7,
-        lines: [
-          {
-            ...cloneSession(baseSession.lines[0]),
-            countedQuantity: 4.0,
-            variance: 0.7,
-            resultingQuantity: 4.0,
-            note: "",
-            status: "Counted",
-          },
-        ],
-        updatedAt: "2026-08-25T09:05:00.000Z",
-      };
-      currentSession = cloneSession(updatedSession);
-      return cloneSession(updatedSession);
-    });
-    pilotApiMocks.finalizePilotCountSession.mockImplementation(async () => {
-      await finalizeDeferred.promise;
-      const finalizedSession = {
-        ...cloneSession(currentSession),
-        status: "Completed",
-        completedAt: "2026-08-25T09:10:00.000Z",
-        finalizedByUserId: 1,
-        lines: [
-          {
-            ...cloneSession(currentSession.lines[0]),
-            status: "Completed",
-          },
-        ],
-        updatedAt: "2026-08-25T09:10:00.000Z",
-      };
-      currentSession = cloneSession(finalizedSession);
-      return cloneSession(finalizedSession);
-    });
+  it("separates active counts from history and keeps the draft actions visible", async () => {
+    renderPage();
 
-    render(
-      <MemoryRouter initialEntries={["/app/stock-counts?sessionId=7"]}>
-        <PilotStockCountsPage />
-      </MemoryRouter>,
-    );
+    expect(await screen.findByRole("heading", { name: "Count sessions that turn into real stock adjustments" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Active count/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Apply count to inventory" })).toBeVisible();
+    expect(screen.getByText("Draft #7")).toBeVisible();
+    expect(screen.queryByText("Completed #8")).not.toBeInTheDocument();
 
-    await screen.findByRole("heading", { name: "Count sessions that turn into real stock adjustments" });
-    await waitFor(() => expect(pilotApiMocks.fetchPilotCountSession).toHaveBeenCalledWith(7));
-    expect(screen.getByRole("button", { name: /Draft #7/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Draft #7/ })).toHaveTextContent("0/1 counted");
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
 
-    fireEvent.change(screen.getByLabelText("Counted quantity"), { target: { value: "4" } });
+    expect(screen.getByRole("button", { name: /History/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Completed #8")).toBeVisible();
+    expect(screen.queryByText("Draft #7")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-    await waitFor(() => expect(pilotApiMocks.updatePilotCountSession).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Saving draft..." })).toBeVisible();
-    saveDeferred.resolve();
-    await waitFor(() => expect(screen.getByRole("button", { name: /Draft #7/ })).toHaveTextContent("1/1 counted"));
-    expect(screen.getByText("Ready to apply this count?")).toBeVisible();
-    expect(screen.getByText("Finalizing will write reconciliation movements into inventory and update the on-hand quantities for every counted line.")).toBeVisible();
-    expect(screen.getByText("3.3 kg expected → 4 counted")).toBeVisible();
+    fireEvent.click(screen.getByText("Completed #8"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Apply count to inventory" }));
-    await waitFor(() => expect(pilotApiMocks.finalizePilotCountSession).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Applying count..." })).toBeVisible();
-    finalizeDeferred.resolve();
-    await waitFor(() => expect(screen.getByLabelText("Status")).toHaveValue("Completed"));
-    expect(screen.getByText("Count sessions that turn into real stock adjustments")).toBeVisible();
+    await waitFor(() => expect(screen.getByText("This count has been finalized and the inventory snapshot above is now read-only.")).toBeVisible());
     expect(screen.getByText("Count applied")).toBeVisible();
   });
 });

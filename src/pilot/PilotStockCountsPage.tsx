@@ -15,6 +15,7 @@ import {
   type PilotCountSession,
   type PilotInventoryItem,
 } from "./pilotApi";
+import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatDateTime, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 interface CountLineDraft {
@@ -87,6 +88,7 @@ export function PilotStockCountsPage() {
   const [lineSearch, setLineSearch] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [selectionSeeded, setSelectionSeeded] = useState(false);
+  const [workflowTab, setWorkflowTab] = useState<"active" | "history">("active");
   const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,8 +112,10 @@ export function PilotStockCountsPage() {
       if (targetSessionId) {
         try {
           current = await fetchPilotCountSession(targetSessionId);
-          const currentId = current.id;
-          nextSessions = [current, ...nextSessions.filter((entry) => entry.id !== currentId)];
+          if (current) {
+            const currentId = current.id;
+            nextSessions = [current, ...nextSessions.filter((entry) => entry.id !== currentId)];
+          }
         } catch {
           current = sessionList.countSessions.find((entry) => entry.id === targetSessionId) ?? null;
         }
@@ -148,6 +152,7 @@ export function PilotStockCountsPage() {
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedId) ?? null, [sessions, selectedId]);
   const draftSessions = useMemo(() => sessions.filter((session) => session.status === "Draft"), [sessions]);
   const completedSessions = useMemo(() => sessions.filter((session) => session.status === "Completed"), [sessions]);
+  const visibleSessions = workflowTab === "history" ? completedSessions : draftSessions;
   const filteredItems = useMemo(
     () => inventoryItems.filter((item) => `${item.name} ${item.category} ${item.preferredSupplierName}`.toLowerCase().includes(itemSearch.toLowerCase())),
     [inventoryItems, itemSearch],
@@ -339,6 +344,17 @@ export function PilotStockCountsPage() {
           ))}
         </div>
         {hasUnsavedChanges ? <p className="mt-3 text-sm text-amber-700">You have unsaved count changes.</p> : null}
+        <div className="mt-6">
+          <WorkspaceTabs
+            tabs={[
+              { id: "active", label: "Active count", badge: draftSessions.length },
+              { id: "history", label: "History", badge: completedSessions.length },
+            ]}
+            value={workflowTab}
+            onChange={(value) => setWorkflowTab(value as "active" | "history")}
+          />
+          <p className="mt-3 text-sm text-muted">{workflowTab === "history" ? "Completed counts are locked snapshots. Open one to review the variances and reconciliation movements." : "Active counts stay editable until you apply them to inventory."}</p>
+        </div>
       </Card>
 
       <Card className="p-6">
@@ -399,13 +415,13 @@ export function PilotStockCountsPage() {
 
       <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
         <Card className="p-6">
-          <SectionHeader title="Sessions" description="Latest count sessions first." />
+          <SectionHeader title={workflowTab === "history" ? "Count history" : "Sessions"} description={workflowTab === "history" ? "Completed counts are locked snapshots." : "Draft counts stay editable until they are applied to inventory."} />
           <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
-            {draftSessions.map((session) => (
+            {visibleSessions.map((session) => (
               <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-ink">Draft #{session.id}</p>
+                    <p className="font-semibold text-ink">{session.status === "Completed" ? "Completed" : "Draft"} #{session.id}</p>
                     <p className="text-sm text-muted">{session.countedBy || "Unassigned"} • {formatDateTime(session.updatedAt)}</p>
                   </div>
                   <Badge tone={statusTone(session.status)}>{session.status}</Badge>
@@ -416,22 +432,7 @@ export function PilotStockCountsPage() {
                 </div>
               </button>
             ))}
-            {completedSessions.map((session) => (
-              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-ink">Completed #{session.id}</p>
-                    <p className="text-sm text-muted">{session.countedBy || "Unassigned"} • {formatDateTime(session.updatedAt)}</p>
-                  </div>
-                  <Badge tone={statusTone(session.status)}>{session.status}</Badge>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <Badge tone="neutral">{session.countedLineCount}/{session.itemCount} counted</Badge>
-                  <Badge tone="neutral">{session.varianceTotal >= 0 ? "+" : ""}{formatNumber(session.varianceTotal)} variance</Badge>
-                </div>
-              </button>
-            ))}
-            {!sessions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No count sessions yet.</p> : null}
+            {!visibleSessions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{workflowTab === "history" ? "No completed counts yet." : "No draft counts yet."}</p> : null}
           </div>
         </Card>
 

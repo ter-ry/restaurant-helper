@@ -5,6 +5,8 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
+import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
+import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotInventoryAdjustment,
   createPilotInventoryItem,
@@ -53,6 +55,8 @@ interface SupplierDraft {
 }
 
 type InventoryEditorMode = "hidden" | "create" | "edit";
+type InventoryTab = "items" | "suppliers";
+type ItemDetailTab = "overview" | "edit" | "history";
 
 function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
   return {
@@ -129,6 +133,8 @@ export function PilotInventoryPage() {
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editorMode, setEditorMode] = useState<InventoryEditorMode>("hidden");
+  const [inventoryTab, setInventoryTab] = useState<InventoryTab>("items");
+  const [itemDetailTab, setItemDetailTab] = useState<ItemDetailTab>("overview");
   const [draft, setDraft] = useState<InventoryDraft>(blankDraft());
   const [itemDetail, setItemDetail] = useState<PilotInventoryItemDetail | null>(null);
   const [itemDetailLoading, setItemDetailLoading] = useState(false);
@@ -343,6 +349,8 @@ export function PilotInventoryPage() {
 
     try {
       const delta = adjustmentDelta;
+      const beforeOnHand = draft.currentOnHand;
+      const afterOnHand = beforeOnHand + delta;
       await createPilotInventoryAdjustment(draft.id, {
         reason: adjustmentReason,
         quantityDelta: delta,
@@ -351,7 +359,8 @@ export function PilotInventoryPage() {
         sourceLineId: "manual",
         note: adjustmentNote,
       });
-      setMessage(`Adjustment recorded for ${draft.name}.`);
+      setDraft((current) => (current ? { ...current, currentOnHand: afterOnHand } : current));
+      setMessage(`Inventory updated: ${formatNumber(beforeOnHand)} ${draft.stockUnit} → ${formatNumber(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatNumber(delta)} ${draft.stockUnit}).`);
       setAdjustmentDelta(0);
       setAdjustmentNote("");
       await load();
@@ -371,29 +380,30 @@ export function PilotInventoryPage() {
   const openItem = (itemId: number) => {
     setSelectedId(itemId);
     setEditorMode("edit");
+    setItemDetailTab("overview");
   };
   const startNewItem = () => {
     setSelectedId(null);
     setEditorMode("create");
     setDraft(blankDraft(suppliers));
     setItemDetail(null);
+    setItemDetailTab("edit");
   };
   const closeItemEditor = () => {
     setSelectedId(null);
     setEditorMode("hidden");
     setItemDetail(null);
+    setItemDetailTab("overview");
   };
 
   return (
     <div className="space-y-6">
-      <Card className="surface-panel p-6 sm:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Inventory</p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Keep stock, counts, and reorder logic aligned</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Manage the item list, current on-hand quantities, adjustments, and the stock-count backbone that keeps the pilot realistic.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <WorkspacePageHeader
+        eyebrow="Inventory"
+        title="Browse stock, manage suppliers, and keep cost basis clear"
+        description="Average cost values inventory and recipes. Latest purchase price stays visible for supplier comparisons and reorder estimates."
+        actions={
+          <>
             <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => { startNewItem(); setMessage(null); }}>
               New item
             </Button>
@@ -403,28 +413,29 @@ export function PilotInventoryPage() {
             <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>
               Reorder list ({reorderCount})
             </Button>
-          </div>
-        </div>
+          </>
+        }
+        metrics={[
+          { label: "Items tracked", value: formatNumber(data?.summary.inventoryItemCount ?? 0) },
+          { label: "Out of stock", value: formatNumber(data?.summary.inventoryOutOfStockCount ?? 0) },
+          { label: "Reorder now", value: formatNumber(data?.summary.inventoryReorderNowCount ?? 0) },
+          { label: "Inventory value", value: formatMoney(data?.summary.inventoryValue ?? 0) },
+        ]}
+      />
 
-        {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
-        {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
+      {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+      {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {[
-            { label: "Items tracked", value: formatNumber(data?.summary.inventoryItemCount ?? 0) },
-            { label: "Out of stock", value: formatNumber(data?.summary.inventoryOutOfStockCount ?? 0) },
-            { label: "Reorder now", value: formatNumber(data?.summary.inventoryReorderNowCount ?? 0) },
-            { label: "Low stock", value: formatNumber(data?.summary.inventoryLowStockCount ?? 0) },
-            { label: "Inventory value", value: formatMoney(data?.summary.inventoryValue ?? 0) },
-          ].map((metric) => (
-            <div key={metric.label} className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <WorkspaceTabs
+        tabs={[
+          { id: "items", label: "Items", badge: formatNumber(data?.summary.inventoryItemCount ?? 0) },
+          { id: "suppliers", label: "Suppliers", badge: formatNumber(suppliers.length) },
+        ]}
+        value={inventoryTab}
+        onChange={(value) => setInventoryTab(value as InventoryTab)}
+      />
 
+      {inventoryTab === "suppliers" ? (
       <Card className="p-6">
         <SectionHeader title="Suppliers" description="Keep supplier names, focus areas, and active status consistent across invoices and inventory items." />
 
@@ -601,6 +612,7 @@ export function PilotInventoryPage() {
           </div>
         </div>
       </Card>
+      ) : (
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
         <Card className="p-6">
@@ -923,8 +935,9 @@ export function PilotInventoryPage() {
               </div>
             </div>
           )}
-        </Card>
+      </Card>
       </div>
+      )}
 
       <Card className="p-6">
         <SectionHeader title="Count sessions" description="Recent counts and the session status." />

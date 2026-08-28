@@ -1643,6 +1643,7 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
   await expect(page.getByText("Recipe and menu pricing")).toBeVisible();
   await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
   await expect(page.getByText("Cost $2.00").first()).toBeVisible();
+  await page.getByRole("button", { name: /Menu items/ }).click();
   await expect(page.getByText("Food cost 16.7%").first()).toBeVisible();
 });
 

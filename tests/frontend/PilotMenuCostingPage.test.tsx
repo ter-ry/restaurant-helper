@@ -178,6 +178,7 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByText("Recipe and menu pricing")).toBeVisible();
     expect(screen.getByText("Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons.")).toBeVisible();
     expect(screen.getAllByText("Cost $3.50").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /Menu items/ }));
     expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);
     expect(screen.getByText("Line Kitchen")).toBeVisible();
   });
@@ -186,9 +187,9 @@ describe("PilotMenuCostingPage", () => {
     render(<PilotMenuCostingPage />);
 
     await screen.findByText("Menu costing");
+    expect(screen.getByRole("button", { name: /Recipes/ })).toBeVisible();
     expect(screen.getByText("Start a new recipe or select one from the catalog to edit its ingredients and live costing.")).toBeVisible();
     expect(screen.getByText("Each line uses average inventory cost as the recipe basis. Latest purchase price stays visible for comparison when supplier costs change.")).toBeVisible();
-    expect(screen.getByText("Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "New recipe" }));
     expect(screen.getByRole("heading", { name: "New recipe" })).toBeVisible();
@@ -201,6 +202,8 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByText(/Average inventory cost/)).toBeVisible();
     expect(screen.getByText(/Latest purchase price stays visible for comparison/)).toBeVisible();
 
+    fireEvent.click(screen.getByRole("button", { name: /Menu items/ }));
+    expect(screen.getByText("Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "New menu item" }));
     expect(screen.getByRole("heading", { name: "New menu item" })).toBeVisible();
     expect(screen.getAllByLabelText("Name").at(-1)).toHaveValue("");

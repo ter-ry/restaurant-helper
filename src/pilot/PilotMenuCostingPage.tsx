@@ -23,6 +23,8 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
 import { usePilotSession } from "./PilotSessionProvider";
+import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
+import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 interface RecipeDraft {
@@ -125,6 +127,7 @@ export function PilotMenuCostingPage() {
   const [selectedRecipeId, setSelectedRecipeId] = useState<number | null>(null);
   const [selectedIngredientId, setSelectedIngredientId] = useState<number | null>(null);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<number | null>(null);
+  const [menuTab, setMenuTab] = useState<"recipes" | "menu-items">("recipes");
   const [recipeEditorMode, setRecipeEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [menuItemEditorMode, setMenuItemEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
@@ -372,22 +375,23 @@ export function PilotMenuCostingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Menu costing</p>
-          <h1 className="mt-1 text-3xl font-bold text-ink">Recipe and menu pricing</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons.
-          </p>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
-            Use the left rail to scan the live catalog, then open a recipe or menu item when you want to edit details.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted shadow-soft">
-          <div><span className="font-semibold text-ink">Organization:</span> {organization.name}</div>
-          <div><span className="font-semibold text-ink">Location:</span> {currentLocation.name}</div>
-        </div>
-      </div>
+      <WorkspacePageHeader
+        eyebrow="Menu costing"
+        title="Recipe and menu pricing"
+        description="Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons."
+        actions={
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
+            <RefreshCcw className="h-4 w-4" />
+            Refresh
+          </button>
+        }
+        metrics={[
+          { label: "Recipes", value: formatNumber(recipes.length), helper: `${formatNumber(recipes.filter((recipe) => recipe.active).length)} active` },
+          { label: "Menu items", value: formatNumber(menuItems.length), helper: `${formatNumber(menuItems.filter((item) => item.active).length)} active` },
+          { label: "Inventory items", value: formatNumber(inventoryItems.length), helper: `${formatNumber(activeInventoryItems.length)} active cost sources` },
+          { label: "Costing context", value: organization.name, helper: currentLocation.name },
+        ]}
+      />
 
       {loading ? (
         <Card className="p-6 text-sm text-muted">Loading menu costing…</Card>
@@ -404,24 +408,6 @@ export function PilotMenuCostingPage() {
         <Card className="border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{message}</Card>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Recipes</p>
-          <p className="mt-2 text-2xl font-bold text-ink">{recipes.length}</p>
-          <p className="text-sm text-muted">{recipes.filter((recipe) => recipe.active).length} active recipes</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Menu items</p>
-          <p className="mt-2 text-2xl font-bold text-ink">{menuItems.length}</p>
-          <p className="text-sm text-muted">{menuItems.filter((item) => item.active).length} active menu items</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory items</p>
-          <p className="mt-2 text-2xl font-bold text-ink">{inventoryItems.length}</p>
-          <p className="text-sm text-muted">{activeInventoryItems.length} active cost sources</p>
-        </Card>
-      </div>
-
       <div className="flex items-center gap-3">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
           <Search className="h-4 w-4 text-muted" />
@@ -437,6 +423,16 @@ export function PilotMenuCostingPage() {
         </Button>
       </div>
 
+      <WorkspaceTabs
+        tabs={[
+          { id: "recipes", label: "Recipes", badge: formatNumber(recipes.length) },
+          { id: "menu-items", label: "Menu items", badge: formatNumber(menuItems.length) },
+        ]}
+        value={menuTab}
+        onChange={(value) => setMenuTab(value as "recipes" | "menu-items")}
+      />
+
+      {menuTab === "recipes" ? (
       <div className="grid gap-6 xl:grid-cols-[0.98fr_1.22fr]">
         <Card className="p-5">
               <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
@@ -646,7 +642,7 @@ export function PilotMenuCostingPage() {
           </div>
         </Card>
       </div>
-
+      ) : (
       <Card className="p-5">
         <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
         <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr]">
@@ -767,6 +763,7 @@ export function PilotMenuCostingPage() {
           </div>
         </div>
       </Card>
+      )}
     </div>
   );
 }
