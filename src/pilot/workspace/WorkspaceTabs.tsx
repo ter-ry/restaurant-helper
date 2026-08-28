@@ -1,35 +1,42 @@
-import type { ReactNode } from "react";
-
-export interface WorkspaceTabItem {
+interface WorkspaceTab {
   id: string;
   label: string;
-  badge?: ReactNode;
+  badge?: number | string | null;
+  count?: number | string | null;
 }
 
 interface WorkspaceTabsProps {
-  tabs: WorkspaceTabItem[];
+  tabs: WorkspaceTab[];
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  ariaLabel?: string;
 }
 
-export function WorkspaceTabs({ tabs, value, onChange, className = "" }: WorkspaceTabsProps) {
+export function WorkspaceTabs({ tabs, value, onChange, className, ariaLabel = "Workspace sections" }: WorkspaceTabsProps) {
   return (
-    <div className={`flex flex-wrap gap-2 rounded-2xl border border-line bg-slate-50 p-2 ${className}`}>
+    <div
+      aria-label={ariaLabel}
+      className={`flex flex-wrap gap-2 rounded-2xl border border-line bg-slate-50 p-2 ${className ?? ""}`.trim()}
+      role="tablist"
+    >
       {tabs.map((tab) => {
         const active = tab.id === value;
+        const tabBadge = tab.badge ?? tab.count;
         return (
           <button
             key={tab.id}
-            className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-              active ? "bg-ink text-white shadow-sm" : "bg-white text-muted hover:bg-brand-50 hover:text-ink"
+            aria-selected={active}
+            aria-label={tab.label}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              active ? "bg-white text-ink shadow-soft" : "text-muted hover:bg-white/70 hover:text-ink"
             }`}
-            type="button"
             onClick={() => onChange(tab.id)}
-            aria-pressed={active}
+            role="tab"
+            type="button"
           >
             <span>{tab.label}</span>
-            {tab.badge ? <span className={`rounded-full px-2 py-0.5 text-xs ${active ? "bg-white/15 text-white" : "bg-slate-100 text-muted"}`}>{tab.badge}</span> : null}
+            {tabBadge !== undefined && tabBadge !== null ? <span className={`rounded-full px-2 py-0.5 text-xs ${active ? "bg-brand-50 text-brand-700" : "bg-slate-200 text-muted"}`}>{tabBadge}</span> : null}
           </button>
         );
       })}

@@ -156,7 +156,7 @@ describe("PilotReorderPlanPage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Plan what needs ordering and preserve the snapshot" })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Live planning/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "Live planning" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Current reorder pressure")).toBeVisible();
     expect(screen.getByText("Supplier groups")).toBeVisible();
     expect(screen.getByText("Saved plans")).toBeVisible();
@@ -171,9 +171,9 @@ describe("PilotReorderPlanPage", () => {
     expect(screen.getByRole("button", { name: "Mark prepared" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Complete plan" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
-    expect(screen.getByRole("button", { name: /History/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByText("Completed plan history").length).toBeGreaterThan(0);
     expect(screen.queryByText("Current reorder pressure")).not.toBeInTheDocument();
     expect(screen.getAllByText("Week 1 completed").length).toBeGreaterThan(0);

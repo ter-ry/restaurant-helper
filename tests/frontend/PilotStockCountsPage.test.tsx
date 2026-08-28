@@ -162,15 +162,15 @@ describe("PilotStockCountsPage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Count sessions that turn into real stock adjustments" })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Active count/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "Active count" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Apply count to inventory" })).toBeVisible();
     expect(screen.getByText("Draft #7")).toBeVisible();
     expect(screen.queryByText("Completed #8")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
-    expect(screen.getByRole("button", { name: /History/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Completed #8")).toBeVisible();
     expect(screen.queryByText("Draft #7")).not.toBeInTheDocument();
 
