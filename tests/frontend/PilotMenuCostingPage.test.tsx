@@ -75,6 +75,7 @@ describe("PilotMenuCostingPage", () => {
                 parLevel: 0,
                 preferredSupplierName: "",
                 latestPurchasePrice: 4,
+                averageUnitCost: 3.5,
                 lastPurchaseUnit: "each",
                 lastPurchaseConversionFactor: 2,
                 lastReceivedAt: null,
@@ -89,14 +90,14 @@ describe("PilotMenuCostingPage", () => {
                 updatedAt: null,
               },
               inventoryItemCostPerStockUnit: 2,
-              lineCost: 4,
+              lineCost: 7,
               warnings: [],
               createdAt: null,
               updatedAt: null,
             },
           ],
-          totalCost: 4,
-          costPerYield: 2,
+          totalCost: 7,
+          costPerYield: 3.5,
           costAvailable: true,
           warnings: [],
           createdByUserId: null,
@@ -118,10 +119,10 @@ describe("PilotMenuCostingPage", () => {
           active: true,
           notes: "Pilot menu item",
           recipe: null,
-          recipeCostPerYield: 2,
-          grossProfit: 10,
-          foodCostPercent: 16.7,
-          grossMarginPercent: 83.3,
+          recipeCostPerYield: 3.5,
+          grossProfit: 8.5,
+          foodCostPercent: 29.2,
+          grossMarginPercent: 70.8,
           costAvailable: true,
           warnings: [],
           createdByUserId: null,
@@ -147,6 +148,7 @@ describe("PilotMenuCostingPage", () => {
           parLevel: 0,
           preferredSupplierName: "",
           latestPurchasePrice: 4,
+          averageUnitCost: 3.5,
           lastPurchaseUnit: "each",
           lastPurchaseConversionFactor: 2,
           lastReceivedAt: null,
@@ -174,8 +176,10 @@ describe("PilotMenuCostingPage", () => {
     expect(await screen.findByText("Menu costing")).toBeVisible();
     expect(screen.getAllByText("Cheesy Toast").length).toBeGreaterThan(0);
     expect(screen.getByText("Recipe and menu pricing")).toBeVisible();
-    expect(screen.getAllByText("Cost $2.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Food cost 16.7%").length).toBeGreaterThan(0);
+    expect(screen.getByText("Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons.")).toBeVisible();
+    expect(screen.getAllByText("Cost $3.50").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
+    expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);
     expect(screen.getByText("Line Kitchen")).toBeVisible();
   });
 
@@ -183,8 +187,9 @@ describe("PilotMenuCostingPage", () => {
     render(<PilotMenuCostingPage />);
 
     await screen.findByText("Menu costing");
+    expect(screen.getByRole("tab", { name: "Recipes" })).toBeVisible();
     expect(screen.getByText("Start a new recipe or select one from the catalog to edit its ingredients and live costing.")).toBeVisible();
-    expect(screen.getByText("Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.")).toBeVisible();
+    expect(screen.getByText("Each line uses average inventory cost as the recipe basis. Latest purchase price stays visible for comparison when supplier costs change.")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "New recipe" }));
     expect(screen.getByRole("heading", { name: "New recipe" })).toBeVisible();
@@ -193,7 +198,12 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
     await waitFor(() => expect(screen.getByRole("heading", { name: "Edit recipe" })).toBeVisible());
     expect(screen.getAllByLabelText("Name")[0]).toHaveValue("Cheesy Toast");
+    expect(screen.getByText(/Cost basis:/)).toBeVisible();
+    expect(screen.getByText(/Average inventory cost/)).toBeVisible();
+    expect(screen.getByText(/Latest purchase price stays visible for comparison/)).toBeVisible();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
+    expect(screen.getByText("Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "New menu item" }));
     expect(screen.getByRole("heading", { name: "New menu item" })).toBeVisible();
     expect(screen.getAllByLabelText("Name").at(-1)).toHaveValue("");

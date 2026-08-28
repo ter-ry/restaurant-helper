@@ -4,6 +4,7 @@ import { ArrowUpRight, CalendarDays, ChevronRight, ClipboardList, PackageSearch,
 import { Card } from "../components/Card";
 import { Badge } from "../components/Badge";
 import { SectionHeader } from "../components/SectionHeader";
+import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { fetchPilotDashboard, type PilotDashboardResponse } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
@@ -130,50 +131,31 @@ export function PilotDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="surface-panel p-6 sm:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Dashboard</p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">What the owner needs to know today</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Back-office control between POS and accounting, with today&apos;s work and this week&apos;s changes in one place.</p>
-          </div>
+      <WorkspacePageHeader
+        eyebrow="Dashboard"
+        title="What the owner needs to know today"
+        description="Back-office control between POS and accounting, with today&apos;s work and this week&apos;s changes in one place."
+        actions={
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
             <RefreshCcw className="h-4 w-4" />
             Refresh
           </button>
-        </div>
+        }
+        metrics={topMetrics.map((metric) => ({
+          label: metric.label,
+          value: metric.value,
+          helper: metric.helper,
+        }))}
+      />
 
-        {error ? (
-          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{error}</div>
-        ) : null}
-        {dashboardLoading ? (
-          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted" aria-busy="true">
-            Loading dashboard data...
-          </div>
-        ) : null}
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy={dashboardLoading}>
-          {topMetrics.map((metric) => (
-            <button
-              key={metric.label}
-              type="button"
-              className={`group rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
-                metric.label === "Reorder now" || metric.label === "Invoices to review"
-                  ? "border-brand-200 bg-brand-50/70"
-                  : "border-line bg-white"
-              }`}
-              onClick={() => navigate(metric.to)}
-            >
-              <p className="text-xs font-bold uppercase tracking-wide text-muted group-hover:text-brand-700">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
-              <p className="mt-1 text-sm text-muted">{metric.helper}</p>
-            </button>
-          ))}
+      {error ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{error}</div>
+      ) : null}
+      {dashboardLoading ? (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted" aria-busy="true">
+          Loading dashboard data...
         </div>
-        <p className="mt-3 text-xs leading-5 text-muted">
-          Low stock is a watchlist signal. Reorder now means the item is already urgent and should move into a draft plan or purchase flow.
-        </p>
-      </Card>
+      ) : null}
 
       <Card className="p-6">
         <SectionHeader title="Today&apos;s workflow" description="The connected loop from invoice to export readiness." />

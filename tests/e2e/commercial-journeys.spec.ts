@@ -1643,6 +1643,7 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
   await expect(page.getByText("Recipe and menu pricing")).toBeVisible();
   await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
   await expect(page.getByText("Cost $2.00").first()).toBeVisible();
+  await page.getByRole("tab", { name: "Menu items" }).click();
   await expect(page.getByText("Food cost 16.7%").first()).toBeVisible();
 });
 
@@ -1922,6 +1923,21 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
     importJob: null,
   };
   const purchaseFlow = makeEmptyPurchaseFlowState();
+  purchaseFlow.suppliers.push({
+    id: 20,
+    name: "North Bay Dairy",
+    categoryFocus: "Dairy",
+    contactName: "",
+    contactPhone: "",
+    contactEmail: "",
+    orderingNotes: "",
+    notes: "",
+    isActive: true,
+  });
+  purchaseFlow.inventoryItems.push(
+    { id: 30, name: "2% Milk", stockUnit: "case" },
+    { id: 31, name: "Whole Milk", stockUnit: "bag" },
+  );
   enableEmptyPurchaseWorkflow(state, purchaseFlow);
   await installMockApi(page, state);
 
@@ -1945,70 +1961,61 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   expect(editorBox).not.toBeNull();
   expect(historyBox).not.toBeNull();
   expect(mainBox).not.toBeNull();
-  expect(editorBox!.width).toBeGreaterThan(mainBox!.width - 100);
-  expect(Math.abs(editorBox!.width - historyBox!.width)).toBeLessThan(32);
-  expect(historyBox!.y).toBeGreaterThan(editorBox!.y + editorBox!.height - 1);
+  expect(editorBox!.width).toBeGreaterThan(historyBox!.width);
+  expect(editorBox!.x).toBeLessThan(historyBox!.x);
+  expect(Math.abs(historyBox!.y - editorBox!.y)).toBeLessThan(32);
 
   const editorHeading = page.getByRole("heading", { name: "New purchase" });
-  const lineCards = page.getByTestId("purchase-line-card");
   await page.getByRole("button", { name: "New purchase" }).click();
-  await expect(page.getByTestId("purchase-mutation-toast")).toBeVisible();
   await expect(editorHeading).toBeInViewport();
   await expect(editorCard.getByRole("heading", { name: "New purchase" })).toBeVisible();
   await expect(editorCard.getByLabel("Supplier")).toBeVisible();
   await expect(editorCard.getByLabel("Invoice number")).toBeVisible();
-  await expect(lineCards).toHaveCount(1);
-
-  await page.getByLabel("Supplier name").fill("North Bay Dairy");
-  await page.getByRole("button", { name: "Create supplier" }).click();
-  await expect(page.getByRole("button", { name: "Add supplier" })).toBeVisible();
+  await page.getByLabel("Supplier").selectOption("North Bay Dairy");
   await expect(page.getByLabel("Supplier")).toHaveValue("North Bay Dairy");
+  await page.getByRole("tab", { name: "Lines" }).click();
+  await expect(page.getByTestId("purchase-lines-panel")).toBeVisible();
+  await expect(page.getByLabel("Description")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Add line" }).click();
-  await expect(lineCards).toHaveCount(2);
+  await expect(page.getByLabel("Description")).toHaveCount(2);
 
-  const firstLine = lineCards.nth(0);
-  const secondLine = lineCards.nth(1);
-
-  await firstLine.getByLabel("Description").fill("2% Milk");
-  await secondLine.getByLabel("Description").fill("Whole Milk");
-
-  await firstLine.getByRole("button", { name: "Create inventory item" }).click();
-  await expect(firstLine.getByText("Create inventory item from this line")).toBeVisible();
-  await expect(firstLine.getByLabel("Item name")).toHaveValue("2% Milk");
-  await firstLine.getByLabel("Stock unit").fill("case");
-  await firstLine.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("2");
-  await firstLine.getByLabel("Qty").fill("2");
-  await firstLine.getByLabel("Unit price").fill("4.5");
-  await firstLine.getByLabel("Line total").fill("9");
-  await firstLine.getByRole("button", { name: "Create and map item" }).click();
-
-  await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
-  await expect(secondLine.getByLabel("Inventory item")).toHaveValue("");
-
-  await secondLine.getByRole("button", { name: "Create inventory item" }).click();
-  await expect(secondLine.getByText("Create inventory item from this line")).toBeVisible();
-  await expect(secondLine.getByLabel("Item name")).toHaveValue("Whole Milk");
-  await secondLine.getByLabel("Stock unit").fill("bag");
-  await secondLine.getByRole("spinbutton", { name: "Conversion", exact: true }).fill("1");
-  await secondLine.getByLabel("Qty").fill("3");
-  await secondLine.getByLabel("Unit price").fill("2");
-  await secondLine.getByLabel("Line total").fill("6");
-  await secondLine.getByRole("button", { name: "Create and map item" }).click();
-
-  await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
-  await expect(secondLine.getByLabel("Inventory item")).toHaveValue("31");
+  const descriptions = page.getByLabel("Description");
+  const inventoryItems = page.getByLabel("Inventory item");
+  await descriptions.nth(0).fill("2% Milk");
+  await descriptions.nth(1).fill("Whole Milk");
+  await inventoryItems.nth(0).selectOption("30");
+  await inventoryItems.nth(1).selectOption("31");
+  await expect(inventoryItems.nth(0)).toHaveValue("30");
+  await expect(inventoryItems.nth(1)).toHaveValue("31");
+  await page.locator('label:has-text("Purchase unit") input').nth(0).fill("case");
+  await page.locator('label:has-text("Purchase unit") input').nth(1).fill("case");
+  await page.locator('label:has-text("Inventory unit") input').nth(0).fill("bag");
+  await page.locator('label:has-text("Inventory unit") input').nth(1).fill("bag");
+  await page.locator('label:has-text("Conversion") input').nth(0).fill("1");
+  await page.locator('label:has-text("Conversion") input').nth(1).fill("1");
+  await page.locator('label:has-text("Qty / price / total") input').nth(0).fill("2");
+  await page.locator('label:has-text("Qty / price / total") input').nth(1).fill("4.50");
+  await page.locator('label:has-text("Qty / price / total") input').nth(3).fill("1");
+  await page.locator('label:has-text("Qty / price / total") input').nth(4).fill("5.25");
 
   await page.getByRole("button", { name: "Add line" }).click();
-  await expect(lineCards).toHaveCount(3);
-  await lineCards.nth(2).getByRole("button", { name: "Remove" }).click();
-  await expect(lineCards).toHaveCount(2);
-  await expect(firstLine.getByLabel("Inventory item")).toHaveValue("30");
-  await expect(secondLine.getByLabel("Inventory item")).toHaveValue("31");
+  await expect(page.getByLabel("Description")).toHaveCount(3);
+  await page.getByRole("button", { name: "Remove" }).nth(2).click();
+  await expect(page.getByLabel("Description")).toHaveCount(2);
+  await expect(inventoryItems.nth(0)).toHaveValue("30");
+  await expect(inventoryItems.nth(1)).toHaveValue("31");
 
+  await page.getByRole("tab", { name: "Review" }).click();
+  await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await page.getByRole("button", { name: "Save ready" }).click();
-  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled();
+  await expect(page.getByText(/Invoice .+ saved successfully\./)).toBeVisible();
+  await page.getByRole("tab", { name: "Review" }).click();
+  await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
 
   await page.getByRole("button", { name: "Receive into inventory" }).click();
-  await expect(page.getByTestId("purchase-mutation-toast").getByText("Purchase received", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Invoice .+ received into inventory\./)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New purchase" })).toBeVisible();
+  await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });

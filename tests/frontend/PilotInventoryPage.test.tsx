@@ -173,9 +173,9 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Keep stock, counts, and reorder logic aligned" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
-    expect(screen.getByRole("columnheader", { name: "Reorder status" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Latest cost" })).toBeVisible();
     expect(screen.getByText("Select an item or create one deliberately")).toBeVisible();
     expect(screen.queryByLabelText("Item name")).not.toBeInTheDocument();
 
@@ -232,42 +232,13 @@ describe("PilotInventoryPage", () => {
         inventoryValue: 888,
       },
     });
-    inventoryMocks.updatePilotInventoryItem.mockResolvedValue({
-      id: 30,
-      organizationId: 42,
-      locationId: 7,
-      supplierId: null,
-      name: "Chicken Breast",
-      normalizedName: "chicken breast",
-      category: "Poultry",
-      stockUnit: "kg",
-      currentOnHand: 100,
-      averageUnitCost: 8.88,
-      minQuantity: 1,
-      parLevel: 5,
-      preferredSupplierName: "Dairy Co",
-      latestPurchasePrice: 9,
-      lastPurchaseUnit: "kg",
-      lastPurchaseConversionFactor: 1,
-      lastReceivedAt: null,
-      lastCountedAt: null,
-      averageDailyUsage: 0.8,
-      estimatedCostMethod: "latest_purchase_price",
-      active: true,
-      notes: "Updated notes",
-      createdByUserId: 1,
-      updatedByUserId: 1,
-      createdAt: null,
-      updatedAt: null,
-    });
-
     render(
       <MemoryRouter initialEntries={["/app/inventory"]}>
         <PilotInventoryPage />
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Keep stock, counts, and reorder logic aligned" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByText("Edit Chicken Breast")).toBeVisible());
 
@@ -279,10 +250,74 @@ describe("PilotInventoryPage", () => {
     expect(within(preview).getByText("Estimated inventory value")).toBeVisible();
     expect(within(preview).getByText("$888.00")).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Updated notes" } });
+    expect(screen.getByLabelText("Item notes")).toHaveValue("");
+    expect(screen.getByLabelText("Movement note (optional)")).toHaveValue("");
+    inventoryMocks.fetchPilotInventory.mockResolvedValueOnce({
+      items: [
+        {
+          id: 30,
+          organizationId: 42,
+          locationId: 7,
+          supplierId: null,
+          name: "Chicken Breast",
+          normalizedName: "chicken breast",
+          category: "Poultry",
+          stockUnit: "kg",
+          currentOnHand: 100,
+          averageUnitCost: 8.88,
+          minQuantity: 1,
+          parLevel: 5,
+          preferredSupplierName: "Dairy Co",
+          latestPurchasePrice: 9,
+          lastPurchaseUnit: "kg",
+          lastPurchaseConversionFactor: 1,
+          lastReceivedAt: null,
+          lastCountedAt: null,
+          averageDailyUsage: 0.8,
+          estimatedCostMethod: "latest_purchase_price",
+          active: true,
+          notes: "Updated notes",
+          createdByUserId: 1,
+          updatedByUserId: 1,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      movements: [],
+      countSessions: [],
+      reorderPlan: { suggestions: [], groupedBySupplier: [] },
+      summary: {
+        inventoryItemCount: 1,
+        inventoryOutOfStockCount: 0,
+        inventoryReorderNowCount: 0,
+        inventoryLowStockCount: 0,
+        inventoryValue: 888,
+      },
+    });
+    fireEvent.change(screen.getByLabelText("Item notes"), { target: { value: "Updated notes" } });
     fireEvent.click(screen.getByRole("button", { name: "Update item" }));
 
-    await waitFor(() => expect(inventoryMocks.updatePilotInventoryItem).toHaveBeenCalled());
+    await waitFor(() => expect(inventoryMocks.updatePilotInventoryItem).toHaveBeenCalledTimes(1));
+    expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).toMatchObject({ notes: "Updated notes" });
     expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).not.toHaveProperty("averageUnitCost");
+    expect(inventoryMocks.createPilotInventoryAdjustment).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByLabelText("Item notes")).toHaveValue("Updated notes"));
+    expect(screen.getByLabelText("Movement note (optional)")).toHaveValue("");
+  });
+
+  it("blocks zero-quantity movements and enables non-zero adjustments", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
+    fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
+    await waitFor(() => expect(screen.getByText("Edit Chicken Breast")).toBeVisible());
+
+    expect(screen.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Quantity delta"), { target: { value: "1" } });
+    expect(screen.getByRole("button", { name: "Save stock movement" })).toBeEnabled();
   });
 });

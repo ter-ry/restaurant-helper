@@ -18,6 +18,7 @@ import {
   type PilotReorderPlanLine,
   type PilotReorderSuggestion,
 } from "./pilotApi";
+import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 type LineDraft = PilotReorderPlanLine;
@@ -32,6 +33,8 @@ export function PilotReorderPlanPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "prepare" | "complete" | null>(null);
+  const [workflowTab, setWorkflowTab] = useState<"live" | "history">("live");
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,12 +103,16 @@ export function PilotReorderPlanPage() {
   const draftPlanCount = plans.filter((plan) => plan.status === "Draft").length;
   const preparedPlanCount = plans.filter((plan) => plan.status === "Prepared").length;
   const completedPlanCount = plans.filter((plan) => plan.status === "Completed").length;
+  const livePlans = useMemo(() => plans.filter((plan) => plan.status !== "Completed"), [plans]);
+  const historyPlans = useMemo(() => plans.filter((plan) => plan.status === "Completed"), [plans]);
+  const visiblePlans = workflowTab === "history" ? historyPlans : livePlans;
 
   const openPlan = async (planId: number) => {
     if (saving || creating || loading) {
       return;
     }
     setSaving(true);
+    setPendingAction(null);
     setMessage(null);
     setError(null);
     try {
@@ -125,6 +132,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setCreating(true);
+    setPendingAction(null);
     setMessage(null);
     setError(null);
     try {
@@ -156,6 +164,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("save");
     setMessage(null);
     setError(null);
     try {
@@ -178,6 +187,7 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not save the reorder plan.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -186,6 +196,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("prepare");
     setMessage(null);
     setError(null);
     try {
@@ -208,6 +219,7 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not prepare the reorder plan.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -216,6 +228,7 @@ export function PilotReorderPlanPage() {
       return;
     }
     setSaving(true);
+    setPendingAction("complete");
     setMessage(null);
     setError(null);
     try {
@@ -238,6 +251,7 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   };
 
@@ -293,75 +307,112 @@ export function PilotReorderPlanPage() {
             </div>
           ))}
         </div>
+        <div className="mt-6">
+          <WorkspaceTabs
+            tabs={[
+              { id: "live", label: "Live planning", badge: livePlans.length },
+              { id: "history", label: "History", badge: historyPlans.length },
+            ]}
+            value={workflowTab}
+            onChange={(value) => setWorkflowTab(value as "live" | "history")}
+          />
+          <p className="mt-3 text-sm text-muted">{workflowTab === "history" ? "Completed plans are locked history snapshots." : "Live pressure stays separate from completed history so the working draft remains obvious."}</p>
+        </div>
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
         <Card className="p-6">
-          <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
-          <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-            {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
-              <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-ink">{suggestion.inventoryItemName}</p>
-                    <p className="text-sm text-muted">{suggestion.supplier || "Unassigned supplier"} • {suggestion.category}</p>
+          {workflowTab === "history" ? (
+            <>
+              <SectionHeader title="Completed plan history" description="Live reorder pressure stays hidden here so this view reads as history only." />
+              <div className="space-y-3">
+                {historyPlans.slice(0, 5).map((plan) => (
+                  <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-ink">{plan.name}</p>
+                        <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
+                      </div>
+                      <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                      <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
+                    </div>
                   </div>
-                  <Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge>
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Current</p>
-                    <p className="mt-1 text-ink">{formatNumber(suggestion.currentQuantity)} {suggestion.unit}</p>
+                ))}
+                {!historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
+              </div>
+            </>
+          ) : (
+            <>
+              <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
+              <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+                {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
+                  <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-ink">{suggestion.inventoryItemName}</p>
+                        <p className="text-sm text-muted">{suggestion.supplier || "Unassigned supplier"} • {suggestion.category}</p>
+                      </div>
+                      <Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Current</p>
+                        <p className="mt-1 text-ink">{formatNumber(suggestion.currentQuantity)} {suggestion.unit}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Minimum / PAR</p>
+                        <p className="mt-1 text-ink">{formatNumber(suggestion.minimumQuantity)} / {formatNumber(suggestion.parLevel)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested</p>
+                        <p className="mt-1 text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimate</p>
+                        <p className="mt-1 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Minimum / PAR</p>
-                    <p className="mt-1 text-ink">{formatNumber(suggestion.minimumQuantity)} / {formatNumber(suggestion.parLevel)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested</p>
-                    <p className="mt-1 text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimate</p>
-                    <p className="mt-1 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</p>
-                  </div>
+                ))}
+                {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : null}
+              </div>
+
+              <div className="mt-6">
+                <SectionHeader title="Supplier groups" description="What each supplier needs in the current snapshot." />
+                <div className="space-y-3">
+                  {currentGroups.map((group) => (
+                    <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-ink">{group.supplier}</p>
+                          <p className="text-sm text-muted">{group.itemCount} items</p>
+                        </div>
+                        <Badge tone="orange">{formatMoney(group.estimatedOrderTotal)}</Badge>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {group.lines.slice(0, 4).map((line) => (
+                          <div key={line.id} className="flex items-center justify-between rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                            <span className="truncate text-ink">{line.inventoryItemName}</span>
+                            <span className="text-muted">{formatNumber(line.adjustedQuantity)} {line.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {!currentGroups.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Supplier groups appear once items need ordering.</p> : null}
                 </div>
               </div>
-            ))}
-            {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : null}
-          </div>
-
-          <div className="mt-6">
-            <SectionHeader title="Supplier groups" description="What each supplier needs in the current snapshot." />
-            <div className="space-y-3">
-              {currentGroups.map((group) => (
-                <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{group.supplier}</p>
-                      <p className="text-sm text-muted">{group.itemCount} items</p>
-                    </div>
-                    <Badge tone="orange">{formatMoney(group.estimatedOrderTotal)}</Badge>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {group.lines.slice(0, 4).map((line) => (
-                      <div key={line.id} className="flex items-center justify-between rounded-xl border border-line bg-white px-3 py-2 text-sm">
-                        <span className="truncate text-ink">{line.inventoryItemName}</span>
-                        <span className="text-muted">{formatNumber(line.adjustedQuantity)} {line.unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!currentGroups.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Supplier groups appear once items need ordering.</p> : null}
-            </div>
-          </div>
+            </>
+          )}
         </Card>
 
         <Card className="p-6">
-          <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
+          <SectionHeader title={workflowTab === "history" ? "Completed plan history" : "Saved plans"} description={workflowTab === "history" ? "Completed snapshots are locked for review." : "Drafts stay editable. Completed plans preserve their snapshots."} />
           <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
-            {plans.map((plan) => (
+            {visiblePlans.map((plan) => (
               <button
                 key={plan.id}
                 type="button"
@@ -397,7 +448,7 @@ export function PilotReorderPlanPage() {
                 </p>
               </button>
             ))}
-            {!plans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No reorder plans yet. Start a draft when you are ready.</p> : null}
+            {!visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{workflowTab === "history" ? "No completed plans yet." : "No draft plans yet. Start a draft when you are ready."}</p> : null}
           </div>
         </Card>
       </div>
@@ -464,13 +515,13 @@ export function PilotReorderPlanPage() {
 
             <div className="mt-5 flex flex-wrap gap-2">
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
-                {saving ? "Saving..." : "Save draft"}
+                {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
               </Button>
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
-                Mark prepared
+                {saving && pendingAction === "prepare" ? "Preparing..." : "Mark prepared"}
               </Button>
               <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => void completeDraft()}>
-                Complete plan
+                {saving && pendingAction === "complete" ? "Completing..." : "Complete plan"}
               </Button>
             </div>
 

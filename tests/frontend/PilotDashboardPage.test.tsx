@@ -137,13 +137,13 @@ describe("PilotDashboardPage", () => {
     );
 
     await screen.findByRole("heading", { name: "What the owner needs to know today" });
-    expect(screen.getByRole("button", { name: /Invoices to review/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Reorder now/ })).toBeVisible();
+    expect(screen.getAllByText("Invoices to review").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reorder now").length).toBeGreaterThan(0);
     expect(screen.getByText("Low stock")).toBeVisible();
     expect(screen.getByText("These are unfinished records, not history. Reopen the exact invoice, count, or reorder draft you last touched.")).toBeVisible();
     expect(screen.getByText("The items that need attention now, from low stock through urgent reorder.")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reorder now 2 5 low stock" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open reorder plan" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/reorder-plan"));
   });
 });

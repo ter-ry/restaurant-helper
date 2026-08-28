@@ -80,6 +80,17 @@ export function PilotWorkspaceLayout() {
     () => navItems.filter((item) => !item.moduleKey || enabledModuleKeySet.has(item.moduleKey)),
     [enabledModuleKeySet],
   );
+  const locationLabel = useMemo(() => {
+    if (!currentLocation) {
+      return "No location selected";
+    }
+    return `${currentLocation.name}`;
+  }, [currentLocation]);
+  const currentSectionLabel = useMemo(() => {
+    const current = [...visibleNavItems].reverse().find((item) => location.pathname.startsWith(item.to));
+    return current?.label ?? "Workspace";
+  }, [location.pathname, visibleNavItems]);
+  const currentContextLabel = `${organization?.name ?? "Flowtally pilot"} · ${locationLabel}`;
 
   useEffect(() => {
     window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", String(desktopSidebarCollapsed));
@@ -92,13 +103,6 @@ export function PilotWorkspaceLayout() {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
-
-  const locationLabel = useMemo(() => {
-    if (!currentLocation) {
-      return "No location selected";
-    }
-    return `${currentLocation.name}`;
-  }, [currentLocation]);
 
   const handleLocationChange = async (event: ChangeEvent<HTMLSelectElement>) => {
     const locationId = Number(event.target.value);
@@ -303,10 +307,10 @@ export function PilotWorkspaceLayout() {
   return (
     <div className="min-h-screen bg-slate-50 text-ink">
       <AnalyticsTracker />
-      <div className="lg:flex">
+      <div className="xl:flex">
         <aside
-          className={`sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-5 shadow-sm transition-[width] duration-200 lg:flex lg:flex-col ${
-            desktopSidebarCollapsed ? "lg:w-24" : "lg:w-80"
+          className={`sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-4 shadow-sm transition-[width] duration-200 xl:flex xl:flex-col ${
+            desktopSidebarCollapsed ? "xl:w-24" : "xl:w-72"
           }`}
         >
           <div className={`flex items-start ${desktopSidebarCollapsed ? "justify-center" : "justify-between gap-3"}`}>
@@ -315,8 +319,9 @@ export function PilotWorkspaceLayout() {
                 <Building2 className="h-6 w-6" />
               </div>
               <div className={desktopSidebarCollapsed ? "sr-only" : "min-w-0"}>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Private pilot</p>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
                 <h1 className="truncate text-lg font-bold">{organization?.name ?? "Flowtally pilot"}</h1>
+                <p className="mt-1 truncate text-xs text-muted">{locationLabel}</p>
               </div>
             </div>
             <button
@@ -411,31 +416,37 @@ export function PilotWorkspaceLayout() {
 
         <div className="min-w-0 flex-1">
           <header className="sticky top-0 z-20 border-b border-line bg-white/92 backdrop-blur">
-            <div className="flex items-center gap-3 px-4 py-3 sm:px-6 lg:hidden">
+            <div className="flex items-center gap-3 px-4 py-3 sm:px-5 xl:hidden">
               <button
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-ink"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm"
                 type="button"
                 onClick={() => setMobileNavOpen(true)}
               >
                 <Menu className="h-5 w-5" />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-ink">{organization?.name ?? "Flowtally pilot"}</p>
-                <p className="truncate text-xs text-muted">{locationLabel}</p>
+                <p className="truncate text-sm font-semibold text-ink">{currentSectionLabel}</p>
+                <p className="truncate text-xs text-muted">{currentContextLabel}</p>
               </div>
-              <button className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-ink" type="button" onClick={() => void signOut()}>
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void refreshSession()} title="Refresh session">
+                <RefreshCw className="h-4 w-4" />
+              </button>
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void signOut()} title="Sign out">
                 <LogOut className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="hidden items-center justify-between gap-4 px-6 py-4 lg:flex">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Private pilot workspace</p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink">End-to-end purchasing and inventory control</h2>
+            <div className="hidden items-center justify-between gap-4 px-5 py-3 xl:flex">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Operations workspace</p>
+                <div className="mt-1 flex items-baseline gap-3">
+                  <h2 className="text-lg font-bold tracking-tight text-ink">{currentSectionLabel}</h2>
+                  <p className="truncate text-sm text-muted">{currentContextLabel}</p>
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                   type="button"
                   onClick={() => setDesktopSidebarCollapsed((current) => !current)}
                   title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -443,10 +454,9 @@ export function PilotWorkspaceLayout() {
                   {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
                   {desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 </button>
-                <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
+                <div className="rounded-2xl border border-line bg-slate-50 px-3 py-2.5">
                   {locations.length > 1 ? (
-                    <select className="input mt-1 min-w-56" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
+                    <select className="input min-w-56" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
                       {locations.map((entry) => (
                         <option key={entry.id} value={entry.id}>
                           {entry.name}
@@ -454,14 +464,14 @@ export function PilotWorkspaceLayout() {
                       ))}
                     </select>
                   ) : (
-                    <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-ink">
                       <MapPin className="h-4 w-4 text-muted" />
                       {locationLabel}
                     </div>
                   )}
                 </div>
                 <button
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                   type="button"
                   onClick={() => void refreshSession()}
                 >
@@ -472,7 +482,7 @@ export function PilotWorkspaceLayout() {
             </div>
           </header>
 
-          <main className="mx-auto w-full max-w-[1800px] px-4 py-5 sm:px-6 lg:px-8">
+          <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-5 lg:px-6 xl:px-8">
             {error ? (
               <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert" aria-live="polite">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -499,13 +509,14 @@ export function PilotWorkspaceLayout() {
       </div>
 
       {mobileNavOpen ? (
-        <div className="fixed inset-0 z-30 lg:hidden">
+        <div className="fixed inset-0 z-30 xl:hidden">
           <button className="absolute inset-0 bg-slate-900/35" type="button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />
-          <div className="absolute left-0 top-0 h-full w-[86%] max-w-sm border-r border-line bg-white p-5 shadow-2xl">
+          <div className="absolute left-0 top-0 h-full w-[86%] max-w-sm border-r border-line bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Private pilot</p>
-                <h2 className="mt-1 text-lg font-bold text-ink">{organization?.name ?? "Flowtally pilot"}</h2>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
+                <h2 className="mt-1 text-lg font-bold text-ink">{currentSectionLabel}</h2>
+                <p className="mt-1 text-xs text-muted">{currentContextLabel}</p>
               </div>
               <button
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink"
