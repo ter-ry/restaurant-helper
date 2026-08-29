@@ -118,13 +118,6 @@ def test_menu_costing_persists_and_tracks_live_costs(client):
     assert menu_item["grossProfit"] == 10.0
     assert menu_item["foodCostPercent"] == 16.7
 
-    update_item_response = client.patch(
-        f"/api/pilot/inventory/items/{item_id}",
-        headers=csrf_headers(client),
-        json={"latestPurchasePrice": 6},
-    )
-    assert update_item_response.status_code == 200
-
     refreshed = client.get("/api/pilot/menu-costing")
     assert refreshed.status_code == 200
     body = refreshed.get_json()

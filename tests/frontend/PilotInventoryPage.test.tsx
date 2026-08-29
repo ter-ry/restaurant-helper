@@ -279,6 +279,7 @@ describe("PilotInventoryPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Latest cost" })).toBeVisible();
     expect(screen.queryByText("Count sessions")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
@@ -302,6 +303,13 @@ describe("PilotInventoryPage", () => {
     expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
+
+    expect(screen.getByText("Average cost")).toBeVisible();
+    expect(screen.getByText("$8.88")).toBeVisible();
+    expect(screen.getByText("Latest cost")).toBeVisible();
+    expect(screen.getByText("$9.00")).toBeVisible();
+    expect(screen.getByText("Inventory value")).toBeVisible();
+    expect(screen.getByText("$248.64")).toBeVisible();
 
     expect(screen.getByLabelText("Quantity delta")).toHaveValue(0);
     expect(screen.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
