@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -129,15 +129,6 @@ function ReadOnlyStat({ label, value }: { label: string; value: ReactNode }) {
     <div className="rounded-2xl border border-line bg-slate-50 p-4">
       <p className="text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p>
       <div className="mt-2 min-w-0 text-lg font-semibold text-ink">{value}</div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-line bg-slate-50 px-4 py-3">
-      <p className="text-sm font-semibold text-ink">{label}</p>
-      <div className="text-right text-sm text-muted">{value}</div>
     </div>
   );
 }
@@ -724,7 +715,6 @@ export function PilotInventoryPage() {
   const renderExistingWorkspace = () => {
     const item = selectedItemDetail ?? draft;
     const averageCost = item.averageUnitCost && item.averageUnitCost > 0 ? item.averageUnitCost : null;
-    const inventoryValue = averageCost !== null ? item.currentOnHand * averageCost : null;
     const status = stockStatus(item);
 
     return (
@@ -783,50 +773,40 @@ export function PilotInventoryPage() {
               <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-              <Card className="p-5">
-                <SectionHeader title="Inventory adjustment" description="Record a stock movement without changing the item's master data." />
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <label className="block">
-                    <span className="text-sm font-semibold text-ink">Quantity delta</span>
-                    <input className="input mt-1" type="number" step="0.0001" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-semibold text-ink">Reason</span>
-                    <input className="input mt-1" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} />
-                  </label>
-                </div>
-                <label className="mt-4 block">
-                  <span className="text-sm font-semibold text-ink">Movement note (optional)</span>
-                  <textarea className="input mt-1" value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} />
+            <Card className="p-5">
+              <SectionHeader title="Inventory adjustment" description="Record a stock movement without changing the item's master data." />
+              <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_0.8fr_1.4fr]">
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">Quantity delta</span>
+                  <input className="input mt-1" type="number" step="0.0001" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
                 </label>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
-                    Save stock movement
-                  </Button>
-                  <Button variant="secondary" disabled={saving} type="button" onClick={() => navigate("/app/stock-counts")}>
-                    Stock counts →
-                  </Button>
-                </div>
-                {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
-              </Card>
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">Reason</span>
+                  <input className="input mt-1" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">Movement note (optional)</span>
+                  <textarea className="input mt-1 resize-y" rows={2} value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
+                  Save stock movement
+                </Button>
+                <Button variant="secondary" disabled={saving} type="button" onClick={() => navigate("/app/stock-counts")}>
+                  Stock counts →
+                </Button>
+              </div>
+              {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
+            </Card>
 
-              <Card className="p-5">
-                <SectionHeader title="Operational summary" description="A compact read-only snapshot of the selected item." />
-                <div className="mt-4 space-y-3 text-sm">
-                  <DetailRow label="Item" value={item.name} />
-                  <DetailRow label="Category" value={item.category} />
-                  <DetailRow label="Base unit" value={item.stockUnit} />
-                  <DetailRow label="Preferred supplier" value={item.preferredSupplierName || "Unassigned"} />
-                  <DetailRow label="Average daily usage" value={item.averageDailyUsage !== null ? formatNumber(item.averageDailyUsage) : "Not set"} />
-                  <DetailRow label="Latest purchase unit" value={item.lastPurchaseUnit || "each"} />
-                  <DetailRow label="Purchase conversion" value={`x${formatNumber(item.lastPurchaseConversionFactor)}`} />
-                  <DetailRow label="Current on hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
-                </div>
-                <p className="mt-4 text-xs leading-5 text-muted">
-                  System-derived values stay read-only here. Use Edit for metadata and Overview for operational changes.
-                </p>
-              </Card>
+            <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted">
+              <span className="font-semibold text-ink">Secondary details</span>{" "}
+              <span className="whitespace-pre-wrap">
+                · Category {item.category || "Other"} · Base unit {item.stockUnit || "each"} · Avg daily usage{" "}
+                {item.averageDailyUsage !== null ? formatNumber(item.averageDailyUsage) : "Not set"} · Purchase unit {item.lastPurchaseUnit || "each"} ×
+                {formatNumber(item.lastPurchaseConversionFactor)}
+              </span>
             </div>
           </div>
         ) : null}

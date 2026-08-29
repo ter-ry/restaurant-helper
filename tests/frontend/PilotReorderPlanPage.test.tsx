@@ -152,6 +152,29 @@ describe("PilotReorderPlanPage", () => {
     });
   });
 
+  it("shows a compact zero-state when nothing needs reordering", async () => {
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({
+      suggestions: [],
+      groupedBySupplier: [],
+    });
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({
+      plans: [createPlan("Completed", 2)],
+      activeDraftPlanId: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("No items currently need reordering.")).toBeVisible();
+    expect(screen.getByText("Tracked inventory is currently above its reorder thresholds.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Start manual draft" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View history" })).toBeVisible();
+    expect(screen.queryByText("Current reorder pressure")).not.toBeInTheDocument();
+    expect(screen.queryByText("Supplier groups")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved plans")).not.toBeInTheDocument();
+    expect(screen.getByText("Completed plan history")).toBeVisible();
+    expect(screen.getByText("Week 1 completed")).toBeVisible();
+  });
+
   it("separates live planning from completed history and keeps the draft actions clear", async () => {
     renderPage();
 

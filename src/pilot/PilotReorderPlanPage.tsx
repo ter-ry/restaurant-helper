@@ -106,6 +106,7 @@ export function PilotReorderPlanPage() {
   const livePlans = useMemo(() => plans.filter((plan) => plan.status !== "Completed"), [plans]);
   const historyPlans = useMemo(() => plans.filter((plan) => plan.status === "Completed"), [plans]);
   const visiblePlans = workflowTab === "history" ? historyPlans : livePlans;
+  const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0;
 
   const openPlan = async (planId: number) => {
     if (saving || creating || loading) {
@@ -320,138 +321,219 @@ export function PilotReorderPlanPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
-        <Card className="p-6">
-          {workflowTab === "history" ? (
-            <>
-              <SectionHeader title="Completed plan history" description="Live reorder pressure stays hidden here so this view reads as history only." />
-              <div className="space-y-3">
-                {historyPlans.slice(0, 5).map((plan) => (
-                  <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-ink">{plan.name}</p>
-                        <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
-                      </div>
-                      <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
+      {workflowTab === "history" ? (
+        <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+          <Card className="p-6">
+            <SectionHeader title="Completed plan history" description="Live reorder pressure stays hidden here so this view reads as history only." />
+            <div className="space-y-3">
+              {historyPlans.slice(0, 5).map((plan) => (
+                <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{plan.name}</p>
+                      <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
-                      <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
-                    </div>
+                    <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
-                ))}
-                {!historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
-              </div>
-            </>
-          ) : (
-            <>
-              <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
-              <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-                {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
-                  <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-ink">{suggestion.inventoryItemName}</p>
-                        <p className="text-sm text-muted">{suggestion.supplier || "Unassigned supplier"} • {suggestion.category}</p>
-                      </div>
-                      <Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge>
-                    </div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-4">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Current</p>
-                        <p className="mt-1 text-ink">{formatNumber(suggestion.currentQuantity)} {suggestion.unit}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Minimum / PAR</p>
-                        <p className="mt-1 text-ink">{formatNumber(suggestion.minimumQuantity)} / {formatNumber(suggestion.parLevel)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested</p>
-                        <p className="mt-1 text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimate</p>
-                        <p className="mt-1 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</p>
-                      </div>
-                    </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
-                ))}
-                {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : null}
-              </div>
-
-              <div className="mt-6">
-                <SectionHeader title="Supplier groups" description="What each supplier needs in the current snapshot." />
-                <div className="space-y-3">
-                  {currentGroups.map((group) => (
-                    <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-ink">{group.supplier}</p>
-                          <p className="text-sm text-muted">{group.itemCount} items</p>
-                        </div>
-                        <Badge tone="orange">{formatMoney(group.estimatedOrderTotal)}</Badge>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {group.lines.slice(0, 4).map((line) => (
-                          <div key={line.id} className="flex items-center justify-between rounded-xl border border-line bg-white px-3 py-2 text-sm">
-                            <span className="truncate text-ink">{line.inventoryItemName}</span>
-                            <span className="text-muted">{formatNumber(line.adjustedQuantity)} {line.unit}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {!currentGroups.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Supplier groups appear once items need ordering.</p> : null}
                 </div>
-              </div>
-            </>
-          )}
-        </Card>
+              ))}
+              {!historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
+            </div>
+          </Card>
 
-        <Card className="p-6">
-          <SectionHeader title={workflowTab === "history" ? "Completed plan history" : "Saved plans"} description={workflowTab === "history" ? "Completed snapshots are locked for review." : "Drafts stay editable. Completed plans preserve their snapshots."} />
-          <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
-            {visiblePlans.map((plan) => (
-              <button
-                key={plan.id}
-                type="button"
-                disabled={creating || saving || loading}
-                onClick={() => void openPlan(plan.id)}
-                className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
-                  selectedPlanId === plan.id
-                    ? "border-brand-200 bg-brand-50"
-                    : plan.status === "Draft"
-                      ? "border-brand-100 bg-brand-50/50"
+          <Card className="p-6">
+            <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
+            <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
+              {visiblePlans.map((plan) => (
+                <button
+                  key={plan.id}
+                  type="button"
+                  disabled={creating || saving || loading}
+                  onClick={() => void openPlan(plan.id)}
+                  className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
+                    selectedPlanId === plan.id
+                      ? "border-brand-200 bg-brand-50"
+                      : plan.status === "Draft"
+                        ? "border-brand-100 bg-brand-50/50"
+                        : plan.status === "Prepared"
+                          ? "border-amber-200 bg-amber-50/70"
+                          : "border-line bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{plan.name}</p>
+                      <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
+                    </div>
+                    <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    {plan.status === "Draft"
+                      ? "Editable draft"
                       : plan.status === "Prepared"
-                        ? "border-amber-200 bg-amber-50/70"
-                        : "border-line bg-slate-50"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-ink">{plan.name}</p>
-                    <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
+                        ? "Prepared snapshot"
+                        : "Completed history"}
+                  </p>
+                </button>
+              ))}
+              {!visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No draft plans yet. Start a draft when you are ready.</p> : null}
+            </div>
+          </Card>
+        </div>
+      ) : showCompactEmptyState ? (
+        <div className="space-y-6">
+          <Card className="p-6">
+            <SectionHeader title="No items currently need reordering." description="Tracked inventory is currently above its reorder thresholds." />
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {completedPlanCount > 0 ? <Badge tone="neutral">{completedPlanCount} completed plan{completedPlanCount === 1 ? "" : "s"} available in History</Badge> : null}
+              <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
+                Start manual draft
+              </Button>
+              <Button variant="secondary" type="button" onClick={() => setWorkflowTab("history")}>
+                View history
+              </Button>
+            </div>
+            <p className="mt-4 text-sm text-muted">Completed plans stay preserved as history snapshots.</p>
+          </Card>
+
+          <Card className="p-6">
+            <SectionHeader title="Completed plan history" description="History stays separate from live reorder pressure." />
+            <div className="space-y-3">
+              {historyPlans.slice(0, 3).map((plan) => (
+                <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{plan.name}</p>
+                      <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
+                    </div>
+                    <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
-                  <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
+                  </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
-                  <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
+              ))}
+              {!historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
+            </div>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+          <Card className="p-6">
+            <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
+            <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+              {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
+                <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{suggestion.inventoryItemName}</p>
+                      <p className="text-sm text-muted">{suggestion.supplier || "Unassigned supplier"} • {suggestion.category}</p>
+                    </div>
+                    <Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Current</p>
+                      <p className="mt-1 text-ink">{formatNumber(suggestion.currentQuantity)} {suggestion.unit}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Minimum / PAR</p>
+                      <p className="mt-1 text-ink">{formatNumber(suggestion.minimumQuantity)} / {formatNumber(suggestion.parLevel)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested</p>
+                      <p className="mt-1 text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimate</p>
+                      <p className="mt-1 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</p>
+                    </div>
+                  </div>
                 </div>
-                <p className="mt-2 text-xs text-muted">
-                  {plan.status === "Draft"
-                    ? "Editable draft"
-                    : plan.status === "Prepared"
-                      ? "Prepared snapshot"
-                      : "Completed history"}
-                </p>
-              </button>
-            ))}
-            {!visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{workflowTab === "history" ? "No completed plans yet." : "No draft plans yet. Start a draft when you are ready."}</p> : null}
-          </div>
-        </Card>
-      </div>
+              ))}
+              {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : null}
+            </div>
+
+            <div className="mt-6">
+              <SectionHeader title="Supplier groups" description="What each supplier needs in the current snapshot." />
+              <div className="space-y-3">
+                {currentGroups.map((group) => (
+                  <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-ink">{group.supplier}</p>
+                        <p className="text-sm text-muted">{group.itemCount} items</p>
+                      </div>
+                      <Badge tone="orange">{formatMoney(group.estimatedOrderTotal)}</Badge>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {group.lines.slice(0, 4).map((line) => (
+                        <div key={line.id} className="flex items-center justify-between rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                          <span className="truncate text-ink">{line.inventoryItemName}</span>
+                          <span className="text-muted">{formatNumber(line.adjustedQuantity)} {line.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {!currentGroups.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Supplier groups appear once items need ordering.</p> : null}
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
+            <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
+              {visiblePlans.map((plan) => (
+                <button
+                  key={plan.id}
+                  type="button"
+                  disabled={creating || saving || loading}
+                  onClick={() => void openPlan(plan.id)}
+                  className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
+                    selectedPlanId === plan.id
+                      ? "border-brand-200 bg-brand-50"
+                      : plan.status === "Draft"
+                        ? "border-brand-100 bg-brand-50/50"
+                        : plan.status === "Prepared"
+                          ? "border-amber-200 bg-amber-50/70"
+                          : "border-line bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{plan.name}</p>
+                      <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
+                    </div>
+                    <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    {plan.status === "Draft"
+                      ? "Editable draft"
+                      : plan.status === "Prepared"
+                        ? "Prepared snapshot"
+                        : "Completed history"}
+                  </p>
+                </button>
+              ))}
+              {!visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No draft plans yet. Start a draft when you are ready.</p> : null}
+            </div>
+          </Card>
+        </div>
+      )}
 
       <Card className="p-6">
         <SectionHeader

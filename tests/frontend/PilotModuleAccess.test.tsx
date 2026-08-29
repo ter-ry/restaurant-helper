@@ -130,6 +130,7 @@ describe("Pilot module access", () => {
     expect(screen.getByText("Organization")).toBeVisible();
     expect(screen.getByText("Location")).toBeVisible();
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
+    expect(screen.queryByText("Variance Cafe · Line Kitchen")).not.toBeInTheDocument();
 
     const purchasesLink = screen.getByRole("link", { name: "Purchases" });
     expect(purchasesLink).toHaveTextContent(/Purchases.*P/);

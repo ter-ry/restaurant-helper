@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Plus, RefreshCcw, Save, ClipboardList, Search } from "lucide-react";
+import { CheckCircle2, Plus, RefreshCcw, Save, Search } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -84,6 +84,7 @@ export function PilotStockCountsPage() {
   const [creating, setCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<"save" | "finalize" | null>(null);
   const [confirmConcurrency, setConfirmConcurrency] = useState(false);
+  const [showConcurrencyDetails, setShowConcurrencyDetails] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [lineSearch, setLineSearch] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
@@ -133,10 +134,12 @@ export function PilotStockCountsPage() {
         setDraft(sessionToDraft(activeSession));
         setSavedDraftSignature(JSON.stringify(sessionToDraft(activeSession)));
         setConfirmConcurrency(false);
+        setShowConcurrencyDetails(false);
       } else {
         setDraft(null);
         setSavedDraftSignature(null);
         setConfirmConcurrency(false);
+        setShowConcurrencyDetails(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load count sessions.");
@@ -172,6 +175,7 @@ export function PilotStockCountsPage() {
     if (selectedSession) {
       setDraft(sessionToDraft(selectedSession));
       setConfirmConcurrency(false);
+      setShowConcurrencyDetails(false);
     }
   }, [selectedSession]);
 
@@ -190,8 +194,15 @@ export function PilotStockCountsPage() {
   useEffect(() => {
     if (draft?.status === "Completed") {
       setConfirmConcurrency(false);
+      setShowConcurrencyDetails(false);
     }
   }, [draft?.status]);
+
+  useEffect(() => {
+    if (!draft?.hasMovementSinceStart) {
+      setShowConcurrencyDetails(false);
+    }
+  }, [draft?.hasMovementSinceStart]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -470,7 +481,7 @@ export function PilotStockCountsPage() {
               <p className="mt-2 text-sm leading-6 text-muted">
                 {isCompleted
                   ? "Inventory has already been updated from this count. Review the locked snapshot below for audit history."
-                  : "This draft is still editable. Save draft keeps it open; Apply count to inventory posts the reconciliation movements."}
+                  : "Draft counts stay editable. Save draft keeps the session open; Apply count to inventory posts reconciliation movements."}
               </p>
             </div>
           ) : null}
@@ -497,23 +508,34 @@ export function PilotStockCountsPage() {
 
               {draft.hasMovementSinceStart ? (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  Inventory moved after this count began. Review the variances, then confirm you want to finalize against the current ledger.
-                </div>
-              ) : null}
-              {conflictLines.length ? (
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-white px-4 py-3">
-                  <p className="text-sm font-semibold text-ink">Later movements since this count began</p>
-                  <div className="mt-3 space-y-2">
-                    {conflictLines.slice(0, 4).map((line) => (
-                      <div key={line.id} className="flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-3 py-2 text-sm">
-                        <div className="min-w-0">
-                          <p className="font-medium text-ink">{line.itemNameSnapshot}</p>
-                          <p className="text-xs text-muted">{line.movementCountSinceStart} later movement{line.movementCountSinceStart === 1 ? "" : "s"}</p>
-                        </div>
-                        <Badge tone="warning">{line.movementCountSinceStart} later movement{line.movementCountSinceStart === 1 ? "" : "s"}</Badge>
-                      </div>
-                    ))}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">Inventory changed after this count began.</p>
+                      <p className="mt-1 leading-6">
+                        {conflictLines.length} item{conflictLines.length === 1 ? " has" : "s have"} later inventory activity. Review it before applying this count.
+                      </p>
+                    </div>
+                    {conflictLines.length ? (
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        disabled={!conflictLines.length}
+                        onClick={() => setShowConcurrencyDetails((current) => !current)}
+                      >
+                        {showConcurrencyDetails ? "Hide details" : "View details"}
+                      </Button>
+                    ) : null}
                   </div>
+                  {showConcurrencyDetails && conflictLines.length ? (
+                    <div className="mt-3 space-y-2">
+                      {conflictLines.slice(0, 4).map((line) => (
+                        <div key={line.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm text-ink">
+                          <p className="font-medium">{line.itemNameSnapshot}</p>
+                          <Badge tone="warning">{line.movementCountSinceStart} later movement{line.movementCountSinceStart === 1 ? "" : "s"}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -626,7 +648,7 @@ export function PilotStockCountsPage() {
               {draft.hasMovementSinceStart ? (
                 <label className="mt-4 flex items-center gap-2 text-sm text-muted">
                   <input checked={confirmConcurrency} disabled={draft.status === "Completed"} type="checkbox" onChange={(event) => setConfirmConcurrency(event.target.checked)} />
-                  I reviewed the later inventory movements and want to finalize against the current ledger.
+                  I reviewed the later inventory activity and want to reconcile this count against the current ledger.
                 </label>
               ) : null}
             </>

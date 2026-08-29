@@ -187,8 +187,14 @@ describe("PilotStockCountsPage", () => {
     const draftSession = createCountSession("Draft", 7);
     draftSession.hasMovementSinceStart = true;
     draftSession.movementCountSinceStart = 2;
+    draftSession.countedLineCount = 2;
+    draftSession.uncountedLineCount = 0;
+    draftSession.varianceTotal = 0.7;
     draftSession.lines[0].hasMovementSinceStart = true;
     draftSession.lines[0].movementCountSinceStart = 2;
+    draftSession.lines[1].countedQuantity = 6;
+    draftSession.lines[1].variance = 0;
+    draftSession.lines[1].resultingQuantity = 6;
 
     mockApi.fetchPilotCountSessions.mockResolvedValue({ countSessions: [draftSession, createCountSession("Completed", 8)] });
     mockApi.fetchPilotCountSession.mockImplementation(async (sessionId: number) => {
@@ -204,8 +210,15 @@ describe("PilotStockCountsPage", () => {
 
     renderPage();
 
-    expect((await screen.findAllByText(/2 later movements?/)).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Review movements first" })).toBeVisible();
+    expect(await screen.findByText("Inventory changed after this count began.")).toBeVisible();
+    expect(screen.getByText("1 item has later inventory activity. Review it before applying this count.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View details" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "View details" }));
+    expect(screen.getAllByText("2 later movements").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Hide details" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review movements first" })).toBeDisabled();
     expect(screen.queryByText("Clear")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("I reviewed the later inventory activity and want to reconcile this count against the current ledger."));
+    expect(screen.getByRole("button", { name: "Apply count to inventory" })).toBeEnabled();
   });
 });
