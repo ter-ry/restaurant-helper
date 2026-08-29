@@ -42,20 +42,20 @@ function NavItem({
   onClick?: () => void;
 }) {
   return (
-    <NavLink
+      <NavLink
       to={to}
       aria-label={label}
       title={label}
       className={({ isActive }) =>
         [
           "flex items-center gap-3 rounded-2xl py-3 text-sm font-semibold transition",
-          collapsed ? "justify-center px-2" : "justify-between px-4",
+          collapsed ? "justify-center px-2" : "justify-start px-3",
           isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100 hover:text-ink",
         ].join(" ")
       }
       onClick={onClick}
     >
-      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-[11px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border text-[11px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
         {label.slice(0, 1)}
       </span>
       <span className={collapsed ? "sr-only" : "truncate"}>{children}</span>
@@ -310,18 +310,13 @@ export function PilotWorkspaceLayout() {
       <div className="xl:flex">
         <aside
           className={`sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-4 shadow-sm transition-[width] duration-200 xl:flex xl:flex-col ${
-            desktopSidebarCollapsed ? "xl:w-24" : "xl:w-72"
+            desktopSidebarCollapsed ? "xl:w-16" : "xl:w-60"
           }`}
         >
-          <div className={`flex items-start ${desktopSidebarCollapsed ? "justify-center" : "justify-between gap-3"}`}>
+          <div className={`flex items-center ${desktopSidebarCollapsed ? "justify-center" : "justify-between gap-3"}`}>
             <div className={`flex items-center gap-3 ${desktopSidebarCollapsed ? "flex-col text-center" : ""}`}>
               <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
                 <Building2 className="h-6 w-6" />
-              </div>
-              <div className={desktopSidebarCollapsed ? "sr-only" : "min-w-0"}>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
-                <h1 className="truncate text-lg font-bold">{organization?.name ?? "Flowtally pilot"}</h1>
-                <p className="mt-1 truncate text-xs text-muted">{locationLabel}</p>
               </div>
             </div>
             <button
@@ -335,7 +330,7 @@ export function PilotWorkspaceLayout() {
             </button>
           </div>
 
-          <div className={`mt-5 rounded-2xl border border-line bg-slate-50 ${desktopSidebarCollapsed ? "p-3" : "p-4"}`}>
+          <div className={`mt-5 rounded-2xl border border-line bg-slate-50 ${desktopSidebarCollapsed ? "p-2.5" : "p-4"}`}>
             {!desktopSidebarCollapsed ? (
               <>
                 {organizations.length > 1 ? (
@@ -371,18 +366,18 @@ export function PilotWorkspaceLayout() {
             ) : (
               <div className="space-y-2 text-center">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Workspace</p>
-                <p className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm">{organization?.name ?? "Pilot"}</p>
-                <p className="rounded-2xl bg-white px-3 py-2 text-xs text-muted shadow-sm">{locationLabel}</p>
+                <p className="rounded-2xl bg-white px-2 py-2 text-[11px] font-semibold text-ink shadow-sm">{organization?.name ?? "Pilot"}</p>
+                <p className="rounded-2xl bg-white px-2 py-2 text-[11px] text-muted shadow-sm">{locationLabel}</p>
               </div>
             )}
           </div>
 
-          <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-1" : ""}`}>
-                {visibleNavItems.map((item) => (
-                  <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed}>
-                    {item.label}
-                  </NavItem>
-                ))}
+          <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-0.5" : ""}`}>
+            {visibleNavItems.map((item) => (
+              <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed}>
+                {item.label}
+              </NavItem>
+            ))}
           </nav>
 
           <div className={`mt-auto space-y-3 border-t border-line pt-5 text-sm text-muted ${desktopSidebarCollapsed ? "items-center" : ""}`}>

@@ -126,8 +126,9 @@ export function PilotStockCountsPage() {
         setSelectedItemIds(inventory.items.filter((item) => item.active).map((item) => item.id));
         setSelectionSeeded(true);
       }
-      const activeSession = current ?? nextSessions[0] ?? null;
+      const activeSession = current ?? nextSessions.find((entry) => entry.status === "Draft") ?? nextSessions[0] ?? null;
       if (activeSession) {
+        setWorkflowTab(activeSession.status === "Completed" ? "history" : "active");
         setSelectedId(activeSession.id);
         setDraft(sessionToDraft(activeSession));
         setSavedDraftSignature(JSON.stringify(sessionToDraft(activeSession)));
@@ -173,6 +174,18 @@ export function PilotStockCountsPage() {
       setConfirmConcurrency(false);
     }
   }, [selectedSession]);
+
+  useEffect(() => {
+    if (!visibleSessions.length) {
+      if (selectedId !== null) {
+        setSelectedId(null);
+      }
+      return;
+    }
+    if (!visibleSessions.some((session) => session.id === selectedId)) {
+      setSelectedId(visibleSessions[0].id);
+    }
+  }, [selectedId, visibleSessions]);
 
   useEffect(() => {
     if (draft?.status === "Completed") {
@@ -357,61 +370,67 @@ export function PilotStockCountsPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
-        <SectionHeader title="Start a count" description="Pick the active inventory items to include, then start or resume a count session." />
-        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Search className="h-4 w-4 text-muted" />
-                <input className="w-full bg-transparent text-sm outline-none" placeholder="Search items to include" value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} />
+      {workflowTab === "active" ? (
+        <Card className="p-6">
+          <SectionHeader title="Start a count" description="Pick the active inventory items to include, then start or resume a count session." />
+          <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Search className="h-4 w-4 text-muted" />
+                  <input className="w-full bg-transparent text-sm outline-none" placeholder="Search items to include" value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge tone="neutral">{selectedItemCount} selected</Badge>
+                <Badge tone="neutral">{activeItemCount} active items</Badge>
+                <Badge tone={selectedItemCount === activeItemCount ? "success" : "warning"}>{selectedItemCount === activeItemCount ? "All active selected" : "Partial selection"}</Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => setSelectedItemIds(inventoryItems.filter((item) => item.active).map((item) => item.id))}>
+                  Select active items
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setSelectedItemIds([])}>
+                  Clear selection
+                </Button>
+                <Button disabled={saving || !selectedItemCount} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
+                  Start count
+                </Button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <Badge tone="neutral">{selectedItemCount} selected</Badge>
-              <Badge tone="neutral">{activeItemCount} active items</Badge>
-              <Badge tone={selectedItemCount === activeItemCount ? "success" : "warning"}>{selectedItemCount === activeItemCount ? "All active selected" : "Partial selection"}</Badge>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={() => setSelectedItemIds(inventoryItems.filter((item) => item.active).map((item) => item.id))}>
-                Select active items
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setSelectedItemIds([])}>
-                Clear selection
-              </Button>
-              <Button disabled={saving || !selectedItemCount} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
-                Start count
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Included items</p>
-            <div className="max-h-72 space-y-2 overflow-auto pr-1">
-              {filteredItems.map((item) => {
-                const selected = selectedItemIds.includes(item.id);
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    disabled={creating || saving}
-                    onClick={() => setSelectedItemIds((current) => (current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]))}
-                    className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
-                      selected ? "border-brand-200 bg-brand-50" : "border-line bg-white"
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p className="font-semibold text-ink">{item.name}</p>
-                      <p className="text-sm text-muted">{item.category} • {formatNumber(item.currentOnHand)} {item.stockUnit}</p>
-                    </div>
-                    <Badge tone={selected ? "success" : "neutral"}>{selected ? "Included" : "Excluded"}</Badge>
-                  </button>
-                );
-              })}
-              {!filteredItems.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No active inventory items match this search.</p> : null}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Included items</p>
+              <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                {filteredItems.map((item) => {
+                  const selected = selectedItemIds.includes(item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={creating || saving}
+                      onClick={() => setSelectedItemIds((current) => (current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]))}
+                      className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${
+                        selected ? "border-brand-200 bg-brand-50" : "border-line bg-white"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-ink">{item.name}</p>
+                        <p className="text-sm text-muted">{item.category} • {formatNumber(item.currentOnHand)} {item.stockUnit}</p>
+                      </div>
+                      <Badge tone={selected ? "success" : "neutral"}>{selected ? "Included" : "Excluded"}</Badge>
+                    </button>
+                  );
+                })}
+                {!filteredItems.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No active inventory items match this search.</p> : null}
+              </div>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      ) : (
+        <Card className="p-6">
+          <SectionHeader title="Completed count history" description="History stays read-only. Open a completed count to review the locked snapshot and reconciliation movements." />
+        </Card>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
         <Card className="p-6">
@@ -438,7 +457,7 @@ export function PilotStockCountsPage() {
 
         <Card className="p-6">
           <SectionHeader
-            title={draft?.id ? `Edit count #${draft.id}` : "Start a count"}
+            title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}
           />
 
@@ -491,7 +510,7 @@ export function PilotStockCountsPage() {
                           <p className="font-medium text-ink">{line.itemNameSnapshot}</p>
                           <p className="text-xs text-muted">{line.movementCountSinceStart} later movement{line.movementCountSinceStart === 1 ? "" : "s"}</p>
                         </div>
-                        <Badge tone="warning">{line.hasMovementSinceStart ? "Review" : "Clear"}</Badge>
+                        <Badge tone="warning">{line.movementCountSinceStart} later movement{line.movementCountSinceStart === 1 ? "" : "s"}</Badge>
                       </div>
                     ))}
                   </div>

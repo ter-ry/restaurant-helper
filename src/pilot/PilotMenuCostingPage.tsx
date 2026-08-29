@@ -610,7 +610,7 @@ export function PilotMenuCostingPage() {
                           <div>
                             <p className="font-semibold text-ink">{ingredient.inventoryItem?.name ?? "Unknown item"}</p>
                             <p className="mt-1 text-sm text-muted">
-                              {formatNumber(ingredient.quantityRequired)} {ingredient.unit} · {formatMoney(ingredient.lineCost)} line cost
+                              {formatNumber(ingredient.quantityRequired)} {ingredient.unit} × {formatMoney(ingredient.quantityRequired ? (ingredient.lineCost ?? 0) / ingredient.quantityRequired : 0)} average cost = {formatMoney(ingredient.lineCost)} ingredient cost
                             </p>
                           </div>
                           <div className="flex items-center gap-2">

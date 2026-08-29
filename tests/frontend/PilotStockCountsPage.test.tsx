@@ -163,6 +163,7 @@ describe("PilotStockCountsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Count sessions that turn into real stock adjustments" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Active count" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Start count" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Apply count to inventory" })).toBeVisible();
     expect(screen.getByText("Draft #7")).toBeVisible();
@@ -171,12 +172,40 @@ describe("PilotStockCountsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
     expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Completed count history" })).toBeVisible();
     expect(screen.getByText("Completed #8")).toBeVisible();
     expect(screen.queryByText("Draft #7")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start count" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Completed #8"));
 
     await waitFor(() => expect(screen.getByText("This count has been finalized and the inventory snapshot above is now read-only.")).toBeVisible());
     expect(screen.getByText("Count applied")).toBeVisible();
+  });
+
+  it("shows later movement warnings without a fake review action", async () => {
+    const draftSession = createCountSession("Draft", 7);
+    draftSession.hasMovementSinceStart = true;
+    draftSession.movementCountSinceStart = 2;
+    draftSession.lines[0].hasMovementSinceStart = true;
+    draftSession.lines[0].movementCountSinceStart = 2;
+
+    mockApi.fetchPilotCountSessions.mockResolvedValue({ countSessions: [draftSession, createCountSession("Completed", 8)] });
+    mockApi.fetchPilotCountSession.mockImplementation(async (sessionId: number) => {
+      if (sessionId === 7) {
+        return draftSession;
+      }
+      if (sessionId === 8) {
+        return createCountSession("Completed", 8);
+      }
+      throw new Error("Session not found");
+    });
+    mockApi.finalizePilotCountSession.mockResolvedValue(draftSession);
+
+    renderPage();
+
+    expect((await screen.findAllByText(/2 later movements?/)).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Review movements first" })).toBeVisible();
+    expect(screen.queryByText("Clear")).not.toBeInTheDocument();
   });
 });
