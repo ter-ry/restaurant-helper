@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, Building2, ChevronLeft, ChevronRight, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Building2, ChevronLeft, ChevronRight, ExternalLink, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
 import { usePilotSession } from "./PilotSessionProvider";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
@@ -42,23 +42,23 @@ function NavItem({
   onClick?: () => void;
 }) {
   return (
-      <NavLink
+    <NavLink
       to={to}
       aria-label={label}
       title={label}
       className={({ isActive }) =>
         [
-          "flex items-center gap-3 rounded-2xl py-3 text-sm font-semibold transition",
+          "flex items-center justify-start gap-2 rounded-2xl py-3 text-sm font-semibold transition",
           collapsed ? "justify-center px-2" : "justify-start px-3",
           isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100 hover:text-ink",
         ].join(" ")
       }
       onClick={onClick}
     >
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border text-[11px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
+      <span className={collapsed ? "sr-only" : "truncate"}>{children}</span>
+      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border text-[10px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
         {label.slice(0, 1)}
       </span>
-      <span className={collapsed ? "sr-only" : "truncate"}>{children}</span>
     </NavLink>
   );
 }
@@ -313,14 +313,14 @@ export function PilotWorkspaceLayout() {
             desktopSidebarCollapsed ? "xl:w-16" : "xl:w-60"
           }`}
         >
-          <div className={`flex items-center ${desktopSidebarCollapsed ? "justify-center" : "justify-between gap-3"}`}>
+          <div className={`flex ${desktopSidebarCollapsed ? "flex-col items-center gap-2" : "items-center justify-between gap-3"}`}>
             <div className={`flex items-center gap-3 ${desktopSidebarCollapsed ? "flex-col text-center" : ""}`}>
               <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
                 <Building2 className="h-6 w-6" />
               </div>
             </div>
             <button
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-ink transition hover:bg-slate-50"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink transition hover:bg-slate-50"
               type="button"
               aria-label={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -330,24 +330,27 @@ export function PilotWorkspaceLayout() {
             </button>
           </div>
 
-          <div className={`mt-5 rounded-2xl border border-line bg-slate-50 ${desktopSidebarCollapsed ? "p-2.5" : "p-4"}`}>
-            {!desktopSidebarCollapsed ? (
-              <>
+          {!desktopSidebarCollapsed ? (
+            <div className="mt-4 space-y-3 rounded-2xl border border-line bg-slate-50 p-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
                 {organizations.length > 1 ? (
-                  <div className="mb-4">
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
-                    <select className="input mt-2" value={organization.id} onChange={handleOrganizationChange}>
-                      {organizations.map((entry) => (
-                        <option key={entry.organization.id} value={entry.organization.id}>
-                          {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Current location</p>
+                  <select className="input mt-1" value={organization.id} onChange={handleOrganizationChange}>
+                    {organizations.map((entry) => (
+                      <option key={entry.organization.id} value={entry.organization.id}>
+                        {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="mt-1 font-semibold text-ink">{organization?.name ?? "Flowtally pilot"}</p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
                 {locations.length > 1 ? (
-                  <select className="input mt-2" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
+                  <select className="input mt-1" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
                     {!currentLocation ? (
                       <option value="" disabled>
                         Select a location
@@ -360,17 +363,11 @@ export function PilotWorkspaceLayout() {
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-2 font-semibold text-ink">{locationLabel}</p>
+                  <p className="mt-1 font-semibold text-ink">{locationLabel}</p>
                 )}
-              </>
-            ) : (
-              <div className="space-y-2 text-center">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Workspace</p>
-                <p className="rounded-2xl bg-white px-2 py-2 text-[11px] font-semibold text-ink shadow-sm">{organization?.name ?? "Pilot"}</p>
-                <p className="rounded-2xl bg-white px-2 py-2 text-[11px] text-muted shadow-sm">{locationLabel}</p>
               </div>
-            )}
-          </div>
+            </div>
+          ) : null}
 
           <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-0.5" : ""}`}>
             {visibleNavItems.map((item) => (
@@ -394,6 +391,7 @@ export function PilotWorkspaceLayout() {
                 type="button"
                 onClick={() => void signOut()}
                 title="Sign out"
+                aria-label="Sign out"
               >
                 <LogOut className="h-4 w-4" />
                 <span className={desktopSidebarCollapsed ? "sr-only" : ""}>Sign out</span>
@@ -402,7 +400,9 @@ export function PilotWorkspaceLayout() {
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
                 to="/"
                 title="Public site"
+                aria-label="Public site"
               >
+                <ExternalLink className="h-4 w-4" />
                 <span className={desktopSidebarCollapsed ? "sr-only" : ""}>Public site</span>
               </Link>
             </div>
@@ -419,9 +419,8 @@ export function PilotWorkspaceLayout() {
               >
                 <Menu className="h-5 w-5" />
               </button>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-ink">{currentSectionLabel}</p>
-                <p className="truncate text-xs text-muted">{currentContextLabel}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-ink">{currentSectionLabel}</p>
               </div>
               <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void refreshSession()} title="Refresh session">
                 <RefreshCw className="h-4 w-4" />

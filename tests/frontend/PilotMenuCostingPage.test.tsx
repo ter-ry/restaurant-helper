@@ -202,7 +202,7 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByText(/Average inventory cost/)).toBeVisible();
     expect(screen.getByText(/Latest purchase price stays visible for comparison/)).toBeVisible();
     expect(
-      screen.getByText((content) => content.includes("2 each") && content.includes("average cost") && content.includes("ingredient cost")),
+      screen.getByText((content) => content.includes("2 each") && content.includes("$3.50/each") && content.includes("ingredient cost")),
     ).toBeVisible();
 
     fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));

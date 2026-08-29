@@ -609,9 +609,19 @@ export function PilotMenuCostingPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="font-semibold text-ink">{ingredient.inventoryItem?.name ?? "Unknown item"}</p>
-                            <p className="mt-1 text-sm text-muted">
-                              {formatNumber(ingredient.quantityRequired)} {ingredient.unit} × {formatMoney(ingredient.quantityRequired ? (ingredient.lineCost ?? 0) / ingredient.quantityRequired : 0)} average cost = {formatMoney(ingredient.lineCost)} ingredient cost
-                            </p>
+                            {(() => {
+                              const averageUnitCost = ingredient.inventoryItem?.averageUnitCost && ingredient.inventoryItem.averageUnitCost > 0
+                                ? ingredient.inventoryItem.averageUnitCost
+                                : ingredient.quantityRequired > 0
+                                  ? (ingredient.lineCost ?? 0) / ingredient.quantityRequired
+                                  : 0;
+                              const costBasisUnit = ingredient.inventoryItem?.stockUnit ?? ingredient.unit;
+                              return (
+                                <p className="mt-1 text-sm text-muted">
+                                  {formatNumber(ingredient.quantityRequired)} {ingredient.unit} × {formatMoney(averageUnitCost)}/{costBasisUnit} average cost = {formatMoney(ingredient.lineCost)} ingredient cost
+                                </p>
+                              );
+                            })()}
                           </div>
                           <div className="flex items-center gap-2">
                             <Button variant="secondary" type="button" onClick={() => { setSelectedIngredientId(ingredient.id); setIngredientDraft(draftFromIngredient(ingredient)); }}>

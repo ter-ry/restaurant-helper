@@ -120,6 +120,39 @@ describe("Pilot module access", () => {
     expect(window.localStorage.getItem("flowtally:pilot-sidebar-collapsed")).toBe("false");
   });
 
+  it("keeps the expanded sidebar context compact and the collapsed rail icon-only", () => {
+    render(
+      <MemoryRouter initialEntries={["/app/dashboard"]}>
+        <PilotWorkspaceLayout />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Organization")).toBeVisible();
+    expect(screen.getByText("Location")).toBeVisible();
+    expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
+
+    const purchasesLink = screen.getByRole("link", { name: "Purchases" });
+    expect(purchasesLink).toHaveTextContent(/Purchases.*P/);
+  });
+
+  it("removes workspace cards and shows a visible public-site icon when collapsed", async () => {
+    window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", "true");
+
+    render(
+      <MemoryRouter initialEntries={["/app/dashboard"]}>
+        <PilotWorkspaceLayout />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
+    expect(screen.queryByText("Organization")).not.toBeInTheDocument();
+    expect(screen.queryByText("Variance Cafe")).not.toBeInTheDocument();
+
+    const publicSiteLink = screen.getByRole("link", { name: "Public site" });
+    expect(publicSiteLink).toBeVisible();
+    expect(publicSiteLink.querySelector("svg")).not.toBeNull();
+  });
+
   it("shows a module unavailable state for menu costing without mounting the page", async () => {
     render(
       <MemoryRouter initialEntries={["/app/menu-costing"]}>
