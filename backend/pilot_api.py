@@ -1455,8 +1455,19 @@ def update_inventory_item(item_id: int):
                 errors={"stockUnit": "Create a new item instead of changing the base unit on a used item."},
             )
         item.stock_unit = new_stock_unit
+    protected_fields = {}
     if "currentOnHand" in payload:
-        item.current_on_hand = _to_quantity(payload.get("currentOnHand"), field="currentOnHand")
+        protected_fields["currentOnHand"] = "Current on hand is controlled by receipts, adjustments, and stock counts."
+    if "averageUnitCost" in payload:
+        protected_fields["averageUnitCost"] = "Average unit cost is derived from purchase history."
+    if "latestPurchasePrice" in payload:
+        protected_fields["latestPurchasePrice"] = "Latest price is derived from purchase receipts."
+    if "lastPurchaseUnit" in payload:
+        protected_fields["lastPurchaseUnit"] = "Last purchase unit is derived from purchase receipts."
+    if "lastPurchaseConversionFactor" in payload:
+        protected_fields["lastPurchaseConversionFactor"] = "Purchase conversion is derived from purchase receipts."
+    if protected_fields:
+        return json_error("Validation failed.", 400, errors=protected_fields)
     if "minQuantity" in payload:
         item.min_quantity = _to_quantity(payload.get("minQuantity"), field="minQuantity")
     if "parLevel" in payload:

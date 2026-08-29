@@ -1294,6 +1294,46 @@ def test_manual_inventory_adjustment_records_movement_and_updates_quantity(app, 
         assert InventoryMovement.query.filter_by(source_record_id="manual-test", source_line_id="manual-test-line").count() == 1
 
 
+def test_inventory_item_patch_rejects_quantity_and_cost_basis_changes(app, client):
+    login(client)
+
+    with app.app_context():
+        cups = InventoryItem.query.filter_by(name="Cups").first()
+        assert cups is not None
+        cups_id = cups.id
+        before_current_on_hand = float(cups.current_on_hand)
+        before_latest_purchase_price = float(cups.latest_purchase_price)
+        before_last_purchase_unit = cups.last_purchase_unit
+        before_last_purchase_conversion_factor = float(cups.last_purchase_conversion_factor)
+
+    response = client.patch(
+        f"/api/pilot/inventory/items/{cups_id}",
+        headers=csrf_headers(client),
+        json={
+            "currentOnHand": before_current_on_hand + 5,
+            "averageUnitCost": 99.99,
+            "latestPurchasePrice": before_latest_purchase_price + 1,
+            "lastPurchaseUnit": "case",
+            "lastPurchaseConversionFactor": before_last_purchase_conversion_factor + 1,
+        },
+    )
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["errors"]["currentOnHand"] == "Current on hand is controlled by receipts, adjustments, and stock counts."
+    assert body["errors"]["averageUnitCost"] == "Average unit cost is derived from purchase history."
+    assert body["errors"]["latestPurchasePrice"] == "Latest price is derived from purchase receipts."
+    assert body["errors"]["lastPurchaseUnit"] == "Last purchase unit is derived from purchase receipts."
+    assert body["errors"]["lastPurchaseConversionFactor"] == "Purchase conversion is derived from purchase receipts."
+
+    with app.app_context():
+        cups_after = InventoryItem.query.filter_by(id=cups_id).first()
+        assert cups_after is not None
+        assert float(cups_after.current_on_hand) == before_current_on_hand
+        assert float(cups_after.latest_purchase_price) == before_latest_purchase_price
+        assert cups_after.last_purchase_unit == before_last_purchase_unit
+        assert float(cups_after.last_purchase_conversion_factor) == before_last_purchase_conversion_factor
+
+
 def test_reorder_plan_mark_ordered(app, client):
     login(client)
 
