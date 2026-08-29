@@ -56,7 +56,7 @@ interface SupplierDraft {
 
 type InventoryEditorMode = "hidden" | "create" | "edit";
 type InventoryTab = "items" | "suppliers";
-type ItemDetailTab = "overview" | "edit" | "history";
+type HistoryTab = "movements" | "purchases" | "supplierMappings";
 
 function blankDraft(suppliers: PilotSupplierSummary[] = []): InventoryDraft {
   return {
@@ -134,7 +134,7 @@ export function PilotInventoryPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editorMode, setEditorMode] = useState<InventoryEditorMode>("hidden");
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>("items");
-  const [itemDetailTab, setItemDetailTab] = useState<ItemDetailTab>("overview");
+  const [historyTab, setHistoryTab] = useState<HistoryTab>("movements");
   const [draft, setDraft] = useState<InventoryDraft>(blankDraft());
   const [itemDetail, setItemDetail] = useState<PilotInventoryItemDetail | null>(null);
   const [itemDetailLoading, setItemDetailLoading] = useState(false);
@@ -150,6 +150,8 @@ export function PilotInventoryPage() {
   const [adjustmentNote, setAdjustmentNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adjustmentMessage, setAdjustmentMessage] = useState<string | null>(null);
+  const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -210,6 +212,14 @@ export function PilotInventoryPage() {
       setDraft(draftFromItem(selectedItem));
     }
   }, [selectedItem]);
+
+  useEffect(() => {
+    setAdjustmentMessage(null);
+    setAdjustmentError(null);
+    setAdjustmentDelta(0);
+    setAdjustmentNote("");
+    setAdjustmentReason("Periodic review");
+  }, [selectedId]);
 
   useEffect(() => {
     if (!selectedItem && editorMode === "edit") {
@@ -273,16 +283,20 @@ export function PilotInventoryPage() {
         name: draft.name,
         category: draft.category,
         stockUnit: draft.stockUnit,
-        currentOnHand: draft.currentOnHand,
         minQuantity: draft.minQuantity,
         parLevel: draft.parLevel,
         preferredSupplierName: draft.preferredSupplierName,
-        latestPurchasePrice: draft.latestPurchasePrice,
-        lastPurchaseUnit: draft.lastPurchaseUnit,
-        lastPurchaseConversionFactor: draft.lastPurchaseConversionFactor,
         averageDailyUsage: draft.averageDailyUsage,
         notes: draft.notes,
         active: draft.active,
+        ...(draft.id === null
+          ? {
+              currentOnHand: draft.currentOnHand,
+              latestPurchasePrice: draft.latestPurchasePrice,
+              lastPurchaseUnit: draft.lastPurchaseUnit,
+              lastPurchaseConversionFactor: draft.lastPurchaseConversionFactor,
+            }
+          : {}),
       };
       const saved = draft.id ? await updatePilotInventoryItem(draft.id, payload) : await createPilotInventoryItem(payload);
       setSelectedId(saved.id);
@@ -346,6 +360,8 @@ export function PilotInventoryPage() {
     setSaving(true);
     setError(null);
     setMessage(null);
+    setAdjustmentMessage(null);
+    setAdjustmentError(null);
 
     try {
       const delta = adjustmentDelta;
@@ -360,40 +376,53 @@ export function PilotInventoryPage() {
         note: adjustmentNote,
       });
       setDraft((current) => (current ? { ...current, currentOnHand: afterOnHand } : current));
-      setMessage(`Inventory updated: ${formatNumber(beforeOnHand)} ${draft.stockUnit} → ${formatNumber(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatNumber(delta)} ${draft.stockUnit}).`);
+      const confirmation = `Inventory updated: ${formatNumber(beforeOnHand)} ${draft.stockUnit} → ${formatNumber(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatNumber(delta)} ${draft.stockUnit}).`;
+      setAdjustmentMessage(confirmation);
+      setMessage(confirmation);
       setAdjustmentDelta(0);
       setAdjustmentNote("");
       await load();
+      setItemDetailLoading(true);
+      try {
+        const refreshedDetail = await fetchPilotInventoryItem(draft.id);
+        setItemDetail(refreshedDetail);
+      } catch {
+        // Keep the success state visible even if the history refresh is interrupted.
+      } finally {
+        setItemDetailLoading(false);
+      }
       setSelectedId(draft.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not record adjustment.");
+      const adjustmentErrorMessage = err instanceof Error ? err.message : "Could not record adjustment.";
+      setAdjustmentError(adjustmentErrorMessage);
+      setError(adjustmentErrorMessage);
     } finally {
       setSaving(false);
     }
   };
 
   const reorderCount = data?.summary.inventoryReorderNowCount ?? 0;
-  const inventoryModeLabel = editorMode === "create" ? "Create item" : editorMode === "edit" ? "Edit item" : "Browse catalog";
   const showItemEditor = editorMode !== "hidden" || selectedId !== null;
+  const savedItemFieldsReadOnly = draft.id !== null;
   const averageCost = draft.averageUnitCost > 0 ? draft.averageUnitCost : null;
   const estimatedInventoryValue = averageCost !== null ? draft.currentOnHand * averageCost : null;
   const openItem = (itemId: number) => {
     setSelectedId(itemId);
     setEditorMode("edit");
-    setItemDetailTab("overview");
+    setHistoryTab("movements");
   };
   const startNewItem = () => {
     setSelectedId(null);
     setEditorMode("create");
     setDraft(blankDraft(suppliers));
     setItemDetail(null);
-    setItemDetailTab("edit");
+    setHistoryTab("movements");
   };
   const closeItemEditor = () => {
     setSelectedId(null);
     setEditorMode("hidden");
     setItemDetail(null);
-    setItemDetailTab("overview");
+    setHistoryTab("movements");
   };
 
   return (
@@ -614,9 +643,9 @@ export function PilotInventoryPage() {
       </Card>
       ) : (
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
+      <div className={`grid gap-6 ${showItemEditor ? "xl:grid-cols-[1.35fr_0.95fr]" : "xl:grid-cols-1"}`}>
         <Card className="p-6">
-          <SectionHeader title="Items" description="Search, open, and keep the stock list current." />
+          <SectionHeader title="Items" description="Search, open, and keep the stock list current. PAR = target stock; Minimum = reorder trigger." />
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-slate-50 px-4 py-3">
               <Search className="h-4 w-4 text-muted" />
@@ -679,34 +708,11 @@ export function PilotInventoryPage() {
             </div>
           </div>
 
-          <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
-            <p className="font-semibold text-ink">PAR and Minimum</p>
-            <p className="mt-1">PAR is the target stock level. Minimum is the point where reorder becomes urgent.</p>
-          </div>
-
-          <div className="mt-5">
-            <SectionHeader title="Recent movements" description="What changed most recently." />
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-              {(data?.movements ?? []).slice(0, 8).map((movement) => (
-                <div key={movement.id} className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{movement.inventoryItemName}</p>
-                      <p className="text-sm text-muted">{movement.reason}</p>
-                    </div>
-                    <p className={`text-sm font-semibold ${movement.quantityDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      {movement.quantityDelta >= 0 ? "+" : ""}{formatNumber(movement.quantityDelta)} {movement.unit}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </Card>
 
+        {showItemEditor ? (
         <Card className="p-6 lg:sticky lg:top-4">
-          {showItemEditor ? (
-            <>
+          <>
               <SectionHeader
                 title={draft.id ? `Edit ${draft.name || "inventory item"}` : editorMode === "create" ? "Create inventory item" : "Inventory item"}
                 description={draft.id ? "Keep the live preview aligned with the form." : editorMode === "create" ? "Add the new item deliberately, then save it into the catalog." : "Select an item from the catalog to edit it, or start a new one."}
@@ -746,7 +752,14 @@ export function PilotInventoryPage() {
           <div className="mt-4 grid gap-4 md:grid-cols-4">
             <label className="block">
               <span className="text-sm font-semibold text-ink">Current on hand</span>
-              <input className="input mt-1" type="number" step="0.0001" value={draft.currentOnHand} onChange={(event) => setDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) }))} />
+              <input
+                className={`input mt-1 ${savedItemFieldsReadOnly ? "bg-slate-100 text-muted" : ""}`}
+                readOnly={savedItemFieldsReadOnly}
+                type="number"
+                step="0.0001"
+                value={draft.currentOnHand}
+                onChange={(event) => setDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) }))}
+              />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Minimum</span>
@@ -758,17 +771,37 @@ export function PilotInventoryPage() {
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Latest price</span>
-              <input className="input mt-1" type="number" step="0.01" value={draft.latestPurchasePrice} onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))} />
+              <input
+                className={`input mt-1 ${savedItemFieldsReadOnly ? "bg-slate-100 text-muted" : ""}`}
+                readOnly={savedItemFieldsReadOnly}
+                type="number"
+                step="0.01"
+                value={draft.latestPurchasePrice}
+                onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))}
+              />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Last purchase unit</span>
-              <input className="input mt-1" value={draft.lastPurchaseUnit} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))} />
+              <input
+                className={`input mt-1 ${savedItemFieldsReadOnly ? "bg-slate-100 text-muted" : ""}`}
+                readOnly={savedItemFieldsReadOnly}
+                value={draft.lastPurchaseUnit}
+                onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseUnit: event.target.value }))}
+              />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Purchase conversion</span>
-              <input className="input mt-1" type="number" step="0.0001" value={draft.lastPurchaseConversionFactor} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) }))} />
+              <input
+                className={`input mt-1 ${savedItemFieldsReadOnly ? "bg-slate-100 text-muted" : ""}`}
+                readOnly={savedItemFieldsReadOnly}
+                type="number"
+                step="0.0001"
+                value={draft.lastPurchaseConversionFactor}
+                onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) }))}
+              />
             </label>
           </div>
+          {savedItemFieldsReadOnly ? <p className="mt-2 text-xs text-muted">Saved items keep quantity and purchase cost fields read-only so receipts, adjustments, and stock counts remain the source of truth.</p> : null}
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="block">
@@ -837,6 +870,8 @@ export function PilotInventoryPage() {
 
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory adjustment</p>
+              {adjustmentMessage ? <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-900">{adjustmentMessage}</div> : null}
+              {adjustmentError ? <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">{adjustmentError}</div> : null}
               <div className="mt-3 grid gap-4 md:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Quantity delta</span>
@@ -852,7 +887,7 @@ export function PilotInventoryPage() {
                 <textarea className="input mt-1" value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} />
               </label>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
+                <Button disabled={saving || adjustmentDelta === 0 || !draft.id} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
                   Save stock movement
                 </Button>
                 <Button variant="secondary" disabled={saving || !draft.id} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
@@ -865,77 +900,77 @@ export function PilotInventoryPage() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 xl:grid-cols-3">
-            <div className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Purchase history</p>
-              <div className="mt-3 space-y-2">
-                {itemDetailLoading ? <p className="text-sm text-muted">Loading purchase history...</p> : null}
-                {selectedItemPurchaseHistory.length ? selectedItemPurchaseHistory.map((line) => (
-                  <div key={line.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-ink">{line.invoiceNumber}</p>
-                        <p className="text-xs text-muted">{line.supplierName} · {line.invoiceDate}</p>
+          {draft.id ? (
+            <div className="mt-5 rounded-2xl border border-line bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">History</p>
+                  <p className="mt-1 text-sm text-muted">Open one history stream at a time to keep the item detail readable.</p>
+                </div>
+              </div>
+              <WorkspaceTabs
+                ariaLabel="Inventory item history sections"
+                className="mt-3"
+                tabs={[
+                  { id: "purchases", label: "Purchases", badge: selectedItemPurchaseHistory.length },
+                  { id: "movements", label: "Movements", badge: selectedItemMovementHistory.length },
+                  { id: "supplierMappings", label: "Supplier mappings", badge: selectedItemSupplierMappings.length },
+                ]}
+                value={historyTab}
+                onChange={(value) => setHistoryTab(value as HistoryTab)}
+              />
+              <div className="mt-4 max-h-80 overflow-y-auto pr-1">
+                {historyTab === "purchases" ? (
+                  <div className="space-y-2">
+                    {itemDetailLoading ? <p className="text-sm text-muted">Loading purchase history...</p> : null}
+                    {selectedItemPurchaseHistory.length ? selectedItemPurchaseHistory.map((line) => (
+                      <div key={line.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-ink">{line.invoiceNumber}</p>
+                            <p className="text-xs text-muted">{line.supplierName} · {line.invoiceDate}</p>
+                          </div>
+                          <p className="font-semibold text-ink">{formatMoney(line.lineTotal)}</p>
+                        </div>
+                        <p className="mt-2 text-muted">{line.description} · {formatNumber(line.quantity)} {line.purchaseUnit}</p>
                       </div>
-                      <p className="font-semibold text-ink">{formatMoney(line.lineTotal)}</p>
-                    </div>
-                    <p className="mt-2 text-muted">{line.description} · {formatNumber(line.quantity)} {line.purchaseUnit}</p>
+                    )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No purchase history yet.</p> : null}
                   </div>
-                )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No purchase history yet.</p> : null}
+                ) : null}
+                {historyTab === "movements" ? (
+                  <div className="space-y-2">
+                    {itemDetailLoading ? <p className="text-sm text-muted">Loading movement history...</p> : null}
+                    {selectedItemMovementHistory.length ? selectedItemMovementHistory.map((movement) => (
+                      <div key={movement.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-ink">{movement.sourceType}</p>
+                          <p className={`font-semibold ${movement.quantityDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                            {movement.quantityDelta >= 0 ? "+" : ""}{formatNumber(movement.quantityDelta)} {movement.unit}
+                          </p>
+                        </div>
+                        <p className="mt-2 text-xs text-muted">{movement.reason}</p>
+                      </div>
+                    )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No movement history yet.</p> : null}
+                  </div>
+                ) : null}
+                {historyTab === "supplierMappings" ? (
+                  <div className="space-y-2">
+                    {itemDetailLoading ? <p className="text-sm text-muted">Loading mapping history...</p> : null}
+                    {selectedItemSupplierMappings.length ? selectedItemSupplierMappings.map((mapping) => (
+                      <div key={mapping.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
+                        <p className="font-semibold text-ink">{mapping.supplierItemName}</p>
+                        <p className="text-xs text-muted">{mapping.purchaseUnit} → {mapping.inventoryUnit} · x{formatNumber(mapping.conversionFactor)}</p>
+                        <p className="mt-2 text-xs text-muted">{mapping.lastSeenAt ? `Last seen ${mapping.lastSeenAt}` : "No last-seen date"}</p>
+                      </div>
+                    )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No supplier mappings yet.</p> : null}
+                  </div>
+                ) : null}
               </div>
             </div>
-
-            <div className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Movement history</p>
-              <div className="mt-3 space-y-2">
-                {itemDetailLoading ? <p className="text-sm text-muted">Loading movement history...</p> : null}
-                {selectedItemMovementHistory.length ? selectedItemMovementHistory.map((movement) => (
-                  <div key={movement.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold text-ink">{movement.sourceType}</p>
-                      <p className={`font-semibold ${movement.quantityDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                        {movement.quantityDelta >= 0 ? "+" : ""}{formatNumber(movement.quantityDelta)} {movement.unit}
-                      </p>
-                    </div>
-                    <p className="mt-2 text-xs text-muted">{movement.reason}</p>
-                  </div>
-                )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No movement history yet.</p> : null}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Supplier mappings</p>
-              <div className="mt-3 space-y-2">
-                {itemDetailLoading ? <p className="text-sm text-muted">Loading mapping history...</p> : null}
-                {selectedItemSupplierMappings.length ? selectedItemSupplierMappings.map((mapping) => (
-                  <div key={mapping.id} className="rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">
-                    <p className="font-semibold text-ink">{mapping.supplierItemName}</p>
-                    <p className="text-xs text-muted">{mapping.purchaseUnit} → {mapping.inventoryUnit} · x{formatNumber(mapping.conversionFactor)}</p>
-                    <p className="mt-2 text-xs text-muted">{mapping.lastSeenAt ? `Last seen ${mapping.lastSeenAt}` : "No last-seen date"}</p>
-                  </div>
-                )) : !itemDetailLoading ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No supplier mappings yet.</p> : null}
-              </div>
-            </div>
-          </div>
+          ) : null}
           </>
-          ) : (
-            <div className="flex min-h-[44rem] flex-col justify-center rounded-2xl border border-dashed border-line bg-slate-50 p-8">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory workspace</p>
-              <h2 className="mt-2 text-2xl font-bold text-ink">Select an item or create one deliberately</h2>
-              <p className="mt-3 max-w-md text-sm leading-6 text-muted">
-                The catalog stays visible on the left. Open an item to edit its details, or start a new item when you are ready to add one.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Button type="button" onClick={startNewItem}>
-                  New item
-                </Button>
-                <Button variant="secondary" type="button" onClick={() => navigate("/app/reorder-plan")}>
-                  Reorder list
-                </Button>
-              </div>
-            </div>
-          )}
-      </Card>
+        </Card>
+        ) : null}
       </div>
       )}
 
