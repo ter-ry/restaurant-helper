@@ -220,10 +220,12 @@ describe("PilotPurchasesPage", () => {
 
     expect(await screen.findByRole("heading", { name: "New purchase" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Details" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Lines" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Invoice items" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Review" })).toBeVisible();
     const editor = screen.getByTestId("purchase-editor-card");
     expect(within(editor).queryByText("FD-1001")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Supplier")).toHaveValue("");
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("");
     expect(screen.getByTestId("purchase-history-card")).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
@@ -239,9 +241,9 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Lines" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
     expect(await screen.findByTestId("purchase-lines-panel")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Add line" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add item" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     expect(await screen.findByTestId("purchase-review-panel")).toBeVisible();
@@ -293,6 +295,8 @@ describe("PilotPurchasesPage", () => {
 
     expect(await screen.findByText("Invoice FD-1002 received into inventory.")).toBeVisible();
     await waitFor(() => expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible());
+    expect(screen.getByLabelText("Supplier")).toHaveValue("");
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("");
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
     const editor = screen.getByTestId("purchase-editor-card");
     expect(within(editor).queryByText("FD-1002")).not.toBeInTheDocument();

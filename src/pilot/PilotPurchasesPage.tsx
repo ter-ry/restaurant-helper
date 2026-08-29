@@ -78,12 +78,11 @@ function blankLine(): DraftLine {
   };
 }
 
-function buildBlankDraft(data?: PilotPurchasesResponse): PurchaseDraft {
-  const supplierName = data?.suppliers?.[0]?.name ?? "Fresh Dairy Toronto";
+function buildBlankDraft(): PurchaseDraft {
   return {
     id: null,
-    supplierName,
-    invoiceNumber: `FP-${String(Math.floor(Math.random() * 9000) + 1000)}`,
+    supplierName: "",
+    invoiceNumber: "",
     invoiceDate: todayIso(),
     subtotal: 0,
     tax: 0,
@@ -211,7 +210,7 @@ function PurchaseInvoiceDetailsModal({
 
             <Card className="p-5">
               <div className="mb-4">
-                <h3 className="text-lg font-bold text-ink">Line items</h3>
+                <h3 className="text-lg font-bold text-ink">Invoice items</h3>
                 <p className="mt-1 text-sm text-muted">Line mappings, quantities, and costs are shown as stored on the completed record.</p>
               </div>
               <div className="space-y-3">
@@ -315,7 +314,7 @@ export function PilotPurchasesPage() {
         setPurchasePanel("details");
       } else {
         setSelectedId(null);
-        setDraft(buildBlankDraft(purchases));
+        setDraft(buildBlankDraft());
         setDetailInvoice(resolvedInvoice && (resolvedInvoice.status === "Completed" || resolvedInvoice.status === "Corrected") ? resolvedInvoice : null);
         setPurchasePanel("details");
       }
@@ -357,7 +356,7 @@ export function PilotPurchasesPage() {
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
   const purchaseTabs = [
     { id: "details", label: "Details", badge: finalizedStatus ? "Locked" : "Core" },
-    { id: "lines", label: "Lines", badge: `${draft.lineItems.length}` },
+    { id: "lines", label: "Invoice items", badge: `${draft.lineItems.length}` },
     { id: "review", label: "Review", badge: finalizedStatus ? draft.status : readyToReceive ? "Ready" : "Action" },
   ];
 
@@ -392,7 +391,7 @@ export function PilotPurchasesPage() {
 
     try {
       if (status === "Ready" && unresolvedLineCount > 0) {
-        throw new Error("Map every invoice line before marking the purchase ready.");
+        throw new Error("Map every invoice item before marking the purchase ready.");
       }
       const payload = {
         supplierName: draft.supplierName,
@@ -438,7 +437,7 @@ export function PilotPurchasesPage() {
       return;
     }
     if (!readyToReceive) {
-      setError("Map every invoice line before receiving this purchase.");
+      setError("Map every invoice item before receiving this purchase.");
       return;
     }
     setSaving(true);
@@ -448,7 +447,7 @@ export function PilotPurchasesPage() {
     try {
       const received = await receivePilotPurchaseInvoice(draft.id);
       setSelectedId(null);
-      setDraft(buildBlankDraft(data ?? undefined));
+      setDraft(buildBlankDraft());
       setDetailInvoice(null);
       setPurchasePanel("details");
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
@@ -493,7 +492,7 @@ export function PilotPurchasesPage() {
     const invoice = data?.invoices.find((entry) => entry.id === invoiceId) ?? (await fetchPilotPurchaseInvoice(invoiceId));
     if (invoice.status === "Completed" || invoice.status === "Corrected") {
       setSelectedId(null);
-      setDraft(buildBlankDraft(data ?? undefined));
+      setDraft(buildBlankDraft());
       setDetailInvoice(invoice);
       setPurchasePanel("details");
       return;
@@ -560,7 +559,7 @@ export function PilotPurchasesPage() {
                 setSelectedId(null);
                 setReceiveMessage(null);
                 setCorrectionNote("");
-                setDraft(buildBlankDraft(data ?? undefined));
+      setDraft(buildBlankDraft());
                 setPurchasePanel("details");
                 window.requestAnimationFrame(() => {
                   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -601,7 +600,7 @@ export function PilotPurchasesPage() {
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
-                description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Work through details, line items, and review in a compact workspace."}
+                description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Work through details, invoice items, and review in a compact workspace."}
               />
               <div className="flex flex-col items-start gap-2 sm:items-end">
                 <Badge tone={finalizedStatus ? "neutral" : readyToReceive ? "success" : "warning"}>{purchaseStatusLabel}</Badge>
@@ -630,6 +629,7 @@ export function PilotPurchasesPage() {
                       <label className="block">
                         <span className="text-sm font-semibold text-ink">Supplier</span>
                         <select className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
+                          <option value="">Choose a supplier</option>
                           {data?.suppliers?.map((supplier) => (
                             <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
                           ))}
@@ -637,7 +637,7 @@ export function PilotPurchasesPage() {
                       </label>
                       <label className="block">
                         <span className="text-sm font-semibold text-ink">Invoice number</span>
-                        <input className="input mt-1" value={draft.invoiceNumber} onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
+                        <input className="input mt-1" value={draft.invoiceNumber} placeholder="Leave blank until the invoice number is known" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
                       </label>
                       <label className="block">
                         <span className="text-sm font-semibold text-ink">Invoice date</span>
@@ -687,11 +687,11 @@ export function PilotPurchasesPage() {
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-ink">Line items</p>
-                        <p className="mt-1 text-sm text-muted">Map each supplier line before receiving the purchase.</p>
+                        <p className="text-sm font-semibold text-ink">Invoice items</p>
+                        <p className="mt-1 text-sm text-muted">Map each supplier item before receiving the purchase.</p>
                       </div>
                       <button type="button" className="text-sm font-semibold text-brand-700" onClick={addLine} disabled={finalizedStatus}>
-                        Add line
+                        Add item
                       </button>
                     </div>
                     <div className="mt-4 space-y-4">
@@ -773,7 +773,7 @@ export function PilotPurchasesPage() {
                           </div>
                           {line.inventoryItemId ? (
                             <p className="mt-3 text-xs leading-5 text-muted">
-                              Inventory unit {line.inventoryUnit || "each"} will receive {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} units from this line.
+                              Inventory unit {line.inventoryUnit || "each"} will receive {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} units from this item.
                             </p>
                           ) : null}
                         </div>
@@ -790,7 +790,7 @@ export function PilotPurchasesPage() {
                     <p className="mt-1 text-sm text-muted">
                       {finalizedStatus
                         ? "This purchase is locked for review only. Completed and corrected records cannot be received again."
-                        : "Save a draft first, or mark it ready once every invoice line has been mapped to inventory."}
+                        : "Save a draft first, or mark it ready once every invoice item has been mapped to inventory."}
                     </p>
                     <div className="mt-4 flex flex-wrap gap-3">
                       <Button disabled={saving || finalizedStatus} type="button" onClick={() => void saveDraft("Draft")}>
@@ -832,7 +832,7 @@ export function PilotPurchasesPage() {
 
                   <div className="rounded-2xl border border-line bg-white p-4 text-sm text-muted">
                     <p className="font-semibold text-ink">Purchase status</p>
-                    <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Corrected purchases stay view-only and preserve the audit trail. Save ready is available only when every line is mapped.</p>
+                    <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Corrected purchases stay view-only and preserve the audit trail. Save ready is available only when every item is mapped.</p>
                   </div>
                 </section>
               ) : null}
@@ -856,7 +856,7 @@ export function PilotPurchasesPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between text-sm text-muted">
                     <span>{formatMoney(invoice.totalAmount)}</span>
-                    <span>{invoice.lineItems.length} line items</span>
+                    <span>{invoice.lineItems.length} invoice items</span>
                   </div>
                 </button>
               ))}

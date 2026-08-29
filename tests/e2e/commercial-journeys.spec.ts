@@ -1973,11 +1973,11 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(editorCard.getByLabel("Invoice number")).toBeVisible();
   await page.getByLabel("Supplier").selectOption("North Bay Dairy");
   await expect(page.getByLabel("Supplier")).toHaveValue("North Bay Dairy");
-  await page.getByRole("tab", { name: "Lines" }).click();
+  await page.getByRole("tab", { name: "Invoice items" }).click();
   await expect(page.getByTestId("purchase-lines-panel")).toBeVisible();
   await expect(page.getByLabel("Description")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Add line" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
   await expect(page.getByLabel("Description")).toHaveCount(2);
 
   const descriptions = page.getByLabel("Description");
@@ -1999,7 +1999,7 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await page.locator('label:has-text("Qty / price / total") input').nth(3).fill("1");
   await page.locator('label:has-text("Qty / price / total") input').nth(4).fill("5.25");
 
-  await page.getByRole("button", { name: "Add line" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
   await expect(page.getByLabel("Description")).toHaveCount(3);
   await page.getByRole("button", { name: "Remove" }).nth(2).click();
   await expect(page.getByLabel("Description")).toHaveCount(2);
@@ -2009,13 +2009,13 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await page.getByRole("button", { name: "Save ready" }).click();
-  await expect(page.getByText(/Invoice .+ saved successfully\./)).toBeVisible();
+  await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
 
   await page.getByRole("button", { name: "Receive into inventory" }).click();
-  await expect(page.getByText(/Invoice .+ received into inventory\./)).toBeVisible();
+  await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible();
   await expect(page.getByRole("heading", { name: "New purchase" })).toBeVisible();
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });
