@@ -90,7 +90,6 @@ export function PilotWorkspaceLayout() {
     const current = [...visibleNavItems].reverse().find((item) => location.pathname.startsWith(item.to));
     return current?.label ?? "Workspace";
   }, [location.pathname, visibleNavItems]);
-  const currentContextLabel = `${organization?.name ?? "Flowtally pilot"} · ${locationLabel}`;
 
   useEffect(() => {
     window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", String(desktopSidebarCollapsed));
@@ -433,10 +432,7 @@ export function PilotWorkspaceLayout() {
             <div className="hidden items-center justify-between gap-4 px-5 py-3 xl:flex">
               <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Operations workspace</p>
-                <div className="mt-1 flex items-baseline gap-3">
-                  <h2 className="text-lg font-bold tracking-tight text-ink">{currentSectionLabel}</h2>
-                  <p className="truncate text-sm text-muted">{currentContextLabel}</p>
-                </div>
+                <h2 className="mt-1 text-lg font-bold tracking-tight text-ink">{currentSectionLabel}</h2>
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -510,7 +506,6 @@ export function PilotWorkspaceLayout() {
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
                 <h2 className="mt-1 text-lg font-bold text-ink">{currentSectionLabel}</h2>
-                <p className="mt-1 text-xs text-muted">{currentContextLabel}</p>
               </div>
               <button
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink"

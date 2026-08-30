@@ -310,6 +310,9 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("$9.00")).toBeVisible();
     expect(screen.getByText("Inventory value")).toBeVisible();
     expect(screen.getByText("$248.64")).toBeVisible();
+    expect(screen.queryByText("Operational summary")).not.toBeInTheDocument();
+    expect(screen.getByText("Secondary details")).toBeVisible();
+    expect(screen.getAllByText((_, element) => element?.textContent?.includes("Base unit kg") ?? false).length).toBeGreaterThan(0);
 
     expect(screen.getByLabelText("Quantity delta")).toHaveValue(0);
     expect(screen.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
