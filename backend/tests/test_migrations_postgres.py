@@ -458,7 +458,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-    assert _current_revision() == "0014_authenticated_membership_discovery"
+        assert _current_revision() == "0014_authenticated_membership_discovery"
 
     migration_engine = _migration_engine()
     with migration_engine.begin() as connection:
