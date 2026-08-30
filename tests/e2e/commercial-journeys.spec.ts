@@ -106,6 +106,34 @@ type MockState = {
   importJob: any | null;
 };
 
+type DailyCloseUsageFixture = {
+  period: { startAt: string; endAt: string };
+  coverage: Record<string, number | boolean>;
+  totals: {
+    theoreticalUsage: number;
+    actualUsage: number | null;
+    discrepancy: number | null;
+    discrepancyPercent: number | null;
+  };
+  contributingMenuItems: Array<Record<string, unknown>>;
+  unmappedVariations: Array<Record<string, unknown>>;
+  ingredientUsage: Array<Record<string, unknown>>;
+};
+
+type DailyCloseSnapshotFixture = {
+  healthStatus: string;
+  inventoryValue: number;
+  sales: Record<string, unknown>;
+  usage: DailyCloseUsageFixture;
+  variance: {
+    quantity: number | null;
+    percent: number | null;
+    value: number;
+  };
+  square: Record<string, unknown>;
+  readyToFinalize: boolean;
+};
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -2006,7 +2034,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
 
   const businessDate = new Date().toLocaleDateString("en-CA");
   const location = { id: 7, name: "Main Dining Room", timezone: "America/Toronto" };
-  const baseUsage = {
+  const baseUsage: DailyCloseUsageFixture = {
     period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
     coverage: {},
     totals: { theoreticalUsage: 18, actualUsage: null, discrepancy: null, discrepancyPercent: null },
@@ -2014,7 +2042,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
     unmappedVariations: [],
     ingredientUsage: [],
   };
-  const baseSnapshot = {
+  const baseSnapshot: DailyCloseSnapshotFixture = {
     healthStatus: "Open",
     inventoryValue: 1250,
     sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
@@ -2023,11 +2051,11 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
     square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
     readyToFinalize: true,
   };
-  const syncedUsage = {
+  const syncedUsage: DailyCloseUsageFixture = {
     ...baseUsage,
     totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
   };
-  const syncedSnapshot = {
+  const syncedSnapshot: DailyCloseSnapshotFixture = {
     healthStatus: "Ready with warnings",
     inventoryValue: 1250,
     sales: { netSales: 375, orders: 13, refunds: 0, cancelledOrders: 0 },
@@ -2053,7 +2081,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
         createdByUserId: number | null;
         createdAt: string | null;
         updatedAt: string | null;
-        currentSnapshot?: typeof baseSnapshot;
+        currentSnapshot?: DailyCloseSnapshotFixture;
       } = null;
   const buildResponse = () => ({
     session: activeSession,
@@ -2200,10 +2228,8 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("merchant-42")).toBeVisible();
   await expect(page.getByText("Main Dining Room").first()).toBeVisible();
   await expect(page.getByText("ITEM_VARIATION · ITEM-1")).toBeVisible();
-  await page.getByRole("button", { name: "Sync locations" }).click();
-  await page.getByRole("button", { name: "Sync catalog" }).click();
-  await page.getByRole("button", { name: "Sync orders" }).click();
-  await expect(page.getByText("orders-sync completed.")).toBeVisible();
+  await page.getByRole("button", { name: "Sync now" }).click();
+  await expect(page.getByText("Sync now completed.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Usage variance" })).toBeVisible();
   await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
 
