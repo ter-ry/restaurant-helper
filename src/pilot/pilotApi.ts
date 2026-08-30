@@ -716,6 +716,16 @@ export async function finalizePilotDailyClose(sessionId: number) {
   });
 }
 
+export async function syncPilotDailyCloseSales(sessionId: number, payload: { businessDate?: string }) {
+  return requestCsrfJson<PilotDailyCloseResponse>(`/api/pilot/daily-close/${sessionId}/sync-sales`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchPilotSquareStatus(organizationId: number) {
   return fetchSquareStatus(organizationId);
 }

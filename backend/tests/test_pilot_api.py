@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from backend.extensions import db
-from backend.models import DailyCloseSession, InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
+from backend.models import DailyCloseSession, InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, StockCountSession, Supplier, SupplierItemMapping, User
 from backend.seed import (
     LOCAL_LOCATION_NAME,
     LOCAL_MANAGER_EMAIL,
@@ -15,6 +18,7 @@ from backend.seed import (
     LOCAL_OWNER_PASSWORD,
 )
 from backend.tests.conftest import make_operational_organization
+from backend.tests.test_square_integration import connect_square
 
 
 def login(client):
@@ -866,6 +870,173 @@ def test_daily_close_session_lifecycle_respects_module_enablement(app, client):
     assert refetched_body["businessDate"] == "2026-08-30"
     assert refetched_body["session"] is not None
     assert refetched_body["session"]["id"] == session_id
+
+
+def test_daily_close_sync_sales_uses_business_date_bounds(app, client, monkeypatch):
+    login(client)
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = make_operational_organization(
+            owner,
+            name=f"Square Daily Close Org {uuid4().hex[:8]}",
+            location_name="Toronto Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS", "SQUARE_INTEGRATION", "DAILY_CLOSE"),
+        )
+        restaurant_location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        assert restaurant_location is not None
+        restaurant_location_id = restaurant_location.id
+    select_org(client, organization.id)
+
+    connect_square(client, monkeypatch, app, organization.id)
+
+    status_response = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
+    assert status_response.status_code == 200
+    square_location_row_id = status_response.get_json()["connection"]["locations"][0]["id"]
+
+    mapping_response = client.post(
+        "/api/integrations/square/location-mappings",
+        headers=csrf_headers(client),
+        json={
+            "organizationId": organization.id,
+            "squareLocationId": square_location_row_id,
+            "restaurantLocationId": restaurant_location_id,
+        },
+    )
+    assert mapping_response.status_code == 200
+
+    opened = client.post(
+        "/api/pilot/daily-close",
+        headers=csrf_headers(client),
+        json={"locationId": restaurant_location_id, "businessDate": "2026-08-28"},
+    )
+    assert opened.status_code == 200
+    opened_body = opened.get_json()
+    session_id = opened_body["session"]["id"]
+
+    captured: dict[str, object] = {}
+
+    def fake_sync(organization_arg, connection_arg, *, start_at, end_at, location_ids):
+      captured["organization_id"] = organization_arg.id
+      captured["connection_id"] = connection_arg.id
+      captured["start_at"] = start_at
+      captured["end_at"] = end_at
+      captured["location_ids"] = list(location_ids)
+      return {"connection": {"id": connection_arg.id}, "job": {"id": 1, "status": "completed", "cursorJson": {}}}
+
+    monkeypatch.setattr("backend.daily_close.sync_square_orders_for_range", fake_sync)
+
+    synced = client.post(
+        f"/api/pilot/daily-close/{session_id}/sync-sales",
+        headers=csrf_headers(client),
+        json={"businessDate": "2026-08-28"},
+    )
+    assert synced.status_code == 200
+
+    tz = ZoneInfo("America/Toronto")
+    expected_start = datetime(2026, 8, 28, 0, 0, tzinfo=tz).astimezone(timezone.utc)
+    expected_end = (datetime(2026, 8, 28, 0, 0, tzinfo=tz) + timedelta(days=1) - timedelta(microseconds=1)).astimezone(timezone.utc)
+    assert captured["organization_id"] == organization.id
+    assert captured["connection_id"] > 0
+    assert captured["start_at"] == expected_start
+    assert captured["end_at"] == expected_end
+    assert captured["location_ids"] == ["LOC-1"]
+
+
+def test_completed_daily_close_keeps_stored_snapshot_after_source_mutation(app, client, monkeypatch):
+    login(client)
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = make_operational_organization(
+            owner,
+            name=f"Daily Close Snapshot {uuid4().hex[:8]}",
+            location_name="Toronto Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS", "SQUARE_INTEGRATION", "DAILY_CLOSE"),
+        )
+        restaurant_location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        assert restaurant_location is not None
+        square_connection = SquareConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            square_merchant_id="merchant-daily-close",
+            status="connected",
+            sync_status="idle",
+            last_sync_at=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(square_connection)
+        db.session.flush()
+        square_location = SquareLocation(
+            square_connection_id=square_connection.id,
+            square_location_id="LOC-1",
+            name="Toronto Kitchen",
+            status="ACTIVE",
+            raw_payload_json={},
+        )
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(
+            SquareLocationMapping(
+                square_location_id=square_location.id,
+                restaurant_location_id=restaurant_location.id,
+                mapped_by_user_id=owner.id,
+            )
+        )
+        db.session.add(
+            SquareDailySalesSummary(
+                square_connection_id=square_connection.id,
+                square_location_id="LOC-1",
+                restaurant_location_id=restaurant_location.id,
+                sale_date=date(2026, 8, 28),
+                currency="CAD",
+                gross_amount=Decimal("1500"),
+                discount_amount=Decimal("50"),
+                tax_amount=Decimal("100"),
+                tip_amount=Decimal("75"),
+                refund_amount=Decimal("25"),
+                net_amount=Decimal("1600"),
+                order_count=4,
+                cancelled_order_count=0,
+                raw_payload_json={"source": "test"},
+            )
+        )
+        db.session.commit()
+        organization_id = organization.id
+        square_connection_id = square_connection.id
+        restaurant_location_id = restaurant_location.id
+    select_org(client, organization_id)
+
+    opened = client.post(
+        "/api/pilot/daily-close",
+        headers=csrf_headers(client),
+        json={"locationId": restaurant_location_id, "businessDate": "2026-08-28"},
+    )
+    assert opened.status_code == 200
+    opened_body = opened.get_json()
+    session_id = opened_body["session"]["id"]
+    assert opened_body["session"]["currentSnapshot"]["sales"]["netSales"] == 1600
+
+    finalized = client.post(f"/api/pilot/daily-close/{session_id}/finalize", headers=csrf_headers(client))
+    assert finalized.status_code == 200
+    finalized_body = finalized.get_json()
+
+    with app.app_context():
+        summary = SquareDailySalesSummary.query.filter_by(square_connection_id=square_connection_id, square_location_id="LOC-1").first()
+        assert summary is not None
+        summary.net_amount = Decimal("9999")
+        summary.order_count = 99
+        db.session.commit()
+
+    refetched = client.get("/api/pilot/daily-close", query_string={"locationId": restaurant_location_id, "businessDate": "2026-08-28"})
+    assert refetched.status_code == 200
+    refetched_body = refetched.get_json()
+    assert refetched_body["session"]["status"] == "COMPLETED"
+    assert refetched_body["session"]["summarySnapshot"] == finalized_body["session"]["summarySnapshot"]
+    assert refetched_body["session"]["usageSnapshot"] == finalized_body["session"]["usageSnapshot"]
+    assert refetched_body["session"]["exceptionsSnapshot"] == finalized_body["session"]["exceptionsSnapshot"]
+    assert refetched_body["session"]["currentSnapshot"]["sales"]["netSales"] == finalized_body["session"]["currentSnapshot"]["sales"]["netSales"]
 
 
 def test_receipt_initializes_weighted_average_when_inventory_starts_at_zero(app, client):

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Send } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -41,6 +42,13 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <span className="min-w-0 break-words text-sm text-ink sm:max-w-56 sm:text-right">{value}</span>
     </div>
   );
+}
+
+function squareSectionLinkClasses(active: boolean) {
+  return [
+    "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition",
+    active ? "border-ink bg-ink text-white shadow-soft" : "border-line bg-white text-ink hover:bg-slate-50",
+  ].join(" ");
 }
 
 export function PilotSquarePage() {
@@ -166,6 +174,31 @@ export function PilotSquarePage() {
   const totalMappedLocations = squareLocations.length > 0 ? `${mappedLocations}/${squareLocations.length}` : "0";
   const totalMappedMenus = catalogObjects.length > 0 ? `${mappedMenus}/${catalogObjects.length}` : "0";
 
+  const syncNow = async () => {
+    if (!currentOrganizationId || !connectionReady || saving !== null) {
+      return;
+    }
+
+    setSaving("sync-now");
+    setError(null);
+    setMessage(null);
+    try {
+      await syncPilotSquareLocations(currentOrganizationId);
+      await syncPilotSquareCatalog(currentOrganizationId);
+      await syncPilotSquareOrders({
+        organizationId: currentOrganizationId,
+        startAt: new Date(rangeStartAt).toISOString(),
+        endAt: new Date(rangeEndAt).toISOString(),
+      });
+      await load();
+      setMessage("Sync now completed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sync Square.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="surface-panel p-6 sm:p-7">
@@ -235,6 +268,15 @@ export function PilotSquarePage() {
         ) : null}
       </Card>
 
+      <div className="flex flex-wrap gap-2">
+        <Link aria-current="page" className={squareSectionLinkClasses(true)} to="/app/square">
+          Setup & Sync
+        </Link>
+        <Link className={squareSectionLinkClasses(false)} to="/app/square-usage">
+          Usage & Variance
+        </Link>
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <div className="space-y-6">
           <Card className="p-6">
@@ -249,8 +291,15 @@ export function PilotSquarePage() {
             <div className="mt-5 flex flex-wrap gap-2">
               <Button
                 type="button"
+                disabled={!connectionReady || saving !== null}
+                onClick={() => void syncNow()}
+              >
+                {saving === "sync-now" ? "Syncing..." : "Sync now"}
+              </Button>
+              <Button
+                type="button"
                 variant="secondary"
-                disabled={!connectionReady || saving === "locations-sync"}
+                disabled={!connectionReady || saving !== null}
                 onClick={() => {
                   if (!currentOrganizationId) {
                     return;
@@ -263,7 +312,7 @@ export function PilotSquarePage() {
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!connectionReady || saving === "catalog-sync"}
+                disabled={!connectionReady || saving !== null}
                 onClick={() => {
                   if (!currentOrganizationId) {
                     return;
@@ -276,7 +325,7 @@ export function PilotSquarePage() {
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!connectionReady || saving === "orders-sync"}
+                disabled={!connectionReady || saving !== null}
                 onClick={() => void syncOrders()}
               >
                 {saving === "orders-sync" ? "Syncing orders..." : "Sync orders"}
@@ -285,7 +334,7 @@ export function PilotSquarePage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  disabled={saving === "disconnect"}
+                  disabled={saving !== null}
                   onClick={() => {
                     if (!currentOrganizationId) {
                       return;
@@ -349,7 +398,7 @@ export function PilotSquarePage() {
                       </select>
                       <Button
                         type="button"
-                        disabled={!connectionReady || saving === `location-${location.id}` || !locations.length}
+                        disabled={!connectionReady || saving !== null || !locations.length}
                         onClick={() => void saveLocationMapping(location.id)}
                       >
                         {saving === `location-${location.id}` ? "Saving..." : "Save mapping"}
@@ -388,7 +437,7 @@ export function PilotSquarePage() {
                       </select>
                       <Button
                         type="button"
-                        disabled={!connectionReady || saving === `catalog-${catalogObject.id}` || !menuItems.length}
+                        disabled={!connectionReady || saving !== null || !menuItems.length}
                         onClick={() => void saveCatalogMapping(catalogObject.id)}
                       >
                         {saving === `catalog-${catalogObject.id}` ? "Saving..." : "Save mapping"}

@@ -1,5 +1,6 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotSquarePage } from "../../src/pilot/PilotSquarePage";
 import type { PilotMenuCostingResponse, PilotSquareConnectionSummary } from "../../src/pilot/pilotApi";
@@ -206,23 +207,35 @@ describe("PilotSquarePage", () => {
   });
 
   it("shows the disconnected controls and keeps sync actions disabled", async () => {
-    render(<PilotSquarePage />);
+    render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByRole("heading", { name: "Connection and sync" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Connect Square" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Sync locations" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Usage & Variance" })).toHaveAttribute("href", "/app/square-usage");
     expect(screen.getByText("Location mapping")).toBeVisible();
     expect(screen.getByText("Menu mapping")).toBeVisible();
     expect(screen.getByText("disconnected")).toBeVisible();
   });
 
   it("supports connected status, sync, and menu/location mapping updates", async () => {
-    mockApi.fetchPilotSquareStatus.mockResolvedValueOnce({ connection: createConnectedConnection() });
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
 
-    const { container } = render(<PilotSquarePage />);
+    const { container } = render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByRole("button", { name: "Disconnect" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Sync locations" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Usage & Variance" })).toHaveAttribute("href", "/app/square-usage");
     expect(screen.getByText("Main Bar")).toBeVisible();
     expect(screen.getByText("Classic Milk Tea")).toBeVisible();
 
@@ -258,5 +271,12 @@ describe("PilotSquarePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sync locations" }));
     await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("locations-sync completed.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockApi.syncPilotSquareCatalog).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockApi.syncPilotSquareOrders).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Sync now completed.")).toBeVisible();
   });
 });

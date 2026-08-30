@@ -11,6 +11,7 @@ const pilotSessionMock = vi.hoisted(() => ({
 const pilotApiMocks = vi.hoisted(() => ({
   fetchPilotDailyClose: vi.fn(),
   openPilotDailyClose: vi.fn(),
+  syncPilotDailyCloseSales: vi.fn(),
   updatePilotDailyClose: vi.fn(),
   finalizePilotDailyClose: vi.fn(),
 }));
@@ -25,6 +26,7 @@ vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
     ...actual,
     fetchPilotDailyClose: pilotApiMocks.fetchPilotDailyClose,
     openPilotDailyClose: pilotApiMocks.openPilotDailyClose,
+    syncPilotDailyCloseSales: pilotApiMocks.syncPilotDailyCloseSales,
     updatePilotDailyClose: pilotApiMocks.updatePilotDailyClose,
     finalizePilotDailyClose: pilotApiMocks.finalizePilotDailyClose,
   };
@@ -132,6 +134,193 @@ describe("PilotDailyClosePage", () => {
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Start daily close" }));
     await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
+  });
+
+  it("syncs Square sales for the selected business date and refreshes the draft", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: {
+        id: 12,
+        organizationId: 42,
+        locationId: 7,
+        businessDate: "2026-08-30",
+        status: "DRAFT",
+        summarySnapshot: {},
+        usageSnapshot: {},
+        exceptionsSnapshot: [],
+        notes: "Initial note",
+        completedAt: null,
+        completedByUserId: null,
+        createdByUserId: 1,
+        createdAt: "2026-08-30T00:00:00Z",
+        updatedAt: "2026-08-30T00:00:00Z",
+        currentSnapshot: {
+          healthStatus: "Ready with warnings",
+          inventoryValue: 1250,
+          sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
+          usage: {
+            period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+            coverage: {},
+            totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+            contributingMenuItems: [],
+            unmappedVariations: [],
+            ingredientUsage: [],
+          },
+          variance: { quantity: 1, percent: 5.6, value: 4.2 },
+          square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+          readyToFinalize: true,
+        },
+      },
+      snapshot: {
+        healthStatus: "Ready with warnings",
+        inventoryValue: 1250,
+        sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
+        usage: {
+          period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+          coverage: {},
+          totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+          contributingMenuItems: [],
+          unmappedVariations: [],
+          ingredientUsage: [],
+        },
+        variance: { quantity: 1, percent: 5.6, value: 4.2 },
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: {
+        period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+        coverage: {},
+        totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+        contributingMenuItems: [],
+        unmappedVariations: [],
+        ingredientUsage: [],
+      },
+      exceptions: ["Square not synced."],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+    pilotApiMocks.syncPilotDailyCloseSales.mockResolvedValue({
+      session: {
+        id: 12,
+        organizationId: 42,
+        locationId: 7,
+        businessDate: "2026-08-30",
+        status: "DRAFT",
+        summarySnapshot: {},
+        usageSnapshot: {},
+        exceptionsSnapshot: [],
+        notes: "Initial note",
+        completedAt: null,
+        completedByUserId: null,
+        createdByUserId: 1,
+        createdAt: "2026-08-30T00:00:00Z",
+        updatedAt: "2026-08-30T00:00:00Z",
+        currentSnapshot: {
+          healthStatus: "Reconciled",
+          inventoryValue: 1250,
+          sales: { netSales: 1234.56, orders: 18, refunds: 0, cancelledOrders: 0 },
+          usage: {
+            period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+            coverage: {},
+            totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+            contributingMenuItems: [],
+            unmappedVariations: [],
+            ingredientUsage: [],
+          },
+          variance: { quantity: 1, percent: 5.6, value: 4.2 },
+          square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+          readyToFinalize: true,
+        },
+      },
+      snapshot: {
+        healthStatus: "Reconciled",
+        inventoryValue: 1250,
+        sales: { netSales: 1234.56, orders: 18, refunds: 0, cancelledOrders: 0 },
+        usage: {
+          period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+          coverage: {},
+          totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+          contributingMenuItems: [],
+          unmappedVariations: [],
+          ingredientUsage: [],
+        },
+        variance: { quantity: 1, percent: 5.6, value: 4.2 },
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: {
+        period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+        coverage: {},
+        totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+        contributingMenuItems: [],
+        unmappedVariations: [],
+        ingredientUsage: [],
+      },
+      exceptions: ["Square not synced."],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    render(
+      <MemoryRouter>
+        <PilotDailyClosePage />
+      </MemoryRouter>,
+    );
+
+    const syncButton = await screen.findByRole("button", { name: "Sync sales" });
+    expect(syncButton).toBeEnabled();
+    fireEvent.click(syncButton);
+    await waitFor(() => expect(pilotApiMocks.syncPilotDailyCloseSales).toHaveBeenCalledWith(12, { businessDate: "2026-08-30" }));
+    expect(await screen.findByText((text) => text.startsWith("Synced Square sales for"))).toBeVisible();
+    expect(screen.getAllByText("$1,234.56").length).toBeGreaterThan(0);
+  });
+
+  it("shows Connect Square when the close is disconnected", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: null,
+      snapshot: {
+        healthStatus: "Incomplete",
+        inventoryValue: 1250,
+        sales: { netSales: 0, orders: 0, refunds: 0, cancelledOrders: 0 },
+        usage: {
+          period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+          coverage: {},
+          totals: { theoreticalUsage: 0, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+          contributingMenuItems: [],
+          unmappedVariations: [],
+          ingredientUsage: [],
+        },
+        variance: { quantity: null, percent: null, value: 0 },
+        square: { squareStatus: "Not connected", squareSynced: false, locationMapped: false },
+        readyToFinalize: false,
+      },
+      usage: {
+        period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+        coverage: {},
+        totals: { theoreticalUsage: 0, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+        contributingMenuItems: [],
+        unmappedVariations: [],
+        ingredientUsage: [],
+      },
+      exceptions: ["Square not synced."],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Not connected", squareSynced: false, locationMapped: false },
+    });
+
+    render(
+      <MemoryRouter>
+        <PilotDailyClosePage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Start a daily close")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Connect Square" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Sync sales" })).not.toBeInTheDocument();
   });
 
   it("saves notes and finalizes an existing daily close", async () => {
@@ -350,6 +539,7 @@ describe("PilotDailyClosePage", () => {
     await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(12));
     expect(await screen.findByText("Completed daily close")).toBeVisible();
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Sync sales" })).not.toBeInTheDocument();
   });
 
   it("opens a historical daily close from history and keeps the loaded session read-only", async () => {

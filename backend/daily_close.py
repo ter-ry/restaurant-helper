@@ -11,7 +11,7 @@ from flask_login import current_user, login_required
 from .access import organization_has_enabled_module, organization_is_operational
 from .extensions import db
 from .models import DailyCloseSession, InventoryItem, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
-from .square_integration import _build_square_usage_report
+from .square_integration import _build_square_usage_report, sync_square_orders_for_range
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
 bp = Blueprint("daily_close", __name__)
@@ -66,8 +66,8 @@ def _square_location_ids_for_location(connection: SquareConnection | None, locat
     if connection is None:
         return []
     location_ids = [
-        mapping.square_location_id
-        for mapping in SquareLocationMapping.query.join(SquareLocation, SquareLocationMapping.square_location_id == SquareLocation.id).filter(
+        square_location.square_location_id
+        for square_location in SquareLocation.query.join(SquareLocationMapping, SquareLocationMapping.square_location_id == SquareLocation.id).filter(
             SquareLocation.square_connection_id == connection.id,
             SquareLocationMapping.restaurant_location_id == location.id,
         ).all()
@@ -245,6 +245,16 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     return snapshot, usage, exceptions, connection
 
 
+def _stored_session_snapshot(session_record: DailyCloseSession, snapshot: dict[str, Any], usage: dict[str, Any], exceptions: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    if session_record.status != "COMPLETED":
+        return snapshot, usage, exceptions
+    return (
+        dict(session_record.summary_snapshot_json or snapshot),
+        dict(session_record.usage_snapshot_json or usage),
+        list(session_record.exceptions_snapshot_json or exceptions),
+    )
+
+
 def _serialize_session_with_snapshot(session_record: DailyCloseSession, snapshot: dict[str, Any]) -> dict[str, Any]:
     payload = serialize_daily_close_session(session_record)
     payload["currentSnapshot"] = snapshot
@@ -277,6 +287,8 @@ def daily_close():
     business_date = _business_date_for_location(location)
     session_record = DailyCloseSession.query.filter_by(organization_id=organization.id, location_id=location.id, business_date=business_date).first()
     snapshot, usage, exceptions, connection = _daily_close_snapshot(organization, location, business_date)
+    if session_record is not None:
+        snapshot, usage, exceptions = _stored_session_snapshot(session_record, snapshot, usage, exceptions)
     history = [
         _serialize_session_with_snapshot(record, snapshot if record.status != "COMPLETED" else dict(record.summary_snapshot_json or {}))
         for record in DailyCloseSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(DailyCloseSession.business_date.desc(), DailyCloseSession.id.desc()).all()
@@ -337,6 +349,7 @@ def open_daily_close():
         session_record.usage_snapshot_json = usage
         session_record.exceptions_snapshot_json = exceptions
     db.session.commit()
+    snapshot, usage, exceptions = _stored_session_snapshot(session_record, snapshot, usage, exceptions)
     history = [
         _serialize_session_with_snapshot(record, snapshot if record.status != "COMPLETED" else dict(record.summary_snapshot_json or {}))
         for record in DailyCloseSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(DailyCloseSession.business_date.desc(), DailyCloseSession.id.desc()).all()
@@ -350,6 +363,67 @@ def open_daily_close():
             "history": history,
             "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
             "businessDate": business_date.isoformat(),
+            "square": snapshot["square"],
+        }
+    ), 200
+
+
+@bp.post("/api/pilot/daily-close/<int:session_id>/sync-sales")
+@login_required
+def sync_daily_close_sales(session_id: int):
+    context = _require_daily_close_access()
+    if isinstance(context, tuple) and len(context) == 2 and hasattr(context[0], "status_code"):
+        return context
+    organization, membership, locations = context
+    payload = request.get_json(silent=True) or {}
+    session_record = DailyCloseSession.query.filter_by(id=session_id, organization_id=organization.id).first()
+    if session_record is None:
+        return json_error("Daily close session not found.", 404)
+    if session_record.status == "COMPLETED":
+        return json_error("Completed daily closes are read-only.", 409)
+    location = next((entry for entry in locations if entry.id == session_record.location_id), None)
+    if location is None:
+        return json_error("Restaurant location not found.", 404)
+    connection = _connection_for_organization(organization.id)
+    if connection is None:
+        return json_error("Square is not connected.", 409)
+    square_location_ids = _square_location_ids_for_location(connection, location)
+    if not square_location_ids:
+        return json_error("Map Square locations before syncing sales.", 409)
+    raw_business_date = payload.get("businessDate")
+    try:
+        business_date = date.fromisoformat(str(raw_business_date)) if raw_business_date else session_record.business_date
+    except (TypeError, ValueError):
+        business_date = session_record.business_date
+    start_at, end_at = _business_date_bounds(location, business_date)
+    try:
+        sync_square_orders_for_range(
+            organization,
+            connection,
+            start_at=start_at,
+            end_at=end_at,
+            location_ids=square_location_ids,
+        )
+    except RuntimeError as exc:
+        return json_error(str(exc), 400)
+    snapshot, usage, exceptions, _ = _daily_close_snapshot(organization, location, session_record.business_date)
+    session_record.summary_snapshot_json = snapshot
+    session_record.usage_snapshot_json = usage
+    session_record.exceptions_snapshot_json = exceptions
+    db.session.commit()
+    history = [
+        _serialize_session_with_snapshot(record, snapshot if record.status != "COMPLETED" else dict(record.summary_snapshot_json or {}))
+        for record in DailyCloseSession.query.filter_by(organization_id=organization.id, location_id=session_record.location_id).order_by(DailyCloseSession.business_date.desc(), DailyCloseSession.id.desc()).all()
+    ]
+    return jsonify(
+        {
+            "session": _serialize_session_with_snapshot(session_record, snapshot),
+            "snapshot": snapshot,
+            "usage": usage,
+            "exceptions": exceptions,
+            "history": history,
+            "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
+            "businessDate": session_record.business_date.isoformat(),
             "square": snapshot["square"],
         }
     ), 200

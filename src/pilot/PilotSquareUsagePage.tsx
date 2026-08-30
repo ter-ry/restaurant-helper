@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, Loader2, RefreshCw, Save, Search, Trash2, Workflow } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -33,6 +34,13 @@ function defaultRange() {
     startAt: toLocalDateTime(start),
     endAt: toLocalDateTime(end),
   };
+}
+
+function squareSectionLinkClasses(active: boolean) {
+  return [
+    "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition",
+    active ? "border-ink bg-ink text-white shadow-soft" : "border-line bg-white text-ink hover:bg-slate-50",
+  ].join(" ");
 }
 
 function MappingCard({
@@ -266,6 +274,15 @@ export function PilotSquareUsagePage() {
 
   return (
     <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Map Square variations to menu items and review theoretical versus actual inventory usage.">
+      <div className="flex flex-wrap gap-2">
+        <Link className={squareSectionLinkClasses(false)} to="/app/square">
+          Setup & Sync
+        </Link>
+        <Link aria-current="page" className={squareSectionLinkClasses(true)} to="/app/square-usage">
+          Usage & Variance
+        </Link>
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">

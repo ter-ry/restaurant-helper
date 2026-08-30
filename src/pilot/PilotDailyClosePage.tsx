@@ -10,6 +10,7 @@ import {
   fetchPilotDailyClose,
   finalizePilotDailyClose,
   openPilotDailyClose,
+  syncPilotDailyCloseSales,
   updatePilotDailyClose,
   type PilotDailyCloseResponse,
 } from "./pilotApi";
@@ -36,8 +37,9 @@ export function PilotDailyClosePage() {
   const [data, setData] = useState<PilotDailyCloseResponse | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<"open" | "notes" | "finalize" | null>(null);
+  const [saving, setSaving] = useState<"open" | "notes" | "finalize" | "sync-sales" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const currentSession = data?.session ?? null;
   const snapshot = currentSession?.currentSnapshot ?? data?.snapshot ?? null;
@@ -55,6 +57,7 @@ export function PilotDailyClosePage() {
     }
     setLoading(true);
     setError(null);
+    setMessage(null);
     try {
       const response = await fetchPilotDailyClose(locationId, businessDate || null);
       setData(response);
@@ -115,6 +118,7 @@ export function PilotDailyClosePage() {
     }
     setSaving("open");
     setError(null);
+    setMessage(null);
     try {
       const response = await openPilotDailyClose({ locationId: selectedLocationId, businessDate: selectedBusinessDate || undefined });
       setData(response);
@@ -134,6 +138,7 @@ export function PilotDailyClosePage() {
     }
     setSaving("notes");
     setError(null);
+    setMessage(null);
     try {
       const response = await updatePilotDailyClose(currentSession.id, { notes });
       setData(response);
@@ -151,6 +156,7 @@ export function PilotDailyClosePage() {
     }
     setSaving("finalize");
     setError(null);
+    setMessage(null);
     try {
       const response = await finalizePilotDailyClose(currentSession.id);
       setData(response);
@@ -162,11 +168,33 @@ export function PilotDailyClosePage() {
     }
   };
 
+  const syncSales = async () => {
+    if (!currentSession || !canSyncSales) {
+      return;
+    }
+    setSaving("sync-sales");
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await syncPilotDailyCloseSales(currentSession.id, { businessDate: selectedBusinessDate || currentSession.businessDate });
+      setData(response);
+      setNotes(response.session?.notes ?? notes);
+      setSelectedBusinessDate(response.businessDate);
+      setMessage(`Synced Square sales for ${formatDate(response.businessDate)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sync Square sales.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const selectedLocation = locationOptions.find((entry) => entry.id === selectedLocationId) ?? currentLocation ?? null;
   const squareStatus = String(snapshot?.square?.squareStatus ?? "Not connected");
   const squareSynced = Boolean(snapshot?.square?.squareSynced);
   const locationMapped = Boolean(snapshot?.square?.locationMapped);
+  const squareConnected = squareStatus === "Connected";
   const completed = currentSession?.status === "COMPLETED";
+  const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
 
   const openHistorySession = (sessionDate: string) => {
     setSelectedBusinessDate(sessionDate);
@@ -183,7 +211,7 @@ export function PilotDailyClosePage() {
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
               <ExternalLink className="h-4 w-4" />
-              Open Square
+              {squareConnected ? "Open Square" : "Connect Square"}
             </Link>
             <button
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -256,7 +284,17 @@ export function PilotDailyClosePage() {
         </div>
       </Card>
 
+      <div className="flex flex-wrap gap-2">
+        <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
+          Setup & Sync
+        </Link>
+        <Link aria-current="page" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-ink bg-ink px-4 py-2 text-sm font-semibold text-white shadow-soft" to="/app/square-usage">
+          Usage & Variance
+        </Link>
+      </div>
+
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
+      {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">{message}</div> : null}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted" aria-busy="true">Loading daily close…</div> : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
@@ -343,10 +381,26 @@ export function PilotDailyClosePage() {
                   placeholder="Add context for unusual sales, waste, or count discrepancies."
                 />
                 <div className="mt-4 flex flex-wrap gap-3">
+                  {canSyncSales ? (
+                    <button
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-800 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      type="button"
+                      disabled={saving !== null}
+                      onClick={() => void syncSales()}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      {saving === "sync-sales" ? "Syncing..." : "Sync sales"}
+                    </button>
+                  ) : !completed ? (
+                    <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
+                      <ExternalLink className="h-4 w-4" />
+                      Connect Square
+                    </Link>
+                  ) : null}
                   <button
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     type="button"
-                    disabled={completed || !currentSession}
+                    disabled={completed || !currentSession || saving !== null}
                     onClick={() => void saveNotes()}
                   >
                     <Save className="h-4 w-4" />
@@ -355,7 +409,7 @@ export function PilotDailyClosePage() {
                   <button
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                     type="button"
-                    disabled={completed || !currentSession}
+                    disabled={completed || !currentSession || saving !== null}
                     onClick={() => void finalizeClose()}
                   >
                     <Lock className="h-4 w-4" />
