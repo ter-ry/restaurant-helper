@@ -2004,6 +2004,197 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
     });
   });
 
+  const businessDate = new Date().toLocaleDateString("en-CA");
+  const location = { id: 7, name: "Main Dining Room", timezone: "America/Toronto" };
+  const baseUsage = {
+    period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+    coverage: {},
+    totals: { theoreticalUsage: 18, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+    contributingMenuItems: [],
+    unmappedVariations: [],
+    ingredientUsage: [],
+  };
+  const baseSnapshot = {
+    healthStatus: "Open",
+    inventoryValue: 1250,
+    sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
+    usage: baseUsage,
+    variance: { quantity: null, percent: null, value: 0 },
+    square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    readyToFinalize: true,
+  };
+  const syncedUsage = {
+    ...baseUsage,
+    totals: { theoreticalUsage: 18, actualUsage: 17, discrepancy: 1, discrepancyPercent: 5.6 },
+  };
+  const syncedSnapshot = {
+    healthStatus: "Ready with warnings",
+    inventoryValue: 1250,
+    sales: { netSales: 375, orders: 13, refunds: 0, cancelledOrders: 0 },
+    usage: syncedUsage,
+    variance: { quantity: 1, percent: 5.6, value: 4.2 },
+    square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    readyToFinalize: true,
+  };
+  let activeSession:
+    | null
+    | {
+        id: number;
+        organizationId: number;
+        locationId: number;
+        businessDate: string;
+        status: string;
+        summarySnapshot: Record<string, unknown>;
+        usageSnapshot: Record<string, unknown>;
+        exceptionsSnapshot: string[];
+        notes: string;
+        completedAt: string | null;
+        completedByUserId: number | null;
+        createdByUserId: number | null;
+        createdAt: string | null;
+        updatedAt: string | null;
+        currentSnapshot?: typeof baseSnapshot;
+      } = null;
+  const buildResponse = () => ({
+    session: activeSession,
+    snapshot: activeSession?.currentSnapshot ?? baseSnapshot,
+    usage: activeSession?.currentSnapshot?.usage ?? baseUsage,
+    exceptions: activeSession ? (activeSession.currentSnapshot?.healthStatus === "Ready with warnings" ? ["Square sales synced before finalize."] : []) : [],
+    history: activeSession?.status === "COMPLETED" ? [activeSession] : [],
+    location,
+    businessDate: activeSession?.businessDate ?? businessDate,
+    square: baseSnapshot.square,
+  });
+
+  await page.route("**/api/pilot/daily-close**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+
+    if (request.method() === "GET" && path === "/api/pilot/daily-close") {
+      const requestedBusinessDate = url.searchParams.get("businessDate") ?? businessDate;
+      if (activeSession && activeSession.businessDate === requestedBusinessDate) {
+        await jsonResponse(route, buildResponse());
+        return;
+      }
+      await jsonResponse(route, {
+        session: null,
+        snapshot: baseSnapshot,
+        usage: baseUsage,
+        exceptions: [],
+        history: [],
+        location,
+        businessDate,
+        square: baseSnapshot.square,
+      });
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/api/pilot/daily-close") {
+      activeSession = {
+        id: 9,
+        organizationId: organization.id,
+        locationId: location.id,
+        businessDate,
+        status: "DRAFT",
+        summarySnapshot: {},
+        usageSnapshot: {},
+        exceptionsSnapshot: [],
+        notes: "",
+        completedAt: null,
+        completedByUserId: null,
+        createdByUserId: 1,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        currentSnapshot: baseSnapshot,
+      };
+      await jsonResponse(route, buildResponse());
+      return;
+    }
+
+    if (request.method() === "POST" && /\/api\/pilot\/daily-close\/\d+\/sync-sales$/.test(path)) {
+      activeSession = {
+        ...(activeSession ?? {
+          id: 9,
+          organizationId: organization.id,
+          locationId: location.id,
+          businessDate,
+          status: "DRAFT",
+          summarySnapshot: {},
+          usageSnapshot: {},
+          exceptionsSnapshot: [],
+          notes: "",
+          completedAt: null,
+          completedByUserId: null,
+          createdByUserId: 1,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        }),
+        currentSnapshot: syncedSnapshot,
+      };
+      await jsonResponse(route, buildResponse());
+      return;
+    }
+
+    if (request.method() === "PATCH" && /\/api\/pilot\/daily-close\/\d+$/.test(path)) {
+      const body = request.postDataJSON() as { notes?: string } | undefined;
+      activeSession = {
+        ...(activeSession ?? {
+          id: 9,
+          organizationId: organization.id,
+          locationId: location.id,
+          businessDate,
+          status: "DRAFT",
+          summarySnapshot: {},
+          usageSnapshot: {},
+          exceptionsSnapshot: [],
+          notes: "",
+          completedAt: null,
+          completedByUserId: null,
+          createdByUserId: 1,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          currentSnapshot: baseSnapshot,
+        }),
+        notes: body?.notes ?? activeSession?.notes ?? "",
+        updatedAt: nowIso(),
+      };
+      await jsonResponse(route, buildResponse());
+      return;
+    }
+
+    if (request.method() === "POST" && /\/api\/pilot\/daily-close\/\d+\/finalize$/.test(path)) {
+      activeSession = {
+        ...(activeSession ?? {
+          id: 9,
+          organizationId: organization.id,
+          locationId: location.id,
+          businessDate,
+          status: "DRAFT",
+          summarySnapshot: {},
+          usageSnapshot: {},
+          exceptionsSnapshot: [],
+          notes: "",
+          completedAt: null,
+          completedByUserId: null,
+          createdByUserId: 1,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          currentSnapshot: syncedSnapshot,
+        }),
+        status: "COMPLETED",
+        completedAt: nowIso(),
+        completedByUserId: 1,
+        currentSnapshot: syncedSnapshot,
+        updatedAt: nowIso(),
+      };
+      await jsonResponse(route, buildResponse());
+      return;
+    }
+
+    await route.continue();
+  });
+
   await page.goto("/app/square", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Private workspace for Square connection, sync, and mapping" })).toBeVisible();
   await expect(page.getByText("merchant-42")).toBeVisible();
@@ -2017,26 +2208,29 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
 
   await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Pilot close workspace for Square and end-of-day checks" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Close the day with a clear snapshot" })).toBeVisible();
   await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
-  await page.getByLabel("POS expected sales").fill("125");
-  await page.getByLabel("Cash").fill("125");
-  await expect(page.getByRole("heading", { name: "Theoretical usage" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Actual usage / variance" })).toBeVisible();
-  await expect(page.getByText("Balanced - the close can be finalized.")).toBeVisible();
-  await page.getByLabel("Close notes").fill("Square sales synced before finalize.");
-  await page.getByLabel("I reviewed the Square sales, coverage, and usage variance and understand the close is only saved after confirmation.").check();
-  await page.getByRole("button", { name: "Finalize close" }).click({ force: true });
-  await expect(page.getByRole("button", { name: "Edit close" })).toBeVisible();
-  await expect(page.getByLabel("POS expected sales")).toBeDisabled();
-  await expect(page.getByText("Today's close is finalized.")).toBeVisible();
+  await page.getByRole("button", { name: "Start daily close" }).click();
+  await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();
+  await page.getByRole("button", { name: "Sync sales" }).click();
+  await expect(page.getByText("Synced Square sales for")).toBeVisible();
+  await expect(page.getByText("Theoretical usage").first()).toBeVisible();
+  await expect(page.getByText("Actual usage").first()).toBeVisible();
+  await expect(page.getByText("Exceptions to review", { exact: true })).toBeVisible();
+  await page.getByPlaceholder("Add context for unusual sales, waste, or count discrepancies.").fill("Square sales synced before finalize.");
+  await page.getByRole("button", { name: "Save notes" }).click();
+  await page.getByRole("button", { name: "Finalize daily close" }).click();
+  await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
+  await expect(page.getByText("Read only").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sync sales" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save notes" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Finalize daily close" })).toBeDisabled();
 
-  await page.getByRole("button", { name: "Open" }).first().click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("Saved reconciliation");
-  await expect(dialog).toContainText("Square sales synced before finalize.");
-  await expect(dialog).toContainText("Business date");
-  await expect(dialog).toContainText("Expected POS");
+  await page.getByRole("button", { name: /^Open / }).first().click();
+  await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Add context for unusual sales, waste, or count discrepancies." })).toHaveValue("Square sales synced before finalize.");
+  await expect(page.getByText("Read only").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Finalize daily close" })).toBeDisabled();
 });
 
 test("owner audit history shows filtered organization activity", async ({ page }) => {
