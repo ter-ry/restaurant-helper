@@ -81,6 +81,24 @@ describe("PilotDashboardPage", () => {
           status: "Draft",
         },
       ],
+      pendingDraftDailyCloseSessions: [
+        {
+          id: 9,
+          organizationId: 1,
+          locationId: 4,
+          businessDate: "2026-08-28",
+          status: "DRAFT",
+          summarySnapshot: {},
+          usageSnapshot: {},
+          exceptionsSnapshot: [],
+          notes: "Late deliveries",
+          completedAt: null,
+          completedByUserId: null,
+          createdByUserId: 1,
+          createdAt: "2026-08-28T22:00:00.000Z",
+          updatedAt: "2026-08-28T22:00:00.000Z",
+        },
+      ],
       pendingDraftReorderPlans: [
         {
           id: 5,
@@ -123,7 +141,7 @@ describe("PilotDashboardPage", () => {
         review: "Needs review",
         inventory: "Not ready",
         reorder: "Alert",
-        close: "Not ready",
+        close: "Open",
         export: "Not ready",
       },
     });
@@ -140,8 +158,9 @@ describe("PilotDashboardPage", () => {
     expect(screen.getAllByText("Invoices to review").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Reorder now").length).toBeGreaterThan(0);
     expect(screen.getByText("Low stock")).toBeVisible();
-    expect(screen.getByText("These are unfinished records, not history. Reopen the exact invoice, count, or reorder draft you last touched.")).toBeVisible();
+    expect(screen.getByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).toBeVisible();
     expect(screen.getByText("The items that need attention now, from low stock through urgent reorder.")).toBeVisible();
+    expect(screen.getByText("Daily close")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Open reorder plan" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/reorder-plan"));

@@ -45,7 +45,7 @@ SETUP_TEMPLATES: list[dict[str, Any]] = [
         "templateKey": "GENERIC_RESTAURANT",
         "displayName": "Generic independent restaurant",
         "description": "A balanced setup for a small full-service restaurant.",
-        "defaultModules": ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"],
+        "defaultModules": ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "DAILY_CLOSE"],
     },
     {
         "templateKey": "CAFE",

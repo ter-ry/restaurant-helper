@@ -32,7 +32,7 @@ DEFAULT_CONFIGURATION = {
 SETUP_TEMPLATES: list[dict[str, Any]] = [
     {
         "templateKey": "GENERIC_RESTAURANT",
-        "defaultModules": ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"],
+        "defaultModules": ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "DAILY_CLOSE"],
     },
     {
         "templateKey": "CAFE",

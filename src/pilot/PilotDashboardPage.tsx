@@ -85,6 +85,7 @@ export function PilotDashboardPage() {
   const summary = (data?.summary ?? {}) as Record<string, number>;
   const pendingPurchaseDrafts = data?.pendingDraftInvoices ?? [];
   const pendingCountDrafts = data?.pendingDraftCountSessions ?? [];
+  const pendingDailyCloseDrafts = data?.pendingDraftDailyCloseSessions ?? [];
   const pendingReorderDrafts = data?.pendingDraftReorderPlans ?? [];
 
   const draftCards = [
@@ -113,6 +114,19 @@ export function PilotDashboardPage() {
       empty: "No draft stock counts waiting to continue.",
       fallback: () => navigate("/app/stock-counts"),
       fallbackLabel: "Open stock counts",
+    },
+    {
+      title: "Daily close",
+      items: pendingDailyCloseDrafts.slice(0, 3).map((session) => ({
+        key: `close-${session.id}`,
+        title: formatDate(session.businessDate),
+        detail: session.notes || `${session.locationId ? "Location" : "Session"} · ${session.status.toLowerCase()}`,
+        badge: session.status,
+        onClick: () => navigate(`/app/daily-close?locationId=${session.locationId}`),
+      })),
+      empty: "No draft daily closes waiting to continue.",
+      fallback: () => navigate("/app/daily-close"),
+      fallbackLabel: "Open daily close",
     },
     {
       title: "Reorder plans",
@@ -163,10 +177,10 @@ export function PilotDashboardPage() {
             {[
             { label: "Invoice", icon: <ClipboardList className="h-4 w-4" />, status: data?.workflow.purchase ?? "Needs review", to: "/app/purchases" },
             { label: "Review", icon: <RefreshCcw className="h-4 w-4" />, status: data?.workflow.review ?? "Needs review", to: "/app/purchases" },
-            { label: "Inventory", icon: <ShoppingCart className="h-4 w-4" />, status: data?.workflow.inventory ?? "Not ready", to: "/app/inventory" },
-            { label: "Reorder", icon: <PackageSearch className="h-4 w-4" />, status: data?.workflow.reorder ?? "Alert", to: "/app/reorder-plan" },
-            { label: "Close", icon: <CalendarDays className="h-4 w-4" />, status: data?.workflow.close ?? "Not ready", to: "/app/stock-counts" },
-            { label: "Export", icon: <ArrowUpRight className="h-4 w-4" />, status: data?.workflow.export ?? "Not ready", to: "/app/purchases" },
+          { label: "Inventory", icon: <ShoppingCart className="h-4 w-4" />, status: data?.workflow.inventory ?? "Not ready", to: "/app/inventory" },
+          { label: "Reorder", icon: <PackageSearch className="h-4 w-4" />, status: data?.workflow.reorder ?? "Alert", to: "/app/reorder-plan" },
+          { label: "Close", icon: <CalendarDays className="h-4 w-4" />, status: data?.workflow.close ?? "Open", to: "/app/daily-close" },
+          { label: "Export", icon: <ArrowUpRight className="h-4 w-4" />, status: data?.workflow.export ?? "Not ready", to: "/app/purchases" },
           ].map((step, index, list) => (
             <button key={step.label} type="button" className="rounded-2xl border border-line bg-slate-50 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft" onClick={() => navigate(step.to)}>
               <div className="flex items-center justify-between gap-2">
@@ -181,8 +195,8 @@ export function PilotDashboardPage() {
       </Card>
 
       <Card className="p-6">
-        <SectionHeader title="Continue draft work" description="These are unfinished records, not history. Reopen the exact invoice, count, or reorder draft you last touched." />
-        <div className="grid gap-4 xl:grid-cols-3">
+        <SectionHeader title="Continue draft work" description="These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched." />
+        <div className="grid gap-4 xl:grid-cols-4">
           {draftCards.map((card) => (
             <div key={card.title} className="rounded-3xl border border-brand-100 bg-brand-50/40 p-4">
               <div className="flex items-center justify-between gap-2">

@@ -29,6 +29,7 @@ from backend.models import (
     PlatformRole,
     OrganizationModule,
     OrganizationConfiguration,
+    DailyCloseSession,
     MenuItem,
     Recipe,
     RecipeIngredient,
@@ -1444,6 +1445,49 @@ def _seed_admin_square_dataset(prefix: str) -> dict[str, object]:
     return _seed_admin_fixture(f"{prefix} square dataset", _seed)
 
 
+def _seed_admin_daily_close_dataset(prefix: str) -> dict[str, object]:
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        org_a = _create_org(owner, f"{prefix} Daily Close Alpha")
+        org_b = _create_org(owner, f"{prefix} Daily Close Beta")
+        location_a = RestaurantLocation.query.filter_by(organization_id=org_a.id).first()
+        location_b = RestaurantLocation.query.filter_by(organization_id=org_b.id).first()
+        assert location_a is not None
+        assert location_b is not None
+        db.session.add(
+            DailyCloseSession(
+                organization_id=org_a.id,
+                location_id=location_a.id,
+                business_date=utc_now().date(),
+                status="DRAFT",
+                summary_snapshot_json={"healthStatus": "Open"},
+                usage_snapshot_json={},
+                exceptions_snapshot_json=[],
+                notes="",
+                created_by_user_id=owner.id,
+            )
+        )
+        db.session.add(
+            DailyCloseSession(
+                organization_id=org_b.id,
+                location_id=location_b.id,
+                business_date=utc_now().date(),
+                status="COMPLETED",
+                summary_snapshot_json={"healthStatus": "Reconciled"},
+                usage_snapshot_json={},
+                exceptions_snapshot_json=[],
+                notes="",
+                completed_by_user_id=owner.id,
+                created_by_user_id=owner.id,
+            )
+        )
+        db.session.flush()
+        return {"org_a_id": org_a.id, "org_b_id": org_b.id}
+
+    return _seed_admin_fixture(f"{prefix} daily close dataset", _seed)
+
+
 def _seed_admin_import_dataset(prefix: str) -> dict[str, object]:
     def _seed():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
@@ -2373,7 +2417,7 @@ def test_postgres_onboarding_bootstrap_creates_prospect_organization(postgres_ap
             module.module_key
             for module in OrganizationModule.query.filter_by(organization_id=organization_id).all()
         }
-        assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"}
+        assert module_keys == {"PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "DAILY_CLOSE"}
         _github_warning("onboarding regression: persisted organization, location, modules, and configuration")
         with postgres_app.app_context():
             _set_rls_context(access_scope="setup", organization_id=organization_id)
@@ -2517,6 +2561,8 @@ def test_postgres_setup_console_mutations_materialize_before_commit(postgres_app
             "modules": [
                 {"moduleKey": "PURCHASES", "status": "ENABLED"},
                 {"moduleKey": "INVENTORY", "status": "ENABLED"},
+                {"moduleKey": "MENU_COSTING", "status": "ENABLED"},
+                {"moduleKey": "DAILY_CLOSE", "status": "ENABLED"},
                 {"moduleKey": "REORDER_PLANS", "status": "ENABLED"},
                 {"moduleKey": "STOCK_COUNTS", "status": "ENABLED"},
             ]
@@ -2682,7 +2728,7 @@ def test_postgres_operational_mutations_materialize_before_commit(postgres_app):
             owner,
             name=org_a_name,
             location_name=org_a_location_name,
-            enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"),
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "DAILY_CLOSE", "STOCK_COUNTS", "REORDER_PLANS"),
         )
         _set_rls_context(access_scope="setup", user_id=owner.id)
         organization_id = Organization.query.filter_by(name=org_a_name).first().id
@@ -2701,7 +2747,7 @@ def test_postgres_operational_mutations_materialize_before_commit(postgres_app):
             other_owner,
             name=other_org_name,
             location_name=other_location_name,
-            enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS"),
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "DAILY_CLOSE", "STOCK_COUNTS", "REORDER_PLANS"),
         )
         db.session.remove()
 
@@ -3146,6 +3192,17 @@ def test_rls_protects_square_sales_tables(postgres_app):
         assert SquareOrder.query.filter_by(square_connection_id=connection_b_id).count() == 0
         assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_a_id).count() == 1
         assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_b_id).count() == 0
+
+
+def test_rls_protects_daily_close_sessions(postgres_app):
+    seeded = _seed_admin_daily_close_dataset("RLS")
+    with postgres_app.app_context():
+        org_a_id = seeded["org_a_id"]
+        org_b_id = seeded["org_b_id"]
+
+        _set_rls_context(access_scope="customer", organization_id=org_a_id)
+        assert DailyCloseSession.query.filter_by(organization_id=org_a_id).count() == 1
+        assert DailyCloseSession.query.filter_by(organization_id=org_b_id).count() == 0
 
 
 def test_rls_covers_import_tables_and_selected_organization_views(postgres_app):

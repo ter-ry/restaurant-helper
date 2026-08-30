@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from backend.extensions import db
-from backend.models import InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
+from backend.models import DailyCloseSession, InventoryItem, InventoryMovement, Organization, OrganizationMembership, PurchaseInvoice, RestaurantLocation, ReorderIntent, StockCountSession, Supplier, SupplierItemMapping, User
 from backend.seed import (
     LOCAL_LOCATION_NAME,
     LOCAL_MANAGER_EMAIL,
@@ -789,6 +789,76 @@ def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costi
     assert menu_item_body["recipeCostPerYield"] == pytest.approx(1.4)
     assert menu_item_body["foodCostPercent"] == pytest.approx(14.0)
     assert menu_item_body["grossProfit"] == pytest.approx(8.6)
+
+
+def test_daily_close_session_lifecycle_respects_module_enablement(app, client):
+    login(client)
+
+    blocked = client.get("/api/pilot/daily-close")
+    assert blocked.status_code == 403
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = make_operational_organization(
+            owner,
+            name=f"Daily Close Org {uuid4().hex[:8]}",
+            location_name="Daily Close Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS", "DAILY_CLOSE"),
+        )
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        assert location is not None
+        location_id = location.id
+    select_org(client, organization.id)
+
+    initial = client.get(f"/api/pilot/daily-close?locationId={location_id}")
+    assert initial.status_code == 200
+    initial_body = initial.get_json()
+    assert initial_body["session"] is None
+    assert initial_body["location"]["id"] == location_id
+    assert "Square not synced." in initial_body["exceptions"]
+
+    opened = client.post(
+        "/api/pilot/daily-close",
+        headers=csrf_headers(client),
+        json={"locationId": location_id, "businessDate": "2026-08-30"},
+    )
+    assert opened.status_code == 200
+    opened_body = opened.get_json()
+    session_id = opened_body["session"]["id"]
+    assert opened_body["session"]["status"] == "DRAFT"
+    assert opened_body["session"]["notes"] == ""
+    assert opened_body["history"][0]["id"] == session_id
+
+    updated = client.patch(
+        f"/api/pilot/daily-close/{session_id}",
+        headers=csrf_headers(client),
+        json={"notes": "End-of-day notes"},
+    )
+    assert updated.status_code == 200
+    updated_body = updated.get_json()
+    assert updated_body["session"]["notes"] == "End-of-day notes"
+    assert updated_body["session"]["status"] == "DRAFT"
+
+    finalized = client.post(f"/api/pilot/daily-close/{session_id}/finalize", headers=csrf_headers(client))
+    assert finalized.status_code == 200
+    finalized_body = finalized.get_json()
+    assert finalized_body["session"]["status"] == "COMPLETED"
+    assert finalized_body["session"]["notes"] == "End-of-day notes"
+    assert finalized_body["session"]["completedByUserId"] == 1
+
+    read_only = client.patch(
+        f"/api/pilot/daily-close/{session_id}",
+        headers=csrf_headers(client),
+        json={"notes": "Another note"},
+    )
+    assert read_only.status_code == 409
+
+    with app.app_context():
+        stored = DailyCloseSession.query.filter_by(id=session_id).first()
+        assert stored is not None
+        assert stored.status == "COMPLETED"
+        assert stored.notes == "End-of-day notes"
 
 
 def test_receipt_initializes_weighted_average_when_inventory_starts_at_zero(app, client):

@@ -9,6 +9,8 @@ const navItems = [
   { to: "/app/purchases", label: "Purchases" },
   { to: "/app/inventory", label: "Inventory" },
   { to: "/app/menu-costing", label: "Menu Costing", moduleKey: "MENU_COSTING" },
+  { to: "/app/square", label: "Square", moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/daily-close", label: "Daily Close", moduleKey: "DAILY_CLOSE" },
   { to: "/app/square-usage", label: "Usage / Variance", moduleKey: "SQUARE_INTEGRATION" },
   { to: "/app/stock-counts", label: "Stock Counts" },
   { to: "/app/reorder-plan", label: "Reorder Plan" },

@@ -2,7 +2,9 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PilotDailyClosePage } from "../../src/pilot/PilotDailyClosePage";
 import { PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
+import { PilotSquarePage } from "../../src/pilot/PilotSquarePage";
 import { PilotModuleGate } from "../../src/pilot/PilotModuleGate";
 import { PilotSquareUsagePage } from "../../src/pilot/PilotSquareUsagePage";
 import { PilotWorkspaceLayout } from "../../src/pilot/PilotWorkspaceLayout";
@@ -15,6 +17,20 @@ const sessionMock = vi.hoisted(() => ({
 const pilotApiMocks = vi.hoisted(() => ({
   fetchPilotMenuCosting: vi.fn(),
   fetchPilotInventory: vi.fn(),
+  fetchPilotDailyClose: vi.fn(),
+  openPilotDailyClose: vi.fn(),
+  updatePilotDailyClose: vi.fn(),
+  finalizePilotDailyClose: vi.fn(),
+  fetchPilotSquareStatus: vi.fn(),
+  fetchPilotSquareCatalogMappings: vi.fn(),
+  fetchPilotSquareUsage: vi.fn(),
+  beginPilotSquareConnection: vi.fn(),
+  disconnectPilotSquare: vi.fn(),
+  syncPilotSquareLocations: vi.fn(),
+  syncPilotSquareCatalog: vi.fn(),
+  syncPilotSquareOrders: vi.fn(),
+  updatePilotSquareLocationMapping: vi.fn(),
+  updatePilotSquareCatalogMapping: vi.fn(),
 }));
 
 const squareIntegrationMocks = vi.hoisted(() => ({
@@ -41,6 +57,20 @@ vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
     ...actual,
     fetchPilotMenuCosting: pilotApiMocks.fetchPilotMenuCosting,
     fetchPilotInventory: pilotApiMocks.fetchPilotInventory,
+    fetchPilotDailyClose: pilotApiMocks.fetchPilotDailyClose,
+    openPilotDailyClose: pilotApiMocks.openPilotDailyClose,
+    updatePilotDailyClose: pilotApiMocks.updatePilotDailyClose,
+    finalizePilotDailyClose: pilotApiMocks.finalizePilotDailyClose,
+    fetchPilotSquareStatus: pilotApiMocks.fetchPilotSquareStatus,
+    fetchPilotSquareCatalogMappings: pilotApiMocks.fetchPilotSquareCatalogMappings,
+    fetchPilotSquareUsage: pilotApiMocks.fetchPilotSquareUsage,
+    beginPilotSquareConnection: pilotApiMocks.beginPilotSquareConnection,
+    disconnectPilotSquare: pilotApiMocks.disconnectPilotSquare,
+    syncPilotSquareLocations: pilotApiMocks.syncPilotSquareLocations,
+    syncPilotSquareCatalog: pilotApiMocks.syncPilotSquareCatalog,
+    syncPilotSquareOrders: pilotApiMocks.syncPilotSquareOrders,
+    updatePilotSquareLocationMapping: pilotApiMocks.updatePilotSquareLocationMapping,
+    updatePilotSquareCatalogMapping: pilotApiMocks.updatePilotSquareCatalogMapping,
   };
 });
 
@@ -102,6 +132,8 @@ describe("Pilot module access", () => {
     expect(screen.getByRole("link", { name: "Purchases" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Inventory" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Menu Costing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Square" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Daily Close" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Usage / Variance" })).not.toBeInTheDocument();
   });
 
@@ -182,5 +214,43 @@ describe("Pilot module access", () => {
     expect(squareIntegrationMocks.fetchSquareStatus).not.toHaveBeenCalled();
     expect(squareIntegrationMocks.fetchSquareCatalogMappings).not.toHaveBeenCalled();
     expect(squareIntegrationMocks.fetchSquareUsage).not.toHaveBeenCalled();
+  });
+
+  it("blocks the pilot Square page before it can fetch", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/square"]}>
+        <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
+          <PilotSquarePage />
+        </PilotModuleGate>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Square Integration is not available for this organization")).toBeVisible();
+    expect(pilotApiMocks.fetchPilotSquareStatus).not.toHaveBeenCalled();
+    expect(pilotApiMocks.fetchPilotSquareCatalogMappings).not.toHaveBeenCalled();
+    expect(pilotApiMocks.fetchPilotSquareUsage).not.toHaveBeenCalled();
+    expect(pilotApiMocks.beginPilotSquareConnection).not.toHaveBeenCalled();
+    expect(pilotApiMocks.disconnectPilotSquare).not.toHaveBeenCalled();
+    expect(pilotApiMocks.syncPilotSquareLocations).not.toHaveBeenCalled();
+    expect(pilotApiMocks.syncPilotSquareCatalog).not.toHaveBeenCalled();
+    expect(pilotApiMocks.syncPilotSquareOrders).not.toHaveBeenCalled();
+    expect(pilotApiMocks.updatePilotSquareLocationMapping).not.toHaveBeenCalled();
+    expect(pilotApiMocks.updatePilotSquareCatalogMapping).not.toHaveBeenCalled();
+  });
+
+  it("blocks daily close before it can fetch", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/daily-close"]}>
+        <PilotModuleGate moduleKey="DAILY_CLOSE" moduleName="Daily Close">
+          <PilotDailyClosePage />
+        </PilotModuleGate>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Daily Close is not available for this organization")).toBeVisible();
+    expect(pilotApiMocks.fetchPilotDailyClose).not.toHaveBeenCalled();
+    expect(pilotApiMocks.openPilotDailyClose).not.toHaveBeenCalled();
+    expect(pilotApiMocks.updatePilotDailyClose).not.toHaveBeenCalled();
+    expect(pilotApiMocks.finalizePilotDailyClose).not.toHaveBeenCalled();
   });
 });
