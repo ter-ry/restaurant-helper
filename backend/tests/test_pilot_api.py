@@ -860,6 +860,13 @@ def test_daily_close_session_lifecycle_respects_module_enablement(app, client):
         assert stored.status == "COMPLETED"
         assert stored.notes == "End-of-day notes"
 
+    refetched = client.get("/api/pilot/daily-close", query_string={"locationId": location_id, "businessDate": "2026-08-30"})
+    assert refetched.status_code == 200
+    refetched_body = refetched.get_json()
+    assert refetched_body["businessDate"] == "2026-08-30"
+    assert refetched_body["session"] is not None
+    assert refetched_body["session"]["id"] == session_id
+
 
 def test_receipt_initializes_weighted_average_when_inventory_starts_at_zero(app, client):
     login(client)

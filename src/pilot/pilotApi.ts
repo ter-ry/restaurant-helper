@@ -678,10 +678,13 @@ export async function fetchPilotDashboard() {
   return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
 }
 
-export async function fetchPilotDailyClose(locationId?: number | null) {
+export async function fetchPilotDailyClose(locationId?: number | null, businessDate?: string | null) {
   const params = new URLSearchParams();
   if (locationId != null) {
     params.set("locationId", String(locationId));
+  }
+  if (businessDate) {
+    params.set("businessDate", businessDate);
   }
   const query = params.toString();
   return requestJson<PilotDailyCloseResponse>(`/api/pilot/daily-close${query ? `?${query}` : ""}`);

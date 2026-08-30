@@ -62,7 +62,7 @@ def configure_square_usage(app):
 
 
 def oauth_responder():
-    calls = {"locations": 0, "catalog": 0}
+    calls = {"locations": 0, "catalog": 0, "orders": 0}
 
     def handler(request_obj, timeout=30):
         url = request_obj.full_url
@@ -104,6 +104,44 @@ def oauth_responder():
                 }
             )
         if "/v2/orders/search" in url:
+            calls["orders"] += 1
+            if calls["orders"] > 1:
+                return FakeResponse(
+                    {
+                        "orders": [
+                            {
+                                "id": "order-1",
+                                "location_id": "LOC-1",
+                                "state": "CANCELED",
+                                "created_at": "2026-08-07T10:00:00Z",
+                                "closed_at": "2026-08-07T10:20:00Z",
+                                "total_money": {"amount": 1500, "currency": "CAD"},
+                                "discount_money": {"amount": 100, "currency": "CAD"},
+                                "tax_money": {"amount": 162, "currency": "CAD"},
+                                "tip_money": {"amount": 200, "currency": "CAD"},
+                                "refunded_money": {"amount": 250, "currency": "CAD"},
+                                "line_items": [
+                                    {
+                                        "uid": "line-1",
+                                        "name": "Latte",
+                                        "catalog_object_id": "CAT-1",
+                                        "quantity": "1",
+                                        "base_price_money": {"amount": 625, "currency": "CAD"},
+                                        "total_money": {"amount": 625, "currency": "CAD"},
+                                    },
+                                    {
+                                        "uid": "line-2",
+                                        "name": "Espresso",
+                                        "catalog_object_id": "CAT-1",
+                                        "quantity": "2",
+                                        "base_price_money": {"amount": 437, "currency": "CAD"},
+                                        "total_money": {"amount": 875, "currency": "CAD"},
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                )
             return FakeResponse(
                 {
                     "orders": [
@@ -389,6 +427,16 @@ def test_square_oauth_connection_catalog_and_status(app, client, monkeypatch):
     assert connection["squareMerchantId"] == "merchant-123"
     assert connection["catalogCount"] >= 2
     assert connection["locationCount"] == 1
+    assert "accessToken" not in connection
+    assert "refreshToken" not in connection
+    assert "access_token" not in connection
+    assert "refresh_token" not in connection
+
+    disconnect_response = client.post("/api/integrations/square/disconnect", headers=csrf_headers(client), json={"organizationId": organization.id})
+    assert disconnect_response.status_code == 200
+    disconnected = disconnect_response.get_json()["connection"]
+    assert disconnected["status"] == "disconnected"
+    assert disconnected["revokedAt"] is not None
 
     with app.app_context():
         square_connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
@@ -457,8 +505,16 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
     assert repeated_orders_sync.status_code == 200
 
     with app.app_context():
+        order = SquareOrder.query.filter_by(square_connection_id=square_connection.id, square_order_id="order-1").first()
+        assert order is not None
+        assert order.order_state == "CANCELED"
+        assert order.line_count == 2
         assert SquareOrder.query.filter_by(square_connection_id=square_connection.id).count() == 1
-        assert SquareDailySalesSummary.query.filter_by(square_connection_id=square_connection.id).count() == 1
+        assert SquareOrderLine.query.filter_by(square_order_id=order.id).count() == 2
+        summary = SquareDailySalesSummary.query.filter_by(square_connection_id=square_connection.id).first()
+        assert summary is not None
+        assert summary.cancelled_order_count == 1
+        assert float(summary.refund_amount) == 2.5
 
 
 def test_square_webhook_signature_validation_and_idempotency(app, client, monkeypatch):

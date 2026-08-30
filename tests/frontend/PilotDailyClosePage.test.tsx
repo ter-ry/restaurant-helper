@@ -128,9 +128,10 @@ describe("PilotDailyClosePage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Close the day with a clear snapshot" })).toBeVisible();
+    expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-30");
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Start daily close" }));
-    await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7 }));
+    await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
   });
 
   it("saves notes and finalizes an existing daily close", async () => {
@@ -348,6 +349,130 @@ describe("PilotDailyClosePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Finalize daily close" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(12));
     expect(await screen.findByText("Completed daily close")).toBeVisible();
+    expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
+  });
+
+  it("opens a historical daily close from history and keeps the loaded session read-only", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      session: null,
+      snapshot: {
+        healthStatus: "Open",
+        inventoryValue: 1250,
+        sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
+        usage: {
+          period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+          coverage: {},
+          totals: { theoreticalUsage: 18, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+          contributingMenuItems: [], unmappedVariations: [], ingredientUsage: [],
+        },
+        variance: { quantity: null, percent: null, value: 0 },
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: {
+        period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" },
+        coverage: {},
+        totals: { theoreticalUsage: 18, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+        contributingMenuItems: [], unmappedVariations: [], ingredientUsage: [],
+      },
+      exceptions: [],
+      history: [
+        {
+          id: 77,
+          organizationId: 42,
+          locationId: 7,
+          businessDate: "2026-08-29",
+          status: "COMPLETED",
+          summarySnapshot: {},
+          usageSnapshot: {},
+          exceptionsSnapshot: [],
+          notes: "Closed yesterday",
+          completedAt: "2026-08-29T23:59:00Z",
+          completedByUserId: 1,
+          createdByUserId: 1,
+          createdAt: "2026-08-29T00:00:00Z",
+          updatedAt: "2026-08-29T23:59:00Z",
+        },
+      ],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      session: {
+        id: 77,
+        organizationId: 42,
+        locationId: 7,
+        businessDate: "2026-08-29",
+        status: "COMPLETED",
+        summarySnapshot: {},
+        usageSnapshot: {},
+        exceptionsSnapshot: [],
+        notes: "Closed yesterday",
+        completedAt: "2026-08-29T23:59:00Z",
+        completedByUserId: 1,
+        createdByUserId: 1,
+        createdAt: "2026-08-29T00:00:00Z",
+        updatedAt: "2026-08-29T23:59:00Z",
+        currentSnapshot: {
+          healthStatus: "Reconciled",
+          inventoryValue: 1250,
+          sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
+          usage: {
+            period: { startAt: "2026-08-28T00:00:00Z", endAt: "2026-08-29T00:00:00Z" },
+            coverage: {},
+            totals: { theoreticalUsage: 16, actualUsage: 16, discrepancy: 0, discrepancyPercent: 0 },
+            contributingMenuItems: [],
+            unmappedVariations: [],
+            ingredientUsage: [],
+          },
+          variance: { quantity: 0, percent: 0, value: 0 },
+          square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+          readyToFinalize: true,
+        },
+      },
+      snapshot: {
+        healthStatus: "Reconciled",
+        inventoryValue: 1250,
+        sales: { netSales: 340, orders: 12, refunds: 0, cancelledOrders: 0 },
+        usage: {
+          period: { startAt: "2026-08-28T00:00:00Z", endAt: "2026-08-29T00:00:00Z" },
+          coverage: {},
+          totals: { theoreticalUsage: 16, actualUsage: 16, discrepancy: 0, discrepancyPercent: 0 },
+          contributingMenuItems: [],
+          unmappedVariations: [],
+          ingredientUsage: [],
+        },
+        variance: { quantity: 0, percent: 0, value: 0 },
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: {
+        period: { startAt: "2026-08-28T00:00:00Z", endAt: "2026-08-29T00:00:00Z" },
+        coverage: {},
+        totals: { theoreticalUsage: 16, actualUsage: 16, discrepancy: 0, discrepancyPercent: 0 },
+        contributingMenuItems: [],
+        unmappedVariations: [],
+        ingredientUsage: [],
+      },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-29",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    render(
+      <MemoryRouter>
+        <PilotDailyClosePage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Closed yesterday")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    await waitFor(() => expect(pilotApiMocks.fetchPilotDailyClose).toHaveBeenLastCalledWith(7, "2026-08-29"));
+    expect(await screen.findByText("Completed daily close")).toBeVisible();
+    expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-29");
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
   });
 });

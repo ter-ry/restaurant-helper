@@ -28,9 +28,11 @@ export function PilotDailyClosePage() {
   const { currentLocation, locations } = usePilotSession();
   const location = useLocation();
   const queryLocationId = Number(new URLSearchParams(location.search).get("locationId"));
+  const queryBusinessDate = new URLSearchParams(location.search).get("businessDate")?.trim() || "";
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(() =>
     Number.isFinite(queryLocationId) && queryLocationId > 0 ? queryLocationId : currentLocation?.id ?? locations[0]?.id ?? null,
   );
+  const [selectedBusinessDate, setSelectedBusinessDate] = useState<string>(() => queryBusinessDate || new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<PilotDailyCloseResponse | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
@@ -45,7 +47,7 @@ export function PilotDailyClosePage() {
   const history = data?.history ?? [];
   const locationOptions = locations;
 
-  const load = async (locationId = selectedLocationId) => {
+  const load = async (locationId = selectedLocationId, businessDate = selectedBusinessDate) => {
     if (!locationId) {
       setData(null);
       setLoading(false);
@@ -54,9 +56,10 @@ export function PilotDailyClosePage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchPilotDailyClose(locationId);
+      const response = await fetchPilotDailyClose(locationId, businessDate || null);
       setData(response);
       setNotes(response.session?.notes ?? "");
+      setSelectedBusinessDate(response.businessDate);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load daily close.");
     } finally {
@@ -67,7 +70,7 @@ export function PilotDailyClosePage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLocationId]);
+  }, []);
 
   const metrics = useMemo(
     () => [
@@ -113,9 +116,10 @@ export function PilotDailyClosePage() {
     setSaving("open");
     setError(null);
     try {
-      const response = await openPilotDailyClose({ locationId: selectedLocationId });
+      const response = await openPilotDailyClose({ locationId: selectedLocationId, businessDate: selectedBusinessDate || undefined });
       setData(response);
       setNotes(response.session?.notes ?? "");
+      setSelectedBusinessDate(response.businessDate);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start daily close.");
     } finally {
@@ -164,6 +168,11 @@ export function PilotDailyClosePage() {
   const locationMapped = Boolean(snapshot?.square?.locationMapped);
   const completed = currentSession?.status === "COMPLETED";
 
+  const openHistorySession = (sessionDate: string) => {
+    setSelectedBusinessDate(sessionDate);
+    void load(selectedLocationId ?? undefined, sessionDate);
+  };
+
   return (
     <div className="space-y-6">
       <WorkspacePageHeader
@@ -203,21 +212,47 @@ export function PilotDailyClosePage() {
             </p>
           </div>
 
-          {locationOptions.length > 1 ? (
-            <label className="block w-full max-w-sm">
-              <span className="text-sm font-semibold text-ink">Workspace location</span>
-              <select className="input mt-1" value={selectedLocationId ?? ""} onChange={(event) => setSelectedLocationId(Number(event.target.value))}>
-                <option value="" disabled>
-                  Select a location
-                </option>
-                {locationOptions.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {locationOptions.length > 1 ? (
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Workspace location</span>
+                <select
+                  className="input mt-1"
+                  value={selectedLocationId ?? ""}
+                  onChange={(event) => {
+                    const nextLocationId = Number(event.target.value);
+                    if (!Number.isFinite(nextLocationId) || nextLocationId <= 0) {
+                      return;
+                    }
+                    setSelectedLocationId(nextLocationId);
+                    void load(nextLocationId, selectedBusinessDate);
+                  }}
+                >
+                  <option value="" disabled>
+                    Select a location
                   </option>
-                ))}
-              </select>
+                  {locationOptions.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Business date</span>
+              <input
+                className="input mt-1"
+                type="date"
+                value={selectedBusinessDate}
+                onChange={(event) => {
+                  const nextBusinessDate = event.target.value;
+                  setSelectedBusinessDate(nextBusinessDate);
+                  void load(selectedLocationId ?? undefined, nextBusinessDate);
+                }}
+              />
             </label>
-          ) : null}
+          </div>
         </div>
       </Card>
 
@@ -457,6 +492,15 @@ export function PilotDailyClosePage() {
                       <Badge tone={statusTone(session.status)}>{session.status}</Badge>
                     </div>
                     {session.notes ? <p className="mt-3 text-sm leading-6 text-slate-700">{session.notes}</p> : null}
+                    <div className="mt-3">
+                      <button
+                        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:bg-slate-50"
+                        type="button"
+                        onClick={() => openHistorySession(session.businessDate)}
+                      >
+                        Open {formatDate(session.businessDate)}
+                      </button>
+                    </div>
                   </div>
                 ))
               ) : (

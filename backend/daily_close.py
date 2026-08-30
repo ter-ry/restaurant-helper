@@ -72,12 +72,10 @@ def _square_location_ids_for_location(connection: SquareConnection | None, locat
             SquareLocationMapping.restaurant_location_id == location.id,
         ).all()
     ]
-    if location_ids:
-        return location_ids
-    return [entry.square_location_id for entry in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
+    return location_ids
 
 
-def _sales_summary_for_day(connection: SquareConnection | None, location: RestaurantLocation) -> dict[str, Any]:
+def _sales_summary_for_day(connection: SquareConnection | None, location: RestaurantLocation, business_date: date) -> dict[str, Any]:
     if connection is None:
         return {
             "squareSynced": False,
@@ -108,7 +106,7 @@ def _sales_summary_for_day(connection: SquareConnection | None, location: Restau
         square_location_ids = [""]
     raw_summaries = SquareDailySalesSummary.query.filter(
         SquareDailySalesSummary.square_connection_id == connection.id,
-        SquareDailySalesSummary.sale_date == _business_date_for_location(location),
+        SquareDailySalesSummary.sale_date == business_date,
     ).filter(SquareDailySalesSummary.square_location_id.in_(square_location_ids)).all()
     gross = sum((Decimal(str(summary.gross_amount or 0)) for summary in raw_summaries), start=Decimal("0"))
     discounts = sum((Decimal(str(summary.discount_amount or 0)) for summary in raw_summaries), start=Decimal("0"))
@@ -199,7 +197,7 @@ def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[s
 
 def _daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
     connection = _connection_for_organization(organization.id)
-    summary = _sales_summary_for_day(connection, location)
+    summary = _sales_summary_for_day(connection, location, business_date)
     usage = _daily_close_usage(organization, location, business_date, connection)
     exceptions = _daily_close_exceptions(connection, summary, usage)
     actual_usage = usage.get("totals", {}).get("actualUsage")
