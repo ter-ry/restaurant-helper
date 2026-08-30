@@ -1851,6 +1851,194 @@ test("Square usage variance maps and clears variation links", async ({ page }) =
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
 });
 
+test("Square sync feeds the daily close and keeps the completed snapshot read-only", async ({ page }) => {
+  const organization = makeOrganization({
+    id: 42,
+    name: "Pilot Bistro",
+  });
+  const state: MockState = {
+    session: makeActiveOwnerSession({
+      currentOrganizationId: organization.id,
+      currentLocationId: 7,
+      enabledModuleKeys: ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "SQUARE_INTEGRATION", "DAILY_CLOSE"],
+      organizations: [{ organization, membershipRole: "owner", selected: true }],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: organization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: {
+      id: 1,
+      organizationId: organization.id,
+      organization: { id: organization.id, name: organization.name },
+      environment: "sandbox",
+      squareMerchantId: "merchant-42",
+      status: "connected",
+      tokenExpiresAt: nowIso(),
+      revokedAt: null,
+      lastSyncAt: nowIso(),
+      syncStatus: "idle",
+      syncError: "",
+      catalogCount: 1,
+      orderCount: 0,
+      locationCount: 1,
+      dailySalesCount: 0,
+      locations: [
+        {
+          id: 1,
+          squareLocationId: "SQ-1",
+          name: "Main Dining Room",
+          status: "active",
+          rawPayload: { id: "SQ-1" },
+          mappings: [
+            {
+              id: 1,
+              squareLocationId: 1,
+              restaurantLocationId: 7,
+              restaurantLocation: { id: 7, name: "Main Dining Room" },
+              mappedByUserId: 1,
+              mappedAt: nowIso(),
+            },
+          ],
+        },
+      ],
+      catalogObjects: [
+        {
+          id: 1,
+          squareObjectId: "ITEM-1",
+          objectType: "ITEM_VARIATION",
+          version: 1,
+          isDeleted: false,
+          rawPayload: { id: "ITEM-1" },
+          mappings: [
+            {
+              id: 1,
+              flowtallyEntityType: "menu_item",
+              flowtallyEntityId: "21",
+              status: "mapped",
+            },
+          ],
+        },
+      ],
+      orders: [],
+      dailySales: [],
+      syncJobs: [],
+      webhookEvents: [],
+    },
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+  await page.route("**/api/pilot/menu-costing", async (route) => {
+    const organization = state.currentOrganization ?? makeOrganization();
+    await jsonResponse(route, {
+      organizationId: organization.id,
+      locationId: 7,
+      recipes: [
+        {
+          id: 1,
+          organizationId: organization.id,
+          locationId: 7,
+          name: "Cheesy Toast",
+          normalizedName: "cheesy toast",
+          description: "Toasted bread with cheese",
+          yieldQuantity: 2,
+          yieldUnit: "servings",
+          active: true,
+          notes: "Pilot recipe",
+          ingredientCount: 1,
+          ingredients: [
+            {
+              id: 11,
+              organizationId: organization.id,
+              recipeId: 1,
+              inventoryItemId: 101,
+              quantityRequired: 2,
+              unit: "each",
+              notes: "Two portions of cheese",
+              sortOrder: 1,
+              inventoryItem: null,
+              inventoryItemCostPerStockUnit: 2,
+              lineCost: 4,
+              warnings: [],
+              createdAt: null,
+              updatedAt: null,
+            },
+          ],
+          totalCost: 4,
+          costPerYield: 2,
+          costAvailable: true,
+          warnings: [],
+          createdByUserId: null,
+          updatedByUserId: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      menuItems: [
+        {
+          id: 21,
+          organizationId: organization.id,
+          locationId: 7,
+          recipeId: 1,
+          name: "Cheesy Toast",
+          normalizedName: "cheesy toast",
+          category: "Breakfast",
+          sellingPrice: 12,
+          active: true,
+          notes: "Pilot menu item",
+          recipe: null,
+          recipeCostPerYield: 2,
+          grossProfit: 10,
+          foodCostPercent: 16.7,
+          grossMarginPercent: 83.3,
+          costAvailable: true,
+          warnings: [],
+          createdByUserId: null,
+          updatedByUserId: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+    });
+  });
+
+  await page.goto("/app/square", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Private workspace for Square connection, sync, and mapping" })).toBeVisible();
+  await expect(page.getByText("merchant-42")).toBeVisible();
+  await expect(page.getByText("Main Dining Room").first()).toBeVisible();
+  await expect(page.getByText("ITEM_VARIATION · ITEM-1")).toBeVisible();
+  await page.getByRole("button", { name: "Sync locations" }).click();
+  await page.getByRole("button", { name: "Sync catalog" }).click();
+  await page.getByRole("button", { name: "Sync orders" }).click();
+  await expect(page.getByText("orders-sync completed.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Usage variance" })).toBeVisible();
+  await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
+
+  await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Pilot close workspace for Square and end-of-day checks" })).toBeVisible();
+  await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
+  await page.getByLabel("POS expected sales").fill("125");
+  await page.getByLabel("Cash").fill("125");
+  await expect(page.getByRole("heading", { name: "Theoretical usage" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Actual usage / variance" })).toBeVisible();
+  await expect(page.getByText("Balanced - the close can be finalized.")).toBeVisible();
+  await page.getByLabel("Close notes").fill("Square sales synced before finalize.");
+  await page.getByLabel("I reviewed the Square sales, coverage, and usage variance and understand the close is only saved after confirmation.").check();
+  await page.getByRole("button", { name: "Finalize close" }).click({ force: true });
+  await expect(page.getByRole("button", { name: "Edit close" })).toBeVisible();
+  await expect(page.getByLabel("POS expected sales")).toBeDisabled();
+  await expect(page.getByText("Today's close is finalized.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Open" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Saved reconciliation");
+  await expect(dialog).toContainText("Square sales synced before finalize.");
+  await expect(dialog).toContainText("Business date");
+  await expect(dialog).toContainText("Expected POS");
+});
+
 test("owner audit history shows filtered organization activity", async ({ page }) => {
   const state: MockState = {
     session: makeActiveOwnerSession(),
