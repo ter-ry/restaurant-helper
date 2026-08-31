@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import text
 
 from backend.extensions import db
-from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
+from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.square import square_notification_signature
 from backend.tests.conftest import make_operational_organization
@@ -100,10 +100,23 @@ def oauth_responder():
                 )
             return FakeResponse(
                 {
-                    "objects": [
-                        {"id": "CAT-1", "type": "ITEM_VARIATION", "version": 1788210903620, "is_deleted": False},
-                        {"id": "CAT-2", "type": "MODIFIER", "version": 1788210903621, "is_deleted": False},
-                    ],
+                        "objects": [
+                            {
+                                "id": "ITEM_TEST_BURGER",
+                                "type": "ITEM",
+                                "version": 1788210903619,
+                                "is_deleted": False,
+                                "item_data": {"name": "Test Burger", "variations": [{"id": "VAR_TEST_BURGER_REGULAR"}]},
+                            },
+                            {
+                                "id": "VAR_TEST_BURGER_REGULAR",
+                                "type": "ITEM_VARIATION",
+                                "version": 1788210903620,
+                                "is_deleted": False,
+                                "item_variation_data": {"item_id": "ITEM_TEST_BURGER", "name": "Regular"},
+                            },
+                            {"id": "CAT-2", "type": "MODIFIER", "version": 1788210903621, "is_deleted": False},
+                        ],
                     "cursor": "page-2",
                 }
             )
@@ -128,7 +141,7 @@ def oauth_responder():
                                     {
                                         "uid": "line-1",
                                         "name": "Latte",
-                                        "catalog_object_id": "CAT-1",
+                                        "catalog_object_id": "VAR_TEST_BURGER_REGULAR",
                                         "quantity": "1",
                                         "base_price_money": {"amount": 625, "currency": "CAD"},
                                         "total_money": {"amount": 625, "currency": "CAD"},
@@ -136,7 +149,7 @@ def oauth_responder():
                                     {
                                         "uid": "line-2",
                                         "name": "Espresso",
-                                        "catalog_object_id": "CAT-1",
+                                        "catalog_object_id": "VAR_TEST_BURGER_REGULAR",
                                         "quantity": "2",
                                         "base_price_money": {"amount": 437, "currency": "CAD"},
                                         "total_money": {"amount": 875, "currency": "CAD"},
@@ -164,7 +177,7 @@ def oauth_responder():
                                 {
                                     "uid": "line-1",
                                     "name": "Latte",
-                                    "catalog_object_id": "CAT-1",
+                                    "catalog_object_id": "VAR_TEST_BURGER_REGULAR",
                                     "quantity": "2",
                                     "base_price_money": {"amount": 625, "currency": "CAD"},
                                     "total_money": {"amount": 1250, "currency": "CAD"},
@@ -525,7 +538,12 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
     login(client)
     owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
     assert owner is not None
-    organization = make_operational_organization(owner, name=f"Square Orders {uuid4().hex[:6]}", location_name="Main Kitchen")
+    organization = make_operational_organization(
+        owner,
+        name=f"Square Orders {uuid4().hex[:6]}",
+        location_name="Main Kitchen",
+        enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "SQUARE_INTEGRATION"),
+    )
     client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
 
     fake_urlopen = connect_square(client, monkeypatch, app, organization.id)
@@ -553,8 +571,16 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
     assert catalog_sync.status_code == 200
     assert fake_urlopen.calls["catalog"] == 4
     with app.app_context():
-        large_catalog_object = SquareCatalogObject.query.filter_by(square_object_id="CAT-1").one()
+        large_catalog_object = SquareCatalogObject.query.filter_by(square_object_id="VAR_TEST_BURGER_REGULAR").one()
         assert large_catalog_object.version == 1788210903620
+
+    mapping_summary = client.get(f"/api/integrations/square/catalog/mappings?organizationId={organization.id}")
+    assert mapping_summary.status_code == 200
+    mapping_payload = mapping_summary.get_json()
+    assert [row["squareObjectId"] for row in mapping_payload["mappings"]] == ["VAR_TEST_BURGER_REGULAR"]
+    assert mapping_payload["mappings"][0]["squareObjectName"] == "Test Burger · Regular"
+    assert mapping_payload["mappings"][0]["squareItemName"] == "Test Burger"
+    assert mapping_payload["mappingCoverage"]["totalVariationCount"] == 1
 
     orders_sync = client.post(
         "/api/integrations/square/orders/sync",
@@ -619,6 +645,20 @@ def test_square_catalog_sync_rolls_back_failed_transaction_before_recording_erro
         connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
         assert connection.sync_status == "error"
         assert "missing_square_catalog_table" in connection.sync_error
+        assert SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="catalog", status="failed").count() == 1
+
+    monkeypatch.setattr("backend.square_integration._sync_catalog", lambda connection, token: {"objectCount": 0, "pages": 1, "squareObjectIds": []})
+    successful_sync = client.post(
+        "/api/integrations/square/catalog/sync",
+        headers=csrf_headers(client),
+        json={"organizationId": organization.id},
+    )
+    assert successful_sync.status_code == 200
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
+        assert connection.sync_status == "idle"
+        assert connection.sync_error == ""
+        assert SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="catalog", status="failed").count() == 1
 
 
 def test_square_webhook_signature_validation_and_idempotency(app, client, monkeypatch):

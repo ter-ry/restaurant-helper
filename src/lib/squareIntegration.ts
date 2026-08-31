@@ -78,6 +78,20 @@ export interface SquareCatalogMappingSummary {
   updatedAt: string | null;
 }
 
+export interface SquareCatalogMappingCandidate {
+  id: number;
+  squareCatalogObjectId: number;
+  squareObjectId: string;
+  squareObjectType: string;
+  squareObjectName: string;
+  squareItemName: string;
+  isDeleted: boolean;
+  soldUnits: number;
+  suggestedMenuItemId: number | null;
+  suggestedMenuItemName: string;
+  mapping: SquareCatalogMappingSummary | null;
+}
+
 export interface SquareUsageMenuItemSummary {
   id: number;
   organizationId: number;
@@ -392,20 +406,8 @@ export async function fetchSquareCatalogMappings(payload: { organizationId: numb
   return requestJson<{
     connection: SquareConnectionSummary;
     menuItems: SquareUsageMenuItemSummary[];
-    mappings: SquareCatalogMappingSummary[];
-    unmappedVariations: Array<{
-      id: number;
-      squareCatalogObjectId: number;
-      squareObjectId: string;
-      squareObjectType: string;
-      squareObjectName: string;
-      squareItemName: string;
-      isDeleted: boolean;
-      soldUnits: number;
-      suggestedMenuItemId: number | null;
-      suggestedMenuItemName: string;
-      mapping: SquareCatalogMappingSummary | null;
-    }>;
+    mappings: SquareCatalogMappingCandidate[];
+    unmappedVariations: SquareCatalogMappingCandidate[];
     mappingCoverage: SquareUsageMappingCoverage;
   }>(`/api/integrations/square/catalog/mappings?${params.toString()}`);
 }

@@ -3,6 +3,7 @@ import {
   beginSquareConnection,
   disconnectSquare,
   fetchSquareStatus,
+  fetchSquareCatalogMappings,
   syncSquareCatalog,
   syncSquareLocations,
   syncSquareOrders,
@@ -728,6 +729,10 @@ export async function syncPilotDailyCloseSales(sessionId: number, payload: { bus
 
 export async function fetchPilotSquareStatus(organizationId: number) {
   return fetchSquareStatus(organizationId);
+}
+
+export async function fetchPilotSquareCatalogMappings(organizationId: number, locationId?: number | null) {
+  return fetchSquareCatalogMappings({ organizationId, locationId });
 }
 
 export async function beginPilotSquareConnection(organizationId: number) {

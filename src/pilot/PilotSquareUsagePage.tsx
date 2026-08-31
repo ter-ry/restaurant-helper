@@ -10,12 +10,19 @@ import {
   fetchSquareUsage,
   updateSquareCatalogMapping,
   type SquareCatalogMappingSummary,
+  type SquareCatalogMappingCandidate,
   type SquareUsageIngredientRow,
   type SquareUsageMenuItemSummary,
   type SquareUsageReport,
 } from "../lib/squareIntegration";
 
 type MappingDraft = Record<number, number | "">;
+
+function getMappingDetail(candidate: SquareCatalogMappingCandidate): SquareCatalogMappingSummary | null {
+  if (candidate.mapping) return candidate.mapping;
+  const legacy = candidate as SquareCatalogMappingCandidate & Partial<SquareCatalogMappingSummary>;
+  return legacy.flowtallyEntityId !== undefined ? legacy as SquareCatalogMappingSummary : null;
+}
 
 function formatQuantity(value: number | null | undefined) {
   return new Intl.NumberFormat("en-CA", { maximumFractionDigits: 4 }).format(Number(value ?? 0));
@@ -149,20 +156,8 @@ export function PilotSquareUsagePage() {
   const [mappingError, setMappingError] = useState<string | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [menuItems, setMenuItems] = useState<SquareUsageMenuItemSummary[]>([]);
-  const [mappings, setMappings] = useState<SquareCatalogMappingSummary[]>([]);
-  const [unmappedVariations, setUnmappedVariations] = useState<Array<{
-    id: number;
-    squareCatalogObjectId: number;
-    squareObjectId: string;
-    squareObjectType: string;
-    squareObjectName: string;
-    squareItemName: string;
-    isDeleted: boolean;
-    soldUnits: number;
-    suggestedMenuItemId: number | null;
-    suggestedMenuItemName: string;
-    mapping: SquareCatalogMappingSummary | null;
-  }>>([]);
+  const [mappings, setMappings] = useState<SquareCatalogMappingCandidate[]>([]);
+  const [unmappedVariations, setUnmappedVariations] = useState<SquareCatalogMappingCandidate[]>([]);
   const [mappingCoverage, setMappingCoverage] = useState<{ mappedVariationCount: number; totalVariationCount: number; mappedPercent: number }>({
     mappedVariationCount: 0,
     totalVariationCount: 0,
@@ -197,7 +192,7 @@ export function PilotSquareUsagePage() {
         Object.fromEntries(
           mappingResponse.mappings.map((mapping) => [
             mapping.squareCatalogObjectId,
-            mapping.flowtallyEntityId ? Number(mapping.flowtallyEntityId) : "",
+            getMappingDetail(mapping)?.flowtallyEntityId ? Number(getMappingDetail(mapping)?.flowtallyEntityId) : "",
           ]),
         ),
       );
@@ -226,7 +221,10 @@ export function PilotSquareUsagePage() {
   }, [loadData]);
 
   const topUsageRows = useMemo(() => (usage?.ingredientUsage ?? []).slice(0, 20), [usage?.ingredientUsage]);
-  const activeMappings = useMemo(() => mappings.filter((mapping) => mapping.status !== "unmapped"), [mappings]);
+  const activeMappings = useMemo(() => mappings.filter((mapping) => {
+    const detail = getMappingDetail(mapping);
+    return detail !== null && detail.status !== "unmapped";
+  }), [mappings]);
 
   async function saveMapping(squareCatalogObjectId: number) {
     if (!organization) return;
@@ -433,13 +431,13 @@ export function PilotSquareUsagePage() {
                   <MappingCard
                     key={mapping.id}
                     title={mapping.squareObjectName}
-                    subtitle={`${mapping.squareObjectId} · ${mapping.mappingType}`}
-                    mapping={mapping}
+                    subtitle={`${mapping.squareObjectId} · ${mapping.mapping?.mappingType ?? "menu_item"}`}
                     menuItems={menuItems}
-                    draftValue={drafts[mapping.squareCatalogObjectId] ?? (mapping.flowtallyEntityId ? Number(mapping.flowtallyEntityId) : "")}
+                    mapping={getMappingDetail(mapping)}
+                    draftValue={drafts[mapping.squareCatalogObjectId] ?? (getMappingDetail(mapping)?.flowtallyEntityId ? Number(getMappingDetail(mapping)!.flowtallyEntityId) : "")}
                     onDraftChange={(value) => setDrafts((current) => ({ ...current, [mapping.squareCatalogObjectId]: value }))}
                     onSave={() => void saveMapping(mapping.squareCatalogObjectId)}
-                    onRemove={() => void removeMapping(mapping.id)}
+                    onRemove={() => (getMappingDetail(mapping) ? void removeMapping(getMappingDetail(mapping)!.id) : undefined)}
                     suggestion={null}
                   />
                 ))

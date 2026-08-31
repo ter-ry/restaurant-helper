@@ -153,12 +153,11 @@ def _catalog_object_name(obj: SquareCatalogObject) -> str:
         payload = {}
     variation_data = payload.get("item_variation_data") or payload.get("itemVariationData") or {}
     item_data = payload.get("item_data") or payload.get("itemData") or {}
-    for candidate in (
-        variation_data.get("name"),
-        item_data.get("name"),
-        payload.get("name"),
-        payload.get("display_name"),
-    ):
+    variation_name = str(variation_data.get("name") or "").strip()
+    parent_name = _catalog_object_parent_name(obj)
+    if obj.object_type.upper() == "ITEM_VARIATION" and parent_name:
+        return f"{parent_name} · {variation_name}" if variation_name else parent_name
+    for candidate in (variation_name, item_data.get("name"), payload.get("name"), payload.get("display_name")):
         if candidate:
             return str(candidate)
     if obj.object_type.upper() == "ITEM_VARIATION":
@@ -174,6 +173,18 @@ def _catalog_object_parent_name(obj: SquareCatalogObject) -> str:
         payload = {}
     variation_data = payload.get("item_variation_data") or payload.get("itemVariationData") or {}
     item_data = payload.get("item_data") or payload.get("itemData") or {}
+    if obj.object_type.upper() == "ITEM_VARIATION":
+        parent_id = str(variation_data.get("item_id") or variation_data.get("itemId") or "").strip()
+        if parent_id:
+            parent = SquareCatalogObject.query.filter_by(
+                square_connection_id=obj.square_connection_id,
+                square_object_id=parent_id,
+                object_type="ITEM",
+            ).first()
+            parent_payload = (parent.raw_payload_json or {}) if parent else {}
+            parent_data = parent_payload.get("item_data") or parent_payload.get("itemData") or {}
+            if parent_data.get("name"):
+                return str(parent_data["name"])
     for candidate in (
         item_data.get("name"),
         variation_data.get("item_name"),
@@ -1230,6 +1241,7 @@ def sync_square_orders_for_range(
         )
         connection.last_sync_at = _now()
         connection.sync_status = "idle"
+        connection.sync_error = ""
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
@@ -1247,7 +1259,7 @@ def sync_square_orders_for_range(
         db.session.commit()
         return response_payload
     except Exception as exc:
-        _persist_square_sync_failure(organization_id, connection_id, str(exc))
+        _persist_square_sync_failure(organization_id, connection_id, str(exc), job_type="orders")
         raise RuntimeError(f"Square order sync failed: {exc}") from exc
 
 
@@ -1261,7 +1273,7 @@ def _ensure_connection_and_access(organization_id: int) -> tuple[Organization | 
     return organization, _ensure_connection(organization), None
 
 
-def _persist_square_sync_failure(organization_id: int, connection_id: int, error_message: str) -> None:
+def _persist_square_sync_failure(organization_id: int, connection_id: int, error_message: str, *, job_type: str | None = None) -> None:
     """Record sync failure state in a fresh tenant-scoped transaction."""
     db.session.rollback()
     try:
@@ -1272,6 +1284,18 @@ def _persist_square_sync_failure(organization_id: int, connection_id: int, error
             return
         connection.sync_status = "error"
         connection.sync_error = error_message
+        if job_type:
+            db.session.add(
+                SquareSyncJob(
+                    square_connection_id=connection_id,
+                    job_type=job_type,
+                    status="failed",
+                    requested_at=_now(),
+                    started_at=_now(),
+                    completed_at=_now(),
+                    error_message=error_message,
+                )
+            )
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -1391,6 +1415,7 @@ def square_callback():
         catalog_summary = _sync_catalog(connection, token)
         connection.last_sync_at = _now()
         connection.sync_status = "idle"
+        connection.sync_error = ""
         record_audit_event(
             event_type="square.oauth.connected",
             entity_type="square_connection",
@@ -1401,7 +1426,7 @@ def square_callback():
         )
         db.session.commit()
     except Exception as exc:
-        _persist_square_sync_failure(organization_id, connection_id, str(exc))
+        _persist_square_sync_failure(organization_id, connection_id, str(exc), job_type="catalog")
         _clear_oauth_context()
         return json_error(f"Square sync failed after connection: {exc}", 400)
 
@@ -1472,6 +1497,7 @@ def square_sync_locations():
         result = _sync_locations(connection, token)
         connection.last_sync_at = _now()
         connection.sync_status = "idle"
+        connection.sync_error = ""
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
@@ -1489,7 +1515,7 @@ def square_sync_locations():
         db.session.commit()
         return jsonify(response_payload), 200
     except Exception as exc:
-        _persist_square_sync_failure(organization_id, connection_id, str(exc))
+        _persist_square_sync_failure(organization_id, connection_id, str(exc), job_type="locations")
         return json_error(f"Square location sync failed: {exc}", 400)
 
 
@@ -1515,6 +1541,7 @@ def square_sync_catalog():
         result = _sync_catalog(connection, token)
         connection.last_sync_at = _now()
         connection.sync_status = "idle"
+        connection.sync_error = ""
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
@@ -1532,7 +1559,7 @@ def square_sync_catalog():
         db.session.commit()
         return jsonify(response_payload), 200
     except Exception as exc:
-        _persist_square_sync_failure(organization_id, connection_id, str(exc))
+        _persist_square_sync_failure(organization_id, connection_id, str(exc), job_type="catalog")
         return json_error(f"Square catalog sync failed: {exc}", 400)
 
 
