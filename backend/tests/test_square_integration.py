@@ -191,8 +191,39 @@ def connect_square(client, monkeypatch, app, organization_id: int):
         query_string={"state": context["state"], "code": "auth-code"},
     )
     assert callback_response.status_code == 302
-    assert "/integrations/square" in callback_response.headers["Location"]
+    expected_frontend_origin = str(app.config["FLOWTALLY_FRONTEND_ORIGIN"]).rstrip("/")
+    assert callback_response.headers["Location"] == f"{expected_frontend_origin}/app/square?organizationId={organization_id}&connected=1"
+    assert "access_token" not in callback_response.headers["Location"]
+    assert "refresh_token" not in callback_response.headers["Location"]
     return fake_urlopen
+
+
+def test_square_oauth_callback_rejects_invalid_state(app, client, monkeypatch):
+    login(client)
+    organization = make_operational_organization(
+        User.query.filter_by(email=LOCAL_OWNER_EMAIL).first(),
+        name=f"Square Org {uuid4().hex[:6]}",
+        location_name="Main Kitchen",
+    )
+    select_org = client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
+    assert select_org.status_code == 200
+
+    configure_square(app)
+    fake_urlopen = oauth_responder()
+    monkeypatch.setattr("backend.square_integration.urlopen", fake_urlopen)
+
+    start_response = client.get(f"/api/integrations/square/start?organizationId={organization.id}")
+    assert start_response.status_code == 302
+    with client.session_transaction() as session:
+        context = session["square_oauth_context"]
+
+    callback_response = client.get(
+        "/api/integrations/square/callback",
+        query_string={"state": f'{context["state"]}-wrong', "code": "auth-code"},
+    )
+    assert callback_response.status_code == 400
+    assert callback_response.get_json()["error"] == "Square state validation failed."
+    assert fake_urlopen.calls == {"locations": 0, "catalog": 0, "orders": 0}
 
 
 def _create_square_usage_fixture(app, owner: User, *, organization_name: str):
@@ -415,6 +446,9 @@ def test_square_oauth_connection_catalog_and_status(app, client, monkeypatch):
     )
     select_org = client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
     assert select_org.status_code == 200
+
+    with app.app_context():
+        app.config["FLOWTALLY_FRONTEND_ORIGIN"] = "https://frontend.example.test"
 
     fake_urlopen = connect_square(client, monkeypatch, app, organization.id)
     assert fake_urlopen.calls["locations"] == 1

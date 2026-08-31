@@ -62,6 +62,10 @@ def _square_api_base() -> str:
     return _square_base_url()
 
 
+def _frontend_origin() -> str:
+    return str(current_app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip().rstrip("/")
+
+
 def _platform_role() -> str | None:
     role = get_platform_role(current_user.id) if current_user.is_authenticated else None
     return role.role if role else None
@@ -1385,7 +1389,7 @@ def square_callback():
         metadata={"merchantId": connection.square_merchant_id, "locationSummary": location_summary, "catalogSummary": catalog_summary},
     )
     db.session.commit()
-    return redirect(f"/integrations/square?organizationId={organization.id}&connected=1", code=302)
+    return redirect(f"{_frontend_origin()}/app/square?organizationId={organization.id}&connected=1", code=302)
 
 
 @bp.get("/api/integrations/square/status")
