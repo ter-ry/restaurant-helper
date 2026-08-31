@@ -33,6 +33,8 @@ const PilotDashboardPage = lazyNamed(() => import("./pilot/PilotDashboardPage"),
 const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"), "PilotPurchasesPage");
 const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
 const PilotMenuCostingPage = lazyNamed(() => import("./pilot/PilotMenuCostingPage"), "PilotMenuCostingPage");
+const PilotSquarePage = lazyNamed(() => import("./pilot/PilotSquarePage"), "PilotSquarePage");
+const PilotDailyClosePage = lazyNamed(() => import("./pilot/PilotDailyClosePage"), "PilotDailyClosePage");
 const PilotSquareUsagePage = lazyNamed(() => import("./pilot/PilotSquareUsagePage"), "PilotSquareUsagePage");
 const PilotStockCountsPage = lazyNamed(() => import("./pilot/PilotStockCountsPage"), "PilotStockCountsPage");
 const PilotReorderPlanPage = lazyNamed(() => import("./pilot/PilotReorderPlanPage"), "PilotReorderPlanPage");
@@ -215,6 +217,22 @@ const pilotAppRoutes = pilotAppEnabled
                 element: (
                   <PilotModuleGate moduleKey="MENU_COSTING" moduleName="Menu Costing">
                     <PilotMenuCostingPage />
+                  </PilotModuleGate>
+                ),
+              },
+              {
+                path: "square",
+                element: (
+                  <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
+                    <PilotSquarePage />
+                  </PilotModuleGate>
+                ),
+              },
+              {
+                path: "daily-close",
+                element: (
+                  <PilotModuleGate moduleKey="DAILY_CLOSE" moduleName="Daily Close">
+                    <PilotDailyClosePage />
                   </PilotModuleGate>
                 ),
               },

@@ -40,7 +40,7 @@ def test_enabled_module_keys_track_current_organization_and_ignore_disabled_rows
             owner,
             name="Enabled Module Cafe",
             location_name="Enabled Kitchen",
-            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "STOCK_COUNTS", "REORDER_PLANS"),
+            enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING", "DAILY_CLOSE", "STOCK_COUNTS", "REORDER_PLANS"),
         )
         disabled_org = make_operational_organization(
             owner,

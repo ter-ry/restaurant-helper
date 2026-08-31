@@ -993,3 +993,28 @@ class SquareDailySalesSummary(TimestampMixin, db.Model):
 
     connection = db.relationship("SquareConnection")
     restaurant_location = db.relationship("RestaurantLocation")
+
+
+class DailyCloseSession(TimestampMixin, db.Model):
+    __tablename__ = "daily_close_sessions"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "location_id", "business_date", name="uq_daily_close_session_scope"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    business_date = db.Column(db.Date, nullable=False, index=True)
+    status = db.Column(db.String(40), nullable=False, default="DRAFT")
+    summary_snapshot_json = db.Column(db.JSON, nullable=False, default=dict)
+    usage_snapshot_json = db.Column(db.JSON, nullable=False, default=dict)
+    exceptions_snapshot_json = db.Column(db.JSON, nullable=False, default=list)
+    notes = db.Column(db.Text, nullable=False, default="")
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    completed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    completed_by = db.relationship("User", foreign_keys=[completed_by_user_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])

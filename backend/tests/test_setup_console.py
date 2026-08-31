@@ -183,6 +183,9 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
     reporting = next(entry for entry in detail_body["modules"] if entry["key"] == "REPORTING")
     assert reporting["status"] == "DISABLED"
     assert reporting["backendReady"] is False
+    square = next(entry for entry in detail_body["modules"] if entry["key"] == "SQUARE_INTEGRATION")
+    assert square["status"] == "DISABLED"
+    assert square["backendReady"] is True
 
     enable_response = client.post(
         f"/api/platform/setup/organizations/{organization_id}/modules",
@@ -192,6 +195,7 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
                 {"moduleKey": "PURCHASES", "status": "ENABLED"},
                 {"moduleKey": "INVENTORY", "status": "ENABLED"},
                 {"moduleKey": "MENU_COSTING", "status": "ENABLED"},
+                {"moduleKey": "SQUARE_INTEGRATION", "status": "ENABLED"},
             ]
         },
     )
@@ -201,6 +205,9 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
     assert menu_costing["status"] == "ENABLED"
     assert menu_costing["hasOrganizationRow"] is True
     assert menu_costing["enabledAt"] is not None
+    square = next(entry for entry in enable_body["modules"] if entry["key"] == "SQUARE_INTEGRATION")
+    assert square["status"] == "ENABLED"
+    assert square["hasOrganizationRow"] is True
 
     disable_response = client.post(
         f"/api/platform/setup/organizations/{organization_id}/modules",
@@ -210,6 +217,7 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
                 {"moduleKey": "PURCHASES", "status": "ENABLED"},
                 {"moduleKey": "INVENTORY", "status": "ENABLED"},
                 {"moduleKey": "MENU_COSTING", "status": "DISABLED"},
+                {"moduleKey": "SQUARE_INTEGRATION", "status": "DISABLED"},
             ]
         },
     )
@@ -218,3 +226,6 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
     menu_costing = next(entry for entry in disable_body["modules"] if entry["key"] == "MENU_COSTING")
     assert menu_costing["status"] == "DISABLED"
     assert menu_costing["hasOrganizationRow"] is True
+    square = next(entry for entry in disable_body["modules"] if entry["key"] == "SQUARE_INTEGRATION")
+    assert square["status"] == "DISABLED"
+    assert square["hasOrganizationRow"] is True

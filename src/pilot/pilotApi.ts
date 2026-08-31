@@ -1,4 +1,22 @@
 import { pilotApiBaseUrl } from "./pilotConfig";
+import {
+  beginSquareConnection,
+  disconnectSquare,
+  fetchSquareStatus,
+  syncSquareCatalog,
+  syncSquareLocations,
+  syncSquareOrders,
+  updateSquareCatalogMapping,
+  updateSquareLocationMapping,
+  type SquareCatalogMappingSummary,
+  type SquareCatalogObjectSummary,
+  type SquareConnectionSummary,
+  type SquareDailySalesSummary,
+  type SquareLocationSummary,
+  type SquareOrderSummary,
+  type SquareSyncJobSummary,
+  type SquareWebhookEventSummary,
+} from "../lib/squareIntegration";
 
 export interface PilotUser {
   id: number;
@@ -467,6 +485,7 @@ export interface PilotDashboardResponse {
   recentPriceChanges: Array<Record<string, unknown>>;
   pendingDraftInvoices: PilotPurchaseInvoice[];
   pendingDraftCountSessions: PilotCountSession[];
+  pendingDraftDailyCloseSessions: PilotDailyCloseSession[];
   pendingDraftReorderPlans: PilotReorderPlan[];
   supplierSpend: Array<Record<string, unknown>>;
   reorderSuggestions: PilotReorderSuggestion[];
@@ -580,6 +599,70 @@ export interface PilotReorderPlansResponse {
   activeDraftPlanId: number | null;
 }
 
+export interface PilotDailyCloseSession {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  businessDate: string;
+  status: string;
+  summarySnapshot: Record<string, unknown>;
+  usageSnapshot: Record<string, unknown>;
+  exceptionsSnapshot: string[];
+  notes: string;
+  completedAt: string | null;
+  completedByUserId: number | null;
+  createdByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  currentSnapshot?: PilotDailyCloseSnapshot;
+}
+
+export interface PilotDailyCloseSnapshot {
+  healthStatus: string;
+  inventoryValue: number;
+  sales: Record<string, unknown>;
+  usage: {
+    period: { startAt: string; endAt: string } | null;
+    coverage: Record<string, number | boolean>;
+    totals: {
+      theoreticalUsage: number;
+      actualUsage: number | null;
+      discrepancy: number | null;
+      discrepancyPercent: number | null;
+    };
+    contributingMenuItems: Array<Record<string, unknown>>;
+    unmappedVariations: Array<Record<string, unknown>>;
+    ingredientUsage: Array<Record<string, unknown>>;
+  };
+  variance: {
+    quantity: number | null;
+    percent: number | null;
+    value: number;
+  };
+  square: Record<string, unknown>;
+  readyToFinalize: boolean;
+}
+
+export interface PilotDailyCloseResponse {
+  session: PilotDailyCloseSession | null;
+  snapshot: PilotDailyCloseSnapshot;
+  usage: PilotDailyCloseSnapshot["usage"];
+  exceptions: string[];
+  history: PilotDailyCloseSession[];
+  location: { id: number; name: string; timezone: string };
+  businessDate: string;
+  square: Record<string, unknown>;
+}
+
+export type PilotSquareConnectionSummary = SquareConnectionSummary;
+export type PilotSquareLocationSummary = SquareLocationSummary;
+export type PilotSquareCatalogObjectSummary = SquareCatalogObjectSummary;
+export type PilotSquareDailySalesSummary = SquareDailySalesSummary;
+export type PilotSquareOrderSummary = SquareOrderSummary;
+export type PilotSquareSyncJobSummary = SquareSyncJobSummary;
+export type PilotSquareWebhookEventSummary = SquareWebhookEventSummary;
+export type PilotSquareCatalogMappingSummary = SquareCatalogMappingSummary;
+
 async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const csrfToken = await getPilotCsrfToken();
   return requestJson<T>(path, {
@@ -593,6 +676,93 @@ async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise
 
 export async function fetchPilotDashboard() {
   return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
+}
+
+export async function fetchPilotDailyClose(locationId?: number | null, businessDate?: string | null) {
+  const params = new URLSearchParams();
+  if (locationId != null) {
+    params.set("locationId", String(locationId));
+  }
+  if (businessDate) {
+    params.set("businessDate", businessDate);
+  }
+  const query = params.toString();
+  return requestJson<PilotDailyCloseResponse>(`/api/pilot/daily-close${query ? `?${query}` : ""}`);
+}
+
+export async function openPilotDailyClose(payload: { locationId: number; businessDate?: string }) {
+  return requestCsrfJson<PilotDailyCloseResponse>("/api/pilot/daily-close", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotDailyClose(sessionId: number, payload: { notes: string }) {
+  return requestCsrfJson<PilotDailyCloseResponse>(`/api/pilot/daily-close/${sessionId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function finalizePilotDailyClose(sessionId: number) {
+  return requestCsrfJson<PilotDailyCloseResponse>(`/api/pilot/daily-close/${sessionId}/finalize`, {
+    method: "POST",
+  });
+}
+
+export async function syncPilotDailyCloseSales(sessionId: number, payload: { businessDate?: string }) {
+  return requestCsrfJson<PilotDailyCloseResponse>(`/api/pilot/daily-close/${sessionId}/sync-sales`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPilotSquareStatus(organizationId: number) {
+  return fetchSquareStatus(organizationId);
+}
+
+export async function beginPilotSquareConnection(organizationId: number) {
+  return beginSquareConnection(organizationId);
+}
+
+export async function disconnectPilotSquare(organizationId: number) {
+  return disconnectSquare(organizationId);
+}
+
+export async function syncPilotSquareLocations(organizationId: number) {
+  return syncSquareLocations(organizationId);
+}
+
+export async function syncPilotSquareCatalog(organizationId: number) {
+  return syncSquareCatalog(organizationId);
+}
+
+export async function syncPilotSquareOrders(payload: { organizationId: number; startAt: string; endAt: string; locationIds?: string[] }) {
+  return syncSquareOrders(payload);
+}
+
+export async function updatePilotSquareLocationMapping(payload: { organizationId: number; squareLocationId: number; restaurantLocationId: number }) {
+  return updateSquareLocationMapping(payload);
+}
+
+export async function updatePilotSquareCatalogMapping(payload: {
+  organizationId: number;
+  squareCatalogObjectId: number;
+  mappingType?: string;
+  flowtallyEntityType?: string;
+  flowtallyEntityId?: string;
+  status?: string;
+}) {
+  return updateSquareCatalogMapping(payload);
 }
 
 export async function fetchPilotPurchases() {

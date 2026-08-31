@@ -10,6 +10,7 @@ from sqlalchemy import and_
 
 from .models import (
     AuditEvent,
+    DailyCloseSession,
     InventoryItem,
     InventoryMovement,
     Organization,
@@ -379,6 +380,25 @@ def serialize_reorder_intent(intent: ReorderIntent) -> dict[str, Any]:
         "actorUserId": intent.actor_user_id,
         "createdAt": isoformat(intent.created_at),
         "updatedAt": isoformat(intent.updated_at),
+    }
+
+
+def serialize_daily_close_session(session_record: DailyCloseSession) -> dict[str, Any]:
+    return {
+        "id": session_record.id,
+        "organizationId": session_record.organization_id,
+        "locationId": session_record.location_id,
+        "businessDate": session_record.business_date.isoformat(),
+        "status": session_record.status,
+        "summarySnapshot": dict(session_record.summary_snapshot_json or {}),
+        "usageSnapshot": dict(session_record.usage_snapshot_json or {}),
+        "exceptionsSnapshot": list(session_record.exceptions_snapshot_json or []),
+        "notes": session_record.notes,
+        "completedAt": isoformat(session_record.completed_at),
+        "completedByUserId": session_record.completed_by_user_id,
+        "createdByUserId": session_record.created_by_user_id,
+        "createdAt": isoformat(session_record.created_at),
+        "updatedAt": isoformat(session_record.updated_at),
     }
 
 

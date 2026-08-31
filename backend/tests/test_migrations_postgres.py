@@ -354,12 +354,13 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0015_weighted_average_inventory_cost"
+        assert _current_revision() == "0016_daily_close_sessions"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
         _assert_table_owned_by_migrator("recipe_ingredients")
         _assert_table_owned_by_migrator("menu_items")
+        _assert_table_owned_by_migrator("daily_close_sessions")
         data_type, nullable, precision, scale = _column_info("inventory_items", "average_unit_cost")
         assert data_type == "numeric"
         assert nullable is False
@@ -374,6 +375,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_policy_exists("flowtally_suppliers_tenant_access", "suppliers")
         _assert_policy_exists("flowtally_data_import_jobs_tenant_access", "data_import_jobs")
         _assert_policy_exists("flowtally_square_orders_tenant_access", "square_orders")
+        _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
         _assert_policy_exists("flowtally_support_access_grants_select_access", "support_access_grants")
         _assert_policy_exists("flowtally_recipes_tenant_access", "recipes")
         _assert_policy_exists("flowtally_recipe_ingredients_tenant_access", "recipe_ingredients")
@@ -393,10 +395,12 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0015_weighted_average_inventory_cost"
+        assert _current_revision() == "0016_daily_close_sessions"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
+        _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
+        _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
         _assert_policy_exists("flowtally_organizations_write_access", "organizations")
         _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
@@ -416,9 +420,10 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0015_weighted_average_inventory_cost"
+        assert _current_revision() == "0016_daily_close_sessions"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
+        _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
         _assert_policy_exists("flowtally_organizations_write_access", "organizations")
         _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
@@ -434,9 +439,11 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0015_weighted_average_inventory_cost"
+        assert _current_revision() == "0016_daily_close_sessions"
         _assert_function_exists("flowtally_current_user_id", 0)
+        _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
+        _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
         _assert_policy_exists("flowtally_organizations_write_access", "organizations")
         _assert_policy_exists("flowtally_organization_memberships_read_access", "organization_memberships")
@@ -453,190 +460,189 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
         _assert_runtime_connection()
         assert _current_revision() == "0014_authenticated_membership_discovery"
 
-        migration_engine = _migration_engine()
-        with migration_engine.begin() as connection:
-            identity = connection.execute(text("select current_user, session_user, current_role")).one()
-            assert identity[0] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
-            assert identity[1] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
-            assert identity[2] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
-            _set_setup_migration_context(connection)
-            assert (
-                connection.execute(text("select current_setting('flowtally.access_scope', true)")).scalar_one()
-                == "setup"
-            )
+    migration_engine = _migration_engine()
+    with migration_engine.begin() as connection:
+        identity = connection.execute(text("select current_user, session_user, current_role")).one()
+        assert identity[0] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+        assert identity[1] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+        assert identity[2] == "flowtally_migrator", f"expected migrator identity, got {identity!r}"
+        _set_setup_migration_context(connection)
+        assert connection.execute(text("select current_setting('flowtally.access_scope', true)")).scalar_one() == "setup"
 
-            connection.execute(
-                text(
-                    """
-                    insert into organizations (
-                        id,
-                        name,
-                        lifecycle_status,
-                        setup_status,
-                        subscription_status,
-                        setup_template_key,
-                        setup_fee_status,
-                        subscription_provider,
-                        external_customer_reference,
-                        external_subscription_reference,
-                        is_prospect,
-                        active_at,
-                        setup_completed_at,
-                        created_at,
-                        updated_at
-                    ) values (
-                        1,
-                        'Demo Bistro',
-                        'ACTIVE',
-                        'COMPLETE',
-                        'ACTIVE',
-                        'GENERIC_RESTAURANT',
-                        'confirmed',
-                        '',
-                        '',
-                        '',
-                        false,
-                        current_timestamp,
-                        current_timestamp,
-                        current_timestamp,
-                        current_timestamp
-                    )
-                    """
+        connection.execute(
+            text(
+                """
+                insert into organizations (
+                    id,
+                    name,
+                    lifecycle_status,
+                    setup_status,
+                    subscription_status,
+                    setup_template_key,
+                    setup_fee_status,
+                    subscription_provider,
+                    external_customer_reference,
+                    external_subscription_reference,
+                    is_prospect,
+                    active_at,
+                    setup_completed_at,
+                    created_at,
+                    updated_at
+                ) values (
+                    1,
+                    'Demo Bistro',
+                    'ACTIVE',
+                    'COMPLETE',
+                    'ACTIVE',
+                    'GENERIC_RESTAURANT',
+                    'confirmed',
+                    '',
+                    '',
+                    '',
+                    false,
+                    current_timestamp,
+                    current_timestamp,
+                    current_timestamp,
+                    current_timestamp
                 )
+                """
             )
-            connection.execute(
-                text(
-                    """
-                    insert into restaurant_locations (
-                        id,
-                        organization_id,
-                        name,
-                        address_line1,
-                        address_line2,
-                        city,
-                        region,
-                        postal_code,
-                        country,
-                        timezone,
-                        created_at,
-                        updated_at
-                    ) values (
-                        7,
-                        1,
-                        'Main Dining Room',
-                        '',
-                        '',
-                        'Toronto',
-                        'ON',
-                        '',
-                        'Canada',
-                        'America/Toronto',
-                        current_timestamp,
-                        current_timestamp
-                    )
-                    """
+        )
+        connection.execute(
+            text(
+                """
+                insert into restaurant_locations (
+                    id,
+                    organization_id,
+                    name,
+                    address_line1,
+                    address_line2,
+                    city,
+                    region,
+                    postal_code,
+                    country,
+                    timezone,
+                    created_at,
+                    updated_at
+                ) values (
+                    7,
+                    1,
+                    'Main Dining Room',
+                    '',
+                    '',
+                    'Toronto',
+                    'ON',
+                    '',
+                    'Canada',
+                    'America/Toronto',
+                    current_timestamp,
+                    current_timestamp
                 )
+                """
             )
-            connection.execute(
-                text(
-                    """
-                    insert into inventory_items (
-                        id,
-                        organization_id,
-                        location_id,
-                        name,
-                        normalized_name,
-                        category,
-                        stock_unit,
-                        current_on_hand,
-                        min_quantity,
-                        par_level,
-                        preferred_supplier_name,
-                        latest_purchase_price,
-                        last_purchase_unit,
-                        last_purchase_conversion_factor,
-                        estimated_cost_method,
-                        active,
-                        notes,
-                        created_at,
-                        updated_at
-                    ) values (
-                        11,
-                        1,
-                        7,
-                        'Chicken Breast',
-                        'chicken breast',
-                        'Protein',
-                        'kg',
-                        100,
-                        0,
-                        0,
-                        'Local Foods',
-                        7,
-                        'kg',
-                        2,
-                        'latest_purchase_price',
-                        true,
-                        '',
-                        current_timestamp,
-                        current_timestamp
-                    )
-                    """
+        )
+        connection.execute(
+            text(
+                """
+                insert into inventory_items (
+                    id,
+                    organization_id,
+                    location_id,
+                    name,
+                    normalized_name,
+                    category,
+                    stock_unit,
+                    current_on_hand,
+                    min_quantity,
+                    par_level,
+                    preferred_supplier_name,
+                    latest_purchase_price,
+                    last_purchase_unit,
+                    last_purchase_conversion_factor,
+                    estimated_cost_method,
+                    active,
+                    notes,
+                    created_at,
+                    updated_at
+                ) values (
+                    11,
+                    1,
+                    7,
+                    'Chicken Breast',
+                    'chicken breast',
+                    'Protein',
+                    'kg',
+                    100,
+                    0,
+                    0,
+                    'Local Foods',
+                    7,
+                    'kg',
+                    2,
+                    'latest_purchase_price',
+                    true,
+                    '',
+                    current_timestamp,
+                    current_timestamp
                 )
+                """
             )
-            connection.execute(
-                text(
-                    """
-                    insert into inventory_items (
-                        id,
-                        organization_id,
-                        location_id,
-                        name,
-                        normalized_name,
-                        category,
-                        stock_unit,
-                        current_on_hand,
-                        min_quantity,
-                        par_level,
-                        preferred_supplier_name,
-                        latest_purchase_price,
-                        last_purchase_unit,
-                        last_purchase_conversion_factor,
-                        estimated_cost_method,
-                        active,
-                        notes,
-                        created_at,
-                        updated_at
-                    ) values (
-                        12,
-                        1,
-                        7,
-                        'Salt',
-                        'salt',
-                        'Dry goods',
-                        'kg',
-                        0,
-                        0,
-                        0,
-                        '',
-                        7,
-                        'kg',
-                        0,
-                        'latest_purchase_price',
-                        true,
-                        '',
-                        current_timestamp,
-                        current_timestamp
-                    )
-                    """
+        )
+        connection.execute(
+            text(
+                """
+                insert into inventory_items (
+                    id,
+                    organization_id,
+                    location_id,
+                    name,
+                    normalized_name,
+                    category,
+                    stock_unit,
+                    current_on_hand,
+                    min_quantity,
+                    par_level,
+                    preferred_supplier_name,
+                    latest_purchase_price,
+                    last_purchase_unit,
+                    last_purchase_conversion_factor,
+                    estimated_cost_method,
+                    active,
+                    notes,
+                    created_at,
+                    updated_at
+                ) values (
+                    12,
+                    1,
+                    7,
+                    'Salt',
+                    'salt',
+                    'Dry goods',
+                    'kg',
+                    0,
+                    0,
+                    0,
+                    '',
+                    7,
+                    'kg',
+                    0,
+                    'latest_purchase_price',
+                    true,
+                    '',
+                    current_timestamp,
+                    current_timestamp
                 )
+                """
             )
+        )
 
     migration_config = _upgrade_to(application, "head")
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0015_weighted_average_inventory_cost"
+        assert _current_revision() == "0016_daily_close_sessions"
+        _assert_table_owned_by_migrator("daily_close_sessions")
+        _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
     with _migration_engine().begin() as connection:
         _set_setup_migration_context(connection)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Plus, RefreshCcw, Save, Search } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -93,6 +93,7 @@ export function PilotStockCountsPage() {
   const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const previousSelectedId = useRef<number | null>(null);
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("sessionId");
     const parsed = Number(value);
@@ -175,9 +176,15 @@ export function PilotStockCountsPage() {
     if (selectedSession) {
       setDraft(sessionToDraft(selectedSession));
       setConfirmConcurrency(false);
-      setShowConcurrencyDetails(false);
     }
   }, [selectedSession]);
+
+  useEffect(() => {
+    if (previousSelectedId.current !== selectedId) {
+      setShowConcurrencyDetails(false);
+      previousSelectedId.current = selectedId;
+    }
+  }, [selectedId]);
 
   useEffect(() => {
     if (!visibleSessions.length) {
@@ -226,6 +233,7 @@ export function PilotStockCountsPage() {
   const openSession = (sessionId: number) => {
     setSelectedId(sessionId);
     setConfirmConcurrency(false);
+    setShowConcurrencyDetails(false);
     navigate(`${location.pathname}?sessionId=${sessionId}`, { replace: true });
   };
 
@@ -249,6 +257,7 @@ export function PilotStockCountsPage() {
       setDraft(sessionToDraft(created));
       setSavedDraftSignature(JSON.stringify(sessionToDraft(created)));
       setConfirmConcurrency(false);
+      setShowConcurrencyDetails(false);
       setMessage(`Stock count ${created.id} started.`);
       navigate(`${location.pathname}?sessionId=${created.id}`, { replace: true });
       await load(created.id);

@@ -1196,6 +1196,57 @@ def _sync_orders(connection: SquareConnection, token: str, *, start_at: str, end
     return {"orderCount": order_count, "pages": pages, "cursor": cursor, "locationIds": location_ids}
 
 
+def sync_square_orders_for_range(
+    organization: Organization,
+    connection: SquareConnection,
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    location_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    token = _connection_token(connection)
+    requested_location_ids = [str(item) for item in (location_ids or []) if str(item).strip()]
+    if not requested_location_ids:
+        requested_location_ids = [location.square_location_id for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
+    if not requested_location_ids:
+        raise RuntimeError("Sync Square locations before importing orders.")
+
+    job = SquareSyncJob(square_connection_id=connection.id, job_type="orders", status="running", started_at=_now(), requested_at=_now())
+    db.session.add(job)
+    try:
+        result = _sync_orders(
+            connection,
+            token,
+            start_at=start_at.isoformat().replace("+00:00", "Z"),
+            end_at=end_at.isoformat().replace("+00:00", "Z"),
+            location_ids=requested_location_ids,
+        )
+        connection.last_sync_at = _now()
+        connection.sync_status = "idle"
+        job.status = "completed"
+        job.completed_at = _now()
+        job.cursor_json = result
+        db.session.commit()
+        record_audit_event(
+            event_type="square.orders_synced",
+            entity_type="square_connection",
+            entity_id=connection.id,
+            organization_id=organization.id,
+            actor_user_id=current_user.id,
+            metadata=result,
+        )
+        db.session.commit()
+        return {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
+    except Exception as exc:
+        connection.sync_status = "error"
+        connection.sync_error = str(exc)
+        job.status = "failed"
+        job.completed_at = _now()
+        job.error_message = str(exc)
+        db.session.commit()
+        raise RuntimeError(f"Square order sync failed: {exc}") from exc
+
+
 def _ensure_connection_and_access(organization_id: int) -> tuple[Organization | None, SquareConnection | None, tuple[dict[str, Any], int] | None]:
     organization = Organization.query.filter_by(id=organization_id).first()
     if organization is None:
@@ -1480,43 +1531,23 @@ def square_sync_orders():
     if error is not None:
         return error
     assert organization is not None and connection is not None
-    try:
-        token = _connection_token(connection)
-    except Exception as exc:
-        return json_error(str(exc), 409)
     location_ids = [str(item) for item in payload.get("locationIds") or [] if str(item).strip()]
-    if not location_ids:
-        location_ids = [location.square_location_id for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
-    if not location_ids:
-        return json_error("Sync Square locations before importing orders.", 409)
-    job = SquareSyncJob(square_connection_id=connection.id, job_type="orders", status="running", started_at=_now(), requested_at=_now())
-    db.session.add(job)
     try:
-        result = _sync_orders(connection, token, start_at=start_at, end_at=end_at, location_ids=location_ids)
-        connection.last_sync_at = _now()
-        connection.sync_status = "idle"
-        job.status = "completed"
-        job.completed_at = _now()
-        job.cursor_json = result
-        db.session.commit()
-        record_audit_event(
-            event_type="square.orders_synced",
-            entity_type="square_connection",
-            entity_id=connection.id,
-            organization_id=organization.id,
-            actor_user_id=current_user.id,
-            metadata=result,
+        start_at_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+        end_at_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
+    except ValueError:
+        return json_error("Start and end timestamps must be valid ISO datetimes.", 400)
+    try:
+        result = sync_square_orders_for_range(
+            organization,
+            connection,
+            start_at=start_at_dt,
+            end_at=end_at_dt,
+            location_ids=location_ids,
         )
-        db.session.commit()
-        return jsonify({"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}), 200
-    except Exception as exc:
-        connection.sync_status = "error"
-        connection.sync_error = str(exc)
-        job.status = "failed"
-        job.completed_at = _now()
-        job.error_message = str(exc)
-        db.session.commit()
-        return json_error(f"Square order sync failed: {exc}", 400)
+        return jsonify(result), 200
+    except RuntimeError as exc:
+        return json_error(str(exc), 400)
 
 
 @bp.post("/api/integrations/square/location-mappings")
