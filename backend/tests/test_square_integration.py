@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
+from sqlalchemy import text
 
 from backend.extensions import db
 from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
@@ -93,15 +94,15 @@ def oauth_responder():
                 return FakeResponse(
                     {
                         "objects": [
-                            {"id": "CAT-3", "type": "CATEGORY", "version": 3, "is_deleted": False},
+                            {"id": "CAT-3", "type": "CATEGORY", "version": 1788210903622, "is_deleted": False},
                         ]
                     }
                 )
             return FakeResponse(
                 {
                     "objects": [
-                        {"id": "CAT-1", "type": "ITEM_VARIATION", "version": 1, "is_deleted": False},
-                        {"id": "CAT-2", "type": "MODIFIER", "version": 2, "is_deleted": False},
+                        {"id": "CAT-1", "type": "ITEM_VARIATION", "version": 1788210903620, "is_deleted": False},
+                        {"id": "CAT-2", "type": "MODIFIER", "version": 1788210903621, "is_deleted": False},
                     ],
                     "cursor": "page-2",
                 }
@@ -551,6 +552,9 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
     catalog_sync = client.post("/api/integrations/square/catalog/sync", headers=csrf_headers(client), json={"organizationId": organization.id})
     assert catalog_sync.status_code == 200
     assert fake_urlopen.calls["catalog"] == 4
+    with app.app_context():
+        large_catalog_object = SquareCatalogObject.query.filter_by(square_object_id="CAT-1").one()
+        assert large_catalog_object.version == 1788210903620
 
     orders_sync = client.post(
         "/api/integrations/square/orders/sync",
@@ -589,6 +593,32 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
         assert summary is not None
         assert summary.cancelled_order_count == 1
         assert float(summary.refund_amount) == 2.5
+
+
+def test_square_catalog_sync_rolls_back_failed_transaction_before_recording_error(app, client, monkeypatch):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization = make_operational_organization(owner, name=f"Square Catalog Error {uuid4().hex[:6]}", location_name="Main Kitchen")
+    client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
+    connect_square(client, monkeypatch, app, organization.id)
+
+    def fail_after_database_error(connection, token):
+        db.session.execute(text("select * from missing_square_catalog_table"))
+        raise AssertionError("the invalid query should fail first")
+
+    monkeypatch.setattr("backend.square_integration._sync_catalog", fail_after_database_error)
+    response = client.post(
+        "/api/integrations/square/catalog/sync",
+        headers=csrf_headers(client),
+        json={"organizationId": organization.id},
+    )
+    assert response.status_code == 400
+    assert "Square catalog sync failed" in response.get_json()["error"]
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
+        assert connection.sync_status == "error"
+        assert "missing_square_catalog_table" in connection.sync_error
 
 
 def test_square_webhook_signature_validation_and_idempotency(app, client, monkeypatch):

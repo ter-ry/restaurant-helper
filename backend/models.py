@@ -848,7 +848,7 @@ class SquareCatalogObject(TimestampMixin, db.Model):
     square_connection_id = db.Column(db.Integer, db.ForeignKey("square_connections.id", ondelete="CASCADE"), nullable=False, index=True)
     square_object_id = db.Column(db.String(255), nullable=False)
     object_type = db.Column(db.String(120), nullable=False, default="")
-    version = db.Column(db.Integer, nullable=False, default=0)
+    version = db.Column(db.BigInteger, nullable=False, default=0)
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
 

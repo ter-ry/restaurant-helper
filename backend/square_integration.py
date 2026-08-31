@@ -38,7 +38,7 @@ from .models import (
 )
 from .access import organization_has_enabled_module
 from .square import decrypt_square_secret, encrypt_square_secret, square_enabled, square_environment, verify_square_webhook_signature
-from .tenant_context import apply_org_tenant_context
+from .tenant_context import apply_org_tenant_context, apply_request_tenant_context
 from .utils import get_platform_role, isoformat, json_error, serialize_location, serialize_organization
 
 bp = Blueprint("square_integration", __name__)
@@ -1209,6 +1209,8 @@ def sync_square_orders_for_range(
     end_at: datetime,
     location_ids: list[str] | None = None,
 ) -> dict[str, Any]:
+    connection_id = connection.id
+    organization_id = organization.id
     token = _connection_token(connection)
     requested_location_ids = [str(item) for item in (location_ids or []) if str(item).strip()]
     if not requested_location_ids:
@@ -1232,8 +1234,6 @@ def sync_square_orders_for_range(
         job.completed_at = _now()
         job.cursor_json = result
         response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
-        connection_id = connection.id
-        organization_id = organization.id
         actor_user_id = current_user.id
         db.session.commit()
         record_audit_event(
@@ -1247,12 +1247,7 @@ def sync_square_orders_for_range(
         db.session.commit()
         return response_payload
     except Exception as exc:
-        connection.sync_status = "error"
-        connection.sync_error = str(exc)
-        job.status = "failed"
-        job.completed_at = _now()
-        job.error_message = str(exc)
-        db.session.commit()
+        _persist_square_sync_failure(organization_id, connection_id, str(exc))
         raise RuntimeError(f"Square order sync failed: {exc}") from exc
 
 
@@ -1264,6 +1259,22 @@ def _ensure_connection_and_access(organization_id: int) -> tuple[Organization | 
     if permission_error is not None:
         return organization, None, permission_error
     return organization, _ensure_connection(organization), None
+
+
+def _persist_square_sync_failure(organization_id: int, connection_id: int, error_message: str) -> None:
+    """Record sync failure state in a fresh tenant-scoped transaction."""
+    db.session.rollback()
+    try:
+        apply_request_tenant_context(organization_id=organization_id)
+        connection = SquareConnection.query.filter_by(id=connection_id, organization_id=organization_id).first()
+        if connection is None:
+            db.session.rollback()
+            return
+        connection.sync_status = "error"
+        connection.sync_error = error_message
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def _square_feature_error(organization: Organization, module_key: str, message: str) -> tuple[dict[str, Any], int] | None:
@@ -1390,9 +1401,7 @@ def square_callback():
         )
         db.session.commit()
     except Exception as exc:
-        connection.sync_status = "error"
-        connection.sync_error = str(exc)
-        db.session.commit()
+        _persist_square_sync_failure(organization_id, connection_id, str(exc))
         _clear_oauth_context()
         return json_error(f"Square sync failed after connection: {exc}", 400)
 
@@ -1451,6 +1460,8 @@ def square_sync_locations():
     if error is not None:
         return error
     assert organization is not None and connection is not None
+    connection_id = connection.id
+    organization_id = organization.id
     try:
         token = _connection_token(connection)
     except Exception as exc:
@@ -1465,8 +1476,6 @@ def square_sync_locations():
         job.completed_at = _now()
         job.cursor_json = result
         response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
-        connection_id = connection.id
-        organization_id = organization.id
         actor_user_id = current_user.id
         db.session.commit()
         record_audit_event(
@@ -1480,12 +1489,7 @@ def square_sync_locations():
         db.session.commit()
         return jsonify(response_payload), 200
     except Exception as exc:
-        connection.sync_status = "error"
-        connection.sync_error = str(exc)
-        job.status = "failed"
-        job.completed_at = _now()
-        job.error_message = str(exc)
-        db.session.commit()
+        _persist_square_sync_failure(organization_id, connection_id, str(exc))
         return json_error(f"Square location sync failed: {exc}", 400)
 
 
@@ -1499,6 +1503,8 @@ def square_sync_catalog():
     if error is not None:
         return error
     assert organization is not None and connection is not None
+    connection_id = connection.id
+    organization_id = organization.id
     try:
         token = _connection_token(connection)
     except Exception as exc:
@@ -1513,8 +1519,6 @@ def square_sync_catalog():
         job.completed_at = _now()
         job.cursor_json = result
         response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
-        connection_id = connection.id
-        organization_id = organization.id
         actor_user_id = current_user.id
         db.session.commit()
         record_audit_event(
@@ -1528,12 +1532,7 @@ def square_sync_catalog():
         db.session.commit()
         return jsonify(response_payload), 200
     except Exception as exc:
-        connection.sync_status = "error"
-        connection.sync_error = str(exc)
-        job.status = "failed"
-        job.completed_at = _now()
-        job.error_message = str(exc)
-        db.session.commit()
+        _persist_square_sync_failure(organization_id, connection_id, str(exc))
         return json_error(f"Square catalog sync failed: {exc}", 400)
 
 
