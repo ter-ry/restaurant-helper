@@ -1366,12 +1366,24 @@ def square_callback():
     connection = _ensure_connection(organization)
     _upsert_connection_tokens(connection, token_payload)
     db.session.flush()
+    organization_id = organization.id
+    connection_id = connection.id
+    actor_user_id = current_user.id
+    merchant_id = str(connection.square_merchant_id or "")
     try:
         token = decrypt_square_secret(connection.access_token_ciphertext)
         location_summary = _sync_locations(connection, token)
         catalog_summary = _sync_catalog(connection, token)
         connection.last_sync_at = _now()
         connection.sync_status = "idle"
+        record_audit_event(
+            event_type="square.oauth.connected",
+            entity_type="square_connection",
+            entity_id=connection_id,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            metadata={"merchantId": merchant_id, "locationSummary": location_summary, "catalogSummary": catalog_summary},
+        )
         db.session.commit()
     except Exception as exc:
         connection.sync_status = "error"
@@ -1381,16 +1393,7 @@ def square_callback():
         return json_error(f"Square sync failed after connection: {exc}", 400)
 
     _clear_oauth_context()
-    record_audit_event(
-        event_type="square.oauth.connected",
-        entity_type="square_connection",
-        entity_id=connection.id,
-        organization_id=organization.id,
-        actor_user_id=current_user.id,
-        metadata={"merchantId": connection.square_merchant_id, "locationSummary": location_summary, "catalogSummary": catalog_summary},
-    )
-    db.session.commit()
-    return redirect(f"{_frontend_origin()}/app/square?organizationId={organization.id}&connected=1", code=302)
+    return redirect(f"{_frontend_origin()}/app/square?organizationId={organization_id}&connected=1", code=302)
 
 
 @bp.get("/api/integrations/square/status")

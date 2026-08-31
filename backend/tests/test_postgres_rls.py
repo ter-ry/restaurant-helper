@@ -43,6 +43,7 @@ from backend.models import (
 )
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD, seed_pilot_data
 from backend.tests.conftest import make_operational_organization
+from backend.tests.test_square_integration import configure_square, oauth_responder
 from backend.utils import utc_now
 
 
@@ -3192,6 +3193,72 @@ def test_rls_protects_square_sales_tables(postgres_app):
         assert SquareOrder.query.filter_by(square_connection_id=connection_b_id).count() == 0
         assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_a_id).count() == 1
         assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection_b_id).count() == 0
+
+
+def test_square_oauth_callback_commits_audit_event_under_rls(postgres_app, monkeypatch):
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = make_operational_organization(
+            owner,
+            name=f"RLS Square OAuth {uuid4().hex[:6]}",
+            location_name="Main Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "SQUARE_INTEGRATION"),
+        )
+        return {"organization_id": organization.id}
+
+    seeded = _seed_admin_fixture("RLS square oauth dataset", _seed)
+    organization_id = int(seeded["organization_id"])
+
+    configure_square(postgres_app)
+    with postgres_app.app_context():
+        postgres_app.config["FLOWTALLY_FRONTEND_ORIGIN"] = "https://frontend.example.test"
+
+    fake_urlopen = oauth_responder()
+    monkeypatch.setattr("backend.square_integration.urlopen", fake_urlopen)
+
+    client = postgres_app.test_client()
+    _login_owner(client)
+    csrf_response = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001")
+    csrf_token = csrf_response.get_json()["csrfToken"]
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"organizationId": organization_id},
+    )
+    assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
+
+    start_response = client.get(f"/api/integrations/square/start?organizationId={organization_id}", base_url="http://127.0.0.1:5001")
+    assert start_response.status_code == 302, start_response.get_data(as_text=True)
+    with client.session_transaction() as session:
+        context = session["square_oauth_context"]
+
+    callback_response = client.get(
+        "/api/integrations/square/callback",
+        base_url="http://127.0.0.1:5001",
+        query_string={"state": context["state"], "code": "auth-code"},
+    )
+    assert callback_response.status_code == 302, callback_response.get_data(as_text=True)
+    assert callback_response.headers["Location"] == "https://frontend.example.test/app/square?organizationId=%s&connected=1" % organization_id
+    assert "access_token" not in callback_response.headers["Location"]
+    assert "refresh_token" not in callback_response.headers["Location"]
+    assert fake_urlopen.calls["locations"] == 1
+    assert fake_urlopen.calls["catalog"] == 2
+
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=organization_id)
+        connection = SquareConnection.query.filter_by(organization_id=organization_id).one()
+        assert connection.status == "connected"
+        assert connection.square_merchant_id == "merchant-123"
+        audit_event = AuditEvent.query.filter_by(
+            event_type="square.oauth.connected",
+            entity_type="square_connection",
+            organization_id=organization_id,
+        ).one()
+        assert audit_event.entity_id == str(connection.id)
+        assert "merchantId" in audit_event.metadata_json
+        assert client.get(f"/api/integrations/square/status?organizationId={organization_id}", base_url="http://127.0.0.1:5001").status_code == 200
 
 
 def test_rls_protects_daily_close_sessions(postgres_app):
