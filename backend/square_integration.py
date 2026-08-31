@@ -884,6 +884,7 @@ def _exchange_token(code: str) -> dict[str, Any]:
             "client_secret": current_app.config.get("SQUARE_APPLICATION_SECRET", ""),
             "code": code,
             "grant_type": "authorization_code",
+            "redirect_uri": current_app.config.get("SQUARE_REDIRECT_URI", ""),
         },
     )
 
