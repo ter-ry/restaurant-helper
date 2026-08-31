@@ -36,6 +36,8 @@ from backend.models import (
     RestaurantLocation,
     SquareConnection,
     SquareDailySalesSummary,
+    SquareLocation,
+    SquareLocationMapping,
     SquareOrder,
     SupportAccessGrant,
     Supplier,
@@ -3259,6 +3261,86 @@ def test_square_oauth_callback_commits_audit_event_under_rls(postgres_app, monke
         assert audit_event.entity_id == str(connection.id)
         assert "merchantId" in audit_event.metadata_json
         assert client.get(f"/api/integrations/square/status?organizationId={organization_id}", base_url="http://127.0.0.1:5001").status_code == 200
+
+
+def test_square_location_mapping_serializes_before_commit_under_rls(postgres_app):
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        assert owner is not None
+        organization = _create_org(owner, f"RLS Square Mapping {uuid4().hex[:6]}")
+        restaurant_location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        assert restaurant_location is not None
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            square_merchant_id="merchant-mapping",
+            status="connected",
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(
+            square_connection_id=connection.id,
+            square_location_id="LOC-MAPPING",
+            name="Sandbox Mapping",
+            status="active",
+            raw_payload_json={"id": "LOC-MAPPING", "name": "Sandbox Mapping"},
+        )
+        db.session.add(square_location)
+        db.session.flush()
+        return {
+            "organization_id": organization.id,
+            "restaurant_location_id": restaurant_location.id,
+            "square_location_id": square_location.id,
+        }
+
+    seeded = _seed_admin_fixture("RLS square location mapping dataset", _seed)
+    organization_id = int(seeded["organization_id"])
+
+    client = postgres_app.test_client()
+    _login_owner(client)
+    csrf_response = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001")
+    csrf_token = csrf_response.get_json()["csrfToken"]
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"organizationId": organization_id},
+    )
+    assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
+
+    response = client.post(
+        "/api/integrations/square/location-mappings",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={
+            "organizationId": organization_id,
+            "squareLocationId": int(seeded["square_location_id"]),
+            "restaurantLocationId": int(seeded["restaurant_location_id"]),
+        },
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    response_connection = response.get_json()["connection"]
+    assert response_connection["squareMerchantId"] == "merchant-mapping"
+    assert response_connection["locations"][0]["mappings"][0]["restaurantLocationId"] == int(seeded["restaurant_location_id"])
+
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=organization_id)
+        mapping = SquareLocationMapping.query.filter_by(square_location_id=int(seeded["square_location_id"])).one()
+        assert mapping.restaurant_location_id == int(seeded["restaurant_location_id"])
+        audit_event = AuditEvent.query.filter_by(
+            event_type="square.location_mapped",
+            entity_type="square_location_mapping",
+            organization_id=organization_id,
+        ).one()
+        assert audit_event.entity_id == str(mapping.id)
+
+    status_response = client.get(
+        f"/api/integrations/square/status?organizationId={organization_id}",
+        base_url="http://127.0.0.1:5001",
+    )
+    assert status_response.status_code == 200, status_response.get_data(as_text=True)
+    status_connection = status_response.get_json()["connection"]
+    assert status_connection["locations"][0]["mappings"][0]["restaurantLocationId"] == int(seeded["restaurant_location_id"])
 
 
 def test_rls_protects_daily_close_sessions(postgres_app):

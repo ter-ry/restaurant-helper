@@ -1231,17 +1231,21 @@ def sync_square_orders_for_range(
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
+        response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
+        connection_id = connection.id
+        organization_id = organization.id
+        actor_user_id = current_user.id
         db.session.commit()
         record_audit_event(
             event_type="square.orders_synced",
             entity_type="square_connection",
-            entity_id=connection.id,
-            organization_id=organization.id,
-            actor_user_id=current_user.id,
+            entity_id=connection_id,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
             metadata=result,
         )
         db.session.commit()
-        return {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
+        return response_payload
     except Exception as exc:
         connection.sync_status = "error"
         connection.sync_error = str(exc)
@@ -1432,8 +1436,9 @@ def square_disconnect():
         organization_id=organization.id,
         actor_user_id=current_user.id,
     )
+    response_payload = {"connection": _serialize_connection(connection)}
     db.session.commit()
-    return jsonify({"connection": _serialize_connection(connection)}), 200
+    return jsonify(response_payload), 200
 
 
 @bp.post("/api/integrations/square/locations/sync")
@@ -1459,17 +1464,21 @@ def square_sync_locations():
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
+        response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
+        connection_id = connection.id
+        organization_id = organization.id
+        actor_user_id = current_user.id
         db.session.commit()
         record_audit_event(
             event_type="square.locations_synced",
             entity_type="square_connection",
-            entity_id=connection.id,
-            organization_id=organization.id,
-            actor_user_id=current_user.id,
+            entity_id=connection_id,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
             metadata=result,
         )
         db.session.commit()
-        return jsonify({"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}), 200
+        return jsonify(response_payload), 200
     except Exception as exc:
         connection.sync_status = "error"
         connection.sync_error = str(exc)
@@ -1503,17 +1512,21 @@ def square_sync_catalog():
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
+        response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
+        connection_id = connection.id
+        organization_id = organization.id
+        actor_user_id = current_user.id
         db.session.commit()
         record_audit_event(
             event_type="square.catalog_synced",
             entity_type="square_connection",
-            entity_id=connection.id,
-            organization_id=organization.id,
-            actor_user_id=current_user.id,
+            entity_id=connection_id,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
             metadata=result,
         )
         db.session.commit()
-        return jsonify({"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}), 200
+        return jsonify(response_payload), 200
     except Exception as exc:
         connection.sync_status = "error"
         connection.sync_error = str(exc)
@@ -1595,8 +1608,9 @@ def square_location_mapping():
         actor_user_id=current_user.id,
         metadata={"squareLocationId": square_location.square_location_id, "restaurantLocationId": restaurant_location_id},
     )
+    response_payload = {"connection": _serialize_connection(connection)}
     db.session.commit()
-    return jsonify({"connection": _serialize_connection(connection)}), 200
+    return jsonify(response_payload), 200
 
 
 @bp.get("/api/integrations/square/catalog/mappings")
@@ -1683,8 +1697,9 @@ def square_catalog_mapping():
         actor_user_id=current_user.id,
         metadata={"squareObjectId": catalog_object.square_object_id, "mappingType": mapping_type, "status": status},
     )
+    response_payload = {"connection": _serialize_connection(connection)}
     db.session.commit()
-    return jsonify({"connection": _serialize_connection(connection)}), 200
+    return jsonify(response_payload), 200
 
 
 @bp.delete("/api/integrations/square/catalog/mappings/<int:mapping_id>")
