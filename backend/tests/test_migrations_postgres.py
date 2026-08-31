@@ -354,7 +354,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0016_daily_close_sessions"
+        assert _current_revision() == "0017_square_catalog_version_bigint"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -366,6 +366,11 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         assert nullable is False
         assert precision == 14
         assert scale == 6
+        catalog_type, catalog_nullable, catalog_precision, catalog_scale = _column_info("square_catalog_objects", "version")
+        assert catalog_type == "bigint"
+        assert catalog_nullable is False
+        assert catalog_precision == 64
+        assert catalog_scale == 0
         _assert_policy_exists("flowtally_organizations_read_access", "organizations")
         _assert_policy_exists("flowtally_organizations_write_access", "organizations")
         _assert_policy_absent("flowtally_organizations_tenant_access", "organizations")
@@ -382,6 +387,23 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_policy_exists("flowtally_menu_items_tenant_access", "menu_items")
 
 
+def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
+    application = _create_app()
+    _reset_public_schema(application)
+    _upgrade_to(application, "0016_daily_close_sessions")
+    migration_config = _upgrade_to(application, "head")
+
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        _assert_runtime_connection()
+        assert _current_revision() == "0017_square_catalog_version_bigint"
+        data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
+        assert data_type == "bigint"
+        assert nullable is False
+        assert precision == 64
+        assert scale == 0
+
+
 def test_postgres_migrations_upgrade_from_secure_backend_head():
     application = _create_app()
     _reset_public_schema(application)
@@ -395,7 +417,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0016_daily_close_sessions"
+        assert _current_revision() == "0017_square_catalog_version_bigint"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -420,7 +442,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0016_daily_close_sessions"
+        assert _current_revision() == "0017_square_catalog_version_bigint"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -439,7 +461,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0016_daily_close_sessions"
+        assert _current_revision() == "0017_square_catalog_version_bigint"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -640,7 +662,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0016_daily_close_sessions"
+        assert _current_revision() == "0017_square_catalog_version_bigint"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
@@ -688,3 +710,42 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
         assert rows[1]["latest_purchase_price"] == Decimal("7.00")
         assert rows[1]["last_purchase_conversion_factor"] == Decimal("0.0000")
         assert rows[1]["average_unit_cost"] == Decimal("7.000000")
+
+        connection.execute(
+            text(
+                """
+                insert into square_connections (
+                    id, organization_id, environment, square_merchant_id, status,
+                    access_token_ciphertext, refresh_token_ciphertext,
+                    sync_status, sync_error, created_at, updated_at
+                ) values (
+                    21, 1, 'sandbox', 'merchant-catalog', 'connected',
+                    '', '', 'idle', '', current_timestamp, current_timestamp
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                insert into square_catalog_objects (
+                    id, square_connection_id, square_object_id, object_type,
+                    version, is_deleted, raw_payload_json, created_at, updated_at
+                ) values
+                    (31, 21, 'ITEM-REAL', 'ITEM', 1788210903620, false, '{}', current_timestamp, current_timestamp),
+                    (32, 21, 'VAR-REAL', 'ITEM_VARIATION', 1788210903620, false, '{}', current_timestamp, current_timestamp)
+                """
+            )
+        )
+        catalog_versions = connection.execute(
+            text(
+                """
+                select square_object_id, version
+                from square_catalog_objects
+                where id in (31, 32)
+                order by id
+                """
+            )
+        ).mappings().all()
+        assert [row["square_object_id"] for row in catalog_versions] == ["ITEM-REAL", "VAR-REAL"]
+        assert [row["version"] for row in catalog_versions] == [1788210903620, 1788210903620]
