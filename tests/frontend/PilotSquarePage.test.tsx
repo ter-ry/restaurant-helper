@@ -7,6 +7,7 @@ import type { PilotMenuCostingResponse, PilotSquareConnectionSummary } from "../
 
 const mockApi = vi.hoisted(() => ({
   fetchPilotSquareStatus: vi.fn(),
+  fetchPilotSquareCatalogMappings: vi.fn(),
   fetchPilotMenuCosting: vi.fn(),
   syncPilotSquareLocations: vi.fn(),
   syncPilotSquareCatalog: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
   return {
     ...actual,
     fetchPilotSquareStatus: mockApi.fetchPilotSquareStatus,
+    fetchPilotSquareCatalogMappings: mockApi.fetchPilotSquareCatalogMappings,
     fetchPilotMenuCosting: mockApi.fetchPilotMenuCosting,
     syncPilotSquareLocations: mockApi.syncPilotSquareLocations,
     syncPilotSquareCatalog: mockApi.syncPilotSquareCatalog,
@@ -185,9 +187,35 @@ function createMenuCosting(): PilotMenuCostingResponse {
   };
 }
 
+function createCatalogMappingResponse() {
+  const mapping = {
+    id: 55,
+    squareCatalogObjectId: 55,
+    squareObjectId: "VAR-TEST-BURGER-REGULAR",
+    squareObjectType: "ITEM_VARIATION",
+    squareObjectName: "Test Burger · Regular",
+    squareItemName: "Test Burger",
+    mappingType: "menu_item",
+    flowtallyEntityType: "",
+    flowtallyEntityId: "",
+    status: "unmapped",
+    mappedByUserId: null,
+    createdAt: null,
+    updatedAt: null,
+  };
+  return {
+    connection: createConnectedConnection(),
+    menuItems: [],
+    mappings: [{ ...mapping, mapping: null, isDeleted: false, soldUnits: 0, suggestedMenuItemId: null, suggestedMenuItemName: "" }],
+    unmappedVariations: [{ ...mapping, mapping: null, isDeleted: false, soldUnits: 0, suggestedMenuItemId: null, suggestedMenuItemName: "" }],
+    mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 1, mappedPercent: 0 },
+  };
+}
+
 describe("PilotSquarePage", () => {
   beforeEach(() => {
     mockApi.fetchPilotSquareStatus.mockReset();
+    mockApi.fetchPilotSquareCatalogMappings.mockReset();
     mockApi.fetchPilotMenuCosting.mockReset();
     mockApi.syncPilotSquareLocations.mockReset();
     mockApi.syncPilotSquareCatalog.mockReset();
@@ -197,6 +225,7 @@ describe("PilotSquarePage", () => {
     mockApi.disconnectPilotSquare.mockReset();
     mockApi.beginPilotSquareConnection.mockReset();
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createDisconnectedConnection() });
+    mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue(createCatalogMappingResponse());
     mockApi.fetchPilotMenuCosting.mockResolvedValue(createMenuCosting());
     mockApi.syncPilotSquareLocations.mockResolvedValue({ connection: createConnectedConnection(), job: { id: 1, jobType: "locations", status: "completed", cursorJson: {} } });
     mockApi.syncPilotSquareCatalog.mockResolvedValue({ connection: createConnectedConnection(), job: { id: 2, jobType: "catalog", status: "completed", cursorJson: {} } });
@@ -238,6 +267,8 @@ describe("PilotSquarePage", () => {
     expect(screen.getByRole("link", { name: "Usage & Variance" })).toHaveAttribute("href", "/app/square-usage");
     expect(screen.getByText("Main Bar")).toBeVisible();
     expect(screen.getByText("Classic Milk Tea")).toBeVisible();
+    expect(screen.getByText("Test Burger · Regular")).toBeVisible();
+    expect(screen.queryByText("ITEM · ITEM-55")).not.toBeInTheDocument();
 
     const locationSelect = container.querySelector<HTMLSelectElement>("#pilot-square-location-10");
     expect(locationSelect).not.toBeNull();
@@ -276,7 +307,25 @@ describe("PilotSquarePage", () => {
     await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mockApi.syncPilotSquareCatalog).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockApi.syncPilotSquareOrders).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(3));
     expect(await screen.findByText("Sync now completed.")).toBeVisible();
+  });
+
+  it("clears a stale connection error after a successful sync", async () => {
+    const failedConnection = { ...createConnectedConnection(), syncError: "Square request failed (500)" };
+    mockApi.fetchPilotSquareStatus
+      .mockResolvedValueOnce({ connection: failedConnection })
+      .mockResolvedValue({ connection: createConnectedConnection() });
+
+    render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Square request failed (500)")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    expect(await screen.findByText("Sync now completed.")).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("Square request failed (500)")).not.toBeInTheDocument());
   });
 });

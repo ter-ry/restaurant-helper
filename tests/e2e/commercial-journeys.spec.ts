@@ -2227,7 +2227,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByRole("heading", { name: "Private workspace for Square connection, sync, and mapping" })).toBeVisible();
   await expect(page.getByText("merchant-42")).toBeVisible();
   await expect(page.getByText("Main Dining Room").first()).toBeVisible();
-  await expect(page.getByText("ITEM_VARIATION · ITEM-1")).toBeVisible();
+  await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByText("Sync now completed.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Usage variance" })).toBeVisible();

@@ -10,6 +10,7 @@ import {
   beginPilotSquareConnection,
   disconnectPilotSquare,
   fetchPilotSquareStatus,
+  fetchPilotSquareCatalogMappings,
   fetchPilotMenuCosting,
   syncPilotSquareCatalog,
   syncPilotSquareLocations,
@@ -54,6 +55,8 @@ function squareSectionLinkClasses(active: boolean) {
 export function PilotSquarePage() {
   const { organization, locations, currentLocation } = usePilotSession();
   const [connection, setConnection] = useState<PilotSquareConnectionSummary | null>(null);
+  const [catalogMappings, setCatalogMappings] = useState<Awaited<ReturnType<typeof fetchPilotSquareCatalogMappings>>["mappings"]>([]);
+  const [mappingCoverage, setMappingCoverage] = useState<Awaited<ReturnType<typeof fetchPilotSquareCatalogMappings>>["mappingCoverage"]>({ mappedVariationCount: 0, totalVariationCount: 0, mappedPercent: 0 });
   const [menuCosting, setMenuCosting] = useState<PilotMenuCostingResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -72,9 +75,15 @@ export function PilotSquarePage() {
     setLoading(true);
     setError(null);
     try {
-      const [status, costing] = await Promise.all([fetchPilotSquareStatus(currentOrganizationId), fetchPilotMenuCosting()]);
+      const [status, costing, mappingResponse] = await Promise.all([
+        fetchPilotSquareStatus(currentOrganizationId),
+        fetchPilotMenuCosting(),
+        fetchPilotSquareCatalogMappings(currentOrganizationId),
+      ]);
       setConnection(status.connection);
       setMenuCosting(costing);
+      setCatalogMappings(mappingResponse.mappings.length ? mappingResponse.mappings : mappingResponse.unmappedVariations);
+      setMappingCoverage(mappingResponse.mappingCoverage);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load Square.");
     } finally {
@@ -88,14 +97,11 @@ export function PilotSquarePage() {
   }, [currentOrganizationId]);
 
   const squareLocations = connection?.locations ?? [];
-  const catalogObjects = connection?.catalogObjects ?? [];
   const dailySales = connection?.dailySales ?? [];
   const syncJobs = connection?.syncJobs ?? [];
   const menuItems = menuCosting?.menuItems ?? [];
   const mappedLocations = squareLocations.filter((location) => location.mappings.some((mapping) => mapping.restaurantLocationId)).length;
-  const mappedMenus = catalogObjects.filter((catalogObject) =>
-    catalogObject.mappings.some((mapping) => mapping.flowtallyEntityType === "menu_item" && Boolean(mapping.flowtallyEntityId)),
-  ).length;
+  const mappedMenus = mappingCoverage.mappedVariationCount;
   const latestDailySale = dailySales[0] ?? null;
   const connectionReady = connection?.status === "connected";
 
@@ -144,7 +150,7 @@ export function PilotSquarePage() {
     }
 
     const menuItemId = readValue(`pilot-square-menu-item-${catalogObjectId}`, "");
-    return runAction(`catalog-${catalogObjectId}`, () =>
+    await runAction(`catalog-${catalogObjectId}`, () =>
       updatePilotSquareCatalogMapping({
         organizationId: currentOrganizationId,
         squareCatalogObjectId: catalogObjectId,
@@ -154,6 +160,7 @@ export function PilotSquarePage() {
         status: menuItemId ? "mapped" : "unmapped",
       }),
     );
+    await load();
   };
 
   const syncOrders = async () => {
@@ -172,7 +179,7 @@ export function PilotSquarePage() {
 
   const squareStatusTone = connectionReady ? "success" : "warning";
   const totalMappedLocations = squareLocations.length > 0 ? `${mappedLocations}/${squareLocations.length}` : "0";
-  const totalMappedMenus = catalogObjects.length > 0 ? `${mappedMenus}/${catalogObjects.length}` : "0";
+  const totalMappedMenus = mappingCoverage.totalVariationCount > 0 ? `${mappedMenus}/${mappingCoverage.totalVariationCount}` : "0";
 
   const syncNow = async () => {
     if (!currentOrganizationId || !connectionReady || saving !== null) {
@@ -415,14 +422,14 @@ export function PilotSquarePage() {
           <Card className="p-6">
             <SectionHeader title="Menu mapping" description="Link Square catalog items to Flowtally menu items so the close and usage view stay aligned." />
             <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
-              {catalogObjects.length ? catalogObjects.slice(0, 16).map((catalogObject) => {
-                const mapping = catalogObject.mappings[0] ?? null;
+              {catalogMappings.length ? catalogMappings.slice(0, 16).map((catalogObject) => {
+                const mapping = catalogObject.mapping;
                 return (
                   <div key={catalogObject.id} className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-semibold text-ink">{catalogObject.objectType} · {catalogObject.squareObjectId}</p>
-                        <p className="mt-1 text-xs text-muted">Version {catalogObject.version} · {catalogObject.isDeleted ? "Deleted" : "Active"}</p>
+                        <p className="font-semibold text-ink">{catalogObject.squareObjectName || catalogObject.squareObjectId}</p>
+                        <p className="mt-1 text-xs text-muted">ITEM_VARIATION · {catalogObject.squareObjectId}</p>
                       </div>
                       <Badge tone={mapping?.flowtallyEntityId ? "success" : "warning"}>{mapping?.flowtallyEntityId ? "Mapped" : "Needs mapping"}</Badge>
                     </div>
@@ -474,7 +481,7 @@ export function PilotSquarePage() {
             <SectionHeader title="Coverage snapshot" description="What is ready, what is mapped, and what still needs work." />
             <div className="mt-4 grid gap-3">
               <MetricCard label="Locations mapped" value={totalMappedLocations} detail="Square locations matched to Flowtally locations." tone={mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"} />
-              <MetricCard label="Menu items mapped" value={totalMappedMenus} detail="Square catalog items linked to menu items." tone={mappedMenus === catalogObjects.length && catalogObjects.length > 0 ? "success" : "warning"} />
+              <MetricCard label="Menu items mapped" value={totalMappedMenus} detail="Sellable Square item variations linked to menu items." tone={mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"} />
               <MetricCard label="Daily sales summaries" value={formatNumber(dailySales.length)} detail="Recent Square sales summaries imported for the close." />
             </div>
           </Card>
