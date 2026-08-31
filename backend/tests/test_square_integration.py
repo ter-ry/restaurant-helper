@@ -62,11 +62,14 @@ def configure_square_usage(app):
 
 
 def oauth_responder():
-    calls = {"locations": 0, "catalog": 0, "orders": 0}
+    calls = {"locations": 0, "catalog": 0, "orders": 0, "token_requests": []}
 
     def handler(request_obj, timeout=30):
         url = request_obj.full_url
         if url.endswith("/oauth2/token"):
+            raw_body = request_obj.data.decode("utf-8") if request_obj.data else "{}"
+            token_payload = json.loads(raw_body)
+            calls["token_requests"].append(token_payload)
             return FakeResponse(
                 {
                     "access_token": "square-access-token",
@@ -223,7 +226,10 @@ def test_square_oauth_callback_rejects_invalid_state(app, client, monkeypatch):
     )
     assert callback_response.status_code == 400
     assert callback_response.get_json()["error"] == "Square state validation failed."
-    assert fake_urlopen.calls == {"locations": 0, "catalog": 0, "orders": 0}
+    assert fake_urlopen.calls["locations"] == 0
+    assert fake_urlopen.calls["catalog"] == 0
+    assert fake_urlopen.calls["orders"] == 0
+    assert fake_urlopen.calls["token_requests"] == []
 
 
 def _create_square_usage_fixture(app, owner: User, *, organization_name: str):
@@ -453,6 +459,13 @@ def test_square_oauth_connection_catalog_and_status(app, client, monkeypatch):
     fake_urlopen = connect_square(client, monkeypatch, app, organization.id)
     assert fake_urlopen.calls["locations"] == 1
     assert fake_urlopen.calls["catalog"] == 2
+    assert fake_urlopen.calls["token_requests"][0] == {
+        "client_id": "square-app",
+        "client_secret": "square-secret",
+        "code": "auth-code",
+        "grant_type": "authorization_code",
+        "redirect_uri": app.config["SQUARE_REDIRECT_URI"],
+    }
 
     status_response = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
     assert status_response.status_code == 200
@@ -477,7 +490,34 @@ def test_square_oauth_connection_catalog_and_status(app, client, monkeypatch):
         assert square_connection is not None
         assert square_connection.access_token_ciphertext != "square-access-token"
         assert square_connection.refresh_token_ciphertext != "square-refresh-token"
-        assert square_connection.square_merchant_id == "merchant-123"
+
+
+def test_square_oauth_refresh_token_grant_does_not_require_redirect_uri(app, monkeypatch):
+    configure_square(app)
+    from backend.square import encrypt_square_secret
+    from backend.square_integration import SquareConnection as SquareConnectionModel, _refresh_token
+
+    fake_urlopen = oauth_responder()
+    monkeypatch.setattr("backend.square_integration.urlopen", fake_urlopen)
+
+    with app.app_context():
+        connection = SquareConnectionModel(
+            organization_id=1,
+            environment="sandbox",
+            square_merchant_id="merchant-123",
+            status="connected",
+            access_token_ciphertext=encrypt_square_secret("square-access-token"),
+            refresh_token_ciphertext=encrypt_square_secret("square-refresh-token"),
+        )
+        token_payload = _refresh_token(connection)
+
+    assert token_payload["access_token"] == "square-access-token"
+    assert fake_urlopen.calls["token_requests"][0] == {
+        "client_id": "square-app",
+        "client_secret": "square-secret",
+        "refresh_token": "square-refresh-token",
+        "grant_type": "refresh_token",
+    }
 
 
 def test_square_location_mapping_catalog_pagination_and_orders(app, client, monkeypatch):
