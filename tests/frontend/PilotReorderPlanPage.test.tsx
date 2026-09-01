@@ -110,6 +110,7 @@ function renderPage(path = "/app/reorder-plan") {
 
 describe("PilotReorderPlanPage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     const draftPlan = createPlan("Draft", 1);
     const completedPlan = createPlan("Completed", 2);
 
@@ -224,5 +225,40 @@ describe("PilotReorderPlanPage", () => {
     await waitFor(() => expect(mockApi.updatePilotReorderPlan).toHaveBeenCalled());
     const payload = mockApi.updatePilotReorderPlan.mock.calls.at(-1)?.[1] as { lines: Array<{ inventoryItemId?: number }> };
     expect(payload.lines).toEqual(expect.arrayContaining([expect.objectContaining({ inventoryItemId: 302 })]));
+  });
+
+  it("adds a live recommendation on the first click, creating a draft when needed", async () => {
+    const newDraft = { ...createPlan("Draft", 3), lines: [], lineCount: 0, estimatedCost: 0, includedCost: 0, supplierCount: 0 };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [createPlan("Completed", 2)], activeDraftPlanId: null });
+    mockApi.createPilotReorderPlan.mockResolvedValue(newDraft);
+    mockApi.updatePilotReorderPlan.mockImplementation(async (_planId: number, payload: Record<string, unknown>) => ({
+      ...newDraft,
+      lines: (payload.lines as PilotReorderPlan["lines"]).map((line, index) => ({
+        ...createPlan("Draft", 3).lines[0],
+        ...line,
+        id: 3010 + index,
+        planId: 3,
+        inventoryItemId: 301,
+        inventoryItemName: "Chicken Breast",
+        supplierName: "Fresh Foods",
+        estimatedUnitCost: 9,
+        estimatedLineCost: 72,
+      })),
+      lineCount: 1,
+      supplierCount: 1,
+      estimatedCost: 72,
+      includedCost: 72,
+    }));
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to draft" }));
+
+    await waitFor(() => expect(mockApi.createPilotReorderPlan).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockApi.updatePilotReorderPlan).toHaveBeenCalledTimes(1));
+    expect(mockApi.updatePilotReorderPlan.mock.calls.at(-1)?.[1]).toMatchObject({
+      lines: [expect.objectContaining({ inventoryItemId: 301, orderQuantity: 8 })],
+    });
+    expect(await screen.findByText("Item added to the working order plan.")).toBeVisible();
   });
 });

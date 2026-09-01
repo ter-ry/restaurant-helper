@@ -219,10 +219,10 @@ export function PilotInventoryPage() {
   );
 
   useEffect(() => {
-    if (selectedItem && workspaceMode === "existing") {
+    if (selectedItem && workspaceMode === "existing" && !isEditing) {
       setDraft(draftFromItem(selectedItem));
     }
-  }, [selectedItem, workspaceMode]);
+  }, [isEditing, selectedItem, workspaceMode]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -299,12 +299,12 @@ export function PilotInventoryPage() {
       setSelectedId(saved.id);
       setWorkspaceMode("existing");
       setItemDetailTab(draft.id ? itemDetailTab : "overview");
-      setIsEditing(false);
       setItemHistoryTab("purchases");
       setDraft(draftFromItem(saved));
       setMessage(`${saved.name} saved.`);
       await load();
       setSelectedId(saved.id);
+      setIsEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save inventory item.");
     } finally {

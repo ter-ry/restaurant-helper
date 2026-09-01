@@ -1639,6 +1639,10 @@ def test_reorder_plan_draft_lifecycle_preserves_snapshots(app, client):
     assert updated["notes"] == "Draft reorder plan"
     assert updated["lines"][0]["orderQuantity"] == first_line["orderQuantity"] + 2
 
+    refreshed = client.get(f"/api/pilot/reorder-plans/{original_plan_id}")
+    assert refreshed.status_code == 200
+    assert refreshed.get_json()["lines"][0]["orderQuantity"] == first_line["orderQuantity"] + 2
+
     with app.app_context():
         item = InventoryItem.query.filter_by(id=first_line["inventoryItemId"]).first()
         assert item is not None
