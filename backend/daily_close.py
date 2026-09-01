@@ -11,7 +11,7 @@ from flask_login import current_user, login_required
 from .access import organization_has_enabled_module, organization_is_operational
 from .extensions import db
 from .models import DailyCloseSession, InventoryItem, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
-from .square_integration import _build_square_usage_report, sync_square_orders_for_range
+from .square_integration import _build_square_usage_report, _current_square_location_ids, sync_square_orders_for_range
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
 bp = Blueprint("daily_close", __name__)
@@ -65,12 +65,14 @@ def _connection_for_organization(organization_id: int) -> SquareConnection | Non
 def _square_location_ids_for_location(connection: SquareConnection | None, location: RestaurantLocation) -> list[str]:
     if connection is None:
         return []
+    current_location_ids = set(_current_square_location_ids(connection))
     location_ids = [
         square_location.square_location_id
         for square_location in SquareLocation.query.join(SquareLocationMapping, SquareLocationMapping.square_location_id == SquareLocation.id).filter(
             SquareLocation.square_connection_id == connection.id,
             SquareLocationMapping.restaurant_location_id == location.id,
         ).all()
+        if square_location.square_location_id in current_location_ids
     ]
     return location_ids
 

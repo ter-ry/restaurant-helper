@@ -63,7 +63,7 @@ def configure_square_usage(app):
 
 
 def oauth_responder(*, merchant_id="merchant-123", location_id="LOC-1", item_id="ITEM_TEST_BURGER", variation_id="VAR_TEST_BURGER_REGULAR"):
-    calls = {"locations": 0, "catalog": 0, "orders": 0, "token_requests": []}
+    calls = {"locations": 0, "catalog": 0, "orders": 0, "orders_payloads": [], "token_requests": []}
 
     def handler(request_obj, timeout=30):
         url = request_obj.full_url
@@ -122,6 +122,7 @@ def oauth_responder(*, merchant_id="merchant-123", location_id="LOC-1", item_id=
             )
         if "/v2/orders/search" in url:
             calls["orders"] += 1
+            calls["orders_payloads"].append(json.loads(request_obj.data.decode("utf-8")))
             if calls["orders"] > 1:
                 return FakeResponse(
                     {
@@ -553,6 +554,7 @@ def test_square_reconnect_resets_old_merchant_data_but_preserves_same_merchant_d
         db.session.add(SquareSyncJob(square_connection_id=connection.id, job_type="catalog", status="completed"))
         db.session.commit()
         connection_id = connection.id
+        restaurant_location_id = location.id
 
     connect_square(
         client,
@@ -582,9 +584,11 @@ def test_square_reconnect_resets_old_merchant_data_but_preserves_same_merchant_d
         new_mapping.flowtally_entity_id = "current-menu-item"
         new_mapping.status = "mapped"
         new_mapping.mapped_by_user_id = owner.id
+        current_location_row = SquareLocation.query.filter_by(square_connection_id=connection.id, square_location_id="LOC-B").one()
+        db.session.add(SquareLocationMapping(square_location=current_location_row, restaurant_location_id=restaurant_location_id, mapped_by_user_id=owner.id))
         db.session.commit()
 
-    connect_square(
+    same_merchant_fake = connect_square(
         client,
         monkeypatch,
         app,
@@ -602,6 +606,41 @@ def test_square_reconnect_resets_old_merchant_data_but_preserves_same_merchant_d
         current_mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=current_catalog.id, mapping_type="menu_item").one()
         assert current_mapping.status == "mapped"
         assert current_mapping.flowtally_entity_id == "current-menu-item"
+        stale_location = SquareLocation(
+            square_connection_id=connection.id,
+            square_location_id="OLD_LOCATION",
+            name="Old merchant location",
+            status="active",
+            raw_payload_json={"id": "OLD_LOCATION"},
+        )
+        db.session.add(stale_location)
+        db.session.add(SquareLocationMapping(square_location=stale_location, restaurant_location_id=restaurant_location_id, mapped_by_user_id=owner.id))
+        db.session.commit()
+
+    status_response = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
+    assert status_response.status_code == 200
+    assert [entry["squareLocationId"] for entry in status_response.get_json()["connection"]["locations"]] == ["LOC-B"]
+    mapping_summary = client.get(f"/api/integrations/square/catalog/mappings?organizationId={organization.id}")
+    assert mapping_summary.status_code == 200
+    assert [entry["squareObjectId"] for entry in mapping_summary.get_json()["mappings"]] == ["VAR-BURGER-B-REGULAR"]
+    with app.app_context():
+        from backend.daily_close import _square_location_ids_for_location
+
+        connection = SquareConnection.query.filter_by(id=connection_id).one()
+        current_location = RestaurantLocation.query.filter_by(id=restaurant_location_id).one()
+        assert _square_location_ids_for_location(connection, current_location) == ["LOC-B"]
+
+    orders_response = client.post(
+        "/api/integrations/square/orders/sync",
+        headers=csrf_headers(client),
+        json={
+            "organizationId": organization.id,
+            "startAt": "2026-08-07T00:00:00Z",
+            "endAt": "2026-08-08T00:00:00Z",
+        },
+    )
+    assert orders_response.status_code == 200
+    assert same_merchant_fake.calls["orders_payloads"][-1]["location_ids"] == ["LOC-B"]
 
 
 def test_square_oauth_refresh_token_grant_does_not_require_redirect_uri(app, monkeypatch):

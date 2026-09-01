@@ -404,12 +404,13 @@ def _build_square_usage_report(
     start_at: datetime,
     end_at: datetime,
 ) -> dict[str, Any]:
+    current_location_ids = set(_current_square_location_ids(connection))
     square_location_ids = [location_mapping.square_location_id for location_mapping in SquareLocationMapping.query.join(SquareLocation, SquareLocationMapping.square_location_id == SquareLocation.id).filter(
         SquareLocation.square_connection_id == connection.id,
         SquareLocationMapping.restaurant_location_id == location.id,
-    ).all()] if location is not None else []
+    ).all() if location_mapping.square_location_id in current_location_ids] if location is not None else []
     if location is None:
-        square_location_ids = [entry.square_location_id for entry in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
+        square_location_ids = list(current_location_ids)
     if not square_location_ids:
         square_location_ids = [""]
 
@@ -783,6 +784,12 @@ def _serialize_webhook_event(event: SquareWebhookEvent) -> dict[str, Any]:
 
 
 def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
+    current_location_ids = set(_current_square_location_ids(connection))
+    locations = [
+        location
+        for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()
+        if location.square_location_id in current_location_ids
+    ]
     return {
         "id": connection.id,
         "organizationId": connection.organization_id,
@@ -797,7 +804,7 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
         "syncError": connection.sync_error,
         "catalogCount": SquareCatalogObject.query.filter_by(square_connection_id=connection.id).count(),
         "orderCount": SquareOrder.query.filter_by(square_connection_id=connection.id).count(),
-        "locationCount": SquareLocation.query.filter_by(square_connection_id=connection.id).count(),
+        "locationCount": len(locations),
         "dailySalesCount": SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).count(),
         "locations": [
             {
@@ -810,7 +817,7 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
                 "createdAt": isoformat(location.created_at),
                 "updatedAt": isoformat(location.updated_at),
             }
-            for location in SquareLocation.query.filter_by(square_connection_id=connection.id).order_by(SquareLocation.name.asc(), SquareLocation.id.asc()).all()
+            for location in sorted(locations, key=lambda entry: (entry.name, entry.id))
         ],
         "catalogObjects": [_serialize_catalog_object(obj) for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id).order_by(SquareCatalogObject.updated_at.desc(), SquareCatalogObject.id.desc()).limit(100).all()],
         "orders": [_serialize_order(order) for order in SquareOrder.query.filter_by(square_connection_id=connection.id).order_by(SquareOrder.updated_at.desc(), SquareOrder.id.desc()).limit(50).all()],
@@ -1021,14 +1028,37 @@ def _upsert_square_location(connection: SquareConnection, entry: dict[str, Any])
     return square_location
 
 
+def _current_square_location_ids(connection: SquareConnection) -> list[str]:
+    location_cursor = SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="locations").first()
+    if location_cursor is not None:
+        try:
+            current_ids = json.loads(location_cursor.cursor_value or "[]")
+        except (TypeError, ValueError):
+            current_ids = []
+        if isinstance(current_ids, list):
+            return [str(location_id) for location_id in current_ids if str(location_id).strip()]
+    return [
+        location.square_location_id
+        for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()
+        if location.status.lower() not in {"inactive", "deleted"}
+    ]
+
+
 def _sync_locations(connection: SquareConnection, token: str) -> dict[str, Any]:
     payload = _square_request("GET", "/v2/locations", token=token)
     locations = payload.get("locations") or []
+    current_location_ids = [str(entry.get("id") or "").strip() for entry in locations if str(entry.get("id") or "").strip()]
+    SquareLocation.query.filter_by(square_connection_id=connection.id).update({"status": "inactive"}, synchronize_session=False)
     persisted = 0
     for entry in locations:
         if _upsert_square_location(connection, entry) is not None:
             persisted += 1
-    return {"locations": persisted, "squareLocationIds": [str(entry.get("id") or "") for entry in locations if str(entry.get("id") or "").strip()]}
+    location_cursor = SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="locations").first()
+    if location_cursor is None:
+        location_cursor = SquareSyncCursor(square_connection_id=connection.id, cursor_key="locations", cursor_value="[]")
+        db.session.add(location_cursor)
+    location_cursor.cursor_value = json.dumps(current_location_ids)
+    return {"locations": persisted, "squareLocationIds": current_location_ids}
 
 
 def _default_catalog_mapping_status(object_type: str) -> str:
@@ -1248,9 +1278,10 @@ def sync_square_orders_for_range(
     connection_id = connection.id
     organization_id = organization.id
     token = _connection_token(connection)
-    requested_location_ids = [str(item) for item in (location_ids or []) if str(item).strip()]
+    current_location_ids = set(_current_square_location_ids(connection))
+    requested_location_ids = [str(item) for item in (location_ids or []) if str(item).strip() and str(item) in current_location_ids]
     if not requested_location_ids:
-        requested_location_ids = [location.square_location_id for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
+        requested_location_ids = list(current_location_ids)
     if not requested_location_ids:
         raise RuntimeError("Sync Square locations before importing orders.")
 
