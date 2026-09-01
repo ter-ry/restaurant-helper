@@ -48,7 +48,7 @@ export function PilotReorderPlanPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
-  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean }) => {
+  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean; preserveSelection?: boolean }) => {
     setLoading(true);
     setError(null);
     if (!options?.preserveMessage) {
@@ -58,8 +58,10 @@ export function PilotReorderPlanPage() {
     setCurrentSuggestions([]);
     setCurrentGroups([]);
     setInventoryItems([]);
-    setSelectedPlanId(null);
-    setDraft(null);
+    if (!options?.preserveSelection) {
+      setSelectedPlanId(null);
+      setDraft(null);
+    }
 
     try {
       const [suggestionsResponse, plansResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans()]);
@@ -158,16 +160,27 @@ export function PilotReorderPlanPage() {
   };
 
   const addItemsToDraft = async (items: Array<{ id: number; suggestedQuantity?: number }>) => {
-    if (!draft || draft.status !== "Draft" || !items.length) return;
-    setSaving(true);
+    if ((creating || saving || loading) || !items.length) return;
+    setCreating(!draft || draft.status !== "Draft");
     setPendingAction(null);
     setMessage(null);
     setError(null);
     try {
-      const saved = await updatePilotReorderPlan(draft.id, {
+      const workingDraft = draft && draft.status === "Draft" ? draft : await createPilotReorderPlan();
+      setSelectedPlanId(workingDraft.id);
+      setDraft(workingDraft);
+      setPlans((current) => current.some((plan) => plan.id === workingDraft.id) ? current.map((plan) => plan.id === workingDraft.id ? workingDraft : plan) : [workingDraft, ...current]);
+      const additions = items.filter((item) => !workingDraft.lines.some((line) => line.inventoryItemId === item.id));
+      if (!additions.length) {
+        setMessage("Those items are already in the working order plan.");
+        return;
+      }
+      setCreating(false);
+      setSaving(true);
+      const saved = await updatePilotReorderPlan(workingDraft.id, {
         lines: [
-          ...draft.lines.map((line) => ({ id: line.id, orderQuantity: line.orderQuantity, excluded: line.excluded, notes: line.notes })),
-          ...items.filter((item) => !draft.lines.some((line) => line.inventoryItemId === item.id)).map((item) => ({ inventoryItemId: item.id, orderQuantity: item.suggestedQuantity ?? 0 })),
+          ...workingDraft.lines.map((line) => ({ id: line.id, orderQuantity: line.orderQuantity, excluded: line.excluded, notes: line.notes })),
+          ...additions.map((item) => ({ inventoryItemId: item.id, orderQuantity: item.suggestedQuantity ?? 0 })),
         ],
       });
       setDraft(saved);
@@ -176,6 +189,7 @@ export function PilotReorderPlanPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add items to the reorder plan.");
     } finally {
+      setCreating(false);
       setSaving(false);
     }
   };
@@ -213,7 +227,7 @@ export function PilotReorderPlanPage() {
           supplierNameSnapshot: line.supplierName,
         })),
       });
-      await load(saved.id, { preserveMessage: true });
+      await load(saved.id, { preserveMessage: true, preserveSelection: true });
       setSelectedPlanId(saved.id);
       setDraft(saved);
       setMessage(`Saved draft ${saved.name}. It remains editable until you prepare it.`);
@@ -495,6 +509,16 @@ export function PilotReorderPlanPage() {
                       <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimate</p>
                       <p className="mt-1 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</p>
                     </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      disabled={creating || saving || loading}
+                      onClick={() => void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}
+                    >
+                      {draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId) ? "Added to draft" : "Add to draft"}
+                    </Button>
                   </div>
                 </div>
               ))}
