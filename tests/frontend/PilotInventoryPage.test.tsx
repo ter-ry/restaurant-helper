@@ -250,6 +250,7 @@ describe("PilotInventoryPage", () => {
       ],
     });
     inventoryMocks.fetchPilotInventoryItem.mockResolvedValue(createInventoryDetail());
+    inventoryMocks.updatePilotInventoryItem.mockResolvedValue(createInventoryItem());
     inventoryMocks.createPilotInventoryAdjustment.mockResolvedValue({
       id: 99,
       organizationId: 42,
@@ -311,13 +312,13 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("Inventory value")).toBeVisible();
     expect(screen.getByText("$248.64")).toBeVisible();
     expect(screen.queryByText("Operational summary")).not.toBeInTheDocument();
-    expect(screen.getByText("Secondary details")).toBeVisible();
+    expect(screen.getByText("Item details")).toBeVisible();
     expect(screen.getAllByText((_, element) => element?.textContent?.includes("Base unit kg") ?? false).length).toBeGreaterThan(0);
 
     expect(screen.getByLabelText("Quantity delta")).toHaveValue(0);
     expect(screen.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
     expect(screen.getByText("Movement note (optional)")).toBeVisible();
-    expect(screen.queryByLabelText("Item notes")).not.toBeInTheDocument();
+    expect(screen.getByText(/Item notes None/)).toBeVisible();
     expect(screen.queryByLabelText("Current on hand")).not.toBeInTheDocument();
 
     inventoryMocks.fetchPilotInventory.mockResolvedValueOnce(
@@ -365,7 +366,7 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText((_, element) => element?.textContent === "30 kg on hand · Dairy Co")).toBeVisible();
   });
 
-  it("keeps edit metadata separate from system-derived values and only updates notes through Update item", async () => {
+  it("edits metadata in place without duplicating system-derived values", async () => {
     render(
       <MemoryRouter initialEntries={["/app/inventory"]}>
         <PilotInventoryPage />
@@ -376,7 +377,7 @@ describe("PilotInventoryPage", () => {
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
-    fireEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(await screen.findByLabelText("Item name")).toHaveValue("Chicken Breast");
     expect(screen.getByLabelText("Category")).toHaveValue("Poultry");
     expect(screen.getByLabelText("Base unit")).toHaveValue("kg");
@@ -385,7 +386,15 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("28 kg")).toBeVisible();
     expect(screen.queryByLabelText("Current on hand")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Latest price")).not.toBeInTheDocument();
-    expect(screen.queryByText("Movement note (optional)")).not.toBeInTheDocument();
+    expect(screen.getByText("Movement note (optional)")).toBeVisible();
+    expect(screen.getByRole("spinbutton", { name: "Minimum" })).toHaveValue(1);
+    expect(screen.getByRole("spinbutton", { name: "PAR" })).toHaveValue(5);
+    expect(screen.getAllByLabelText("Item notes")).toHaveLength(1);
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Minimum" }), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("spinbutton", { name: "Minimum" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
     inventoryMocks.fetchPilotInventory.mockResolvedValueOnce(
       createInventoryResponse({
@@ -409,7 +418,7 @@ describe("PilotInventoryPage", () => {
     );
 
     fireEvent.change(screen.getByLabelText("Item notes"), { target: { value: "Updated notes" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(inventoryMocks.updatePilotInventoryItem).toHaveBeenCalledTimes(1));
     expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).toMatchObject({
@@ -427,7 +436,7 @@ describe("PilotInventoryPage", () => {
     expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).not.toHaveProperty("latestPurchasePrice");
     expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).not.toHaveProperty("lastPurchaseUnit");
     expect(inventoryMocks.updatePilotInventoryItem.mock.calls[0][1]).not.toHaveProperty("lastPurchaseConversionFactor");
-    expect(await screen.findByLabelText("Item notes")).toHaveValue("Updated notes");
+    expect(await screen.findByText(/Item notes Updated notes/)).toBeVisible();
   });
 
   it("shows one history stream at a time", async () => {

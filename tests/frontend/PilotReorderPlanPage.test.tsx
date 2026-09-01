@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotReorderPlanPage } from "../../src/pilot/PilotReorderPlanPage";
-import type { PilotReorderPlan, PilotReorderSuggestion } from "../../src/pilot/pilotApi";
+import type { PilotInventoryItem, PilotReorderPlan, PilotReorderSuggestion } from "../../src/pilot/pilotApi";
 
 const mockApi = vi.hoisted(() => ({
   fetchPilotReorderPlan: vi.fn(),
@@ -115,6 +115,7 @@ describe("PilotReorderPlanPage", () => {
 
     mockApi.fetchPilotReorderPlan.mockResolvedValue({
       suggestions: [createSuggestion()],
+      inventoryItems: [{ id: 302, name: "Olive Oil", category: "Pantry", stockUnit: "L", currentOnHand: 20, parLevel: 10, preferredSupplierName: "Fresh Foods" } as PilotInventoryItem],
       groupedBySupplier: [
         {
           supplier: "Fresh Foods",
@@ -208,5 +209,20 @@ describe("PilotReorderPlanPage", () => {
 
     await waitFor(() => expect(screen.getByText("Drafts stay editable. Prepared and completed plans open as read-only snapshots.")).toBeVisible());
     expect(screen.getByText("Read-only reorder snapshot opened.")).toBeVisible();
+  });
+
+  it("lets a draft add any active inventory item separately from recommendations", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+
+    expect(screen.getByLabelText("Search inventory to add")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Search inventory to add"), { target: { value: "Olive" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(mockApi.updatePilotReorderPlan).toHaveBeenCalled());
+    const payload = mockApi.updatePilotReorderPlan.mock.calls.at(-1)?.[1] as { lines: Array<{ inventoryItemId?: number }> };
+    expect(payload.lines).toEqual(expect.arrayContaining([expect.objectContaining({ inventoryItemId: 302 })]));
   });
 });

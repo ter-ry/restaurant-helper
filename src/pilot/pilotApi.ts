@@ -920,7 +920,7 @@ export async function finalizePilotCountSession(sessionId: number, payload: Reco
 }
 
 export async function fetchPilotReorderPlan() {
-  return requestJson<{ suggestions: PilotReorderSuggestion[]; groupedBySupplier: PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]; activeInventoryItemCount?: number; refreshedAt?: string }>("/api/pilot/reorder-plan");
+  return requestJson<{ suggestions: PilotReorderSuggestion[]; groupedBySupplier: PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]; inventoryItems?: PilotInventoryItem[]; activeInventoryItemCount?: number; refreshedAt?: string }>("/api/pilot/reorder-plan");
 }
 
 export async function markPilotReorderOrdered(itemId: number) {

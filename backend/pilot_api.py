@@ -327,7 +327,6 @@ def _dashboard_snapshot(location_id: int):
     today_daily_close = next((session for session in daily_close_sessions if session.business_date == _now().date()), None)
     if organization_has_enabled_module(location.organization_id, "DAILY_CLOSE") and (today_daily_close is None or today_daily_close.status == "DRAFT"):
         daily_close_attention = 1
-    reorder_attention_count = inventory_summary["inventoryReorderNowCount"] + inventory_summary["inventoryOutOfStockCount"]
     week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
     purchase_workflow = {
@@ -347,6 +346,7 @@ def _dashboard_snapshot(location_id: int):
     top_reorder = [_reorder_suggestion_for_item(item) for item in inventory_items]
     top_reorder = [entry for entry in top_reorder if entry is not None]
     top_reorder.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["suggestedQuantity"]), reverse=False)
+    recommendation_count = len(top_reorder)
     return {
         "summary": {
             "weeklyInvoiceCount": len(week_invoices),
@@ -355,6 +355,8 @@ def _dashboard_snapshot(location_id: int):
             "monthlyInvoiceSpend": round(sum(float(invoice.total_amount) for invoice in invoices), 2),
             "invoiceReviewQueueCount": len(draft_invoices),
             **inventory_summary,
+            "inventoryItemsToReorderCount": recommendation_count,
+            "inventoryRecommendationCount": recommendation_count,
             "recentPriceChangeCount": len(recent_price_changes),
         },
         "recentInvoices": [serialize_purchase_invoice(invoice) for invoice in recent_invoices],
@@ -370,12 +372,12 @@ def _dashboard_snapshot(location_id: int):
             "purchase": "Done" if any(invoice.status == "Completed" for invoice in invoices) else "Needs review",
             "review": "Needs review" if draft_invoices else "Done",
             "inventory": "Updated" if inventory_summary["inventoryReceiptCount"] > 0 else "Not ready",
-            "reorder": "Alert" if inventory_summary["inventoryReorderNowCount"] or inventory_summary["inventoryOutOfStockCount"] else "Done",
+            "reorder": "Alert" if recommendation_count else "Done",
             "close": "Complete" if today_daily_close and today_daily_close.status == "COMPLETED" else "In progress" if today_daily_close and today_daily_close.status == "DRAFT" else "Open",
             "export": "Not ready",
         },
             "operationalAttention": {
-                "reorder": {"count": reorder_attention_count, "severity": "urgent" if reorder_attention_count else "none"},
+                "reorder": {"count": recommendation_count, "severity": "urgent" if recommendation_count else "none"},
             "square": {**square_attention, "severity": "urgent" if square_attention["syncErrorCount"] else "attention" if square_attention["unmappedVariationCount"] else "none"},
             "dailyClose": {"count": daily_close_attention, "severity": "attention" if daily_close_attention else "none"},
         },
@@ -1963,7 +1965,7 @@ def reorder_plan():
         suggestions.append(suggestion)
     suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
     groups = _group_reorder_by_supplier(suggestions)
-    return jsonify({"suggestions": suggestions, "groupedBySupplier": groups, "activeInventoryItemCount": len(items), "refreshedAt": _now().isoformat()}), 200
+    return jsonify({"suggestions": suggestions, "groupedBySupplier": groups, "activeInventoryItemCount": len(items), "inventoryItems": [serialize_inventory_item(item) for item in items], "refreshedAt": _now().isoformat()}), 200
 
 
 def _current_reorder_suggestions_for_location(organization_id: int, location_id: int) -> list[dict[str, Any]]:
@@ -2142,6 +2144,43 @@ def update_reorder_plan(plan_id: int):
         lines_by_id = {line.id: line for line in plan.lines}
         for index, line_payload in enumerate(payload.get("lines")):
             line = lines_by_id.get(int(line_payload.get("id"))) if line_payload.get("id") else None
+            if line is None and line_payload.get("inventoryItemId") and plan.status == "Draft":
+                item = InventoryItem.query.filter_by(id=int(line_payload["inventoryItemId"]), organization_id=organization.id, location_id=location.id, active=True).first()
+                if item is None or any(existing.inventory_item_id == item.id for existing in plan.lines):
+                    continue
+                suggestion = _reorder_suggestion_for_item(item)
+                conversion_factor = Decimal(item.last_purchase_conversion_factor or 1)
+                purchase_unit = item.last_purchase_unit or item.stock_unit or "each"
+                latest_cost = Decimal(item.latest_purchase_price or 0)
+                suggested_quantity = Decimal(str(suggestion["suggestedQuantity"])) if suggestion else Decimal("0")
+                order_quantity = _to_quantity(line_payload.get("orderQuantity", suggested_quantity), field=f"lines[{index}].orderQuantity", required=False) or suggested_quantity
+                estimated_line_cost = None
+                if conversion_factor > 0 and latest_cost >= 0:
+                    estimated_line_cost = (order_quantity / conversion_factor * latest_cost).quantize(MONEY)
+                line = ReorderPlanLine(
+                    plan_id=plan.id,
+                    inventory_item_id=item.id,
+                    supplier_id=item.supplier_id,
+                    line_index=len(plan.lines),
+                    inventory_item_name_snapshot=item.name,
+                    supplier_name_snapshot=item.preferred_supplier_name or (item.supplier.name if item.supplier else ""),
+                    category_snapshot=item.category,
+                    purchase_unit_snapshot=purchase_unit,
+                    inventory_unit_snapshot=item.stock_unit or "each",
+                    conversion_factor_snapshot=conversion_factor,
+                    current_on_hand_snapshot=item.current_on_hand,
+                    minimum_quantity_snapshot=item.min_quantity,
+                    par_level_snapshot=item.par_level,
+                    suggested_quantity_snapshot=suggested_quantity,
+                    order_quantity=order_quantity,
+                    excluded=bool(line_payload.get("excluded", False)),
+                    estimated_unit_cost_snapshot=latest_cost,
+                    estimated_line_cost_snapshot=estimated_line_cost,
+                    notes=str(line_payload.get("notes") or "").strip(),
+                )
+                db.session.add(line)
+                plan.lines.append(line)
+                lines_by_id[line.id] = line
             if line is None:
                 continue
             if "orderQuantity" in line_payload:
