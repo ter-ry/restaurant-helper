@@ -405,10 +405,17 @@ def _build_square_usage_report(
     end_at: datetime,
 ) -> dict[str, Any]:
     current_location_ids = set(_current_square_location_ids(connection))
-    square_location_ids = [location_mapping.square_location_id for location_mapping in SquareLocationMapping.query.join(SquareLocation, SquareLocationMapping.square_location_id == SquareLocation.id).filter(
-        SquareLocation.square_connection_id == connection.id,
-        SquareLocationMapping.restaurant_location_id == location.id,
-    ).all() if location_mapping.square_location_id in current_location_ids] if location is not None else []
+    square_location_ids = [
+        square_location.square_location_id
+        for square_location, _location_mapping in db.session.query(SquareLocation, SquareLocationMapping)
+        .join(SquareLocationMapping, SquareLocationMapping.square_location_id == SquareLocation.id)
+        .filter(
+            SquareLocation.square_connection_id == connection.id,
+            SquareLocationMapping.restaurant_location_id == location.id,
+        )
+        .all()
+        if square_location.square_location_id in current_location_ids
+    ] if location is not None else []
     if location is None:
         square_location_ids = list(current_location_ids)
     if not square_location_ids:
