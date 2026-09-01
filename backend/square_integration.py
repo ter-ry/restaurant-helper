@@ -336,7 +336,7 @@ def _menu_items_for_usage(organization_id: int, location_id: int | None) -> list
 
 def _square_mapping_summary(organization: Organization, connection: SquareConnection, *, location_id: int | None = None) -> dict[str, Any]:
     catalog_objects = (
-        SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION")
+        SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION", is_deleted=False)
         .order_by(SquareCatalogObject.updated_at.desc(), SquareCatalogObject.id.desc())
         .all()
     )
@@ -428,12 +428,13 @@ def _build_square_usage_report(
 
     catalog_objects = {
         obj.square_object_id: obj
-        for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION").all()
+        for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION", is_deleted=False).all()
     }
     active_mappings = {
         mapping.square_catalog_object_id: mapping
         for mapping in SquareCatalogMapping.query.join(SquareCatalogObject, SquareCatalogMapping.square_catalog_object_id == SquareCatalogObject.id).filter(
             SquareCatalogObject.square_connection_id == connection.id,
+            SquareCatalogObject.is_deleted.is_(False),
             SquareCatalogMapping.mapping_type == "menu_item",
             SquareCatalogMapping.status != "unmapped",
         ).all()
@@ -802,7 +803,7 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
         "lastSyncAt": isoformat(connection.last_sync_at),
         "syncStatus": connection.sync_status,
         "syncError": connection.sync_error,
-        "catalogCount": SquareCatalogObject.query.filter_by(square_connection_id=connection.id).count(),
+        "catalogCount": SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).count(),
         "orderCount": SquareOrder.query.filter_by(square_connection_id=connection.id).count(),
         "locationCount": len(locations),
         "dailySalesCount": SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).count(),
@@ -819,7 +820,7 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
             }
             for location in sorted(locations, key=lambda entry: (entry.name, entry.id))
         ],
-        "catalogObjects": [_serialize_catalog_object(obj) for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id).order_by(SquareCatalogObject.updated_at.desc(), SquareCatalogObject.id.desc()).limit(100).all()],
+        "catalogObjects": [_serialize_catalog_object(obj) for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).order_by(SquareCatalogObject.updated_at.desc(), SquareCatalogObject.id.desc()).limit(100).all()],
         "orders": [_serialize_order(order) for order in SquareOrder.query.filter_by(square_connection_id=connection.id).order_by(SquareOrder.updated_at.desc(), SquareOrder.id.desc()).limit(50).all()],
         "dailySales": [_serialize_daily_summary(summary) for summary in SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).order_by(SquareDailySalesSummary.sale_date.desc(), SquareDailySalesSummary.id.desc()).limit(60).all()],
         "syncJobs": [
@@ -1113,6 +1114,13 @@ def _sync_catalog(connection: SquareConnection, token: str) -> dict[str, Any]:
         page_count += 1
         if not cursor:
             break
+    if object_ids:
+        SquareCatalogObject.query.filter(
+            SquareCatalogObject.square_connection_id == connection.id,
+            SquareCatalogObject.square_object_id.notin_(object_ids),
+        ).update({"is_deleted": True}, synchronize_session=False)
+    else:
+        SquareCatalogObject.query.filter_by(square_connection_id=connection.id).update({"is_deleted": True}, synchronize_session=False)
     SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="catalog").delete()
     db.session.add(SquareSyncCursor(square_connection_id=connection.id, cursor_key="catalog", cursor_value=cursor))
     return {"objectCount": total, "pages": page_count, "squareObjectIds": object_ids}
@@ -1749,6 +1757,8 @@ def square_catalog_mapping():
     catalog_object = SquareCatalogObject.query.filter_by(id=square_catalog_object_id, square_connection_id=connection.id).first()
     if catalog_object is None:
         return json_error("Square catalog object not found.", 404)
+    if catalog_object.is_deleted:
+        return json_error("Square catalog object is not current.", 409)
     if catalog_object.object_type != "ITEM_VARIATION":
         return json_error("Only Square item variations can be mapped to Flowtally menu items.", 400)
     if flowtally_entity_type and flowtally_entity_type != "menu_item":
