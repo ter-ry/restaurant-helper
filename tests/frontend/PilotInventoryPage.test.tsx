@@ -381,6 +381,8 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByLabelText("Category")).toHaveValue("Poultry");
     expect(screen.getByLabelText("Base unit")).toHaveValue("kg");
     expect(screen.getByLabelText("Item notes")).toHaveValue("");
+    expect(screen.getByText("Average cost")).toBeVisible();
+    expect(screen.getByText("28 kg")).toBeVisible();
     expect(screen.queryByLabelText("Current on hand")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Latest price")).not.toBeInTheDocument();
     expect(screen.queryByText("Movement note (optional)")).not.toBeInTheDocument();

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AlertTriangle, Building2, ChevronLeft, ChevronRight, ExternalLink, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
 import { usePilotSession } from "./PilotSessionProvider";
+import { fetchPilotDashboard } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
 const navItems = [
@@ -36,12 +37,14 @@ function NavItem({
   collapsed = false,
   children,
   onClick,
+  badge,
 }: {
   to: string;
   label: string;
   collapsed?: boolean;
   children: ReactNode;
   onClick?: () => void;
+  badge?: number;
 }) {
   return (
     <NavLink
@@ -57,7 +60,10 @@ function NavItem({
       }
       onClick={onClick}
     >
-      <span className={collapsed ? "sr-only" : "truncate"}>{children}</span>
+      <span className={collapsed ? "sr-only" : "flex min-w-0 flex-1 items-center justify-between gap-2 truncate"}>
+        <span className="truncate">{children}</span>
+        {badge && badge > 0 ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900" aria-label={`${badge} needs attention`}>{badge}</span> : null}
+      </span>
       <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border text-[10px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
         {label.slice(0, 1)}
       </span>
@@ -69,6 +75,7 @@ export function PilotWorkspaceLayout() {
   const { error, user, organization, enabledModuleKeys, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [operationalAttention, setOperationalAttention] = useState<{ reorder: number }>({ reorder: 0 });
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -92,6 +99,26 @@ export function PilotWorkspaceLayout() {
     const current = [...visibleNavItems].reverse().find((item) => location.pathname.startsWith(item.to));
     return current?.label ?? "Workspace";
   }, [location.pathname, visibleNavItems]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAttention = async () => {
+      try {
+        const dashboard = await fetchPilotDashboard();
+        if (!cancelled) {
+          setOperationalAttention({ reorder: dashboard.operationalAttention?.reorder.count ?? dashboard.summary.inventoryItemsToReorderCount ?? 0 });
+        }
+      } catch {
+        // The sidebar should remain usable when the attention refresh is unavailable.
+      }
+    };
+    void loadAttention();
+    const interval = window.setInterval(() => void loadAttention(), 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [location.pathname, activeOrganizationId, activeLocationId]);
 
   useEffect(() => {
     window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", String(desktopSidebarCollapsed));
@@ -372,7 +399,7 @@ export function PilotWorkspaceLayout() {
 
           <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-0.5" : ""}`}>
             {visibleNavItems.map((item) => (
-              <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed}>
+              <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined}>
                 {item.label}
               </NavItem>
             ))}
@@ -552,7 +579,7 @@ export function PilotWorkspaceLayout() {
 
             <nav className="mt-6 space-y-2">
               {visibleNavItems.map((item) => (
-                <NavItem key={item.to} to={item.to} label={item.label} onClick={() => setMobileNavOpen(false)}>
+                <NavItem key={item.to} to={item.to} label={item.label} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)}>
                   {item.label}
                 </NavItem>
               ))}

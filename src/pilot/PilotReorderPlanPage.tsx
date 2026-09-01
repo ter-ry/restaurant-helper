@@ -27,6 +27,8 @@ export function PilotReorderPlanPage() {
   const location = useLocation();
   const [currentSuggestions, setCurrentSuggestions] = useState<PilotReorderSuggestion[]>([]);
   const [currentGroups, setCurrentGroups] = useState<PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]>([]);
+  const [activeInventoryItemCount, setActiveInventoryItemCount] = useState(0);
+  const [recommendationsRefreshedAt, setRecommendationsRefreshedAt] = useState<string | null>(null);
   const [plans, setPlans] = useState<PilotReorderPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [draft, setDraft] = useState<PilotReorderPlan | null>(null);
@@ -60,6 +62,8 @@ export function PilotReorderPlanPage() {
       const [suggestionsResponse, plansResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans()]);
       setCurrentSuggestions(suggestionsResponse.suggestions);
       setCurrentGroups(suggestionsResponse.groupedBySupplier);
+      setActiveInventoryItemCount(suggestionsResponse.activeInventoryItemCount ?? 0);
+      setRecommendationsRefreshedAt(suggestionsResponse.refreshedAt ?? null);
       setPlans(plansResponse.plans);
       const selected = preferredPlanId
         ? plansResponse.plans.find((plan) => plan.id === preferredPlanId) ?? null
@@ -390,11 +394,15 @@ export function PilotReorderPlanPage() {
         </div>
       ) : showCompactEmptyState ? (
         <div className="space-y-6">
-          <Card className="p-6">
-            <SectionHeader title="No items currently need reordering." description="Tracked inventory is currently above its reorder thresholds." />
+          <Card className="border-brand-200 bg-brand-50/30 p-6">
+            <SectionHeader title="Nothing needs reordering right now." description="All active inventory items are currently above their reorder thresholds." />
+            <div className="mt-4 rounded-2xl border border-brand-100 bg-white px-4 py-3 text-sm leading-6 text-slate-700">
+              Checked <span className="font-bold text-ink">{formatNumber(activeInventoryItemCount)} active inventory item{activeInventoryItemCount === 1 ? "" : "s"}</span>. No current reorder pressure was found.
+              {recommendationsRefreshedAt ? <span className="block text-xs text-muted">Recommendations refreshed {new Date(recommendationsRefreshedAt).toLocaleString()}</span> : null}
+            </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {completedPlanCount > 0 ? <Badge tone="neutral">{completedPlanCount} completed plan{completedPlanCount === 1 ? "" : "s"} available in History</Badge> : null}
-              <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
+              <Button variant="secondary" icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
                 Start manual draft
               </Button>
               <Button variant="secondary" type="button" onClick={() => setWorkflowTab("history")}>
