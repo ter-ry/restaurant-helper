@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -31,6 +32,7 @@ from .models import (
     SquareLocationMapping,
     SquareOrder,
     SquareOrderLine,
+    SquareOrderLineInventoryConsumption,
     SquareSyncCursor,
     SquareSyncJob,
     SquareWebhookEvent,
@@ -308,7 +310,7 @@ def _inventory_usage_basis(organization_id: int, location_id: int, inventory_ite
         InventoryMovement.inventory_item_id == inventory_item_id,
         InventoryMovement.created_at > datetime.fromisoformat(opening["completedAt"].replace("Z", "+00:00")),
         InventoryMovement.created_at <= datetime.fromisoformat(closing["completedAt"].replace("Z", "+00:00")),
-    ).filter(InventoryMovement.source_type != "stock count reconciliation")
+    ).filter(InventoryMovement.source_type.notin_({"stock count reconciliation", "square sale consumption", "square sale reversal"}))
     movement_net = sum((Decimal(str(movement.quantity_delta or 0)) for movement in movement_query.all()), start=Decimal("0")).quantize(QTY)
     opening_quantity = Decimal(str(opening["quantity"])).quantize(QTY)
     closing_quantity = Decimal(str(closing["quantity"])).quantize(QTY)
@@ -461,18 +463,26 @@ def _build_square_usage_report(
     usage_warnings: list[str] = []
 
     for order in relevant_orders:
-        if order.order_state in {"CANCELED", "CANCELLED", "VOIDED"}:
+        if order.order_state in {"CANCELED", "CANCELLED", "VOIDED", "REFUNDED"}:
             excluded_cancelled_units += Decimal(str(order.item_quantity or 0))
             continue
         for line in order.lines:
-            line_quantity = Decimal(str(line.quantity or 0))
+            resolution = _square_line_consumption(
+                organization,
+                connection,
+                order,
+                line,
+                current_location_ids=current_location_ids,
+                catalog_objects=catalog_objects,
+                active_mappings=active_mappings,
+            )
+            line_quantity = resolution["lineQuantity"]
+            if line_quantity <= 0:
+                continue
             total_sold_units += line_quantity
-            mapping = None
-            catalog_object = catalog_objects.get(line.square_item_variation_id)
-            if catalog_object is not None:
-                mapping = active_mappings.get(catalog_object.id)
-            if mapping is None:
+            if resolution["status"] == "unmapped":
                 excluded_unmapped_units += line_quantity
+                catalog_object = catalog_objects.get(line.square_item_variation_id)
                 variation_key = line.square_item_variation_id or line.name or "unknown"
                 unmapped_entry = unmapped_variations.setdefault(
                     variation_key,
@@ -486,89 +496,38 @@ def _build_square_usage_report(
                 )
                 unmapped_entry["soldUnits"] = Decimal(str(unmapped_entry["soldUnits"])) + line_quantity
                 if len(unmapped_entry["recentOrders"]) < 5:
-                    unmapped_entry["recentOrders"].append(
-                        {
-                            "squareOrderId": order.square_order_id,
-                            "orderedAt": isoformat(order.ordered_at),
-                            "quantity": float(line_quantity),
-                        }
-                    )
+                    unmapped_entry["recentOrders"].append({"squareOrderId": order.square_order_id, "orderedAt": isoformat(order.ordered_at), "quantity": float(line_quantity)})
                 continue
-
-            menu_item = MenuItem.query.filter_by(id=int(mapping.flowtally_entity_id or 0), organization_id=organization.id).first() if mapping.flowtally_entity_id else None
-            if menu_item is None:
+            if resolution["status"] != "mapped":
                 excluded_incomplete_units += line_quantity
-                usage_warnings.append(f"Square variation {line.square_item_variation_id} is mapped to a missing menu item.")
-                continue
-            if menu_item.location_id is not None and location is not None and menu_item.location_id != location.id:
-                excluded_incomplete_units += line_quantity
-                usage_warnings.append(f"Menu item {menu_item.name} belongs to a different location and was excluded.")
-                continue
-            recipe = menu_item.recipe
-            if recipe is None or recipe.organization_id != organization.id:
-                excluded_incomplete_units += line_quantity
-                menu_item_warnings[menu_item.id].add("Menu item is mapped but has no recipe.")
-                continue
-            if Decimal(str(recipe.yield_quantity or 0)) <= 0:
-                excluded_incomplete_units += line_quantity
-                menu_item_warnings[menu_item.id].add("Recipe yield must be greater than zero.")
+                usage_warnings.extend(resolution["warnings"])
+                if resolution.get("menuItem") is not None:
+                    menu_item_warnings[resolution["menuItem"].id].update(resolution["warnings"])
                 continue
 
             mapped_sold_units += line_quantity
             calculable_sold_units += line_quantity
+            menu_item = resolution["menuItem"]
+            recipe = resolution["recipe"]
             menu_item_entry = menu_item_contributions.setdefault(
                 menu_item.id,
-                {
-                    "menuItemId": menu_item.id,
-                    "menuItemName": menu_item.name,
-                    "soldUnits": Decimal("0"),
-                    "recipeYield": float(recipe.yield_quantity or 0),
-                    "recipeYieldUnit": recipe.yield_unit,
-                    "warnings": [],
-                },
+                {"menuItemId": menu_item.id, "menuItemName": menu_item.name, "soldUnits": Decimal("0"), "recipeYield": float(recipe.yield_quantity or 0), "recipeYieldUnit": recipe.yield_unit, "warnings": []},
             )
             menu_item_entry["soldUnits"] = Decimal(str(menu_item_entry["soldUnits"])) + line_quantity
-
-            for ingredient in recipe.ingredients:
-                inventory_item = ingredient.inventory_item
-                if inventory_item is None or inventory_item.organization_id != organization.id:
-                    menu_item_warnings[menu_item.id].add("Recipe ingredient is missing its inventory item.")
-                    continue
-                if ingredient.unit and inventory_item.stock_unit and ingredient.unit != inventory_item.stock_unit:
-                    ingredient_warnings[inventory_item.id].append(
-                        f"{menu_item.name} uses {ingredient.unit} but {inventory_item.name} is tracked in {inventory_item.stock_unit}."
-                    )
-                    continue
-                quantity_required = Decimal(str(ingredient.quantity_required or 0))
-                if quantity_required <= 0:
-                    ingredient_warnings[inventory_item.id].append(f"{menu_item.name} has an ingredient with no quantity.")
-                    continue
-                yield_quantity = Decimal(str(recipe.yield_quantity or 0))
-                contribution = (line_quantity * quantity_required / yield_quantity).quantize(QTY)
+            if resolution["warnings"]:
+                menu_item_warnings[menu_item.id].update(resolution["warnings"])
+            for ingredient in resolution["ingredients"]:
+                inventory_item = ingredient["inventoryItem"]
+                contribution = ingredient["quantity"]
                 aggregate = ingredient_aggregates.setdefault(
                     inventory_item.id,
-                    {
-                        "inventoryItemId": inventory_item.id,
-                        "inventoryItemName": inventory_item.name,
-                        "unit": inventory_item.stock_unit,
-                        "theoreticalUsage": Decimal("0"),
-                        "soldMenuUnits": Decimal("0"),
-                        "contributingMenuItems": {},
-                        "warnings": set(),
-                    },
+                    {"inventoryItemId": inventory_item.id, "inventoryItemName": inventory_item.name, "unit": inventory_item.stock_unit, "theoreticalUsage": Decimal("0"), "soldMenuUnits": Decimal("0"), "contributingMenuItems": {}, "warnings": set()},
                 )
                 aggregate["theoreticalUsage"] = Decimal(str(aggregate["theoreticalUsage"])) + contribution
                 aggregate["soldMenuUnits"] = Decimal(str(aggregate["soldMenuUnits"])) + line_quantity
                 contribution_bucket = aggregate["contributingMenuItems"].setdefault(
                     menu_item.id,
-                    {
-                        "menuItemId": menu_item.id,
-                        "menuItemName": menu_item.name,
-                        "soldUnits": Decimal("0"),
-                        "theoreticalUsage": Decimal("0"),
-                        "recipeId": recipe.id,
-                        "recipeYield": float(recipe.yield_quantity or 0),
-                    },
+                    {"menuItemId": menu_item.id, "menuItemName": menu_item.name, "soldUnits": Decimal("0"), "theoreticalUsage": Decimal("0"), "recipeId": recipe.id, "recipeYield": float(recipe.yield_quantity or 0)},
                 )
                 contribution_bucket["soldUnits"] = Decimal(str(contribution_bucket["soldUnits"])) + line_quantity
                 contribution_bucket["theoreticalUsage"] = Decimal(str(contribution_bucket["theoreticalUsage"])) + contribution
@@ -958,6 +917,9 @@ def _upsert_connection_tokens(connection: SquareConnection, token_payload: dict[
     merchant_id = str(token_payload.get("merchant_id") or "").strip()
     if connection.square_merchant_id and merchant_id and connection.square_merchant_id != merchant_id:
         _reset_square_merchant_data(connection)
+        connection.inventory_depletion_activated_at = _now()
+    elif connection.inventory_depletion_activated_at is None:
+        connection.inventory_depletion_activated_at = _now()
     connection.square_merchant_id = merchant_id or connection.square_merchant_id or ""
     connection.status = "connected"
     connection.access_token_ciphertext = encrypt_square_secret(str(token_payload.get("access_token") or ""))
@@ -976,7 +938,12 @@ def _upsert_connection_tokens(connection: SquareConnection, token_payload: dict[
 def _ensure_connection(organization: Organization) -> SquareConnection:
     connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
     if connection is None:
-        connection = SquareConnection(organization_id=organization.id, environment=square_environment(), status="disconnected")
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment=square_environment(),
+            status="disconnected",
+            inventory_depletion_activated_at=_now(),
+        )
         db.session.add(connection)
         db.session.flush()
     return connection
@@ -1050,6 +1017,203 @@ def _current_square_location_ids(connection: SquareConnection) -> list[str]:
         for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()
         if location.status.lower() not in {"inactive", "deleted"}
     ]
+
+
+def _square_line_sale_quantity(order: SquareOrder, line: SquareOrderLine) -> Decimal:
+    """Return the completed, non-refunded quantity eligible for system depletion."""
+    if order.is_deleted or order.order_state != "COMPLETED":
+        return Decimal("0")
+    raw_payload = line.raw_payload_json if isinstance(line.raw_payload_json, dict) else {}
+    refunded = raw_payload.get("refunded_quantity") or raw_payload.get("refundedQuantity") or 0
+    try:
+        refunded_quantity = Decimal(str(refunded))
+    except (InvalidOperation, TypeError, ValueError):
+        refunded_quantity = Decimal("0")
+    return max(Decimal(str(line.quantity or 0)) - max(refunded_quantity, Decimal("0")), Decimal("0")).quantize(QTY)
+
+
+def _square_line_consumption(
+    organization: Organization,
+    connection: SquareConnection,
+    order: SquareOrder,
+    line: SquareOrderLine,
+    *,
+    current_location_ids: set[str] | None = None,
+    catalog_objects: dict[str, SquareCatalogObject] | None = None,
+    active_mappings: dict[int, SquareCatalogMapping] | None = None,
+) -> dict[str, Any]:
+    """Resolve one Square line through the canonical menu recipe path."""
+    line_quantity = _square_line_sale_quantity(order, line)
+    if line_quantity <= 0:
+        return {"status": "excluded", "lineQuantity": line_quantity, "ingredients": [], "warnings": [], "menuItem": None, "recipe": None}
+    current_location_ids = current_location_ids if current_location_ids is not None else set(_current_square_location_ids(connection))
+    if order.square_location_id not in current_location_ids or order.restaurant_location_id is None:
+        return {"status": "excluded", "lineQuantity": line_quantity, "ingredients": [], "warnings": ["Square order location is not current or mapped."], "menuItem": None, "recipe": None}
+    if catalog_objects is None:
+        catalog_objects = {
+            obj.square_object_id: obj
+            for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION", is_deleted=False).all()
+        }
+    catalog_object = catalog_objects.get(line.square_item_variation_id)
+    if catalog_object is None:
+        return {"status": "unmapped", "lineQuantity": line_quantity, "ingredients": [], "warnings": [f"Square variation {line.square_item_variation_id} is unmapped."], "menuItem": None, "recipe": None}
+    if active_mappings is None:
+        active_mappings = {
+            mapping.square_catalog_object_id: mapping
+            for mapping in SquareCatalogMapping.query.join(SquareCatalogObject, SquareCatalogMapping.square_catalog_object_id == SquareCatalogObject.id).filter(
+                SquareCatalogObject.square_connection_id == connection.id,
+                SquareCatalogObject.is_deleted.is_(False),
+                SquareCatalogMapping.mapping_type == "menu_item",
+                SquareCatalogMapping.status != "unmapped",
+            ).all()
+        }
+    mapping = active_mappings.get(catalog_object.id)
+    if mapping is None or not mapping.flowtally_entity_id:
+        return {"status": "unmapped", "lineQuantity": line_quantity, "ingredients": [], "warnings": [f"Square variation {line.square_item_variation_id} is unmapped."], "menuItem": None, "recipe": None}
+    try:
+        menu_item_id = int(mapping.flowtally_entity_id)
+    except (TypeError, ValueError):
+        return {"status": "incomplete", "lineQuantity": line_quantity, "ingredients": [], "warnings": ["Square mapping points to an invalid menu item."], "menuItem": None, "recipe": None}
+    menu_item = MenuItem.query.filter_by(id=menu_item_id, organization_id=organization.id).first()
+    if menu_item is None or (menu_item.location_id is not None and menu_item.location_id != order.restaurant_location_id):
+        return {"status": "incomplete", "lineQuantity": line_quantity, "ingredients": [], "warnings": ["Square mapping points to an unavailable menu item."], "menuItem": None, "recipe": None}
+    recipe = menu_item.recipe
+    if recipe is None or recipe.organization_id != organization.id:
+        return {"status": "incomplete", "lineQuantity": line_quantity, "ingredients": [], "warnings": [f"Menu item {menu_item.name} has no valid recipe."], "menuItem": menu_item, "recipe": recipe}
+    yield_quantity = Decimal(str(recipe.yield_quantity or 0))
+    if yield_quantity <= 0:
+        return {"status": "incomplete", "lineQuantity": line_quantity, "ingredients": [], "warnings": [f"Menu item {menu_item.name} has an invalid recipe yield."], "menuItem": menu_item, "recipe": recipe}
+    ingredients: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for ingredient in recipe.ingredients:
+        inventory_item = ingredient.inventory_item
+        if inventory_item is None or inventory_item.organization_id != organization.id:
+            warnings.append(f"{menu_item.name} has a missing inventory ingredient.")
+            continue
+        if ingredient.unit and inventory_item.stock_unit and ingredient.unit != inventory_item.stock_unit:
+            warnings.append(f"{menu_item.name} uses {ingredient.unit} but {inventory_item.name} is tracked in {inventory_item.stock_unit}.")
+            continue
+        required = Decimal(str(ingredient.quantity_required or 0))
+        if required <= 0:
+            warnings.append(f"{menu_item.name} has an ingredient with no quantity.")
+            continue
+        ingredients.append(
+            {
+                "inventoryItem": inventory_item,
+                "quantity": (line_quantity * required / yield_quantity).quantize(QTY),
+                "menuItem": menu_item,
+                "recipe": recipe,
+            }
+        )
+    return {"status": "mapped", "lineQuantity": line_quantity, "ingredients": ingredients, "warnings": warnings, "menuItem": menu_item, "recipe": recipe}
+
+
+def _apply_square_order_inventory_consumption(
+    organization: Organization,
+    connection: SquareConnection,
+    order: SquareOrder,
+) -> list[str]:
+    """Apply or reverse one order's mapped recipe usage without replaying history."""
+    activation = _parse_iso_datetime(connection.inventory_depletion_activated_at or connection.created_at)
+    order_event_at = _parse_iso_datetime(order.closed_at or order.ordered_at)
+    existing_line_ids = {line.id for line in order.lines if line.id is not None}
+    existing_consumptions = (
+        SquareOrderLineInventoryConsumption.query.filter(
+            SquareOrderLineInventoryConsumption.organization_id == organization.id,
+            SquareOrderLineInventoryConsumption.square_order_line_id.in_(existing_line_ids or [-1]),
+        ).all()
+    )
+    if activation is not None and order_event_at is not None and order_event_at < activation and not existing_consumptions:
+        return []
+
+    current_location_ids = set(_current_square_location_ids(connection))
+    catalog_objects = {
+        obj.square_object_id: obj
+        for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION", is_deleted=False).all()
+    }
+    active_mappings = {
+        mapping.square_catalog_object_id: mapping
+        for mapping in SquareCatalogMapping.query.join(SquareCatalogObject, SquareCatalogMapping.square_catalog_object_id == SquareCatalogObject.id).filter(
+            SquareCatalogObject.square_connection_id == connection.id,
+            SquareCatalogObject.is_deleted.is_(False),
+            SquareCatalogMapping.mapping_type == "menu_item",
+            SquareCatalogMapping.status != "unmapped",
+        ).all()
+    }
+    desired: dict[tuple[int, int], dict[str, Any]] = {}
+    warnings: list[str] = []
+    for line in order.lines:
+        resolution = _square_line_consumption(
+            organization,
+            connection,
+            order,
+            line,
+            current_location_ids=current_location_ids,
+            catalog_objects=catalog_objects,
+            active_mappings=active_mappings,
+        )
+        warnings.extend(resolution["warnings"])
+        for ingredient in resolution["ingredients"]:
+            item = ingredient["inventoryItem"]
+            key = (line.id, item.id)
+            if key in desired:
+                desired[key]["quantity"] -= ingredient["quantity"]
+            else:
+                desired[key] = {"quantity": -ingredient["quantity"], "item": item, "line": line}
+
+    by_key = {(row.square_order_line_id, row.inventory_item_id): row for row in existing_consumptions}
+    for key, row in by_key.items():
+        desired.setdefault(key, {"quantity": Decimal("0"), "item": row.inventory_item, "line": row.square_order_line})
+    for key, target in desired.items():
+        line_id, item_id = key
+        consumption = by_key.get(key)
+        if consumption is None:
+            consumption = SquareOrderLineInventoryConsumption(
+                organization_id=organization.id,
+                location_id=target["item"].location_id,
+                square_order_line_id=line_id,
+                inventory_item_id=item_id,
+                applied_quantity=Decimal("0"),
+            )
+            db.session.add(consumption)
+            db.session.flush()
+        applied = Decimal(str(consumption.applied_quantity or 0))
+        wanted = Decimal(str(target["quantity"])).quantize(QTY)
+        correction = (wanted - applied).quantize(QTY)
+        if correction == 0:
+            continue
+        item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=consumption.location_id).with_for_update().first()
+        if item is None:
+            warnings.append(f"Inventory item {item_id} is no longer available for Square consumption.")
+            continue
+        before = Decimal(str(item.current_on_hand or 0))
+        after = (before + correction).quantize(QTY)
+        movement_key = hashlib.sha1(f"{target['line'].line_uid}:{item_id}".encode("utf-8")).hexdigest()[:20]
+        prior_count = InventoryMovement.query.filter(
+            InventoryMovement.organization_id == organization.id,
+            InventoryMovement.location_id == consumption.location_id,
+            InventoryMovement.source_record_id == order.square_order_id,
+            InventoryMovement.source_line_id.like(f"pos:{movement_key}:%"),
+        ).count()
+        movement = InventoryMovement(
+            organization_id=organization.id,
+            location_id=consumption.location_id,
+            inventory_item_id=item.id,
+            quantity_delta=correction,
+            quantity_before=before,
+            quantity_after=after,
+            unit=item.stock_unit,
+            source_type="square sale consumption" if correction < 0 else "square sale reversal",
+            source_record_id=order.square_order_id,
+            source_line_id=f"pos:{movement_key}:{prior_count + 1}",
+            reason=f"Square order {order.square_order_id} recipe consumption",
+            actor_user_id=None,
+        )
+        item.current_on_hand = after
+        item.updated_at = _now()
+        db.session.add(movement)
+        consumption.applied_quantity = wanted
+    return sorted(set(warnings))
 
 
 def _sync_locations(connection: SquareConnection, token: str) -> dict[str, Any]:
@@ -1240,11 +1404,12 @@ def _rebuild_daily_summaries(connection: SquareConnection, orders: list[SquareOr
         summary.raw_payload_json = {"saleDate": sale_date.isoformat(), "squareLocationId": square_location_id, "source": "square-orders-sync"}
 
 
-def _sync_orders(connection: SquareConnection, token: str, *, start_at: str, end_at: str, location_ids: list[str]) -> dict[str, Any]:
+def _sync_orders(organization: Organization, connection: SquareConnection, token: str, *, start_at: str, end_at: str, location_ids: list[str]) -> dict[str, Any]:
     cursor = ""
     order_count = 0
     pages = 0
     synced_orders: list[SquareOrder] = []
+    sync_warnings: list[str] = []
     while True:
         payload = _square_request(
             "POST",
@@ -1270,6 +1435,10 @@ def _sync_orders(connection: SquareConnection, token: str, *, start_at: str, end
         for entry in orders:
             order = _upsert_order(connection, entry)
             if order is not None:
+                db.session.flush()
+                consumption_warnings = _apply_square_order_inventory_consumption(organization, connection, order)
+                if consumption_warnings:
+                    sync_warnings.extend(consumption_warnings)
                 synced_orders.append(order)
                 order_count += 1
         cursor = str(payload.get("cursor") or "")
@@ -1279,7 +1448,7 @@ def _sync_orders(connection: SquareConnection, token: str, *, start_at: str, end
     SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="orders").delete()
     db.session.add(SquareSyncCursor(square_connection_id=connection.id, cursor_key="orders", cursor_value=cursor))
     _rebuild_daily_summaries(connection, synced_orders)
-    return {"orderCount": order_count, "pages": pages, "cursor": cursor, "locationIds": location_ids}
+    return {"orderCount": order_count, "pages": pages, "cursor": cursor, "locationIds": location_ids, "inventoryWarnings": sorted(set(sync_warnings))}
 
 
 def sync_square_orders_for_range(
@@ -1304,6 +1473,7 @@ def sync_square_orders_for_range(
     db.session.add(job)
     try:
         result = _sync_orders(
+            organization,
             connection,
             token,
             start_at=start_at.isoformat().replace("+00:00", "Z"),
@@ -1889,7 +2059,12 @@ def _apply_webhook_event(connection: SquareConnection, payload: dict[str, Any]) 
     if "order" in event_type.lower():
         order_payload = data.get("object") or data.get("order") or data
         if isinstance(order_payload, dict):
-            _upsert_order(connection, order_payload)
+            order = _upsert_order(connection, order_payload)
+            if order is not None:
+                db.session.flush()
+                organization = Organization.query.filter_by(id=connection.organization_id).first()
+                if organization is not None:
+                    _apply_square_order_inventory_consumption(organization, connection, order)
             _rebuild_daily_summaries(connection, [order for order in SquareOrder.query.filter_by(square_connection_id=connection.id).all()])
     elif "catalog" in event_type.lower():
         catalog_payload = data.get("object") or data.get("catalog_object") or data

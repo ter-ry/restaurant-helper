@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import text
 
 from backend.extensions import db
-from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareSyncCursor, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
+from backend.models import InventoryItem, InventoryMovement, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareOrderLineInventoryConsumption, SquareSyncCursor, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.square import square_notification_signature
 from backend.tests.conftest import make_operational_organization
@@ -970,6 +971,77 @@ def test_square_usage_report_calculates_theoretical_and_actual_usage(app, client
     assert payload["usage"]["totals"]["discrepancy"] == 0.3
     assert payload["usage"]["ingredientUsage"][0]["inventoryItemName"] == "Beef"
     assert payload["usage"]["ingredientUsage"][0]["actualUsageBasis"]["available"] is True
+
+
+def test_completed_square_sales_deplete_inventory_idempotently_and_reverse_on_cancel(app, client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization, location = _create_square_usage_fixture(app, owner, organization_name=f"Square POS Inventory {uuid4().hex[:6]}")
+
+    with app.app_context():
+        from backend.square_integration import _apply_square_order_inventory_consumption
+
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
+        connection.inventory_depletion_activated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        inventory_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Beef").one()
+        inventory_item.average_unit_cost = Decimal("7.25")
+        order = SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id="ORDER-1").one()
+        _apply_square_order_inventory_consumption(organization, connection, order)
+        db.session.commit()
+        assert float(inventory_item.current_on_hand) == 18.2
+        assert float(inventory_item.average_unit_cost) == pytest.approx(7.25)
+        assert InventoryMovement.query.filter_by(source_record_id="ORDER-1").count() == 1
+        assert SquareOrderLineInventoryConsumption.query.count() == 1
+        consumption_movement = InventoryMovement.query.filter_by(source_record_id="ORDER-1").one()
+        consumption_movement.created_at = datetime(2026, 8, 8, 12, 5, tzinfo=timezone.utc)
+        from backend.square_integration import _inventory_usage_basis
+
+        usage_basis = _inventory_usage_basis(
+            organization.id,
+            location.id,
+            inventory_item.id,
+            datetime(2026, 8, 5, tzinfo=timezone.utc),
+            datetime(2026, 8, 11, 23, 59, tzinfo=timezone.utc),
+        )
+        assert usage_basis["actualUsage"] == 2.1
+
+        _apply_square_order_inventory_consumption(organization, connection, order)
+        db.session.commit()
+        assert float(db.session.get(InventoryItem, inventory_item.id).current_on_hand) == 18.2
+        assert InventoryMovement.query.filter_by(source_record_id="ORDER-1").count() == 1
+
+        order.lines[0].quantity = Decimal("5")
+        _apply_square_order_inventory_consumption(organization, connection, order)
+        db.session.commit()
+        assert float(db.session.get(InventoryItem, inventory_item.id).current_on_hand) == 19.1
+        assert InventoryMovement.query.filter_by(source_record_id="ORDER-1").count() == 2
+
+        order.order_state = "CANCELED"
+        _apply_square_order_inventory_consumption(organization, connection, order)
+        db.session.commit()
+        assert float(db.session.get(InventoryItem, inventory_item.id).current_on_hand) == 20.0
+        assert InventoryMovement.query.filter_by(source_record_id="ORDER-1").count() == 3
+        assert InventoryMovement.query.filter_by(source_record_id="ORDER-1", source_type="square sale reversal").count() == 2
+
+
+def test_historical_square_orders_are_not_replayed_into_inventory(app, client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization, location = _create_square_usage_fixture(app, owner, organization_name=f"Square POS Baseline {uuid4().hex[:6]}")
+
+    with app.app_context():
+        from backend.square_integration import _apply_square_order_inventory_consumption
+
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
+        connection.inventory_depletion_activated_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        inventory_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Beef").one()
+        order = SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id="ORDER-1").one()
+        _apply_square_order_inventory_consumption(organization, connection, order)
+        db.session.commit()
+        assert float(inventory_item.current_on_hand) == 20.0
+        assert SquareOrderLineInventoryConsumption.query.count() == 0
 
 
 def test_square_catalog_mapping_rejects_non_variation_catalog_objects(app, client):
