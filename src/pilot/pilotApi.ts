@@ -491,6 +491,11 @@ export interface PilotDashboardResponse {
   supplierSpend: Array<Record<string, unknown>>;
   reorderSuggestions: PilotReorderSuggestion[];
   workflow: Record<string, string>;
+  operationalAttention?: {
+    reorder: { count: number; severity: string };
+    square: { syncErrorCount: number; unmappedVariationCount: number; severity: string };
+    dailyClose: { count: number; severity: string };
+  };
 }
 
 export interface PilotPurchasesResponse {
@@ -915,7 +920,7 @@ export async function finalizePilotCountSession(sessionId: number, payload: Reco
 }
 
 export async function fetchPilotReorderPlan() {
-  return requestJson<{ suggestions: PilotReorderSuggestion[]; groupedBySupplier: PilotInventoryResponse["reorderPlan"]["groupedBySupplier"] }>("/api/pilot/reorder-plan");
+  return requestJson<{ suggestions: PilotReorderSuggestion[]; groupedBySupplier: PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]; activeInventoryItemCount?: number; refreshedAt?: string }>("/api/pilot/reorder-plan");
 }
 
 export async function markPilotReorderOrdered(itemId: number) {

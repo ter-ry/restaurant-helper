@@ -17,9 +17,15 @@ const mockSession = vi.hoisted(() => ({
   switchOrganization: vi.fn(),
   refreshSession: vi.fn(),
 }));
+const mockDashboard = vi.hoisted(() => ({ fetchPilotDashboard: vi.fn() }));
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
   usePilotSession: () => mockSession,
+}));
+
+vi.mock("../../src/pilot/pilotApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/pilot/pilotApi")>()),
+  fetchPilotDashboard: mockDashboard.fetchPilotDashboard,
 }));
 
 function renderLayout() {
@@ -36,6 +42,7 @@ function renderLayout() {
 
 describe("PilotWorkspaceLayout", () => {
   beforeEach(() => {
+    mockDashboard.fetchPilotDashboard.mockResolvedValue({ summary: { inventoryItemsToReorderCount: 1 }, operationalAttention: { reorder: { count: 1, severity: "urgent" } } });
     mockSession.signOut.mockReset();
     mockSession.switchLocation.mockReset();
     mockSession.switchOrganization.mockReset();
@@ -48,5 +55,17 @@ describe("PilotWorkspaceLayout", () => {
     expect(screen.getByRole("link", { name: "Square" })).toHaveAttribute("href", "/app/square");
     expect(screen.getByRole("link", { name: "Daily Close" })).toHaveAttribute("href", "/app/daily-close");
     expect(screen.getByText("Dashboard outlet")).toBeVisible();
+  });
+
+  it("shows an actionable reorder badge and omits it when pressure is clear", async () => {
+    const firstRender = renderLayout();
+
+    expect(await screen.findByLabelText("1 needs attention")).toBeVisible();
+
+    mockDashboard.fetchPilotDashboard.mockResolvedValueOnce({ summary: { inventoryItemsToReorderCount: 0 }, operationalAttention: { reorder: { count: 0, severity: "none" } } });
+    firstRender.unmount();
+    renderLayout();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByLabelText("1 needs attention")).not.toBeInTheDocument();
   });
 });

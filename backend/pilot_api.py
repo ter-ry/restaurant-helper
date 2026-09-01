@@ -6,12 +6,14 @@ from decimal import Decimal, InvalidOperation
 import re
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
+from .access import organization_has_enabled_module
 from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, weighted_average_inventory_cost
 from .extensions import db
 from .models import (
@@ -29,6 +31,9 @@ from .models import (
     Recipe,
     RecipeIngredient,
     RestaurantLocation,
+    SquareCatalogMapping,
+    SquareCatalogObject,
+    SquareConnection,
     StockCountSession,
     StockCountSessionLine,
     Supplier,
@@ -286,6 +291,9 @@ def _price_changes_for_location(location_id: int):
 
 
 def _dashboard_snapshot(location_id: int):
+    location = RestaurantLocation.query.filter_by(id=location_id).first()
+    if location is None:
+        return {}
     start = _start_of_week()
     invoices = PurchaseInvoice.query.filter_by(location_id=location_id).all()
     recent_invoices = sorted(invoices, key=lambda invoice: (invoice.created_at, invoice.invoice_date), reverse=True)[:5]
@@ -297,7 +305,29 @@ def _dashboard_snapshot(location_id: int):
     inventory_items = InventoryItem.query.filter_by(location_id=location_id, active=True).all()
     recent_price_changes = _price_changes_for_location(location_id)
     inventory_summary = _inventory_summary(location_id)
+    square_attention = {"syncErrorCount": 0, "unmappedVariationCount": 0}
+    if organization_has_enabled_module(location.organization_id, "SQUARE_INTEGRATION"):
+        connection = SquareConnection.query.filter_by(organization_id=location.organization_id, status="connected").first()
+        if connection is not None:
+            square_attention["syncErrorCount"] = 1 if connection.sync_error else 0
+            square_attention["unmappedVariationCount"] = (
+                SquareCatalogObject.query.outerjoin(
+                    SquareCatalogMapping,
+                    SquareCatalogMapping.square_catalog_object_id == SquareCatalogObject.id,
+                )
+                .filter(
+                    SquareCatalogObject.square_connection_id == connection.id,
+                    SquareCatalogObject.object_type == "ITEM_VARIATION",
+                    SquareCatalogObject.is_deleted.is_(False),
+                    or_(SquareCatalogMapping.id.is_(None), SquareCatalogMapping.status == "unmapped"),
+                )
+                .count()
+            )
+    daily_close_attention = 0
     today_daily_close = next((session for session in daily_close_sessions if session.business_date == _now().date()), None)
+    if organization_has_enabled_module(location.organization_id, "DAILY_CLOSE") and (today_daily_close is None or today_daily_close.status == "DRAFT"):
+        daily_close_attention = 1
+    reorder_attention_count = inventory_summary["inventoryReorderNowCount"] + inventory_summary["inventoryOutOfStockCount"]
     week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
     purchase_workflow = {
@@ -343,6 +373,11 @@ def _dashboard_snapshot(location_id: int):
             "reorder": "Alert" if inventory_summary["inventoryReorderNowCount"] or inventory_summary["inventoryOutOfStockCount"] else "Done",
             "close": "Complete" if today_daily_close and today_daily_close.status == "COMPLETED" else "In progress" if today_daily_close and today_daily_close.status == "DRAFT" else "Open",
             "export": "Not ready",
+        },
+            "operationalAttention": {
+                "reorder": {"count": reorder_attention_count, "severity": "urgent" if reorder_attention_count else "none"},
+            "square": {**square_attention, "severity": "urgent" if square_attention["syncErrorCount"] else "attention" if square_attention["unmappedVariationCount"] else "none"},
+            "dailyClose": {"count": daily_close_attention, "severity": "attention" if daily_close_attention else "none"},
         },
     }
 
@@ -1928,7 +1963,7 @@ def reorder_plan():
         suggestions.append(suggestion)
     suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
     groups = _group_reorder_by_supplier(suggestions)
-    return jsonify({"suggestions": suggestions, "groupedBySupplier": groups}), 200
+    return jsonify({"suggestions": suggestions, "groupedBySupplier": groups, "activeInventoryItemCount": len(items), "refreshedAt": _now().isoformat()}), 200
 
 
 def _current_reorder_suggestions_for_location(organization_id: int, location_id: int) -> list[dict[str, Any]]:

@@ -1,19 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, CalendarDays, ChevronRight, ClipboardList, PackageSearch, RefreshCcw, ShoppingCart, TrendingUp } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowUpRight, CalendarDays, ChevronRight, ClipboardList, PackageSearch, RefreshCcw, ShoppingCart } from "lucide-react";
 import { Card } from "../components/Card";
 import { Badge } from "../components/Badge";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { fetchPilotDashboard, type PilotDashboardResponse } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
-
-const attentionOrder = [
-  ["invoiceReviewQueueCount", "Invoices to review", "Review"],
-  ["recentPriceChangeCount", "Supplier price changes", "Prices"],
-  ["inventoryLowStockCount", "Low stock", "Stock"],
-  ["inventoryReorderNowCount", "Reorder now", "Reorder"],
-];
 
 export function PilotDashboardPage() {
   const navigate = useNavigate();
@@ -87,6 +80,44 @@ export function PilotDashboardPage() {
   const pendingCountDrafts = data?.pendingDraftCountSessions ?? [];
   const pendingDailyCloseDrafts = data?.pendingDraftDailyCloseSessions ?? [];
   const pendingReorderDrafts = data?.pendingDraftReorderPlans ?? [];
+  const attentionItems = [
+    {
+      key: "reorder",
+      title: "Reorder pressure",
+      detail: `${data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0} item(s) need ordering now.`,
+      count: data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0,
+      to: "/app/reorder-plan",
+      tone: "warning" as const,
+      action: "Open Reorder Plan",
+    },
+    {
+      key: "square-error",
+      title: "Square sync needs attention",
+      detail: "The connected Square integration has an active sync error.",
+      count: data?.operationalAttention?.square.syncErrorCount ?? 0,
+      to: "/app/square",
+      tone: "danger" as const,
+      action: "Open Square",
+    },
+    {
+      key: "square-mapping",
+      title: "Square variations need mapping",
+      detail: "Mapped variations are required before their sales can drive recipe usage.",
+      count: data?.operationalAttention?.square.unmappedVariationCount ?? 0,
+      to: "/app/square",
+      tone: "warning" as const,
+      action: "Review mappings",
+    },
+    {
+      key: "daily-close",
+      title: "Daily Close is outstanding",
+      detail: "Today&apos;s close is still open or has not been started.",
+      count: data?.operationalAttention?.dailyClose.count ?? 0,
+      to: "/app/daily-close",
+      tone: "warning" as const,
+      action: "Open Daily Close",
+    },
+  ].filter((item) => item.count > 0);
 
   const draftCards = [
     {
@@ -249,20 +280,16 @@ export function PilotDashboardPage() {
         <Card className="p-6">
           <SectionHeader title="Needs attention" description="Compact signals for the next 15 seconds, with reorder urgency first." />
           <div className="space-y-3">
-            {attentionOrder.map(([key, label]) => {
-              const value = summary[key] ?? 0;
-              return (
-              <div key={key} className="flex items-center justify-between rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-ink">{label}</p>
-                  <p className="text-xs text-muted">One tap to jump into the right workflow</p>
+            {attentionItems.length ? attentionItems.map((item) => (
+              <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-slate-50 px-4 py-3 transition hover:bg-white hover:shadow-soft">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">{item.title}</p>
+                  <p className="mt-1 text-xs text-muted">{item.detail}</p>
+                  <p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p>
                 </div>
-                <Badge tone={statusTone(String(value))}>
-                  {formatNumber(value)}
-                </Badge>
-              </div>
-              );
-            })}
+                <Badge tone={item.tone}>{formatNumber(item.count)}</Badge>
+              </Link>
+            )) : <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-5 text-sm text-muted">No operational alerts right now.</p>}
           </div>
         </Card>
       </div>

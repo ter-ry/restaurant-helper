@@ -156,6 +156,8 @@ describe("PilotReorderPlanPage", () => {
     mockApi.fetchPilotReorderPlan.mockResolvedValue({
       suggestions: [],
       groupedBySupplier: [],
+      activeInventoryItemCount: 2,
+      refreshedAt: "2026-08-29T12:00:00.000Z",
     });
     mockApi.fetchPilotReorderPlans.mockResolvedValue({
       plans: [createPlan("Completed", 2)],
@@ -164,8 +166,9 @@ describe("PilotReorderPlanPage", () => {
 
     renderPage();
 
-    expect(await screen.findByText("No items currently need reordering.")).toBeVisible();
-    expect(screen.getByText("Tracked inventory is currently above its reorder thresholds.")).toBeVisible();
+    expect(await screen.findByText("Nothing needs reordering right now.")).toBeVisible();
+    expect(screen.getByText("All active inventory items are currently above their reorder thresholds.")).toBeVisible();
+    expect(screen.getByText(/Checked/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Start manual draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "View history" })).toBeVisible();
     expect(screen.queryByText("Current reorder pressure")).not.toBeInTheDocument();

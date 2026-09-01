@@ -1554,6 +1554,26 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
         enabledModuleKeys: ["MENU_COSTING"],
       });
     }
+    if (path === "/api/pilot/dashboard" && method === "GET") {
+      return jsonResponse(route, {
+        summary: { inventoryItemsToReorderCount: 0 },
+        recentInvoices: [],
+        recentMovements: [],
+        recentPriceChanges: [],
+        pendingDraftInvoices: [],
+        pendingDraftCountSessions: [],
+        pendingDraftDailyCloseSessions: [],
+        pendingDraftReorderPlans: [],
+        supplierSpend: [],
+        reorderSuggestions: [],
+        workflow: {},
+        operationalAttention: {
+          reorder: { count: 0, severity: "none" },
+          square: { syncErrorCount: 0, unmappedVariationCount: 0, severity: "none" },
+          dailyClose: { count: 0, severity: "none" },
+        },
+      });
+    }
     if (path === "/api/pilot/inventory" && method === "GET") {
       return jsonResponse(route, {
         items: [

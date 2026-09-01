@@ -760,19 +760,19 @@ export function PilotInventoryPage() {
           onChange={(value) => setItemDetailTab(value as ItemDetailTab)}
         />
 
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ReadOnlyStat label="On hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
+          <ReadOnlyStat label="Minimum" value={formatNumber(item.minQuantity)} />
+          <ReadOnlyStat label="PAR" value={formatNumber(item.parLevel)} />
+          <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
+          <ReadOnlyStat label="Latest cost" value={formatMoney(item.latestPurchasePrice)} />
+          <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
+          <ReadOnlyStat label="Preferred supplier" value={item.preferredSupplierName || "Unassigned"} />
+          <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
+        </div>
+
         {itemDetailTab === "overview" ? (
           <div className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <ReadOnlyStat label="On hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
-              <ReadOnlyStat label="Minimum" value={formatNumber(item.minQuantity)} />
-              <ReadOnlyStat label="PAR" value={formatNumber(item.parLevel)} />
-              <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
-              <ReadOnlyStat label="Latest cost" value={formatMoney(item.latestPurchasePrice)} />
-              <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
-              <ReadOnlyStat label="Preferred supplier" value={item.preferredSupplierName || "Unassigned"} />
-              <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
-            </div>
-
             <Card className="p-5">
               <SectionHeader title="Inventory adjustment" description="Record a stock movement without changing the item's master data." />
               <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_0.8fr_1.4fr]">

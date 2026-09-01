@@ -144,6 +144,11 @@ describe("PilotDashboardPage", () => {
         close: "Open",
         export: "Not ready",
       },
+      operationalAttention: {
+        reorder: { count: 2, severity: "urgent" },
+        square: { syncErrorCount: 1, unmappedVariationCount: 2, severity: "urgent" },
+        dailyClose: { count: 1, severity: "attention" },
+      },
     });
   });
 
@@ -155,9 +160,12 @@ describe("PilotDashboardPage", () => {
     );
 
     await screen.findByRole("heading", { name: "What the owner needs to know today" });
-    expect(screen.getAllByText("Invoices to review").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Reorder now").length).toBeGreaterThan(0);
-    expect(screen.getByText("Low stock")).toBeVisible();
+    expect(screen.getByText("Reorder pressure")).toBeVisible();
+    expect(screen.getByText("Open Reorder Plan")).toBeVisible();
+    expect(screen.getByText("Square sync needs attention")).toBeVisible();
+    expect(screen.getByText("Square variations need mapping")).toBeVisible();
+    expect(screen.getByText("Daily Close is outstanding")).toBeVisible();
+    expect(screen.getByText("5 low stock")).toBeVisible();
     expect(screen.getByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).toBeVisible();
     expect(screen.getByText("The items that need attention now, from low stock through urgent reorder.")).toBeVisible();
     expect(screen.getByText("Daily close")).toBeVisible();
