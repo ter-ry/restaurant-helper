@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import text
 
 from backend.extensions import db
-from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
+from backend.models import InventoryItem, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareSyncCursor, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.square import square_notification_signature
 from backend.tests.conftest import make_operational_organization
@@ -62,7 +62,7 @@ def configure_square_usage(app):
     configure_square(app)
 
 
-def oauth_responder():
+def oauth_responder(*, merchant_id="merchant-123", location_id="LOC-1", item_id="ITEM_TEST_BURGER", variation_id="VAR_TEST_BURGER_REGULAR"):
     calls = {"locations": 0, "catalog": 0, "orders": 0, "token_requests": []}
 
     def handler(request_obj, timeout=30):
@@ -75,7 +75,7 @@ def oauth_responder():
                 {
                     "access_token": "square-access-token",
                     "refresh_token": "square-refresh-token",
-                    "merchant_id": "merchant-123",
+                    "merchant_id": merchant_id,
                     "expires_at": "2027-01-01T00:00:00Z",
                 }
             )
@@ -84,7 +84,7 @@ def oauth_responder():
             return FakeResponse(
                 {
                     "locations": [
-                        {"id": "LOC-1", "name": "Sandbox A", "status": "ACTIVE"},
+                        {"id": location_id, "name": "Sandbox A", "status": "ACTIVE"},
                     ]
                 }
             )
@@ -102,18 +102,18 @@ def oauth_responder():
                 {
                         "objects": [
                             {
-                                "id": "ITEM_TEST_BURGER",
+                                "id": item_id,
                                 "type": "ITEM",
                                 "version": 1788210903619,
                                 "is_deleted": False,
-                                "item_data": {"name": "Test Burger", "variations": [{"id": "VAR_TEST_BURGER_REGULAR"}]},
+                                "item_data": {"name": "Test Burger", "variations": [{"id": variation_id}]},
                             },
                             {
-                                "id": "VAR_TEST_BURGER_REGULAR",
+                                "id": variation_id,
                                 "type": "ITEM_VARIATION",
                                 "version": 1788210903620,
                                 "is_deleted": False,
-                                "item_variation_data": {"item_id": "ITEM_TEST_BURGER", "name": "Regular"},
+                                "item_variation_data": {"item_id": item_id, "name": "Regular"},
                             },
                             {"id": "CAT-2", "type": "MODIFIER", "version": 1788210903621, "is_deleted": False},
                         ],
@@ -193,9 +193,9 @@ def oauth_responder():
     return handler
 
 
-def connect_square(client, monkeypatch, app, organization_id: int):
+def connect_square(client, monkeypatch, app, organization_id: int, responder=None):
     configure_square(app)
-    fake_urlopen = oauth_responder()
+    fake_urlopen = responder or oauth_responder()
     monkeypatch.setattr("backend.square_integration.urlopen", fake_urlopen)
 
     start_response = client.get(f"/api/integrations/square/start?organizationId={organization_id}")
@@ -504,6 +504,104 @@ def test_square_oauth_connection_catalog_and_status(app, client, monkeypatch):
         assert square_connection is not None
         assert square_connection.access_token_ciphertext != "square-access-token"
         assert square_connection.refresh_token_ciphertext != "square-refresh-token"
+
+
+def test_square_reconnect_resets_old_merchant_data_but_preserves_same_merchant_data(app, client, monkeypatch):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization = make_operational_organization(
+        owner,
+        name=f"Square Reconnect {uuid4().hex[:6]}",
+        location_name="Main Kitchen",
+        enabled_modules=("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "SQUARE_INTEGRATION"),
+    )
+    assert client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id}).status_code == 200
+
+    connect_square(client, monkeypatch, app, organization.id)
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).one()
+        old_location = SquareLocation.query.filter_by(square_connection_id=connection.id, square_location_id="LOC-1").one()
+        old_catalog = SquareCatalogObject.query.filter_by(square_connection_id=connection.id, square_object_id="VAR_TEST_BURGER_REGULAR").one()
+        db.session.add(SquareLocationMapping(square_location_id=old_location.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
+        old_mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=old_catalog.id, mapping_type="menu_item").one()
+        old_mapping.flowtally_entity_type = "menu_item"
+        old_mapping.flowtally_entity_id = "legacy-menu-item"
+        old_mapping.status = "mapped"
+        old_mapping.mapped_by_user_id = owner.id
+        old_order = SquareOrder(
+            square_connection_id=connection.id,
+            square_order_id="old-order",
+            square_location_id="LOC-1",
+            restaurant_location_id=location.id,
+            order_state="COMPLETED",
+            currency="CAD",
+            ordered_at=datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(old_order)
+        db.session.flush()
+        db.session.add(SquareOrderLine(order=old_order, line_uid="old-line", square_item_variation_id="VAR_TEST_BURGER_REGULAR", quantity=Decimal("1")))
+        db.session.add(SquareDailySalesSummary(
+            square_connection_id=connection.id,
+            square_location_id="LOC-1",
+            restaurant_location_id=location.id,
+            sale_date=datetime(2026, 8, 8, tzinfo=timezone.utc).date(),
+        ))
+        old_cursor = SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="catalog").one()
+        old_cursor.cursor_value = "old-cursor"
+        db.session.add(SquareSyncJob(square_connection_id=connection.id, job_type="catalog", status="completed"))
+        db.session.commit()
+        connection_id = connection.id
+
+    connect_square(
+        client,
+        monkeypatch,
+        app,
+        organization.id,
+        responder=oauth_responder(
+            merchant_id="merchant-b",
+            location_id="LOC-B",
+            item_id="ITEM-BURGER-B",
+            variation_id="VAR-BURGER-B-REGULAR",
+        ),
+    )
+
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(id=connection_id).one()
+        assert connection.square_merchant_id == "merchant-b"
+        assert SquareLocation.query.filter_by(square_connection_id=connection.id, square_location_id="LOC-1").count() == 0
+        assert SquareCatalogObject.query.filter_by(square_connection_id=connection.id, square_object_id="VAR_TEST_BURGER_REGULAR").count() == 0
+        assert SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id="old-order").count() == 0
+        assert SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id, square_location_id="LOC-1").count() == 0
+        assert SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="catalog", cursor_value="old-cursor").count() == 0
+        assert SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="catalog", status="completed").count() == 1
+        new_catalog = SquareCatalogObject.query.filter_by(square_connection_id=connection.id, square_object_id="VAR-BURGER-B-REGULAR").one()
+        new_mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=new_catalog.id, mapping_type="menu_item").one()
+        new_mapping.flowtally_entity_type = "menu_item"
+        new_mapping.flowtally_entity_id = "current-menu-item"
+        new_mapping.status = "mapped"
+        new_mapping.mapped_by_user_id = owner.id
+        db.session.commit()
+
+    connect_square(
+        client,
+        monkeypatch,
+        app,
+        organization.id,
+        responder=oauth_responder(
+            merchant_id="merchant-b",
+            location_id="LOC-B",
+            item_id="ITEM-BURGER-B",
+            variation_id="VAR-BURGER-B-REGULAR",
+        ),
+    )
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(id=connection_id).one()
+        current_catalog = SquareCatalogObject.query.filter_by(square_connection_id=connection.id, square_object_id="VAR-BURGER-B-REGULAR").one()
+        current_mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=current_catalog.id, mapping_type="menu_item").one()
+        assert current_mapping.status == "mapped"
+        assert current_mapping.flowtally_entity_id == "current-menu-item"
 
 
 def test_square_oauth_refresh_token_grant_does_not_require_redirect_uri(app, monkeypatch):
