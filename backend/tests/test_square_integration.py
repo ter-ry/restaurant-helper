@@ -935,29 +935,6 @@ def test_square_usage_report_calculates_theoretical_and_actual_usage(app, client
         for order in seeded_orders:
             _ = list(order.lines)
 
-    class _FakeQuery:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def filter_by(self, *args, **kwargs):
-            return self
-
-        def filter(self, *args, **kwargs):
-            return self
-
-        def order_by(self, *args, **kwargs):
-            return self
-
-        def limit(self, *args, **kwargs):
-            return self
-
-        def count(self):
-            return len(self._rows)
-
-        def all(self):
-            return self._rows
-
-    monkeypatch.setattr("backend.square_integration.SquareOrder.query", _FakeQuery(seeded_orders))
     monkeypatch.setattr(
         "backend.square_integration._inventory_usage_basis",
         lambda *args, **kwargs: {
