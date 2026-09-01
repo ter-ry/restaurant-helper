@@ -641,6 +641,10 @@ def test_square_catalog_sync_rolls_back_failed_transaction_before_recording_erro
     )
     assert response.status_code == 400
     assert "Square catalog sync failed" in response.get_json()["error"]
+    failed_status = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
+    assert failed_status.status_code == 200
+    assert failed_status.get_json()["connection"]["syncStatus"] == "error"
+    assert "missing_square_catalog_table" in failed_status.get_json()["connection"]["syncError"]
     with app.app_context():
         connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
         assert connection.sync_status == "error"
@@ -654,6 +658,10 @@ def test_square_catalog_sync_rolls_back_failed_transaction_before_recording_erro
         json={"organizationId": organization.id},
     )
     assert successful_sync.status_code == 200
+    successful_status = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
+    assert successful_status.status_code == 200
+    assert successful_status.get_json()["connection"]["syncStatus"] == "idle"
+    assert successful_status.get_json()["connection"]["syncError"] == ""
     with app.app_context():
         connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
         assert connection.sync_status == "idle"
