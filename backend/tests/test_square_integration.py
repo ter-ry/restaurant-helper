@@ -615,7 +615,35 @@ def test_square_reconnect_resets_old_merchant_data_but_preserves_same_merchant_d
         )
         db.session.add(stale_location)
         db.session.add(SquareLocationMapping(square_location=stale_location, restaurant_location_id=restaurant_location_id, mapped_by_user_id=owner.id))
+        stale_catalog = SquareCatalogObject(
+            square_connection_id=connection.id,
+            square_object_id="OLD_VARIATION",
+            object_type="ITEM_VARIATION",
+            version=1,
+            is_deleted=False,
+            raw_payload_json={"id": "OLD_VARIATION", "type": "ITEM_VARIATION", "item_variation_data": {"name": "Old"}},
+        )
+        db.session.add(stale_catalog)
+        db.session.flush()
+        db.session.add(SquareCatalogMapping(
+            square_catalog_object_id=stale_catalog.id,
+            mapping_type="menu_item",
+            flowtally_entity_type="menu_item",
+            flowtally_entity_id="legacy-menu-item",
+            status="mapped",
+            mapped_by_user_id=owner.id,
+        ))
         db.session.commit()
+
+    catalog_response = client.post(
+        "/api/integrations/square/catalog/sync",
+        headers=csrf_headers(client),
+        json={"organizationId": organization.id},
+    )
+    assert catalog_response.status_code == 200
+    with app.app_context():
+        stale_catalog = SquareCatalogObject.query.filter_by(square_connection_id=connection_id, square_object_id="OLD_VARIATION").one()
+        assert stale_catalog.is_deleted is True
 
     status_response = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
     assert status_response.status_code == 200
