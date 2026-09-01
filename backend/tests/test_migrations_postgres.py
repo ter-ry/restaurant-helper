@@ -354,13 +354,21 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0017_square_catalog_version_bigint"
+        assert _current_revision() == "0018_pos_driven_system_inventory"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
         _assert_table_owned_by_migrator("recipe_ingredients")
         _assert_table_owned_by_migrator("menu_items")
         _assert_table_owned_by_migrator("daily_close_sessions")
+        _assert_table_owned_by_migrator("square_order_line_inventory_consumptions")
+        consumption_type, consumption_nullable, consumption_precision, consumption_scale = _column_info(
+            "square_order_line_inventory_consumptions", "applied_quantity"
+        )
+        assert consumption_type == "numeric"
+        assert consumption_nullable is False
+        assert consumption_precision == 12
+        assert consumption_scale == 4
         data_type, nullable, precision, scale = _column_info("inventory_items", "average_unit_cost")
         assert data_type == "numeric"
         assert nullable is False
@@ -381,6 +389,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_policy_exists("flowtally_data_import_jobs_tenant_access", "data_import_jobs")
         _assert_policy_exists("flowtally_square_orders_tenant_access", "square_orders")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
+        _assert_policy_exists("flowtally_square_order_line_inventory_consumptions_tenant_access", "square_order_line_inventory_consumptions")
         _assert_policy_exists("flowtally_support_access_grants_select_access", "support_access_grants")
         _assert_policy_exists("flowtally_recipes_tenant_access", "recipes")
         _assert_policy_exists("flowtally_recipe_ingredients_tenant_access", "recipe_ingredients")
@@ -396,7 +405,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0017_square_catalog_version_bigint"
+        assert _current_revision() == "0018_pos_driven_system_inventory"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -417,7 +426,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0017_square_catalog_version_bigint"
+        assert _current_revision() == "0018_pos_driven_system_inventory"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -442,7 +451,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0017_square_catalog_version_bigint"
+        assert _current_revision() == "0018_pos_driven_system_inventory"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -461,7 +470,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0017_square_catalog_version_bigint"
+        assert _current_revision() == "0018_pos_driven_system_inventory"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -662,7 +671,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0017_square_catalog_version_bigint"
+        assert _current_revision() == "0018_pos_driven_system_inventory"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 

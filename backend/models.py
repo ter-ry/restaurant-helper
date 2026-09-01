@@ -137,6 +137,7 @@ class InventoryItem(TimestampMixin, db.Model):
     normalized_name = db.Column(db.String(255), nullable=False)
     category = db.Column(db.String(120), nullable=False, default="Other")
     stock_unit = db.Column(db.String(60), nullable=False, default="each")
+    # Operational/system expected quantity; physical counts reconcile this estimate.
     current_on_hand = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
     average_unit_cost = db.Column(db.Numeric(14, 6), nullable=False, default=Decimal("0"))
     min_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
@@ -799,6 +800,7 @@ class SquareConnection(TimestampMixin, db.Model):
     token_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
     last_sync_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    inventory_depletion_activated_at = db.Column(db.DateTime(timezone=True), nullable=True)
     sync_status = db.Column(db.String(40), nullable=False, default="idle")
     sync_error = db.Column(db.Text, nullable=False, default="")
 
@@ -969,6 +971,25 @@ class SquareOrderLine(TimestampMixin, db.Model):
     raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
 
     order = db.relationship("SquareOrder", back_populates="lines")
+
+
+class SquareOrderLineInventoryConsumption(TimestampMixin, db.Model):
+    __tablename__ = "square_order_line_inventory_consumptions"
+    __table_args__ = (
+        UniqueConstraint("square_order_line_id", "inventory_item_id", name="uq_square_order_line_inventory_consumption"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    square_order_line_id = db.Column(db.Integer, db.ForeignKey("square_order_lines.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    applied_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    square_order_line = db.relationship("SquareOrderLine")
+    inventory_item = db.relationship("InventoryItem")
 
 
 class SquareDailySalesSummary(TimestampMixin, db.Model):
