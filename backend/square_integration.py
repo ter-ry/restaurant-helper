@@ -916,9 +916,34 @@ def _refresh_token(connection: SquareConnection) -> dict[str, Any]:
     )
 
 
+def _reset_square_merchant_data(connection: SquareConnection) -> None:
+    """Remove operational data when an organization switches Square merchants."""
+    location_ids = [row.id for row in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
+    catalog_object_ids = [row.id for row in SquareCatalogObject.query.filter_by(square_connection_id=connection.id).all()]
+    order_ids = [row.id for row in SquareOrder.query.filter_by(square_connection_id=connection.id).all()]
+
+    if location_ids:
+        SquareLocationMapping.query.filter(SquareLocationMapping.square_location_id.in_(location_ids)).delete(synchronize_session=False)
+    if catalog_object_ids:
+        SquareCatalogMapping.query.filter(SquareCatalogMapping.square_catalog_object_id.in_(catalog_object_ids)).delete(synchronize_session=False)
+    if order_ids:
+        SquareOrderLine.query.filter(SquareOrderLine.square_order_id.in_(order_ids)).delete(synchronize_session=False)
+
+    SquareLocation.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
+    SquareCatalogObject.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
+    SquareOrder.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
+    SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
+    SquareSyncCursor.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
+    # Keep sync jobs as connection-level audit history, but discard old merchant webhook data.
+    SquareWebhookEvent.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
+
+
 def _upsert_connection_tokens(connection: SquareConnection, token_payload: dict[str, Any]) -> None:
     connection.environment = square_environment()
-    connection.square_merchant_id = str(token_payload.get("merchant_id") or connection.square_merchant_id or "")
+    merchant_id = str(token_payload.get("merchant_id") or "").strip()
+    if connection.square_merchant_id and merchant_id and connection.square_merchant_id != merchant_id:
+        _reset_square_merchant_data(connection)
+    connection.square_merchant_id = merchant_id or connection.square_merchant_id or ""
     connection.status = "connected"
     connection.access_token_ciphertext = encrypt_square_secret(str(token_payload.get("access_token") or ""))
     refresh_token = str(token_payload.get("refresh_token") or "")
