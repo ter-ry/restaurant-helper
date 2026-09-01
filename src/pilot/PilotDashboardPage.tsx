@@ -55,8 +55,8 @@ export function PilotDashboardPage() {
       },
       {
         label: "Reorder now",
-        value: dashboardLoading ? "—" : formatNumber(data?.summary.inventoryReorderNowCount),
-        helper: dashboardLoading ? "Loading reorder status" : `${formatNumber(data?.summary.inventoryLowStockCount)} low stock`,
+        value: dashboardLoading ? "—" : formatNumber(data?.summary.inventoryRecommendationCount ?? data?.operationalAttention?.reorder.count),
+        helper: dashboardLoading ? "Loading reorder status" : `${formatNumber(data?.summary.inventoryRecommendationCount ?? data?.operationalAttention?.reorder.count)} item(s) need attention`,
         to: "/app/reorder-plan",
       },
       {
@@ -72,7 +72,7 @@ export function PilotDashboardPage() {
         to: "/app/purchases",
       },
     ],
-    [dashboardLoading, data?.summary],
+    [dashboardLoading, data?.summary, data?.operationalAttention?.reorder.count],
   );
 
   const summary = (data?.summary ?? {}) as Record<string, number>;
@@ -202,6 +202,26 @@ export function PilotDashboardPage() {
         </div>
       ) : null}
 
+      {attentionItems.length ? (
+        <Card className="border-amber-200 bg-amber-50/50 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-800">Needs attention</p>
+              <h2 className="mt-1 text-xl font-bold text-ink">Operational actions are waiting</h2>
+            </div>
+            <Badge tone="warning">{formatNumber(attentionItems.reduce((sum, item) => sum + item.count, 0))} actions</Badge>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {attentionItems.slice(0, 4).map((item) => (
+              <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-white px-4 py-3 transition hover:shadow-soft">
+                <div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p></div>
+                <Badge tone={item.tone}>{formatNumber(item.count)}</Badge>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <Card className="p-6">
         <SectionHeader title="Today&apos;s workflow" description="The connected loop from invoice to export readiness." />
         <div className="grid gap-3 lg:grid-cols-6">
@@ -278,19 +298,8 @@ export function PilotDashboardPage() {
         </Card>
 
         <Card className="p-6">
-          <SectionHeader title="Needs attention" description="Compact signals for the next 15 seconds, with reorder urgency first." />
-          <div className="space-y-3">
-            {attentionItems.length ? attentionItems.map((item) => (
-              <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-slate-50 px-4 py-3 transition hover:bg-white hover:shadow-soft">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-ink">{item.title}</p>
-                  <p className="mt-1 text-xs text-muted">{item.detail}</p>
-                  <p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p>
-                </div>
-                <Badge tone={item.tone}>{formatNumber(item.count)}</Badge>
-              </Link>
-            )) : <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-5 text-sm text-muted">No operational alerts right now.</p>}
-          </div>
+          <SectionHeader title="Operational signals" description="Current exceptions only. Historic completed work stays in its workflow history." />
+          <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-5 text-sm text-muted">{attentionItems.length ? "See the action panel above for current attention items." : "No operational alerts right now."}</p>
         </Card>
       </div>
 

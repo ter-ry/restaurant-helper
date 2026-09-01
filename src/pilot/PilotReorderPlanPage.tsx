@@ -27,6 +27,7 @@ export function PilotReorderPlanPage() {
   const location = useLocation();
   const [currentSuggestions, setCurrentSuggestions] = useState<PilotReorderSuggestion[]>([]);
   const [currentGroups, setCurrentGroups] = useState<PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]>([]);
+  const [inventoryItems, setInventoryItems] = useState<NonNullable<Awaited<ReturnType<typeof fetchPilotReorderPlan>>["inventoryItems"]>>([]);
   const [activeInventoryItemCount, setActiveInventoryItemCount] = useState(0);
   const [recommendationsRefreshedAt, setRecommendationsRefreshedAt] = useState<string | null>(null);
   const [plans, setPlans] = useState<PilotReorderPlan[]>([]);
@@ -38,6 +39,7 @@ export function PilotReorderPlanPage() {
   const [pendingAction, setPendingAction] = useState<"save" | "prepare" | "complete" | null>(null);
   const [workflowTab, setWorkflowTab] = useState<"live" | "history">("live");
   const [search, setSearch] = useState("");
+  const [inventorySearch, setInventorySearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestedPlanId = useMemo(() => {
@@ -55,6 +57,7 @@ export function PilotReorderPlanPage() {
     setPlans([]);
     setCurrentSuggestions([]);
     setCurrentGroups([]);
+    setInventoryItems([]);
     setSelectedPlanId(null);
     setDraft(null);
 
@@ -62,6 +65,7 @@ export function PilotReorderPlanPage() {
       const [suggestionsResponse, plansResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans()]);
       setCurrentSuggestions(suggestionsResponse.suggestions);
       setCurrentGroups(suggestionsResponse.groupedBySupplier);
+      setInventoryItems(suggestionsResponse.inventoryItems ?? []);
       setActiveInventoryItemCount(suggestionsResponse.activeInventoryItemCount ?? 0);
       setRecommendationsRefreshedAt(suggestionsResponse.refreshedAt ?? null);
       setPlans(plansResponse.plans);
@@ -152,6 +156,31 @@ export function PilotReorderPlanPage() {
       setCreating(false);
     }
   };
+
+  const addItemsToDraft = async (items: Array<{ id: number; suggestedQuantity?: number }>) => {
+    if (!draft || draft.status !== "Draft" || !items.length) return;
+    setSaving(true);
+    setPendingAction(null);
+    setMessage(null);
+    setError(null);
+    try {
+      const saved = await updatePilotReorderPlan(draft.id, {
+        lines: [
+          ...draft.lines.map((line) => ({ id: line.id, orderQuantity: line.orderQuantity, excluded: line.excluded, notes: line.notes })),
+          ...items.filter((item) => !draft.lines.some((line) => line.inventoryItemId === item.id)).map((item) => ({ inventoryItemId: item.id, orderQuantity: item.suggestedQuantity ?? 0 })),
+        ],
+      });
+      setDraft(saved);
+      setPlans((current) => current.map((plan) => plan.id === saved.id ? saved : plan));
+      setMessage(`${items.length === 1 ? "Item" : "Items"} added to the working order plan.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add items to the reorder plan.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addRecommendations = () => void addItemsToDraft(currentSuggestions.map((suggestion) => ({ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity })));
 
   const updateLine = (lineId: number, updater: (line: LineDraft) => LineDraft) => {
     setDraft((current) =>
@@ -268,6 +297,7 @@ export function PilotReorderPlanPage() {
   }, 0) ?? 0;
   const draftExcludedCount = draft?.lines.filter((line) => line.excluded).length ?? 0;
   const unknownPriceCount = draft?.lines.filter((line) => line.estimatedUnitCost === null).length ?? 0;
+  const availableItems = inventoryItems.filter((item) => !draft?.lines.some((line) => line.inventoryItemId === item.id) && `${item.name} ${item.category} ${item.preferredSupplierName} ${item.stockUnit}`.toLowerCase().includes(inventorySearch.toLowerCase()));
 
   return (
     <div className="space-y-6">
@@ -604,6 +634,11 @@ export function PilotReorderPlanPage() {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
+              {draft.status === "Draft" && currentSuggestions.some((suggestion) => !draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId)) ? (
+                <Button variant="secondary" type="button" onClick={addRecommendations} disabled={saving || loading}>
+                  Add current recommendations
+                </Button>
+              ) : null}
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
                 {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
               </Button>
@@ -615,11 +650,37 @@ export function PilotReorderPlanPage() {
               </Button>
             </div>
 
+            {draft.status === "Draft" ? (
+              <div className="mt-5 rounded-2xl border border-brand-100 bg-brand-50/50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-ink">Add inventory item</p>
+                    <p className="mt-1 text-sm text-muted">Choose any active item, even when Flowtally has no current recommendation.</p>
+                  </div>
+                  <Badge tone="neutral">{availableItems.length} available</Badge>
+                </div>
+                <div className="mt-3 flex items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3">
+                  <Search className="h-4 w-4 text-muted" />
+                  <input aria-label="Search inventory to add" className="w-full bg-transparent text-sm outline-none" placeholder="Search inventory to add" value={inventorySearch} onChange={(event) => setInventorySearch(event.target.value)} />
+                </div>
+                <div className="mt-3 space-y-2">
+                  {availableItems.slice(0, 8).map((item) => {
+                    const suggestion = currentSuggestions.find((candidate) => candidate.inventoryItemId === item.id);
+                    return <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white px-3 py-3">
+                      <div><p className="font-semibold text-ink">{item.name}</p><p className="text-xs text-muted">{formatNumber(item.currentOnHand)} {item.stockUnit} on hand · PAR {formatNumber(item.parLevel)} · {item.preferredSupplierName || "No supplier"}</p></div>
+                      <Button variant="secondary" type="button" onClick={() => void addItemsToDraft([{ id: item.id, suggestedQuantity: suggestion?.suggestedQuantity }])} disabled={saving}>Add</Button>
+                    </div>;
+                  })}
+                  {!availableItems.length ? <p className="text-sm text-muted">No active inventory items match this search.</p> : null}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-5">
               <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Search className="h-4 w-4 text-muted" />
-                  <input className="w-full bg-transparent text-sm outline-none" placeholder="Search plan items" value={search} onChange={(event) => setSearch(event.target.value)} />
+                  <input aria-label="Search items in this plan" className="w-full bg-transparent text-sm outline-none" placeholder="Search items in this plan" value={search} onChange={(event) => setSearch(event.target.value)} />
                 </div>
               </div>
             </div>
@@ -681,7 +742,7 @@ export function PilotReorderPlanPage() {
                   </div>
                 </div>
               ))}
-              {!Object.keys(draftLinesBySupplier).length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No lines match this search. Clear the search to show the full plan.</p> : null}
+              {!Object.keys(draftLinesBySupplier).length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{draft.lines.length ? "No lines match this search. Clear the plan search to show the full draft." : "This draft has no items yet. Use Add inventory item or Add current recommendations above."}</p> : null}
             </div>
           </>
         ) : (

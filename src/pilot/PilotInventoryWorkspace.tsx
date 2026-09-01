@@ -58,7 +58,7 @@ interface SupplierDraft {
 
 type InventoryTab = "items" | "suppliers";
 type InventoryWorkspaceMode = "browse" | "create" | "existing";
-type ItemDetailTab = "overview" | "edit" | "history";
+type ItemDetailTab = "overview" | "history";
 type ItemHistoryTab = "purchases" | "movements" | "supplierMappings";
 
 function blankDraft(): InventoryDraft {
@@ -145,6 +145,7 @@ export function PilotInventoryPage() {
   const [workspaceMode, setWorkspaceMode] = useState<InventoryWorkspaceMode>("browse");
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>("items");
   const [itemDetailTab, setItemDetailTab] = useState<ItemDetailTab>("overview");
+  const [isEditing, setIsEditing] = useState(false);
   const [itemHistoryTab, setItemHistoryTab] = useState<ItemHistoryTab>("purchases");
   const [draft, setDraft] = useState<InventoryDraft>(blankDraft());
   const [itemDetail, setItemDetail] = useState<PilotInventoryItemDetail | null>(null);
@@ -298,6 +299,7 @@ export function PilotInventoryPage() {
       setSelectedId(saved.id);
       setWorkspaceMode("existing");
       setItemDetailTab(draft.id ? itemDetailTab : "overview");
+      setIsEditing(false);
       setItemHistoryTab("purchases");
       setDraft(draftFromItem(saved));
       setMessage(`${saved.name} saved.`);
@@ -391,6 +393,7 @@ export function PilotInventoryPage() {
     setSelectedId(null);
     setItemDetail(null);
     setItemDetailTab("overview");
+    setIsEditing(false);
     setItemHistoryTab("purchases");
     setInventoryTab("items");
     setAdjustmentDelta(0);
@@ -402,6 +405,7 @@ export function PilotInventoryPage() {
     setSelectedId(itemId);
     setWorkspaceMode("existing");
     setItemDetailTab("overview");
+    setIsEditing(false);
     setItemHistoryTab("purchases");
     setMessage(null);
     setError(null);
@@ -412,7 +416,7 @@ export function PilotInventoryPage() {
     setWorkspaceMode("create");
     setDraft(blankDraft());
     setItemDetail(null);
-    setItemDetailTab("edit");
+    setItemDetailTab("overview");
     setItemHistoryTab("purchases");
     setAdjustmentDelta(0);
     setAdjustmentReason("Periodic review");
@@ -727,7 +731,12 @@ export function PilotInventoryPage() {
               </Button>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-brand-700">Inventory item</p>
-                <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{item.name || "Inventory item"}</h1>
+                {isEditing ? (
+                  <label className="mt-2 block">
+                    <span className="sr-only">Item name</span>
+                    <input className="input text-2xl font-bold tracking-tight" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+                  </label>
+                ) : <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{item.name || "Inventory item"}</h1>}
                 <p className="mt-2 text-sm text-muted">
                   {formatNumber(item.currentOnHand)} {item.stockUnit} on hand · {item.preferredSupplierName || "Unassigned supplier"}
                 </p>
@@ -740,6 +749,20 @@ export function PilotInventoryPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {isEditing ? (
+                <>
+                  <Button disabled={saving} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
+                    {saving ? "Saving..." : "Save changes"}
+                  </Button>
+                  <Button variant="secondary" disabled={saving} type="button" onClick={() => { if (selectedItemDetail) setDraft(draftFromItem(selectedItemDetail)); setIsEditing(false); }}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button variant="secondary" icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => setIsEditing(true)}>
+                  Edit
+                </Button>
+              )}
               <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
                 Refresh
               </Button>
@@ -751,23 +774,19 @@ export function PilotInventoryPage() {
         </Card>
 
         <WorkspaceTabs
-          tabs={[
-            { id: "overview", label: "Overview" },
-            { id: "edit", label: "Edit" },
-            { id: "history", label: "History" },
-          ]}
+          tabs={[{ id: "overview", label: "Overview" }, { id: "history", label: "History" }]}
           value={itemDetailTab}
           onChange={(value) => setItemDetailTab(value as ItemDetailTab)}
         />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ReadOnlyStat label="On hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
-          <ReadOnlyStat label="Minimum" value={formatNumber(item.minQuantity)} />
-          <ReadOnlyStat label="PAR" value={formatNumber(item.parLevel)} />
+          <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1" type="number" step="0.0001" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
+          <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1" type="number" step="0.0001" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
           <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
           <ReadOnlyStat label="Latest cost" value={formatMoney(item.latestPurchasePrice)} />
           <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
-          <ReadOnlyStat label="Preferred supplier" value={item.preferredSupplierName || "Unassigned"} />
+          <ReadOnlyStat label="Preferred supplier" value={isEditing ? (suppliers.length ? <select aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}><option value="">Unassigned</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}</select> : <input aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />) : item.preferredSupplierName || "Unassigned"} />
           <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
         </div>
 
@@ -801,84 +820,20 @@ export function PilotInventoryPage() {
             </Card>
 
             <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted">
-              <span className="font-semibold text-ink">Secondary details</span>{" "}
-              <span className="whitespace-pre-wrap">
-                · Category {item.category || "Other"} · Base unit {item.stockUnit || "each"} · Avg daily usage{" "}
-                {item.averageDailyUsage !== null ? formatNumber(item.averageDailyUsage) : "Not set"} · Purchase unit {item.lastPurchaseUnit || "each"} ×
-                {formatNumber(item.lastPurchaseConversionFactor)}
-              </span>
+              <span className="font-semibold text-ink">Item details</span>
+              {isEditing ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label><span className="text-sm font-semibold text-ink">Category</span><input className="input mt-1" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))} /></label>
+                  <label><span className="text-sm font-semibold text-ink">Base unit</span><input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} /></label>
+                  <label><span className="text-sm font-semibold text-ink">Average daily usage</span><input className="input mt-1" type="number" step="0.0001" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} /></label>
+                  <label><span className="text-sm font-semibold text-ink">Active</span><select className="input mt-1" value={draft.active ? "true" : "false"} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.value === "true" }))}><option value="true">Active</option><option value="false">Inactive</option></select></label>
+                  <label className="sm:col-span-2"><span className="text-sm font-semibold text-ink">Item notes</span><textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
+                </div>
+              ) : (
+                <span className="whitespace-pre-wrap"> · Category {item.category || "Other"} · Base unit {item.stockUnit || "each"} · Avg daily usage {item.averageDailyUsage !== null ? formatNumber(item.averageDailyUsage) : "Not set"} · Item notes {item.notes || "None"} · Purchase unit {item.lastPurchaseUnit || "each"} ×{formatNumber(item.lastPurchaseConversionFactor)}</span>
+              )}
             </div>
           </div>
-        ) : null}
-
-        {itemDetailTab === "edit" ? (
-          <Card className="p-5">
-            <SectionHeader title={`Edit ${item.name || "inventory item"}`} description="Update item metadata. System-derived quantity and cost fields stay on Overview." />
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Item name</span>
-                <input className="input mt-1" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Category</span>
-                <input className="input mt-1" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Base unit</span>
-                <input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Preferred supplier</span>
-                {suppliers.length ? (
-                  <select className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}>
-                    <option value="">Unassigned</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.name}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />
-                )}
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Minimum</span>
-                <input className="input mt-1" type="number" step="0.0001" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">PAR</span>
-                <input className="input mt-1" type="number" step="0.0001" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Average daily usage</span>
-                <input className="input mt-1" type="number" step="0.0001" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Active</span>
-                <select className="input mt-1" value={draft.active ? "true" : "false"} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.value === "true" }))}>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-              </label>
-            </div>
-            <label className="mt-4 block">
-              <span className="text-sm font-semibold text-ink">Item notes</span>
-              <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} />
-            </label>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button disabled={saving || !draft.id} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
-                Update item
-              </Button>
-              <Button variant="secondary" disabled={saving} type="button" onClick={() => setItemDetailTab("overview")}>
-                Back to overview
-              </Button>
-            </div>
-            {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
-            <p className="mt-4 text-xs leading-5 text-muted">
-              Quantity, latest purchase price, and conversion details are system-controlled and shown on Overview instead of this edit form.
-            </p>
-          </Card>
         ) : null}
 
         {itemDetailTab === "history" ? (
