@@ -1239,9 +1239,7 @@ def sync_square_orders_for_range(
             end_at=end_at.isoformat().replace("+00:00", "Z"),
             location_ids=requested_location_ids,
         )
-        connection.last_sync_at = _now()
-        connection.sync_status = "idle"
-        connection.sync_error = ""
+        _mark_square_sync_success(connection)
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
@@ -1271,6 +1269,13 @@ def _ensure_connection_and_access(organization_id: int) -> tuple[Organization | 
     if permission_error is not None:
         return organization, None, permission_error
     return organization, _ensure_connection(organization), None
+
+
+def _mark_square_sync_success(connection: SquareConnection) -> None:
+    """Persist the active connection state for the latest successful sync."""
+    connection.last_sync_at = _now()
+    connection.sync_status = "idle"
+    connection.sync_error = ""
 
 
 def _persist_square_sync_failure(organization_id: int, connection_id: int, error_message: str, *, job_type: str | None = None) -> None:
@@ -1413,9 +1418,7 @@ def square_callback():
         token = decrypt_square_secret(connection.access_token_ciphertext)
         location_summary = _sync_locations(connection, token)
         catalog_summary = _sync_catalog(connection, token)
-        connection.last_sync_at = _now()
-        connection.sync_status = "idle"
-        connection.sync_error = ""
+        _mark_square_sync_success(connection)
         record_audit_event(
             event_type="square.oauth.connected",
             entity_type="square_connection",
@@ -1495,9 +1498,7 @@ def square_sync_locations():
     db.session.add(job)
     try:
         result = _sync_locations(connection, token)
-        connection.last_sync_at = _now()
-        connection.sync_status = "idle"
-        connection.sync_error = ""
+        _mark_square_sync_success(connection)
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
@@ -1539,9 +1540,7 @@ def square_sync_catalog():
     db.session.add(job)
     try:
         result = _sync_catalog(connection, token)
-        connection.last_sync_at = _now()
-        connection.sync_status = "idle"
-        connection.sync_error = ""
+        _mark_square_sync_success(connection)
         job.status = "completed"
         job.completed_at = _now()
         job.cursor_json = result
