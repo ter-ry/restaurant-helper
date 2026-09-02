@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within, waitFor } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotPurchasesPage } from "../../src/pilot/PilotPurchasesPage";
-import type { PilotInventoryItem, PilotPurchaseInvoice, PilotPurchasesResponse } from "../../src/pilot/pilotApi";
+import { PilotApiError, type PilotInventoryItem, type PilotPurchaseInvoice, type PilotPurchasesResponse } from "../../src/pilot/pilotApi";
 
 const mockApi = vi.hoisted(() => ({
   fetchPilotPurchases: vi.fn(),
@@ -229,6 +229,47 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByTestId("purchase-history-card")).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
+  });
+
+  it("creates a mapped invoice with a blank invoice number and readable transaction fields", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Fresh Dairy Toronto" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
+    fireEvent.change(screen.getByLabelText("Inventory item"), { target: { value: "301" } });
+
+    const quantity = screen.getByLabelText("Quantity");
+    const unitPrice = screen.getByLabelText("Unit price");
+    expect(quantity).toHaveAttribute("step", "0.0001");
+    expect(unitPrice).toHaveAttribute("step", "0.01");
+    fireEvent.change(quantity, { target: { value: "10" } });
+    fireEvent.change(unitPrice, { target: { value: "12" } });
+    expect(screen.getByLabelText("Line total")).toHaveValue(120);
+    expect(screen.getByText("Confirmed")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() => expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+    const payload = mockApi.createPilotPurchaseInvoice.mock.calls[0][0];
+    expect(payload.invoiceNumber).toBe("");
+    expect(payload.subtotal).toBe(120);
+    expect(payload.totalAmount).toBe(120);
+    expect(payload.lineItems[0]).toMatchObject({ quantity: 10, unitPrice: 12, lineTotal: 120, inventoryItemId: 301, needsReview: false });
+    expect(await screen.findByText(/Invoice\s+saved successfully\./)).toBeVisible();
+  });
+
+  it("surfaces structured invoice validation details", async () => {
+    mockApi.createPilotPurchaseInvoice.mockRejectedValueOnce(new PilotApiError("Invoice validation failed.", 400, { supplierName: "Supplier is required." }));
+    renderPage();
+
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+    expect(await screen.findByText(/Supplier is required\./)).toBeVisible();
   });
 
   it("moves a draft invoice through details, lines, and review tabs", async () => {

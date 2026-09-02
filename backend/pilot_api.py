@@ -443,8 +443,6 @@ def _validate_invoice_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not supplier_name:
         errors["supplierName"] = "Supplier is required."
     invoice_number = str(payload.get("invoiceNumber") or "").strip()
-    if not invoice_number:
-        errors["invoiceNumber"] = "Invoice number is required."
     invoice_date_value = payload.get("invoiceDate")
     if not invoice_date_value:
         errors["invoiceDate"] = "Invoice date is required."

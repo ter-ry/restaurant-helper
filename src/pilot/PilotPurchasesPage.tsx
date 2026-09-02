@@ -14,6 +14,7 @@ import {
   fetchPilotPurchaseInvoice,
   receivePilotPurchaseInvoice,
   updatePilotPurchaseInvoice,
+  PilotApiError,
   type PilotInventoryItem,
   type PilotPurchaseInvoice,
   type PilotPurchasesResponse,
@@ -60,6 +61,14 @@ function todayIso() {
 
 function normalizeLookup(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function purchaseErrorMessage(error: unknown) {
+  if (error instanceof PilotApiError && error.errors) {
+    const details = Object.values(error.errors).join(" ");
+    return details ? `${error.message} ${details}` : error.message;
+  }
+  return error instanceof Error ? error.message : "Could not save the purchase.";
 }
 
 function blankLine(): DraftLine {
@@ -426,7 +435,7 @@ export function PilotPurchasesPage() {
       setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
       await load(saved.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the purchase.");
+      setError(purchaseErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -539,6 +548,7 @@ export function PilotPurchasesPage() {
       inventoryUnit: hint?.inventoryUnit ?? selectedItem?.stockUnit ?? current.inventoryUnit,
       purchaseUnit: hint?.purchaseUnit ?? current.purchaseUnit,
       conversionFactor: hint?.conversionFactor ?? (current.conversionFactor || 1),
+      needsReview: inventoryItemId ? false : current.needsReview,
     }));
   };
 
@@ -712,7 +722,11 @@ export function PilotPurchasesPage() {
                               </select>
                             </label>
                           </div>
-                          <div className="mt-3 grid gap-3 md:grid-cols-4">
+                          <div className="mt-3 grid gap-3 md:grid-cols-[minmax(7rem,0.85fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)]">
+                            <label className="block">
+                              <span className="text-xs font-bold uppercase tracking-wide text-muted">Quantity</span>
+                              <input className="input mt-1" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
+                            </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
                               <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
@@ -722,6 +736,16 @@ export function PilotPurchasesPage() {
                                 ))}
                               </datalist>
                             </label>
+                            <label className="block">
+                              <span className="text-xs font-bold uppercase tracking-wide text-muted">Unit price</span>
+                              <input className="input mt-1" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-bold uppercase tracking-wide text-muted">Line total</span>
+                              <input className="input mt-1 font-semibold" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
+                            </label>
+                          </div>
+                          <div className="mt-3 grid gap-3 border-t border-dashed border-line pt-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.7fr)]">
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory unit</span>
                               <input className="input mt-1" list={`inventory-units-${index}`} value={line.inventoryUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={finalizedStatus} />
@@ -734,14 +758,6 @@ export function PilotPurchasesPage() {
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion</span>
                               <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
-                            </label>
-                            <label className="block">
-                              <span className="text-xs font-bold uppercase tracking-wide text-muted">Qty / price / total</span>
-                              <div className="mt-1 grid grid-cols-3 gap-2">
-                                <input className="input" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
-                                <input className="input" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
-                                <input className="input" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
-                              </div>
                             </label>
                           </div>
                           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">

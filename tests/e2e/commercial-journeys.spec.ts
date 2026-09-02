@@ -2422,10 +2422,10 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await page.locator('label:has-text("Inventory unit") input').nth(1).fill("bag");
   await page.locator('label:has-text("Conversion") input').nth(0).fill("1");
   await page.locator('label:has-text("Conversion") input').nth(1).fill("1");
-  await page.locator('label:has-text("Qty / price / total") input').nth(0).fill("2");
-  await page.locator('label:has-text("Qty / price / total") input').nth(1).fill("4.50");
-  await page.locator('label:has-text("Qty / price / total") input').nth(3).fill("1");
-  await page.locator('label:has-text("Qty / price / total") input').nth(4).fill("5.25");
+  await page.locator('label:has-text("Quantity") input').nth(0).fill("2");
+  await page.locator('label:has-text("Unit price") input').nth(0).fill("4.50");
+  await page.locator('label:has-text("Quantity") input').nth(1).fill("1");
+  await page.locator('label:has-text("Unit price") input').nth(1).fill("5.25");
 
   await page.getByRole("button", { name: "Add item" }).click();
   await expect(page.getByLabel("Description")).toHaveCount(3);
