@@ -87,6 +87,45 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
 
 
+def test_purchase_invoice_accepts_blank_number_for_mapped_line(client):
+    login(client)
+    supplier = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={"name": f"Test Food Supplier {uuid4().hex[:8]}", "isActive": True},
+    )
+    assert supplier.status_code == 201
+    inventory_item = next(item for item in client.get("/api/pilot/inventory").get_json()["items"] if item["name"] == "Chicken Breast")
+    payload = {
+        "supplierName": supplier.get_json()["name"],
+        "invoiceNumber": "",
+        "invoiceDate": "2026-09-02",
+        "subtotal": 120,
+        "tax": 0,
+        "totalAmount": 120,
+        "status": "Draft",
+        "lineItems": [{
+            "description": "Chicken Breast",
+            "inventoryItemId": inventory_item["id"],
+            "purchaseUnit": "kg",
+            "inventoryUnit": "kg",
+            "conversionFactor": 1,
+            "quantity": 10,
+            "unitPrice": 12,
+            "lineTotal": 120,
+            "confidence": 1,
+            "needsReview": False,
+        }],
+    }
+    created = client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload)
+    assert created.status_code == 201, created.get_data(as_text=True)
+    body = created.get_json()
+    assert body["invoiceNumber"] == ""
+    fetched = client.get(f"/api/pilot/purchases/invoices/{body['id']}")
+    assert fetched.status_code == 200
+    assert fetched.get_json()["lineItems"][0]["quantity"] == 10
+
+
 def test_pilot_dashboard_lists_live_drafts(client):
     login(client)
 
