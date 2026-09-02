@@ -195,6 +195,7 @@ describe("PilotReorderPlanPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Week 1 draft/ }));
 
     await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    expect(screen.getByRole("button", { name: "In draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Mark prepared" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Complete plan" })).toBeVisible();
@@ -225,6 +226,19 @@ describe("PilotReorderPlanPage", () => {
     await waitFor(() => expect(mockApi.updatePilotReorderPlan).toHaveBeenCalled());
     const payload = mockApi.updatePilotReorderPlan.mock.calls.at(-1)?.[1] as { lines: Array<{ inventoryItemId?: number }> };
     expect(payload.lines).toEqual(expect.arrayContaining([expect.objectContaining({ inventoryItemId: 302 })]));
+  });
+
+  it("explains when every active inventory item is already in the draft", async () => {
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({
+      suggestions: [createSuggestion()],
+      inventoryItems: [{ id: 301, name: "Chicken Breast", category: "Proteins", stockUnit: "kg", currentOnHand: 12, parLevel: 10, preferredSupplierName: "Fresh Foods" } as PilotInventoryItem],
+      groupedBySupplier: [],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    expect(screen.getByRole("button", { name: "In draft" })).toBeVisible();
+    expect(screen.getByText("All active inventory items are already in this draft.")).toBeVisible();
   });
 
   it("adds a live recommendation on the first click, creating a draft when needed", async () => {
