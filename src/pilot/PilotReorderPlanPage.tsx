@@ -369,6 +369,7 @@ export function PilotReorderPlanPage() {
         </div>
       </Card>
 
+      <div className="flex flex-col gap-6">
       {workflowTab === "history" ? (
         <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
           <Card className="p-6">
@@ -479,7 +480,7 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+        <div className="order-2 grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
           <Card className="p-6">
             <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
@@ -511,14 +512,19 @@ export function PilotReorderPlanPage() {
                     </div>
                   </div>
                   <div className="mt-4 flex justify-end">
+                    {(() => {
+                      const isInDraft = draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId);
+                      return (
                     <Button
                       variant="secondary"
                       type="button"
                       disabled={creating || saving || loading}
-                      onClick={() => void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}
+                      onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}
                     >
-                      {draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId) ? "Added to draft" : "Add to draft"}
+                      {isInDraft ? "In draft" : "Add to draft"}
                     </Button>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
@@ -597,7 +603,7 @@ export function PilotReorderPlanPage() {
         </div>
       )}
 
-      <Card className="p-6">
+      <Card className={`p-6 ${draft && workflowTab === "live" ? "order-1" : ""}`}>
         <SectionHeader
           title={selectedPlan ? `${selectedPlan.name}` : "Open a reorder plan"}
           description={selectedPlan ? "Drafts stay editable. Prepared and completed plans open as read-only snapshots." : "Start or reopen a draft to begin planning."}
@@ -695,7 +701,13 @@ export function PilotReorderPlanPage() {
                       <Button variant="secondary" type="button" onClick={() => void addItemsToDraft([{ id: item.id, suggestedQuantity: suggestion?.suggestedQuantity }])} disabled={saving}>Add</Button>
                     </div>;
                   })}
-                  {!availableItems.length ? <p className="text-sm text-muted">No active inventory items match this search.</p> : null}
+                  {!availableItems.length ? (
+                    inventorySearch.trim()
+                      ? <p className="text-sm text-muted">No inventory items match your search.</p>
+                      : inventoryItems.length > 0 && draft.lines.length >= inventoryItems.length
+                        ? <p className="text-sm text-muted">All active inventory items are already in this draft.</p>
+                        : <p className="text-sm text-muted">No active inventory items match this search.</p>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -773,6 +785,7 @@ export function PilotReorderPlanPage() {
           <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Start a draft to build a reorder plan from the current stock picture.</div>
         )}
       </Card>
+      </div>
     </div>
   );
 }

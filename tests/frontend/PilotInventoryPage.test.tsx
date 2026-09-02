@@ -377,7 +377,7 @@ describe("PilotInventoryPage", () => {
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit item" }));
     expect(await screen.findByLabelText("Item name")).toHaveValue("Chicken Breast");
     expect(screen.getByLabelText("Category")).toHaveValue("Poultry");
     expect(screen.getByLabelText("Base unit")).toHaveValue("kg");
@@ -389,12 +389,15 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("Movement note (optional)")).toBeVisible();
     expect(screen.getByRole("spinbutton", { name: "Minimum" })).toHaveValue(1);
     expect(screen.getByRole("spinbutton", { name: "PAR" })).toHaveValue(5);
+    expect(screen.getByRole("spinbutton", { name: "Minimum" })).toHaveAttribute("step", "1");
+    expect(screen.getByRole("spinbutton", { name: "PAR" })).toHaveAttribute("step", "1");
+    expect(screen.getByRole("spinbutton", { name: "Average daily usage" })).toHaveAttribute("step", "0.1");
     expect(screen.getAllByLabelText("Item notes")).toHaveLength(1);
 
     fireEvent.change(screen.getByRole("spinbutton", { name: "Minimum" }), { target: { value: "8" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("spinbutton", { name: "Minimum" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit item" }));
 
     inventoryMocks.fetchPilotInventory.mockResolvedValueOnce(
       createInventoryResponse({

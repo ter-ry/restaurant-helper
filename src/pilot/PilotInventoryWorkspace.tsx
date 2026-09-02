@@ -749,20 +749,6 @@ export function PilotInventoryPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {isEditing ? (
-                <>
-                  <Button disabled={saving} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
-                    {saving ? "Saving..." : "Save changes"}
-                  </Button>
-                  <Button variant="secondary" disabled={saving} type="button" onClick={() => { if (selectedItemDetail) setDraft(draftFromItem(selectedItemDetail)); setIsEditing(false); }}>
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <Button variant="secondary" icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => setIsEditing(true)}>
-                  Edit
-                </Button>
-              )}
               <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
                 Refresh
               </Button>
@@ -778,11 +764,27 @@ export function PilotInventoryPage() {
           value={itemDetailTab}
           onChange={(value) => setItemDetailTab(value as ItemDetailTab)}
         />
+        <div className="flex flex-wrap justify-end gap-2">
+          {isEditing ? (
+            <>
+              <Button disabled={saving} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
+                {saving ? "Saving..." : "Save changes"}
+              </Button>
+              <Button variant="secondary" disabled={saving} type="button" onClick={() => { if (selectedItemDetail) setDraft(draftFromItem(selectedItemDetail)); setIsEditing(false); }}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => setIsEditing(true)}>
+              Edit item
+            </Button>
+          )}
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ReadOnlyStat label="On hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
-          <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1" type="number" step="0.0001" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
-          <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1" type="number" step="0.0001" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
+          <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
+          <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
           <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
           <ReadOnlyStat label="Latest cost" value={formatMoney(item.latestPurchasePrice)} />
           <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
@@ -825,7 +827,7 @@ export function PilotInventoryPage() {
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <label><span className="text-sm font-semibold text-ink">Category</span><input className="input mt-1" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))} /></label>
                   <label><span className="text-sm font-semibold text-ink">Base unit</span><input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} /></label>
-                  <label><span className="text-sm font-semibold text-ink">Average daily usage</span><input className="input mt-1" type="number" step="0.0001" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} /></label>
+                  <label><span className="text-sm font-semibold text-ink">Average daily usage</span><input className="input mt-1" type="number" step="0.1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} /></label>
                   <label><span className="text-sm font-semibold text-ink">Active</span><select className="input mt-1" value={draft.active ? "true" : "false"} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.value === "true" }))}><option value="true">Active</option><option value="false">Inactive</option></select></label>
                   <label className="sm:col-span-2"><span className="text-sm font-semibold text-ink">Item notes</span><textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
                 </div>
@@ -1056,15 +1058,15 @@ export function PilotInventoryPage() {
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Minimum</span>
-            <input className="input mt-1" type="number" step="0.0001" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} />
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">PAR</span>
-            <input className="input mt-1" type="number" step="0.0001" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} />
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Average daily usage</span>
-            <input className="input mt-1" type="number" step="0.0001" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="0.1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} />
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Active</span>
