@@ -22,7 +22,7 @@ from .google_oidc import (
     verify_google_id_token,
 )
 from .extensions import db, limiter
-from .models import ExternalIdentity, Organization, OrganizationMembership, User
+from .models import DataImportFile, DataImportJob, ExternalIdentity, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, RestaurantLocation, User
 from .validation import RequestValidationError, clean_email, parse_login_payload
 from .utils import clear_pilot_context, enabled_module_keys_for_organization, get_current_location, get_current_organization_bundle, get_platform_role, get_user_memberships, json_error, serialize_membership_summaries, serialize_organization, serialize_user
 
@@ -77,6 +77,7 @@ def _login_payload(user: User, memberships: list[OrganizationMembership], member
         "currentOrganization": serialize_organization(organization) if organization else None,
         "currentLocationId": current_location.id if current_location else None,
         "enabledModuleKeys": enabled_module_keys_for_organization(organization.id) if organization is not None else [],
+        "onboardingProgress": _onboarding_progress(organization),
         "supportAccessGrant": {
             "id": support_grant.id,
             "organizationId": support_grant.organization_id,
@@ -90,6 +91,41 @@ def _login_payload(user: User, memberships: list[OrganizationMembership], member
         else None,
         "organizations": serialize_membership_summaries(memberships, selected_organization_id=membership.organization_id if membership else None),
         "csrfToken": generate_csrf(),
+    }
+
+
+def _onboarding_progress(organization: Organization | None) -> dict[str, bool | None]:
+    if organization is None:
+        return {
+            "accountCreated": False,
+            "businessInformation": False,
+            "dataRequested": False,
+            "migrationUpload": False,
+            "configuration": None,
+            "customerReview": False,
+            "readyToLaunch": False,
+        }
+    locations = RestaurantLocation.query.filter_by(organization_id=organization.id).all()
+    configuration = OrganizationConfiguration.query.filter_by(organization_id=organization.id).first()
+    version = None
+    if configuration is not None and configuration.current_version_id is not None:
+        version = OrganizationConfigurationVersion.query.filter_by(id=configuration.current_version_id).first()
+    if version is None and configuration is not None:
+        version = OrganizationConfigurationVersion.query.filter_by(organization_configuration_id=configuration.id).order_by(OrganizationConfigurationVersion.version_number.desc()).first()
+    config_payload = version.configuration_json if version is not None else {}
+    migration_uploaded = (
+        DataImportFile.query.join(DataImportJob).filter(DataImportJob.organization_id == organization.id).first() is not None
+    )
+    business_information = bool(organization.name.strip()) and any(bool(location.name.strip() and location.city.strip()) for location in locations)
+    customer_review = bool(((config_payload or {}).get("customerReview") or {}).get("approvedAt"))
+    return {
+        "accountCreated": organization.created_at is not None,
+        "businessInformation": business_information,
+        "dataRequested": organization.setup_status in {"DATA_REQUESTED", "CONFIGURATION_IN_PROGRESS", "CUSTOMER_REVIEW", "COMPLETE"},
+        "migrationUpload": migration_uploaded,
+        "configuration": True if version is not None and version.published_at is not None else None,
+        "customerReview": customer_review,
+        "readyToLaunch": organization.lifecycle_status == "ACTIVE" and organization.setup_status == "COMPLETE" and organization.subscription_status == "ACTIVE",
     }
 
 
@@ -287,6 +323,7 @@ def me() -> tuple[object, int]:
                 "currentOrganizationId": organization.id if organization else None,
                 "currentLocationId": current_location.id if current_location else None,
                 "enabledModuleKeys": enabled_module_keys_for_organization(organization.id) if organization else [],
+                "onboardingProgress": _onboarding_progress(organization),
                 "supportAccessGrant": {
                     "id": support_grant.id,
                     "organizationId": support_grant.organization_id,

@@ -213,6 +213,14 @@ function makeDetail(
       readyForActivation: missingModules.length === 0,
     },
     locations: [{ id: 7, name: "Main Dining Room", city: "Toronto" }],
+    customerIdentity: {
+      organizationId: 42,
+      organizationName: "Demo Bistro",
+      owner: { userId: 2, email: "owner@demo-bistro.test", role: "owner", createdAt: "2026-08-20T09:00:00Z" },
+      locations: [{ id: 7, name: "Main Dining Room", city: "Toronto" }],
+      signedUpAt: "2026-08-20T09:00:00Z",
+      setupRequestedAt: "2026-08-21T09:00:00Z",
+    },
     modules: modules.map((module) => ({
       ...module,
       ...(moduleOverrides[module.key] ?? {}),
@@ -281,6 +289,18 @@ beforeEach(() => {
 });
 
 describe("SetupConsolePage", () => {
+  it("shows compact customer identity and humanizes readiness checks", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    expect(screen.getByTestId("customer-identity")).toHaveTextContent("owner@demo-bistro.test");
+    expect(screen.getByTestId("customer-identity")).toHaveTextContent("Main Dining Room");
+    expect(screen.getByTestId("customer-identity")).toHaveTextContent("ID 7");
+    expect(screen.getByText("Owner assigned")).toBeVisible();
+    expect(screen.getByText("Required modules ready")).toBeVisible();
+    expect(screen.getByTestId("customer-identity")).toHaveTextContent("owner");
+  });
+
   it("shows saving state, prevents duplicate save clicks, and refreshes authoritative module data", async () => {
     let resolveUpdate!: (value: unknown) => void;
     const updatePromise = new Promise((resolve) => {

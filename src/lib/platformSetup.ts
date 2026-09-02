@@ -45,6 +45,16 @@ export interface PlatformSetupOrganizationSummary {
   };
   locations: Array<Record<string, unknown>>;
   modules: PlatformModuleEntitlement[];
+  customerIdentity?: PlatformCustomerIdentity;
+}
+
+export interface PlatformCustomerIdentity {
+  organizationId: number;
+  organizationName: string;
+  owner: { userId: number; email: string; role: string; createdAt: string | null } | null;
+  locations: Array<Record<string, unknown>>;
+  signedUpAt: string | null;
+  setupRequestedAt: string | null;
 }
 
 export interface PlatformSetupDetail extends PlatformSetupOrganizationSummary {
@@ -52,6 +62,7 @@ export interface PlatformSetupDetail extends PlatformSetupOrganizationSummary {
   configuration: Record<string, unknown>;
   auditEvents: Array<Record<string, unknown>>;
   platformRole: string | null;
+  customerIdentity?: PlatformCustomerIdentity;
 }
 
 export interface PlatformSetupListResponse {

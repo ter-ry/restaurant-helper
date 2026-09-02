@@ -182,14 +182,15 @@ function LoggedInProspectView({
   const setupStatus = currentOrganization?.setupStatus ?? "NOT_STARTED";
   const lifecycleStatus = currentOrganization?.lifecycleStatus ?? "ONBOARDING";
   const subscriptionStatus = currentOrganization?.subscriptionStatus ?? "NONE";
+  const onboardingProgress = session.onboardingProgress;
   const progress = [
-    ["Account created", true],
-    ["Business information", true],
-    ["Data requested", setupStatus !== "NOT_STARTED"],
-    ["Migration upload", setupStatus !== "NOT_STARTED"],
-    ["Configuration", setupStatus === "CONFIGURATION_IN_PROGRESS" || setupStatus === "CUSTOMER_REVIEW" || setupStatus === "COMPLETE"],
-    ["Customer review", setupStatus === "CUSTOMER_REVIEW" || setupStatus === "COMPLETE"],
-    ["Ready to launch", setupStatus === "COMPLETE" && lifecycleStatus === "READY_FOR_REVIEW"],
+    ["Account created", onboardingProgress?.accountCreated ?? Boolean(currentOrganization)],
+    ["Business information", onboardingProgress?.businessInformation ?? false],
+    ["Data requested", onboardingProgress?.dataRequested ?? false],
+    ["Migration upload", onboardingProgress?.migrationUpload ?? false],
+    ["Configuration", onboardingProgress?.configuration ?? null],
+    ["Customer review", onboardingProgress?.customerReview ?? false],
+    ["Ready to launch", onboardingProgress?.readyToLaunch ?? false],
   ] as const;
 
   async function handleLogout() {
@@ -297,11 +298,12 @@ function LoggedInProspectView({
         <p className="text-sm font-semibold text-ink">Onboarding progress</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {progress.map(([label, complete]) => (
-            <div key={label} className={`rounded-2xl border p-4 text-sm ${complete ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-line bg-slate-50 text-slate-600"}`}>
+            <div key={label} className={`rounded-2xl border p-4 text-sm ${complete === true ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-line bg-slate-50 text-slate-600"}`}>
               <div className="flex items-center gap-2 font-semibold">
                 <CheckCircle2 className="h-4 w-4" />
                 {label}
               </div>
+              {complete === null ? <p className="mt-1 text-xs">Not yet tracked</p> : null}
             </div>
           ))}
         </div>

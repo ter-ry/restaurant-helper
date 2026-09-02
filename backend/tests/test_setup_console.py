@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from backend.extensions import db
 from backend.models import Organization, OrganizationModule, PlatformRole, User
-from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
+from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
 def login(client, email: str = LOCAL_OWNER_EMAIL, password: str = LOCAL_OWNER_PASSWORD):
@@ -47,9 +47,22 @@ def test_platform_setup_console_can_activate_an_organization(app, client):
     list_response = client.get("/api/platform/setup/organizations?state=ONBOARDING")
     assert list_response.status_code == 200
     assert any(entry["organization"]["id"] == organization_id for entry in list_response.get_json()["organizations"])
+    email_search = client.get(f"/api/platform/setup/organizations?state=ONBOARDING&search={LOCAL_OWNER_EMAIL}")
+    assert email_search.status_code == 200
+    assert any(entry["organization"]["id"] == organization_id for entry in email_search.get_json()["organizations"])
+    location_search = client.get("/api/platform/setup/organizations?state=ONBOARDING&search=Setup%20Kitchen")
+    assert location_search.status_code == 200
+    assert any(entry["organization"]["id"] == organization_id for entry in location_search.get_json()["organizations"])
 
     detail_response = client.get(f"/api/platform/setup/organizations/{organization_id}")
     assert detail_response.status_code == 200
+    identity = detail_response.get_json()["customerIdentity"]
+    assert identity["organizationId"] == organization_id
+    assert identity["owner"]["email"] == LOCAL_OWNER_EMAIL
+    assert identity["owner"]["role"] == "owner"
+    assert identity["locations"][0]["name"] == "Setup Kitchen"
+    assert identity["locations"][0]["city"] == "Toronto"
+    assert identity["setupRequestedAt"] is None
 
     template_response = client.post(
         f"/api/platform/setup/organizations/{organization_id}/template",
@@ -229,3 +242,9 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
     square = next(entry for entry in disable_body["modules"] if entry["key"] == "SQUARE_INTEGRATION")
     assert square["status"] == "DISABLED"
     assert square["hasOrganizationRow"] is True
+
+
+def test_non_platform_user_cannot_access_setup_customer_identity(client):
+    login(client, LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD)
+    response = client.get("/api/platform/setup/organizations")
+    assert response.status_code == 403

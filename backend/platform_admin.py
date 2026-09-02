@@ -159,6 +159,34 @@ def _serialized_locations(organization: Organization) -> list[dict[str, Any]]:
     return [serialize_location(location) for location in RestaurantLocation.query.filter_by(organization_id=organization.id).order_by(RestaurantLocation.created_at.asc(), RestaurantLocation.id.asc()).all()]
 
 
+def _customer_identity(organization: Organization) -> dict[str, Any]:
+    owner_membership = (
+        OrganizationMembership.query.filter_by(organization_id=organization.id, role="owner")
+        .order_by(OrganizationMembership.created_at.asc(), OrganizationMembership.id.asc())
+        .first()
+    )
+    requested_event = (
+        AuditEvent.query.filter_by(organization_id=organization.id, event_type="onboarding.setup_requested")
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .first()
+    )
+    return {
+        "organizationId": organization.id,
+        "organizationName": organization.name,
+        "owner": {
+            "userId": owner_membership.user.id,
+            "email": owner_membership.user.email,
+            "role": owner_membership.role,
+            "createdAt": isoformat(owner_membership.created_at),
+        }
+        if owner_membership is not None and owner_membership.user is not None
+        else None,
+        "locations": _serialized_locations(organization),
+        "signedUpAt": isoformat(organization.created_at),
+        "setupRequestedAt": isoformat(requested_event.created_at) if requested_event is not None else None,
+    }
+
+
 def _serialized_configuration(organization: Organization) -> dict[str, Any]:
     configuration = _ensure_configuration(organization)
     version = _current_configuration(configuration)
@@ -249,7 +277,7 @@ def _checklist(organization: Organization) -> dict[str, Any]:
 def _serialize_organization_detail(organization: Organization) -> dict[str, Any]:
     owner_memberships = OrganizationMembership.query.filter_by(organization_id=organization.id).order_by(OrganizationMembership.created_at.asc()).all()
     platform_role = _platform_role()
-    return {
+    payload = {
         "organization": serialize_organization(organization),
         "memberships": [
             {
@@ -268,6 +296,9 @@ def _serialize_organization_detail(organization: Organization) -> dict[str, Any]
         "auditEvents": [serialize_audit_event(event) for event in AuditEvent.query.filter_by(organization_id=organization.id).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(50).all()],
         "platformRole": platform_role.role if platform_role else None,
     }
+    if platform_role is not None and platform_role.role in {"setup_admin", "support"}:
+        payload["customerIdentity"] = _customer_identity(organization)
+    return payload
 
 
 def _serialize_support_grant(grant: SupportAccessGrant) -> dict[str, Any]:
@@ -317,7 +348,13 @@ def list_setup_organizations():
     organizations = query.order_by(Organization.created_at.desc(), Organization.id.desc()).all()
     payload = []
     for organization in organizations:
-        if search and search not in organization.name.lower():
+        identity = _customer_identity(organization)
+        owner_email = str((identity.get("owner") or {}).get("email") or "").lower()
+        location_text = " ".join(
+            f"{location.get('name', '')} {location.get('city', '')}".lower()
+            for location in identity["locations"]
+        )
+        if search and search not in " ".join((organization.name.lower(), owner_email, location_text)):
             continue
         payload.append(
             {
@@ -325,6 +362,7 @@ def list_setup_organizations():
                 "checklist": _checklist(organization),
                 "locations": _serialized_locations(organization),
                 "modules": _serialized_modules(organization),
+                "customerIdentity": identity,
             }
         )
     return jsonify({"organizations": payload}), 200
