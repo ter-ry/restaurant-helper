@@ -2920,6 +2920,61 @@ def test_postgres_operational_mutations_materialize_before_commit(postgres_app):
     _github_warning("operational mutation regression: supplier, inventory, invoice, receive, and tenant isolation succeeded")
 
 
+def test_postgres_daily_close_mutations_restore_context_after_commit(postgres_app):
+    owner_email = f"daily-close-{uuid4().hex[:8]}@example.com"
+    owner_password = f"DailyClose-{uuid4().hex[:12]}!"
+
+    def seed_daily_close():
+        owner = User(email=owner_email, is_active=True)
+        owner.set_password(owner_password)
+        db.session.add(owner)
+        db.session.flush()
+        organization = _create_org(owner, f"Daily Close RLS {uuid4().hex[:8]}")
+        db.session.add(OrganizationModule(organization_id=organization.id, module_key="DAILY_CLOSE", status="ENABLED"))
+        db.session.commit()
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        return {"location_id": location.id}
+
+    seeded = _seed_admin_fixture("daily close post-commit RLS", seed_daily_close)
+    client = postgres_app.test_client()
+    _login_user(client, owner_email, owner_password)
+
+    csrf_token = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]
+    opened = client.post(
+        "/api/pilot/daily-close",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"locationId": seeded["location_id"], "businessDate": "2026-09-01"},
+    )
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    session_id = opened.get_json()["session"]["id"]
+
+    updated = client.patch(
+        f"/api/pilot/daily-close/{session_id}",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"notes": "Post-commit RLS context"},
+    )
+    assert updated.status_code == 200, updated.get_data(as_text=True)
+    assert updated.get_json()["session"]["notes"] == "Post-commit RLS context"
+
+    finalized = client.post(
+        f"/api/pilot/daily-close/{session_id}/finalize",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+    )
+    assert finalized.status_code == 200, finalized.get_data(as_text=True)
+    assert finalized.get_json()["session"]["status"] == "COMPLETED"
+
+    refetched = client.get(
+        "/api/pilot/daily-close",
+        base_url="http://127.0.0.1:5001",
+        query_string={"locationId": seeded["location_id"], "businessDate": "2026-09-01"},
+    )
+    assert refetched.status_code == 200, refetched.get_data(as_text=True)
+    assert refetched.get_json()["session"]["notes"] == "Post-commit RLS context"
+
+
 def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgres_app):
     with postgres_app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
