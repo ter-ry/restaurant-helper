@@ -856,12 +856,23 @@ def test_daily_close_session_lifecycle_respects_module_enablement(app, client):
     assert updated_body["session"]["notes"] == "End-of-day notes"
     assert updated_body["session"]["status"] == "DRAFT"
 
+    repeated_update = client.patch(
+        f"/api/pilot/daily-close/{session_id}",
+        headers=csrf_headers(client),
+        json={"notes": "End-of-day notes"},
+    )
+    assert repeated_update.status_code == 200
+    assert repeated_update.get_json()["session"]["notes"] == "End-of-day notes"
+
     finalized = client.post(f"/api/pilot/daily-close/{session_id}/finalize", headers=csrf_headers(client))
     assert finalized.status_code == 200
     finalized_body = finalized.get_json()
     assert finalized_body["session"]["status"] == "COMPLETED"
     assert finalized_body["session"]["notes"] == "End-of-day notes"
     assert finalized_body["session"]["completedByUserId"] == 1
+
+    repeated_finalize = client.post(f"/api/pilot/daily-close/{session_id}/finalize", headers=csrf_headers(client))
+    assert repeated_finalize.status_code == 409
 
     read_only = client.patch(
         f"/api/pilot/daily-close/{session_id}",
