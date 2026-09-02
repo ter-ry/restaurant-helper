@@ -34,6 +34,7 @@ from .models import (
     SquareCatalogMapping,
     SquareCatalogObject,
     SquareConnection,
+    SquareOrder,
     StockCountSession,
     StockCountSessionLine,
     Supplier,
@@ -210,6 +211,8 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
     target = decimal_to_float(item.par_level) or decimal_to_float(item.min_quantity) or 0
     current = decimal_to_float(item.current_on_hand) or 0
     suggested = max(0, round(target - current, 4))
+    if suggested <= 0:
+        return None
     estimated_cost = None
     if item.last_purchase_conversion_factor and item.last_purchase_conversion_factor > 0:
         estimated_cost = round((Decimal(str(suggested)) / item.last_purchase_conversion_factor * item.latest_purchase_price).quantize(MONEY), 2)
@@ -325,7 +328,16 @@ def _dashboard_snapshot(location_id: int):
             )
     daily_close_attention = 0
     today_daily_close = next((session for session in daily_close_sessions if session.business_date == _now().date()), None)
-    if organization_has_enabled_module(location.organization_id, "DAILY_CLOSE") and (today_daily_close is None or today_daily_close.status == "DRAFT"):
+    square_connection = SquareConnection.query.filter_by(organization_id=location.organization_id, status="connected").first()
+    has_square_sales = bool(
+        square_connection
+        and SquareOrder.query.filter_by(
+            square_connection_id=square_connection.id,
+            restaurant_location_id=location_id,
+            is_deleted=False,
+        ).filter(SquareOrder.order_state.notin_(["CANCELED", "CANCELLED"])).first()
+    )
+    if organization_has_enabled_module(location.organization_id, "DAILY_CLOSE") and square_connection and has_square_sales and (today_daily_close is None or today_daily_close.status == "DRAFT"):
         daily_close_attention = 1
     week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
