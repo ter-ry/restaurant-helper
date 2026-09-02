@@ -452,7 +452,11 @@ def update_daily_close(session_id: int):
     session_record.summary_snapshot_json = snapshot
     session_record.usage_snapshot_json = usage
     session_record.exceptions_snapshot_json = exceptions
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return jsonify(
         {
             "session": _serialize_session_with_snapshot(session_record, snapshot),
@@ -480,6 +484,8 @@ def finalize_daily_close(session_id: int):
     session_record = DailyCloseSession.query.filter_by(id=session_id, organization_id=organization.id).first()
     if session_record is None:
         return json_error("Daily close session not found.", 404)
+    if session_record.status == "COMPLETED":
+        return json_error("Completed daily closes are read-only.", 409)
     location = next((entry for entry in locations if entry.id == session_record.location_id), None)
     if location is None:
         return json_error("Restaurant location not found.", 404)
@@ -490,7 +496,11 @@ def finalize_daily_close(session_id: int):
     session_record.exceptions_snapshot_json = exceptions
     session_record.completed_at = _now()
     session_record.completed_by_user_id = current_user.id
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return jsonify(
         {
             "session": _serialize_session_with_snapshot(session_record, snapshot),
