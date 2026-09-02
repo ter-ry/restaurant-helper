@@ -835,6 +835,17 @@ def test_daily_close_session_lifecycle_respects_module_enablement(app, client):
     assert opened_body["session"]["notes"] == ""
     assert opened_body["history"][0]["id"] == session_id
 
+    reopened = client.post(
+        "/api/pilot/daily-close",
+        headers=csrf_headers(client),
+        json={"locationId": location_id, "businessDate": "2026-08-30"},
+    )
+    assert reopened.status_code == 200
+    assert reopened.get_json()["session"]["id"] == session_id
+    immediate_get = client.get("/api/pilot/daily-close", query_string={"locationId": location_id, "businessDate": "2026-08-30"})
+    assert immediate_get.status_code == 200
+    assert immediate_get.get_json()["session"]["id"] == session_id
+
     updated = client.patch(
         f"/api/pilot/daily-close/{session_id}",
         headers=csrf_headers(client),

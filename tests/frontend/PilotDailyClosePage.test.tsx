@@ -136,6 +136,24 @@ describe("PilotDailyClosePage", () => {
     await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
   });
 
+  it("renders date-only business dates without a timezone shift", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: null,
+      snapshot: { healthStatus: "Open", inventoryValue: 0, sales: {}, usage: { totals: {}, ingredientUsage: [] }, variance: { quantity: null, percent: null, value: 0 }, square: {}, readyToFinalize: true },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [{ id: 9, organizationId: 42, locationId: 7, businessDate: "2026-09-01", status: "DRAFT", notes: "", currentSnapshot: null }],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-09-01",
+      square: {},
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Business date Sep 1")).toBeVisible();
+    expect(screen.getByText("Sep 1")).toBeVisible();
+  });
+
   it("syncs Square sales for the selected business date and refreshes the draft", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: {
