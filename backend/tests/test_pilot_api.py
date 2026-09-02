@@ -64,7 +64,7 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert dashboard_body["summary"]["inventoryOutOfStockCount"] == 1
     assert dashboard_body["summary"]["inventoryLowStockCount"] == 6
     assert dashboard_body["recentPriceChanges"]
-    assert dashboard_body["operationalAttention"]["reorder"]["count"] == 11
+    assert dashboard_body["operationalAttention"]["reorder"]["count"] == 10
 
     purchases = client.get("/api/pilot/purchases")
     assert purchases.status_code == 200
@@ -72,7 +72,6 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert purchases_body["exportReadiness"]["readyForCsv"] >= 6
     assert purchases_body["summary"]["uploadsNeedingReview"] == 2
     assert any(invoice["status"] == "Draft" for invoice in purchases_body["invoices"])
-
     inventory = client.get("/api/pilot/inventory")
     assert inventory.status_code == 200
     inventory_body = inventory.get_json()
@@ -86,6 +85,27 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert len(supplier_body["suppliers"]) >= 6
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
 
+
+def test_reorder_recommendation_requires_positive_quantity(app, client):
+    login(client)
+
+    with app.app_context():
+        item = InventoryItem.query.filter_by(name="Chicken Breast").first()
+        assert item is not None
+        item.current_on_hand = 10
+        item.min_quantity = 5
+        item.par_level = 9
+        item.average_daily_usage = 0
+        db.session.commit()
+
+    dashboard = client.get("/api/pilot/dashboard")
+    assert dashboard.status_code == 200
+    dashboard_body = dashboard.get_json()
+    assert not any(entry["inventoryItemName"] == "Chicken Breast" for entry in dashboard_body["reorderSuggestions"])
+
+    reorder = client.get("/api/pilot/reorder-plan")
+    assert reorder.status_code == 200
+    assert not any(entry["inventoryItemName"] == "Chicken Breast" for entry in reorder.get_json()["suggestions"])
 
 def test_purchase_invoice_accepts_blank_number_for_mapped_line(client):
     login(client)

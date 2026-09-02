@@ -10,6 +10,7 @@ const mockApi = vi.hoisted(() => ({
   fetchPilotInventory: vi.fn(),
   fetchPilotPurchaseInvoice: vi.fn(),
   createPilotPurchaseInvoice: vi.fn(),
+  createPilotSupplier: vi.fn(),
   updatePilotPurchaseInvoice: vi.fn(),
   receivePilotPurchaseInvoice: vi.fn(),
   correctPilotPurchaseInvoice: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     fetchPilotInventory: mockApi.fetchPilotInventory,
     fetchPilotPurchaseInvoice: mockApi.fetchPilotPurchaseInvoice,
     createPilotPurchaseInvoice: mockApi.createPilotPurchaseInvoice,
+    createPilotSupplier: mockApi.createPilotSupplier,
     updatePilotPurchaseInvoice: mockApi.updatePilotPurchaseInvoice,
     receivePilotPurchaseInvoice: mockApi.receivePilotPurchaseInvoice,
     correctPilotPurchaseInvoice: mockApi.correctPilotPurchaseInvoice,
@@ -213,6 +215,12 @@ describe("PilotPurchasesPage", () => {
       id: 2,
     }));
     mockApi.correctPilotPurchaseInvoice.mockResolvedValue(createInvoice({ id: 1, invoiceNumber: "FD-1001", status: "Corrected", supplierName: "Heritage Dairy" }));
+    mockApi.createPilotSupplier.mockImplementation(async ({ name }: { name: string }) => ({
+      ...createInvoice({ id: 9, invoiceNumber: "", status: "Draft", supplierName: name }).supplier,
+      id: 99,
+      name,
+      normalizedName: name.toLowerCase(),
+    }));
   });
 
   it("starts on a blank new purchase even when historical completed invoices exist", async () => {
@@ -259,6 +267,34 @@ describe("PilotPurchasesPage", () => {
     expect(payload.totalAmount).toBe(120);
     expect(payload.lineItems[0]).toMatchObject({ quantity: 10, unitPrice: 12, lineTotal: 120, inventoryItemId: 301, needsReview: false });
     expect(await screen.findByText(/Invoice\s+saved successfully\./)).toBeVisible();
+  });
+
+  it("adds a supplier inline without losing the purchase draft", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.click(screen.getByRole("button", { name: "+ New supplier" }));
+    fireEvent.change(screen.getByLabelText("New supplier name"), { target: { value: "North Star Produce" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("North Star Produce added and selected.")).toBeVisible();
+    expect(screen.getByLabelText("Supplier")).toHaveValue("North Star Produce");
+    expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible();
+  });
+
+  it("auto-maps one exact active inventory name without fuzzy matching", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
+    expect(screen.getByLabelText("Inventory item")).toHaveValue("301");
+    expect(screen.getByText("Confirmed")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    const descriptions = screen.getAllByLabelText("Description");
+    fireEvent.change(descriptions[1], { target: { value: "Milk 2L extra" } });
+    expect(screen.getAllByLabelText("Inventory item")[1]).toHaveValue("");
   });
 
   it("surfaces structured invoice validation details", async () => {

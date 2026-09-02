@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { ArrowRight, CheckCircle2, FileText, Plus, RefreshCcw, ShoppingBag } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -8,6 +8,7 @@ import { SectionHeader } from "../components/SectionHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotPurchaseInvoice,
+  createPilotSupplier,
   correctPilotPurchaseInvoice,
   fetchPilotInventory,
   fetchPilotPurchases,
@@ -61,6 +62,12 @@ function todayIso() {
 
 function normalizeLookup(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function selectZeroValue(event: FocusEvent<HTMLInputElement>) {
+  if (Number(event.currentTarget.value) === 0) {
+    event.currentTarget.select();
+  }
 }
 
 function purchaseErrorMessage(error: unknown) {
@@ -283,6 +290,9 @@ export function PilotPurchasesPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [purchasePanel, setPurchasePanel] = useState<"details" | "lines" | "review">("details");
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [supplierSaving, setSupplierSaving] = useState(false);
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
     const parsed = Number(value);
@@ -393,6 +403,34 @@ export function PilotPurchasesPage() {
     }));
   };
 
+  const purchasePayload = (status: string) => ({
+    supplierName: draft.supplierName,
+    invoiceNumber: draft.invoiceNumber,
+    invoiceDate: draft.invoiceDate,
+    subtotal: draft.subtotal,
+    tax: draft.tax,
+    totalAmount: draft.totalAmount,
+    notes: draft.notes,
+    status,
+    sourceFileName: draft.sourceFileName,
+    sourceFileType: draft.sourceFileType,
+    extractionStatus: draft.extractionStatus,
+    extractedText: draft.extractedText,
+    lineItems: draft.lineItems.map((line) => ({
+      description: line.description,
+      inventoryItemId: line.inventoryItemId,
+      purchaseUnit: line.purchaseUnit,
+      inventoryUnit: line.inventoryUnit,
+      conversionFactor: line.conversionFactor,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      lineTotal: line.lineTotal || line.quantity * line.unitPrice,
+      confidence: line.confidence,
+      needsReview: line.needsReview,
+      note: line.note,
+    })),
+  });
+
   const saveDraft = async (status: string) => {
     setSaving(true);
     setReceiveMessage(null);
@@ -402,33 +440,7 @@ export function PilotPurchasesPage() {
       if (status === "Ready" && unresolvedLineCount > 0) {
         throw new Error("Map every invoice item before marking the purchase ready.");
       }
-      const payload = {
-        supplierName: draft.supplierName,
-        invoiceNumber: draft.invoiceNumber,
-        invoiceDate: draft.invoiceDate,
-        subtotal: draft.subtotal,
-        tax: draft.tax,
-        totalAmount: draft.totalAmount,
-        notes: draft.notes,
-        status,
-        sourceFileName: draft.sourceFileName,
-        sourceFileType: draft.sourceFileType,
-        extractionStatus: draft.extractionStatus,
-        extractedText: draft.extractedText,
-        lineItems: draft.lineItems.map((line) => ({
-          description: line.description,
-          inventoryItemId: line.inventoryItemId,
-          purchaseUnit: line.purchaseUnit,
-          inventoryUnit: line.inventoryUnit,
-          conversionFactor: line.conversionFactor,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          lineTotal: line.lineTotal || line.quantity * line.unitPrice,
-          confidence: line.confidence,
-          needsReview: line.needsReview,
-          note: line.note,
-        })),
-      };
+      const payload = purchasePayload(status);
       const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
       setSelectedId(saved.id);
       setDraft(invoiceToDraft(saved));
@@ -438,6 +450,51 @@ export function PilotPurchasesPage() {
       setError(purchaseErrorMessage(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveAndReceive = async () => {
+    if (!readyToReceive) {
+      setError("Map every invoice item before receiving this purchase.");
+      return;
+    }
+    setSaving(true);
+    setReceiveMessage(null);
+    setError(null);
+    try {
+      const payload = purchasePayload("Ready");
+      const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
+      await receivePilotPurchaseInvoice(saved.id);
+      setSelectedId(null);
+      setDraft(buildBlankDraft());
+      setDetailInvoice(null);
+      setPurchasePanel("details");
+      setReceiveMessage(`Invoice ${saved.invoiceNumber || "purchase"} received into inventory.`);
+      navigate(location.pathname, { replace: true });
+      await load(null);
+    } catch (err) {
+      setError(purchaseErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createSupplier = async () => {
+    const name = newSupplierName.trim();
+    if (!name) return;
+    setSupplierSaving(true);
+    setError(null);
+    try {
+      const supplier = await createPilotSupplier({ name });
+      setData((current) => current ? { ...current, suppliers: [...current.suppliers, supplier] } : current);
+      setDraft((current) => ({ ...current, supplierName: supplier.name }));
+      setNewSupplierName("");
+      setShowSupplierForm(false);
+      setReceiveMessage(`${supplier.name} added and selected.`);
+    } catch (err) {
+      setError(purchaseErrorMessage(err));
+    } finally {
+      setSupplierSaving(false);
     }
   };
 
@@ -525,14 +582,14 @@ export function PilotPurchasesPage() {
   const setLineDescription = (index: number, description: string) => {
     updateLine(index, (current) => {
       const next = { ...current, description };
-      const hint = applyMappingHint(draft.supplierName, description);
-      if (hint && !current.inventoryItemId) {
+      const exactMatches = inventoryItems.filter((item) => item.active && normalizeLookup(item.name) === normalizeLookup(description));
+      if (exactMatches.length === 1 && !current.inventoryItemId) {
         return {
           ...next,
-          inventoryItemId: hint.inventoryItemId,
-          purchaseUnit: hint.purchaseUnit,
-          inventoryUnit: hint.inventoryUnit,
-          conversionFactor: hint.conversionFactor,
+          inventoryItemId: exactMatches[0].id,
+          inventoryUnit: exactMatches[0].stockUnit,
+          conversionFactor: current.conversionFactor || 1,
+          needsReview: false,
         };
       }
       return next;
@@ -619,6 +676,11 @@ export function PilotPurchasesPage() {
                   <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{unresolvedLineCount} need confirmation</Badge>
                   <Badge tone={readyToReceive ? "success" : "neutral"}>{readyToReceive ? "Ready to receive" : "Not ready to receive"}</Badge>
                 </div>
+                {readyToReceive ? (
+                  <Button disabled={saving} type="button" onClick={() => void saveAndReceive()}>
+                    {saving ? "Receiving..." : "Save & receive"}
+                  </Button>
+                ) : null}
               </div>
             </div>
 
@@ -636,15 +698,26 @@ export function PilotPurchasesPage() {
                 <section className="space-y-5" data-testid="purchase-details-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="grid gap-4 md:grid-cols-2">
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Supplier</span>
-                        <select className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
+                      <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold text-ink">Supplier</span>
+                          <button type="button" className="text-sm font-semibold text-brand-700 disabled:text-slate-300" onClick={() => setShowSupplierForm((value) => !value)} disabled={finalizedStatus}>
+                            {showSupplierForm ? "Cancel" : "+ New supplier"}
+                          </button>
+                        </div>
+                        <select aria-label="Supplier" className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
                           <option value="">Choose a supplier</option>
                           {data?.suppliers?.map((supplier) => (
                             <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
                           ))}
                         </select>
-                      </label>
+                        {showSupplierForm ? (
+                          <div className="mt-2 flex gap-2">
+                            <input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} />
+                            <Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button>
+                          </div>
+                        ) : null}
+                      </div>
                       <label className="block">
                         <span className="text-sm font-semibold text-ink">Invoice number</span>
                         <input className="input mt-1" value={draft.invoiceNumber} placeholder="Leave blank until the invoice number is known" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
@@ -673,15 +746,15 @@ export function PilotPurchasesPage() {
                   <div className="grid gap-4 md:grid-cols-3">
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Subtotal</span>
-                      <input className="input mt-1" type="number" step="0.01" value={draft.subtotal} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="0.01" value={draft.subtotal} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
                     </label>
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Tax</span>
-                      <input className="input mt-1" type="number" step="0.01" value={draft.tax} onChange={(event) => setTax(Number(event.target.value))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="0.01" value={draft.tax} onFocus={selectZeroValue} onChange={(event) => setTax(Number(event.target.value))} disabled={finalizedStatus} />
                     </label>
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Total</span>
-                      <input className="input mt-1" type="number" step="0.01" value={draft.totalAmount} onChange={(event) => setDraft((current) => ({ ...current, totalAmount: Number(event.target.value) }))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="0.01" value={draft.totalAmount} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, totalAmount: Number(event.target.value) }))} disabled={finalizedStatus} />
                     </label>
                   </div>
 
@@ -725,7 +798,7 @@ export function PilotPurchasesPage() {
                           <div className="mt-3 grid gap-3 md:grid-cols-[minmax(7rem,0.85fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)]">
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Quantity</span>
-                              <input className="input mt-1" type="number" step="0.0001" value={line.quantity} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
+                              <input className="input mt-1" type="number" step="0.0001" value={line.quantity} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
@@ -738,11 +811,11 @@ export function PilotPurchasesPage() {
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Unit price</span>
-                              <input className="input mt-1" type="number" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
+                              <input className="input mt-1" type="number" step="0.01" value={line.unitPrice} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Line total</span>
-                              <input className="input mt-1 font-semibold" type="number" step="0.01" value={line.lineTotal} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
+                              <input className="input mt-1 font-semibold" type="number" step="0.01" value={line.lineTotal} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
                             </label>
                           </div>
                           <div className="mt-3 grid gap-3 border-t border-dashed border-line pt-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.7fr)]">
@@ -757,7 +830,7 @@ export function PilotPurchasesPage() {
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion</span>
-                              <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
+                              <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
                             </label>
                           </div>
                           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
