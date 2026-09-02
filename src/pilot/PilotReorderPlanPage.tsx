@@ -480,8 +480,8 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
-          <Card className="order-2 p-6">
+        <div className="order-2 grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+          <Card className="p-6">
             <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
               {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
