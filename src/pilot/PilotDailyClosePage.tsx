@@ -25,6 +25,10 @@ function formatSignedNumber(value: number | null | undefined) {
   return `${prefix}${formatNumber(number)}`;
 }
 
+function currentBusinessDate(timeZone: string | null | undefined) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
 export function PilotDailyClosePage() {
   const { currentLocation, locations } = usePilotSession();
   const location = useLocation();
@@ -33,7 +37,7 @@ export function PilotDailyClosePage() {
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(() =>
     Number.isFinite(queryLocationId) && queryLocationId > 0 ? queryLocationId : currentLocation?.id ?? locations[0]?.id ?? null,
   );
-  const [selectedBusinessDate, setSelectedBusinessDate] = useState<string>(() => queryBusinessDate || new Date().toISOString().slice(0, 10));
+  const [selectedBusinessDate, setSelectedBusinessDate] = useState<string>(() => queryBusinessDate || currentBusinessDate(currentLocation?.timezone));
   const [data, setData] = useState<PilotDailyCloseResponse | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
@@ -74,6 +78,12 @@ export function PilotDailyClosePage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!queryBusinessDate && !data && currentLocation?.timezone) {
+      setSelectedBusinessDate(currentBusinessDate(currentLocation.timezone));
+    }
+  }, [currentLocation?.timezone, data, queryBusinessDate]);
 
   const metrics = useMemo(
     () => [
