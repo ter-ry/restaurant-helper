@@ -42,6 +42,15 @@ export interface CustomerSessionResponse {
     expiresAt: string | null;
   } | null;
   organizations?: CustomerOrganizationMembershipSummary[];
+  onboardingProgress?: {
+    accountCreated: boolean;
+    businessInformation: boolean;
+    dataRequested: boolean;
+    migrationUpload: boolean;
+    configuration: boolean | null;
+    customerReview: boolean;
+    readyToLaunch: boolean;
+  };
   csrfToken: string;
 }
 

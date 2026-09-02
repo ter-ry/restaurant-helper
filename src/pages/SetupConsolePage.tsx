@@ -61,6 +61,41 @@ function readValue(id: string, fallback: string) {
   return (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null)?.value ?? fallback;
 }
 
+const checklistLabels: Record<string, string> = {
+  owner: "Owner assigned",
+  locations: "Location configured",
+  setupFee: "Setup fee",
+  setupComplete: "Configuration complete",
+  subscriptionActive: "Subscription active",
+  customerApproved: "Customer approved",
+  noBlockers: "No launch blockers",
+  modulesReady: "Required modules ready",
+  squareReady: "Square ready",
+};
+
+function checklistReason(key: string, selected: PlatformSetupDetail) {
+  if (key === "modulesReady" && selected.checklist.missingModules.length) {
+    return `${selected.checklist.missingModules.length} required module${selected.checklist.missingModules.length === 1 ? "" : "s"} still need configuration`;
+  }
+  if (key === "customerApproved" && !selected.checklist.customerApproved) {
+    return "Waiting for customer review";
+  }
+  if (key === "noBlockers" && selected.checklist.launchBlockers.length) {
+    return `${selected.checklist.launchBlockers.length} launch blocker${selected.checklist.launchBlockers.length === 1 ? "" : "s"} recorded`;
+  }
+  if (key === "locations" && !selected.checklist.locationCount) {
+    return "Add at least one restaurant location";
+  }
+  if (key === "owner" && !selected.checklist.ownerCount) {
+    return "Assign an organization owner";
+  }
+  return null;
+}
+
+function displayTimestamp(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : "Not recorded";
+}
+
 function SetupStateChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-line bg-white px-4 py-3">
@@ -564,6 +599,8 @@ export function SetupConsolePage() {
                 onClick={() => void handleLoadOrganization(entry.organization.id)}
               >
                 <p className="text-sm font-semibold text-ink">{entry.organization.name}</p>
+                <p className="mt-1 truncate text-xs text-muted">{entry.customerIdentity?.owner?.email ?? "Owner email unavailable"}</p>
+                <p className="mt-1 truncate text-xs text-muted">{entry.customerIdentity?.locations?.map((location) => String(location.name ?? "")).filter(Boolean).join(", ") || "No location recorded"}</p>
                 <p className="mt-1 text-xs text-muted">
                   {entry.organization.lifecycleStatus} · {entry.organization.setupStatus} · {entry.checklist.readyForActivation ? "ready" : "blocked"}
                 </p>
@@ -595,6 +632,39 @@ export function SetupConsolePage() {
                 <SetupStateChip label="Missing modules" value={selected.checklist.missingModules.length ? selected.checklist.missingModules.join(", ") : "None"} />
                 <SetupStateChip label="Launch blockers" value={selected.checklist.launchBlockers.length ? selected.checklist.launchBlockers.join(", ") : "None"} />
               </div>
+              {selected.customerIdentity ? (
+                <div className="mt-5 rounded-2xl border border-brand-100 bg-brand-50/50 p-4" data-testid="customer-identity">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Customer identity</p>
+                      <p className="mt-1 text-sm font-semibold text-ink">{selected.customerIdentity.organizationName}</p>
+                      <p className="mt-1 text-xs text-muted">Organization ID {selected.customerIdentity.organizationId}</p>
+                    </div>
+                    <div className="text-right text-xs text-muted">
+                      <p>Signed up {displayTimestamp(selected.customerIdentity.signedUpAt)}</p>
+                      <p className="mt-1">Setup requested {displayTimestamp(selected.customerIdentity.setupRequestedAt)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1.4fr]">
+                    <div className="rounded-xl border border-brand-100 bg-white p-3 text-sm">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Owner</p>
+                      <p className="mt-1 font-semibold text-ink">{selected.customerIdentity.owner?.email ?? "Owner unavailable"}</p>
+                      {selected.customerIdentity.owner ? <p className="mt-1 text-xs text-muted">{selected.customerIdentity.owner.role}</p> : null}
+                    </div>
+                    <div className="rounded-xl border border-brand-100 bg-white p-3 text-sm">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Locations</p>
+                      <div className="mt-2 space-y-2">
+                        {selected.customerIdentity.locations.length ? selected.customerIdentity.locations.map((location) => (
+                          <div key={String(location.id)} className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                            <span className="font-semibold text-ink">{String(location.name ?? "Unnamed location")}</span>
+                            <span className="text-muted">ID {String(location.id)}{location.city ? ` · ${String(location.city)}` : ""}</span>
+                          </div>
+                        )) : <span className="text-xs text-muted">No locations recorded</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </Card>
 
             <div className="grid gap-6 lg:grid-cols-2">
@@ -892,7 +962,8 @@ export function SetupConsolePage() {
                 }).map(([label, ok]) => (
                   <div key={label} className={`rounded-2xl border p-4 text-sm font-semibold ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-rose-200 bg-rose-50 text-rose-900"}`}>
                     {ok ? <CheckCircle2 className="mb-2 h-4 w-4" /> : <AlertTriangle className="mb-2 h-4 w-4" />}
-                    {label}
+                    <p>{checklistLabels[label] ?? label}</p>
+                    {!ok && checklistReason(label, selected) ? <p className="mt-1 text-xs font-normal leading-5">{checklistReason(label, selected)}</p> : null}
                   </div>
                 ))}
               </div>

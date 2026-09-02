@@ -54,6 +54,14 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
         assert session["pilot_current_organization_id"] == body["organization"]["id"]
         assert session["pilot_current_location_id"] == body["currentLocationId"]
 
+    progress = client.get("/api/auth/me").get_json()["onboardingProgress"]
+    assert progress["accountCreated"] is True
+    assert progress["businessInformation"] is True
+    assert progress["migrationUpload"] is False
+    assert progress["configuration"] is None
+    assert progress["customerReview"] is False
+    assert progress["readyToLaunch"] is False
+
     with app.app_context():
         organization = Organization.query.filter_by(name=body["organization"]["name"]).first()
         assert organization is not None
