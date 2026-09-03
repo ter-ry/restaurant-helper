@@ -207,12 +207,12 @@ export function PilotSquarePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="surface-panel p-6 sm:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <div className="workspace-page">
+      <Card className="surface-panel workspace-card">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Square</p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Private workspace for Square connection, sync, and mapping</h1>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Private workspace for Square connection, sync, and mapping</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">
               Keep the integration practical: connect, sync, map locations, link menu items, and review the usage snapshot without leaving the pilot shell.
             </p>
@@ -284,9 +284,9 @@ export function PilotSquarePage() {
         </Link>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-        <div className="space-y-6">
-          <Card className="p-6">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="space-y-4">
+          <Card className="workspace-card">
             <SectionHeader title="Connection and sync" description="Connection state, sync controls, and the latest imported sales summary." />
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={connectionReady ? "Square is connected to this organization." : "Connect Square before syncing data."} tone={squareStatusTone} />
@@ -380,7 +380,7 @@ export function PilotSquarePage() {
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="workspace-card">
             <SectionHeader title="Location mapping" description="Map Square locations to the active pilot workspace locations." />
             <div className="mt-4 space-y-3">
               {squareLocations.length ? squareLocations.map((location) => {
@@ -419,7 +419,7 @@ export function PilotSquarePage() {
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="workspace-card">
             <SectionHeader title="Menu mapping" description="Link Square catalog items to Flowtally menu items so the close and usage view stay aligned." />
             <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {catalogMappings.length ? catalogMappings.slice(0, 16).map((catalogObject) => {

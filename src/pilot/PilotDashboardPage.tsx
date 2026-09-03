@@ -175,7 +175,7 @@ export function PilotDashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Dashboard"
         title="What the owner needs to know today"
@@ -222,7 +222,7 @@ export function PilotDashboardPage() {
         </Card>
       ) : null}
 
-      <Card className="p-6">
+      <Card className="workspace-card">
         <SectionHeader title="Today&apos;s workflow" description="The connected loop from invoice to export readiness." />
         <div className="grid gap-3 lg:grid-cols-6">
             {[
@@ -245,7 +245,7 @@ export function PilotDashboardPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className="workspace-card">
         <SectionHeader title="Continue draft work" description="These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched." />
         <div className="grid gap-4 xl:grid-cols-4">
           {draftCards.map((card) => (
@@ -277,8 +277,8 @@ export function PilotDashboardPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
-        <Card className="p-6">
+      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
+        <Card className="workspace-card">
           <SectionHeader title="This week&apos;s changes" description="The biggest shifts that affect pricing, stock, and spend." />
           <div className="space-y-3">
             {(data?.recentPriceChanges ?? []).slice(0, 5).map((change) => (
@@ -297,14 +297,14 @@ export function PilotDashboardPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="workspace-card">
           <SectionHeader title="Operational signals" description="Current exceptions only. Historic completed work stays in its workflow history." />
           <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-5 text-sm text-muted">{attentionItems.length ? "See the action panel above for current attention items." : "No operational alerts right now."}</p>
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-6">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="workspace-card">
           <SectionHeader title="Recent activity" description="New purchases, inventory moves, and count updates." />
           <div className="space-y-3">
             {(data?.recentMovements ?? []).slice(0, 5).map((movement) => (
@@ -323,7 +323,7 @@ export function PilotDashboardPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="workspace-card">
           <SectionHeader title="Reorder plan preview" description="The items that need attention now, from low stock through urgent reorder." />
           <div className="space-y-3">
             {(data?.reorderSuggestions ?? []).slice(0, 5).map((item) => (
@@ -352,7 +352,7 @@ export function PilotDashboardPage() {
         </Card>
       </div>
 
-      <Card className="p-6">
+      <Card className="workspace-card">
         <SectionHeader title="Supplier spend" description="Who drove this month&apos;s purchasing so far." />
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {(data?.supplierSpend ?? []).slice(0, 6).map((supplier) => (

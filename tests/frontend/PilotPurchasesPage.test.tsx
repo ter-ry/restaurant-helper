@@ -236,7 +236,7 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByLabelText("Invoice number")).toHaveValue("");
     expect(screen.getByTestId("purchase-history-card")).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("purchase-primary-actions")).not.toBeInTheDocument();
   });
 
   it("creates a mapped invoice with a blank invoice number and readable transaction fields", async () => {
@@ -318,7 +318,7 @@ describe("PilotPurchasesPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("purchase-primary-actions")).toBeVisible();
 
     fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
     expect(await screen.findByTestId("purchase-lines-panel")).toBeVisible();

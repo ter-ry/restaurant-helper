@@ -342,13 +342,13 @@ export function PilotStockCountsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="surface-panel p-6 sm:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <div className="workspace-page">
+      <Card className="surface-panel workspace-card">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Stock Counts</p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Count sessions that turn into real stock adjustments</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Start a count, enter counted quantities, save the draft, and finalize into the inventory ledger when the shelf is reconciled.</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Count sessions that turn into real stock adjustments</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Count quickly, review exceptions, then apply a verified draft to inventory.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
@@ -363,7 +363,7 @@ export function PilotStockCountsPage() {
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: "Count sessions", value: formatNumber(sessions.length) },
             { label: "Draft counts", value: formatNumber(sessions.filter((session) => session.status === "Draft").length) },
@@ -391,7 +391,7 @@ export function PilotStockCountsPage() {
       </Card>
 
       {workflowTab === "active" ? (
-        <Card className="p-6">
+        <Card className="workspace-card">
           <SectionHeader title="Start a count" description="Pick the active inventory items to include, then start or resume a count session." />
           <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
             <div className="space-y-3">
@@ -447,13 +447,13 @@ export function PilotStockCountsPage() {
           </div>
         </Card>
       ) : (
-        <Card className="p-6">
+        <Card className="workspace-card">
           <SectionHeader title="Completed count history" description="History stays read-only. Open a completed count to review the locked snapshot and reconciliation movements." />
         </Card>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
-        <Card className="p-6">
+      <div className="grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
+        <Card className="workspace-card">
           <SectionHeader title={workflowTab === "history" ? "Count history" : "Sessions"} description={workflowTab === "history" ? "Completed counts are locked snapshots." : "Draft counts stay editable until they are applied to inventory."} />
           <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
             {visibleSessions.map((session) => (
@@ -475,7 +475,7 @@ export function PilotStockCountsPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="workspace-card">
           <SectionHeader
             title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}
@@ -589,9 +589,12 @@ export function PilotStockCountsPage() {
                   </div>
                 </div>
                 <p className="mt-2 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 workspace-table-wrap">
+                  <div className="hidden grid-cols-[minmax(12rem,1.3fr)_repeat(3,minmax(7rem,0.7fr))_minmax(10rem,1fr)] gap-3 bg-slate-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-muted lg:grid">
+                    <span>Item</span><span>Expected</span><span>Counted</span><span>Variance</span><span>Note</span>
+                  </div>
                   {filteredLines.map((line) => (
-                    <div key={line.id} className="rounded-2xl border border-line bg-white p-4">
+                    <div key={line.id} className="border-b border-line bg-white p-3 last:border-b-0">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="min-w-0">
                           <p className="font-semibold text-ink">{line.itemNameSnapshot}</p>
@@ -601,16 +604,16 @@ export function PilotStockCountsPage() {
                         </div>
                         <Badge tone={statusTone(line.status)}>{line.status}</Badge>
                       </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                        <div className="rounded-2xl border border-line bg-slate-50 p-3">
+                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                        <div className="rounded-xl border border-line bg-slate-50 p-2">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Expected</p>
                           <p className="mt-2 text-lg font-bold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</p>
                         </div>
-                        <div className="rounded-2xl border border-line bg-slate-50 p-3">
+                        <div className="rounded-xl border border-line bg-slate-50 p-2">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Counted</p>
                           <p className="mt-2 text-lg font-bold text-ink">{line.countedQuantity === null ? "Not counted" : `${formatNumber(line.countedQuantity)} ${line.stockUnitSnapshot}`}</p>
                         </div>
-                        <div className="rounded-2xl border border-line bg-slate-50 p-3">
+                        <div className="rounded-xl border border-line bg-slate-50 p-2">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Variance</p>
                           <p className={`mt-2 text-lg font-bold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>
                             {line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}

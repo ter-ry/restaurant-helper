@@ -565,7 +565,7 @@ export function SetupConsolePage() {
           </Card>
         </div>
       ) : null}
-      <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[240px_1fr]">
         <Card className="p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-ink">Organizations</h2>
@@ -667,8 +667,8 @@ export function SetupConsolePage() {
               ) : null}
             </Card>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card className="p-6">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card className="workspace-card">
                 <h3 className="text-lg font-bold text-ink">Lifecycle and payment state</h3>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <label className="block">
@@ -708,7 +708,7 @@ export function SetupConsolePage() {
                 </div>
               </Card>
 
-              <Card className="p-6">
+              <Card className="workspace-card">
                 <h3 className="text-lg font-bold text-ink">Template and review</h3>
                 <label className="mt-4 block">
                   <span className="text-sm font-semibold text-ink">Template</span>
@@ -750,19 +750,19 @@ export function SetupConsolePage() {
                 <p className="mt-2 text-sm leading-6 text-muted">
                   Registered modules are shown even when the organization has no entitlement row yet. Backend-ready modules can be enabled; planning-only modules stay visibly locked.
                 </p>
-                <div className="mt-4 space-y-5">
+                <div className="workspace-table-wrap mt-4">
                   {[
                     ["Backend ready", readyModules],
                     ["Locked / planning only", lockedModules],
                   ].map(([label, groupedModules]) => (
-                    <div key={label as string} className="rounded-2xl border border-line bg-slate-50 p-4">
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">{label as string}</p>
-                      <div className="mt-3 space-y-2">
+                    <div key={label as string} className="border-b border-line last:border-b-0">
+                      <p className="bg-slate-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-muted">{label as string}</p>
+                      <div className="divide-y divide-line">
                         {(groupedModules as typeof modules).map((module) => {
                           const missingDependencies = module.missingDependencies ?? [];
                           const selectDisabled = !module.backendReady || missingDependencies.length > 0;
                           return (
-                            <div key={`${String(module.key)}-${selectedRevision}`} className="grid gap-3 rounded-2xl border border-line bg-white p-3 md:grid-cols-[1.1fr_1fr_auto] md:items-start">
+                            <div key={`${String(module.key)}-${selectedRevision}`} className="grid gap-2 bg-white p-3 md:grid-cols-[1.1fr_1fr_auto] md:items-center">
                               <div className="space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
@@ -788,7 +788,7 @@ export function SetupConsolePage() {
                                 </label>
                                 <select
                                   aria-label={`${String(module.displayName ?? module.key)} status`}
-                                  className="w-full rounded-2xl border border-line bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted"
+                                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted"
                                   defaultValue={String(module.status)}
                                   disabled={selectDisabled}
                                   id={`module-${String(module.key)}`}
