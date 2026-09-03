@@ -212,7 +212,7 @@ export function PilotDailyClosePage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Daily close"
         title="Close the day with a clear snapshot"
@@ -307,8 +307,8 @@ export function PilotDailyClosePage() {
       {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">{message}</div> : null}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted" aria-busy="true">Loading daily close…</div> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="p-6">
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className="workspace-card">
           <SectionHeader
             title={completed ? "Completed daily close" : currentSession ? "Active daily close" : "Start a daily close"}
             description={
@@ -516,8 +516,8 @@ export function PilotDailyClosePage() {
           )}
         </Card>
 
-        <div className="space-y-6">
-          <Card className="p-6">
+        <div className="space-y-4">
+          <Card className="workspace-card">
             <SectionHeader title="Square context" description="Connection, mapping, and sync state that feed the close." />
             <div className="mt-4 space-y-3 text-sm">
               <div className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -540,7 +540,7 @@ export function PilotDailyClosePage() {
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="workspace-card">
             <SectionHeader title="History" description="Completed and draft closes for this location." />
             <div className="mt-4 space-y-3">
               {history.length ? (

@@ -426,7 +426,7 @@ export function PilotInventoryPage() {
   };
 
   const renderItemTable = () => (
-    <Card className="p-6">
+    <Card className="workspace-card">
       <SectionHeader title="Items" description="Search, open, and keep the stock list current." />
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-slate-50 px-4 py-3">
@@ -799,7 +799,7 @@ export function PilotInventoryPage() {
               <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_0.8fr_1.4fr]">
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Quantity delta</span>
-                  <input className="input mt-1" type="number" step="0.0001" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
+                  <input className="input mt-1" type="number" step="1" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Reason</span>
@@ -1113,7 +1113,7 @@ export function PilotInventoryPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="workspace-page">
       {loading ? <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted">Loading inventory workspace...</div> : null}
       {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
       {workspaceMode === "browse" ? (

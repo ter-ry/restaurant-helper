@@ -565,7 +565,7 @@ export function SetupConsolePage() {
           </Card>
         </div>
       ) : null}
-      <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[240px_1fr]">
         <Card className="p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-ink">Organizations</h2>

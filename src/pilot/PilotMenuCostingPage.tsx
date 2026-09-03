@@ -365,8 +365,8 @@ export function PilotMenuCostingPage() {
 
   if (!currentLocation || !organization) {
     return (
-      <div className="space-y-6">
-        <Card className="p-6">
+      <div className="workspace-page">
+        <Card className="workspace-card">
           <p className="text-sm text-muted">Menu costing needs an active organization and location before it can load.</p>
         </Card>
       </div>
@@ -374,7 +374,7 @@ export function PilotMenuCostingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Menu costing"
         title="Recipe and menu pricing"
@@ -394,7 +394,7 @@ export function PilotMenuCostingPage() {
       />
 
       {loading ? (
-        <Card className="p-6 text-sm text-muted">Loading menu costing…</Card>
+        <Card className="workspace-card text-sm text-muted">Loading menu costing…</Card>
       ) : null}
       {error ? (
         <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -433,8 +433,8 @@ export function PilotMenuCostingPage() {
       />
 
       {menuTab === "recipes" ? (
-      <div className="grid gap-6 xl:grid-cols-[0.98fr_1.22fr]">
-        <Card className="p-5">
+      <div className="grid gap-4 xl:grid-cols-[0.98fr_1.22fr]">
+        <Card className="workspace-card">
               <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
@@ -560,7 +560,7 @@ export function PilotMenuCostingPage() {
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Quantity required</span>
-                    <input className="input mt-1" type="number" step="0.0001" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
+                    <input className="input mt-1" type="number" step="1" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Unit</span>
@@ -655,7 +655,7 @@ export function PilotMenuCostingPage() {
       ) : (
       <Card className="p-5">
         <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
-        <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr]">
+        <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
           <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
             {filteredMenuItems.length ? (
               filteredMenuItems.map((menuItem) => (

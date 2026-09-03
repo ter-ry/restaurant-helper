@@ -314,13 +314,13 @@ export function PilotReorderPlanPage() {
   const availableItems = inventoryItems.filter((item) => !draft?.lines.some((line) => line.inventoryItemId === item.id) && `${item.name} ${item.category} ${item.preferredSupplierName} ${item.stockUnit}`.toLowerCase().includes(inventorySearch.toLowerCase()));
 
   return (
-    <div className="space-y-6">
-      <Card className="surface-panel p-6 sm:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <div className="workspace-page">
+      <Card className="surface-panel workspace-card">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Reorder Plan</p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Plan what needs ordering and preserve the snapshot</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">Build a draft order from current inventory pressure, adjust quantities, exclude items, and complete the plan when it is ready.</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Plan what needs ordering and preserve the snapshot</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Keep live pressure beside the working draft. Completed plans remain locked history.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
@@ -342,7 +342,7 @@ export function PilotReorderPlanPage() {
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
         {loading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading reorder plans...</div> : null}
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: "Current suggestions", value: formatNumber(currentSuggestions.length), helper: `${formatNumber(currentUrgentCount)} urgent` },
             { label: "Unknown prices", value: formatNumber(currentUnknownPriceCount), helper: "estimate only" },
@@ -369,10 +369,10 @@ export function PilotReorderPlanPage() {
         </div>
       </Card>
 
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
       {workflowTab === "history" ? (
-        <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
-          <Card className="p-6">
+        <div className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
+          <Card className="workspace-card">
             <SectionHeader title="Completed plan history" description="Live reorder pressure stays hidden here so this view reads as history only." />
             <div className="space-y-3">
               {historyPlans.slice(0, 5).map((plan) => (
@@ -394,7 +394,7 @@ export function PilotReorderPlanPage() {
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="workspace-card">
             <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
             <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
               {visiblePlans.map((plan) => (
@@ -438,8 +438,8 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : showCompactEmptyState ? (
-        <div className="space-y-6">
-          <Card className="border-brand-200 bg-brand-50/30 p-6">
+        <div className="space-y-4">
+          <Card className="workspace-card border-brand-200 bg-brand-50/30">
             <SectionHeader title="Nothing needs reordering right now." description="All active inventory items are currently above their reorder thresholds." />
             <div className="mt-4 rounded-2xl border border-brand-100 bg-white px-4 py-3 text-sm leading-6 text-slate-700">
               Checked <span className="font-bold text-ink">{formatNumber(activeInventoryItemCount)} active inventory item{activeInventoryItemCount === 1 ? "" : "s"}</span>. No current reorder pressure was found.
@@ -457,7 +457,7 @@ export function PilotReorderPlanPage() {
             <p className="mt-4 text-sm text-muted">Completed plans stay preserved as history snapshots.</p>
           </Card>
 
-          <Card className="p-6">
+          <Card className="workspace-card">
             <SectionHeader title="Completed plan history" description="History stays separate from live reorder pressure." />
             <div className="space-y-3">
               {historyPlans.slice(0, 3).map((plan) => (
@@ -480,8 +480,8 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : (
-        <div className="order-2 grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
-          <Card className="p-6">
+        <div className="order-2 grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
+          <Card className="workspace-card">
             <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
               {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
@@ -558,7 +558,7 @@ export function PilotReorderPlanPage() {
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="workspace-card">
             <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
             <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
               {visiblePlans.map((plan) => (
@@ -603,7 +603,7 @@ export function PilotReorderPlanPage() {
         </div>
       )}
 
-      <Card className={`p-6 ${draft && workflowTab === "live" ? "order-1" : ""}`}>
+      <Card className={`workspace-card ${draft && workflowTab === "live" ? "order-1" : ""}`}>
         <SectionHeader
           title={selectedPlan ? `${selectedPlan.name}` : "Open a reorder plan"}
           description={selectedPlan ? "Drafts stay editable. Prepared and completed plans open as read-only snapshots." : "Start or reopen a draft to begin planning."}
@@ -751,7 +751,7 @@ export function PilotReorderPlanPage() {
                         <div className="mt-4 grid gap-3 md:grid-cols-4">
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty</span>
-                            <input className="input mt-1" min="0" step="0.0001" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
+                            <input className="input mt-1" min="0" step="1" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Exclude</span>

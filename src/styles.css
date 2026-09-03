@@ -96,7 +96,7 @@ textarea:focus-visible {
 
 .input {
   width: 100%;
-  min-height: 2.75rem;
+  min-height: 2.5rem;
   border: 1px solid #e2e8f0;
   border-radius: 0.5rem;
   background: #ffffff;
@@ -114,8 +114,68 @@ textarea:focus-visible {
 }
 
 textarea.input {
-  min-height: 10rem;
+  min-height: 6rem;
   resize: vertical;
+}
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.workspace-page > .surface-panel {
+  box-shadow: 0 16px 42px rgba(31, 41, 55, 0.08);
+}
+
+.workspace-page .workspace-card {
+  padding: 1.25rem;
+}
+
+.workspace-page .workspace-card .section-header {
+  margin-bottom: 0.75rem;
+}
+
+.workspace-page .workspace-card .section-header + * {
+  margin-top: 0.75rem;
+}
+
+.workspace-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+}
+
+.workspace-table-wrap table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.workspace-table-wrap th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.workspace-table-wrap th,
+.workspace-table-wrap td {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+
+.workspace-table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.workspace-table-wrap tbody tr:hover {
+  background: #f8fafc;
 }
 
 .reveal {

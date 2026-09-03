@@ -610,13 +610,13 @@ export function PilotPurchasesPage() {
   };
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
-      <Card className="surface-panel p-6 sm:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <div className="workspace-page p-3 sm:p-4">
+      <Card className="surface-panel workspace-card">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Purchases</p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Capture invoices, confirm items, and move stock</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">This is the daily intake hub for supplier invoices and receipts. Saved purchases can be reviewed, mapped, received, and marked ready for export.</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Capture invoices, confirm items, and move stock</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">One workspace for supplier details, line mapping, totals, and receiving.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -645,7 +645,7 @@ export function PilotPurchasesPage() {
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {[
             { label: "This month spend", value: formatMoney(data?.summary?.thisMonthSpend ?? 0) },
             { label: "Uploads needing review", value: formatNumber(data?.summary?.uploadsNeedingReview ?? 0) },
@@ -661,9 +661,9 @@ export function PilotPurchasesPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.85fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.85fr)]">
         <div ref={editorPanelRef} className="scroll-mt-32">
-          <Card hidden={!!detailInvoice} aria-hidden={detailInvoice ? "true" : undefined} className={detailInvoice ? "hidden" : "w-full p-6"} data-testid="purchase-editor-card">
+          <Card hidden={!!detailInvoice} aria-hidden={detailInvoice ? "true" : undefined} className={detailInvoice ? "hidden" : "workspace-card w-full"} data-testid="purchase-editor-card">
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
@@ -798,7 +798,7 @@ export function PilotPurchasesPage() {
                           <div className="mt-3 grid gap-3 md:grid-cols-[minmax(7rem,0.85fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)]">
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Quantity</span>
-                              <input className="input mt-1" type="number" step="0.0001" value={line.quantity} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
+                              <input className="input mt-1" type="number" step="1" value={line.quantity} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Purchase unit</span>
@@ -830,7 +830,7 @@ export function PilotPurchasesPage() {
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Conversion</span>
-                              <input className="input mt-1" type="number" step="0.0001" value={line.conversionFactor} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
+                              <input className="input mt-1" type="number" step="1" value={line.conversionFactor} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
                             </label>
                           </div>
                           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
