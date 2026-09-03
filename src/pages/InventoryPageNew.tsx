@@ -1,4 +1,4 @@
-﻿import { Archive, Clock3, History, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { Archive, Clock3, History, Plus, RefreshCw, Save, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -1200,25 +1200,25 @@ export function InventoryPage() {
               <input className="input" value={itemDraft.category} onChange={(event) => setItemDraft((current) => ({ ...current, category: event.target.value }))} />
             </Field>
             <Field label="Current quantity">
-              <input className="input" type="number" step="0.01" value={itemDraft.currentQuantity} onChange={(event) => setItemDraft((current) => ({ ...current, currentQuantity: Number(event.target.value) || 0 }))} />
+              <input className="input" type="number" step="1" value={itemDraft.currentQuantity} onChange={(event) => setItemDraft((current) => ({ ...current, currentQuantity: Number(event.target.value) || 0 }))} />
             </Field>
             <Field label="Unit">
               <input className="input" value={itemDraft.unit} onChange={(event) => setItemDraft((current) => ({ ...current, unit: event.target.value }))} />
             </Field>
             <Field label="Minimum quantity">
-              <input className="input" type="number" step="0.01" value={itemDraft.minQuantity} onChange={(event) => setItemDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} />
+              <input className="input" type="number" step="1" value={itemDraft.minQuantity} onChange={(event) => setItemDraft((current) => ({ ...current, minQuantity: Number(event.target.value) || 0 }))} />
             </Field>
             <Field label="PAR level">
-              <input className="input" type="number" step="0.01" value={itemDraft.parLevel} onChange={(event) => setItemDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} />
+              <input className="input" type="number" step="1" value={itemDraft.parLevel} onChange={(event) => setItemDraft((current) => ({ ...current, parLevel: Number(event.target.value) || 0 }))} />
             </Field>
             <Field label="Preferred supplier">
               <input className="input" value={itemDraft.preferredSupplier} onChange={(event) => setItemDraft((current) => ({ ...current, preferredSupplier: event.target.value }))} />
             </Field>
             <Field label="Latest purchase price">
-              <input className="input" type="number" step="0.01" value={itemDraft.latestPurchasePrice} onChange={(event) => setItemDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} />
+              <input className="input" type="number" step="1" value={itemDraft.latestPurchasePrice} onChange={(event) => setItemDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) || 0 }))} />
             </Field>
             <Field label="Average daily usage">
-              <input className="input" type="number" step="0.01" value={itemDraft.averageDailyUsage ?? ""} onChange={(event) => setItemDraft((current) => ({ ...current, averageDailyUsage: event.target.value.trim() ? Number(event.target.value) || 0 : undefined }))} />
+              <input className="input" type="number" step="1" value={itemDraft.averageDailyUsage ?? ""} onChange={(event) => setItemDraft((current) => ({ ...current, averageDailyUsage: event.target.value.trim() ? Number(event.target.value) || 0 : undefined }))} />
             </Field>
             <Field label="Notes">
               <textarea className="input min-h-28" value={itemDraft.notes} onChange={(event) => setItemDraft((current) => ({ ...current, notes: event.target.value }))} />
@@ -1381,7 +1381,7 @@ export function InventoryPage() {
                         </select>
                       </Field>
                       <Field label="Conversion factor">
-                        <input className="input" type="number" step="0.01" value={line.conversionFactor} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, conversionFactor: Number(event.target.value) || 1 } : entry)))} />
+                        <input className="input" type="number" step="1" value={line.conversionFactor} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, conversionFactor: Number(event.target.value) || 1 } : entry)))} />
                       </Field>
                       <Field label="Note">
                         <input className="input" value={line.note} onChange={(event) => setReceiveLines((current) => current.map((entry) => (entry.invoiceLineItemId === line.invoiceLineItemId ? { ...entry, note: event.target.value } : entry)))} placeholder="Optional receipt note" />
@@ -1448,7 +1448,7 @@ export function InventoryPage() {
               </select>
             </Field>
             <Field label="Quantity delta">
-              <input className="input" type="number" step="0.01" value={manualMovement.quantityDelta} onChange={(event) => setManualMovement((current) => ({ ...current, quantityDelta: Number(event.target.value) || 0 }))} />
+              <input className="input" type="number" step="1" value={manualMovement.quantityDelta} onChange={(event) => setManualMovement((current) => ({ ...current, quantityDelta: Number(event.target.value) || 0 }))} />
             </Field>
             <Field label="Note">
               <input className="input" value={manualMovement.note} onChange={(event) => setManualMovement((current) => ({ ...current, note: event.target.value }))} placeholder="Reason for this movement" />
@@ -1469,7 +1469,7 @@ export function InventoryPage() {
         <ModalShell title="Physical count" onClose={() => setActivePanel(null)}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Counted quantity">
-              <input className="input" type="number" step="0.01" value={countQuantity} onChange={(event) => setCountQuantity(event.target.value)} placeholder="Enter the stock count" />
+              <input className="input" type="number" step="1" value={countQuantity} onChange={(event) => setCountQuantity(event.target.value)} placeholder="Enter the stock count" />
             </Field>
             <Field label="Count note">
               <input className="input" value={countNote} onChange={(event) => setCountNote(event.target.value)} placeholder="Optional count note" />
@@ -1528,7 +1528,7 @@ export function InventoryPage() {
                         <input
                           className="input mt-2"
                           type="number"
-                          step="0.01"
+                          step="1"
                           inputMode="decimal"
                           value={line.countedQuantity ?? ""}
                           onChange={(event) => handleCountSessionFieldUpdate(line.id, event.target.value, line.note)}
@@ -1744,7 +1744,7 @@ export function InventoryPage() {
                             <input
                               className="input mt-2"
                               type="number"
-                              step="0.01"
+                              step="1"
                               value={reorderQuantities[line.itemId] - line.adjustedQuantity}
                               onChange={(event) => setReorderQuantities((current) => ({ ...current, [line.itemId]: Number(event.target.value) || 0 }))}
                             />

@@ -751,7 +751,7 @@ export function PilotReorderPlanPage() {
                         <div className="mt-4 grid gap-3 md:grid-cols-4">
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty</span>
-                            <input className="input mt-1" min="0" step="0.0001" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
+                            <input className="input mt-1" min="0" step="1" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Exclude</span>
