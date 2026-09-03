@@ -651,7 +651,7 @@ export function PilotReorderPlanPage() {
               </label>
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-ink">Plan notes</span>
-                <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
+                <textarea rows={2} className="input mt-1 min-h-0" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
             </div>
 

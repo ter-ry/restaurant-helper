@@ -502,11 +502,11 @@ export function PilotMenuCostingPage() {
           </div>
           <label className="mt-3 block">
             <span className="text-sm font-medium text-ink">Description</span>
-            <textarea className="input mt-1 min-h-24" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} />
+            <textarea rows={2} className="input mt-1 min-h-0" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} />
           </label>
           <label className="mt-3 block">
             <span className="text-sm font-medium text-ink">Notes</span>
-            <textarea className="input mt-1 min-h-20" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} />
+            <textarea rows={2} className="input mt-1 min-h-0" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} />
           </label>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveRecipe()} type="button" disabled={savingRecipe}>
@@ -573,7 +573,7 @@ export function PilotMenuCostingPage() {
                 </div>
                 <label className="block">
                   <span className="text-sm font-medium text-ink">Notes</span>
-                  <textarea className="input mt-1 min-h-20" value={ingredientDraft.notes} onChange={(event) => setIngredientDraft((current) => ({ ...current, notes: event.target.value }))} />
+                  <textarea rows={2} className="input mt-1 min-h-0" value={ingredientDraft.notes} onChange={(event) => setIngredientDraft((current) => ({ ...current, notes: event.target.value }))} />
                 </label>
                 <div className="flex flex-wrap gap-3">
                   <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveIngredient()} type="button" disabled={savingIngredient}>
@@ -723,7 +723,7 @@ export function PilotMenuCostingPage() {
             </div>
             <label className="mt-3 block">
               <span className="text-sm font-medium text-ink">Notes</span>
-              <textarea className="input mt-1 min-h-20" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} />
+              <textarea rows={2} className="input mt-1 min-h-0" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} />
             </label>
             {showMenuItemEditor ? (
               <>

@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
+import { StickyActionBar } from "../components/StickyActionBar";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotPurchaseInvoice,
@@ -693,8 +694,19 @@ export function PilotPurchasesPage() {
               />
             </div>
 
+            {!finalizedStatus && purchasePanel !== "review" && (draft.id || readyToReceive) ? (
+              <StickyActionBar hint={readyToReceive ? "Mapped and ready to post into inventory." : "Complete the required mapping before receiving."} className="mt-4" testId="purchase-primary-actions">
+                  <Button variant="secondary" disabled={saving} type="button" onClick={() => void saveDraft("Draft")}>
+                    {saving ? "Saving..." : "Save draft"}
+                  </Button>
+                  <Button disabled={saving || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
+                    {saving ? "Receiving..." : "Save & receive"}
+                  </Button>
+              </StickyActionBar>
+            ) : null}
+
             <div className="mt-5 space-y-5">
-              {purchasePanel === "details" ? (
+              {purchasePanel !== "review" ? (
                 <section className="space-y-5" data-testid="purchase-details-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -765,7 +777,7 @@ export function PilotPurchasesPage() {
                 </section>
               ) : null}
 
-              {purchasePanel === "lines" ? (
+              {purchasePanel !== "review" ? (
                 <section className="space-y-4" data-testid="purchase-lines-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">

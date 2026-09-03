@@ -589,9 +589,12 @@ export function PilotStockCountsPage() {
                   </div>
                 </div>
                 <p className="mt-2 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 workspace-table-wrap">
+                  <div className="hidden grid-cols-[minmax(12rem,1.3fr)_repeat(3,minmax(7rem,0.7fr))_minmax(10rem,1fr)] gap-3 bg-slate-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-muted lg:grid">
+                    <span>Item</span><span>Expected</span><span>Counted</span><span>Variance</span><span>Note</span>
+                  </div>
                   {filteredLines.map((line) => (
-                    <div key={line.id} className="rounded-2xl border border-line bg-white p-4">
+                    <div key={line.id} className="border-b border-line bg-white p-3 last:border-b-0">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="min-w-0">
                           <p className="font-semibold text-ink">{line.itemNameSnapshot}</p>
@@ -601,16 +604,16 @@ export function PilotStockCountsPage() {
                         </div>
                         <Badge tone={statusTone(line.status)}>{line.status}</Badge>
                       </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                        <div className="rounded-2xl border border-line bg-slate-50 p-3">
+                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                        <div className="rounded-xl border border-line bg-slate-50 p-2">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Expected</p>
                           <p className="mt-2 text-lg font-bold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</p>
                         </div>
-                        <div className="rounded-2xl border border-line bg-slate-50 p-3">
+                        <div className="rounded-xl border border-line bg-slate-50 p-2">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Counted</p>
                           <p className="mt-2 text-lg font-bold text-ink">{line.countedQuantity === null ? "Not counted" : `${formatNumber(line.countedQuantity)} ${line.stockUnitSnapshot}`}</p>
                         </div>
-                        <div className="rounded-2xl border border-line bg-slate-50 p-3">
+                        <div className="rounded-xl border border-line bg-slate-50 p-2">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted">Variance</p>
                           <p className={`mt-2 text-lg font-bold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>
                             {line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}
