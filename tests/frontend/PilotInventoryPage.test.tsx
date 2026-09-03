@@ -311,6 +311,7 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("$9.00")).toBeVisible();
     expect(screen.getByText("Inventory value")).toBeVisible();
     expect(screen.getByText("$248.64")).toBeVisible();
+    expect(screen.getAllByText("In stock").length).toBeGreaterThan(0);
     expect(screen.queryByText("Operational summary")).not.toBeInTheDocument();
     expect(screen.getByText("Item details")).toBeVisible();
     expect(screen.getAllByText((_, element) => element?.textContent?.includes("Base unit kg") ?? false).length).toBeGreaterThan(0);
@@ -391,7 +392,7 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByRole("spinbutton", { name: "PAR" })).toHaveValue(5);
     expect(screen.getByRole("spinbutton", { name: "Minimum" })).toHaveAttribute("step", "1");
     expect(screen.getByRole("spinbutton", { name: "PAR" })).toHaveAttribute("step", "1");
-    expect(screen.getByRole("spinbutton", { name: "Average daily usage" })).toHaveAttribute("step", "0.1");
+    expect(screen.getByRole("spinbutton", { name: "Average daily usage" })).toHaveAttribute("step", "1");
     expect(screen.getAllByLabelText("Item notes")).toHaveLength(1);
 
     fireEvent.change(screen.getByRole("spinbutton", { name: "Minimum" }), { target: { value: "8" } });

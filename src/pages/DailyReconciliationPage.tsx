@@ -478,7 +478,7 @@ export function DailyReconciliationPage() {
                     }}
                     className="input"
                     min="0"
-                    step="0.01"
+                    step="1"
                     type="number"
                     inputMode="decimal"
                   />
@@ -494,25 +494,25 @@ export function DailyReconciliationPage() {
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <Field label="Cash">
-                  <input value={draft.cash} onChange={(event) => setField("cash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.cash} onChange={(event) => setField("cash", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Card">
-                  <input value={draft.card} onChange={(event) => setField("card", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.card} onChange={(event) => setField("card", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Uber Eats">
-                  <input value={draft.uberEats} onChange={(event) => setField("uberEats", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.uberEats} onChange={(event) => setField("uberEats", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="DoorDash">
-                  <input value={draft.doorDash} onChange={(event) => setField("doorDash", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.doorDash} onChange={(event) => setField("doorDash", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Skip">
-                  <input value={draft.skip} onChange={(event) => setField("skip", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.skip} onChange={(event) => setField("skip", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Other payment source">
                   <input value={draft.otherSourceName} onChange={(event) => setField("otherSourceName", event.target.value)} className="input" placeholder="Gift cards, cash drop, etc." type="text" />
                 </Field>
                 <Field label="Other payment amount">
-                  <input value={draft.other} onChange={(event) => setField("other", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.other} onChange={(event) => setField("other", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                   <p className="font-semibold text-ink">What this means</p>
@@ -528,19 +528,19 @@ export function DailyReconciliationPage() {
               </p>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <Field label="Refunds">
-                  <input value={draft.refunds} onChange={(event) => setField("refunds", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.refunds} onChange={(event) => setField("refunds", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Discounts">
-                  <input value={draft.discounts} onChange={(event) => setField("discounts", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.discounts} onChange={(event) => setField("discounts", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Tips">
-                  <input value={draft.tips} onChange={(event) => setField("tips", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.tips} onChange={(event) => setField("tips", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Fees / platform adjustments">
-                  <input value={draft.fees} onChange={(event) => setField("fees", Number(event.target.value) || 0)} className="input" min="0" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.fees} onChange={(event) => setField("fees", Number(event.target.value) || 0)} className="input" min="0" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Manual adjustment">
-                  <input value={draft.manualAdjustment} onChange={(event) => setField("manualAdjustment", Number(event.target.value) || 0)} className="input" step="0.01" type="number" inputMode="decimal" />
+                  <input value={draft.manualAdjustment} onChange={(event) => setField("manualAdjustment", Number(event.target.value) || 0)} className="input" step="1" type="number" inputMode="decimal" />
                 </Field>
                 <Field label="Notes">
                   <textarea

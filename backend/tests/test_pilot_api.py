@@ -62,7 +62,7 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     dashboard_body = dashboard.get_json()
     assert dashboard_body["summary"]["inventoryReorderNowCount"] == 4
     assert dashboard_body["summary"]["inventoryOutOfStockCount"] == 1
-    assert dashboard_body["summary"]["inventoryLowStockCount"] == 6
+    assert dashboard_body["summary"]["inventoryLowStockCount"] == 5
     assert dashboard_body["recentPriceChanges"]
     assert dashboard_body["operationalAttention"]["reorder"]["count"] == 10
 
@@ -106,6 +106,41 @@ def test_reorder_recommendation_requires_positive_quantity(app, client):
     reorder = client.get("/api/pilot/reorder-plan")
     assert reorder.status_code == 200
     assert not any(entry["inventoryItemName"] == "Chicken Breast" for entry in reorder.get_json()["suggestions"])
+
+
+def test_inventory_status_and_reorder_pressure_share_quantity_thresholds(app, client):
+    login(client)
+
+    with app.app_context():
+        item = InventoryItem.query.filter_by(name="Chicken Breast").first()
+        assert item is not None
+        item.current_on_hand = 30
+        item.min_quantity = 5
+        item.par_level = 9
+        db.session.commit()
+
+    above_par = client.get("/api/pilot/reorder-plan").get_json()["suggestions"]
+    assert not any(entry["inventoryItemName"] == "Chicken Breast" for entry in above_par)
+
+    with app.app_context():
+        item = InventoryItem.query.filter_by(name="Chicken Breast").first()
+        assert item is not None
+        item.par_level = 35
+        db.session.commit()
+
+    below_par = client.get("/api/pilot/reorder-plan").get_json()["suggestions"]
+    chicken = next(entry for entry in below_par if entry["inventoryItemName"] == "Chicken Breast")
+    assert chicken["stockStatus"] == "Low stock"
+    assert chicken["suggestedQuantity"] == 5
+
+    with app.app_context():
+        item = InventoryItem.query.filter_by(name="Chicken Breast").first()
+        assert item is not None
+        item.par_level = 9
+        db.session.commit()
+
+    reset = client.get("/api/pilot/reorder-plan").get_json()["suggestions"]
+    assert not any(entry["inventoryItemName"] == "Chicken Breast" for entry in reset)
 
 def test_purchase_invoice_accepts_blank_number_for_mapped_line(client):
     login(client)

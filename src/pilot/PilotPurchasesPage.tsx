@@ -758,15 +758,15 @@ export function PilotPurchasesPage() {
                   <div className="grid gap-4 md:grid-cols-3">
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Subtotal</span>
-                      <input className="input mt-1" type="number" step="0.01" value={draft.subtotal} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="1" value={draft.subtotal} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
                     </label>
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Tax</span>
-                      <input className="input mt-1" type="number" step="0.01" value={draft.tax} onFocus={selectZeroValue} onChange={(event) => setTax(Number(event.target.value))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="1" value={draft.tax} onFocus={selectZeroValue} onChange={(event) => setTax(Number(event.target.value))} disabled={finalizedStatus} />
                     </label>
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Total</span>
-                      <input className="input mt-1" type="number" step="0.01" value={draft.totalAmount} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, totalAmount: Number(event.target.value) }))} disabled={finalizedStatus} />
+                      <input className="input mt-1" type="number" step="1" value={draft.totalAmount} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, totalAmount: Number(event.target.value) }))} disabled={finalizedStatus} />
                     </label>
                   </div>
 
@@ -823,11 +823,11 @@ export function PilotPurchasesPage() {
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Unit price</span>
-                              <input className="input mt-1" type="number" step="0.01" value={line.unitPrice} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
+                              <input className="input mt-1" type="number" step="1" value={line.unitPrice} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Line total</span>
-                              <input className="input mt-1 font-semibold" type="number" step="0.01" value={line.lineTotal} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
+                              <input className="input mt-1 font-semibold" type="number" step="1" value={line.lineTotal} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
                             </label>
                           </div>
                           <div className="mt-3 grid gap-3 border-t border-dashed border-line pt-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.7fr)]">
