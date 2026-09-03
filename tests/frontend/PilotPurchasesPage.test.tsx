@@ -250,8 +250,10 @@ describe("PilotPurchasesPage", () => {
 
     const quantity = screen.getByLabelText("Quantity");
     const unitPrice = screen.getByLabelText("Unit price");
-    expect(quantity).toHaveAttribute("step", "0.0001");
-    expect(unitPrice).toHaveAttribute("step", "0.01");
+    expect(quantity).toHaveAttribute("step", "1");
+    expect(unitPrice).toHaveAttribute("step", "1");
+    fireEvent.change(quantity, { target: { value: "2.5" } });
+    expect(quantity).toHaveValue(2.5);
     fireEvent.change(quantity, { target: { value: "10" } });
     fireEvent.change(unitPrice, { target: { value: "12" } });
     expect(screen.getByLabelText("Line total")).toHaveValue(120);

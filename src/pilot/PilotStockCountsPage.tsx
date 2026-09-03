@@ -618,7 +618,7 @@ export function PilotStockCountsPage() {
                         </div>
                         <label className="block">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Counted quantity</span>
-                          <input className="input mt-1" min="0" type="number" step="0.0001" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} />
+                          <input className="input mt-1" min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} />
                         </label>
                         <label className="block md:col-span-2 xl:col-span-1">
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Variance note</span>

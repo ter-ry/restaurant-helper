@@ -116,11 +116,10 @@ function draftFromItem(item: PilotInventoryItem): InventoryDraft {
   };
 }
 
-function stockStatus(item: Pick<PilotInventoryItem, "currentOnHand" | "minQuantity" | "parLevel" | "averageDailyUsage">) {
-  const daysRemaining = item.averageDailyUsage && item.averageDailyUsage > 0 ? Number((item.currentOnHand / item.averageDailyUsage).toFixed(1)) : null;
+function stockStatus(item: Pick<PilotInventoryItem, "currentOnHand" | "minQuantity" | "parLevel">) {
   if (item.currentOnHand <= 0) return "Out of stock";
-  if (item.currentOnHand <= item.minQuantity || (daysRemaining !== null && daysRemaining <= 3)) return "Reorder now";
-  if (item.currentOnHand < item.parLevel || (daysRemaining !== null && daysRemaining <= 10)) return "Low stock";
+  if (item.currentOnHand <= item.minQuantity) return "Reorder now";
+  if (item.currentOnHand < item.parLevel) return "Low stock";
   return "In stock";
 }
 
@@ -799,7 +798,7 @@ export function PilotInventoryPage() {
               <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_0.8fr_1.4fr]">
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Quantity delta</span>
-                  <input className="input mt-1" type="number" step="0.0001" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
+                  <input className="input mt-1" type="number" step="1" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Reason</span>
@@ -827,7 +826,7 @@ export function PilotInventoryPage() {
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <label><span className="text-sm font-semibold text-ink">Category</span><input className="input mt-1" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))} /></label>
                   <label><span className="text-sm font-semibold text-ink">Base unit</span><input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} /></label>
-                  <label><span className="text-sm font-semibold text-ink">Average daily usage</span><input className="input mt-1" type="number" step="0.1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} /></label>
+                  <label><span className="text-sm font-semibold text-ink">Average daily usage</span><input className="input mt-1" type="number" step="1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} /></label>
                   <label><span className="text-sm font-semibold text-ink">Active</span><select className="input mt-1" value={draft.active ? "true" : "false"} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.value === "true" }))}><option value="true">Active</option><option value="false">Inactive</option></select></label>
                   <label className="sm:col-span-2"><span className="text-sm font-semibold text-ink">Item notes</span><textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
                 </div>
@@ -1066,7 +1065,7 @@ export function PilotInventoryPage() {
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Average daily usage</span>
-            <input className="input mt-1" type="number" step="0.1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} />
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Active</span>
@@ -1087,11 +1086,11 @@ export function PilotInventoryPage() {
         <div className="mt-4 grid gap-4 md:grid-cols-4">
           <label className="block">
             <span className="text-sm font-semibold text-ink">Current on hand</span>
-            <input className="input mt-1" type="number" step="0.0001" value={draft.currentOnHand} onChange={(event) => setDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="1" value={draft.currentOnHand} onChange={(event) => setDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) }))} />
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Latest price</span>
-            <input className="input mt-1" type="number" step="0.01" value={draft.latestPurchasePrice} onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="1" value={draft.latestPurchasePrice} onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))} />
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Last purchase unit</span>
@@ -1099,7 +1098,7 @@ export function PilotInventoryPage() {
           </label>
           <label className="block">
             <span className="text-sm font-semibold text-ink">Purchase conversion</span>
-            <input className="input mt-1" type="number" step="0.0001" value={draft.lastPurchaseConversionFactor} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) }))} />
+            <input className="input mt-1" type="number" step="1" value={draft.lastPurchaseConversionFactor} onChange={(event) => setDraft((current) => ({ ...current, lastPurchaseConversionFactor: Number(event.target.value) }))} />
           </label>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">

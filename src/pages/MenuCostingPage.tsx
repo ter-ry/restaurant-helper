@@ -712,7 +712,7 @@ export function MenuCostingPage() {
                   </label>
                   <label className="space-y-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-muted">Selling price</span>
-                    <input type="number" step="0.01" className={editableFieldClass} value={selectedDraft.sellingPrice} onChange={(event) => updateItemField(selectedDraft.id, { sellingPrice: Number(event.target.value || 0) })} />
+                    <input type="number" step="1" className={editableFieldClass} value={selectedDraft.sellingPrice} onChange={(event) => updateItemField(selectedDraft.id, { sellingPrice: Number(event.target.value || 0) })} />
                   </label>
                   <label className="space-y-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-muted">Square POS item</span>
@@ -773,7 +773,7 @@ export function MenuCostingPage() {
                           <span className="text-xs font-bold uppercase tracking-wide text-muted">Quantity per sale</span>
                           <input
                             type="number"
-                            step="0.1"
+                            step="1"
                             className={editableFieldClass}
                             value={ingredient.quantity}
                             onChange={(event) => updateIngredientField(selectedDraft.id, ingredient.id, { quantity: Number(event.target.value || 0) })}

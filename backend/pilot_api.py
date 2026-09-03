@@ -192,9 +192,9 @@ def _status_for_item(item: InventoryItem) -> dict[str, Any]:
 
     if current <= 0:
         status = "Out of stock"
-    elif current <= min_quantity or (days_remaining is not None and days_remaining <= 3):
+    elif current <= min_quantity:
         status = "Reorder now"
-    elif current < par_level or (days_remaining is not None and days_remaining <= 10):
+    elif current < par_level:
         status = "Low stock"
     else:
         status = "In stock"

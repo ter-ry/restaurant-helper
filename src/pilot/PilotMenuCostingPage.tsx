@@ -490,7 +490,7 @@ export function PilotMenuCostingPage() {
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink">Yield quantity</span>
-              <input className="input mt-1" type="number" step="0.0001" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: Number(event.target.value || 0) }))} />
+              <input className="input mt-1" type="number" step="1" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: Number(event.target.value || 0) }))} />
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink">Active</span>
@@ -560,7 +560,7 @@ export function PilotMenuCostingPage() {
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Quantity required</span>
-                    <input className="input mt-1" type="number" step="0.0001" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
+                    <input className="input mt-1" type="number" step="1" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Unit</span>
@@ -711,7 +711,7 @@ export function PilotMenuCostingPage() {
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-ink">Selling price</span>
-                <input className="input mt-1" type="number" step="0.01" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: Number(event.target.value || 0) }))} />
+                <input className="input mt-1" type="number" step="1" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: Number(event.target.value || 0) }))} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-ink">Active</span>
