@@ -480,8 +480,8 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : (
-        <div className="order-2 grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
-          <Card className="workspace-card">
+        <div className="order-1 grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+          <Card className="p-6">
             <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
               {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
@@ -603,7 +603,7 @@ export function PilotReorderPlanPage() {
         </div>
       )}
 
-      <Card className={`workspace-card ${draft && workflowTab === "live" ? "order-1" : ""}`}>
+      <Card className={`p-5 ${draft && workflowTab === "live" ? "order-2" : ""}`}>
         <SectionHeader
           title={selectedPlan ? `${selectedPlan.name}` : "Open a reorder plan"}
           description={selectedPlan ? "Drafts stay editable. Prepared and completed plans open as read-only snapshots." : "Start or reopen a draft to begin planning."}
@@ -651,7 +651,7 @@ export function PilotReorderPlanPage() {
               </label>
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-ink">Plan notes</span>
-                <textarea rows={2} className="input mt-1 min-h-0" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
+                <textarea className="input mt-1 min-h-10" rows={1} placeholder="Optional plan note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
             </div>
 

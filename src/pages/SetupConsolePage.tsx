@@ -736,16 +736,19 @@ export function SetupConsolePage() {
               </Card>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card className="p-6">
+            <div className="grid gap-6">
+              <Card className="p-5">
                 <h3 className="text-lg font-bold text-ink">Locations</h3>
-                <textarea id="locations-json" className="mt-4 min-h-48 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson(locations)} />
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveLocations()} disabled={savingAction !== null || refreshing}>
-                  {mutationButtonLabel("locations", "Save locations JSON", "Saving...", "Locations saved")}
-                </button>
+                <details className="mt-4 rounded-xl border border-line bg-slate-50 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink">Advanced location data</summary>
+                  <textarea id="locations-json" className="mt-3 min-h-32 w-full rounded-xl border border-line bg-white px-3 py-2 font-mono text-xs outline-none" defaultValue={prettyJson(locations)} />
+                  <button className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveLocations()} disabled={savingAction !== null || refreshing}>
+                    {mutationButtonLabel("locations", "Save locations JSON", "Saving...", "Locations saved")}
+                  </button>
+                </details>
               </Card>
 
-              <Card className="p-6">
+              <Card className="p-5">
                 <h3 className="text-lg font-bold text-ink">Module entitlements</h3>
                 <p className="mt-2 text-sm leading-6 text-muted">
                   Registered modules are shown even when the organization has no entitlement row yet. Backend-ready modules can be enabled; planning-only modules stay visibly locked.
@@ -762,7 +765,7 @@ export function SetupConsolePage() {
                           const missingDependencies = module.missingDependencies ?? [];
                           const selectDisabled = !module.backendReady || missingDependencies.length > 0;
                           return (
-                            <div key={`${String(module.key)}-${selectedRevision}`} className="grid gap-2 bg-white p-3 md:grid-cols-[1.1fr_1fr_auto] md:items-center">
+                            <div key={`${String(module.key)}-${selectedRevision}`} className="grid gap-2 px-3 py-3 md:grid-cols-[minmax(12rem,1.2fr)_minmax(13rem,1fr)_10rem] md:items-center">
                               <div className="space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
@@ -776,7 +779,7 @@ export function SetupConsolePage() {
                                     {String(module.status)}
                                   </span>
                                 </div>
-                                <p className="text-xs leading-5 text-muted">{String(module.description ?? "")}</p>
+                                <p className="hidden text-xs leading-5 text-muted lg:block">{String(module.description ?? "")}</p>
                               </div>
                               <div className="space-y-1 text-xs text-muted">
                                 <p>Dependencies: {module.dependencies?.length ? module.dependencies.join(", ") : "None"}.</p>

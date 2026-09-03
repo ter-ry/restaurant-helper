@@ -384,7 +384,8 @@ export function PilotDailyClosePage() {
                   {completed ? <span className="text-xs font-semibold uppercase tracking-wide text-muted">Read only</span> : null}
                 </div>
                 <textarea
-                  className="input mt-3 min-h-32 w-full"
+                  className="input mt-3 min-h-10 w-full"
+                  rows={1}
                   value={notes}
                   disabled={completed}
                   onChange={(event) => setNotes(event.target.value)}

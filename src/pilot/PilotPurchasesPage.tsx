@@ -374,11 +374,6 @@ export function PilotPurchasesPage() {
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
-  const purchaseTabs = [
-    { id: "details", label: "Details", badge: finalizedStatus ? "Locked" : "Core" },
-    { id: "lines", label: "Invoice items", badge: `${draft.lineItems.length}` },
-    { id: "review", label: "Review", badge: finalizedStatus ? draft.status : readyToReceive ? "Ready" : "Action" },
-  ];
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
     const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
@@ -668,7 +663,7 @@ export function PilotPurchasesPage() {
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
-                description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Work through details, invoice items, and review in a compact workspace."}
+                description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Enter supplier details and invoice lines together, then receive when the mapping is ready."}
               />
               <div className="flex flex-col items-start gap-2 sm:items-end">
                 <Badge tone={finalizedStatus ? "neutral" : readyToReceive ? "success" : "warning"}>{purchaseStatusLabel}</Badge>
@@ -677,22 +672,29 @@ export function PilotPurchasesPage() {
                   <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{unresolvedLineCount} need confirmation</Badge>
                   <Badge tone={readyToReceive ? "success" : "neutral"}>{readyToReceive ? "Ready to receive" : "Not ready to receive"}</Badge>
                 </div>
-                {readyToReceive ? (
-                  <Button disabled={saving} type="button" onClick={() => void saveAndReceive()}>
-                    {saving ? "Receiving..." : "Save & receive"}
-                  </Button>
+                {!finalizedStatus ? (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant="secondary" disabled={saving} type="button" onClick={() => void saveDraft("Draft")}>
+                      {saving ? "Saving..." : "Save draft"}
+                    </Button>
+                    <Button disabled={saving || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
+                      {saving ? "Receiving..." : "Save & receive"}
+                    </Button>
+                    <Button variant="ghost" type="button" onClick={() => setPurchasePanel("review")}>
+                      Review
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             </div>
 
-            <div className="mt-5">
-              <WorkspaceTabs
-                ariaLabel="Purchase workspace sections"
-                onChange={(value) => setPurchasePanel(value as "details" | "lines" | "review")}
-                tabs={purchaseTabs}
-                value={purchasePanel}
-              />
-            </div>
+            {!finalizedStatus && draft.id && !readyToReceive ? (
+              <div className="mt-4 flex justify-end">
+                <Button variant="secondary" type="button" onClick={() => setPurchasePanel("review")}>
+                  Review before saving
+                </Button>
+              </div>
+            ) : null}
 
             {!finalizedStatus && purchasePanel !== "review" && (draft.id || readyToReceive) ? (
               <StickyActionBar hint={readyToReceive ? "Mapped and ready to post into inventory." : "Complete the required mapping before receiving."} className="mt-4" testId="purchase-primary-actions">
@@ -770,9 +772,9 @@ export function PilotPurchasesPage() {
                     </label>
                   </div>
 
-                  <label className="block rounded-2xl border border-line bg-slate-50 p-4">
+                  <label className="block rounded-2xl border border-line bg-slate-50 p-3">
                     <span className="text-sm font-semibold text-ink">Notes</span>
-                    <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={finalizedStatus} />
+                    <textarea className="input mt-1 min-h-10" rows={1} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={finalizedStatus} placeholder="Optional purchase note" />
                   </label>
                 </section>
               ) : null}

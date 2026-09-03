@@ -758,12 +758,13 @@ export function PilotInventoryPage() {
           </div>
         </Card>
 
-        <WorkspaceTabs
-          tabs={[{ id: "overview", label: "Overview" }, { id: "history", label: "History" }]}
-          value={itemDetailTab}
-          onChange={(value) => setItemDetailTab(value as ItemDetailTab)}
-        />
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <WorkspaceTabs
+            tabs={[{ id: "overview", label: "Overview" }, { id: "history", label: "History" }]}
+            value={itemDetailTab}
+            onChange={(value) => setItemDetailTab(value as ItemDetailTab)}
+          />
+          <div className="flex flex-wrap gap-2">
           {isEditing ? (
             <>
               <Button disabled={saving} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
@@ -778,6 +779,7 @@ export function PilotInventoryPage() {
               Edit item
             </Button>
           )}
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -828,7 +830,7 @@ export function PilotInventoryPage() {
                   <label><span className="text-sm font-semibold text-ink">Base unit</span><input className="input mt-1" value={draft.stockUnit} onChange={(event) => setDraft((current) => ({ ...current, stockUnit: event.target.value }))} /></label>
                   <label><span className="text-sm font-semibold text-ink">Average daily usage</span><input className="input mt-1" type="number" step="1" value={draft.averageDailyUsage} onChange={(event) => setDraft((current) => ({ ...current, averageDailyUsage: Number(event.target.value) }))} /></label>
                   <label><span className="text-sm font-semibold text-ink">Active</span><select className="input mt-1" value={draft.active ? "true" : "false"} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.value === "true" }))}><option value="true">Active</option><option value="false">Inactive</option></select></label>
-                  <label className="sm:col-span-2"><span className="text-sm font-semibold text-ink">Item notes</span><textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
+                  <label className="sm:col-span-2"><span className="text-sm font-semibold text-ink">Item notes</span><textarea className="input mt-1 min-h-10" rows={1} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
                 </div>
               ) : (
                 <span className="whitespace-pre-wrap"> · Category {item.category || "Other"} · Base unit {item.stockUnit || "each"} · Avg daily usage {item.averageDailyUsage !== null ? formatNumber(item.averageDailyUsage) : "Not set"} · Item notes {item.notes || "None"} · Purchase unit {item.lastPurchaseUnit || "each"} ×{formatNumber(item.lastPurchaseConversionFactor)}</span>
@@ -1077,7 +1079,7 @@ export function PilotInventoryPage() {
         </div>
         <label className="mt-4 block">
           <span className="text-sm font-semibold text-ink">Item notes</span>
-          <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} />
+          <textarea className="input mt-1 min-h-10" rows={1} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} />
         </label>
       </Card>
 

@@ -577,7 +577,7 @@ export function PilotStockCountsPage() {
 
               <label className="mt-4 block">
                 <span className="text-sm font-semibold text-ink">Notes</span>
-                <textarea className="input mt-1" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
+                <textarea className="input mt-1 min-h-10" rows={1} placeholder="Optional count note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
               </label>
 
               <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
