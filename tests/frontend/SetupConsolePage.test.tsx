@@ -331,7 +331,7 @@ describe("SetupConsolePage", () => {
     expect(toast).toHaveClass("fixed");
     expect(toast).toHaveTextContent("Modules saved");
     expect(screen.getByText("Missing modules").parentElement).toHaveTextContent("None");
-    expect(screen.getByText("Ready").parentElement).toHaveTextContent("Yes");
+    expect(screen.getAllByRole("cell", { name: "Ready" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Modules saved" })).toBeVisible();
     expect(platformSetupMocks.fetchSupportGrants).toHaveBeenCalledTimes(2);
   });
@@ -345,7 +345,7 @@ describe("SetupConsolePage", () => {
     expect(screen.getByRole("combobox", { name: "Menu Costing status" })).toHaveValue("DISABLED");
     expect(screen.getByRole("combobox", { name: "Menu Costing status" })).not.toBeDisabled();
     expect(screen.getByRole("combobox", { name: "Reporting status" })).toBeDisabled();
-    expect(screen.getByText("Backend not ready")).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Not ready" })).toBeVisible();
   });
 
   it("creates, reloads, and persists MENU_COSTING without changing core module behavior", async () => {

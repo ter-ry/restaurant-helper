@@ -500,14 +500,16 @@ export function PilotMenuCostingPage() {
               </select>
             </label>
           </div>
-          <label className="mt-3 block">
-            <span className="text-sm font-medium text-ink">Description</span>
-            <input className="input mt-1" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional description" />
-          </label>
-          <label className="mt-3 block">
-            <span className="text-sm font-medium text-ink">Notes</span>
-            <input className="input mt-1" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
-          </label>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-ink">Description</span>
+              <input className="input mt-1" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional description" />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-ink">Notes</span>
+              <input className="input mt-1" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
+            </label>
+          </div>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveRecipe()} type="button" disabled={savingRecipe}>
               {savingRecipe ? "Saving…" : recipeDraft.id ? "Update recipe" : "Create recipe"}

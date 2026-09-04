@@ -236,7 +236,6 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByLabelText("Invoice number")).toHaveValue("");
     expect(screen.getByTestId("purchase-history-card")).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
-    expect(screen.queryByTestId("purchase-primary-actions")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
   });
 
@@ -315,7 +314,6 @@ describe("PilotPurchasesPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
-    expect(screen.getByTestId("purchase-primary-actions")).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Save draft" })[0]).toBeVisible();
 
     expect(await screen.findByTestId("purchase-lines-panel")).toBeVisible();

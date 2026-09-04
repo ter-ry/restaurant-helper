@@ -797,7 +797,7 @@ export function PilotInventoryPage() {
           <div className="space-y-5">
             <Card className="p-5">
               <SectionHeader title="Inventory adjustment" description="Record a stock movement without changing the item's master data." />
-              <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_0.8fr_1.4fr]">
+              <div className="mt-4 grid items-end gap-3 xl:grid-cols-[0.8fr_0.8fr_1.4fr_auto]">
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Quantity delta</span>
                   <input className="input mt-1" type="number" step="1" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
@@ -808,13 +808,13 @@ export function PilotInventoryPage() {
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Movement note (optional)</span>
-                  <textarea className="input mt-1 resize-y" rows={2} value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} />
+                  <input className="input mt-1" value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} placeholder="Optional movement note" />
                 </label>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
                 <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
                   Save stock movement
                 </Button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button variant="secondary" disabled={saving} type="button" onClick={() => navigate("/app/stock-counts")}>
                   Stock counts →
                 </Button>

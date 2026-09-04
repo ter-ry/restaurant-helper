@@ -589,54 +589,21 @@ export function PilotStockCountsPage() {
                   </div>
                 </div>
                 <p className="mt-2 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
-                <div className="mt-4 workspace-table-wrap">
-                  <div className="hidden grid-cols-[minmax(12rem,1.3fr)_repeat(3,minmax(7rem,0.7fr))_minmax(10rem,1fr)] gap-3 bg-slate-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-muted lg:grid">
-                    <span>Item</span><span>Expected</span><span>Counted</span><span>Variance</span><span>Note</span>
-                  </div>
-                  {filteredLines.map((line) => (
-                    <div key={line.id} className="border-b border-line bg-white p-3 last:border-b-0">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-ink">{line.itemNameSnapshot}</p>
-                          <p className="text-sm text-muted">
-                            Expected {formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot} • Counted {line.countedQuantity === null ? "not entered" : formatNumber(line.countedQuantity)} • Variance {line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)}`}
-                          </p>
-                        </div>
-                        <Badge tone={statusTone(line.status)}>{line.status}</Badge>
-                      </div>
-                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-                        <div className="rounded-xl border border-line bg-slate-50 p-2">
-                          <p className="text-xs font-bold uppercase tracking-wide text-muted">Expected</p>
-                          <p className="mt-2 text-lg font-bold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</p>
-                        </div>
-                        <div className="rounded-xl border border-line bg-slate-50 p-2">
-                          <p className="text-xs font-bold uppercase tracking-wide text-muted">Counted</p>
-                          <p className="mt-2 text-lg font-bold text-ink">{line.countedQuantity === null ? "Not counted" : `${formatNumber(line.countedQuantity)} ${line.stockUnitSnapshot}`}</p>
-                        </div>
-                        <div className="rounded-xl border border-line bg-slate-50 p-2">
-                          <p className="text-xs font-bold uppercase tracking-wide text-muted">Variance</p>
-                          <p className={`mt-2 text-lg font-bold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>
-                            {line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}
-                          </p>
-                        </div>
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Counted quantity</span>
-                          <input className="input mt-1" min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} />
-                        </label>
-                        <label className="block md:col-span-2 xl:col-span-1">
-                          <span className="text-xs font-bold uppercase tracking-wide text-muted">Variance note</span>
-                          <input className="input mt-1" value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} disabled={draft.status === "Completed"} />
-                        </label>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                        <Badge tone="neutral">Expected {formatNumber(line.expectedQuantity)}</Badge>
-                        <Badge tone={line.countedQuantity === null ? "neutral" : line.countedQuantity >= line.expectedQuantity ? "success" : "warning"}>
-                          {line.countedQuantity === null ? "Not counted yet" : `${line.countedQuantity >= line.expectedQuantity ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} variance`}
-                        </Badge>
-                        <Badge tone={line.hasMovementSinceStart ? "warning" : "neutral"}>{line.movementCountSinceStart} later movements</Badge>
-                      </div>
-                    </div>
-                  ))}
+                <div className="mt-4 workspace-table-wrap overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-left text-sm">
+                    <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-muted"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Expected</th><th className="px-3 py-2">Counted</th><th className="px-3 py-2">Variance</th><th className="px-3 py-2">Variance note</th></tr></thead>
+                    <tbody className="divide-y divide-line">
+                      {filteredLines.map((line) => (
+                        <tr key={line.id} className="bg-white align-middle">
+                          <td className="px-3 py-3"><p className="font-semibold text-ink">{line.itemNameSnapshot}</p><div className="mt-1 flex flex-wrap gap-1"><Badge tone={statusTone(line.status)}>{line.status}</Badge>{line.hasMovementSinceStart ? <Badge tone="warning">{line.movementCountSinceStart} later movements</Badge> : null}</div></td>
+                          <td className="px-3 py-3 font-semibold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</td>
+                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`counted-${line.id}`}>Counted quantity for {line.itemNameSnapshot}</label><input id={`counted-${line.id}`} className="input w-32" min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} /></td>
+                          <td className={`px-3 py-3 font-semibold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>{line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}</td>
+                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`variance-note-${line.id}`}>Variance note for {line.itemNameSnapshot}</label><input id={`variance-note-${line.id}`} className="input" value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} disabled={draft.status === "Completed"} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                   {!filteredLines.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No count lines match this search.</p> : null}
                 </div>
               </div>

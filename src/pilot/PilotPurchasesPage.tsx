@@ -5,7 +5,6 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
-import { StickyActionBar } from "../components/StickyActionBar";
 import {
   createPilotPurchaseInvoice,
   createPilotSupplier,
@@ -289,7 +288,7 @@ export function PilotPurchasesPage() {
   const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [purchasePanel, setPurchasePanel] = useState<"details" | "lines" | "review">("details");
+  const [showReview, setShowReview] = useState(false);
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierSaving, setSupplierSaving] = useState(false);
@@ -330,12 +329,12 @@ export function PilotPurchasesPage() {
         setSelectedId(resolvedInvoice.id);
         setDraft(invoiceToDraft(resolvedInvoice));
         setDetailInvoice(null);
-        setPurchasePanel("details");
+        setShowReview(false);
       } else {
         setSelectedId(null);
         setDraft(buildBlankDraft());
         setDetailInvoice(resolvedInvoice && (resolvedInvoice.status === "Completed" || resolvedInvoice.status === "Corrected") ? resolvedInvoice : null);
-        setPurchasePanel("details");
+        setShowReview(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load purchases.");
@@ -463,7 +462,7 @@ export function PilotPurchasesPage() {
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
-      setPurchasePanel("details");
+      setShowReview(false);
       setReceiveMessage(`Invoice ${saved.invoiceNumber || "purchase"} received into inventory.`);
       navigate(location.pathname, { replace: true });
       await load(null);
@@ -510,7 +509,7 @@ export function PilotPurchasesPage() {
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
-      setPurchasePanel("details");
+      setShowReview(false);
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
       navigate(location.pathname, { replace: true });
       await load(null);
@@ -536,7 +535,7 @@ export function PilotPurchasesPage() {
       setSelectedId(corrected.id);
       setDraft(invoiceToDraft(corrected));
       setCorrectionNote("");
-      setPurchasePanel("details");
+      setShowReview(false);
       setReceiveMessage(`Invoice ${corrected.invoiceNumber} corrected and inventory movements were reversed.`);
       await load(corrected.id);
     } catch (err) {
@@ -555,13 +554,13 @@ export function PilotPurchasesPage() {
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(invoice);
-      setPurchasePanel("details");
+      setShowReview(false);
       return;
     }
     setDetailInvoice(null);
     setSelectedId(invoice.id);
     setDraft(invoiceToDraft(invoice));
-    setPurchasePanel("details");
+    setShowReview(false);
   };
 
   const addLine = () => {
@@ -622,7 +621,7 @@ export function PilotPurchasesPage() {
                 setReceiveMessage(null);
                 setCorrectionNote("");
       setDraft(buildBlankDraft());
-                setPurchasePanel("details");
+                setShowReview(false);
                 window.requestAnimationFrame(() => {
                   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
                   editorPanelRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
@@ -679,7 +678,7 @@ export function PilotPurchasesPage() {
                     <Button disabled={saving || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
                       {saving ? "Receiving..." : "Save & receive"}
                     </Button>
-                    <Button variant="ghost" type="button" onClick={() => setPurchasePanel("review")}>
+                    <Button variant="ghost" type="button" onClick={() => setShowReview(true)}>
                       Review
                     </Button>
                   </div>
@@ -689,25 +688,14 @@ export function PilotPurchasesPage() {
 
             {!finalizedStatus && draft.id && !readyToReceive ? (
               <div className="mt-4 flex justify-end">
-                <Button variant="secondary" type="button" onClick={() => setPurchasePanel("review")}>
+                <Button variant="secondary" type="button" onClick={() => setShowReview(true)}>
                   Review before saving
                 </Button>
               </div>
             ) : null}
 
-            {!finalizedStatus && purchasePanel !== "review" && (draft.id || readyToReceive) ? (
-              <StickyActionBar hint={readyToReceive ? "Mapped and ready to post into inventory." : "Complete the required mapping before receiving."} className="mt-4" testId="purchase-primary-actions">
-                  <Button variant="secondary" disabled={saving} type="button" onClick={() => void saveDraft("Draft")}>
-                    {saving ? "Saving..." : "Save draft"}
-                  </Button>
-                  <Button disabled={saving || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
-                    {saving ? "Receiving..." : "Save & receive"}
-                  </Button>
-              </StickyActionBar>
-            ) : null}
-
             <div className="mt-5 space-y-5">
-              {purchasePanel !== "review" ? (
+              {!showReview ? (
                 <section className="space-y-5" data-testid="purchase-details-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -778,7 +766,7 @@ export function PilotPurchasesPage() {
                 </section>
               ) : null}
 
-              {purchasePanel !== "review" ? (
+              {!showReview ? (
                 <section className="space-y-4" data-testid="purchase-lines-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">
@@ -885,7 +873,7 @@ export function PilotPurchasesPage() {
                 </section>
               ) : null}
 
-              {purchasePanel === "review" ? (
+              {showReview ? (
                 <section className="space-y-4" data-testid="purchase-review-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <p className="text-sm font-semibold text-ink">Review and send</p>
