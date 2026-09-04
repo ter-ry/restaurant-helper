@@ -343,12 +343,12 @@ export function PilotStockCountsPage() {
 
   return (
     <div className="workspace-page">
-      <Card className="surface-panel workspace-card">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <Card className="surface-panel workspace-card p-3">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Stock Counts</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Count sessions that turn into real stock adjustments</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Count quickly, review exceptions, then apply a verified draft to inventory.</p>
+            <h1 className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">Stock Counts</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted">Enter counted quantities, review exceptions, and apply the count.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
@@ -363,21 +363,9 @@ export function PilotStockCountsPage() {
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          {[
-            { label: "Count sessions", value: formatNumber(sessions.length) },
-            { label: "Draft counts", value: formatNumber(sessions.filter((session) => session.status === "Draft").length) },
-            { label: "Completed counts", value: formatNumber(sessions.filter((session) => session.status === "Completed").length) },
-            { label: "Items available", value: formatNumber(inventoryItems.length) },
-          ].map((metric) => (
-            <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
-              <span className="text-sm font-bold text-ink">{metric.value}</span>
-            </div>
-          ))}
-        </div>
-        {hasUnsavedChanges ? <p className="mt-3 text-sm text-amber-700">You have unsaved count changes.</p> : null}
-        <div className="mt-6">
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
+          <span className="text-xs text-muted">{formatNumber(sessions.length)} sessions · {formatNumber(inventoryItems.length)} items</span>
+          {hasUnsavedChanges ? <Badge tone="warning">Unsaved changes</Badge> : null}
           <WorkspaceTabs
             tabs={[
               { id: "active", label: "Active count", badge: draftSessions.length },
@@ -386,7 +374,6 @@ export function PilotStockCountsPage() {
             value={workflowTab}
             onChange={(value) => setWorkflowTab(value as "active" | "history")}
           />
-          <p className="mt-3 text-sm text-muted">{workflowTab === "history" ? "Completed counts are locked snapshots. Open one to review the variances and reconciliation movements." : "Active counts stay editable until you apply them to inventory."}</p>
         </div>
       </Card>
 
@@ -446,73 +433,51 @@ export function PilotStockCountsPage() {
             </div>
           </div>
         </Card>
-      ) : (
-        <Card className="workspace-card">
-          <SectionHeader title="Completed count history" description="History stays read-only. Open a completed count to review the locked snapshot and reconciliation movements." />
-        </Card>
-      )}
+      ) : null}
 
       <div className="flex flex-col gap-4">
-        <Card className="workspace-card">
-          <SectionHeader title={workflowTab === "history" ? "Count history" : "Sessions"} description={workflowTab === "history" ? "Completed counts are locked snapshots." : "Draft counts stay editable until they are applied to inventory."} />
-          <div className="flex max-h-32 gap-2 overflow-x-auto pb-1">
+        <Card className="workspace-card p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">{workflowTab === "history" ? "Completed history" : "Active drafts"}</span>
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
             {visibleSessions.map((session) => (
-              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`min-w-64 rounded-xl border px-3 py-2 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
-                <div className="flex items-start justify-between gap-3">
+              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`min-w-56 rounded-lg border px-2 py-1.5 text-left text-xs transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+                <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink">{session.status === "Completed" ? "Completed" : "Draft"} #{session.id}</p>
-                    <p className="text-sm text-muted">{session.countedBy || "Unassigned"} • {formatDateTime(session.updatedAt)}</p>
+                    <p className="text-[11px] text-muted">{session.countedBy || "Unassigned"} · {formatDateTime(session.updatedAt)}</p>
                   </div>
                   <Badge tone={statusTone(session.status)}>{session.status}</Badge>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <Badge tone="neutral">{session.countedLineCount}/{session.itemCount} counted</Badge>
-                  <Badge tone={session.uncountedLineCount > 0 ? "warning" : "success"}>{session.uncountedLineCount} uncounted</Badge>
-                </div>
+                <p className="mt-1 text-[11px] text-muted">{session.countedLineCount}/{session.itemCount} counted · {session.uncountedLineCount} uncounted</p>
               </button>
             ))}
             {!visibleSessions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{workflowTab === "history" ? "No completed counts yet." : "No draft counts yet."}</p> : null}
+            </div>
           </div>
         </Card>
 
-        <Card className="workspace-card w-full">
+        <Card className="workspace-card w-full p-4">
           <SectionHeader
             title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}
           />
 
           {draft ? (
-            <div className={`mb-5 rounded-2xl border px-4 py-3 ${isCompleted ? "border-emerald-200 bg-emerald-50" : "border-brand-100 bg-brand-50"}`}>
-              <div className="flex flex-wrap items-center gap-2">
+            <div className={`mb-3 flex flex-wrap items-center gap-2 border-b pb-3 ${isCompleted ? "border-emerald-200" : "border-brand-100"}`}>
                 <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
                 <Badge tone="neutral">{isCompleted ? "Completed count" : "Draft count"}</Badge>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                {isCompleted
-                  ? "Inventory has already been updated from this count. Review the locked snapshot below for audit history."
-                  : "Draft counts stay editable. Save draft keeps the session open; Apply count to inventory posts reconciliation movements."}
-              </p>
+                <span className="text-xs text-muted">{draft.countedBy || "Unassigned"} · {draft.countedLineCount}/{draft.itemCount} counted · {draft.uncountedLineCount} uncounted · {draft.varianceTotal >= 0 ? "+" : ""}{formatNumber(draft.varianceTotal)} variance</span>
             </div>
           ) : null}
 
           {draft ? (
             <>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
                 <label className="block">
-                  <span className="text-sm font-semibold text-ink">Counted by</span>
-                  <input className="input mt-1" value={draft.countedBy} onChange={(event) => setDraft((current) => (current ? { ...current, countedBy: event.target.value } : current))} disabled={draft.status === "Completed"} />
+                  <span className="mr-2 text-xs font-semibold text-muted">Counted by</span>
+                  <input className="input inline-block w-40" value={draft.countedBy} onChange={(event) => setDraft((current) => (current ? { ...current, countedBy: event.target.value } : current))} disabled={draft.status === "Completed"} />
                 </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-ink">Status</span>
-                  <input className="input mt-1" value={draft.status} readOnly />
-                </label>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <Badge tone="neutral">{draft.countedLineCount}/{draft.itemCount} counted</Badge>
-                <Badge tone={draft.uncountedLineCount > 0 ? "warning" : "success"}>{draft.uncountedLineCount} uncounted</Badge>
-                <Badge tone={draft.varianceTotal === 0 ? "success" : "orange"}>{draft.varianceTotal >= 0 ? "+" : ""}{formatNumber(draft.varianceTotal)} variance</Badge>
-                <Badge tone={draft.hasMovementSinceStart ? "warning" : "neutral"}>{draft.movementCountSinceStart} later movements</Badge>
               </div>
 
               {draft.hasMovementSinceStart ? (
@@ -548,88 +513,66 @@ export function PilotStockCountsPage() {
                 </div>
               ) : null}
 
-              {draft.status !== "Completed" && draft.countedLineCount > 0 ? (
-                <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
-                  <p className="text-sm font-semibold text-ink">Ready to apply this count?</p>
-                  <p className="mt-1 text-sm leading-6 text-muted">Finalizing will write reconciliation movements into inventory and update the on-hand quantities for every counted line.</p>
-                  <div className="mt-3 space-y-2">
-                    {draft.lines
-                      .filter((line) => line.countedQuantity !== null)
-                      .slice(0, 3)
-                      .map((line) => (
-                        <div key={line.id} className="rounded-xl bg-white px-3 py-3 text-sm">
-                          <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-medium text-ink">{line.itemNameSnapshot}</p>
-                            <p className="text-xs text-muted">
-                              {formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot} expected → {formatNumber(line.countedQuantity ?? 0)} counted
-                            </p>
-                          </div>
-                          <Badge tone={line.countedQuantity !== null && line.countedQuantity >= line.expectedQuantity ? "success" : "warning"}>
-                            {line.countedQuantity !== null && line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}{formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} variance
-                          </Badge>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
+              <div className="mt-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink">Count sheet</p>
+                  <label className="flex items-center gap-2 text-xs text-muted">
+                    <span>Filter</span>
+                    <input className="input h-9 w-48" placeholder="Search items" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
+                  </label>
                 </div>
-              ) : null}
-
-              <label className="mt-4 block">
-                <span className="text-sm font-semibold text-ink">Notes</span>
-                <textarea className="input mt-1 min-h-10" rows={1} placeholder="Optional count note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
-              </label>
-
-              <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-ink">Count lines</p>
-                <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Search className="h-4 w-4 text-muted" />
-                    <input className="w-full bg-transparent text-sm outline-none" placeholder="Search count lines" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
-                <div className="mt-4 workspace-table-wrap overflow-x-auto">
+                <div className="mt-2 workspace-table-wrap overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-muted"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Expected</th><th className="px-3 py-2">Counted</th><th className="px-3 py-2">Variance</th><th className="px-3 py-2">Variance note</th></tr></thead>
                     <tbody className="divide-y divide-line">
                       {filteredLines.map((line) => (
                         <tr key={line.id} className="bg-white align-middle">
-                          <td className="px-3 py-3"><p className="font-semibold text-ink">{line.itemNameSnapshot}</p><div className="mt-1 flex flex-wrap gap-1"><Badge tone={statusTone(line.status)}>{line.status}</Badge>{line.hasMovementSinceStart ? <Badge tone="warning">{line.movementCountSinceStart} later movements</Badge> : null}</div></td>
-                          <td className="px-3 py-3 font-semibold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</td>
-                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`counted-${line.id}`}>Counted quantity for {line.itemNameSnapshot}</label><input id={`counted-${line.id}`} className="input w-32" min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} /></td>
-                          <td className={`px-3 py-3 font-semibold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>{line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}</td>
-                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`variance-note-${line.id}`}>Variance note for {line.itemNameSnapshot}</label><input id={`variance-note-${line.id}`} className="input" value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} disabled={draft.status === "Completed"} /></td>
+                          <td className="px-3 py-2"><p className="font-semibold text-ink">{line.itemNameSnapshot}</p><div className="mt-1 flex flex-wrap gap-1">{line.hasMovementSinceStart ? <Badge tone="warning">{line.movementCountSinceStart} later movements</Badge> : null}</div></td>
+                          <td className="px-3 py-2 font-semibold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</td>
+                          <td className="px-3 py-2"><label className="sr-only" htmlFor={`counted-${line.id}`}>Counted quantity for {line.itemNameSnapshot}</label><input id={`counted-${line.id}`} className="input w-36 border-brand-200 bg-brand-50/40 text-base font-semibold" min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} /></td>
+                          <td className={`px-3 py-2 font-semibold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>{line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}</td>
+                          <td className="px-3 py-2"><label className="sr-only" htmlFor={`variance-note-${line.id}`}>Variance note for {line.itemNameSnapshot}</label><input id={`variance-note-${line.id}`} className="input" value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} disabled={draft.status === "Completed"} /></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  {!filteredLines.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No count lines match this search.</p> : null}
+                  {!filteredLines.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-sm text-muted">No count lines match this search.</p> : null}
+                </div>
+                <p className="mt-1 text-xs text-muted">{filteredLines.length} of {draft.lines.length} lines shown</p>
+              </div>
+
+              <label className="mt-3 flex items-center gap-2 text-sm">
+                <span className="text-xs font-semibold text-muted">Notes</span>
+                <input className="input h-9 min-w-0 flex-1" placeholder="Optional count note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
+              </label>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                <p className="text-xs text-muted">Counted quantities become inventory adjustments only when applied.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={creating || saving || draft.status === "Completed"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
+                    {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
+                  </Button>
+                  <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="primary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
+                    {saving && pendingAction === "finalize" ? "Applying count..." : draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Apply count to inventory"}
+                  </Button>
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button disabled={creating || saving || draft.status === "Completed"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveSession()}>
-                  {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
-                </Button>
-                <Button disabled={creating || saving || draft.status === "Completed" || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} variant="primary" icon={<CheckCircle2 className="h-4 w-4" />} type="button" onClick={() => void finalizeSession()}>
-                  {saving && pendingAction === "finalize" ? "Applying count..." : draft.hasMovementSinceStart && !confirmConcurrency ? "Review movements first" : "Apply count to inventory"}
-                </Button>
-              </div>
-
-              {draft.status === "Completed" ? (
-                <div className="mt-4 rounded-2xl border border-emerald-600 bg-emerald-600 px-4 py-3 text-white shadow-soft">
-                  <p className="text-sm font-semibold">Count applied</p>
-                  <p className="mt-1 text-sm leading-6 text-emerald-50">This count has been finalized and the inventory snapshot above is now read-only.</p>
-                </div>
-              ) : null}
-
+              {/* Concurrency review remains adjacent to the actions without competing with the count sheet. */}
               {draft.hasMovementSinceStart ? (
-                <label className="mt-4 flex items-center gap-2 text-sm text-muted">
+                <label className="mt-2 flex items-center gap-2 text-xs text-muted">
                   <input checked={confirmConcurrency} disabled={draft.status === "Completed"} type="checkbox" onChange={(event) => setConfirmConcurrency(event.target.checked)} />
                   I reviewed the later inventory activity and want to reconcile this count against the current ledger.
                 </label>
               ) : null}
+
+              {draft.status === "Completed" ? (
+                <div className="mt-3 rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-white shadow-soft">
+                  <p className="text-sm font-semibold">Count applied</p>
+                  <p className="mt-1 text-sm text-emerald-50">This count is finalized and the inventory snapshot is read-only.</p>
+                </div>
+              ) : null}
+
             </>
           ) : (
             <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Create a count to start entering quantities.</div>
