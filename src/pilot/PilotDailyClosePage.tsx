@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -84,42 +84,6 @@ export function PilotDailyClosePage() {
       setSelectedBusinessDate(currentBusinessDate(currentLocation.timezone));
     }
   }, [currentLocation?.timezone, data, queryBusinessDate]);
-
-  const metrics = useMemo(
-    () => [
-      {
-        label: "Sales",
-        value: snapshot ? formatMoney(Number(sales.netSales ?? 0)) : "—",
-        helper: snapshot ? `${formatNumber(Number(sales.orders ?? 0))} orders` : "Load a location to see sales",
-      },
-      {
-        label: "Theoretical usage",
-        value: snapshot ? formatNumber(Number(usage?.totals?.theoreticalUsage ?? 0)) : "—",
-        helper: "Recipe-driven usage from menu sales",
-      },
-      {
-        label: "Actual usage",
-        value: snapshot ? (usage?.totals?.actualUsage == null ? "Unavailable" : formatNumber(Number(usage.totals.actualUsage))) : "—",
-        helper: "Stock-count and movement basis",
-      },
-      {
-        label: "Variance",
-        value: snapshot ? `${formatSignedNumber(snapshot.variance.quantity)} (${snapshot.variance.percent == null ? "—" : `${formatNumber(snapshot.variance.percent)}%`})` : "—",
-        helper: snapshot ? formatMoney(Number(snapshot.variance.value ?? 0)) : "Waiting for a snapshot",
-      },
-      {
-        label: "Inventory value",
-        value: snapshot ? formatMoney(Number(snapshot.inventoryValue ?? 0)) : "—",
-        helper: "Weighted-average cost basis",
-      },
-      {
-        label: "Exceptions",
-        value: snapshot ? formatNumber(data?.exceptions.length ?? 0) : "—",
-        helper: snapshot ? (data?.exceptions.length ? "Review before finalize" : "No blockers") : "Load a location to see blockers",
-      },
-    ],
-    [data?.exceptions.length, sales.netSales, sales.orders, snapshot, usage?.totals?.actualUsage, usage?.totals?.theoreticalUsage],
-  );
 
   const openClose = async () => {
     if (!selectedLocationId) {
@@ -233,11 +197,7 @@ export function PilotDailyClosePage() {
             </button>
           </div>
         }
-        metrics={metrics.map((metric) => ({
-          label: metric.label,
-          value: metric.value,
-          helper: metric.helper,
-        }))}
+        metrics={[]}
       />
 
       <Card className="p-3">
@@ -291,6 +251,36 @@ export function PilotDailyClosePage() {
               />
             </label>
           </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          {currentSession && !completed ? (
+            <>
+              {canSyncSales ? (
+                <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving !== null} onClick={() => void syncSales()}>
+                  <RefreshCw className="h-4 w-4" />
+                  {saving === "sync-sales" ? "Syncing..." : "Sync sales"}
+                </button>
+              ) : null}
+              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving !== null} onClick={() => void finalizeClose()}>
+                <Lock className="h-4 w-4" />
+                Finalize daily close
+              </button>
+            </>
+          ) : !currentSession ? (
+            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null} onClick={() => void openClose()}>
+              <RefreshCw className="h-4 w-4" />
+              Start daily close
+            </button>
+          ) : null}
+          {completed ? (
+            <>
+              <Badge tone="success"><Lock className="mr-1 h-3.5 w-3.5" /> Completed snapshot</Badge>
+              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-muted" type="button" disabled>
+                <Lock className="h-4 w-4" />
+                Finalize daily close
+              </button>
+            </>
+          ) : null}
         </div>
       </Card>
 
@@ -392,22 +382,6 @@ export function PilotDailyClosePage() {
                   placeholder="Add context for unusual sales, waste, or count discrepancies."
                 />
                 <div className="mt-4 flex flex-wrap gap-3">
-                  {canSyncSales ? (
-                    <button
-                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-800 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      type="button"
-                      disabled={saving !== null}
-                      onClick={() => void syncSales()}
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      {saving === "sync-sales" ? "Syncing..." : "Sync sales"}
-                    </button>
-                  ) : !completed ? (
-                    <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
-                      <ExternalLink className="h-4 w-4" />
-                      Connect Square
-                    </Link>
-                  ) : null}
                   <button
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     type="button"
@@ -416,15 +390,6 @@ export function PilotDailyClosePage() {
                   >
                     <Save className="h-4 w-4" />
                     Save notes
-                  </button>
-                  <button
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    type="button"
-                    disabled={completed || !currentSession || saving !== null}
-                    onClick={() => void finalizeClose()}
-                  >
-                    <Lock className="h-4 w-4" />
-                    Finalize daily close
                   </button>
                   {currentSession ? (
                     <span className="inline-flex items-center rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
@@ -500,15 +465,6 @@ export function PilotDailyClosePage() {
                 Flowtally will snapshot sales, usage, and exceptions so you can review the day before marking it complete.
               </p>
               <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  type="button"
-                  disabled={!selectedLocationId}
-                  onClick={() => void openClose()}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Start daily close
-                </button>
                 <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
                   Review Square
                 </Link>

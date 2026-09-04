@@ -158,12 +158,12 @@ describe("PilotStockCountsPage", () => {
     mockApi.finalizePilotCountSession.mockResolvedValue(completedSession);
   });
 
-  it("separates active counts from history and keeps the draft actions visible", async () => {
+  it("separates active counts from history and opens an existing draft directly", async () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Count sessions that turn into real stock adjustments" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Active count" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: "Start count" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Start count" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Apply count to inventory" })).toBeVisible();
     expect(screen.getByText("Draft #7")).toBeVisible();

@@ -605,12 +605,12 @@ export function PilotPurchasesPage() {
 
   return (
     <div className="workspace-page p-3 sm:p-4">
-      <Card className="surface-panel workspace-card">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <Card className="surface-panel workspace-card p-3 sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Purchases</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Capture invoices, confirm items, and move stock</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">One workspace for supplier details, line mapping, totals, and receiving.</p>
+            <h1 className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">Capture invoice and receive stock</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted">Supplier, invoice lines, totals, and receiving in one transaction workspace.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -639,7 +639,7 @@ export function PilotPurchasesPage() {
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
             { label: "This month spend", value: formatMoney(data?.summary?.thisMonthSpend ?? 0) },
             { label: "Uploads needing review", value: formatNumber(data?.summary?.uploadsNeedingReview ?? 0) },
@@ -647,9 +647,9 @@ export function PilotPurchasesPage() {
             { label: "Mapped items", value: formatNumber(data?.summary?.mappedItems ?? 0) },
             { label: "Export ready", value: formatNumber(data?.summary?.exportReady ?? 0) },
           ].map((metric) => (
-            <div key={metric.label} className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
+            <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
+              <span className="text-sm font-bold text-ink">{metric.value}</span>
             </div>
           ))}
         </div>
@@ -686,6 +686,27 @@ export function PilotPurchasesPage() {
               </div>
             </div>
 
+            {!showReview ? (
+              <div className="mt-4 grid gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-3 md:grid-cols-[minmax(14rem,1.3fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_auto] md:items-end">
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-ink">Supplier</span>
+                    <button type="button" className="text-xs font-semibold text-brand-700 disabled:text-slate-300" onClick={() => setShowSupplierForm((value) => !value)} disabled={finalizedStatus}>
+                      {showSupplierForm ? "Cancel" : "+ New supplier"}
+                    </button>
+                  </div>
+                  <select aria-label="Supplier" className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
+                    <option value="">Choose a supplier</option>
+                    {data?.suppliers?.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
+                  </select>
+                  {showSupplierForm ? <div className="mt-2 flex gap-2"><input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} /><Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button></div> : null}
+                </div>
+                <label className="block"><span className="text-sm font-semibold text-ink">Invoice #</span><input aria-label="Invoice number" className="input mt-1" value={draft.invoiceNumber} placeholder="Optional" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} /></label>
+                <label className="block"><span className="text-sm font-semibold text-ink">Date</span><input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} /></label>
+                <div className="text-xs text-muted"><span className="font-semibold text-ink">Status</span><div className="mt-2"><Badge tone={statusTone(draft.status)}>{draft.status}</Badge></div></div>
+              </div>
+            ) : null}
+
             {!finalizedStatus && draft.id && !readyToReceive ? (
               <div className="mt-4 flex justify-end">
                 <Button variant="secondary" type="button" onClick={() => setShowReview(true)}>
@@ -694,57 +715,10 @@ export function PilotPurchasesPage() {
               </div>
             ) : null}
 
-            <div className="mt-5 space-y-5">
+            <div className="mt-4 flex flex-col gap-4">
               {!showReview ? (
-                <section className="space-y-5" data-testid="purchase-details-panel">
-                  <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-semibold text-ink">Supplier</span>
-                          <button type="button" className="text-sm font-semibold text-brand-700 disabled:text-slate-300" onClick={() => setShowSupplierForm((value) => !value)} disabled={finalizedStatus}>
-                            {showSupplierForm ? "Cancel" : "+ New supplier"}
-                          </button>
-                        </div>
-                        <select aria-label="Supplier" className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
-                          <option value="">Choose a supplier</option>
-                          {data?.suppliers?.map((supplier) => (
-                            <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
-                          ))}
-                        </select>
-                        {showSupplierForm ? (
-                          <div className="mt-2 flex gap-2">
-                            <input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} />
-                            <Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Invoice number</span>
-                        <input className="input mt-1" value={draft.invoiceNumber} placeholder="Leave blank until the invoice number is known" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
-                      </label>
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Invoice date</span>
-                        <input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} />
-                      </label>
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Status</span>
-                        {finalizedStatus ? (
-                          <div className="mt-1 rounded-2xl border border-line bg-white px-4 py-3">
-                            <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
-                          </div>
-                        ) : (
-                          <select className="input mt-1" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
-                            <option value="Draft">Needs review</option>
-                            <option value="Ready">Ready</option>
-                            <option value="Completed">Completed</option>
-                          </select>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-3">
+                <section className="order-2 space-y-4" data-testid="purchase-details-panel">
+                  <div className="grid gap-3 md:grid-cols-3">
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Subtotal</span>
                       <input className="input mt-1" type="number" step="1" value={draft.subtotal} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
@@ -767,7 +741,7 @@ export function PilotPurchasesPage() {
               ) : null}
 
               {!showReview ? (
-                <section className="space-y-4" data-testid="purchase-lines-panel">
+                <section className="order-1 space-y-4" data-testid="purchase-lines-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -874,7 +848,7 @@ export function PilotPurchasesPage() {
               ) : null}
 
               {showReview ? (
-                <section className="space-y-4" data-testid="purchase-review-panel">
+                <section className="order-3 space-y-4" data-testid="purchase-review-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <p className="text-sm font-semibold text-ink">Review and send</p>
                     <p className="mt-1 text-sm text-muted">
