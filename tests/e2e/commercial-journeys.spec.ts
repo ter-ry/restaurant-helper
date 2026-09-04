@@ -2370,7 +2370,7 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await installMockApi(page, state);
 
   await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Capture invoices, confirm items, and move stock" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Capture invoice and receive stock" })).toBeVisible();
 
   const editorCard = page.getByTestId("purchase-editor-card");
   const historyCard = page.getByTestId("purchase-history-card");

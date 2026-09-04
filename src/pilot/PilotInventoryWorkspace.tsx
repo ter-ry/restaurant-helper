@@ -507,21 +507,6 @@ export function PilotInventoryPage() {
         </div>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted">Quick actions</p>
-        <h2 className="mt-2 text-xl font-bold text-ink">Select an item or create one deliberately</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-          Open an item to work in a dedicated full-width workspace, or create a new item when you are ready to add one.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Button type="button" onClick={startNewItem}>
-            Create item
-          </Button>
-          <Button variant="secondary" type="button" onClick={() => navigate("/app/reorder-plan")}>
-            Reorder list
-          </Button>
-        </div>
-      </div>
     </Card>
   );
 
@@ -1131,9 +1116,7 @@ export function PilotInventoryPage() {
                   setInventoryTab("items");
                   startNewItem();
                 }}
-              >
-                New item
-              </Button>
+              >Create item</Button>
               <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
                 Refresh
               </Button>
@@ -1142,12 +1125,7 @@ export function PilotInventoryPage() {
               </Button>
             </>
           }
-          metrics={[
-            { label: "Items tracked", value: formatNumber(data?.summary.inventoryItemCount ?? 0) },
-            { label: "Out of stock", value: formatNumber(data?.summary.inventoryOutOfStockCount ?? 0) },
-            { label: "Reorder now", value: formatNumber(data?.summary.inventoryReorderNowCount ?? 0) },
-            { label: "Inventory value", value: formatMoney(data?.summary.inventoryValue ?? 0) },
-          ]}
+          metrics={[]}
         />
       ) : (
         <></>

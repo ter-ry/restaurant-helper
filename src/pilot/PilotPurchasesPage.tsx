@@ -605,12 +605,12 @@ export function PilotPurchasesPage() {
 
   return (
     <div className="workspace-page p-3 sm:p-4">
-      <Card className="surface-panel workspace-card">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <Card className="surface-panel workspace-card p-3 sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Purchases</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Capture invoices, confirm items, and move stock</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">One workspace for supplier details, line mapping, totals, and receiving.</p>
+            <h1 className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">Capture invoice and receive stock</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted">Supplier, invoice lines, totals, and receiving in one transaction workspace.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -639,7 +639,7 @@ export function PilotPurchasesPage() {
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
             { label: "This month spend", value: formatMoney(data?.summary?.thisMonthSpend ?? 0) },
             { label: "Uploads needing review", value: formatNumber(data?.summary?.uploadsNeedingReview ?? 0) },
@@ -647,9 +647,9 @@ export function PilotPurchasesPage() {
             { label: "Mapped items", value: formatNumber(data?.summary?.mappedItems ?? 0) },
             { label: "Export ready", value: formatNumber(data?.summary?.exportReady ?? 0) },
           ].map((metric) => (
-            <div key={metric.label} className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
+            <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
+              <span className="text-sm font-bold text-ink">{metric.value}</span>
             </div>
           ))}
         </div>
@@ -694,9 +694,9 @@ export function PilotPurchasesPage() {
               </div>
             ) : null}
 
-            <div className="mt-5 space-y-5">
+            <div className="mt-4 flex flex-col gap-4">
               {!showReview ? (
-                <section className="space-y-5" data-testid="purchase-details-panel">
+                <section className="order-2 space-y-4" data-testid="purchase-details-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
@@ -767,7 +767,7 @@ export function PilotPurchasesPage() {
               ) : null}
 
               {!showReview ? (
-                <section className="space-y-4" data-testid="purchase-lines-panel">
+                <section className="order-1 space-y-4" data-testid="purchase-lines-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -874,7 +874,7 @@ export function PilotPurchasesPage() {
               ) : null}
 
               {showReview ? (
-                <section className="space-y-4" data-testid="purchase-review-panel">
+                <section className="order-3 space-y-4" data-testid="purchase-review-panel">
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <p className="text-sm font-semibold text-ink">Review and send</p>
                     <p className="mt-1 text-sm text-muted">

@@ -363,16 +363,16 @@ export function PilotStockCountsPage() {
         {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
             { label: "Count sessions", value: formatNumber(sessions.length) },
             { label: "Draft counts", value: formatNumber(sessions.filter((session) => session.status === "Draft").length) },
             { label: "Completed counts", value: formatNumber(sessions.filter((session) => session.status === "Completed").length) },
             { label: "Items available", value: formatNumber(inventoryItems.length) },
           ].map((metric) => (
-            <div key={metric.label} className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
+            <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
+              <span className="text-sm font-bold text-ink">{metric.value}</span>
             </div>
           ))}
         </div>
@@ -390,7 +390,7 @@ export function PilotStockCountsPage() {
         </div>
       </Card>
 
-      {workflowTab === "active" ? (
+      {workflowTab === "active" && !draft ? (
         <Card className="workspace-card">
           <SectionHeader title="Start a count" description="Pick the active inventory items to include, then start or resume a count session." />
           <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -452,12 +452,12 @@ export function PilotStockCountsPage() {
         </Card>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
+      <div className="flex flex-col gap-4">
         <Card className="workspace-card">
           <SectionHeader title={workflowTab === "history" ? "Count history" : "Sessions"} description={workflowTab === "history" ? "Completed counts are locked snapshots." : "Draft counts stay editable until they are applied to inventory."} />
-          <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
+          <div className="flex max-h-32 gap-2 overflow-x-auto pb-1">
             {visibleSessions.map((session) => (
-              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+              <button key={session.id} type="button" disabled={creating || saving} onClick={() => { openSession(session.id); setDraft(sessionToDraft(session)); }} className={`min-w-64 rounded-xl border px-3 py-2 text-left transition hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-70 ${selectedId === session.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-ink">{session.status === "Completed" ? "Completed" : "Draft"} #{session.id}</p>
@@ -475,7 +475,7 @@ export function PilotStockCountsPage() {
           </div>
         </Card>
 
-        <Card className="workspace-card">
+        <Card className="workspace-card w-full">
           <SectionHeader
             title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}

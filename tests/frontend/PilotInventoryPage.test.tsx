@@ -475,7 +475,7 @@ describe("PilotInventoryPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "New item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
 
     expect(await screen.findByRole("heading", { name: "Create inventory item" })).toBeVisible();
     expect(screen.queryByRole("columnheader", { name: "Item" })).not.toBeInTheDocument();

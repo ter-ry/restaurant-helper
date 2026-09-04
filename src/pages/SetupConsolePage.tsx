@@ -799,7 +799,7 @@ export function SetupConsolePage() {
                     ))}
                   </table>
                 </div>
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveModules()} disabled={savingAction !== null || refreshing}>
+                <button className="sticky bottom-3 z-10 mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white shadow-soft transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveModules()} disabled={savingAction !== null || refreshing}>
                   {mutationButtonLabel("modules", "Save modules", "Saving...", "Modules saved")}
                 </button>
               </Card>

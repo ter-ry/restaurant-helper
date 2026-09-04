@@ -342,17 +342,17 @@ export function PilotReorderPlanPage() {
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
         {loading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading reorder plans...</div> : null}
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
             { label: "Current suggestions", value: formatNumber(currentSuggestions.length), helper: `${formatNumber(currentUrgentCount)} urgent` },
             { label: "Unknown prices", value: formatNumber(currentUnknownPriceCount), helper: "estimate only" },
             { label: "Draft plans", value: formatNumber(draftPlanCount), helper: `${formatNumber(preparedPlanCount)} prepared` },
             { label: "Completed plans", value: formatNumber(completedPlanCount), helper: "history preserved" },
           ].map((metric) => (
-            <div key={metric.label} className={`rounded-2xl border p-4 ${metric.label === "Current suggestions" || metric.label === "Draft plans" ? "border-brand-200 bg-brand-50/50" : "border-line bg-white"}`}>
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{metric.value}</p>
-              <p className="mt-1 text-sm text-muted">{metric.helper}</p>
+            <div key={metric.label} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 ${metric.label === "Current suggestions" || metric.label === "Draft plans" ? "border-brand-200 bg-brand-50/50" : "border-line bg-white"}`}>
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
+              <span className="text-sm font-bold text-ink">{metric.value}</span>
+              <span className="text-xs text-muted">{metric.helper}</span>
             </div>
           ))}
         </div>
@@ -371,7 +371,7 @@ export function PilotReorderPlanPage() {
 
       <div className="flex flex-col gap-4">
       {workflowTab === "history" ? (
-        <div className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
+        <div className="grid gap-4">
           <Card className="workspace-card">
             <SectionHeader title="Completed plan history" description="Live reorder pressure stays hidden here so this view reads as history only." />
             <div className="space-y-3">
@@ -480,7 +480,7 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : (
-        <div className="order-1 grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+        <div className={`${draft ? "order-2" : "order-1"} grid gap-6 xl:grid-cols-[1.18fr_0.82fr]`}>
           <Card className="p-6">
             <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
             <div className="workspace-table-wrap max-h-[26rem] overflow-y-auto">
@@ -579,7 +579,7 @@ export function PilotReorderPlanPage() {
         </div>
       )}
 
-      <Card className={`p-5 ${draft && workflowTab === "live" ? "order-2" : ""}`}>
+      <Card className={`p-5 ${draft && workflowTab === "live" ? "order-1" : "order-2"}`}>
         <SectionHeader
           title={selectedPlan ? `${selectedPlan.name}` : "Open a reorder plan"}
           description={selectedPlan ? "Drafts stay editable. Prepared and completed plans open as read-only snapshots." : "Start or reopen a draft to begin planning."}

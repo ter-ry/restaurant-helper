@@ -380,17 +380,20 @@ export function PilotMenuCostingPage() {
         title="Recipe and menu pricing"
         description="Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons."
         actions={
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </button>
+          <>
+            <span className="rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-muted">
+              {organization.name}
+            </span>
+            <span className="rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-muted">
+              {currentLocation.name}
+            </span>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
+              <RefreshCcw className="h-4 w-4" />
+              Refresh
+            </button>
+          </>
         }
-        metrics={[
-          { label: "Recipes", value: formatNumber(recipes.length), helper: `${formatNumber(recipes.filter((recipe) => recipe.active).length)} active` },
-          { label: "Menu items", value: formatNumber(menuItems.length), helper: `${formatNumber(menuItems.filter((item) => item.active).length)} active` },
-          { label: "Inventory items", value: formatNumber(inventoryItems.length), helper: `${formatNumber(activeInventoryItems.length)} active cost sources` },
-          { label: "Costing context", value: organization.name, helper: currentLocation.name },
-        ]}
+        metrics={[]}
       />
 
       {loading ? (
@@ -433,8 +436,8 @@ export function PilotMenuCostingPage() {
       />
 
       {menuTab === "recipes" ? (
-      <div className="grid gap-5 xl:grid-cols-[0.78fr_1.42fr]">
-        <Card className="p-5">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)]">
+        <Card className="order-2 p-4 xl:order-1">
               <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
@@ -471,7 +474,7 @@ export function PilotMenuCostingPage() {
           )}
         </Card>
 
-        <Card className="p-5">
+        <Card className="order-1 p-4 xl:order-2">
           <SectionHeader
             title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"}
             description={recipeDraft.id ? "Recipes stay linked to the current location and inherit live inventory costs." : recipeEditorMode === "create" ? "Build the new recipe and save it deliberately." : "Select an existing recipe or start a new one."}
@@ -537,7 +540,7 @@ export function PilotMenuCostingPage() {
             </div>
           )}
 
-          <div className="mt-6 border-t border-line pt-5">
+          <div className="mt-4 border-t border-line pt-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-semibold text-ink">Ingredients</h3>
