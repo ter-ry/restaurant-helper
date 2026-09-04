@@ -504,7 +504,7 @@ export function PilotStockCountsPage() {
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">Status</span>
-                  <input className="input mt-1" value={draft.status} readOnly />
+                  <input className="input mt-1 cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" value={draft.status} readOnly />
                 </label>
               </div>
 
@@ -577,7 +577,7 @@ export function PilotStockCountsPage() {
 
               <label className="mt-4 block">
                 <span className="text-sm font-semibold text-ink">Notes</span>
-                <textarea className="input mt-1 min-h-10" rows={1} placeholder="Optional count note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
+                <textarea className={`input mt-1 min-h-10 ${draft.status === "Completed" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} rows={1} placeholder="Optional count note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
               </label>
 
               <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
@@ -597,9 +597,9 @@ export function PilotStockCountsPage() {
                         <tr key={line.id} className="bg-white align-middle">
                           <td className="px-3 py-3"><p className="font-semibold text-ink">{line.itemNameSnapshot}</p><div className="mt-1 flex flex-wrap gap-1"><Badge tone={statusTone(line.status)}>{line.status}</Badge>{line.hasMovementSinceStart ? <Badge tone="warning">{line.movementCountSinceStart} later movements</Badge> : null}</div></td>
                           <td className="px-3 py-3 font-semibold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</td>
-                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`counted-${line.id}`}>Counted quantity for {line.itemNameSnapshot}</label><input id={`counted-${line.id}`} className="input w-32" min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} /></td>
+                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`counted-${line.id}`}>Counted quantity for {line.itemNameSnapshot}</label><input id={`counted-${line.id}`} className={`input w-24 ${draft.status === "Completed" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-brand-200 bg-brand-50/40 text-base font-semibold"}`} min="0" type="number" step="1" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} disabled={draft.status === "Completed"} /></td>
                           <td className={`px-3 py-3 font-semibold ${Number(line.countedQuantity ?? 0) >= line.expectedQuantity ? "text-emerald-700" : "text-red-700"}`}>{line.countedQuantity === null ? "—" : `${line.countedQuantity - line.expectedQuantity >= 0 ? "+" : ""}${formatNumber((line.countedQuantity ?? 0) - line.expectedQuantity)} ${line.stockUnitSnapshot}`}</td>
-                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`variance-note-${line.id}`}>Variance note for {line.itemNameSnapshot}</label><input id={`variance-note-${line.id}`} className="input" value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} disabled={draft.status === "Completed"} /></td>
+                          <td className="px-3 py-3"><label className="sr-only" htmlFor={`variance-note-${line.id}`}>Variance note for {line.itemNameSnapshot}</label><input id={`variance-note-${line.id}`} className={`input w-48 ${draft.status === "Completed" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} disabled={draft.status === "Completed"} /></td>
                         </tr>
                       ))}
                     </tbody>
