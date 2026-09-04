@@ -613,21 +613,21 @@ export function SetupConsolePage() {
 
         {selected ? (
           <div key={`${selected.organization.id}-${selectedRevision}`} className="grid gap-6">
-            <Card className="p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
+            <Card className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Selected organization</p>
-                  <h2 className="mt-2 text-3xl font-bold text-ink">{selected.organization.name}</h2>
-                  <p className="mt-2 text-sm leading-6 text-muted">Review the setup checklist, configure modules and launch state, then activate when the checks pass.</p>
+                  <h2 className="mt-1 text-2xl font-bold text-ink">{selected.organization.name}</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted">Review readiness, configure modules, then activate when the checks pass.</p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-2">
                   <SetupStateChip label="Lifecycle" value={selected.organization.lifecycleStatus} />
                   <SetupStateChip label="Setup" value={selected.organization.setupStatus} />
                   <SetupStateChip label="Subscription" value={selected.organization.subscriptionStatus} />
                   <SetupStateChip label="Ready" value={selected.checklist.readyForActivation ? "Yes" : "No"} />
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 <SetupStateChip label="Locations" value={String(selected.checklist.locationCount)} />
                 <SetupStateChip label="Owners" value={String(selected.checklist.ownerCount)} />
                 <SetupStateChip label="Missing modules" value={selected.checklist.missingModules.length ? selected.checklist.missingModules.join(", ") : "None"} />
@@ -646,7 +646,7 @@ export function SetupConsolePage() {
                       <p className="mt-1">Setup requested {displayTimestamp(selected.customerIdentity.setupRequestedAt)}</p>
                     </div>
                   </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1.4fr]">
+                <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr]">
                     <div className="rounded-xl border border-brand-100 bg-white p-3 text-sm">
                       <p className="text-xs font-bold uppercase tracking-wide text-muted">Owner</p>
                       <p className="mt-1 font-semibold text-ink">{selected.customerIdentity.owner?.email ?? "Owner unavailable"}</p>
@@ -668,8 +668,8 @@ export function SetupConsolePage() {
               ) : null}
             </Card>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="workspace-card">
+            <div className="contents">
+              <Card className="workspace-card order-2 lg:order-3">
                 <h3 className="text-lg font-bold text-ink">Lifecycle and payment state</h3>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <label className="block">
@@ -709,7 +709,7 @@ export function SetupConsolePage() {
                 </div>
               </Card>
 
-              <Card className="workspace-card">
+              <Card className="workspace-card order-3 lg:order-4">
                 <h3 className="text-lg font-bold text-ink">Template and review</h3>
                 <label className="mt-4 block">
                   <span className="text-sm font-semibold text-ink">Template</span>
@@ -737,8 +737,8 @@ export function SetupConsolePage() {
               </Card>
             </div>
 
-            <div className="grid gap-6">
-              <Card className="p-5">
+            <div className="contents">
+              <Card className="order-3 p-4 lg:order-5">
                 <h3 className="text-lg font-bold text-ink">Locations</h3>
                 <details className="mt-4 rounded-xl border border-line bg-slate-50 p-3">
                   <summary className="cursor-pointer text-sm font-semibold text-ink">Advanced location data</summary>
@@ -749,7 +749,7 @@ export function SetupConsolePage() {
                 </details>
               </Card>
 
-              <Card className="p-5">
+              <Card className="order-1 p-4 lg:order-2">
                 <h3 className="text-lg font-bold text-ink">Module entitlements</h3>
                 <p className="mt-2 text-sm leading-6 text-muted">
                   Registered modules are shown even when the organization has no entitlement row yet. Backend-ready modules can be enabled; planning-only modules stay visibly locked.

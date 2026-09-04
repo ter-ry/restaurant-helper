@@ -436,8 +436,8 @@ export function PilotMenuCostingPage() {
       />
 
       {menuTab === "recipes" ? (
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)]">
-        <Card className="order-2 p-4 xl:order-1">
+      <div className={`grid gap-5 ${filteredRecipes.length ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)]" : "xl:grid-cols-1"}`}>
+        <Card className={`order-2 p-4 xl:order-1 ${filteredRecipes.length ? "" : "hidden"}`}>
               <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">

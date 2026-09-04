@@ -686,6 +686,27 @@ export function PilotPurchasesPage() {
               </div>
             </div>
 
+            {!showReview ? (
+              <div className="mt-4 grid gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-3 md:grid-cols-[minmax(14rem,1.3fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_auto] md:items-end">
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-ink">Supplier</span>
+                    <button type="button" className="text-xs font-semibold text-brand-700 disabled:text-slate-300" onClick={() => setShowSupplierForm((value) => !value)} disabled={finalizedStatus}>
+                      {showSupplierForm ? "Cancel" : "+ New supplier"}
+                    </button>
+                  </div>
+                  <select aria-label="Supplier" className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
+                    <option value="">Choose a supplier</option>
+                    {data?.suppliers?.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
+                  </select>
+                  {showSupplierForm ? <div className="mt-2 flex gap-2"><input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} /><Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button></div> : null}
+                </div>
+                <label className="block"><span className="text-sm font-semibold text-ink">Invoice #</span><input aria-label="Invoice number" className="input mt-1" value={draft.invoiceNumber} placeholder="Optional" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} /></label>
+                <label className="block"><span className="text-sm font-semibold text-ink">Date</span><input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} /></label>
+                <div className="text-xs text-muted"><span className="font-semibold text-ink">Status</span><div className="mt-2"><Badge tone={statusTone(draft.status)}>{draft.status}</Badge></div></div>
+              </div>
+            ) : null}
+
             {!finalizedStatus && draft.id && !readyToReceive ? (
               <div className="mt-4 flex justify-end">
                 <Button variant="secondary" type="button" onClick={() => setShowReview(true)}>
@@ -697,54 +718,7 @@ export function PilotPurchasesPage() {
             <div className="mt-4 flex flex-col gap-4">
               {!showReview ? (
                 <section className="order-2 space-y-4" data-testid="purchase-details-panel">
-                  <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-semibold text-ink">Supplier</span>
-                          <button type="button" className="text-sm font-semibold text-brand-700 disabled:text-slate-300" onClick={() => setShowSupplierForm((value) => !value)} disabled={finalizedStatus}>
-                            {showSupplierForm ? "Cancel" : "+ New supplier"}
-                          </button>
-                        </div>
-                        <select aria-label="Supplier" className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
-                          <option value="">Choose a supplier</option>
-                          {data?.suppliers?.map((supplier) => (
-                            <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
-                          ))}
-                        </select>
-                        {showSupplierForm ? (
-                          <div className="mt-2 flex gap-2">
-                            <input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} />
-                            <Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Invoice number</span>
-                        <input className="input mt-1" value={draft.invoiceNumber} placeholder="Leave blank until the invoice number is known" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} />
-                      </label>
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Invoice date</span>
-                        <input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} />
-                      </label>
-                      <label className="block">
-                        <span className="text-sm font-semibold text-ink">Status</span>
-                        {finalizedStatus ? (
-                          <div className="mt-1 rounded-2xl border border-line bg-white px-4 py-3">
-                            <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
-                          </div>
-                        ) : (
-                          <select className="input mt-1" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
-                            <option value="Draft">Needs review</option>
-                            <option value="Ready">Ready</option>
-                            <option value="Completed">Completed</option>
-                          </select>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-3">
                     <label className="block rounded-2xl border border-line bg-slate-50 p-4">
                       <span className="text-sm font-semibold text-ink">Subtotal</span>
                       <input className="input mt-1" type="number" step="1" value={draft.subtotal} onFocus={selectZeroValue} onChange={(event) => setDraft((current) => ({ ...current, subtotal: Number(event.target.value), totalAmount: Number(event.target.value) + Number(current.tax || 0) }))} disabled={finalizedStatus} />
