@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
@@ -736,72 +737,67 @@ export function SetupConsolePage() {
               </Card>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card className="p-6">
+            <div className="grid gap-6">
+              <Card className="p-5">
                 <h3 className="text-lg font-bold text-ink">Locations</h3>
-                <textarea id="locations-json" className="mt-4 min-h-48 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 font-mono text-xs outline-none" defaultValue={prettyJson(locations)} />
-                <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveLocations()} disabled={savingAction !== null || refreshing}>
-                  {mutationButtonLabel("locations", "Save locations JSON", "Saving...", "Locations saved")}
-                </button>
+                <details className="mt-4 rounded-xl border border-line bg-slate-50 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink">Advanced location data</summary>
+                  <textarea id="locations-json" className="mt-3 min-h-32 w-full rounded-xl border border-line bg-white px-3 py-2 font-mono text-xs outline-none" defaultValue={prettyJson(locations)} />
+                  <button className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveLocations()} disabled={savingAction !== null || refreshing}>
+                    {mutationButtonLabel("locations", "Save locations JSON", "Saving...", "Locations saved")}
+                  </button>
+                </details>
               </Card>
 
-              <Card className="p-6">
+              <Card className="p-5">
                 <h3 className="text-lg font-bold text-ink">Module entitlements</h3>
                 <p className="mt-2 text-sm leading-6 text-muted">
                   Registered modules are shown even when the organization has no entitlement row yet. Backend-ready modules can be enabled; planning-only modules stay visibly locked.
                 </p>
                 <div className="workspace-table-wrap mt-4">
-                  {[
-                    ["Backend ready", readyModules],
-                    ["Locked / planning only", lockedModules],
-                  ].map(([label, groupedModules]) => (
-                    <div key={label as string} className="border-b border-line last:border-b-0">
-                      <p className="bg-slate-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-muted">{label as string}</p>
-                      <div className="divide-y divide-line">
+                  <table className="w-full min-w-[720px] text-left text-sm">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-muted">
+                      <tr>
+                        <th className="px-3 py-2 font-bold">Module</th>
+                        <th className="px-3 py-2 font-bold">Status</th>
+                        <th className="px-3 py-2 font-bold">Backend</th>
+                        <th className="px-3 py-2 font-bold">Required / dependency</th>
+                      </tr>
+                    </thead>
+                    {[ ["Backend ready", readyModules], ["Locked / planning only", lockedModules] ].map(([label, groupedModules]) => (
+                      <tbody key={label as string} className="divide-y divide-line">
+                        <tr className="bg-slate-50/70">
+                          <th colSpan={4} className="px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-muted">{label as string}</th>
+                        </tr>
                         {(groupedModules as typeof modules).map((module) => {
                           const missingDependencies = module.missingDependencies ?? [];
                           const selectDisabled = !module.backendReady || missingDependencies.length > 0;
                           return (
-                            <div key={`${String(module.key)}-${selectedRevision}`} className="grid gap-2 bg-white p-3 md:grid-cols-[1.1fr_1fr_auto] md:items-center">
-                              <div className="space-y-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-sm font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
-                                  <span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${module.backendReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>
-                                    {module.backendReady ? "Backend ready" : "Backend not ready"}
-                                  </span>
-                                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
-                                    {module.hasOrganizationRow ? "Existing row" : "No org row"}
-                                  </span>
-                                  <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700">
-                                    {String(module.status)}
-                                  </span>
-                                </div>
-                                <p className="text-xs leading-5 text-muted">{String(module.description ?? "")}</p>
-                              </div>
-                              <div className="space-y-1 text-xs text-muted">
-                                <p>Dependencies: {module.dependencies?.length ? module.dependencies.join(", ") : "None"}.</p>
-                                {missingDependencies.length ? <p className="font-semibold text-amber-700">Enable {missingDependencies.join(", ")} first.</p> : null}
-                              </div>
-                              <div className="sm:w-56">
-                                <label className="sr-only" htmlFor={`module-${String(module.key)}`}>
-                                  {String(module.displayName ?? module.key)} status
-                                </label>
-                                <select
-                                  aria-label={`${String(module.displayName ?? module.key)} status`}
-                                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted"
-                                  defaultValue={String(module.status)}
-                                  disabled={selectDisabled}
-                                  id={`module-${String(module.key)}`}
-                                >
+                            <tr key={`${String(module.key)}-${selectedRevision}`} className="bg-white align-top">
+                              <td className="px-3 py-3">
+                                <p className="font-semibold text-ink">{String(module.displayName ?? module.key)}</p>
+                                <p className="mt-1 hidden max-w-lg text-xs text-muted lg:block">{String(module.description ?? "")}</p>
+                                <p className="mt-1 text-[11px] text-muted">{module.hasOrganizationRow ? "Existing entitlement" : "No entitlement row yet"}</p>
+                              </td>
+                              <td className="px-3 py-3">
+                                <label className="sr-only" htmlFor={`module-${String(module.key)}`}>{String(module.displayName ?? module.key)} status</label>
+                                <select aria-label={`${String(module.displayName ?? module.key)} status`} className="w-full rounded-lg border border-line bg-white px-2 py-2 text-sm outline-none disabled:bg-slate-100 disabled:text-muted" defaultValue={String(module.status)} disabled={selectDisabled} id={`module-${String(module.key)}`}>
                                   {moduleStatuses.map((option) => <option key={option} value={option}>{option}</option>)}
                                 </select>
-                              </div>
-                            </div>
+                              </td>
+                              <td className="px-3 py-3">
+                                <Badge tone={module.backendReady ? "success" : "warning"}>{module.backendReady ? "Ready" : "Not ready"}</Badge>
+                              </td>
+                              <td className="px-3 py-3 text-xs text-muted">
+                                <p>{module.dependencies?.length ? module.dependencies.join(", ") : "None"}</p>
+                                {missingDependencies.length ? <p className="mt-1 font-semibold text-amber-700">Enable {missingDependencies.join(", ")} first.</p> : <p className="mt-1">{module.backendReady ? "Available" : "Planning only"}</p>}
+                              </td>
+                            </tr>
                           );
                         })}
-                      </div>
-                    </div>
-                  ))}
+                      </tbody>
+                    ))}
+                  </table>
                 </div>
                 <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveModules()} disabled={savingAction !== null || refreshing}>
                   {mutationButtonLabel("modules", "Save modules", "Saving...", "Modules saved")}

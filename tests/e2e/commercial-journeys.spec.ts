@@ -2401,7 +2401,6 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(editorCard.getByLabel("Invoice number")).toBeVisible();
   await page.getByLabel("Supplier").selectOption("North Bay Dairy");
   await expect(page.getByLabel("Supplier")).toHaveValue("North Bay Dairy");
-  await page.getByRole("tab", { name: "Invoice items" }).click();
   await expect(page.getByTestId("purchase-lines-panel")).toBeVisible();
   await expect(page.getByLabel("Description")).toHaveCount(1);
 
@@ -2434,11 +2433,11 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(inventoryItems.nth(0)).toHaveValue("30");
   await expect(inventoryItems.nth(1)).toHaveValue("31");
 
-  await page.getByRole("tab", { name: "Review" }).click();
+  await page.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await page.getByRole("button", { name: "Save ready" }).click();
   await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
-  await page.getByRole("tab", { name: "Review" }).click();
+  await page.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
 

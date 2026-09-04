@@ -480,54 +480,30 @@ export function PilotReorderPlanPage() {
           </Card>
         </div>
       ) : (
-        <div className="order-2 grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
-          <Card className="workspace-card">
+        <div className="order-1 grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+          <Card className="p-6">
             <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
-            <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-              {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => (
-                <div key={suggestion.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{suggestion.inventoryItemName}</p>
-                      <p className="text-sm text-muted">{suggestion.supplier || "Unassigned supplier"} • {suggestion.category}</p>
-                    </div>
-                    <Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-4">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Current</p>
-                      <p className="mt-1 text-ink">{formatNumber(suggestion.currentQuantity)} {suggestion.unit}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Minimum / PAR</p>
-                      <p className="mt-1 text-ink">{formatNumber(suggestion.minimumQuantity)} / {formatNumber(suggestion.parLevel)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Suggested</p>
-                      <p className="mt-1 text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted">Estimate</p>
-                      <p className="mt-1 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    {(() => {
-                      const isInDraft = draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId);
-                      return (
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      disabled={creating || saving || loading}
-                      onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}
-                    >
-                      {isInDraft ? "In draft" : "Add to draft"}
-                    </Button>
-                      );
-                    })()}
-                  </div>
-                </div>
-              ))}
+            <div className="workspace-table-wrap max-h-[26rem] overflow-y-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-muted">
+                  <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Supplier</th><th className="px-3 py-2">On hand / PAR</th><th className="px-3 py-2">Suggested</th><th className="px-3 py-2">Estimate</th><th className="px-3 py-2">Action</th></tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => {
+                    const isInDraft = draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId);
+                    return (
+                      <tr key={suggestion.id} className="bg-white">
+                        <td className="px-3 py-3"><p className="font-semibold text-ink">{suggestion.inventoryItemName}</p><Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge></td>
+                        <td className="px-3 py-3 text-muted">{suggestion.supplier || "Unassigned supplier"}</td>
+                        <td className="px-3 py-3 text-ink">{formatNumber(suggestion.currentQuantity)} / {formatNumber(suggestion.parLevel)} {suggestion.unit}</td>
+                        <td className="px-3 py-3 font-semibold text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</td>
+                        <td className="px-3 py-3 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</td>
+                        <td className="px-3 py-3"><Button variant="secondary" type="button" disabled={creating || saving || loading} onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}>{isInDraft ? "In draft" : "Add to draft"}</Button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
               {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : null}
             </div>
 
@@ -603,7 +579,7 @@ export function PilotReorderPlanPage() {
         </div>
       )}
 
-      <Card className={`workspace-card ${draft && workflowTab === "live" ? "order-1" : ""}`}>
+      <Card className={`p-5 ${draft && workflowTab === "live" ? "order-2" : ""}`}>
         <SectionHeader
           title={selectedPlan ? `${selectedPlan.name}` : "Open a reorder plan"}
           description={selectedPlan ? "Drafts stay editable. Prepared and completed plans open as read-only snapshots." : "Start or reopen a draft to begin planning."}
@@ -651,7 +627,7 @@ export function PilotReorderPlanPage() {
               </label>
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-ink">Plan notes</span>
-                <textarea rows={2} className="input mt-1 min-h-0" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
+                <textarea className="input mt-1 min-h-10" rows={1} placeholder="Optional plan note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
             </div>
 

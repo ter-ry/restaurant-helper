@@ -433,8 +433,8 @@ export function PilotMenuCostingPage() {
       />
 
       {menuTab === "recipes" ? (
-      <div className="grid gap-4 xl:grid-cols-[0.98fr_1.22fr]">
-        <Card className="workspace-card">
+      <div className="grid gap-5 xl:grid-cols-[0.78fr_1.42fr]">
+        <Card className="p-5">
               <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
@@ -479,7 +479,7 @@ export function PilotMenuCostingPage() {
           />
           {showRecipeEditor ? (
             <>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-4">
             <label className="block">
               <span className="text-sm font-medium text-ink">Name</span>
               <input className="input mt-1" value={recipeDraft.name} onChange={(event) => setRecipeDraft((current) => ({ ...current, name: event.target.value }))} />
@@ -500,14 +500,16 @@ export function PilotMenuCostingPage() {
               </select>
             </label>
           </div>
-          <label className="mt-3 block">
-            <span className="text-sm font-medium text-ink">Description</span>
-            <textarea rows={2} className="input mt-1 min-h-0" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} />
-          </label>
-          <label className="mt-3 block">
-            <span className="text-sm font-medium text-ink">Notes</span>
-            <textarea rows={2} className="input mt-1 min-h-0" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} />
-          </label>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-ink">Description</span>
+              <input className="input mt-1" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional description" />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-ink">Notes</span>
+              <input className="input mt-1" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
+            </label>
+          </div>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveRecipe()} type="button" disabled={savingRecipe}>
               {savingRecipe ? "Saving…" : recipeDraft.id ? "Update recipe" : "Create recipe"}
@@ -573,7 +575,7 @@ export function PilotMenuCostingPage() {
                 </div>
                 <label className="block">
                   <span className="text-sm font-medium text-ink">Notes</span>
-                  <textarea rows={2} className="input mt-1 min-h-0" value={ingredientDraft.notes} onChange={(event) => setIngredientDraft((current) => ({ ...current, notes: event.target.value }))} />
+                  <input className="input mt-1" value={ingredientDraft.notes} onChange={(event) => setIngredientDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional note" />
                 </label>
                 <div className="flex flex-wrap gap-3">
                   <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveIngredient()} type="button" disabled={savingIngredient}>
@@ -655,7 +657,7 @@ export function PilotMenuCostingPage() {
       ) : (
       <Card className="p-5">
         <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
-        <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
+        <div className="grid gap-5 xl:grid-cols-[0.78fr_1.22fr]">
           <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
             {filteredMenuItems.length ? (
               filteredMenuItems.map((menuItem) => (
@@ -723,7 +725,7 @@ export function PilotMenuCostingPage() {
             </div>
             <label className="mt-3 block">
               <span className="text-sm font-medium text-ink">Notes</span>
-              <textarea rows={2} className="input mt-1 min-h-0" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} />
+              <input className="input mt-1" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
             </label>
             {showMenuItemEditor ? (
               <>

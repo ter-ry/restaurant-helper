@@ -240,17 +240,17 @@ export function PilotDailyClosePage() {
         }))}
       />
 
-      <Card className="p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2">
+      <Card className="p-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
-            <h2 className="text-xl font-bold text-ink">{selectedLocation?.name ?? "No location selected"}</h2>
-            <p className="text-sm leading-6 text-muted">
+            <h2 className="text-base font-bold text-ink">{selectedLocation?.name ?? "No location selected"}</h2>
+            <p className="text-xs text-muted">
               {data?.businessDate ? `Business date ${formatDate(data.businessDate)}` : "Choose a location to start the close."}
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[28rem]">
             {locationOptions.length > 1 ? (
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Workspace location</span>
@@ -384,7 +384,8 @@ export function PilotDailyClosePage() {
                   {completed ? <span className="text-xs font-semibold uppercase tracking-wide text-muted">Read only</span> : null}
                 </div>
                 <textarea
-                  className="input mt-3 min-h-32 w-full"
+                  className="input mt-3 min-h-10 w-full"
+                  rows={1}
                   value={notes}
                   disabled={completed}
                   onChange={(event) => setNotes(event.target.value)}

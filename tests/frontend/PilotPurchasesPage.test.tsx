@@ -227,16 +227,16 @@ describe("PilotPurchasesPage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "New purchase" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Details" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Invoice items" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Review" })).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Details" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Invoice items" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Review" })).not.toBeInTheDocument();
     const editor = screen.getByTestId("purchase-editor-card");
     expect(within(editor).queryByText("FD-1001")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Supplier")).toHaveValue("");
     expect(screen.getByLabelText("Invoice number")).toHaveValue("");
     expect(screen.getByTestId("purchase-history-card")).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
-    expect(screen.queryByTestId("purchase-primary-actions")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
   });
 
   it("creates a mapped invoice with a blank invoice number and readable transaction fields", async () => {
@@ -244,7 +244,6 @@ describe("PilotPurchasesPage", () => {
 
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Fresh Dairy Toronto" } });
-    fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
     fireEvent.change(screen.getByLabelText("Inventory item"), { target: { value: "301" } });
 
@@ -259,8 +258,7 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByLabelText("Line total")).toHaveValue(120);
     expect(screen.getByText("Confirmed")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]);
 
     await waitFor(() => expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledTimes(1));
     const payload = mockApi.createPilotPurchaseInvoice.mock.calls[0][0];
@@ -288,7 +286,6 @@ describe("PilotPurchasesPage", () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "New purchase" });
-    fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
     expect(screen.getByLabelText("Inventory item")).toHaveValue("301");
     expect(screen.getByText("Confirmed")).toBeVisible();
@@ -304,8 +301,7 @@ describe("PilotPurchasesPage", () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "New purchase" });
-    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]);
 
     expect(await screen.findByText(/Supplier is required\./)).toBeVisible();
   });
@@ -318,15 +314,14 @@ describe("PilotPurchasesPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
     expect(screen.getByTestId("purchase-details-panel")).toBeVisible();
-    expect(screen.getByTestId("purchase-primary-actions")).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Save draft" })[0]).toBeVisible();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Invoice items" }));
     expect(await screen.findByTestId("purchase-lines-panel")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add item" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(await screen.findByTestId("purchase-review-panel")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Save ready" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeVisible();
   });
@@ -347,9 +342,9 @@ describe("PilotPurchasesPage", () => {
     renderPage("/app/purchases?invoiceId=2");
 
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(await screen.findByTestId("purchase-review-panel")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeVisible();
     expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
   });
@@ -369,7 +364,7 @@ describe("PilotPurchasesPage", () => {
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getByRole("button", { name: /FD-1002/ }));
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
 
     expect(await screen.findByText("Invoice FD-1002 received into inventory.")).toBeVisible();
