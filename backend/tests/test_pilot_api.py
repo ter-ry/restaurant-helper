@@ -1770,6 +1770,23 @@ def test_reorder_plan_draft_lifecycle_preserves_snapshots(app, client):
     reopened_plan = reopened.get_json()
     assert reopened_plan["lines"][0]["estimatedUnitCost"] == original_unit_cost
 
+    exclude_all = client.patch(
+        f"/api/pilot/reorder-plans/{original_plan_id}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": line["id"], "excluded": True} for line in reopened_plan["lines"]]},
+    )
+    assert exclude_all.status_code == 200
+    rejected_empty_completion = client.post(f"/api/pilot/reorder-plans/{original_plan_id}/complete", headers=csrf_headers(client))
+    assert rejected_empty_completion.status_code == 400
+    assert rejected_empty_completion.get_json()["error"] == "Add at least one item to the order before completing this plan."
+
+    restore_included = client.patch(
+        f"/api/pilot/reorder-plans/{original_plan_id}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": line["id"], "excluded": False} for line in reopened_plan["lines"]]},
+    )
+    assert restore_included.status_code == 200
+
     prepared = client.post(f"/api/pilot/reorder-plans/{original_plan_id}/prepare", headers=csrf_headers(client))
     assert prepared.status_code == 200
     assert prepared.get_json()["status"] == "Prepared"

@@ -2263,6 +2263,8 @@ def complete_reorder_plan(plan_id: int):
         return json_error("Reorder plan not found.", 404)
     if plan.status == "Completed":
         return json_error("This reorder plan has already been completed.", 409)
+    if not any(not line.excluded for line in plan.lines):
+        return json_error("Add at least one item to the order before completing this plan.", 400)
     plan.status = "Completed"
     plan.completed_at = _now()
     plan.completed_by_user_id = current_user.id
