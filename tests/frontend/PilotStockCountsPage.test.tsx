@@ -161,7 +161,7 @@ describe("PilotStockCountsPage", () => {
   it("separates active counts from history and opens an existing draft directly", async () => {
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Count sessions that turn into real stock adjustments" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Stock Counts" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Active count" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("button", { name: "Start count" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
@@ -172,14 +172,14 @@ describe("PilotStockCountsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
     expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Completed count history" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Completed count #8" })).toBeVisible();
     expect(screen.getByText("Completed #8")).toBeVisible();
     expect(screen.queryByText("Draft #7")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start count" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Completed #8"));
 
-    await waitFor(() => expect(screen.getByText("This count has been finalized and the inventory snapshot above is now read-only.")).toBeVisible());
+    await waitFor(() => expect(screen.getByText("This count is finalized and the inventory snapshot is read-only.")).toBeVisible());
     expect(screen.getByText("Count applied")).toBeVisible();
   });
 
