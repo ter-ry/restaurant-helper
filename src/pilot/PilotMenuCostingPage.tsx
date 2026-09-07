@@ -554,7 +554,11 @@ export function PilotMenuCostingPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Inventory item</span>
-                    <select className="input mt-1" value={ingredientDraft.inventoryItemId} onChange={(event) => setIngredientDraft((current) => ({ ...current, inventoryItemId: event.target.value ? Number(event.target.value) : "" }))}>
+                    <select className="input mt-1" value={ingredientDraft.inventoryItemId} onChange={(event) => setIngredientDraft((current) => {
+                      const inventoryItemId = event.target.value ? Number(event.target.value) : "";
+                      const item = activeInventoryItems.find((candidate) => candidate.id === inventoryItemId);
+                      return { ...current, inventoryItemId, unit: item?.stockUnit ?? current.unit };
+                    })}>
                       <option value="">Choose an inventory item</option>
                       {activeInventoryItems.map((item) => (
                         <option key={item.id} value={item.id}>

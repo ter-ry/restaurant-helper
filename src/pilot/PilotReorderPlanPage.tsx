@@ -587,12 +587,12 @@ export function PilotReorderPlanPage() {
 
         {draft ? (
           <>
-            <div className={`mb-5 rounded-2xl border px-4 py-3 ${draft.status === "Draft" ? "border-brand-100 bg-brand-50" : draft.status === "Prepared" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+            <div className={`mb-5 rounded-xl border px-3 py-2 ${draft.status === "Draft" ? "border-brand-100 bg-brand-50" : draft.status === "Prepared" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={statusTone(draft.status)}>{draft.status}</Badge>
                 <Badge tone="neutral">{draft.status === "Draft" ? "Editable draft" : draft.status === "Prepared" ? "Review-only snapshot" : "Locked history"}</Badge>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="mt-2 flex w-fit flex-wrap gap-1">
                 {[
                   { label: "Draft", active: draft.status === "Draft" },
                   { label: "Prepared", active: draft.status === "Prepared" },
@@ -600,7 +600,7 @@ export function PilotReorderPlanPage() {
                 ].map((step) => (
                   <div
                     key={step.label}
-                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
                       step.active ? "border-ink bg-ink text-white" : "border-line bg-white text-muted"
                     }`}
                   >
@@ -619,15 +619,15 @@ export function PilotReorderPlanPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Plan name</span>
-                <input className="input mt-1" value={draft.name} onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))} disabled={draft.status !== "Draft"} />
+                <input className={`input mt-1 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} value={draft.name} onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Status</span>
-                <input className="input mt-1" value={draft.status} readOnly />
+                <input className="input mt-1 cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" value={draft.status} readOnly />
               </label>
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-ink">Plan notes</span>
-                <textarea className="input mt-1 min-h-10" rows={1} placeholder="Optional plan note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
+                <textarea className={`input mt-1 min-h-10 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} rows={1} placeholder="Optional plan note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status !== "Draft"} />
               </label>
             </div>
 
@@ -727,18 +727,18 @@ export function PilotReorderPlanPage() {
                         <div className="mt-4 grid gap-3 md:grid-cols-4">
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty</span>
-                            <input className="input mt-1" min="0" step="1" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
+                            <input className={`input mt-1 w-24 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} min="0" step="1" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Exclude</span>
-                            <div className="mt-1 flex h-10 items-center rounded-2xl border border-line bg-slate-50 px-4">
+                            <div className={`mt-1 flex h-10 items-center rounded-xl border px-3 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-line bg-slate-50"}`}>
                               <input checked={line.excluded} disabled={draft.status !== "Draft"} type="checkbox" onChange={(event) => updateLine(line.id, (current) => ({ ...current, excluded: event.target.checked }))} />
                               <span className="ml-2 text-sm text-muted">Do not include in this order</span>
                             </div>
                           </label>
                           <label className="block md:col-span-2">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Line notes</span>
-                            <input className="input mt-1" value={line.notes} onChange={(event) => updateLine(line.id, (current) => ({ ...current, notes: event.target.value }))} disabled={draft.status !== "Draft"} />
+                            <input className={`input mt-1 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} value={line.notes} onChange={(event) => updateLine(line.id, (current) => ({ ...current, notes: event.target.value }))} disabled={draft.status !== "Draft"} />
                           </label>
                         </div>
 

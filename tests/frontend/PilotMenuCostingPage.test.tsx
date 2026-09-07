@@ -58,7 +58,7 @@ describe("PilotMenuCostingPage", () => {
               recipeId: 1,
               inventoryItemId: 101,
               quantityRequired: 2,
-              unit: "each",
+              unit: "kg",
               notes: "Two portions of cheese",
               sortOrder: 1,
               inventoryItem: {
@@ -69,14 +69,14 @@ describe("PilotMenuCostingPage", () => {
                 name: "Cheese",
                 normalizedName: "cheese",
                 category: "Dairy",
-                stockUnit: "each",
+                stockUnit: "kg",
                 currentOnHand: 0,
                 minQuantity: 0,
                 parLevel: 0,
                 preferredSupplierName: "",
                 latestPurchasePrice: 4,
                 averageUnitCost: 3.5,
-                lastPurchaseUnit: "each",
+                lastPurchaseUnit: "kg",
                 lastPurchaseConversionFactor: 2,
                 lastReceivedAt: null,
                 lastCountedAt: null,
@@ -142,14 +142,14 @@ describe("PilotMenuCostingPage", () => {
           name: "Cheese",
           normalizedName: "cheese",
           category: "Dairy",
-          stockUnit: "each",
+          stockUnit: "kg",
           currentOnHand: 0,
           minQuantity: 0,
           parLevel: 0,
           preferredSupplierName: "",
           latestPurchasePrice: 4,
           averageUnitCost: 3.5,
-          lastPurchaseUnit: "each",
+          lastPurchaseUnit: "kg",
           lastPurchaseConversionFactor: 2,
           lastReceivedAt: null,
           lastCountedAt: null,
@@ -198,11 +198,13 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
     await waitFor(() => expect(screen.getByRole("heading", { name: "Edit recipe" })).toBeVisible());
     expect(screen.getAllByLabelText("Name")[0]).toHaveValue("Cheesy Toast");
+    fireEvent.change(screen.getByRole("combobox", { name: "Inventory item" }), { target: { value: "101" } });
+    expect(screen.getByDisplayValue("kg")).toBeVisible();
     expect(screen.getByText(/Cost basis:/)).toBeVisible();
     expect(screen.getByText(/Average inventory cost/)).toBeVisible();
     expect(screen.getByText(/Latest purchase price stays visible for comparison/)).toBeVisible();
     expect(
-      screen.getByText((content) => content.includes("2 each") && content.includes("$3.50/each") && content.includes("ingredient cost")),
+      screen.getByText((content) => content.includes("2 kg") && content.includes("$3.50/kg") && content.includes("ingredient cost")),
     ).toBeVisible();
 
     fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
