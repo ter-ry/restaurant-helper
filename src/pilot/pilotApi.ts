@@ -372,6 +372,25 @@ export interface PilotInventoryMovement {
   updatedAt: string | null;
 }
 
+export interface PilotInventoryWasteEvent {
+  id: number;
+  organizationId: number;
+  locationId: number;
+  inventoryItemId: number;
+  inventoryItemName: string;
+  inventoryMovementId: number;
+  quantity: number;
+  unit: string;
+  reason: string;
+  occurredAt: string | null;
+  note: string;
+  unitCost: number | null;
+  totalCost: number | null;
+  createdByUserId: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface PilotCountSessionLine {
   id: number;
   sessionId: number;
@@ -573,7 +592,7 @@ export interface PilotMenuCostingMenuItem {
   id: number;
   organizationId: number;
   locationId: number;
-  recipeId: number;
+  recipeId: number | null;
   name: string;
   normalizedName: string;
   category: string;
@@ -877,6 +896,18 @@ export async function createPilotInventoryAdjustment(itemId: number, payload: Re
     headers: {
       "Content-Type": "application/json",
     },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPilotInventoryWasteEvents() {
+  return requestJson<{ wasteEvents: PilotInventoryWasteEvent[] }>("/api/pilot/inventory/waste-events");
+}
+
+export async function createPilotInventoryWasteEvent(payload: Record<string, unknown>) {
+  return requestCsrfJson<PilotInventoryWasteEvent>("/api/pilot/inventory/waste-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }

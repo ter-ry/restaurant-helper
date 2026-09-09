@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import secrets
+import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -41,7 +42,7 @@ from .models import (
 from .access import organization_has_enabled_module
 from .square import decrypt_square_secret, encrypt_square_secret, square_enabled, square_environment, verify_square_webhook_signature
 from .tenant_context import apply_org_tenant_context, apply_request_tenant_context
-from .utils import get_platform_role, isoformat, json_error, serialize_location, serialize_organization
+from .utils import decimal_to_float, get_platform_role, isoformat, json_error, serialize_location, serialize_organization
 
 bp = Blueprint("square_integration", __name__)
 
@@ -147,6 +148,10 @@ def _serialize_catalog_object(obj: SquareCatalogObject) -> dict[str, Any]:
 
 def _normalize_key(value: str | None) -> str:
     return " ".join(str(value or "").strip().lower().split())
+
+
+def _menu_normalized_name(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.strip().lower())).strip()
 
 
 def _catalog_object_name(obj: SquareCatalogObject) -> str:
@@ -396,6 +401,88 @@ def _square_mapping_summary(organization: Organization, connection: SquareConnec
             "mappedPercent": round((active_mapping_count / len(catalog_objects) * 100) if catalog_objects else 0, 1),
         },
     }
+
+
+def _catalog_variation_price(obj: SquareCatalogObject) -> Decimal:
+    payload = obj.raw_payload_json if isinstance(obj.raw_payload_json, dict) else {}
+    variation = payload.get("item_variation_data") or payload.get("itemVariationData") or {}
+    money = variation.get("price_money") or variation.get("priceMoney") or {}
+    try:
+        return (Decimal(str(money.get("amount") or 0)) / Decimal("100")).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _catalog_variation_category(obj: SquareCatalogObject) -> str:
+    payload = obj.raw_payload_json if isinstance(obj.raw_payload_json, dict) else {}
+    variation = payload.get("item_variation_data") or payload.get("itemVariationData") or {}
+    parent_id = str(variation.get("item_id") or variation.get("itemId") or "").strip()
+    parent = SquareCatalogObject.query.filter_by(square_connection_id=obj.square_connection_id, square_object_id=parent_id, object_type="ITEM").first() if parent_id else None
+    parent_payload = parent.raw_payload_json if parent and isinstance(parent.raw_payload_json, dict) else {}
+    item_data = parent_payload.get("item_data") or parent_payload.get("itemData") or {}
+    category_id = str(item_data.get("category_id") or item_data.get("categoryId") or "").strip()
+    category = SquareCatalogObject.query.filter_by(square_connection_id=obj.square_connection_id, square_object_id=category_id, object_type="CATEGORY").first() if category_id else None
+    category_payload = category.raw_payload_json if category and isinstance(category.raw_payload_json, dict) else {}
+    category_data = category_payload.get("category_data") or category_payload.get("categoryData") or {}
+    return str(category_data.get("name") or "Other").strip() or "Other"
+
+
+def _square_menu_import_rows(organization: Organization, connection: SquareConnection, location: RestaurantLocation) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    variations = SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION").order_by(SquareCatalogObject.id.asc()).all()
+    for catalog_object in variations:
+        mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=catalog_object.id, mapping_type="menu_item").first()
+        menu_item = None
+        if mapping and mapping.flowtally_entity_id:
+            try:
+                menu_item = MenuItem.query.filter_by(id=int(mapping.flowtally_entity_id), organization_id=organization.id, location_id=location.id).first()
+            except (TypeError, ValueError):
+                menu_item = None
+        name = _catalog_object_name(catalog_object)
+        if catalog_object.is_deleted:
+            state = "inactive"
+        elif menu_item is not None:
+            state = "mapped" if menu_item.recipe_id else "recipe_needed"
+        elif mapping and mapping.flowtally_entity_id:
+            state = "conflict"
+        elif MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=_menu_normalized_name(name)).first() is not None:
+            state = "conflict"
+        else:
+            state = "new"
+        rows.append({
+            "squareCatalogObjectId": catalog_object.id,
+            "squareObjectId": catalog_object.square_object_id,
+            "name": name,
+            "parentName": _catalog_object_parent_name(catalog_object),
+            "category": _catalog_variation_category(catalog_object),
+            "sellingPrice": decimal_to_float(_catalog_variation_price(catalog_object)) or 0,
+            "state": state,
+            "menuItemId": menu_item.id if menu_item else None,
+            "isDeleted": bool(catalog_object.is_deleted),
+        })
+    return rows
+
+
+def _square_menu_import_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    return {key: sum(1 for row in rows if row["state"] == key) for key in ("new", "mapped", "recipe_needed", "inactive", "conflict")}
+
+
+def _refresh_imported_menu_item(mapping: SquareCatalogMapping, catalog_object: SquareCatalogObject) -> None:
+    """Refresh only auto-imported display metadata; never overwrite user mappings or recipes."""
+    if mapping.status != "imported_recipe_needed" or not mapping.flowtally_entity_id:
+        return
+    try:
+        menu_item = MenuItem.query.filter_by(id=int(mapping.flowtally_entity_id)).first()
+    except (TypeError, ValueError):
+        return
+    if menu_item is None:
+        mapping.status = "conflict"
+        return
+    menu_item.name = _catalog_object_name(catalog_object)
+    menu_item.normalized_name = _menu_normalized_name(menu_item.name)
+    menu_item.category = _catalog_variation_category(catalog_object)
+    menu_item.selling_price = _catalog_variation_price(catalog_object)
+    menu_item.active = not bool(catalog_object.is_deleted)
 
 
 def _build_square_usage_report(
@@ -1280,6 +1367,8 @@ def _sync_catalog(connection: SquareConnection, token: str) -> dict[str, Any]:
                 db.session.add(mapping)
             elif not mapping.flowtally_entity_id:
                 mapping.status = _default_catalog_mapping_status(catalog_object.object_type)
+            if catalog_object.object_type == "ITEM_VARIATION":
+                _refresh_imported_menu_item(mapping, catalog_object)
             total += 1
         cursor = str(payload.get("cursor") or "")
         page_count += 1
@@ -1912,6 +2001,111 @@ def square_catalog_mappings():
         ),
         200,
     )
+
+
+def _square_menu_import_context(payload: dict[str, Any] | None = None):
+    payload = payload or {}
+    try:
+        organization_id = int(payload.get("organizationId") or request.args.get("organizationId"))
+        location_id = int(payload.get("locationId") or request.args.get("locationId"))
+    except (TypeError, ValueError):
+        return None, None, None, json_error("Organization and location ids are required.", 400)
+    organization, connection, error = _ensure_connection_and_access(organization_id)
+    if error is not None:
+        return None, None, None, error
+    assert organization is not None and connection is not None
+    module_error = _require_usage_modules(organization)
+    if module_error is not None:
+        return None, None, None, module_error
+    location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization.id).first()
+    if location is None:
+        return None, None, None, json_error("Restaurant location not found.", 404)
+    return organization, connection, location, None
+
+
+@bp.get("/api/integrations/square/catalog/menu-import")
+@login_required
+def preview_square_menu_import():
+    organization, connection, location, error = _square_menu_import_context()
+    if error is not None:
+        return error
+    assert organization is not None and connection is not None and location is not None
+    rows = _square_menu_import_rows(organization, connection, location)
+    return jsonify({"locationId": location.id, "summary": _square_menu_import_summary(rows), "entries": rows}), 200
+
+
+@bp.post("/api/integrations/square/catalog/menu-import")
+@login_required
+def import_square_menu():
+    payload = request.get_json(silent=True) or {}
+    organization, connection, location, error = _square_menu_import_context(payload)
+    if error is not None:
+        return error
+    assert organization is not None and connection is not None and location is not None
+    rows = _square_menu_import_rows(organization, connection, location)
+    imported = 0
+    existing = 0
+    conflicts = 0
+    inactive = 0
+    for row in rows:
+        if row["state"] == "inactive":
+            inactive += 1
+            continue
+        catalog_object = SquareCatalogObject.query.filter_by(id=row["squareCatalogObjectId"], square_connection_id=connection.id).first()
+        mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=row["squareCatalogObjectId"], mapping_type="menu_item").first()
+        if catalog_object is None or mapping is None:
+            conflicts += 1
+            continue
+        if row["state"] in {"mapped", "recipe_needed"}:
+            menu_item = MenuItem.query.filter_by(id=row["menuItemId"], organization_id=organization.id, location_id=location.id).first()
+            if menu_item is not None and mapping.status == "imported_recipe_needed":
+                menu_item.name = row["name"]
+                menu_item.normalized_name = _menu_normalized_name(row["name"])
+                menu_item.category = row["category"]
+                menu_item.selling_price = Decimal(str(row["sellingPrice"]))
+                menu_item.active = True
+            existing += 1
+            continue
+        if row["state"] == "conflict":
+            mapping.status = "conflict"
+            conflicts += 1
+            continue
+        menu_item = MenuItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            recipe_id=None,
+            name=row["name"],
+            normalized_name=_menu_normalized_name(row["name"]),
+            category=row["category"],
+            selling_price=Decimal(str(row["sellingPrice"])),
+            active=True,
+            notes=f"Imported from Square variation {catalog_object.square_object_id}.",
+            created_by_user_id=current_user.id,
+            updated_by_user_id=current_user.id,
+        )
+        db.session.add(menu_item)
+        db.session.flush()
+        mapping.flowtally_entity_type = "menu_item"
+        mapping.flowtally_entity_id = str(menu_item.id)
+        mapping.status = "imported_recipe_needed"
+        mapping.mapped_by_user_id = current_user.id
+        record_audit_event(
+            event_type="square.menu_item_imported",
+            entity_type="menu_item",
+            entity_id=menu_item.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={"squareObjectId": catalog_object.square_object_id, "parentName": row["parentName"]},
+        )
+        imported += 1
+    db.session.commit()
+    result_rows = _square_menu_import_rows(organization, connection, location)
+    return jsonify({
+        "locationId": location.id,
+        "result": {"new": imported, "alreadyImported": existing, "mapped": sum(1 for row in result_rows if row["state"] == "mapped"), "recipeNeeded": sum(1 for row in result_rows if row["state"] == "recipe_needed"), "inactive": inactive, "conflicts": conflicts},
+        "entries": result_rows,
+    }), 200
 
 
 @bp.post("/api/integrations/square/catalog/mappings")

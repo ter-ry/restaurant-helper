@@ -9,6 +9,7 @@ import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotInventoryAdjustment,
+  createPilotInventoryWasteEvent,
   createPilotInventoryItem,
   createPilotSupplier,
   fetchPilotInventory,
@@ -159,6 +160,10 @@ export function PilotInventoryPage() {
   const [adjustmentDelta, setAdjustmentDelta] = useState(0);
   const [adjustmentReason, setAdjustmentReason] = useState("Periodic review");
   const [adjustmentNote, setAdjustmentNote] = useState("");
+  const [wasteQuantity, setWasteQuantity] = useState(0);
+  const [wasteReason, setWasteReason] = useState("spoilage / expired");
+  const [wasteNote, setWasteNote] = useState("");
+  const [wasteOccurredAt, setWasteOccurredAt] = useState(() => new Date().toISOString().slice(0, 16));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -380,6 +385,36 @@ export function PilotInventoryPage() {
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record adjustment.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveWaste = async () => {
+    if (!draft.id || wasteQuantity <= 0) {
+      setError("Enter a waste quantity greater than zero.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const saved = await createPilotInventoryWasteEvent({
+        inventoryItemId: draft.id,
+        quantity: wasteQuantity,
+        unit: draft.stockUnit,
+        reason: wasteReason,
+        note: wasteNote,
+        occurredAt: new Date(wasteOccurredAt).toISOString(),
+      });
+      setDraft((current) => current ? { ...current, currentOnHand: current.currentOnHand - wasteQuantity } : current);
+      setWasteQuantity(0);
+      setWasteNote("");
+      setMessage(`Waste recorded: ${formatNumber(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
+      await load();
+      setSelectedId(draft.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not record waste.");
     } finally {
       setSaving(false);
     }
@@ -805,6 +840,18 @@ export function PilotInventoryPage() {
                 </Button>
               </div>
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
+            </Card>
+
+            <Card className="p-5">
+              <SectionHeader title="Record waste / loss" description="Waste is recorded separately from adjustments and becomes a linked inventory deduction." />
+              <div className="mt-4 grid items-end gap-3 xl:grid-cols-[0.8fr_1fr_1fr_1.4fr_auto]">
+                <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1 w-28" type="number" min="0" step="0.0001" value={wasteQuantity} onChange={(event) => setWasteQuantity(Number(event.target.value))} /></label>
+                <label className="block"><span className="text-sm font-semibold text-ink">Waste reason</span><select aria-label="Waste reason" className="input mt-1" value={wasteReason} onChange={(event) => setWasteReason(event.target.value)}><option value="spoilage / expired">Spoilage / expired</option><option value="prep waste">Prep waste</option><option value="cooking / production mistake">Cooking / production mistake</option><option value="damaged / breakage">Damaged / breakage</option><option value="staff meal">Staff meal</option><option value="complimentary / comped">Complimentary / comped</option><option value="other">Other</option></select></label>
+                <label className="block"><span className="text-sm font-semibold text-ink">Date/time</span><input aria-label="Waste date/time" className="input mt-1" type="datetime-local" value={wasteOccurredAt} onChange={(event) => setWasteOccurredAt(event.target.value)} /></label>
+                <label className="block"><span className="text-sm font-semibold text-ink">Note</span><input className="input mt-1" value={wasteNote} onChange={(event) => setWasteNote(event.target.value)} placeholder="Optional context" /></label>
+                <Button disabled={saving || wasteQuantity <= 0} type="button" onClick={() => void saveWaste()}>Record waste</Button>
+              </div>
+              <p className="mt-3 text-xs text-muted">Current cost estimate: {averageCost !== null ? formatMoney(wasteQuantity * averageCost) : "Not available until a purchase cost is recorded"}.</p>
             </Card>
 
             <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted">

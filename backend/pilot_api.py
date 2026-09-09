@@ -21,6 +21,7 @@ from .models import (
     DailyCloseSession,
     InventoryItem,
     InventoryMovement,
+    InventoryWasteEvent,
     OrganizationMembership,
     MenuItem,
     PurchaseInvoice,
@@ -40,7 +41,7 @@ from .models import (
     Supplier,
     SupplierItemMapping,
 )
-from .menu_costing import serialize_menu_item, serialize_recipe
+from .menu_costing import current_inventory_unit_cost, serialize_menu_item, serialize_recipe
 from .policy import require_permission
 from .utils import (
     decimal_to_float,
@@ -1615,6 +1616,152 @@ def create_inventory_adjustment(item_id: int):
     return _commit_json(response_payload, 201)
 
 
+WASTE_REASONS = {
+    "spoilage / expired",
+    "prep waste",
+    "cooking / production mistake",
+    "damaged / breakage",
+    "staff meal",
+    "complimentary / comped",
+    "other",
+}
+
+
+def _parse_occurred_at(value: Any) -> datetime:
+    if value in (None, ""):
+        return _now()
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        raise RequestValidationError("Validation failed.", {"occurredAt": "Enter a valid ISO date/time."}) from None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+
+def _serialize_waste_event(event: InventoryWasteEvent) -> dict[str, Any]:
+    return {
+        "id": event.id,
+        "organizationId": event.organization_id,
+        "locationId": event.location_id,
+        "inventoryItemId": event.inventory_item_id,
+        "inventoryItemName": event.inventory_item.name if event.inventory_item else "",
+        "inventoryMovementId": event.inventory_movement_id,
+        "quantity": decimal_to_float(event.quantity) or 0,
+        "unit": event.unit,
+        "reason": event.reason,
+        "occurredAt": isoformat(event.occurred_at),
+        "note": event.note,
+        "unitCost": decimal_to_float(event.unit_cost),
+        "totalCost": decimal_to_float(event.total_cost),
+        "createdByUserId": event.created_by_user_id,
+        "createdAt": isoformat(event.created_at),
+        "updatedAt": isoformat(event.updated_at),
+    }
+
+
+@bp.get("/api/pilot/inventory/waste-events")
+@login_required
+def list_inventory_waste_events():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
+    query = InventoryWasteEvent.query.filter_by(organization_id=organization.id, location_id=location.id)
+    if item_id := request.args.get("inventoryItemId"):
+        try:
+            query = query.filter_by(inventory_item_id=int(item_id))
+        except ValueError:
+            return json_error("Inventory item id must be valid.", 400)
+    if reason := str(request.args.get("reason") or "").strip():
+        query = query.filter_by(reason=reason)
+    if start := str(request.args.get("startAt") or "").strip():
+        query = query.filter(InventoryWasteEvent.occurred_at >= _parse_occurred_at(start))
+    if end := str(request.args.get("endAt") or "").strip():
+        query = query.filter(InventoryWasteEvent.occurred_at <= _parse_occurred_at(end))
+    events = query.order_by(InventoryWasteEvent.occurred_at.desc(), InventoryWasteEvent.id.desc()).all()
+    return jsonify({"wasteEvents": [_serialize_waste_event(event) for event in events]}), 200
+
+
+@bp.post("/api/pilot/inventory/waste-events")
+@login_required
+def create_inventory_waste_event():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "inventory.manage")
+    if permission_error is not None:
+        return permission_error
+    payload = _json_body()
+    item_id = _to_int(payload.get("inventoryItemId"), field="inventoryItemId")
+    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+    quantity = _to_quantity(payload.get("quantity"), field="quantity")
+    if quantity <= 0:
+        raise RequestValidationError("Validation failed.", {"quantity": "Quantity must be greater than zero."})
+    unit = str(payload.get("unit") or item.stock_unit or "each").strip()
+    if unit != item.stock_unit:
+        raise RequestValidationError("Validation failed.", {"unit": "Waste must use the inventory item's stock unit."})
+    reason = str(payload.get("reason") or "").strip().lower()
+    if reason not in WASTE_REASONS:
+        raise RequestValidationError("Validation failed.", {"reason": "Choose a supported waste reason."})
+    before = Decimal(str(item.current_on_hand or 0))
+    if quantity > before:
+        return json_error("Waste would make inventory negative.", 400, errors={"quantity": "Quantity cannot reduce stock below zero."})
+    unit_cost = current_inventory_unit_cost(item)
+    total_cost = (quantity * unit_cost).quantize(MONEY) if unit_cost is not None else None
+    event = InventoryWasteEvent(
+        organization_id=organization.id,
+        location_id=location.id,
+        inventory_item_id=item.id,
+        quantity=quantity,
+        unit=unit,
+        reason=reason,
+        occurred_at=_parse_occurred_at(payload.get("occurredAt")),
+        note=str(payload.get("note") or "").strip(),
+        unit_cost=unit_cost,
+        total_cost=total_cost,
+        created_by_user_id=current_user.id,
+    )
+    db.session.add(event)
+    db.session.flush()
+    after = (before - quantity).quantize(QTY)
+    movement = InventoryMovement(
+        organization_id=organization.id,
+        location_id=location.id,
+        inventory_item_id=item.id,
+        quantity_delta=-quantity,
+        quantity_before=before,
+        quantity_after=after,
+        unit=unit,
+        source_type="inventory waste",
+        source_record_id=str(event.id),
+        source_line_id="",
+        reason=reason,
+        actor_user_id=current_user.id,
+    )
+    db.session.add(movement)
+    db.session.flush()
+    event.inventory_movement_id = movement.id
+    item.current_on_hand = after
+    item.updated_by_user_id = current_user.id
+    item.updated_at = _now()
+    record_audit_event(
+        event_type="inventory.waste_recorded",
+        entity_type="inventory_waste_event",
+        entity_id=event.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={"inventoryItemId": item.id, "quantity": float(quantity), "reason": reason, "totalCost": decimal_to_float(total_cost)},
+    )
+    response_payload = _serialize_waste_event(event)
+    return _commit_json(response_payload, 201)
+
+
 def _build_count_session_for_location(location: RestaurantLocation, organization_id: int):
     items = InventoryItem.query.filter_by(organization_id=organization_id, location_id=location.id, active=True).order_by(InventoryItem.name.asc()).all()
     return items
@@ -2357,11 +2504,12 @@ def _menu_costing_menu_item_payload(payload: dict[str, Any], menu_item: MenuItem
 
     recipe_id = payload.get("recipeId", menu_item.recipe_id if menu_item else None)
     if recipe_id in (None, ""):
-        raise RequestValidationError("Validation failed.", {"recipeId": "This field is required."})
-    try:
-        recipe_id_int = int(recipe_id)
-    except (TypeError, ValueError):
-        raise RequestValidationError("Validation failed.", {"recipeId": "Enter a valid whole number."}) from None
+        recipe_id_int = None
+    else:
+        try:
+            recipe_id_int = int(recipe_id)
+        except (TypeError, ValueError):
+            raise RequestValidationError("Validation failed.", {"recipeId": "Enter a valid whole number."}) from None
 
     category = str(payload.get("category", menu_item.category if menu_item else "Other")).strip() or "Other"
     return {
@@ -2649,8 +2797,8 @@ def create_menu_costing_menu_item():
     payload = _json_body()
     item_data = _menu_costing_menu_item_payload(payload)
 
-    recipe = _require_menu_costing_recipe(item_data["recipe_id"], organization.id, location.id)
-    if recipe is None:
+    recipe = _require_menu_costing_recipe(item_data["recipe_id"], organization.id, location.id) if item_data["recipe_id"] is not None else None
+    if item_data["recipe_id"] is not None and recipe is None:
         return json_error("Recipe not found.", 404)
 
     existing = MenuItem.query.filter_by(
@@ -2696,8 +2844,8 @@ def update_menu_costing_menu_item(menu_item_id: int):
 
     payload = _json_body()
     item_data = _menu_costing_menu_item_payload(payload, menu_item)
-    recipe = _require_menu_costing_recipe(item_data["recipe_id"], organization.id, location.id)
-    if recipe is None:
+    recipe = _require_menu_costing_recipe(item_data["recipe_id"], organization.id, location.id) if item_data["recipe_id"] is not None else None
+    if item_data["recipe_id"] is not None and recipe is None:
         return json_error("Recipe not found.", 404)
 
     if item_data["normalized_name"] != menu_item.normalized_name:
@@ -2712,7 +2860,7 @@ def update_menu_costing_menu_item(menu_item_id: int):
 
     for field, value in item_data.items():
         setattr(menu_item, field, value)
-    menu_item.recipe_id = recipe.id
+    menu_item.recipe_id = recipe.id if recipe is not None else None
     menu_item.updated_by_user_id = current_user.id
     record_audit_event(
         event_type="menu_costing.menu_item_updated",

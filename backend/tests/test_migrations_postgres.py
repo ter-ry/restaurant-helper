@@ -326,6 +326,117 @@ def _assert_table_owned_by_migrator(table_name: str) -> None:
         assert _table_owner(connection, table_name) == "flowtally_migrator"
 
 
+def _assert_rls_enabled_and_forced(table_name: str) -> None:
+    row = db.session.execute(
+        text(
+            """
+            select c.relrowsecurity, c.relforcerowsecurity
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = current_schema() and c.relname = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).one()
+    assert row == (True, True)
+
+
+def _assert_foreign_key(
+    table_name: str,
+    column_name: str,
+    referenced_table: str,
+    referenced_column: str = "id",
+    on_delete: str = "NO ACTION",
+) -> None:
+    row = db.session.execute(
+        text(
+            """
+            select case c.confdeltype
+                when 'a' then 'NO ACTION'
+                when 'r' then 'RESTRICT'
+                when 'c' then 'CASCADE'
+                when 'n' then 'SET NULL'
+                when 'd' then 'SET DEFAULT'
+            end as on_delete
+            from pg_constraint c
+            join pg_class child_table on child_table.oid = c.conrelid
+            join pg_namespace child_schema on child_schema.oid = child_table.relnamespace
+            join pg_class parent_table on parent_table.oid = c.confrelid
+            join pg_namespace parent_schema on parent_schema.oid = parent_table.relnamespace
+            join lateral unnest(c.conkey) with ordinality as child_key(attnum, position) on true
+            join lateral unnest(c.confkey) with ordinality as parent_key(attnum, position)
+              on parent_key.position = child_key.position
+            join pg_attribute child_column
+              on child_column.attrelid = child_table.oid
+             and child_column.attnum = child_key.attnum
+            join pg_attribute parent_column
+              on parent_column.attrelid = parent_table.oid
+             and parent_column.attnum = parent_key.attnum
+            where c.contype = 'f'
+              and child_schema.nspname = current_schema()
+              and child_table.relname = :table_name
+              and child_column.attname = :column_name
+              and parent_schema.nspname = current_schema()
+              and parent_table.relname = :referenced_table
+              and parent_column.attname = :referenced_column
+            """
+        ),
+        {
+            "table_name": table_name,
+            "column_name": column_name,
+            "referenced_table": referenced_table,
+            "referenced_column": referenced_column,
+        },
+    ).scalar_one()
+    assert row == on_delete
+
+
+def _assert_index_on_column(table_name: str, column_name: str) -> None:
+    row = db.session.execute(
+        text(
+            """
+            select count(*)
+            from pg_index i
+            join pg_class table_class on table_class.oid = i.indrelid
+            join pg_namespace table_schema on table_schema.oid = table_class.relnamespace
+            join pg_class index_class on index_class.oid = i.indexrelid
+            join pg_attribute indexed_column
+              on indexed_column.attrelid = table_class.oid
+             and indexed_column.attnum = any(i.indkey)
+            where table_schema.nspname = current_schema()
+              and table_class.relname = :table_name
+              and index_class.relkind = 'i'
+              and indexed_column.attname = :column_name
+            """
+        ),
+        {"table_name": table_name, "column_name": column_name},
+    ).scalar_one()
+    assert row >= 1
+
+
+def _assert_unique_constraint(table_name: str, column_name: str) -> None:
+    row = db.session.execute(
+        text(
+            """
+            select count(*)
+            from pg_constraint c
+            join pg_class table_class on table_class.oid = c.conrelid
+            join pg_namespace table_schema on table_schema.oid = table_class.relnamespace
+            join pg_attribute constrained_column
+              on constrained_column.attrelid = table_class.oid
+             and constrained_column.attnum = any(c.conkey)
+            where c.contype = 'u'
+              and cardinality(c.conkey) = 1
+              and table_schema.nspname = current_schema()
+              and table_class.relname = :table_name
+              and constrained_column.attname = :column_name
+            """
+        ),
+        {"table_name": table_name, "column_name": column_name},
+    ).scalar_one()
+    assert row == 1
+
+
 def _column_info(table_name: str, column_name: str) -> tuple[str, bool, int | None, int | None]:
     row = db.session.execute(
         text(
@@ -354,7 +465,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0018_pos_driven_system_inventory"
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -394,6 +505,53 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_policy_exists("flowtally_recipes_tenant_access", "recipes")
         _assert_policy_exists("flowtally_recipe_ingredients_tenant_access", "recipe_ingredients")
         _assert_policy_exists("flowtally_menu_items_tenant_access", "menu_items")
+        waste_quantity_type, waste_quantity_nullable, waste_precision, waste_scale = _column_info("inventory_waste_events", "quantity")
+        assert waste_quantity_type == "numeric"
+        assert waste_quantity_nullable is False
+        assert waste_precision == 12
+        assert waste_scale == 4
+        waste_unit_type, waste_unit_nullable, _, _ = _column_info("inventory_waste_events", "unit")
+        assert waste_unit_type == "character varying"
+        assert waste_unit_nullable is False
+        waste_reason_type, waste_reason_nullable, _, _ = _column_info("inventory_waste_events", "reason")
+        assert waste_reason_type == "character varying"
+        assert waste_reason_nullable is False
+        occurred_type, occurred_nullable, _, _ = _column_info("inventory_waste_events", "occurred_at")
+        assert occurred_type == "timestamp with time zone"
+        assert occurred_nullable is False
+        _, recipe_nullable, _, _ = _column_info("menu_items", "recipe_id")
+        assert recipe_nullable is True
+        _assert_table_owned_by_migrator("inventory_waste_events")
+        _assert_rls_enabled_and_forced("inventory_waste_events")
+        _assert_policy_exists("flowtally_inventory_waste_events_tenant_access", "inventory_waste_events")
+        _assert_foreign_key("inventory_waste_events", "organization_id", "organizations", on_delete="CASCADE")
+        _assert_foreign_key("inventory_waste_events", "location_id", "restaurant_locations", on_delete="CASCADE")
+        _assert_foreign_key("inventory_waste_events", "inventory_item_id", "inventory_items", on_delete="RESTRICT")
+        _assert_foreign_key("inventory_waste_events", "inventory_movement_id", "inventory_movements", on_delete="RESTRICT")
+        _assert_foreign_key("inventory_waste_events", "created_by_user_id", "users", on_delete="SET NULL")
+        for indexed_column in ("organization_id", "location_id", "inventory_item_id", "inventory_movement_id", "occurred_at"):
+            _assert_index_on_column("inventory_waste_events", indexed_column)
+        _assert_unique_constraint("inventory_waste_events", "inventory_movement_id")
+
+
+def test_postgres_migrations_upgrade_from_0018_to_0019():
+    application = _create_app()
+    _reset_public_schema(application)
+    migration_config = _upgrade_to(application, "0018_pos_driven_system_inventory")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        assert _current_revision() == "0018_pos_driven_system_inventory"
+
+    migration_config = _upgrade_to(application, "0019_square_menu_import_and_inventory_waste")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        _assert_runtime_connection()
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        _, recipe_nullable, _, _ = _column_info("menu_items", "recipe_id")
+        assert recipe_nullable is True
+        _assert_table_owned_by_migrator("inventory_waste_events")
+        _assert_rls_enabled_and_forced("inventory_waste_events")
+        _assert_policy_exists("flowtally_inventory_waste_events_tenant_access", "inventory_waste_events")
 
 
 def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
@@ -405,7 +563,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0018_pos_driven_system_inventory"
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -426,7 +584,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0018_pos_driven_system_inventory"
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -451,7 +609,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0018_pos_driven_system_inventory"
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -470,7 +628,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0018_pos_driven_system_inventory"
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -671,7 +829,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0018_pos_driven_system_inventory"
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
