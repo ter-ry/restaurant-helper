@@ -341,24 +341,44 @@ def _assert_rls_enabled_and_forced(table_name: str) -> None:
     assert row == (True, True)
 
 
-def _assert_foreign_key(table_name: str, column_name: str, referenced_table: str, referenced_column: str = "id") -> None:
+def _assert_foreign_key(
+    table_name: str,
+    column_name: str,
+    referenced_table: str,
+    referenced_column: str = "id",
+    on_delete: str = "NO ACTION",
+) -> None:
     row = db.session.execute(
         text(
             """
-            select count(*)
-            from information_schema.table_constraints tc
-            join information_schema.key_column_usage kcu
-              on kcu.constraint_name = tc.constraint_name
-             and kcu.table_schema = tc.table_schema
-            join information_schema.constraint_column_usage ccu
-              on ccu.constraint_name = tc.constraint_name
-             and ccu.table_schema = tc.table_schema
-            where tc.constraint_type = 'FOREIGN KEY'
-              and tc.table_schema = current_schema()
-              and tc.table_name = :table_name
-              and kcu.column_name = :column_name
-              and ccu.table_name = :referenced_table
-              and ccu.column_name = :referenced_column
+            select case c.confdeltype
+                when 'a' then 'NO ACTION'
+                when 'r' then 'RESTRICT'
+                when 'c' then 'CASCADE'
+                when 'n' then 'SET NULL'
+                when 'd' then 'SET DEFAULT'
+            end as on_delete
+            from pg_constraint c
+            join pg_class child_table on child_table.oid = c.conrelid
+            join pg_namespace child_schema on child_schema.oid = child_table.relnamespace
+            join pg_class parent_table on parent_table.oid = c.confrelid
+            join pg_namespace parent_schema on parent_schema.oid = parent_table.relnamespace
+            join lateral unnest(c.conkey) with ordinality as child_key(attnum, position) on true
+            join lateral unnest(c.confkey) with ordinality as parent_key(attnum, position)
+              on parent_key.position = child_key.position
+            join pg_attribute child_column
+              on child_column.attrelid = child_table.oid
+             and child_column.attnum = child_key.attnum
+            join pg_attribute parent_column
+              on parent_column.attrelid = parent_table.oid
+             and parent_column.attnum = parent_key.attnum
+            where c.contype = 'f'
+              and child_schema.nspname = current_schema()
+              and child_table.relname = :table_name
+              and child_column.attname = :column_name
+              and parent_schema.nspname = current_schema()
+              and parent_table.relname = :referenced_table
+              and parent_column.attname = :referenced_column
             """
         ),
         {
@@ -368,7 +388,7 @@ def _assert_foreign_key(table_name: str, column_name: str, referenced_table: str
             "referenced_column": referenced_column,
         },
     ).scalar_one()
-    assert row == 1
+    assert row == on_delete
 
 
 def _assert_index_on_column(table_name: str, column_name: str) -> None:
@@ -376,13 +396,20 @@ def _assert_index_on_column(table_name: str, column_name: str) -> None:
         text(
             """
             select count(*)
-            from pg_indexes
-            where schemaname = current_schema()
-              and tablename = :table_name
-              and indexdef ilike :column_pattern
+            from pg_index i
+            join pg_class table_class on table_class.oid = i.indrelid
+            join pg_namespace table_schema on table_schema.oid = table_class.relnamespace
+            join pg_class index_class on index_class.oid = i.indexrelid
+            join pg_attribute indexed_column
+              on indexed_column.attrelid = table_class.oid
+             and indexed_column.attnum = any(i.indkey)
+            where table_schema.nspname = current_schema()
+              and table_class.relname = :table_name
+              and index_class.relkind = 'i'
+              and indexed_column.attname = :column_name
             """
         ),
-        {"table_name": table_name, "column_pattern": f"%({column_name})%"},
+        {"table_name": table_name, "column_name": column_name},
     ).scalar_one()
     assert row >= 1
 
@@ -392,14 +419,17 @@ def _assert_unique_constraint(table_name: str, column_name: str) -> None:
         text(
             """
             select count(*)
-            from information_schema.table_constraints tc
-            join information_schema.key_column_usage kcu
-              on kcu.constraint_name = tc.constraint_name
-             and kcu.table_schema = tc.table_schema
-            where tc.constraint_type = 'UNIQUE'
-              and tc.table_schema = current_schema()
-              and tc.table_name = :table_name
-              and kcu.column_name = :column_name
+            from pg_constraint c
+            join pg_class table_class on table_class.oid = c.conrelid
+            join pg_namespace table_schema on table_schema.oid = table_class.relnamespace
+            join pg_attribute constrained_column
+              on constrained_column.attrelid = table_class.oid
+             and constrained_column.attnum = any(c.conkey)
+            where c.contype = 'u'
+              and cardinality(c.conkey) = 1
+              and table_schema.nspname = current_schema()
+              and table_class.relname = :table_name
+              and constrained_column.attname = :column_name
             """
         ),
         {"table_name": table_name, "column_name": column_name},
@@ -494,11 +524,11 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_table_owned_by_migrator("inventory_waste_events")
         _assert_rls_enabled_and_forced("inventory_waste_events")
         _assert_policy_exists("flowtally_inventory_waste_events_tenant_access", "inventory_waste_events")
-        _assert_foreign_key("inventory_waste_events", "organization_id", "organizations")
-        _assert_foreign_key("inventory_waste_events", "location_id", "restaurant_locations")
-        _assert_foreign_key("inventory_waste_events", "inventory_item_id", "inventory_items")
-        _assert_foreign_key("inventory_waste_events", "inventory_movement_id", "inventory_movements")
-        _assert_foreign_key("inventory_waste_events", "created_by_user_id", "users")
+        _assert_foreign_key("inventory_waste_events", "organization_id", "organizations", on_delete="CASCADE")
+        _assert_foreign_key("inventory_waste_events", "location_id", "restaurant_locations", on_delete="CASCADE")
+        _assert_foreign_key("inventory_waste_events", "inventory_item_id", "inventory_items", on_delete="RESTRICT")
+        _assert_foreign_key("inventory_waste_events", "inventory_movement_id", "inventory_movements", on_delete="RESTRICT")
+        _assert_foreign_key("inventory_waste_events", "created_by_user_id", "users", on_delete="SET NULL")
         for indexed_column in ("organization_id", "location_id", "inventory_item_id", "inventory_movement_id", "occurred_at"):
             _assert_index_on_column("inventory_waste_events", indexed_column)
         _assert_unique_constraint("inventory_waste_events", "inventory_movement_id")
