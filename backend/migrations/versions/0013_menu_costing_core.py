@@ -116,12 +116,14 @@ def remove_postgres_migration(connection: Connection) -> None:
 
 
 def upgrade() -> None:
-    if not _is_postgres():
+    if _is_postgres():
+        apply_postgres_migration(op.get_bind())
         return
-    apply_postgres_migration(op.get_bind())
+    _create_tables()
 
 
 def downgrade() -> None:
-    if not _is_postgres():
+    if _is_postgres():
+        remove_postgres_migration(op.get_bind())
         return
-    remove_postgres_migration(op.get_bind())
+    _drop_tables()

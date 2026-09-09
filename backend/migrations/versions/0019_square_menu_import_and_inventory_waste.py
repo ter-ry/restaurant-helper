@@ -25,7 +25,8 @@ def _is_postgres() -> bool:
 
 
 def upgrade() -> None:
-    op.alter_column("menu_items", "recipe_id", existing_type=sa.Integer(), nullable=True)
+    with op.batch_alter_table("menu_items") as batch_op:
+        batch_op.alter_column("recipe_id", existing_type=sa.Integer(), nullable=True)
     op.create_table(
         "inventory_waste_events",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -57,7 +58,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    null_count = bind.execute(sa.text("SELECT COUNT(*) FROM menu_items WHERE recipe_id IS NULL")).scalar_one()
+    if null_count:
+        raise RuntimeError(
+            f"Cannot downgrade 0019 while {null_count} menu item(s) have no recipe; assign recipes before downgrading."
+        )
     if _is_postgres():
         op.execute("DROP POLICY IF EXISTS flowtally_inventory_waste_events_tenant_access ON inventory_waste_events")
     op.drop_table("inventory_waste_events")
-    op.alter_column("menu_items", "recipe_id", existing_type=sa.Integer(), nullable=False)
+    with op.batch_alter_table("menu_items") as batch_op:
+        batch_op.alter_column("recipe_id", existing_type=sa.Integer(), nullable=False)
