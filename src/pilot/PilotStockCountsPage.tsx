@@ -80,6 +80,7 @@ export function PilotStockCountsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<CountSessionDraft | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<"save" | "finalize" | null>(null);
@@ -142,6 +143,7 @@ export function PilotStockCountsPage() {
         setConfirmConcurrency(false);
         setShowConcurrencyDetails(false);
       }
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load count sessions.");
     } finally {
@@ -171,6 +173,7 @@ export function PilotStockCountsPage() {
   );
   const conflictLines = useMemo(() => draft?.lines.filter((line) => line.hasMovementSinceStart) ?? [], [draft?.lines]);
   const isCompleted = draft?.status === "Completed";
+  const initialLoading = loading && !hasLoaded;
 
   useEffect(() => {
     if (selectedSession) {
@@ -360,11 +363,13 @@ export function PilotStockCountsPage() {
           </div>
         </div>
 
-        {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+        {initialLoading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading stock counts…</div> : null}
+        {loading && hasLoaded ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Refreshing stock counts…</div> : null}
+        {error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
-          <span className="text-xs text-muted">{formatNumber(sessions.length)} sessions · {formatNumber(inventoryItems.length)} items</span>
+          <span className="text-xs text-muted">{hasLoaded ? formatNumber(sessions.length) : "—"} sessions · {hasLoaded ? formatNumber(inventoryItems.length) : "—"} items</span>
           {hasUnsavedChanges ? <Badge tone="warning">Unsaved changes</Badge> : null}
           <WorkspaceTabs
             tabs={[
@@ -428,7 +433,8 @@ export function PilotStockCountsPage() {
                     </button>
                   );
                 })}
-                {!filteredItems.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No active inventory items match this search.</p> : null}
+                {initialLoading ? <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-8 text-sm text-muted">Loading inventory items…</p> : null}
+                {!loading && hasLoaded && !filteredItems.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No active inventory items match this search.</p> : null}
               </div>
             </div>
           </div>
@@ -452,7 +458,7 @@ export function PilotStockCountsPage() {
                 <p className="mt-1 text-[11px] text-muted">{session.countedLineCount}/{session.itemCount} counted · {session.uncountedLineCount} uncounted</p>
               </button>
             ))}
-            {!visibleSessions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{workflowTab === "history" ? "No completed counts yet." : "No draft counts yet."}</p> : null}
+            {!loading && hasLoaded && !visibleSessions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">{workflowTab === "history" ? "No completed counts yet." : "No draft counts yet."}</p> : null}
             </div>
           </div>
         </Card>

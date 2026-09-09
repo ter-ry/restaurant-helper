@@ -283,6 +283,7 @@ export function PilotPurchasesPage() {
   const [draft, setDraft] = useState<PurchaseDraft>(buildBlankDraft());
   const [detailInvoice, setDetailInvoice] = useState<PilotPurchaseInvoice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [correctionNote, setCorrectionNote] = useState("");
@@ -336,6 +337,7 @@ export function PilotPurchasesPage() {
         setDetailInvoice(resolvedInvoice && (resolvedInvoice.status === "Completed" || resolvedInvoice.status === "Corrected") ? resolvedInvoice : null);
         setShowReview(false);
       }
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load purchases.");
     } finally {
@@ -367,6 +369,7 @@ export function PilotPurchasesPage() {
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
   const priceChanges = (data?.priceChanges ?? []).slice(0, 3);
+  const initialLoading = loading && !hasLoaded;
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const purchaseStatusLabel = finalizedStatus ? "Read-only purchase" : draft.id ? "Editable draft" : "New purchase";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
@@ -630,22 +633,23 @@ export function PilotPurchasesPage() {
             >
               New purchase
             </Button>
-            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
+            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
               Refresh
             </Button>
           </div>
         </div>
 
-        {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+        {loading ? <div className="mt-5 text-sm text-muted">{initialLoading ? "Loading purchases…" : "Refreshing purchases…"}</div> : null}
+        {error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
-            { label: "This month spend", value: formatMoney(data?.summary?.thisMonthSpend ?? 0) },
-            { label: "Uploads needing review", value: formatNumber(data?.summary?.uploadsNeedingReview ?? 0) },
-            { label: "Price changes flagged", value: formatNumber(data?.summary?.priceChangesFlagged ?? 0) },
-            { label: "Mapped items", value: formatNumber(data?.summary?.mappedItems ?? 0) },
-            { label: "Export ready", value: formatNumber(data?.summary?.exportReady ?? 0) },
+            { label: "This month spend", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
+            { label: "Uploads needing review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
+            { label: "Price changes flagged", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
+            { label: "Mapped items", value: hasLoaded ? formatNumber(data?.summary?.mappedItems ?? 0) : "—" },
+            { label: "Export ready", value: hasLoaded ? formatNumber(data?.summary?.exportReady ?? 0) : "—" },
           ].map((metric) => (
             <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
               <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
@@ -908,7 +912,7 @@ export function PilotPurchasesPage() {
           <Card className="w-full p-6" data-testid="purchase-history-card">
             <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
             <div className="space-y-3">
-              {loading ? <p className="text-sm text-muted">Loading purchases…</p> : null}
+              {initialLoading ? <p className="text-sm text-muted">Loading purchase history…</p> : null}
               {invoiceRows.map((invoice) => (
                 <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                   <div className="flex items-start justify-between gap-3">
@@ -924,7 +928,7 @@ export function PilotPurchasesPage() {
                   </div>
                 </button>
               ))}
-              {!invoiceRows.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No purchases yet. Create the first invoice to start tracking spend.</p> : null}
+              {!loading && hasLoaded && !invoiceRows.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No purchases yet. Create the first invoice to start tracking spend.</p> : null}
             </div>
             {data?.invoices?.length && data.invoices.length > 5 ? (
               <button type="button" className="mt-4 text-sm font-semibold text-brand-700" onClick={() => setShowAll((value) => !value)}>

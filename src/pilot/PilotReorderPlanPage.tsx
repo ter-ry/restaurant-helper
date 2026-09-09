@@ -34,6 +34,7 @@ export function PilotReorderPlanPage() {
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [draft, setDraft] = useState<PilotReorderPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<"save" | "prepare" | "complete" | null>(null);
@@ -54,10 +55,6 @@ export function PilotReorderPlanPage() {
     if (!options?.preserveMessage) {
       setMessage(null);
     }
-    setPlans([]);
-    setCurrentSuggestions([]);
-    setCurrentGroups([]);
-    setInventoryItems([]);
     if (!options?.preserveSelection) {
       setSelectedPlanId(null);
       setDraft(null);
@@ -83,6 +80,7 @@ export function PilotReorderPlanPage() {
         setSelectedPlanId(null);
         setDraft(null);
       }
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load the reorder plan.");
     } finally {
@@ -117,6 +115,7 @@ export function PilotReorderPlanPage() {
   const historyPlans = useMemo(() => plans.filter((plan) => plan.status === "Completed"), [plans]);
   const visiblePlans = workflowTab === "history" ? historyPlans : livePlans;
   const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0;
+  const initialLoading = loading && !hasLoaded;
 
   const openPlan = async (planId: number) => {
     if (saving || creating || loading) {
@@ -338,16 +337,16 @@ export function PilotReorderPlanPage() {
           </div>
         </div>
 
-        {error ? <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+        {loading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">{initialLoading ? "Loading reorder plans…" : "Refreshing reorder plans…"}</div> : null}
+        {error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
-        {loading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading reorder plans...</div> : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
-            { label: "Current suggestions", value: formatNumber(currentSuggestions.length), helper: `${formatNumber(currentUrgentCount)} urgent` },
-            { label: "Unknown prices", value: formatNumber(currentUnknownPriceCount), helper: "estimate only" },
-            { label: "Draft plans", value: formatNumber(draftPlanCount), helper: `${formatNumber(preparedPlanCount)} prepared` },
-            { label: "Completed plans", value: formatNumber(completedPlanCount), helper: "history preserved" },
+            { label: "Current suggestions", value: hasLoaded ? formatNumber(currentSuggestions.length) : "—", helper: hasLoaded ? `${formatNumber(currentUrgentCount)} urgent` : "Loading" },
+            { label: "Unknown prices", value: hasLoaded ? formatNumber(currentUnknownPriceCount) : "—", helper: "estimate only" },
+            { label: "Draft plans", value: hasLoaded ? formatNumber(draftPlanCount) : "—", helper: hasLoaded ? `${formatNumber(preparedPlanCount)} prepared` : "Loading" },
+            { label: "Completed plans", value: hasLoaded ? formatNumber(completedPlanCount) : "—", helper: "history preserved" },
           ].map((metric) => (
             <div key={metric.label} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 ${metric.label === "Current suggestions" || metric.label === "Draft plans" ? "border-brand-200 bg-brand-50/50" : "border-line bg-white"}`}>
               <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
@@ -390,7 +389,7 @@ export function PilotReorderPlanPage() {
                   </div>
                 </div>
               ))}
-              {!historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
+              {!loading && hasLoaded && !historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
             </div>
           </Card>
 
@@ -433,10 +432,12 @@ export function PilotReorderPlanPage() {
                   </p>
                 </button>
               ))}
-              {!visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No draft plans yet. Start a draft when you are ready.</p> : null}
+              {!loading && hasLoaded && !visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No draft plans yet. Start a draft when you are ready.</p> : null}
             </div>
           </Card>
         </div>
+      ) : !hasLoaded || loading ? (
+        <Card className="workspace-card text-sm text-muted">{initialLoading ? "Loading reorder recommendations…" : "Refreshing reorder recommendations…"}</Card>
       ) : showCompactEmptyState ? (
         <div className="space-y-4">
           <Card className="workspace-card border-brand-200 bg-brand-50/30">
@@ -475,7 +476,7 @@ export function PilotReorderPlanPage() {
                   </div>
                 </div>
               ))}
-              {!historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
+              {!loading && hasLoaded && !historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
             </div>
           </Card>
         </div>
@@ -573,7 +574,7 @@ export function PilotReorderPlanPage() {
                   </p>
                 </button>
               ))}
-              {!visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No draft plans yet. Start a draft when you are ready.</p> : null}
+              {!loading && hasLoaded && !visiblePlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No draft plans yet. Start a draft when you are ready.</p> : null}
             </div>
           </Card>
         </div>
