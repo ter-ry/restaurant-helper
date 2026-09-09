@@ -279,6 +279,31 @@ class InventoryMovement(TimestampMixin, db.Model):
     actor = db.relationship("User")
 
 
+class InventoryWasteEvent(TimestampMixin, db.Model):
+    __tablename__ = "inventory_waste_events"
+    __table_args__ = (UniqueConstraint("inventory_movement_id", name="uq_inventory_waste_event_movement"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    inventory_movement_id = db.Column(db.Integer, db.ForeignKey("inventory_movements.id", ondelete="RESTRICT"), nullable=True, index=True)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    unit = db.Column(db.String(60), nullable=False, default="each")
+    reason = db.Column(db.String(80), nullable=False)
+    occurred_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    note = db.Column(db.Text, nullable=False, default="")
+    unit_cost = db.Column(db.Numeric(12, 2), nullable=True)
+    total_cost = db.Column(db.Numeric(12, 2), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    inventory_item = db.relationship("InventoryItem")
+    inventory_movement = db.relationship("InventoryMovement")
+    created_by = db.relationship("User")
+
+
 class StockCountSession(TimestampMixin, db.Model):
     __tablename__ = "stock_count_sessions"
 
@@ -463,7 +488,7 @@ class MenuItem(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
-    recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id", ondelete="RESTRICT"), nullable=False, index=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id", ondelete="RESTRICT"), nullable=True, index=True)
     name = db.Column(db.String(255), nullable=False)
     normalized_name = db.Column(db.String(255), nullable=False)
     category = db.Column(db.String(120), nullable=False, default="Other")

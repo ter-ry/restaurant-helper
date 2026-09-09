@@ -92,6 +92,24 @@ export interface SquareCatalogMappingCandidate {
   mapping: SquareCatalogMappingSummary | null;
 }
 
+export interface SquareMenuImportEntry {
+  squareCatalogObjectId: number;
+  squareObjectId: string;
+  name: string;
+  parentName: string;
+  category: string;
+  sellingPrice: number;
+  state: "new" | "mapped" | "recipe_needed" | "inactive" | "conflict";
+  menuItemId: number | null;
+  isDeleted: boolean;
+}
+
+export interface SquareMenuImportPreview {
+  locationId: number;
+  summary: Record<string, number>;
+  entries: SquareMenuImportEntry[];
+}
+
 export interface SquareUsageMenuItemSummary {
   id: number;
   organizationId: number;
@@ -341,6 +359,19 @@ export async function syncSquareCatalog(organizationId: number) {
       "X-CSRFToken": csrfToken,
     },
     body: JSON.stringify({ organizationId }),
+  });
+}
+
+export async function previewSquareMenuImport(organizationId: number, locationId: number) {
+  return requestJson<SquareMenuImportPreview>(`/api/integrations/square/catalog/menu-import?organizationId=${organizationId}&locationId=${locationId}`);
+}
+
+export async function importSquareMenu(organizationId: number, locationId: number) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<SquareMenuImportPreview & { result: Record<string, number> }>("/api/integrations/square/catalog/menu-import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+    body: JSON.stringify({ organizationId, locationId }),
   });
 }
 

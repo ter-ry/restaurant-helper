@@ -113,7 +113,7 @@ function draftFromMenuItem(menuItem: PilotMenuCostingMenuItem): MenuItemDraft {
     id: menuItem.id,
     name: menuItem.name,
     category: menuItem.category,
-    recipeId: menuItem.recipeId,
+    recipeId: menuItem.recipeId ?? "",
     sellingPrice: menuItem.sellingPrice,
     active: menuItem.active,
     notes: menuItem.notes,
@@ -280,11 +280,6 @@ export function PilotMenuCostingPage() {
   };
 
   const saveMenuItem = async () => {
-    if (menuItemDraft.recipeId === "") {
-      setError("Choose a recipe for the menu item.");
-      return;
-    }
-
     setSavingMenuItem(true);
     setError(null);
     setMessage(null);
@@ -292,7 +287,7 @@ export function PilotMenuCostingPage() {
       const payload = {
         name: menuItemDraft.name,
         category: menuItemDraft.category,
-        recipeId: menuItemDraft.recipeId,
+        recipeId: menuItemDraft.recipeId || null,
         sellingPrice: menuItemDraft.sellingPrice,
         active: menuItemDraft.active,
         notes: menuItemDraft.notes,
@@ -710,7 +705,7 @@ export function PilotMenuCostingPage() {
               <label className="block">
                 <span className="text-sm font-medium text-ink">Recipe</span>
                 <select className="input mt-1" value={menuItemDraft.recipeId} onChange={(event) => setMenuItemDraft((current) => ({ ...current, recipeId: event.target.value ? Number(event.target.value) : "" }))}>
-                  <option value="">Choose a recipe</option>
+                  <option value="">Recipe needed — assign later</option>
                   {recipes.map((recipe) => (
                     <option key={recipe.id} value={recipe.id}>
                       {recipe.name}

@@ -10,12 +10,15 @@ import {
   beginSquareConnection,
   disconnectSquare,
   fetchSquareStatus,
+  importSquareMenu,
+  previewSquareMenuImport,
   syncSquareCatalog,
   syncSquareLocations,
   syncSquareOrders,
   updateSquareCatalogMapping,
   updateSquareLocationMapping,
   type SquareConnectionSummary,
+  type SquareMenuImportPreview,
 } from "../lib/squareIntegration";
 
 type OrganizationBundle = {
@@ -63,6 +66,7 @@ export function SquareIntegrationPage() {
   const [connectedNotice, setConnectedNotice] = useState(false);
   const [ordersStartAt, setOrdersStartAt] = useState(dateRangeDefaults().startAt);
   const [ordersEndAt, setOrdersEndAt] = useState(dateRangeDefaults().endAt);
+  const [menuImport, setMenuImport] = useState<(SquareMenuImportPreview & { result?: Record<string, number> }) | null>(null);
 
   const restaurantLocations = organizationBundle?.restaurantLocations ?? [];
   const connectionLocations = connection?.locations ?? [];
@@ -176,6 +180,34 @@ export function SquareIntegrationPage() {
         endAt: new Date(ordersEndAt).toISOString(),
       }),
     );
+  }
+
+  async function reviewMenuImport() {
+    if (!currentOrganizationId || !organizationBundle?.currentLocation?.id) return;
+    setSaving("menu-import-preview");
+    setError(null);
+    try {
+      setMenuImport(await previewSquareMenuImport(currentOrganizationId, organizationBundle.currentLocation.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not review the Square menu import.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function executeMenuImport() {
+    if (!currentOrganizationId || !organizationBundle?.currentLocation?.id) return;
+    setSaving("menu-import");
+    setError(null);
+    try {
+      const result = await importSquareMenu(currentOrganizationId, organizationBundle.currentLocation.id);
+      setMenuImport(result);
+      await reloadStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import the Square menu.");
+    } finally {
+      setSaving(null);
+    }
   }
 
   if (state === "loading") {
@@ -477,6 +509,32 @@ export function SquareIntegrationPage() {
           </div>
         </Card>
       </div>
+
+      <Card className="mt-6 p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-ink">Import menu from Square</h3>
+            <p className="mt-2 text-sm leading-6 text-muted">Create recipe-needed Flowtally menu entries for active Square sellable variations. Existing mappings and recipes are preserved.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60" type="button" onClick={() => void reviewMenuImport()} disabled={!organizationBundle?.currentLocation?.id || saving !== null}>
+              {saving === "menu-import-preview" ? "Reviewing…" : "Review import"}
+            </button>
+            <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white disabled:opacity-60" type="button" onClick={() => void executeMenuImport()} disabled={!organizationBundle?.currentLocation?.id || saving !== null}>
+              {saving === "menu-import" ? "Importing…" : "Import menu from Square"}
+            </button>
+          </div>
+        </div>
+        {menuImport ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm text-muted">New {menuImport.summary.new ?? menuImport.result?.new ?? 0} · Existing {menuImport.summary.mapped ?? menuImport.result?.alreadyImported ?? 0} · Recipe needed {menuImport.summary.recipe_needed ?? menuImport.result?.recipeNeeded ?? 0} · Inactive {menuImport.summary.inactive ?? menuImport.result?.inactive ?? 0} · Conflict {menuImport.summary.conflict ?? menuImport.result?.conflicts ?? 0}</p>
+            <div className="max-h-56 space-y-2 overflow-y-auto">
+              {menuImport.entries.map((entry) => <div key={entry.squareCatalogObjectId} className="rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm"><span className="font-semibold text-ink">{entry.name}</span><span className="ml-2 text-muted">{entry.category} · {entry.state.replace("_", " ")}</span></div>)}
+            </div>
+            <Link className="text-sm font-semibold text-ink underline" to="/pilot/menu-costing">Open Menu &amp; Costing to create or assign recipes</Link>
+          </div>
+        ) : null}
+      </Card>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card className="p-6">

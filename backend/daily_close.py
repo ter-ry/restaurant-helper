@@ -10,7 +10,7 @@ from flask_login import current_user, login_required
 
 from .access import organization_has_enabled_module, organization_is_operational
 from .extensions import db
-from .models import DailyCloseSession, InventoryItem, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
+from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
 from .square_integration import _build_square_usage_report, _current_square_location_ids, sync_square_orders_for_range
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
@@ -206,6 +206,29 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     theoretical_usage = usage.get("totals", {}).get("theoreticalUsage") or 0
     discrepancy = usage.get("totals", {}).get("discrepancy")
     discrepancy_percent = usage.get("totals", {}).get("discrepancyPercent")
+    start_at, end_at = _business_date_bounds(location, business_date)
+    waste_events = InventoryWasteEvent.query.filter(
+        InventoryWasteEvent.organization_id == organization.id,
+        InventoryWasteEvent.location_id == location.id,
+        InventoryWasteEvent.occurred_at >= start_at,
+        InventoryWasteEvent.occurred_at <= end_at,
+    ).all()
+    waste_quantity = sum((Decimal(str(event.quantity or 0)) for event in waste_events), start=Decimal("0"))
+    waste_cost = sum((Decimal(str(event.total_cost or 0)) for event in waste_events), start=Decimal("0"))
+    movements = InventoryMovement.query.filter(
+        InventoryMovement.organization_id == organization.id,
+        InventoryMovement.location_id == location.id,
+        InventoryMovement.created_at >= start_at,
+        InventoryMovement.created_at <= end_at,
+    ).all()
+    other_adjustment_quantity = sum(
+        (Decimal(str(movement.quantity_delta or 0)) for movement in movements if movement.source_type not in {"inventory waste", "square sale consumption", "invoice receipt", "stock count reconciliation"}),
+        start=Decimal("0"),
+    )
+    physical_count_correction = sum(
+        (Decimal(str(movement.quantity_delta or 0)) for movement in movements if movement.source_type == "stock count reconciliation"),
+        start=Decimal("0"),
+    )
     variance_value = 0.0
     if discrepancy is not None:
         for row in usage.get("ingredientUsage", []):
@@ -240,6 +263,14 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
             "quantity": discrepancy,
             "percent": discrepancy_percent,
             "value": round(variance_value, 2),
+        },
+        "reconciliation": {
+            "theoreticalPosUsage": theoretical_usage,
+            "recordedWasteQuantity": float(waste_quantity),
+            "recordedWasteCost": float(waste_cost.quantize(Decimal("0.01"))),
+            "otherAdjustmentQuantity": float(other_adjustment_quantity),
+            "physicalCountCorrectionQuantity": float(physical_count_correction),
+            "unexplainedVarianceQuantity": discrepancy,
         },
         "square": summary,
         "readyToFinalize": True,
