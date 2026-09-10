@@ -3058,6 +3058,13 @@ def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgr
     )
     assert select_location_response.status_code == 200, select_location_response.get_data(as_text=True)
 
+    current_response = client.get("/api/organizations/current", base_url="http://127.0.0.1:5001")
+    assert current_response.status_code == 200, current_response.get_data(as_text=True)
+    current_body = current_response.get_json()
+    assert current_body["organization"]["id"] == organization_id, current_body
+    assert current_body["currentLocation"]["id"] == location_id, current_body
+    assert [entry["id"] for entry in current_body["restaurantLocations"]] == [location_id], current_body
+
     me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
     assert me_response.status_code == 200, me_response.get_data(as_text=True)
     me_body = me_response.get_json()
@@ -3065,6 +3072,19 @@ def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgr
     assert me_body["currentLocationId"] == location_id, me_body
     assert any(entry["organization"]["id"] == organization_id for entry in me_body["organizations"]), me_body
     assert all(entry["organization"]["id"] != other_organization_id for entry in me_body["organizations"]), me_body
+
+    with postgres_app.app_context():
+        rls_state = db.session.execute(
+            text(
+                """
+                SELECT c.relrowsecurity, c.relforcerowsecurity
+                FROM pg_class AS c
+                JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relname = 'restaurant_locations'
+                """
+            )
+        ).one()
+        assert rls_state == (True, True)
 
     dashboard_response = client.get("/api/pilot/dashboard", base_url="http://127.0.0.1:5001")
     assert dashboard_response.status_code == 200, dashboard_response.get_data(as_text=True)

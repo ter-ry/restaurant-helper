@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .access import SUPPORT_ACCESS_ENABLED, support_grant_for_user
 from .extensions import db
 from .models import Organization
-from .utils import get_current_organization_bundle, get_platform_role
+from .utils import get_current_organization_bundle, get_platform_role, invalidate_pilot_request_cache
 
 
 def _is_postgresql() -> bool:
@@ -85,6 +85,11 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
             "flowtally.user_id": str(current_user.id) if current_user.is_authenticated else "",
             "flowtally.support_grant_id": str(grant_id) if grant_id is not None else "",
         }
+        # Tenant discovery can run before PostgreSQL RLS has the final
+        # organization context. Recompute organization-scoped values now that
+        # the transaction-local settings are installed, while retaining the
+        # membership lookup that is independent of organization RLS.
+        invalidate_pilot_request_cache("bundle", "location")
 
 
 def apply_org_tenant_context(organization: Organization | None, *, access_scope: str | None = None) -> None:
