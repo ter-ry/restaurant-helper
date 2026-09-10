@@ -215,7 +215,7 @@ describe("PilotStockCountsPage", () => {
     expect(screen.getByRole("button", { name: "View details" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "View details" }));
     expect(screen.getAllByText("2 later movements").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Hide details" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Hide details" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Review movements first" })).toBeDisabled();
     expect(screen.queryByText("Clear")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("I reviewed the later inventory activity and want to reconcile this count against the current ledger."));
