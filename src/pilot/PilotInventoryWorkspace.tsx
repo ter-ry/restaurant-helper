@@ -153,6 +153,7 @@ export function PilotInventoryPage() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [supplierDraft, setSupplierDraft] = useState<SupplierDraft>(blankSupplierDraft());
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -195,6 +196,7 @@ export function PilotInventoryPage() {
       if (!selectedSupplierId && !supplierResponse.suppliers.length) {
         setSupplierDraft(blankSupplierDraft());
       }
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load inventory.");
     } finally {
@@ -421,6 +423,7 @@ export function PilotInventoryPage() {
   };
 
   const reorderCount = data?.summary.inventoryReorderNowCount ?? 0;
+  const initialLoading = loading && !hasLoaded;
 
   const closeItemWorkspace = () => {
     setWorkspaceMode("browse");
@@ -467,8 +470,8 @@ export function PilotInventoryPage() {
           <Search className="h-4 w-4 text-muted" />
           <input className="w-full bg-transparent text-sm outline-none" placeholder="Search item, supplier, category, or unit" value={search} onChange={(event) => setSearch(event.target.value)} />
         </div>
-        <Badge tone="neutral">{filteredItems.length} visible</Badge>
-        <Badge tone="neutral">{data?.items.length ?? 0} total</Badge>
+        <Badge tone="neutral">{hasLoaded ? filteredItems.length : "—"} visible</Badge>
+        <Badge tone="neutral">{hasLoaded ? data?.items.length ?? 0 : "—"} total</Badge>
       </div>
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
@@ -513,7 +516,8 @@ export function PilotInventoryPage() {
               })}
             </tbody>
           </table>
-          {!filteredItems.length ? <p className="px-4 py-8 text-sm text-muted">No inventory items match this search.</p> : null}
+          {initialLoading ? <p className="px-4 py-8 text-sm text-muted">Loading inventory items…</p> : null}
+          {!loading && hasLoaded && !filteredItems.length ? <p className="px-4 py-8 text-sm text-muted">No inventory items match this search.</p> : null}
         </div>
       </div>
 
@@ -552,8 +556,8 @@ export function PilotInventoryPage() {
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            <Badge tone="neutral">{suppliers.filter((supplier) => supplier.isActive).length} active</Badge>
-            <Badge tone="neutral">{suppliers.filter((supplier) => !supplier.isActive).length} inactive</Badge>
+          <Badge tone="neutral">{hasLoaded ? suppliers.filter((supplier) => supplier.isActive).length : "—"} active</Badge>
+          <Badge tone="neutral">{hasLoaded ? suppliers.filter((supplier) => !supplier.isActive).length : "—"} inactive</Badge>
           </div>
           <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
             <div className="flex items-center gap-2">
@@ -610,7 +614,8 @@ export function PilotInventoryPage() {
               </div>
             </button>
           ))}
-          {!filteredSuppliers.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No suppliers match this search.</p> : null}
+          {initialLoading ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Loading suppliers…</p> : null}
+          {!loading && hasLoaded && !filteredSuppliers.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No suppliers match this search.</p> : null}
         </div>
 
         <div className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -1147,8 +1152,8 @@ export function PilotInventoryPage() {
 
   return (
     <div className="workspace-page">
-      {loading ? <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted">Loading inventory workspace...</div> : null}
-      {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+      {loading ? <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted">{initialLoading ? "Loading inventory workspace…" : "Refreshing inventory data…"}</div> : null}
+      {error ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
         <WorkspacePageHeader
           eyebrow="Inventory"
@@ -1164,11 +1169,11 @@ export function PilotInventoryPage() {
                   startNewItem();
                 }}
               >Create item</Button>
-              <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()}>
+              <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
                 Refresh
               </Button>
               <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>
-                Reorder list ({reorderCount})
+                Reorder list ({hasLoaded ? reorderCount : "—"})
               </Button>
             </>
           }
@@ -1183,8 +1188,8 @@ export function PilotInventoryPage() {
           {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
           <WorkspaceTabs
             tabs={[
-              { id: "items", label: "Items", badge: formatNumber(data?.summary.inventoryItemCount ?? 0) },
-              { id: "suppliers", label: "Suppliers", badge: formatNumber(suppliers.length) },
+              { id: "items", label: "Items", badge: hasLoaded ? formatNumber(data?.summary.inventoryItemCount ?? 0) : "—" },
+              { id: "suppliers", label: "Suppliers", badge: hasLoaded ? formatNumber(suppliers.length) : "—" },
             ]}
             value={inventoryTab}
             onChange={(value) => setInventoryTab(value as InventoryTab)}

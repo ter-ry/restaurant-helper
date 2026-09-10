@@ -134,6 +134,7 @@ export function PilotMenuCostingPage() {
   const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(blankIngredientDraft());
   const [menuItemDraft, setMenuItemDraft] = useState<MenuItemDraft>(blankMenuItemDraft());
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [savingIngredient, setSavingIngredient] = useState(false);
   const [savingMenuItem, setSavingMenuItem] = useState(false);
@@ -160,6 +161,7 @@ export function PilotMenuCostingPage() {
         setMenuItemDraft(blankMenuItemDraft());
         setMenuItemEditorMode("hidden");
       }
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load menu costing.");
     } finally {
@@ -175,6 +177,7 @@ export function PilotMenuCostingPage() {
   const recipes = useMemo(() => data?.recipes ?? [], [data?.recipes]);
   const menuItems = useMemo(() => data?.menuItems ?? [], [data?.menuItems]);
   const activeInventoryItems = inventoryItems.filter((item) => item.active);
+  const initialLoading = loading && !hasLoaded;
   const selectedRecipe = useMemo(() => recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null, [recipes, selectedRecipeId]);
   const selectedMenuItem = useMemo(() => menuItems.find((menuItem) => menuItem.id === selectedMenuItemId) ?? null, [menuItems, selectedMenuItemId]);
   const selectedIngredient = useMemo(
@@ -392,13 +395,13 @@ export function PilotMenuCostingPage() {
       />
 
       {loading ? (
-        <Card className="workspace-card text-sm text-muted">Loading menu costing…</Card>
+        <Card className="workspace-card text-sm text-muted">{initialLoading ? "Loading menu costing…" : "Refreshing menu costing…"}</Card>
       ) : null}
       {error ? (
         <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>{error}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{error}</p></div>
+            <Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button>
           </div>
         </Card>
       ) : null}
@@ -416,15 +419,15 @@ export function PilotMenuCostingPage() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} onClick={() => void load()} type="button">
+        <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} onClick={() => void load()} type="button" disabled={loading}>
           Refresh
         </Button>
       </div>
 
       <WorkspaceTabs
         tabs={[
-          { id: "recipes", label: "Recipes", badge: formatNumber(recipes.length) },
-          { id: "menu-items", label: "Menu items", badge: formatNumber(menuItems.length) },
+          { id: "recipes", label: "Recipes", badge: hasLoaded ? formatNumber(recipes.length) : "—" },
+          { id: "menu-items", label: "Menu items", badge: hasLoaded ? formatNumber(menuItems.length) : "—" },
         ]}
         value={menuTab}
         onChange={(value) => setMenuTab(value as "recipes" | "menu-items")}
@@ -464,9 +467,11 @@ export function PilotMenuCostingPage() {
                 );
               })}
             </div>
-          ) : (
+          ) : initialLoading ? (
+            <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-5 text-sm text-muted">Loading recipes…</div>
+          ) : !loading && hasLoaded ? (
             <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-5 text-sm text-muted">No recipes yet. Add the first one on the right.</div>
-          )}
+          ) : null}
         </Card>
 
         <Card className="order-1 p-4 xl:order-2">
@@ -686,9 +691,11 @@ export function PilotMenuCostingPage() {
                   </div>
                 </button>
               ))
-            ) : (
+            ) : initialLoading ? (
+              <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">Loading menu items…</div>
+            ) : !loading && hasLoaded ? (
               <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No menu items yet.</div>
-            )}
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-line bg-white p-4">
