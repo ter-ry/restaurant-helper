@@ -806,6 +806,55 @@ export async function fetchPilotPurchases() {
   return requestJson<PilotPurchasesResponse>("/api/pilot/purchases");
 }
 
+export interface PilotInvoiceOcrField {
+  value: string | number | null;
+  confidence: number;
+  needsReview: boolean;
+  evidence?: string;
+}
+
+export interface PilotInvoiceOcrLine {
+  itemName: string;
+  originalDescription?: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  lineTotal: number;
+  confidence: number;
+  needsReview: boolean;
+  rawSourceLine?: string;
+}
+
+export interface PilotInvoiceOcrResponse {
+  provider: string;
+  fileName: string;
+  contentType: string;
+  rawText: string;
+  fields: {
+    supplier: PilotInvoiceOcrField;
+    invoiceDate: PilotInvoiceOcrField;
+    invoiceNumber: PilotInvoiceOcrField;
+    subtotal: PilotInvoiceOcrField;
+    tax: PilotInvoiceOcrField;
+    total: PilotInvoiceOcrField;
+  };
+  lineItems: PilotInvoiceOcrLine[];
+  warnings: string[];
+  overallConfidence: number;
+  needsReview: boolean;
+}
+
+export async function uploadPilotInvoiceOcr(file: File) {
+  const csrfToken = await getPilotCsrfToken();
+  const body = new FormData();
+  body.append("file", file);
+  return requestJson<PilotInvoiceOcrResponse>("/api/pilot/purchases/ocr", {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
+    body,
+  });
+}
+
 export async function fetchPilotPurchaseInvoice(invoiceId: number) {
   return requestJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}`);
 }

@@ -13,10 +13,12 @@ import {
   fetchPilotPurchases,
   fetchPilotPurchaseInvoice,
   receivePilotPurchaseInvoice,
+  uploadPilotInvoiceOcr,
   updatePilotPurchaseInvoice,
   PilotApiError,
   type PilotInventoryItem,
   type PilotPurchaseInvoice,
+  type PilotInvoiceOcrResponse,
   type PilotPurchasesResponse,
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
@@ -277,6 +279,7 @@ export function PilotPurchasesPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const editorPanelRef = useRef<HTMLDivElement | null>(null);
+  const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -293,6 +296,7 @@ export function PilotPurchasesPage() {
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierSaving, setSupplierSaving] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
     const parsed = Number(value);
@@ -576,6 +580,68 @@ export function PilotPurchasesPage() {
     return hint ?? null;
   };
 
+  const applyOcrResult = (result: PilotInvoiceOcrResponse, file: File) => {
+    const fieldValue = (field: { value: string | number | null } | undefined) => field?.value ?? "";
+    const supplierName = String(fieldValue(result.fields.supplier)).trim();
+    const lineItems = result.lineItems.map((line) => {
+      const description = String(line.itemName || line.originalDescription || "").trim();
+      const hint = applyMappingHint(supplierName, description);
+      const exactMatch = inventoryItems.find((item) => item.active && normalizeLookup(item.name) === normalizeLookup(description));
+      const inventoryItemId = hint?.inventoryItemId ?? exactMatch?.id ?? null;
+      return {
+        ...blankLine(),
+        description,
+        inventoryItemId,
+        purchaseUnit: hint?.purchaseUnit ?? (line.unit || "each"),
+        inventoryUnit: hint?.inventoryUnit ?? exactMatch?.stockUnit ?? "each",
+        conversionFactor: hint?.conversionFactor ?? 1,
+        quantity: Number(line.quantity) > 0 ? Number(line.quantity) : 1,
+        unitPrice: Number(line.unitPrice) || 0,
+        lineTotal: Number(line.lineTotal) || 0,
+        confidence: Number(line.confidence) || 0,
+        needsReview: Boolean(result.needsReview || line.needsReview || !inventoryItemId),
+        note: line.rawSourceLine || "",
+      };
+    });
+    const subtotal = Number(fieldValue(result.fields.subtotal)) || lineItems.reduce((sum, line) => sum + line.lineTotal, 0);
+    const tax = Number(fieldValue(result.fields.tax)) || 0;
+    setSelectedId(null);
+    setDetailInvoice(null);
+    setDraft({
+      ...buildBlankDraft(),
+      supplierName,
+      invoiceNumber: String(fieldValue(result.fields.invoiceNumber)).trim(),
+      invoiceDate: String(fieldValue(result.fields.invoiceDate) || todayIso()),
+      subtotal,
+      tax,
+      totalAmount: Number(fieldValue(result.fields.total)) || subtotal + tax,
+      sourceFileName: result.fileName || file.name,
+      sourceFileType: result.contentType || file.type,
+      extractionStatus: "ocr",
+      extractedText: result.rawText || "",
+      lineItems: lineItems.length ? lineItems : [blankLine()],
+    });
+    setShowReview(false);
+    setReceiveMessage(result.needsReview ? "Invoice extracted. Review the highlighted fields before saving." : "Invoice extracted. Review the draft before saving.");
+  };
+
+  const uploadInvoice = async (file: File) => {
+    setOcrLoading(true);
+    setError(null);
+    setReceiveMessage(null);
+    try {
+      const result = await uploadPilotInvoiceOcr(file);
+      applyOcrResult(result, file);
+    } catch (err) {
+      setError(purchaseErrorMessage(err));
+    } finally {
+      setOcrLoading(false);
+      if (ocrInputRef.current) {
+        ocrInputRef.current.value = "";
+      }
+    }
+  };
+
   const setLineDescription = (index: number, description: string) => {
     updateLine(index, (current) => {
       const next = { ...current, description };
@@ -632,6 +698,20 @@ export function PilotPurchasesPage() {
               }}
             >
               New purchase
+            </Button>
+            <input
+              ref={ocrInputRef}
+              className="sr-only"
+              aria-label="Invoice file"
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void uploadInvoice(file);
+              }}
+            />
+            <Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>
+              {ocrLoading ? "Processing invoice…" : "Upload invoice"}
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
               Refresh
