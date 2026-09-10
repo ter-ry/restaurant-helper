@@ -43,6 +43,7 @@ from .models import (
     SupplierItemMapping,
 )
 from .menu_costing import current_inventory_unit_cost, serialize_menu_item, serialize_recipe
+from .ocr import ALLOWED_INVOICE_EXTENSIONS, validate_upload_content
 from .policy import require_permission
 from .utils import (
     decimal_to_float,
@@ -66,6 +67,7 @@ from .utils import (
     serialize_supplier_item_mapping,
 )
 from .validation import RequestValidationError
+from invoice_ocr import InvoiceOCRFailure, extract_invoice_document
 
 bp = Blueprint("pilot_api", __name__)
 
@@ -969,6 +971,31 @@ def attention():
     items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, active=True).all()
     reorder_count = sum(1 for item in items if _status_for_item(item)["status"] in {"Reorder now", "Out of stock"})
     return jsonify({"reorder": {"count": reorder_count}}), 200
+
+
+@bp.post("/api/pilot/purchases/ocr")
+@login_required
+def purchases_ocr():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    _, membership, _, _ = context
+    permission_error = _require_role(membership, "purchases.manage")
+    if permission_error is not None:
+        return permission_error
+
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return json_error("No invoice file uploaded.", 400)
+    if not uploaded.filename:
+        return json_error("The uploaded file is missing a filename.", 400)
+    try:
+        content = uploaded.read()
+        validate_upload_content(uploaded.filename, content, ALLOWED_INVOICE_EXTENSIONS)
+        parsed = extract_invoice_document(uploaded.filename, content, uploaded.mimetype or "")
+    except (ValueError, InvoiceOCRFailure) as exc:
+        return json_error(str(exc), 422)
+    return jsonify(parsed), 200
 
 
 @bp.get("/api/pilot/purchases")

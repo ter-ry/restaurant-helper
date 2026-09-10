@@ -14,6 +14,7 @@ const mockApi = vi.hoisted(() => ({
   updatePilotPurchaseInvoice: vi.fn(),
   receivePilotPurchaseInvoice: vi.fn(),
   correctPilotPurchaseInvoice: vi.fn(),
+  uploadPilotInvoiceOcr: vi.fn(),
 }));
 
 vi.mock("../../src/pilot/pilotApi", async () => {
@@ -28,6 +29,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     updatePilotPurchaseInvoice: mockApi.updatePilotPurchaseInvoice,
     receivePilotPurchaseInvoice: mockApi.receivePilotPurchaseInvoice,
     correctPilotPurchaseInvoice: mockApi.correctPilotPurchaseInvoice,
+    uploadPilotInvoiceOcr: mockApi.uploadPilotInvoiceOcr,
   };
 });
 
@@ -215,6 +217,24 @@ describe("PilotPurchasesPage", () => {
       id: 2,
     }));
     mockApi.correctPilotPurchaseInvoice.mockResolvedValue(createInvoice({ id: 1, invoiceNumber: "FD-1001", status: "Corrected", supplierName: "Heritage Dairy" }));
+    mockApi.uploadPilotInvoiceOcr.mockResolvedValue({
+      provider: "ocr.space",
+      fileName: "fresh-foods.pdf",
+      contentType: "application/pdf",
+      rawText: "Supplier: Fresh Dairy Toronto",
+      fields: {
+        supplier: { value: "Fresh Dairy Toronto", confidence: 0.97, needsReview: false },
+        invoiceDate: { value: "2026-08-20", confidence: 0.96, needsReview: false },
+        invoiceNumber: { value: "OCR-1001", confidence: 0.95, needsReview: false },
+        subtotal: { value: 48, confidence: 0.95, needsReview: false },
+        tax: { value: 6.24, confidence: 0.95, needsReview: false },
+        total: { value: 54.24, confidence: 0.95, needsReview: false },
+      },
+      lineItems: [{ itemName: "Milk 2L", quantity: 2, unit: "case", unitPrice: 24, lineTotal: 48, confidence: 0.8, needsReview: true }],
+      warnings: [],
+      overallConfidence: 0.86,
+      needsReview: true,
+    });
     mockApi.createPilotSupplier.mockImplementation(async ({ name }: { name: string }) => ({
       ...createInvoice({ id: 9, invoiceNumber: "", status: "Draft", supplierName: name }).supplier,
       id: 99,
@@ -280,6 +300,33 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByText("North Star Produce added and selected.")).toBeVisible();
     expect(screen.getByLabelText("Supplier")).toHaveValue("North Star Produce");
     expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible();
+  });
+
+  it("uploads an invoice into the existing review draft and preserves review state", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "New purchase" });
+    const file = new File(["%PDF-1.4"], "fresh-foods.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+
+    expect(await screen.findByText("Invoice extracted. Review the highlighted fields before saving.")).toBeVisible();
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("OCR-1001");
+    expect(screen.getByLabelText("Description")).toHaveValue("Milk 2L");
+    expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
+    expect(mockApi.uploadPilotInvoiceOcr).toHaveBeenCalledWith(file);
+  });
+
+  it("keeps an existing draft when invoice OCR fails", async () => {
+    mockApi.uploadPilotInvoiceOcr.mockRejectedValueOnce(new PilotApiError("OCR service unavailable.", 503));
+    renderPage();
+
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.change(screen.getByLabelText("Invoice number"), { target: { value: "MANUAL-1" } });
+    const file = new File(["bad"], "broken.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+
+    expect(await screen.findByText("OCR service unavailable.")).toBeVisible();
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("MANUAL-1");
   });
 
   it("auto-maps one exact active inventory name without fuzzy matching", async () => {

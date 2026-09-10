@@ -43,6 +43,16 @@ def test_health_endpoint_returns_ok(client):
     assert body["environment"] == "testing"
 
 
+def test_health_reports_ocr_configuration_without_exposing_the_key(client, monkeypatch):
+    monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
+    assert client.get("/api/health").get_json()["ocrConfigured"] is False
+
+    monkeypatch.setenv("OCR_SPACE_API_KEY", "test-only-key")
+    response = client.get("/api/health")
+    assert response.get_json()["ocrConfigured"] is True
+    assert "test-only-key" not in response.get_data(as_text=True)
+
+
 def test_health_endpoint_is_exempt_from_rate_limits(rate_limited_app):
     client = rate_limited_app.test_client()
 

@@ -11,6 +11,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from invoice_ocr import InvoiceOCRFailure, extract_invoice_document
 from reconciliation_ocr import InvoiceOCRFailure as ReconciliationOCRFailure, extract_reconciliation_document
 
+from .extensions import limiter
 from .utils import json_error
 
 
@@ -71,6 +72,7 @@ def handle_request_too_large(_: RequestEntityTooLarge) -> Response:
 
 
 @bp.post("/api/invoices/ocr")
+@limiter.limit("10 per minute")
 def invoice_ocr() -> Response:
     uploaded = request.files.get("file")
     if not uploaded:
