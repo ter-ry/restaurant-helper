@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload, selectinload
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
@@ -238,8 +239,12 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
     }
 
 
-def _inventory_summary(location_id: int):
-    items = InventoryItem.query.filter_by(location_id=location_id, active=True).all()
+def _inventory_summary(
+    location_id: int,
+    *,
+    items: list[InventoryItem] | None = None,
+):
+    items = items if items is not None else InventoryItem.query.filter_by(location_id=location_id, active=True).all()
     statuses = [_status_for_item(item)["status"] for item in items]
     low = sum(1 for status in statuses if status == "Low stock")
     reorder = sum(1 for status in statuses if status == "Reorder now")
@@ -258,8 +263,13 @@ def _inventory_summary(location_id: int):
     }
 
 
-def _price_changes_for_location(location_id: int):
-    invoices = PurchaseInvoice.query.filter_by(location_id=location_id).order_by(PurchaseInvoice.invoice_date.asc(), PurchaseInvoice.created_at.asc()).all()
+def _price_changes_for_location(
+    location_id: int,
+    *,
+    invoices: list[PurchaseInvoice] | None = None,
+):
+    invoices = invoices if invoices is not None else PurchaseInvoice.query.filter_by(location_id=location_id).order_by(PurchaseInvoice.invoice_date.asc(), PurchaseInvoice.created_at.asc()).all()
+    invoices = sorted(invoices, key=lambda invoice: (invoice.invoice_date, invoice.created_at))
     seen: dict[tuple[str, str], Decimal] = {}
     changes: list[dict[str, Any]] = []
     for invoice in invoices:
@@ -299,16 +309,33 @@ def _dashboard_snapshot(location_id: int):
     if location is None:
         return {}
     start = _start_of_week()
-    invoices = PurchaseInvoice.query.filter_by(location_id=location_id).all()
+    invoices = (
+        PurchaseInvoice.query.filter_by(location_id=location_id)
+        .options(
+            joinedload(PurchaseInvoice.supplier),
+            selectinload(PurchaseInvoice.lines).joinedload(PurchaseInvoiceLine.inventory_item),
+        )
+        .all()
+    )
     recent_invoices = sorted(invoices, key=lambda invoice: (invoice.created_at, invoice.invoice_date), reverse=True)[:5]
     draft_invoices = [invoice for invoice in invoices if invoice.status == "Draft"]
-    movements = InventoryMovement.query.filter_by(location_id=location_id).order_by(InventoryMovement.created_at.desc()).limit(6).all()
+    movements = (
+        InventoryMovement.query.filter_by(location_id=location_id)
+        .options(joinedload(InventoryMovement.inventory_item))
+        .order_by(InventoryMovement.created_at.desc())
+        .limit(6)
+        .all()
+    )
     count_sessions = StockCountSession.query.filter_by(location_id=location_id).order_by(StockCountSession.updated_at.desc()).all()
     reorder_plans = ReorderPlan.query.filter_by(location_id=location_id).order_by(ReorderPlan.updated_at.desc()).all()
     daily_close_sessions = DailyCloseSession.query.filter_by(location_id=location_id).order_by(DailyCloseSession.updated_at.desc()).all()
-    inventory_items = InventoryItem.query.filter_by(location_id=location_id, active=True).all()
-    recent_price_changes = _price_changes_for_location(location_id)
-    inventory_summary = _inventory_summary(location_id)
+    inventory_items = (
+        InventoryItem.query.filter_by(location_id=location_id, active=True)
+        .options(joinedload(InventoryItem.supplier))
+        .all()
+    )
+    recent_price_changes = _price_changes_for_location(location_id, invoices=invoices)
+    inventory_summary = _inventory_summary(location_id, items=inventory_items)
     square_attention = {"syncErrorCount": 0, "unmappedVariationCount": 0}
     if organization_has_enabled_module(location.organization_id, "SQUARE_INTEGRATION"):
         connection = SquareConnection.query.filter_by(organization_id=location.organization_id, status="connected").first()

@@ -28,12 +28,13 @@ vi.mock("../../src/pilot/pilotApi", async (importOriginal) => ({
   fetchPilotDashboard: mockDashboard.fetchPilotDashboard,
 }));
 
-function renderLayout() {
+function renderLayout(initialPath = "/app/dashboard") {
   return render(
-    <MemoryRouter initialEntries={["/app/dashboard"]}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/app" element={<PilotWorkspaceLayout />}>
           <Route path="dashboard" element={<div>Dashboard outlet</div>} />
+          <Route path="*" element={<div>Workspace outlet</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -42,6 +43,7 @@ function renderLayout() {
 
 describe("PilotWorkspaceLayout", () => {
   beforeEach(() => {
+    mockDashboard.fetchPilotDashboard.mockReset();
     mockDashboard.fetchPilotDashboard.mockResolvedValue({ summary: { inventoryItemsToReorderCount: 1 }, operationalAttention: { reorder: { count: 1, severity: "urgent" } } });
     mockSession.signOut.mockReset();
     mockSession.switchLocation.mockReset();
@@ -58,14 +60,20 @@ describe("PilotWorkspaceLayout", () => {
   });
 
   it("shows an actionable reorder badge and omits it when pressure is clear", async () => {
-    const firstRender = renderLayout();
+    const firstRender = renderLayout("/app/inventory");
 
     expect(await screen.findByLabelText("1 needs attention")).toBeVisible();
 
     mockDashboard.fetchPilotDashboard.mockResolvedValueOnce({ summary: { inventoryItemsToReorderCount: 0 }, operationalAttention: { reorder: { count: 0, severity: "none" } } });
     firstRender.unmount();
-    renderLayout();
+    renderLayout("/app/inventory");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByLabelText("1 needs attention")).not.toBeInTheDocument();
+  });
+
+  it("does not duplicate the dashboard snapshot request", async () => {
+    renderLayout();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockDashboard.fetchPilotDashboard).not.toHaveBeenCalled();
   });
 });
