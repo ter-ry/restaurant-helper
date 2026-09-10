@@ -162,6 +162,19 @@ def _rate_limit_storage_uri(mode: str) -> str:
     return "memory://"
 
 
+def _database_engine_options(mode: str) -> dict[str, Any]:
+    options: dict[str, Any] = {"pool_pre_ping": True}
+    if mode not in PROD_LIKE_MODES:
+        return options
+    pool_size = int(os.environ.get("FLOWTALLY_DB_POOL_SIZE", "4"))
+    max_overflow = int(os.environ.get("FLOWTALLY_DB_MAX_OVERFLOW", "2"))
+    if pool_size < 1 or max_overflow < 0:
+        raise ConfigurationError("FLOWTALLY_DB_POOL_SIZE must be positive and FLOWTALLY_DB_MAX_OVERFLOW cannot be negative.")
+    options["pool_size"] = pool_size
+    options["max_overflow"] = max_overflow
+    return options
+
+
 class BaseConfig:
     mode = "development"
 
@@ -178,7 +191,7 @@ class BaseConfig:
             "SECRET_KEY": _secret_key(cls.mode),
             "SQLALCHEMY_DATABASE_URI": _database_uri(cls.mode),
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-            "SQLALCHEMY_ENGINE_OPTIONS": {"pool_pre_ping": True},
+            "SQLALCHEMY_ENGINE_OPTIONS": _database_engine_options(cls.mode),
             "JSON_SORT_KEYS": False,
             "SESSION_COOKIE_NAME": os.environ.get("SESSION_COOKIE_NAME", "flowtally_pilot_session"),
             "SESSION_COOKIE_HTTPONLY": True,

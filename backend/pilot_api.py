@@ -14,7 +14,6 @@ from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
-from .access import organization_has_enabled_module
 from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, weighted_average_inventory_cost
 from .extensions import db
 from .models import (
@@ -23,6 +22,7 @@ from .models import (
     InventoryItem,
     InventoryMovement,
     InventoryWasteEvent,
+    OrganizationModule,
     OrganizationMembership,
     MenuItem,
     PurchaseInvoice,
@@ -304,8 +304,8 @@ def _price_changes_for_location(
     return list(reversed(changes[-25:]))
 
 
-def _dashboard_snapshot(location_id: int):
-    location = RestaurantLocation.query.filter_by(id=location_id).first()
+def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None = None):
+    location = location or RestaurantLocation.query.filter_by(id=location_id).first()
     if location is None:
         return {}
     start = _start_of_week()
@@ -337,7 +337,11 @@ def _dashboard_snapshot(location_id: int):
     recent_price_changes = _price_changes_for_location(location_id, invoices=invoices)
     inventory_summary = _inventory_summary(location_id, items=inventory_items)
     square_attention = {"syncErrorCount": 0, "unmappedVariationCount": 0}
-    if organization_has_enabled_module(location.organization_id, "SQUARE_INTEGRATION"):
+    enabled_modules = {
+        module.module_key
+        for module in OrganizationModule.query.filter_by(organization_id=location.organization_id, status="ENABLED").all()
+    }
+    if "SQUARE_INTEGRATION" in enabled_modules:
         connection = SquareConnection.query.filter_by(organization_id=location.organization_id, status="connected").first()
         if connection is not None:
             square_attention["syncErrorCount"] = 1 if connection.sync_error else 0
@@ -365,7 +369,7 @@ def _dashboard_snapshot(location_id: int):
             is_deleted=False,
         ).filter(SquareOrder.order_state.notin_(["CANCELED", "CANCELLED"])).first()
     )
-    if organization_has_enabled_module(location.organization_id, "DAILY_CLOSE") and square_connection and has_square_sales and (today_daily_close is None or today_daily_close.status == "DRAFT"):
+    if "DAILY_CLOSE" in enabled_modules and square_connection and has_square_sales and (today_daily_close is None or today_daily_close.status == "DRAFT"):
         daily_close_attention = 1
     week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
@@ -949,7 +953,22 @@ def dashboard():
     permission_error = _require_role(membership, "operational.read")
     if permission_error is not None:
         return permission_error
-    return jsonify(_dashboard_snapshot(location.id)), 200
+    return jsonify(_dashboard_snapshot(location.id, location=location)), 200
+
+
+@bp.get("/api/pilot/attention")
+@login_required
+def attention():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
+    items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, active=True).all()
+    reorder_count = sum(1 for item in items if _status_for_item(item)["status"] in {"Reorder now", "Out of stock"})
+    return jsonify({"reorder": {"count": reorder_count}}), 200
 
 
 @bp.get("/api/pilot/purchases")
@@ -962,10 +981,18 @@ def purchases():
     permission_error = _require_role(membership, "operational.read")
     if permission_error is not None:
         return permission_error
-    invoices = PurchaseInvoice.query.filter_by(location_id=location.id).order_by(PurchaseInvoice.invoice_date.desc(), PurchaseInvoice.created_at.desc()).all()
+    invoices = (
+        PurchaseInvoice.query.filter_by(location_id=location.id)
+        .options(
+            joinedload(PurchaseInvoice.supplier),
+            selectinload(PurchaseInvoice.lines).joinedload(PurchaseInvoiceLine.inventory_item),
+        )
+        .order_by(PurchaseInvoice.invoice_date.desc(), PurchaseInvoice.created_at.desc())
+        .all()
+    )
     suppliers = Supplier.query.filter_by(organization_id=location.organization_id, is_active=True).order_by(Supplier.name.asc()).all()
     purchase_lines = [line for invoice in invoices for line in invoice.lines]
-    price_changes = [change for change in _price_changes_for_location(location.id) if change["status"] in {"Increased", "Decreased"}]
+    price_changes = [change for change in _price_changes_for_location(location.id, invoices=invoices) if change["status"] in {"Increased", "Decreased"}]
     ready_for_csv = sum(1 for invoice in invoices if invoice.status == "Completed")
     needs_review = sum(1 for invoice in invoices if invoice.status == "Draft")
     needs_mapping = sum(1 for invoice in invoices if invoice.status == "Ready" and any(not line.inventory_item_id for line in invoice.lines))
@@ -1008,8 +1035,16 @@ def suppliers():
         return permission_error
     supplier_rows = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.is_active.desc(), Supplier.name.asc()).all()
     inventory_items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
-    invoices = PurchaseInvoice.query.filter_by(organization_id=organization.id, location_id=location.id).all()
-    mappings = SupplierItemMapping.query.filter_by(organization_id=organization.id).all()
+    invoices = (
+        PurchaseInvoice.query.filter_by(organization_id=organization.id, location_id=location.id)
+        .options(joinedload(PurchaseInvoice.supplier))
+        .all()
+    )
+    mappings = (
+        SupplierItemMapping.query.filter_by(organization_id=organization.id)
+        .options(joinedload(SupplierItemMapping.inventory_item))
+        .all()
+    )
     item_counts: dict[int, int] = {}
     invoice_counts: dict[int, int] = {}
     mapping_counts: dict[int, int] = {}
@@ -1328,9 +1363,25 @@ def inventory():
     permission_error = _require_role(membership, "operational.read")
     if permission_error is not None:
         return permission_error
-    items = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(InventoryItem.updated_at.desc(), InventoryItem.created_at.desc()).all()
-    movements = InventoryMovement.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(InventoryMovement.created_at.desc()).limit(50).all()
-    count_sessions = StockCountSession.query.filter_by(organization_id=organization.id, location_id=location.id).order_by(StockCountSession.updated_at.desc()).all()
+    items = (
+        InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id)
+        .options(joinedload(InventoryItem.supplier))
+        .order_by(InventoryItem.updated_at.desc(), InventoryItem.created_at.desc())
+        .all()
+    )
+    movements = (
+        InventoryMovement.query.filter_by(organization_id=organization.id, location_id=location.id)
+        .options(joinedload(InventoryMovement.inventory_item))
+        .order_by(InventoryMovement.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    count_sessions = (
+        StockCountSession.query.filter_by(organization_id=organization.id, location_id=location.id)
+        .options(selectinload(StockCountSession.lines))
+        .order_by(StockCountSession.updated_at.desc())
+        .all()
+    )
     reorder_intents = ReorderIntent.query.filter_by(organization_id=organization.id, location_id=location.id).all()
     reorder_suggestions = [entry for entry in (_reorder_suggestion_for_item(item) for item in items) if entry]
     for suggestion in reorder_suggestions:
@@ -1350,7 +1401,7 @@ def inventory():
                     "suggestions": reorder_suggestions,
                     "groupedBySupplier": _group_reorder_by_supplier(reorder_suggestions),
                 },
-                "summary": _inventory_summary(location.id),
+                "summary": _inventory_summary(location.id, items=items),
             }
         ),
         200,

@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotWorkspaceLayout } from "../../src/pilot/PilotWorkspaceLayout";
 
@@ -17,7 +17,7 @@ const mockSession = vi.hoisted(() => ({
   switchOrganization: vi.fn(),
   refreshSession: vi.fn(),
 }));
-const mockDashboard = vi.hoisted(() => ({ fetchPilotDashboard: vi.fn() }));
+const mockAttention = vi.hoisted(() => ({ fetchPilotAttention: vi.fn() }));
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
   usePilotSession: () => mockSession,
@@ -25,15 +25,20 @@ vi.mock("../../src/pilot/PilotSessionProvider", () => ({
 
 vi.mock("../../src/pilot/pilotApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/pilot/pilotApi")>()),
-  fetchPilotDashboard: mockDashboard.fetchPilotDashboard,
+  fetchPilotAttention: mockAttention.fetchPilotAttention,
 }));
+
+function RouteChanger() {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate("/app/inventory")}>Go inventory</button>;
+}
 
 function renderLayout(initialPath = "/app/dashboard") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/app" element={<PilotWorkspaceLayout />}>
-          <Route path="dashboard" element={<div>Dashboard outlet</div>} />
+          <Route path="dashboard" element={<><div>Dashboard outlet</div><RouteChanger /></>} />
           <Route path="*" element={<div>Workspace outlet</div>} />
         </Route>
       </Routes>
@@ -43,8 +48,8 @@ function renderLayout(initialPath = "/app/dashboard") {
 
 describe("PilotWorkspaceLayout", () => {
   beforeEach(() => {
-    mockDashboard.fetchPilotDashboard.mockReset();
-    mockDashboard.fetchPilotDashboard.mockResolvedValue({ summary: { inventoryItemsToReorderCount: 1 }, operationalAttention: { reorder: { count: 1, severity: "urgent" } } });
+    mockAttention.fetchPilotAttention.mockReset();
+    mockAttention.fetchPilotAttention.mockResolvedValue({ reorder: { count: 1 } });
     mockSession.signOut.mockReset();
     mockSession.switchLocation.mockReset();
     mockSession.switchOrganization.mockReset();
@@ -64,7 +69,7 @@ describe("PilotWorkspaceLayout", () => {
 
     expect(await screen.findByLabelText("1 needs attention")).toBeVisible();
 
-    mockDashboard.fetchPilotDashboard.mockResolvedValueOnce({ summary: { inventoryItemsToReorderCount: 0 }, operationalAttention: { reorder: { count: 0, severity: "none" } } });
+    mockAttention.fetchPilotAttention.mockResolvedValueOnce({ reorder: { count: 0 } });
     firstRender.unmount();
     renderLayout("/app/inventory");
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -74,6 +79,14 @@ describe("PilotWorkspaceLayout", () => {
   it("does not duplicate the dashboard snapshot request", async () => {
     renderLayout();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mockDashboard.fetchPilotDashboard).not.toHaveBeenCalled();
+    expect(mockAttention.fetchPilotAttention).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refetch attention when navigating between workspace routes", async () => {
+    renderLayout();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(screen.getByRole("button", { name: "Go inventory" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockAttention.fetchPilotAttention).toHaveBeenCalledTimes(1);
   });
 });
