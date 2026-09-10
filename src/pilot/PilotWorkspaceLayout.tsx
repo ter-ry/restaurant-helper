@@ -101,6 +101,11 @@ export function PilotWorkspaceLayout() {
   }, [location.pathname, visibleNavItems]);
 
   useEffect(() => {
+    // The dashboard page owns the full snapshot request. Fetching it here as
+    // well creates two identical requests on dashboard entry.
+    if (location.pathname === "/app/dashboard") {
+      return undefined;
+    }
     let cancelled = false;
     const loadAttention = async () => {
       try {
