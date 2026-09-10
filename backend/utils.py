@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import Response, jsonify, session
+from flask import Response, has_request_context, jsonify, request, session
 from flask_login import current_user
 from sqlalchemy import and_
 
@@ -475,6 +475,14 @@ def clear_pilot_context() -> None:
     session.pop("pilot_current_membership_id", None)
     session.pop("pilot_current_organization_id", None)
     session.pop("pilot_current_location_id", None)
+    if has_request_context():
+        cache = request.environ.get("flowtally.request_cache")
+        if cache is not None:
+            cache.clear()
+
+
+def _request_context_cache() -> dict[str, Any]:
+    return request.environ.setdefault("flowtally.request_cache", {})
 
 
 def get_user_memberships(user_id: int) -> list[OrganizationMembership]:
@@ -496,7 +504,11 @@ def get_user_organizations(user_id: int) -> list[Organization]:
 
 
 def get_current_membership() -> OrganizationMembership | None:
+    cache = _request_context_cache()
+    if "membership" in cache:
+        return cache["membership"]
     if not current_user.is_authenticated:
+        cache["membership"] = None
         return None
 
     memberships = get_user_memberships(current_user.id)
@@ -537,12 +549,17 @@ def get_current_membership() -> OrganizationMembership | None:
     if organization_id != membership.organization_id:
         session["pilot_current_organization_id"] = membership.organization_id
         session.pop("pilot_current_location_id", None)
+    cache["membership"] = membership
     return membership
 
 
 def get_current_location() -> RestaurantLocation | None:
+    cache = _request_context_cache()
+    if "location" in cache:
+        return cache["location"]
     organization, membership, locations = get_current_organization_bundle()
     if organization is None or membership is None or not locations:
+        cache["location"] = None
         return None
 
     location_id = session.get("pilot_current_location_id")
@@ -554,21 +571,28 @@ def get_current_location() -> RestaurantLocation | None:
     if location_id is not None:
         location = next((entry for entry in locations if entry.id == location_id), None)
         if location is not None:
+            cache["location"] = location
             return location
 
     if len(locations) == 1:
         location = locations[0]
         session["pilot_current_location_id"] = location.id
+        cache["location"] = location
         return location
 
     session.pop("pilot_current_location_id", None)
+    cache["location"] = None
     return None
 
 
 def get_current_organization_bundle() -> tuple[Organization | None, OrganizationMembership | None, list[RestaurantLocation]]:
+    cache = _request_context_cache()
+    if "bundle" in cache:
+        return cache["bundle"]
     membership = get_current_membership()
     if membership is None:
-        return None, None, []
+        cache["bundle"] = (None, None, [])
+        return cache["bundle"]
 
     organization = Organization.query.filter_by(id=membership.organization_id).first()
     if organization is None:
@@ -580,7 +604,8 @@ def get_current_organization_bundle() -> tuple[Organization | None, Organization
         .order_by(RestaurantLocation.created_at.asc(), RestaurantLocation.id.asc())
         .all()
     )
-    return organization, membership, locations
+    cache["bundle"] = (organization, membership, locations)
+    return cache["bundle"]
 
 
 def membership_for_organization(user_id: int, organization_id: int) -> OrganizationMembership | None:

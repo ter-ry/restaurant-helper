@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AlertTriangle, Building2, ChevronLeft, ChevronRight, ExternalLink, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
 import { usePilotSession } from "./PilotSessionProvider";
-import { fetchPilotDashboard } from "./pilotApi";
+import { fetchPilotAttention } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
 const navItems = [
@@ -101,29 +101,31 @@ export function PilotWorkspaceLayout() {
   }, [location.pathname, visibleNavItems]);
 
   useEffect(() => {
-    // The dashboard page owns the full snapshot request. Fetching it here as
-    // well creates two identical requests on dashboard entry.
-    if (location.pathname === "/app/dashboard") {
-      return undefined;
-    }
     let cancelled = false;
+    let inFlight = false;
     const loadAttention = async () => {
+      if (cancelled || inFlight || !activeOrganizationId || !activeLocationId) {
+        return;
+      }
+      inFlight = true;
       try {
-        const dashboard = await fetchPilotDashboard();
+        const attention = await fetchPilotAttention();
         if (!cancelled) {
-          setOperationalAttention({ reorder: dashboard.operationalAttention?.reorder.count ?? dashboard.summary.inventoryItemsToReorderCount ?? 0 });
+          setOperationalAttention({ reorder: attention.reorder.count });
         }
       } catch {
         // The sidebar should remain usable when the attention refresh is unavailable.
+      } finally {
+        inFlight = false;
       }
     };
     void loadAttention();
-    const interval = window.setInterval(() => void loadAttention(), 30000);
+    const interval = window.setInterval(() => void loadAttention(), 60000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [location.pathname, activeOrganizationId, activeLocationId]);
+  }, [activeOrganizationId, activeLocationId]);
 
   useEffect(() => {
     window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", String(desktopSidebarCollapsed));

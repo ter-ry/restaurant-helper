@@ -579,6 +579,10 @@ async function installMockApi(page: Page, state: MockState) {
       return jsonResponse(route, { events: state.auditEvents });
     }
 
+    if (path === "/api/pilot/attention" && method === "GET") {
+      return jsonResponse(route, { reorder: { count: 0 } });
+    }
+
     if (path === "/api/pilot/dashboard" && method === "GET") {
       return jsonResponse(route, {
         summary: {
@@ -1553,6 +1557,9 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
         membershipRole: "owner",
         enabledModuleKeys: ["MENU_COSTING"],
       });
+    }
+    if (path === "/api/pilot/attention" && method === "GET") {
+      return jsonResponse(route, { reorder: { count: 0 } });
     }
     if (path === "/api/pilot/dashboard" && method === "GET") {
       return jsonResponse(route, {

@@ -703,6 +703,14 @@ export async function fetchPilotDashboard() {
   return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
 }
 
+export type PilotAttentionResponse = {
+  reorder: { count: number };
+};
+
+export async function fetchPilotAttention() {
+  return requestJson<PilotAttentionResponse>("/api/pilot/attention");
+}
+
 export async function fetchPilotDailyClose(locationId?: number | null, businessDate?: string | null) {
   const params = new URLSearchParams();
   if (locationId != null) {
