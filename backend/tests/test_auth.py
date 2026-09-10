@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from flask import request
+
 from backend.extensions import db
 from backend.models import User
 from backend.seed import (
@@ -10,7 +12,7 @@ from backend.seed import (
     LOCAL_OWNER_EMAIL,
     LOCAL_OWNER_PASSWORD,
 )
-from backend import tenant_context
+from backend import tenant_context, utils
 
 
 def login(client, email: str, password: str):
@@ -181,3 +183,30 @@ def test_authenticated_request_sets_user_identity_before_tenant_discovery(monkey
         ("flowtally.organization_id", "42"),
         ("flowtally.support_grant_id", ""),
     ]
+
+
+def test_request_cache_invalidation_discards_pre_rls_bundle_but_preserves_membership(app):
+    membership = object()
+    with app.test_request_context():
+        request.environ["flowtally.request_cache"] = {
+            "membership": membership,
+            "bundle": (object(), membership, []),
+            "location": None,
+        }
+
+        utils.invalidate_pilot_request_cache("bundle", "location")
+
+        assert request.environ["flowtally.request_cache"] == {"membership": membership}
+
+
+def test_request_bundle_cache_is_reused_within_request_and_clear_context_invalidates(app):
+    bundle = (object(), object(), [object()])
+    with app.test_request_context():
+        request.environ["flowtally.request_cache"] = {"bundle": bundle}
+
+        assert utils.get_current_organization_bundle() is bundle
+        assert utils.get_current_organization_bundle() is bundle
+
+        utils.clear_pilot_context()
+
+        assert request.environ["flowtally.request_cache"] == {}

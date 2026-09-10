@@ -471,14 +471,24 @@ def serialize_audit_event(event: AuditEvent) -> dict[str, Any]:
     }
 
 
+def invalidate_pilot_request_cache(*keys: str) -> None:
+    if not has_request_context():
+        return
+    cache = request.environ.get("flowtally.request_cache")
+    if cache is None:
+        return
+    if keys:
+        for key in keys:
+            cache.pop(key, None)
+    else:
+        cache.clear()
+
+
 def clear_pilot_context() -> None:
     session.pop("pilot_current_membership_id", None)
     session.pop("pilot_current_organization_id", None)
     session.pop("pilot_current_location_id", None)
-    if has_request_context():
-        cache = request.environ.get("flowtally.request_cache")
-        if cache is not None:
-            cache.clear()
+    invalidate_pilot_request_cache()
 
 
 def _request_context_cache() -> dict[str, Any]:
