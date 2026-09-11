@@ -2381,24 +2381,12 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
 
   const editorCard = page.getByTestId("purchase-editor-card");
   const historyCard = page.getByTestId("purchase-history-card");
-  await expect(editorCard).toBeVisible();
   await expect(historyCard).toBeVisible();
-  await expect(editorCard.getByRole("heading", { name: "New purchase" })).toBeVisible();
+  await expect(editorCard).toHaveCount(0);
   await expect(historyCard.getByRole("heading", { name: "Review queue and purchase history" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Review queue and purchase history" })).toHaveCount(1);
-  await expect(editorCard.getByText("Supplier", { exact: true })).toBeVisible();
-  await expect(editorCard.getByLabel("Invoice number")).toHaveCount(1);
   await expect(historyCard.getByLabel("Supplier")).toHaveCount(0);
   await expect(historyCard.getByLabel("Invoice number")).toHaveCount(0);
-  const editorBox = await editorCard.boundingBox();
-  const historyBox = await historyCard.boundingBox();
-  const mainBox = await page.locator("main").boundingBox();
-  expect(editorBox).not.toBeNull();
-  expect(historyBox).not.toBeNull();
-  expect(mainBox).not.toBeNull();
-  expect(editorBox!.width).toBeGreaterThan(historyBox!.width);
-  expect(editorBox!.x).toBeLessThan(historyBox!.x);
-  expect(Math.abs(historyBox!.y - editorBox!.y)).toBeLessThan(32);
 
   const editorHeading = page.getByRole("heading", { name: "New purchase" });
   await page.getByRole("button", { name: "New purchase" }).click();
@@ -2450,6 +2438,8 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
 
   await page.getByRole("button", { name: "Receive into inventory" }).click();
   await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible();
+  await expect(editorCard).toHaveCount(0);
+  await page.getByRole("button", { name: "New purchase" }).click();
   await expect(page.getByRole("heading", { name: "New purchase" })).toBeVisible();
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });
