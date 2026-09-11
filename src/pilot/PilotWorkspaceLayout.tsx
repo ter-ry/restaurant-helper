@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, UtensilsCrossed, LogOut, X } from "lucide-react";
+import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
+import { Modal } from "../components/Modal";
 import { usePilotSession } from "./PilotSessionProvider";
 import { fetchPilotAttention } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
@@ -73,6 +74,8 @@ export function PilotWorkspaceLayout() {
   const { error, user, organization, enabledModuleKeys, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [operationalAttention, setOperationalAttention] = useState<{ reorder: number }>({ reorder: 0 });
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") {
@@ -466,7 +469,7 @@ export function PilotWorkspaceLayout() {
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Operations workspace</p>
                 <h2 className="mt-1 text-lg font-bold tracking-tight text-ink">{currentSectionLabel}</h2>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="relative flex items-center gap-3">
                 <button
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                   type="button"
@@ -500,6 +503,8 @@ export function PilotWorkspaceLayout() {
                   <RefreshCw className="h-4 w-4" />
                   Refresh session
                 </button>
+                <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}><UserCircle className="h-4 w-4" />Account</button>
+                {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={() => { setAccountMenuOpen(false); setSettingsOpen(true); }}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
               </div>
             </div>
           </header>
@@ -606,6 +611,7 @@ export function PilotWorkspaceLayout() {
           </div>
         </div>
       ) : null}
+      {settingsOpen ? <Modal title="Restaurant settings" onClose={() => setSettingsOpen(false)}><div className="space-y-4"><p className="text-sm text-muted">Location settings use the active restaurant context.</p><label className="block"><span className="text-sm font-semibold text-ink">Restaurant location</span><input className="input mt-1" value={currentLocation?.name ?? ""} readOnly /></label><label className="block"><span className="text-sm font-semibold text-ink">Restaurant timezone</span><input className="input mt-1" value={currentLocation?.timezone ?? "America/Toronto"} readOnly /></label><p className="text-sm text-muted">Timezone controls operational timestamps, including waste and stock activity.</p></div></Modal> : null}
     </div>
   );
 }
