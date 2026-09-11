@@ -91,6 +91,7 @@ def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, cl
     with app.app_context():
         location = RestaurantLocation.query.filter_by(name=LOCAL_LOCATION_NAME).one()
         location_id = location.id
+        organization_id = location.organization_id
 
     response = client.patch(
         f"/api/pilot/locations/{location_id}",
@@ -106,7 +107,7 @@ def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, cl
     with app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
         other_organization = make_operational_organization(owner, name="Other location settings", location_name="Other location")
-        assert other_organization.id != location.organization_id
+        assert other_organization.id != organization_id
         other_location_id = RestaurantLocation.query.filter_by(organization_id=other_organization.id).one().id
     forbidden = client.patch(f"/api/pilot/locations/{other_location_id}", headers=csrf_headers(client), json={"timezone": "America/Toronto"})
     assert forbidden.status_code == 403
