@@ -299,6 +299,8 @@ export function PilotPurchasesPage() {
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [lastOcrFile, setLastOcrFile] = useState<File | null>(null);
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [ocrPreviewType, setOcrPreviewType] = useState<"image" | "pdf" | null>(null);
   const [ocrPreviewName, setOcrPreviewName] = useState("");
@@ -658,20 +660,32 @@ export function PilotPurchasesPage() {
     }
     setOcrPreviewType(file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "image");
     setOcrPreviewName(file.name);
+    setLastOcrFile(file);
     setOcrLoading(true);
-    setError(null);
+    setOcrError(null);
     setReceiveMessage(null);
     try {
       const result = await uploadPilotInvoiceOcr(file);
       applyOcrResult(result, file);
     } catch (err) {
-      setError(purchaseErrorMessage(err));
+      setOcrError(purchaseErrorMessage(err));
     } finally {
       setOcrLoading(false);
       if (ocrInputRef.current) {
         ocrInputRef.current.value = "";
       }
     }
+  };
+
+  const clearOcrReview = () => {
+    setOcrPreviewUrl((current) => {
+      if (current) { try { URL.revokeObjectURL(current); } catch { /* best effort */ } }
+      return null;
+    });
+    setOcrPreviewType(null);
+    setOcrPreviewName("");
+    setLastOcrFile(null);
+    setOcrError(null);
   };
 
   const setLineDescription = (index: number, description: string) => {
@@ -722,12 +736,7 @@ export function PilotPurchasesPage() {
                 setReceiveMessage(null);
                 setCorrectionNote("");
                 setDraft(buildBlankDraft());
-                setOcrPreviewUrl((current) => {
-                  if (current) { try { URL.revokeObjectURL(current); } catch { /* best effort */ } }
-                  return null;
-                });
-                setOcrPreviewType(null);
-                setOcrPreviewName("");
+                clearOcrReview();
                 setShowReview(false);
                 setEditorOpen(true);
               }}
@@ -755,7 +764,7 @@ export function PilotPurchasesPage() {
         </div>
 
         {loading ? <div className="mt-5 text-sm text-muted">{initialLoading ? "Loading purchases…" : "Refreshing purchases…"}</div> : null}
-        {error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+        {error && !editorOpen ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
@@ -771,24 +780,26 @@ export function PilotPurchasesPage() {
               <span className="text-sm font-bold text-ink">{metric.value}</span>
             </div>
           ))}
-          {ocrPreviewUrl ? (
-            <div className="mt-4 grid gap-4 rounded-2xl border border-brand-100 bg-brand-50 p-4 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.2fr)]">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Original document</p>
-                <p className="mt-1 text-sm text-muted">{ocrPreviewName} · Compare this source with the editable fields.</p>
-                <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 underline" href={ocrPreviewUrl} target="_blank" rel="noreferrer">Open document in a new tab</a>
-              </div>
-              <div className="min-h-56 overflow-hidden rounded-xl border border-line bg-white">
-                {ocrPreviewType === "image" ? <img src={ocrPreviewUrl} alt="Original uploaded invoice" className="max-h-[28rem] w-full object-contain" /> : typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("jsdom") ? <p className="p-4 text-sm text-muted">PDF preview is unavailable in this browser. Use the link above to open the document.</p> : <iframe title="Original uploaded invoice PDF" src={ocrPreviewUrl} sandbox="" className="h-[28rem] w-full" />}
-              </div>
-            </div>
-          ) : null}
         </div>
       </Card>
 
-      {editorOpen ? <Modal title="Purchase editor" size="full" onClose={() => setEditorOpen(false)}>
-        <div ref={editorPanelRef} className="scroll-mt-32">
+      {editorOpen ? <Modal title={ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor"} size="full" onClose={() => setEditorOpen(false)}>
+        <div className={ocrPreviewUrl ? "grid gap-5 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]" : ""}>
+          {ocrPreviewUrl ? (
+            <aside className="self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 xl:sticky xl:top-0">
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Original document</p>
+              <p className="mt-1 text-sm text-muted">{ocrPreviewName} · Compare this source with the editable fields.</p>
+              <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 underline" href={ocrPreviewUrl} target="_blank" rel="noreferrer">Open document in a new tab</a>
+              <div className="mt-4 min-h-56 overflow-hidden rounded-xl border border-line bg-white">
+                {ocrPreviewType === "image" ? <img src={ocrPreviewUrl} alt="Original uploaded invoice" className="max-h-[32rem] w-full object-contain" /> : typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("jsdom") ? <p className="p-4 text-sm text-muted">PDF preview is unavailable in this browser. Use the link above to open the document.</p> : <iframe title="Original uploaded invoice PDF" src={ocrPreviewUrl} sandbox="" className="h-[32rem] w-full" />}
+              </div>
+              {ocrError ? <div role="alert" className="mt-4 rounded-xl border border-danger/20 bg-red-50 p-3 text-sm text-danger"><p>{ocrError}</p><div className="mt-3 flex flex-wrap gap-2"><Button variant="secondary" type="button" disabled={ocrLoading || !lastOcrFile} onClick={() => lastOcrFile && void uploadInvoice(lastOcrFile)}>{ocrLoading ? "Retrying…" : "Retry extraction"}</Button><Button variant="ghost" type="button" onClick={() => setOcrError(null)}>Continue manually</Button><Button variant="ghost" type="button" onClick={() => { clearOcrReview(); setEditorOpen(false); }}>Cancel</Button></div></div> : null}
+              {!ocrError ? <div className="mt-4 flex flex-wrap gap-2"><Button variant="ghost" type="button" onClick={() => clearOcrReview()}>Continue manually</Button><Button variant="ghost" type="button" onClick={() => { clearOcrReview(); setEditorOpen(false); }}>Cancel</Button></div> : null}
+            </aside>
+          ) : null}
+          <div ref={editorPanelRef} className="scroll-mt-32">
           <Card className="workspace-card w-full" data-testid="purchase-editor-card">
+            {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
@@ -1033,6 +1044,7 @@ export function PilotPurchasesPage() {
               ) : null}
             </div>
           </Card>
+          </div>
         </div>
       </Modal> : null}
 

@@ -335,6 +335,13 @@ describe("PilotPurchasesPage", () => {
 
     expect(await screen.findByText("OCR service unavailable.")).toBeVisible();
     expect(screen.getByLabelText("Invoice number")).toHaveValue("MANUAL-1");
+    expect(screen.getByRole("button", { name: "Retry extraction" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Continue manually" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open document in a new tab" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue manually" }));
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("MANUAL-1");
+    expect(screen.getByRole("link", { name: "Open document in a new tab" })).toBeVisible();
   });
 
   it("auto-maps one exact active inventory name without fuzzy matching", async () => {

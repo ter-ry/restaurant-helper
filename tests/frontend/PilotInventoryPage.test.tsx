@@ -316,9 +316,15 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("Item details")).toBeVisible();
     expect(screen.getAllByText((_, element) => element?.textContent?.includes("Base unit kg") ?? false).length).toBeGreaterThan(0);
 
-    expect(screen.getByLabelText("Quantity delta")).toHaveValue(0);
-    expect(screen.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
-    expect(screen.getByText("Movement note (optional)")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Adjust inventory" }));
+    const adjustmentDialog = await waitFor(() => {
+      const dialogs = screen.getAllByRole("dialog");
+      expect(dialogs).toHaveLength(2);
+      return dialogs[1];
+    });
+    expect(within(adjustmentDialog).getByLabelText("Quantity delta (kg)")).toHaveValue(0);
+    expect(within(adjustmentDialog).getByRole("button", { name: "Save stock movement" })).toBeDisabled();
+    expect(within(adjustmentDialog).getByText("Movement note (optional)")).toBeVisible();
     expect(screen.getByText(/Item notes None/)).toBeVisible();
     expect(screen.queryByLabelText("Current on hand")).not.toBeInTheDocument();
 
@@ -350,11 +356,11 @@ describe("PilotInventoryPage", () => {
       }),
     );
 
-    fireEvent.change(screen.getByLabelText("Quantity delta"), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Periodic review" } });
-    fireEvent.change(screen.getByLabelText("Movement note (optional)"), { target: { value: "Shelf count" } });
-    expect(screen.getByRole("button", { name: "Save stock movement" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Save stock movement" }));
+    fireEvent.change(within(adjustmentDialog).getByLabelText("Quantity delta (kg)"), { target: { value: "2" } });
+    fireEvent.change(within(adjustmentDialog).getByLabelText("Reason"), { target: { value: "Periodic review" } });
+    fireEvent.change(within(adjustmentDialog).getByLabelText("Movement note (optional)"), { target: { value: "Shelf count" } });
+    expect(within(adjustmentDialog).getByRole("button", { name: "Save stock movement" })).toBeEnabled();
+    fireEvent.click(within(adjustmentDialog).getByRole("button", { name: "Save stock movement" }));
 
     await waitFor(() => expect(inventoryMocks.createPilotInventoryAdjustment).toHaveBeenCalledTimes(1));
     expect(inventoryMocks.createPilotInventoryAdjustment.mock.calls[0][1]).toMatchObject({
@@ -387,7 +393,7 @@ describe("PilotInventoryPage", () => {
     expect(screen.getByText("28 kg")).toBeVisible();
     expect(screen.queryByLabelText("Current on hand")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Latest price")).not.toBeInTheDocument();
-    expect(screen.getByText("Movement note (optional)")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Adjust inventory" })).toBeVisible();
     expect(screen.getByRole("spinbutton", { name: "Minimum" })).toHaveValue(1);
     expect(screen.getByRole("spinbutton", { name: "PAR" })).toHaveValue(5);
     expect(screen.getByRole("spinbutton", { name: "Minimum" })).toHaveAttribute("step", "1");

@@ -13,11 +13,13 @@ const navItems = [
   { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
   { to: "/app/stock-counts", label: "Stock Counts", group: "Operations", icon: ClipboardList },
   { to: "/app/reorder-plan", label: "Reorder Plan", group: "Operations", icon: ShoppingCart },
-  { to: "/app/menu-costing", label: "Menu Costing", group: "Cost & Menu", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
-  { to: "/app/square", label: "Square", group: "Sales & Reconciliation", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/square-usage", label: "Usage / Variance", group: "Sales & Reconciliation", icon: BarChart3, moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/daily-close", label: "Daily Close", group: "Sales & Reconciliation", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
+  { to: "/app/menu-costing", label: "Menu Costing", group: "Menu & Cost", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
+  { to: "/app/square", label: "Square", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/square-usage", label: "Usage / Variance", group: "Sales & Close", icon: BarChart3, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/daily-close", label: "Daily Close", group: "Sales & Close", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
 ];
+
+const navigationGroups = ["Overview", "Operations", "Menu & Cost", "Sales & Close"] as const;
 
 function AnalyticsTracker() {
   const location = useLocation();
@@ -93,6 +95,10 @@ export function PilotWorkspaceLayout() {
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => !item.moduleKey || enabledModuleKeySet.has(item.moduleKey)),
     [enabledModuleKeySet],
+  );
+  const visibleNavigationGroups = useMemo(
+    () => navigationGroups.map((label) => ({ label, items: visibleNavItems.filter((item) => item.group === label) })).filter((group) => group.items.length > 0),
+    [visibleNavItems],
   );
   const locationLabel = useMemo(() => {
     if (!currentLocation) {
@@ -431,9 +437,18 @@ export function PilotWorkspaceLayout() {
             </div>
           ) : null}
 
-          <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-0.5" : ""}`}>
-            {visibleNavItems.map((item) => (
-              <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} />
+          <nav className={`mt-6 space-y-5 ${desktopSidebarCollapsed ? "px-0.5" : ""}`} aria-label="Workspace navigation">
+            {visibleNavigationGroups.map((group) => (
+              <section key={group.label} aria-labelledby={`desktop-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`}>
+                <p id={`desktop-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`} className={desktopSidebarCollapsed ? "sr-only" : "px-3 pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-muted"}>
+                  {group.label}
+                </p>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} />
+                  ))}
+                </div>
+              </section>
             ))}
           </nav>
 
@@ -476,18 +491,20 @@ export function PilotWorkspaceLayout() {
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm"
                 type="button"
                 onClick={() => setMobileNavOpen(true)}
+                aria-label="Open navigation"
               >
                 <Menu className="h-5 w-5" />
               </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink">{currentSectionLabel}</p>
               </div>
-              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void refreshSession()} title="Refresh session">
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void refreshSession()} title="Refresh session" aria-label="Refresh session">
                 <RefreshCw className="h-4 w-4" />
               </button>
-              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void signOut()} title="Sign out">
-                <LogOut className="h-4 w-4" />
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}>
+                <UserCircle className="h-4 w-4" />
               </button>
+              {accountMenuOpen ? <div className="absolute right-4 top-14 z-40 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
             </div>
 
             <div className="hidden items-center justify-between gap-4 px-5 py-3 xl:flex">
@@ -564,7 +581,7 @@ export function PilotWorkspaceLayout() {
       {mobileNavOpen ? (
         <div className="fixed inset-0 z-30 xl:hidden">
           <button className="absolute inset-0 bg-slate-900/35" type="button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />
-          <div className="absolute left-0 top-0 h-full w-[86%] max-w-sm border-r border-line bg-white p-4 shadow-2xl">
+          <div className="absolute left-0 top-0 flex h-full w-[86%] max-w-sm flex-col border-r border-line bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
@@ -611,13 +628,22 @@ export function PilotWorkspaceLayout() {
               )}
             </div>
 
-            <nav className="mt-6 space-y-2">
-              {visibleNavItems.map((item) => (
-                <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)} />
+            <nav className="mt-6 min-h-0 flex-1 space-y-5 overflow-y-auto pr-1" aria-label="Workspace navigation">
+              {visibleNavigationGroups.map((group) => (
+                <section key={group.label} aria-labelledby={`mobile-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`}>
+                  <p id={`mobile-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`} className="px-3 pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
+                    {group.label}
+                  </p>
+                  <div className="space-y-1">
+                    {group.items.map((item) => (
+                      <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)} />
+                    ))}
+                  </div>
+                </section>
               ))}
             </nav>
 
-            <div className="mt-6 space-y-2 border-t border-line pt-5">
+            <div className="mt-4 shrink-0 space-y-2 border-t border-line pt-4">
               <button
                 className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                 type="button"
