@@ -33,6 +33,7 @@ interface PilotSessionValue {
   switchOrganization: (organizationId: number) => Promise<void>;
   switchLocation: (locationId: number) => Promise<void>;
   signOut: () => Promise<void>;
+  signingOut: boolean;
 }
 
 const PilotSessionContext = createContext<PilotSessionValue | null>(null);
@@ -85,6 +86,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<PilotLocation | null>(null);
   const [membershipRole, setMembershipRole] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   const refreshSession = async () => {
     if (!pilotAppEnabled) {
@@ -219,8 +221,9 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    setSigningOut(true);
     try {
-      await logoutOfPilot();
+      await logoutOfPilot(csrfToken);
     } catch {
       // Session state will still be cleared locally.
     }
@@ -235,6 +238,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     setMembershipRole(null);
     setCsrfToken(null);
     setError(null);
+    window.location.replace("/app/login");
   };
 
   const value = useMemo<PilotSessionValue>(
@@ -254,11 +258,12 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       switchOrganization,
       switchLocation,
       signOut,
+      signingOut,
     }),
-    [csrfToken, currentLocation, enabledModuleKeys, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, status, switchLocation, switchOrganization, user],
+    [csrfToken, currentLocation, enabledModuleKeys, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, signingOut, status, switchLocation, switchOrganization, user],
   );
 
-  return <PilotSessionContext.Provider value={value}>{children}</PilotSessionContext.Provider>;
+  return <PilotSessionContext.Provider value={value}><div className={signingOut ? "pointer-events-none" : undefined}>{children}</div>{signingOut ? <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-white"><div className="text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700"><span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" /></div><p className="mt-4 text-sm font-semibold text-ink">Signing out…</p></div></div> : null}</PilotSessionContext.Provider>;
 }
 
 export function usePilotSession() {

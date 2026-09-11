@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent } from "react";
-import { ArrowRight, CheckCircle2, FileText, Plus, RefreshCcw, ShoppingBag } from "lucide-react";
+import { CheckCircle2, FileText, Plus, RefreshCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -386,7 +386,6 @@ export function PilotPurchasesPage() {
   };
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
-  const priceChanges = (data?.priceChanges ?? []).slice(0, 3);
   const initialLoading = loading && !hasLoaded;
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const purchaseStatusLabel = finalizedStatus ? "Read-only purchase" : draft.id ? "Editable draft" : "New purchase";
@@ -719,13 +718,11 @@ export function PilotPurchasesPage() {
   };
 
   return (
-    <div className="workspace-page p-3 sm:p-4">
+    <div className="workspace-page">
       <Card className="surface-panel workspace-card p-3 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Purchases</p>
-            <h1 className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">Capture invoice and receive stock</h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted">Supplier, invoice lines, totals, and receiving in one transaction workspace.</p>
+            <p className="max-w-2xl text-sm text-muted">Review invoices, map items, and receive stock.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -742,20 +739,6 @@ export function PilotPurchasesPage() {
               }}
             >
               New purchase
-            </Button>
-            <input
-              ref={ocrInputRef}
-              className="sr-only"
-              aria-label="Invoice file"
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,.pdf"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void uploadInvoice(file);
-              }}
-            />
-            <Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => { setEditorOpen(true); ocrInputRef.current?.click(); }} disabled={ocrLoading || saving}>
-              {ocrLoading ? "Processing invoice…" : "Upload invoice"}
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
               Refresh
@@ -799,6 +782,7 @@ export function PilotPurchasesPage() {
           ) : null}
           <div ref={editorPanelRef} className="scroll-mt-32">
           <Card className="workspace-card w-full" data-testid="purchase-editor-card">
+            {!draft.id && !ocrPreviewUrl ? <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-ink">How would you like to add this purchase?</p><p className="mt-1 text-xs text-muted">Upload an invoice for OCR or enter the purchase details manually.</p></div><div className="flex flex-wrap gap-2"><input ref={ocrInputRef} className="sr-only" aria-label="Invoice file" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadInvoice(file); }} /><Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>{ocrLoading ? "Processing invoice…" : "Upload invoice"}</Button><Button variant="ghost" type="button" onClick={() => editorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Enter manually</Button></div></div> : null}
             {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
@@ -1048,13 +1032,24 @@ export function PilotPurchasesPage() {
         </div>
       </Modal> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.85fr)]">
-        <div className="space-y-6">
-          <Card className="w-full p-6" data-testid="purchase-history-card">
-            <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />
-            <div className="space-y-3">
-              {initialLoading ? <p className="text-sm text-muted">Loading purchase history…</p> : null}
-              {invoiceRows.map((invoice) => (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <Card className="w-full p-4" data-testid="purchase-review-card">
+          <SectionHeader title="Needs review" description="Drafts and incomplete purchases that need action." />
+          <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
+            {(data?.invoices ?? []).filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
+              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className="w-full rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-3 text-left transition hover:shadow-soft">
+                <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></div>
+                <div className="mt-2 flex items-center justify-between text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} items</span></div>
+              </button>
+            ))}
+            {initialLoading ? <p className="text-sm text-muted">Loading review items…</p> : null}
+            {!loading && hasLoaded && !(data?.invoices ?? []).some((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected") ? <p className="rounded-xl border border-dashed border-line px-3 py-6 text-sm text-muted">No purchases need review.</p> : null}
+          </div>
+        </Card>
+        <Card className="w-full p-4" data-testid="purchase-history-card">
+          <SectionHeader title="Purchase history" description="Completed and recent purchases." />
+          <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
+              {invoiceRows.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
                 <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -1069,7 +1064,7 @@ export function PilotPurchasesPage() {
                   </div>
                 </button>
               ))}
-              {!loading && hasLoaded && !invoiceRows.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No purchases yet. Create the first invoice to start tracking spend.</p> : null}
+              {!loading && hasLoaded && !invoiceRows.some((invoice) => invoice.status === "Completed" || invoice.status === "Corrected") ? <p className="rounded-xl border border-dashed border-line px-3 py-6 text-sm text-muted">No completed purchases yet.</p> : null}
             </div>
             {data?.invoices?.length && data.invoices.length > 5 ? (
               <button type="button" className="mt-4 text-sm font-semibold text-brand-700" onClick={() => setShowAll((value) => !value)}>
@@ -1077,28 +1072,7 @@ export function PilotPurchasesPage() {
               </button>
             ) : null}
           </Card>
-
-          <Card className="w-full p-6">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Price changes</p>
-            <div className="mt-3 space-y-2">
-              {priceChanges.map((change) => (
-                <div key={String(change.id)} className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{String(change.itemName ?? change.item ?? "")}</p>
-                      <p className="text-sm text-muted">{String(change.supplier ?? "")}</p>
-                    </div>
-                    <Badge tone={Number(change.changePercent ?? 0) >= 0 ? "orange" : "success"}>
-                      {Number(change.changePercent ?? 0) >= 0 ? "+" : ""}{formatNumber(Number(change.changePercent ?? 0))}%
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-              {!priceChanges.length ? <p className="text-sm text-muted">Price change alerts will appear after the first repeated supplier item.</p> : null}
-            </div>
-          </Card>
         </div>
-      </div>
 
       <PurchaseInvoiceDetailsModal invoice={detailInvoice} onClose={closeDetailInvoice} />
     </div>
