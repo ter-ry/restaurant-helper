@@ -722,7 +722,6 @@ export function PilotPurchasesPage() {
       <Card className="surface-panel workspace-card p-3 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
-            <p className="max-w-2xl text-sm text-muted">Review invoices, map items, and receive stock.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

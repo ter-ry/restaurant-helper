@@ -1172,7 +1172,6 @@ export function PilotInventoryPage() {
         <WorkspacePageHeader
           eyebrow="Inventory"
           title="Inventory"
-          description="Track stock, suppliers, and cost basis."
           actions={
             <>
               <Button
