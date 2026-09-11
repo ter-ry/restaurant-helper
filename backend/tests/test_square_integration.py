@@ -700,6 +700,52 @@ def test_square_oauth_refresh_token_grant_does_not_require_redirect_uri(app, mon
     }
 
 
+def test_square_refresh_without_new_refresh_token_preserves_existing_token(app):
+    configure_square(app)
+    from backend.square import decrypt_square_secret, encrypt_square_secret
+    from backend.square_integration import SquareConnection as SquareConnectionModel, _upsert_connection_tokens
+
+    with app.app_context():
+        connection = SquareConnectionModel(
+            organization_id=1,
+            environment="sandbox",
+            square_merchant_id="merchant-123",
+            status="connected",
+            access_token_ciphertext=encrypt_square_secret("old-access-token"),
+            refresh_token_ciphertext=encrypt_square_secret("long-lived-refresh-token"),
+        )
+        _upsert_connection_tokens(connection, {"access_token": "new-access-token", "merchant_id": "merchant-123"})
+        assert decrypt_square_secret(connection.access_token_ciphertext) == "new-access-token"
+        assert decrypt_square_secret(connection.refresh_token_ciphertext) == "long-lived-refresh-token"
+
+
+def test_square_connection_survives_flowtally_logout_and_login(app, client):
+    configure_square(app)
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization = make_operational_organization(owner, name=f"Square Persistence {uuid4().hex[:6]}", location_name="Main Kitchen", enabled_modules=("SQUARE_INTEGRATION", "INVENTORY"))
+    client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
+    from backend.square import decrypt_square_secret, encrypt_square_secret
+    with app.app_context():
+        connection = SquareConnection(organization_id=organization.id, environment="sandbox", square_merchant_id="merchant-persisted", status="connected", access_token_ciphertext=encrypt_square_secret("access"), refresh_token_ciphertext=encrypt_square_secret("refresh"))
+        db.session.add(connection)
+        db.session.commit()
+        connection_id = connection.id
+    logout = client.post("/api/auth/logout", headers=csrf_headers(client))
+    assert logout.status_code == 200
+    login(client)
+    selected = client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id})
+    assert selected.status_code == 200
+    status = client.get(f"/api/integrations/square/status?organizationId={organization.id}")
+    assert status.status_code == 200
+    assert status.get_json()["connection"]["status"] == "connected"
+    with app.app_context():
+        persisted = SquareConnection.query.filter_by(organization_id=organization.id).one()
+        assert persisted.id == connection_id
+        assert decrypt_square_secret(persisted.refresh_token_ciphertext) == "refresh"
+
+
 def test_square_location_mapping_catalog_pagination_and_orders(app, client, monkeypatch):
     login(client)
     owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()

@@ -297,6 +297,9 @@ export function PilotPurchasesPage() {
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
+  const [ocrPreviewType, setOcrPreviewType] = useState<"image" | "pdf" | null>(null);
+  const [ocrPreviewName, setOcrPreviewName] = useState("");
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
     const parsed = Number(value);
@@ -353,6 +356,12 @@ export function PilotPurchasesPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedInvoiceId]);
+
+  useEffect(() => () => {
+    if (ocrPreviewUrl) {
+      try { URL.revokeObjectURL(ocrPreviewUrl); } catch { /* browser cleanup is best effort */ }
+    }
+  }, [ocrPreviewUrl]);
 
   const selectedInvoice = useMemo(
     () => data?.invoices?.find((invoice) => invoice.id === selectedId) ?? null,
@@ -626,6 +635,22 @@ export function PilotPurchasesPage() {
   };
 
   const uploadInvoice = async (file: File) => {
+    let previewUrl: string | null = null;
+    try {
+      if (typeof window !== "undefined" && window.location.origin !== "null") {
+        previewUrl = URL.createObjectURL(file);
+      }
+    } catch {
+      // Some embedded browsers do not expose blob URLs; OCR can still proceed.
+    }
+    if (previewUrl) {
+      setOcrPreviewUrl((current) => {
+        if (current) { try { URL.revokeObjectURL(current); } catch { /* best effort */ } }
+        return previewUrl;
+      });
+    }
+    setOcrPreviewType(file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "image");
+    setOcrPreviewName(file.name);
     setOcrLoading(true);
     setError(null);
     setReceiveMessage(null);
@@ -689,7 +714,13 @@ export function PilotPurchasesPage() {
                 setSelectedId(null);
                 setReceiveMessage(null);
                 setCorrectionNote("");
-      setDraft(buildBlankDraft());
+                setDraft(buildBlankDraft());
+                setOcrPreviewUrl((current) => {
+                  if (current) { try { URL.revokeObjectURL(current); } catch { /* best effort */ } }
+                  return null;
+                });
+                setOcrPreviewType(null);
+                setOcrPreviewName("");
                 setShowReview(false);
                 window.requestAnimationFrame(() => {
                   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -723,7 +754,7 @@ export function PilotPurchasesPage() {
         {error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
             { label: "This month spend", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
             { label: "Uploads needing review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
@@ -736,6 +767,18 @@ export function PilotPurchasesPage() {
               <span className="text-sm font-bold text-ink">{metric.value}</span>
             </div>
           ))}
+          {ocrPreviewUrl ? (
+            <div className="mt-4 grid gap-4 rounded-2xl border border-brand-100 bg-brand-50 p-4 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.2fr)]">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Original document</p>
+                <p className="mt-1 text-sm text-muted">{ocrPreviewName} · Compare this source with the editable fields.</p>
+                <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 underline" href={ocrPreviewUrl} target="_blank" rel="noreferrer">Open document in a new tab</a>
+              </div>
+              <div className="min-h-56 overflow-hidden rounded-xl border border-line bg-white">
+                {ocrPreviewType === "image" ? <img src={ocrPreviewUrl} alt="Original uploaded invoice" className="max-h-[28rem] w-full object-contain" /> : typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("jsdom") ? <p className="p-4 text-sm text-muted">PDF preview is unavailable in this browser. Use the link above to open the document.</p> : <iframe title="Original uploaded invoice PDF" src={ocrPreviewUrl} sandbox="" className="h-[28rem] w-full" />}
+              </div>
+            </div>
+          ) : null}
         </div>
       </Card>
 

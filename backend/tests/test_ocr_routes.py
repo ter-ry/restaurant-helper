@@ -127,6 +127,16 @@ def test_pilot_invoice_ocr_rejects_anonymous_invalid_and_provider_failure(client
     assert failed.status_code == 422
     assert "provider unavailable" in failed.get_json()["error"]
 
+    monkeypatch.setattr(pilot_module, "extract_invoice_document", lambda *_args: (_ for _ in ()).throw(pilot_module.InvoiceOCRTemporaryFailure("temporary")))
+    temporary = client.post(
+        "/api/pilot/purchases/ocr",
+        data={"file": (io.BytesIO(b"%PDF-1.4\n"), "invoice.pdf")},
+        content_type="multipart/form-data",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert temporary.status_code == 503
+    assert temporary.get_json()["error"] == "temporary"
+
 
 def test_pilot_invoice_ocr_rejects_user_without_purchase_permission(client, monkeypatch):
     import backend.policy as policy_module

@@ -29,6 +29,12 @@ class InvoiceOCRFailure(RuntimeError):
     pass
 
 
+class InvoiceOCRTemporaryFailure(InvoiceOCRFailure):
+    """The OCR provider was unavailable; the uploaded document may be valid."""
+
+    pass
+
+
 @dataclass
 class FieldResult:
     value: Any
@@ -127,8 +133,12 @@ def _post_ocr_space(filename: str, content: bytes, content_type: str = "") -> di
     try:
         with urllib.request.urlopen(request, timeout=OCR_TIMEOUT_SECONDS) as response:
             response_body = response.read().decode("utf-8", errors="replace")
-    except urllib.error.URLError as exc:
-        raise InvoiceOCRFailure(f"OCR service request failed: {exc.reason if hasattr(exc, 'reason') else exc}") from exc
+    except urllib.error.HTTPError as exc:
+        if exc.code in {502, 503, 504}:
+            raise InvoiceOCRTemporaryFailure("OCR service is temporarily unavailable. Retry or enter the invoice manually.") from exc
+        raise InvoiceOCRFailure(f"OCR service request failed with status {exc.code}.") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise InvoiceOCRTemporaryFailure("OCR service is temporarily unavailable. Retry or enter the invoice manually.") from exc
 
     try:
         data = json.loads(response_body)

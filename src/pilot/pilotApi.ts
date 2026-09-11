@@ -4,6 +4,8 @@ import {
   disconnectSquare,
   fetchSquareStatus,
   fetchSquareCatalogMappings,
+  previewSquareMenuImport,
+  importSquareMenu,
   syncSquareCatalog,
   syncSquareLocations,
   syncSquareOrders,
@@ -765,6 +767,14 @@ export async function fetchPilotSquareStatus(organizationId: number) {
 
 export async function fetchPilotSquareCatalogMappings(organizationId: number, locationId?: number | null) {
   return fetchSquareCatalogMappings({ organizationId, locationId });
+}
+
+export async function previewPilotSquareMenuImport(organizationId: number, locationId: number) {
+  return previewSquareMenuImport(organizationId, locationId);
+}
+
+export async function importPilotSquareMenu(organizationId: number, locationId: number) {
+  return importSquareMenu(organizationId, locationId);
 }
 
 export async function beginPilotSquareConnection(organizationId: number) {

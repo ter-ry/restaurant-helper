@@ -1010,8 +1010,11 @@ def _upsert_connection_tokens(connection: SquareConnection, token_payload: dict[
     connection.square_merchant_id = merchant_id or connection.square_merchant_id or ""
     connection.status = "connected"
     connection.access_token_ciphertext = encrypt_square_secret(str(token_payload.get("access_token") or ""))
-    refresh_token = str(token_payload.get("refresh_token") or "")
-    connection.refresh_token_ciphertext = encrypt_square_secret(refresh_token)
+    # Square may omit refresh_token on a refresh grant. Preserve the existing
+    # encrypted token so a successful refresh never makes the connection
+    # unrecoverable on the next expiry.
+    if "refresh_token" in token_payload and str(token_payload.get("refresh_token") or "").strip():
+        connection.refresh_token_ciphertext = encrypt_square_secret(str(token_payload["refresh_token"]))
     expires_at = token_payload.get("expires_at")
     if expires_at:
         connection.token_expires_at = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00")).astimezone(timezone.utc)

@@ -67,7 +67,7 @@ from .utils import (
     serialize_supplier_item_mapping,
 )
 from .validation import RequestValidationError
-from invoice_ocr import InvoiceOCRFailure, extract_invoice_document
+from invoice_ocr import InvoiceOCRFailure, InvoiceOCRTemporaryFailure, extract_invoice_document
 
 bp = Blueprint("pilot_api", __name__)
 
@@ -993,6 +993,8 @@ def purchases_ocr():
         content = uploaded.read()
         validate_upload_content(uploaded.filename, content, ALLOWED_INVOICE_EXTENSIONS)
         parsed = extract_invoice_document(uploaded.filename, content, uploaded.mimetype or "")
+    except InvoiceOCRTemporaryFailure as exc:
+        return json_error(str(exc), 503)
     except (ValueError, InvoiceOCRFailure) as exc:
         return json_error(str(exc), 422)
     return jsonify(parsed), 200
