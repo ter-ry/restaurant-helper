@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
@@ -26,6 +27,8 @@ import {
   updatePilotSupplier,
 } from "./pilotApi";
 import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
+import { usePilotSession } from "./PilotSessionProvider";
 
 interface InventoryDraft {
   id: number | null;
@@ -139,6 +142,7 @@ function formatInventoryValue(currentOnHand: number, averageUnitCost: number | n
 
 export function PilotInventoryPage() {
   const navigate = useNavigate();
+  const { currentLocation } = usePilotSession();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -161,10 +165,13 @@ export function PilotInventoryPage() {
   const [adjustmentDelta, setAdjustmentDelta] = useState(0);
   const [adjustmentReason, setAdjustmentReason] = useState("Periodic review");
   const [adjustmentNote, setAdjustmentNote] = useState("");
+  const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
   const [wasteQuantity, setWasteQuantity] = useState(0);
   const [wasteReason, setWasteReason] = useState("spoilage / expired");
   const [wasteNote, setWasteNote] = useState("");
-  const [wasteOccurredAt, setWasteOccurredAt] = useState(() => new Date().toISOString().slice(0, 16));
+  const [wasteOccurredAt, setWasteOccurredAt] = useState(() => locationNowDatetimeLocal("America/Toronto"));
+  const [wasteModalOpen, setWasteModalOpen] = useState(false);
+  const [supplierEditorOpen, setSupplierEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -208,6 +215,10 @@ export function PilotInventoryPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (currentLocation?.timezone) setWasteOccurredAt(locationNowDatetimeLocal(currentLocation.timezone));
+  }, [currentLocation?.timezone]);
 
   const selectedItem = useMemo(() => data?.items.find((item) => item.id === selectedId) ?? null, [data?.items, selectedId]);
   const selectedSupplier = useMemo(() => suppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null, [selectedSupplierId, suppliers]);
@@ -383,6 +394,7 @@ export function PilotInventoryPage() {
       setMessage(`Inventory updated: ${formatNumber(beforeOnHand)} ${draft.stockUnit} → ${formatNumber(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatNumber(delta)} ${draft.stockUnit}).`);
       setAdjustmentDelta(0);
       setAdjustmentNote("");
+      setAdjustmentModalOpen(false);
       await load();
       setSelectedId(draft.id);
     } catch (err) {
@@ -407,11 +419,12 @@ export function PilotInventoryPage() {
         unit: draft.stockUnit,
         reason: wasteReason,
         note: wasteNote,
-        occurredAt: new Date(wasteOccurredAt).toISOString(),
+        occurredAt: locationDatetimeLocalToUtcIso(wasteOccurredAt, currentLocation?.timezone || "America/Toronto"),
       });
       setDraft((current) => current ? { ...current, currentOnHand: current.currentOnHand - wasteQuantity } : current);
       setWasteQuantity(0);
       setWasteNote("");
+      setWasteModalOpen(false);
       setMessage(`Waste recorded: ${formatNumber(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
       await load();
       setSelectedId(draft.id);
@@ -436,6 +449,8 @@ export function PilotInventoryPage() {
     setAdjustmentDelta(0);
     setAdjustmentReason("Periodic review");
     setAdjustmentNote("");
+    setAdjustmentModalOpen(false);
+    setWasteModalOpen(false);
   };
 
   const openItem = (itemId: number) => {
@@ -458,6 +473,8 @@ export function PilotInventoryPage() {
     setAdjustmentDelta(0);
     setAdjustmentReason("Periodic review");
     setAdjustmentNote("");
+    setAdjustmentModalOpen(false);
+    setWasteModalOpen(false);
     setMessage(null);
     setError(null);
   };
@@ -551,10 +568,22 @@ export function PilotInventoryPage() {
 
   const renderSupplierWorkspace = () => (
     <Card className="p-6">
-      <SectionHeader title="Suppliers" description="Keep supplier names, focus areas, and active status consistent across invoices and inventory items." />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SectionHeader title="Suppliers" description="Keep supplier names, focus areas, and active status consistent across invoices and inventory items." />
+        <Button
+          icon={<Plus className="h-4 w-4" />}
+          type="button"
+          onClick={() => {
+            setSelectedSupplierId(null);
+            setSupplierDraft(blankSupplierDraft(suppliers));
+            setSupplierEditorOpen(true);
+          }}
+        >
+          Add supplier
+        </Button>
+      </div>
 
-      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="space-y-2">
+      <div className="mt-5 space-y-2">
           <div className="flex flex-wrap gap-2">
           <Badge tone="neutral">{hasLoaded ? suppliers.filter((supplier) => supplier.isActive).length : "—"} active</Badge>
           <Badge tone="neutral">{hasLoaded ? suppliers.filter((supplier) => !supplier.isActive).length : "—"} inactive</Badge>
@@ -582,6 +611,7 @@ export function PilotInventoryPage() {
                   notes: supplier.notes,
                   isActive: supplier.isActive,
                 });
+                setSupplierEditorOpen(true);
               }}
               className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
                 selectedSupplierId === supplier.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"
@@ -616,8 +646,14 @@ export function PilotInventoryPage() {
           ))}
           {initialLoading ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Loading suppliers…</p> : null}
           {!loading && hasLoaded && !filteredSuppliers.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No suppliers match this search.</p> : null}
-        </div>
+      </div>
 
+      {supplierEditorOpen ? (
+        <Modal
+          title={supplierDraft.id ? `Edit ${supplierDraft.name || "supplier"}` : "Add supplier"}
+          size="large"
+          onClose={() => setSupplierEditorOpen(false)}
+        >
         <div className="rounded-2xl border border-line bg-slate-50 p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">{supplierDraft.id ? `Edit ${supplierDraft.name || "supplier"}` : "New supplier"}</p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -668,9 +704,10 @@ export function PilotInventoryPage() {
               onClick={() => {
                 setSelectedSupplierId(null);
                 setSupplierDraft(blankSupplierDraft(suppliers));
+                setSupplierEditorOpen(false);
               }}
             >
-              New supplier
+              Cancel
             </Button>
           </div>
 
@@ -736,7 +773,8 @@ export function PilotInventoryPage() {
             </div>
           ) : null}
         </div>
-      </div>
+        </Modal>
+      ) : null}
     </Card>
   );
 
@@ -821,42 +859,19 @@ export function PilotInventoryPage() {
         {itemDetailTab === "overview" ? (
           <div className="space-y-5">
             <Card className="p-5">
-              <SectionHeader title="Inventory adjustment" description="Record a stock movement without changing the item's master data." />
-              <div className="mt-4 grid items-end gap-3 xl:grid-cols-[0.8fr_0.8fr_1.4fr_auto]">
-                <label className="block">
-                  <span className="text-sm font-semibold text-ink">Quantity delta</span>
-                  <input className="input mt-1 w-28" type="number" step="1" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-ink">Reason</span>
-                  <input className="input mt-1" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-ink">Movement note (optional)</span>
-                  <input className="input mt-1" value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} placeholder="Optional movement note" />
-                </label>
-                <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
-                  Save stock movement
+              <SectionHeader title="Stock actions" description="Record a stock movement or waste event without changing the item's master data." />
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button icon={<Scale className="h-4 w-4" />} type="button" onClick={() => setAdjustmentModalOpen(true)}>
+                  Adjust inventory
                 </Button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="secondary" type="button" onClick={() => setWasteModalOpen(true)}>
+                  Record waste
+                </Button>
                 <Button variant="secondary" disabled={saving} type="button" onClick={() => navigate("/app/stock-counts")}>
                   Stock counts →
                 </Button>
               </div>
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
-            </Card>
-
-            <Card className="p-5">
-              <SectionHeader title="Record waste / loss" description="Waste is recorded separately from adjustments and becomes a linked inventory deduction." />
-              <div className="mt-4 grid items-end gap-3 xl:grid-cols-[0.8fr_1fr_1fr_1.4fr_auto]">
-                <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1 w-28" type="number" min="0" step="0.0001" value={wasteQuantity} onChange={(event) => setWasteQuantity(Number(event.target.value))} /></label>
-                <label className="block"><span className="text-sm font-semibold text-ink">Waste reason</span><select aria-label="Waste reason" className="input mt-1" value={wasteReason} onChange={(event) => setWasteReason(event.target.value)}><option value="spoilage / expired">Spoilage / expired</option><option value="prep waste">Prep waste</option><option value="cooking / production mistake">Cooking / production mistake</option><option value="damaged / breakage">Damaged / breakage</option><option value="staff meal">Staff meal</option><option value="complimentary / comped">Complimentary / comped</option><option value="other">Other</option></select></label>
-                <label className="block"><span className="text-sm font-semibold text-ink">Date/time</span><input aria-label="Waste date/time" className="input mt-1" type="datetime-local" value={wasteOccurredAt} onChange={(event) => setWasteOccurredAt(event.target.value)} /></label>
-                <label className="block"><span className="text-sm font-semibold text-ink">Note</span><input className="input mt-1" value={wasteNote} onChange={(event) => setWasteNote(event.target.value)} placeholder="Optional context" /></label>
-                <Button disabled={saving || wasteQuantity <= 0} type="button" onClick={() => void saveWaste()}>Record waste</Button>
-              </div>
-              <p className="mt-3 text-xs text-muted">Current cost estimate: {averageCost !== null ? formatMoney(wasteQuantity * averageCost) : "Not available until a purchase cost is recorded"}.</p>
             </Card>
 
             <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted">
@@ -1196,11 +1211,50 @@ export function PilotInventoryPage() {
           />
           {inventoryTab === "suppliers" ? renderSupplierWorkspace() : renderItemTable()}
         </>
-      ) : workspaceMode === "create" ? (
-        renderCreateWorkspace()
-      ) : (
-        renderExistingWorkspace()
-      )}
+      ) : null}
+      {workspaceMode === "create" ? <Modal title="Add inventory item" size="large" onClose={closeItemWorkspace}>{renderCreateWorkspace()}</Modal> : null}
+      {workspaceMode === "existing" ? <Modal title={selectedItemDetail?.name || draft.name || "Inventory item"} size="full" onClose={closeItemWorkspace}>{renderExistingWorkspace()}</Modal> : null}
+      {adjustmentModalOpen ? (
+        <Modal title="Adjust inventory" size="small" onClose={() => setAdjustmentModalOpen(false)}>
+          <p className="text-sm text-muted">Record a stock movement for {draft.name || "this item"} without changing its master data.</p>
+          <div className="mt-5 space-y-4">
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Quantity delta ({draft.stockUnit})</span>
+              <input className="input mt-1" type="number" step="1" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Reason</span>
+              <input className="input mt-1" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Movement note (optional)</span>
+              <input className="input mt-1" value={adjustmentNote} onChange={(event) => setAdjustmentNote(event.target.value)} placeholder="Optional movement note" />
+            </label>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" type="button" disabled={saving} onClick={() => setAdjustmentModalOpen(false)}>Cancel</Button>
+              <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
+                {saving ? "Saving…" : "Save stock movement"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      {wasteModalOpen ? (
+        <Modal title="Record waste / loss" size="large" onClose={() => setWasteModalOpen(false)}>
+          <p className="text-sm text-muted">Waste is recorded separately from adjustments and becomes a linked inventory deduction.</p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1" type="number" min="0" step="0.0001" value={wasteQuantity} onChange={(event) => setWasteQuantity(Number(event.target.value))} /></label>
+            <label className="block"><span className="text-sm font-semibold text-ink">Waste reason</span><select aria-label="Waste reason" className="input mt-1" value={wasteReason} onChange={(event) => setWasteReason(event.target.value)}><option value="spoilage / expired">Spoilage / expired</option><option value="prep waste">Prep waste</option><option value="cooking / production mistake">Cooking / production mistake</option><option value="damaged / breakage">Damaged / breakage</option><option value="staff meal">Staff meal</option><option value="complimentary / comped">Complimentary / comped</option><option value="other">Other</option></select></label>
+            <label className="block"><span className="text-sm font-semibold text-ink">Date/time</span><input aria-label="Waste date/time" className="input mt-1" type="datetime-local" value={wasteOccurredAt} onChange={(event) => setWasteOccurredAt(event.target.value)} /></label>
+            <label className="block"><span className="text-sm font-semibold text-ink">Note</span><input className="input mt-1" value={wasteNote} onChange={(event) => setWasteNote(event.target.value)} placeholder="Optional context" /></label>
+          </div>
+          <p className="mt-4 text-xs text-muted">Current cost estimate: {(selectedItemDetail?.averageUnitCost ?? draft.averageUnitCost) > 0 ? formatMoney(wasteQuantity * (selectedItemDetail?.averageUnitCost ?? draft.averageUnitCost)) : "Not available until a purchase cost is recorded"}.</p>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" type="button" disabled={saving} onClick={() => setWasteModalOpen(false)}>Cancel</Button>
+            <Button disabled={saving || wasteQuantity <= 0} type="button" onClick={() => void saveWaste()}>{saving ? "Saving…" : "Record waste"}</Button>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }

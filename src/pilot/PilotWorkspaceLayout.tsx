@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, Building2, ChevronLeft, ChevronRight, ExternalLink, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
+import { Modal } from "../components/Modal";
+import { Button } from "../components/Button";
 import { usePilotSession } from "./PilotSessionProvider";
-import { fetchPilotAttention } from "./pilotApi";
+import { fetchPilotAttention, updatePilotLocation, type PilotLocation } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
 const navItems = [
-  { to: "/app/dashboard", label: "Dashboard" },
-  { to: "/app/purchases", label: "Purchases" },
-  { to: "/app/inventory", label: "Inventory" },
-  { to: "/app/menu-costing", label: "Menu Costing", moduleKey: "MENU_COSTING" },
-  { to: "/app/square", label: "Square", moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/daily-close", label: "Daily Close", moduleKey: "DAILY_CLOSE" },
-  { to: "/app/square-usage", label: "Usage / Variance", moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/stock-counts", label: "Stock Counts" },
-  { to: "/app/reorder-plan", label: "Reorder Plan" },
+  { to: "/app/dashboard", label: "Dashboard", group: "Overview", icon: LayoutDashboard },
+  { to: "/app/purchases", label: "Purchases", group: "Operations", icon: ReceiptText },
+  { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
+  { to: "/app/stock-counts", label: "Stock Counts", group: "Operations", icon: ClipboardList },
+  { to: "/app/reorder-plan", label: "Reorder Plan", group: "Operations", icon: ShoppingCart },
+  { to: "/app/menu-costing", label: "Menu Costing", group: "Menu & Cost", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
+  { to: "/app/square", label: "Square", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/square-usage", label: "Usage / Variance", group: "Sales & Close", icon: BarChart3, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/daily-close", label: "Daily Close", group: "Sales & Close", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
 ];
+
+const navigationGroups = ["Overview", "Operations", "Menu & Cost", "Sales & Close"] as const;
 
 function AnalyticsTracker() {
   const location = useLocation();
@@ -35,16 +39,16 @@ function NavItem({
   to,
   label,
   collapsed = false,
-  children,
+  icon,
   onClick,
   badge,
 }: {
   to: string;
   label: string;
   collapsed?: boolean;
-  children: ReactNode;
   onClick?: () => void;
   badge?: number;
+  icon: ReactNode;
 }) {
   return (
     <NavLink
@@ -60,12 +64,10 @@ function NavItem({
       }
       onClick={onClick}
     >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center text-current">{icon}</span>
       <span className={collapsed ? "sr-only" : "flex min-w-0 flex-1 items-center justify-between gap-2 truncate"}>
-        <span className="truncate">{children}</span>
+        <span className="truncate">{label}</span>
         {badge && badge > 0 ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900" aria-label={`${badge} needs attention`}>{badge}</span> : null}
-      </span>
-      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border text-[10px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
-        {label.slice(0, 1)}
       </span>
     </NavLink>
   );
@@ -75,6 +77,11 @@ export function PilotWorkspaceLayout() {
   const { error, user, organization, enabledModuleKeys, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<PilotLocation | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [operationalAttention, setOperationalAttention] = useState<{ reorder: number }>({ reorder: 0 });
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") {
@@ -88,6 +95,10 @@ export function PilotWorkspaceLayout() {
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => !item.moduleKey || enabledModuleKeySet.has(item.moduleKey)),
     [enabledModuleKeySet],
+  );
+  const visibleNavigationGroups = useMemo(
+    () => navigationGroups.map((label) => ({ label, items: visibleNavItems.filter((item) => item.group === label) })).filter((group) => group.items.length > 0),
+    [visibleNavItems],
   );
   const locationLabel = useMemo(() => {
     if (!currentLocation) {
@@ -153,6 +164,28 @@ export function PilotWorkspaceLayout() {
       return;
     }
     await switchOrganization(organizationId);
+  };
+
+  const openSettings = () => {
+    setSettingsDraft(currentLocation ? { ...currentLocation } : null);
+    setSettingsError(null);
+    setAccountMenuOpen(false);
+    setSettingsOpen(true);
+  };
+
+  const saveSettings = async () => {
+    if (!settingsDraft) return;
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      await updatePilotLocation(settingsDraft.id, settingsDraft);
+      await refreshSession();
+      setSettingsOpen(false);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Could not save location settings.");
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   if (!organization) {
@@ -404,11 +437,18 @@ export function PilotWorkspaceLayout() {
             </div>
           ) : null}
 
-          <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-0.5" : ""}`}>
-            {visibleNavItems.map((item) => (
-              <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined}>
-                {item.label}
-              </NavItem>
+          <nav className={`mt-6 space-y-5 ${desktopSidebarCollapsed ? "px-0.5" : ""}`} aria-label="Workspace navigation">
+            {visibleNavigationGroups.map((group) => (
+              <section key={group.label} aria-labelledby={`desktop-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`}>
+                <p id={`desktop-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`} className={desktopSidebarCollapsed ? "sr-only" : "px-3 pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-muted"}>
+                  {group.label}
+                </p>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} />
+                  ))}
+                </div>
+              </section>
             ))}
           </nav>
 
@@ -451,18 +491,20 @@ export function PilotWorkspaceLayout() {
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm"
                 type="button"
                 onClick={() => setMobileNavOpen(true)}
+                aria-label="Open navigation"
               >
                 <Menu className="h-5 w-5" />
               </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink">{currentSectionLabel}</p>
               </div>
-              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void refreshSession()} title="Refresh session">
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void refreshSession()} title="Refresh session" aria-label="Refresh session">
                 <RefreshCw className="h-4 w-4" />
               </button>
-              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" onClick={() => void signOut()} title="Sign out">
-                <LogOut className="h-4 w-4" />
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}>
+                <UserCircle className="h-4 w-4" />
               </button>
+              {accountMenuOpen ? <div className="absolute right-4 top-14 z-40 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
             </div>
 
             <div className="hidden items-center justify-between gap-4 px-5 py-3 xl:flex">
@@ -470,7 +512,7 @@ export function PilotWorkspaceLayout() {
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Operations workspace</p>
                 <h2 className="mt-1 text-lg font-bold tracking-tight text-ink">{currentSectionLabel}</h2>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="relative flex items-center gap-3">
                 <button
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                   type="button"
@@ -504,6 +546,8 @@ export function PilotWorkspaceLayout() {
                   <RefreshCw className="h-4 w-4" />
                   Refresh session
                 </button>
+                <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}><UserCircle className="h-4 w-4" />Account</button>
+                {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
               </div>
             </div>
           </header>
@@ -537,7 +581,7 @@ export function PilotWorkspaceLayout() {
       {mobileNavOpen ? (
         <div className="fixed inset-0 z-30 xl:hidden">
           <button className="absolute inset-0 bg-slate-900/35" type="button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />
-          <div className="absolute left-0 top-0 h-full w-[86%] max-w-sm border-r border-line bg-white p-4 shadow-2xl">
+          <div className="absolute left-0 top-0 flex h-full w-[86%] max-w-sm flex-col border-r border-line bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
@@ -584,15 +628,22 @@ export function PilotWorkspaceLayout() {
               )}
             </div>
 
-            <nav className="mt-6 space-y-2">
-              {visibleNavItems.map((item) => (
-                <NavItem key={item.to} to={item.to} label={item.label} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)}>
-                  {item.label}
-                </NavItem>
+            <nav className="mt-6 min-h-0 flex-1 space-y-5 overflow-y-auto pr-1" aria-label="Workspace navigation">
+              {visibleNavigationGroups.map((group) => (
+                <section key={group.label} aria-labelledby={`mobile-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`}>
+                  <p id={`mobile-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`} className="px-3 pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
+                    {group.label}
+                  </p>
+                  <div className="space-y-1">
+                    {group.items.map((item) => (
+                      <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)} />
+                    ))}
+                  </div>
+                </section>
               ))}
             </nav>
 
-            <div className="mt-6 space-y-2 border-t border-line pt-5">
+            <div className="mt-4 shrink-0 space-y-2 border-t border-line pt-4">
               <button
                 className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                 type="button"
@@ -612,6 +663,7 @@ export function PilotWorkspaceLayout() {
           </div>
         </div>
       ) : null}
+      {settingsOpen && settingsDraft ? <Modal title="Restaurant settings" onClose={() => setSettingsOpen(false)}><div className="space-y-4"><p className="text-sm text-muted">These settings apply to the active restaurant location.</p>{settingsError ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{settingsError}</p> : null}<div className="grid gap-4 sm:grid-cols-2">{([['name','Location name'],['addressLine1','Address'],['addressLine2','Address line 2'],['city','City'],['region','Province / state'],['postalCode','Postal / ZIP code'],['country','Country'],['timezone','Timezone (IANA)']] as const).map(([field,label]) => <label key={field} className="block"><span className="text-sm font-semibold text-ink">{label}</span><input className="input mt-1" value={settingsDraft[field] ?? ""} onChange={(event) => setSettingsDraft((current) => current ? { ...current, [field]: event.target.value } : current)} placeholder={field === 'timezone' ? 'America/Toronto' : undefined} /></label>)}</div><p className="text-sm text-muted">Use an IANA timezone such as America/Toronto. Operational timestamps, including waste and stock activity, follow this location.</p><div className="flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setSettingsOpen(false)}>Cancel</Button><Button type="button" disabled={settingsSaving} onClick={() => void saveSettings()}>{settingsSaving ? 'Saving…' : 'Save settings'}</Button></div></div></Modal> : null}
     </div>
   );
 }

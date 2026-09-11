@@ -29,6 +29,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "pilot_api.correct_purchase_invoice": "purchases.manage",
     "pilot_api.bootstrap": "operational.read",
     "pilot_api.set_current_location": "operational.read",
+    "pilot_api.update_pilot_location": "organization.manage",
     "pilot_api.dashboard": "operational.read",
     "pilot_api.attention": "operational.read",
     "pilot_api.purchases_ocr": "purchases.manage",

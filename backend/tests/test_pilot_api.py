@@ -86,6 +86,33 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
 
 
+def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, client):
+    login(client)
+    with app.app_context():
+        location = RestaurantLocation.query.filter_by(name=LOCAL_LOCATION_NAME).one()
+        location_id = location.id
+        organization_id = location.organization_id
+
+    response = client.patch(
+        f"/api/pilot/locations/{location_id}",
+        headers=csrf_headers(client),
+        json={"name": "Flowtally Pilot Kitchen", "addressLine1": "10 King St", "addressLine2": "", "city": "Toronto", "region": "ON", "postalCode": "M5H 1A1", "country": "Canada", "timezone": "America/Vancouver"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["location"]["timezone"] == "America/Vancouver"
+
+    invalid = client.patch(f"/api/pilot/locations/{location_id}", headers=csrf_headers(client), json={"timezone": "Not/A-Timezone"})
+    assert invalid.status_code == 400
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        other_organization = make_operational_organization(owner, name="Other location settings", location_name="Other location")
+        assert other_organization.id != organization_id
+        other_location_id = RestaurantLocation.query.filter_by(organization_id=other_organization.id).one().id
+    forbidden = client.patch(f"/api/pilot/locations/{other_location_id}", headers=csrf_headers(client), json={"timezone": "America/Toronto"})
+    assert forbidden.status_code == 403
+
+
 def test_reorder_recommendation_requires_positive_quantity(app, client):
     login(client)
 

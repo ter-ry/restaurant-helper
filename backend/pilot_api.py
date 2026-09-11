@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import re
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -943,6 +944,50 @@ def set_current_location():
     )
     response_payload = {"currentLocation": serialize_location(location)}
     return _commit_json(response_payload)
+
+
+@bp.patch("/api/pilot/locations/<int:location_id>")
+@login_required
+def update_pilot_location(location_id: int):
+    """Update the active tenant's own location settings.
+
+    This deliberately lives with the pilot API rather than the platform-admin
+    configuration endpoints: the selected location is already tenant-scoped by
+    ``_require_context`` and operational writers use the same permission gate.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, locations, _ = context
+    permission_error = _require_role(membership, "organization.manage")
+    if permission_error is not None:
+        return permission_error
+    location = _check_location_access(location_id, locations)
+    if location is None or location.organization_id != organization.id:
+        return json_error("That location is not available to the current account.", 403)
+
+    payload = _json_body()
+    fields = ("name", "addressLine1", "addressLine2", "city", "region", "postalCode", "country", "timezone")
+    values = {field: str(payload.get(field, getattr(location, re.sub(r"(?<!^)(?=[A-Z])", "_", field).lower(), ""))).strip() for field in fields}
+    if not values["name"]:
+        raise RequestValidationError("Validation failed.", {"name": "Location name is required."})
+    if not values["timezone"]:
+        raise RequestValidationError("Validation failed.", {"timezone": "Timezone is required."})
+    try:
+        ZoneInfo(values["timezone"])
+    except ZoneInfoNotFoundError:
+        raise RequestValidationError("Validation failed.", {"timezone": "Use a valid IANA timezone, such as America/Toronto."}) from None
+
+    location.name = values["name"]
+    location.address_line1 = values["addressLine1"]
+    location.address_line2 = values["addressLine2"]
+    location.city = values["city"]
+    location.region = values["region"]
+    location.postal_code = values["postalCode"]
+    location.country = values["country"] or "Canada"
+    location.timezone = values["timezone"]
+    record_audit_event(event_type="tenant.location_updated", entity_type="restaurant_location", entity_id=location.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"source": "pilot-settings"})
+    return _commit_json({"location": serialize_location(location)})
 
 
 @bp.get("/api/pilot/dashboard")

@@ -9,7 +9,7 @@ const mockSession = vi.hoisted(() => ({
   organizations: [{ organization: { id: 42, name: "Pilot Cafe" }, membershipRole: "owner" }],
   currentLocation: { id: 7, name: "Line Kitchen" },
   locations: [{ id: 7, name: "Line Kitchen" }],
-  enabledModuleKeys: ["SQUARE_INTEGRATION", "DAILY_CLOSE"],
+  enabledModuleKeys: ["MENU_COSTING", "SQUARE_INTEGRATION", "DAILY_CLOSE"],
   user: { email: "pilot@example.com" },
   error: null,
   signOut: vi.fn(),
@@ -62,6 +62,15 @@ describe("PilotWorkspaceLayout", () => {
     expect(screen.getByRole("link", { name: "Square" })).toHaveAttribute("href", "/app/square");
     expect(screen.getByRole("link", { name: "Daily Close" })).toHaveAttribute("href", "/app/daily-close");
     expect(screen.getByText("Dashboard outlet")).toBeVisible();
+  });
+
+  it("organizes workspace navigation into the operational groups", () => {
+    renderLayout();
+
+    expect(screen.getByText("Overview")).toBeVisible();
+    expect(screen.getByText("Operations")).toBeVisible();
+    expect(screen.getByText("Menu & Cost")).toBeVisible();
+    expect(screen.getByText("Sales & Close")).toBeVisible();
   });
 
   it("shows an actionable reorder badge and omits it when pressure is clear", async () => {

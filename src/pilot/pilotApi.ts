@@ -206,6 +206,15 @@ export async function switchPilotLocation(locationId: number) {
   });
 }
 
+export async function updatePilotLocation(locationId: number, payload: Pick<PilotLocation, "name" | "addressLine1" | "addressLine2" | "city" | "region" | "postalCode" | "country" | "timezone">) {
+  const csrfToken = await getPilotCsrfToken();
+  return requestJson<{ location: PilotLocation }>(`/api/pilot/locations/${locationId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface PilotSupplier {
   id: number;
   organizationId: number;
