@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, Building2, ChevronLeft, ChevronRight, ExternalLink, Menu, LogOut, MapPin, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, UtensilsCrossed, LogOut, X } from "lucide-react";
 import { usePilotSession } from "./PilotSessionProvider";
 import { fetchPilotAttention } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
 const navItems = [
-  { to: "/app/dashboard", label: "Dashboard" },
-  { to: "/app/purchases", label: "Purchases" },
-  { to: "/app/inventory", label: "Inventory" },
-  { to: "/app/menu-costing", label: "Menu Costing", moduleKey: "MENU_COSTING" },
-  { to: "/app/square", label: "Square", moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/daily-close", label: "Daily Close", moduleKey: "DAILY_CLOSE" },
-  { to: "/app/square-usage", label: "Usage / Variance", moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/stock-counts", label: "Stock Counts" },
-  { to: "/app/reorder-plan", label: "Reorder Plan" },
+  { to: "/app/dashboard", label: "Dashboard", group: "Overview", icon: LayoutDashboard },
+  { to: "/app/purchases", label: "Purchases", group: "Operations", icon: ReceiptText },
+  { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
+  { to: "/app/stock-counts", label: "Stock Counts", group: "Operations", icon: ClipboardList },
+  { to: "/app/reorder-plan", label: "Reorder Plan", group: "Operations", icon: ShoppingCart },
+  { to: "/app/menu-costing", label: "Menu Costing", group: "Cost & Menu", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
+  { to: "/app/square", label: "Square", group: "Sales & Reconciliation", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/square-usage", label: "Usage / Variance", group: "Sales & Reconciliation", icon: BarChart3, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/daily-close", label: "Daily Close", group: "Sales & Reconciliation", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
 ];
 
 function AnalyticsTracker() {
@@ -35,16 +35,16 @@ function NavItem({
   to,
   label,
   collapsed = false,
-  children,
+  icon,
   onClick,
   badge,
 }: {
   to: string;
   label: string;
   collapsed?: boolean;
-  children: ReactNode;
   onClick?: () => void;
   badge?: number;
+  icon: ReactNode;
 }) {
   return (
     <NavLink
@@ -60,12 +60,10 @@ function NavItem({
       }
       onClick={onClick}
     >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center text-current">{icon}</span>
       <span className={collapsed ? "sr-only" : "flex min-w-0 flex-1 items-center justify-between gap-2 truncate"}>
-        <span className="truncate">{children}</span>
+        <span className="truncate">{label}</span>
         {badge && badge > 0 ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900" aria-label={`${badge} needs attention`}>{badge}</span> : null}
-      </span>
-      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border text-[10px] font-bold uppercase tracking-wide ${collapsed ? "border-brand-100 bg-white text-brand-700" : "border-transparent bg-white/70 text-slate-500"}`}>
-        {label.slice(0, 1)}
       </span>
     </NavLink>
   );
@@ -406,9 +404,7 @@ export function PilotWorkspaceLayout() {
 
           <nav className={`mt-6 space-y-2 ${desktopSidebarCollapsed ? "px-0.5" : ""}`}>
             {visibleNavItems.map((item) => (
-              <NavItem key={item.to} to={item.to} label={item.label} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined}>
-                {item.label}
-              </NavItem>
+              <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} />
             ))}
           </nav>
 
@@ -586,9 +582,7 @@ export function PilotWorkspaceLayout() {
 
             <nav className="mt-6 space-y-2">
               {visibleNavItems.map((item) => (
-                <NavItem key={item.to} to={item.to} label={item.label} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)}>
-                  {item.label}
-                </NavItem>
+                <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} onClick={() => setMobileNavOpen(false)} />
               ))}
             </nav>
 

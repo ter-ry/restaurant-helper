@@ -26,6 +26,8 @@ import {
   updatePilotSupplier,
 } from "./pilotApi";
 import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
+import { usePilotSession } from "./PilotSessionProvider";
 
 interface InventoryDraft {
   id: number | null;
@@ -139,6 +141,7 @@ function formatInventoryValue(currentOnHand: number, averageUnitCost: number | n
 
 export function PilotInventoryPage() {
   const navigate = useNavigate();
+  const { currentLocation } = usePilotSession();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -164,7 +167,7 @@ export function PilotInventoryPage() {
   const [wasteQuantity, setWasteQuantity] = useState(0);
   const [wasteReason, setWasteReason] = useState("spoilage / expired");
   const [wasteNote, setWasteNote] = useState("");
-  const [wasteOccurredAt, setWasteOccurredAt] = useState(() => new Date().toISOString().slice(0, 16));
+  const [wasteOccurredAt, setWasteOccurredAt] = useState(() => locationNowDatetimeLocal("America/Toronto"));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -208,6 +211,10 @@ export function PilotInventoryPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (currentLocation?.timezone) setWasteOccurredAt(locationNowDatetimeLocal(currentLocation.timezone));
+  }, [currentLocation?.timezone]);
 
   const selectedItem = useMemo(() => data?.items.find((item) => item.id === selectedId) ?? null, [data?.items, selectedId]);
   const selectedSupplier = useMemo(() => suppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null, [selectedSupplierId, suppliers]);
@@ -407,7 +414,7 @@ export function PilotInventoryPage() {
         unit: draft.stockUnit,
         reason: wasteReason,
         note: wasteNote,
-        occurredAt: new Date(wasteOccurredAt).toISOString(),
+        occurredAt: locationDatetimeLocalToUtcIso(wasteOccurredAt, currentLocation?.timezone || "America/Toronto"),
       });
       setDraft((current) => current ? { ...current, currentOnHand: current.currentOnHand - wasteQuantity } : current);
       setWasteQuantity(0);
