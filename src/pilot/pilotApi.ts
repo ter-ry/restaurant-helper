@@ -164,8 +164,8 @@ export async function loginToPilot(email: string, password: string) {
   });
 }
 
-export async function logoutOfPilot() {
-  const csrfToken = await getPilotCsrfToken();
+export async function logoutOfPilot(existingCsrfToken?: string | null) {
+  const csrfToken = existingCsrfToken || await getPilotCsrfToken();
   return requestJson<{ ok: true }>("/api/auth/logout", {
     method: "POST",
     headers: {

@@ -2377,14 +2377,14 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await installMockApi(page, state);
 
   await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Capture invoice and receive stock" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Purchases" })).toBeVisible();
 
   const editorCard = page.getByTestId("purchase-editor-card");
   const historyCard = page.getByTestId("purchase-history-card");
   await expect(historyCard).toBeVisible();
   await expect(editorCard).toHaveCount(0);
-  await expect(historyCard.getByRole("heading", { name: "Review queue and purchase history" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Review queue and purchase history" })).toHaveCount(1);
+  await expect(historyCard.getByRole("heading", { name: "Purchase history" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Purchase history" })).toHaveCount(1);
   await expect(historyCard.getByLabel("Supplier")).toHaveCount(0);
   await expect(historyCard.getByLabel("Invoice number")).toHaveCount(0);
 

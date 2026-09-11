@@ -480,7 +480,7 @@ export function PilotInventoryPage() {
   };
 
   const renderItemTable = () => (
-    <Card className="workspace-card">
+    <Card className="workspace-card p-4">
       <SectionHeader title="Items" description="Search, open, and keep the stock list current." />
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-slate-50 px-4 py-3">
@@ -543,7 +543,7 @@ export function PilotInventoryPage() {
         <p className="mt-1">PAR is the target stock level. Minimum is the point where reorder becomes urgent.</p>
       </div>
 
-      <div className="mt-5">
+      <div className="mt-4">
         <SectionHeader title="Recent movements" description="What changed most recently." />
         <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
           {(data?.movements ?? []).slice(0, 8).map((movement) => (
@@ -784,8 +784,8 @@ export function PilotInventoryPage() {
     const status = stockStatus(item);
 
     return (
-      <div className="space-y-5">
-        <Card className="p-5">
+      <div className="space-y-4">
+        <Card className="p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-3">
               <Button variant="secondary" icon={<ArrowLeft className="h-4 w-4" />} type="button" onClick={closeItemWorkspace}>
@@ -845,7 +845,7 @@ export function PilotInventoryPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <ReadOnlyStat label="On hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
           <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1 w-28" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
           <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1 w-28" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
@@ -857,8 +857,8 @@ export function PilotInventoryPage() {
         </div>
 
         {itemDetailTab === "overview" ? (
-          <div className="space-y-5">
-            <Card className="p-5">
+          <div className="space-y-4">
+            <Card className="p-4">
               <SectionHeader title="Stock actions" description="Record a stock movement or waste event without changing the item's master data." />
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button icon={<Scale className="h-4 w-4" />} type="button" onClick={() => setAdjustmentModalOpen(true)}>
@@ -1167,13 +1167,12 @@ export function PilotInventoryPage() {
 
   return (
     <div className="workspace-page">
-      {loading ? <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted">{initialLoading ? "Loading inventory workspace…" : "Refreshing inventory data…"}</div> : null}
       {error ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
         <WorkspacePageHeader
           eyebrow="Inventory"
-          title="Browse stock, manage suppliers, and keep cost basis clear"
-          description="Average cost values inventory and recipes. Latest purchase price stays visible for supplier comparisons and reorder estimates."
+          title="Inventory"
+          description="Track stock, suppliers, and cost basis."
           actions={
             <>
               <Button

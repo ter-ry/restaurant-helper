@@ -278,7 +278,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Latest cost" })).toBeVisible();
     expect(screen.queryByText("Count sessions")).not.toBeInTheDocument();
@@ -301,7 +301,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
@@ -380,7 +380,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
@@ -456,7 +456,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
@@ -480,7 +480,7 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Browse stock, manage suppliers, and keep cost basis clear" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Create item" }));
 
     expect(await screen.findByRole("heading", { name: "Create inventory item" })).toBeVisible();
