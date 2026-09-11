@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotPurchaseInvoice,
@@ -285,6 +286,7 @@ export function PilotPurchasesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<PurchaseDraft>(buildBlankDraft());
   const [detailInvoice, setDetailInvoice] = useState<PilotPurchaseInvoice | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -338,6 +340,7 @@ export function PilotPurchasesPage() {
         setDraft(invoiceToDraft(resolvedInvoice));
         setDetailInvoice(null);
         setShowReview(false);
+        setEditorOpen(true);
       } else {
         setSelectedId(null);
         setDraft(buildBlankDraft());
@@ -479,6 +482,7 @@ export function PilotPurchasesPage() {
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
       setShowReview(false);
+      setEditorOpen(false);
       setReceiveMessage(`Invoice ${saved.invoiceNumber || "purchase"} received into inventory.`);
       navigate(location.pathname, { replace: true });
       await load(null);
@@ -526,6 +530,7 @@ export function PilotPurchasesPage() {
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
       setShowReview(false);
+      setEditorOpen(false);
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
       navigate(location.pathname, { replace: true });
       await load(null);
@@ -571,12 +576,14 @@ export function PilotPurchasesPage() {
       setDraft(buildBlankDraft());
       setDetailInvoice(invoice);
       setShowReview(false);
+      setEditorOpen(false);
       return;
     }
     setDetailInvoice(null);
     setSelectedId(invoice.id);
     setDraft(invoiceToDraft(invoice));
     setShowReview(false);
+    setEditorOpen(true);
   };
 
   const addLine = () => {
@@ -722,10 +729,7 @@ export function PilotPurchasesPage() {
                 setOcrPreviewType(null);
                 setOcrPreviewName("");
                 setShowReview(false);
-                window.requestAnimationFrame(() => {
-                  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-                  editorPanelRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
-                });
+                setEditorOpen(true);
               }}
             >
               New purchase
@@ -741,7 +745,7 @@ export function PilotPurchasesPage() {
                 if (file) void uploadInvoice(file);
               }}
             />
-            <Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>
+            <Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => { setEditorOpen(true); ocrInputRef.current?.click(); }} disabled={ocrLoading || saving}>
               {ocrLoading ? "Processing invoice…" : "Upload invoice"}
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
@@ -782,9 +786,9 @@ export function PilotPurchasesPage() {
         </div>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.85fr)]">
+      {editorOpen ? <Modal title="Purchase editor" size="full" onClose={() => setEditorOpen(false)}>
         <div ref={editorPanelRef} className="scroll-mt-32">
-          <Card hidden={!!detailInvoice} aria-hidden={detailInvoice ? "true" : undefined} className={detailInvoice ? "hidden" : "workspace-card w-full"} data-testid="purchase-editor-card">
+          <Card className="workspace-card w-full" data-testid="purchase-editor-card">
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
@@ -1030,7 +1034,9 @@ export function PilotPurchasesPage() {
             </div>
           </Card>
         </div>
+      </Modal> : null}
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.85fr)]">
         <div className="space-y-6">
           <Card className="w-full p-6" data-testid="purchase-history-card">
             <SectionHeader title="Review queue and purchase history" description="Newest purchases first. Open one to continue review." />

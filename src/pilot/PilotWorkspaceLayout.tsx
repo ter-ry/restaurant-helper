@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
 import { Modal } from "../components/Modal";
+import { Button } from "../components/Button";
 import { usePilotSession } from "./PilotSessionProvider";
-import { fetchPilotAttention } from "./pilotApi";
+import { fetchPilotAttention, updatePilotLocation, type PilotLocation } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 
 const navItems = [
@@ -76,6 +77,9 @@ export function PilotWorkspaceLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<PilotLocation | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [operationalAttention, setOperationalAttention] = useState<{ reorder: number }>({ reorder: 0 });
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") {
@@ -154,6 +158,28 @@ export function PilotWorkspaceLayout() {
       return;
     }
     await switchOrganization(organizationId);
+  };
+
+  const openSettings = () => {
+    setSettingsDraft(currentLocation ? { ...currentLocation } : null);
+    setSettingsError(null);
+    setAccountMenuOpen(false);
+    setSettingsOpen(true);
+  };
+
+  const saveSettings = async () => {
+    if (!settingsDraft) return;
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      await updatePilotLocation(settingsDraft.id, settingsDraft);
+      await refreshSession();
+      setSettingsOpen(false);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Could not save location settings.");
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   if (!organization) {
@@ -504,7 +530,7 @@ export function PilotWorkspaceLayout() {
                   Refresh session
                 </button>
                 <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}><UserCircle className="h-4 w-4" />Account</button>
-                {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={() => { setAccountMenuOpen(false); setSettingsOpen(true); }}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
+                {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
               </div>
             </div>
           </header>
@@ -611,7 +637,7 @@ export function PilotWorkspaceLayout() {
           </div>
         </div>
       ) : null}
-      {settingsOpen ? <Modal title="Restaurant settings" onClose={() => setSettingsOpen(false)}><div className="space-y-4"><p className="text-sm text-muted">Location settings use the active restaurant context.</p><label className="block"><span className="text-sm font-semibold text-ink">Restaurant location</span><input className="input mt-1" value={currentLocation?.name ?? ""} readOnly /></label><label className="block"><span className="text-sm font-semibold text-ink">Restaurant timezone</span><input className="input mt-1" value={currentLocation?.timezone ?? "America/Toronto"} readOnly /></label><p className="text-sm text-muted">Timezone controls operational timestamps, including waste and stock activity.</p></div></Modal> : null}
+      {settingsOpen && settingsDraft ? <Modal title="Restaurant settings" onClose={() => setSettingsOpen(false)}><div className="space-y-4"><p className="text-sm text-muted">These settings apply to the active restaurant location.</p>{settingsError ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{settingsError}</p> : null}<div className="grid gap-4 sm:grid-cols-2">{([['name','Location name'],['addressLine1','Address'],['addressLine2','Address line 2'],['city','City'],['region','Province / state'],['postalCode','Postal / ZIP code'],['country','Country'],['timezone','Timezone (IANA)']] as const).map(([field,label]) => <label key={field} className="block"><span className="text-sm font-semibold text-ink">{label}</span><input className="input mt-1" value={settingsDraft[field] ?? ""} onChange={(event) => setSettingsDraft((current) => current ? { ...current, [field]: event.target.value } : current)} placeholder={field === 'timezone' ? 'America/Toronto' : undefined} /></label>)}</div><p className="text-sm text-muted">Use an IANA timezone such as America/Toronto. Operational timestamps, including waste and stock activity, follow this location.</p><div className="flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setSettingsOpen(false)}>Cancel</Button><Button type="button" disabled={settingsSaving} onClick={() => void saveSettings()}>{settingsSaving ? 'Saving…' : 'Save settings'}</Button></div></div></Modal> : null}
     </div>
   );
 }

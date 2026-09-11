@@ -246,6 +246,8 @@ describe("PilotPurchasesPage", () => {
   it("starts on a blank new purchase even when historical completed invoices exist", async () => {
     renderPage();
 
+    expect(screen.queryByTestId("purchase-editor-card")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
     expect(await screen.findByRole("heading", { name: "New purchase" })).toBeVisible();
     expect(screen.queryByRole("tab", { name: "Details" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Invoice items" })).not.toBeInTheDocument();
@@ -262,6 +264,7 @@ describe("PilotPurchasesPage", () => {
   it("creates a mapped invoice with a blank invoice number and readable transaction fields", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Fresh Dairy Toronto" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
@@ -292,6 +295,7 @@ describe("PilotPurchasesPage", () => {
   it("adds a supplier inline without losing the purchase draft", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getByRole("button", { name: "+ New supplier" }));
     fireEvent.change(screen.getByLabelText("New supplier name"), { target: { value: "North Star Produce" } });
@@ -305,6 +309,7 @@ describe("PilotPurchasesPage", () => {
   it("uploads an invoice into the existing review draft and preserves review state", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     const file = new File(["%PDF-1.4"], "fresh-foods.pdf", { type: "application/pdf" });
     fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
@@ -322,6 +327,7 @@ describe("PilotPurchasesPage", () => {
     mockApi.uploadPilotInvoiceOcr.mockRejectedValueOnce(new PilotApiError("OCR service unavailable.", 503));
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.change(screen.getByLabelText("Invoice number"), { target: { value: "MANUAL-1" } });
     const file = new File(["bad"], "broken.pdf", { type: "application/pdf" });
@@ -334,6 +340,7 @@ describe("PilotPurchasesPage", () => {
   it("auto-maps one exact active inventory name without fuzzy matching", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
     expect(screen.getByLabelText("Inventory item")).toHaveValue("301");
@@ -349,6 +356,7 @@ describe("PilotPurchasesPage", () => {
     mockApi.createPilotPurchaseInvoice.mockRejectedValueOnce(new PilotApiError("Invoice validation failed.", 400, { supplierName: "Supplier is required." }));
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]);
 
@@ -358,6 +366,7 @@ describe("PilotPurchasesPage", () => {
   it("moves a draft invoice through details, lines, and review tabs", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getByRole("button", { name: /FD-1002/ }));
 
@@ -378,6 +387,7 @@ describe("PilotPurchasesPage", () => {
   it("opens completed invoice history in a read-only detail modal", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getByRole("button", { name: /FD-1001/ }));
 
@@ -410,6 +420,7 @@ describe("PilotPurchasesPage", () => {
   it("resets to a blank draft after receiving a purchase", async () => {
     renderPage();
 
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getByRole("button", { name: /FD-1002/ }));
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
@@ -417,6 +428,7 @@ describe("PilotPurchasesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
 
     expect(await screen.findByText("Invoice FD-1002 received into inventory.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "New purchase" })).toBeVisible());
     expect(screen.getByLabelText("Supplier")).toHaveValue("");
     expect(screen.getByLabelText("Invoice number")).toHaveValue("");

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
@@ -1203,11 +1204,9 @@ export function PilotInventoryPage() {
           />
           {inventoryTab === "suppliers" ? renderSupplierWorkspace() : renderItemTable()}
         </>
-      ) : workspaceMode === "create" ? (
-        renderCreateWorkspace()
-      ) : (
-        renderExistingWorkspace()
-      )}
+      ) : null}
+      {workspaceMode === "create" ? <Modal title="Add inventory item" size="large" onClose={closeItemWorkspace}>{renderCreateWorkspace()}</Modal> : null}
+      {workspaceMode === "existing" ? <Modal title={selectedItemDetail?.name || draft.name || "Inventory item"} size="full" onClose={closeItemWorkspace}>{renderExistingWorkspace()}</Modal> : null}
     </div>
   );
 }
