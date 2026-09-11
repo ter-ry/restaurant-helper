@@ -3,6 +3,7 @@ import {
   fetchCurrentOrganization,
   fetchPilotOrganizations,
   fetchPilotSession,
+  getPilotCsrfToken,
   loginToPilot,
   logoutOfPilot,
   PilotApiError,
@@ -87,6 +88,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
   const [membershipRole, setMembershipRole] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const refreshSession = async () => {
     if (!pilotAppEnabled) {
@@ -221,11 +223,27 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (signingOut) return;
     setSigningOut(true);
+    setSignOutError(null);
     try {
       await logoutOfPilot(csrfToken);
-    } catch {
-      // Session state will still be cleared locally.
+    } catch (err) {
+      const apiError = err instanceof PilotApiError ? err : null;
+      if (apiError && (apiError.status === 400 || apiError.status === 403)) {
+        try {
+          const freshCsrfToken = await getPilotCsrfToken();
+          await logoutOfPilot(freshCsrfToken);
+        } catch {
+          setSigningOut(false);
+          setSignOutError("Could not sign out");
+          return;
+        }
+      } else {
+        setSigningOut(false);
+        setSignOutError("Could not sign out");
+        return;
+      }
     }
 
     setStatus("signedOut");
@@ -238,7 +256,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     setMembershipRole(null);
     setCsrfToken(null);
     setError(null);
-    window.location.replace("/app/login");
+    window.location.replace("/app/login?loggedOut=1");
   };
 
   const value = useMemo<PilotSessionValue>(
@@ -263,7 +281,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     [csrfToken, currentLocation, enabledModuleKeys, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, signingOut, status, switchLocation, switchOrganization, user],
   );
 
-  return <PilotSessionContext.Provider value={value}><div className={signingOut ? "pointer-events-none" : undefined}>{children}</div>{signingOut ? <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-white"><div className="text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700"><span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" /></div><p className="mt-4 text-sm font-semibold text-ink">Signing out…</p></div></div> : null}</PilotSessionContext.Provider>;
+  return <PilotSessionContext.Provider value={value}><div className={signingOut || signOutError ? "pointer-events-none" : undefined}>{children}</div>{signingOut || signOutError ? <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-white"><div className="pointer-events-auto text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">{signingOut ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" /> : <span className="text-lg font-bold">!</span>}</div><p className="mt-4 text-sm font-semibold text-ink">{signingOut ? "Signing out…" : "Could not sign out"}</p>{signOutError ? <div className="mt-4 flex justify-center gap-2"><button type="button" className="min-h-11 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white" onClick={() => void signOut()}>Retry</button><button type="button" className="min-h-11 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink" onClick={() => setSignOutError(null)}>Return to app</button></div> : null}</div></div> : null}</PilotSessionContext.Provider>;
 }
 
 export function usePilotSession() {
@@ -273,3 +291,4 @@ export function usePilotSession() {
   }
   return context;
 }
+

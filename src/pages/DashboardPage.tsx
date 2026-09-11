@@ -175,14 +175,13 @@ export function DashboardPage() {
   const heroPeriod = weekLabel();
 
   return (
-    <PageLayout title="Dashboard" description="Back-office control between POS and QuickBooks.">
+    <PageLayout title="Dashboard">
       <Card className="p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">
               {demo.customization.restaurantName} · {heroPeriod}
             </p>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Back-office control between POS and QuickBooks.</h2>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" to={purchasesRoute}>

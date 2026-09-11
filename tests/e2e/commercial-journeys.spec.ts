@@ -452,6 +452,7 @@ async function installMockApi(page: Page, state: MockState) {
     }
 
     if (path === "/api/auth/logout" && method === "POST") {
+      state.session = null;
       return jsonResponse(route, { ok: true });
     }
 
@@ -1464,6 +1465,22 @@ test("active customer Google sign-in returns into the app dashboard", async ({ p
   await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/app\/dashboard/);
   await expect(page.getByRole("heading", { name: "What the owner needs to know today" })).toBeVisible();
+});
+
+test("successful logout stays on the login page after session initialization", async ({ page }) => {
+  const organization = makeOrganization({ id: 5, name: "Starter Cafe", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE", isProspect: false });
+  const state: MockState = {
+    session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 7, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+    csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+  };
+  await installMockApi(page, state);
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Open account menu" }).last().click();
+  await page.getByRole("menu").getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/app\/login/);
+  await expect(page.getByRole("heading", { name: "Sign in to Flowtally" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+  await expect(page).not.toHaveURL(/\/app\/dashboard/);
 });
 
 test("mocked Google registration walks a prospect into onboarding", async ({ page }) => {

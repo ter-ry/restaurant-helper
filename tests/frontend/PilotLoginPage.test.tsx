@@ -58,4 +58,24 @@ describe("PilotLoginPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in locally" }));
     expect(signIn).toHaveBeenCalledWith("owner@flowtally.local", "PilotOwner123!");
   });
+
+  it("does not show a Google redirect during session initialization", () => {
+    vi.stubEnv("VITE_ENABLE_PILOT_SEED_LOGIN", "false");
+    sessionMocks.usePilotSession.mockReturnValue({ status: "loading", error: null });
+
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
+    expect(screen.queryByText("Redirecting to Google…")).not.toBeInTheDocument();
+  });
+
+  it("shows the redirect label only after Google is clicked", () => {
+    vi.stubEnv("VITE_ENABLE_PILOT_SEED_LOGIN", "false");
+    sessionMocks.usePilotSession.mockReturnValue({ status: "signedOut", error: null });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+
+    expect(screen.getByRole("button", { name: "Redirecting to Google…" })).toBeVisible();
+  });
 });
