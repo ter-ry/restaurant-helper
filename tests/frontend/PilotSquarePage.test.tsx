@@ -16,6 +16,8 @@ const mockApi = vi.hoisted(() => ({
   updatePilotSquareCatalogMapping: vi.fn(),
   disconnectPilotSquare: vi.fn(),
   beginPilotSquareConnection: vi.fn(),
+  previewPilotSquareMenuImport: vi.fn(),
+  importPilotSquareMenu: vi.fn(),
 }));
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
@@ -43,6 +45,8 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     updatePilotSquareCatalogMapping: mockApi.updatePilotSquareCatalogMapping,
     disconnectPilotSquare: mockApi.disconnectPilotSquare,
     beginPilotSquareConnection: mockApi.beginPilotSquareConnection,
+    previewPilotSquareMenuImport: mockApi.previewPilotSquareMenuImport,
+    importPilotSquareMenu: mockApi.importPilotSquareMenu,
   };
 });
 
@@ -224,6 +228,8 @@ describe("PilotSquarePage", () => {
     mockApi.updatePilotSquareCatalogMapping.mockReset();
     mockApi.disconnectPilotSquare.mockReset();
     mockApi.beginPilotSquareConnection.mockReset();
+    mockApi.previewPilotSquareMenuImport.mockReset();
+    mockApi.importPilotSquareMenu.mockReset();
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createDisconnectedConnection() });
     mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue(createCatalogMappingResponse());
     mockApi.fetchPilotMenuCosting.mockResolvedValue(createMenuCosting());
@@ -233,6 +239,8 @@ describe("PilotSquarePage", () => {
     mockApi.updatePilotSquareLocationMapping.mockResolvedValue({ connection: createConnectedConnection() });
     mockApi.updatePilotSquareCatalogMapping.mockResolvedValue({ connection: createConnectedConnection() });
     mockApi.disconnectPilotSquare.mockResolvedValue({ connection: createDisconnectedConnection() });
+    mockApi.previewPilotSquareMenuImport.mockResolvedValue({ locationId: 7, summary: { new: 1, mapped: 0, recipe_needed: 1, inactive: 0, conflict: 0 }, entries: [{ squareCatalogObjectId: 55, squareObjectId: "VAR-1", name: "Regular", parentName: "Test Burger", category: "Food", sellingPrice: 12, state: "recipe_needed", menuItemId: 901, isDeleted: false }] });
+    mockApi.importPilotSquareMenu.mockResolvedValue({ locationId: 7, summary: { new: 0, mapped: 0, recipe_needed: 1, inactive: 0, conflict: 0 }, entries: [{ squareCatalogObjectId: 55, squareObjectId: "VAR-1", name: "Regular", parentName: "Test Burger", category: "Food", sellingPrice: 12, state: "recipe_needed", menuItemId: 901, isDeleted: false }], result: { imported: 1 } });
   });
 
   it("shows the disconnected controls and keeps sync actions disabled", async () => {
@@ -327,5 +335,18 @@ describe("PilotSquarePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
     expect(await screen.findByText("Sync now completed.")).toBeVisible();
     await waitFor(() => expect(screen.queryByText("Square request failed (500)")).not.toBeInTheDocument());
+  });
+
+  it("reviews and imports the Square menu without treating recipes as mapping targets", async () => {
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+    expect(await screen.findByRole("button", { name: "Review import" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }));
+    expect(await screen.findByText("Already imported / existing")).toBeVisible();
+    expect(screen.getAllByText("Test Burger · Regular").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Recipe needed").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Assign recipes in Menu Costing" })).toHaveAttribute("href", "/app/menu-costing");
+    fireEvent.click(screen.getByRole("button", { name: "Import menu" }));
+    await waitFor(() => expect(mockApi.importPilotSquareMenu).toHaveBeenCalledWith(42, 7));
   });
 });

@@ -314,6 +314,8 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByLabelText("Description")).toHaveValue("Milk 2L");
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
     expect(mockApi.uploadPilotInvoiceOcr).toHaveBeenCalledWith(file);
+    expect(screen.getByRole("link", { name: "Open document in a new tab" })).toBeVisible();
+    expect(screen.getByText("PDF preview is unavailable in this browser. Use the link above to open the document.")).toBeVisible();
   });
 
   it("keeps an existing draft when invoice OCR fails", async () => {

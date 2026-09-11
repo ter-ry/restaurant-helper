@@ -11,6 +11,8 @@ import {
   disconnectPilotSquare,
   fetchPilotSquareStatus,
   fetchPilotSquareCatalogMappings,
+  previewPilotSquareMenuImport,
+  importPilotSquareMenu,
   fetchPilotMenuCosting,
   syncPilotSquareCatalog,
   syncPilotSquareLocations,
@@ -64,6 +66,8 @@ export function PilotSquarePage() {
   const [rangeStartAt, setRangeStartAt] = useState(dateRangeDefaults().startAt);
   const [rangeEndAt, setRangeEndAt] = useState(dateRangeDefaults().endAt);
   const [message, setMessage] = useState<string | null>(null);
+  const [menuImport, setMenuImport] = useState<Awaited<ReturnType<typeof previewPilotSquareMenuImport>> | null>(null);
+  const [menuImportLoading, setMenuImportLoading] = useState(false);
 
   const currentOrganizationId = organization?.id ?? null;
 
@@ -161,6 +165,34 @@ export function PilotSquarePage() {
       }),
     );
     await load();
+  };
+
+  const reviewMenuImport = async () => {
+    if (!currentOrganizationId || !currentLocation?.id || !connectionReady) return;
+    setMenuImportLoading(true);
+    setError(null);
+    try {
+      setMenuImport(await previewPilotSquareMenuImport(currentOrganizationId, currentLocation.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not review the Square menu import.");
+    } finally {
+      setMenuImportLoading(false);
+    }
+  };
+
+  const runMenuImport = async () => {
+    if (!currentOrganizationId || !currentLocation?.id || !connectionReady) return;
+    setMenuImportLoading(true);
+    setError(null);
+    try {
+      setMenuImport(await importPilotSquareMenu(currentOrganizationId, currentLocation.id));
+      await load();
+      setMessage("Square menu import completed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import the Square menu.");
+    } finally {
+      setMenuImportLoading(false);
+    }
   };
 
   const syncOrders = async () => {
@@ -420,7 +452,7 @@ export function PilotSquarePage() {
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Menu mapping" description="Link Square catalog items to Flowtally menu items so the close and usage view stay aligned." />
+            <SectionHeader title="Menu mapping" description="Map each Square variation to a Flowtally menu item. Recipes are assigned later in Menu Costing." />
             <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {catalogMappings.length ? catalogMappings.slice(0, 16).map((catalogObject) => {
                 const mapping = catalogObject.mapping;
@@ -435,7 +467,7 @@ export function PilotSquarePage() {
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
                       <select id={`pilot-square-menu-item-${catalogObject.id}`} className="input" defaultValue={mapping?.flowtallyEntityId ?? ""} disabled={!connectionReady}>
-                        <option value="">Choose a menu item</option>
+                        <option value="">Choose a Flowtally menu item</option>
                         {menuItems.map((menuItem) => (
                           <option key={menuItem.id} value={menuItem.id}>
                             {menuItem.name}
@@ -456,6 +488,30 @@ export function PilotSquarePage() {
                 <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-8 text-sm text-muted">Sync catalog data to start mapping menu items.</p>
               )}
             </div>
+          </Card>
+
+          <Card className="workspace-card">
+            <SectionHeader title="Import Square menu" description="Review sellable Square variations, then create variation-level Flowtally menu items that can receive recipes in Menu Costing." />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" disabled={!connectionReady || !currentLocation || menuImportLoading} onClick={() => void reviewMenuImport()}>
+                {menuImportLoading ? "Reviewing..." : "Review import"}
+              </Button>
+              <Button type="button" disabled={!connectionReady || !currentLocation || menuImportLoading || !menuImport} onClick={() => void runMenuImport()}>
+                {menuImportLoading ? "Importing..." : "Import menu"}
+              </Button>
+              <Link className="inline-flex min-h-11 items-center rounded-2xl border border-line px-4 py-2 text-sm font-semibold text-ink hover:bg-slate-50" to="/app/menu-costing">Assign recipes in Menu Costing</Link>
+            </div>
+            {menuImport ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  {[["New", "new"], ["Already imported / existing", "mapped"], ["Recipe needed", "recipe_needed"], ["Inactive", "inactive"], ["Conflict", "conflict"]].map(([label, key]) => <div key={key} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-lg font-bold text-ink">{menuImport.summary[key] ?? 0}</p></div>)}
+                </div>
+                <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+                  {menuImport.entries.map((entry) => <div key={entry.squareCatalogObjectId} className="rounded-xl border border-line bg-white p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold text-ink">{entry.parentName ? `${entry.parentName} · ` : ""}{entry.name}</p><p className="mt-1 text-xs text-muted">ITEM_VARIATION · {entry.sellingPrice ? formatMoney(entry.sellingPrice) : "Price not set"}{entry.menuItemId ? ` · Flowtally menu item #${entry.menuItemId}` : ""}</p></div><Badge tone={entry.state === "mapped" ? "success" : entry.state === "conflict" ? "danger" : "warning"}>{entry.state === "recipe_needed" ? "Recipe needed" : entry.state}</Badge></div></div>)}
+                  {!menuImport.entries.length ? <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">No sellable Square variations found for this location.</p> : null}
+                </div>
+              </div>
+            ) : <p className="mt-4 text-sm text-muted">Review the import to see what will be created or reused.</p>}
           </Card>
         </div>
 
