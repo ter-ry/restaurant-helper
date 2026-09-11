@@ -959,7 +959,7 @@ def update_pilot_location(location_id: int):
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, membership, locations, _ = context
-    permission_error = _require_role(membership, "operational.write")
+    permission_error = _require_role(membership, "organization.manage")
     if permission_error is not None:
         return permission_error
     location = _check_location_access(location_id, locations)

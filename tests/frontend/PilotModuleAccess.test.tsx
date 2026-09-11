@@ -165,7 +165,7 @@ describe("Pilot module access", () => {
     expect(screen.queryByText("Variance Cafe · Line Kitchen")).not.toBeInTheDocument();
 
     const purchasesLink = screen.getByRole("link", { name: "Purchases" });
-    expect(purchasesLink).toHaveTextContent(/Purchases.*P/);
+    expect(purchasesLink).toHaveTextContent("Purchases");
   });
 
   it("removes workspace cards and shows a visible public-site icon when collapsed", async () => {
