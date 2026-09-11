@@ -1034,7 +1034,7 @@ export function PilotPurchasesPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <Card className="w-full p-4" data-testid="purchase-review-card">
-          <SectionHeader title="Needs review" description="Drafts and incomplete purchases that need action." />
+          <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
             {(data?.invoices ?? []).filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
               <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className="w-full rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-3 text-left transition hover:shadow-soft">
@@ -1047,7 +1047,7 @@ export function PilotPurchasesPage() {
           </div>
         </Card>
         <Card className="w-full p-4" data-testid="purchase-history-card">
-          <SectionHeader title="Purchase history" description="Completed and recent purchases." />
+          <SectionHeader title="Purchase history" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {invoiceRows.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
                 <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>

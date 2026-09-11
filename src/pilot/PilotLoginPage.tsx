@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Loader2, LockKeyhole, Mail } from "lucide-react";
 import { startGoogleLogin } from "../lib/customerAuth";
 import { pilotSeedLoginEnabled } from "./pilotConfig";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -125,33 +125,6 @@ export function PilotLoginPage() {
         <section className="space-y-6 rounded-3xl border border-line bg-ink p-6 text-white shadow-soft sm:p-8">
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Flowtally customer access</p>
           <h1 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">Sign in to Flowtally</h1>
-          <p className="max-w-2xl text-sm leading-6 text-slate-200 sm:text-base">
-            Use your Google account to return to your restaurant workspace, continue onboarding, or pick up where you left off.
-          </p>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              ["Auth", "Google sign-in"],
-              ["Tenant", "Selected org + location"],
-              ["Session", "Secure cookie + CSRF"],
-            ].map(([label, detail]) => (
-              <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-brand-100">{label}</p>
-                <p className="mt-1 text-sm text-slate-200">{detail}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-slate-200">
-            <div className="flex items-center gap-2 font-semibold text-white">
-              <ShieldCheck className="h-4 w-4" />
-              Safe customer access
-            </div>
-            <p className="mt-2">
-              We do not show shared seed credentials in the commercial experience. If you need local developer sign-in, enable it explicitly in the dev environment.
-            </p>
-          </div>
-
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
         </section>
 
@@ -163,9 +136,6 @@ export function PilotLoginPage() {
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Login</p>
               <h2 className="mt-1 text-2xl font-bold text-ink">Continue with Google</h2>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                This takes you to the Flowtally Google sign-in flow and then returns you to your workspace.
-              </p>
             </div>
           </div>
 
@@ -175,10 +145,10 @@ export function PilotLoginPage() {
             type="button"
             onClick={() => void handleGoogleLogin()}
           >
-            {launchingGoogle || status === "loading" ? (
+            {launchingGoogle ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Redirecting to Google...
+                Redirecting to Google…
               </>
             ) : (
               <>
@@ -187,21 +157,6 @@ export function PilotLoginPage() {
               </>
             )}
           </button>
-
-          <p className="text-sm leading-6 text-muted">
-            We’ll restore your selected restaurant and location where possible, or continue you through onboarding if your organization is still a prospect.
-          </p>
-
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
-            <div className="flex items-center gap-2 font-semibold">
-              <CheckCircle2 className="h-4 w-4" />
-              Want to open the app you were using?
-            </div>
-            <p className="mt-2">We preserve your destination after sign-in so returning customers can land back on the right page.</p>
-            <Link className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-900" to={returnTo}>
-              Return to app
-            </Link>
-          </div>
 
           {pilotSeedLoginEnabled() ? <SeedLoginForm returnTo={returnTo} /> : null}
         </section>

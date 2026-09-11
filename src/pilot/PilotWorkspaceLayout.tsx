@@ -375,7 +375,7 @@ export function PilotWorkspaceLayout() {
   return (
     <div className="min-h-screen bg-slate-50 text-ink">
       <AnalyticsTracker />
-      <div className="xl:flex">
+      <div className="xl:flex xl:h-dvh xl:overflow-hidden">
         <aside
           className={`sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-4 shadow-sm transition-[width] duration-200 xl:flex xl:flex-col ${
             desktopSidebarCollapsed ? "xl:w-16" : "xl:w-60"
@@ -399,8 +399,8 @@ export function PilotWorkspaceLayout() {
           </div>
 
           {!desktopSidebarCollapsed ? (
-            <div className="mt-4 space-y-3 rounded-2xl border border-line bg-slate-50 p-3">
-              <div>
+            <div className="mt-3 rounded-xl border border-line bg-slate-50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
                 {organizations.length > 1 ? (
                   <select className="input mt-1" value={organization.id} onChange={handleOrganizationChange}>
@@ -411,11 +411,11 @@ export function PilotWorkspaceLayout() {
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-1 font-semibold text-ink">{organization?.name ?? "Flowtally pilot"}</p>
+                <p className="font-semibold text-ink">{organization?.name ?? "Flowtally pilot"}</p>
                 )}
               </div>
 
-              <div>
+              <div className="mt-1 flex items-center justify-between gap-2">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
                 {locations.length > 1 ? (
                   <select className="input mt-1" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
@@ -431,13 +431,13 @@ export function PilotWorkspaceLayout() {
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-1 font-semibold text-ink">{locationLabel}</p>
+                  <p className="font-semibold text-ink">{locationLabel}</p>
                 )}
               </div>
             </div>
           ) : null}
 
-          <nav className={`mt-6 space-y-5 ${desktopSidebarCollapsed ? "px-0.5" : ""}`} aria-label="Workspace navigation">
+          <nav className={`mt-4 space-y-4 ${desktopSidebarCollapsed ? "px-0.5" : ""}`} aria-label="Workspace navigation">
             {visibleNavigationGroups.map((group) => (
               <section key={group.label} aria-labelledby={`desktop-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`}>
                 <p id={`desktop-navigation-${group.label.replaceAll(" ", "-").replaceAll("&", "and")}`} className={desktopSidebarCollapsed ? "sr-only" : "px-3 pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-muted"}>
@@ -452,36 +452,6 @@ export function PilotWorkspaceLayout() {
             ))}
           </nav>
 
-          <div className={`mt-auto space-y-3 border-t border-line pt-5 text-sm text-muted ${desktopSidebarCollapsed ? "items-center" : ""}`}>
-            {!desktopSidebarCollapsed ? (
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Signed in as</p>
-                <p className="mt-1 truncate font-semibold text-ink">{user?.email ?? "Unknown user"}</p>
-                <p className="mt-1">Working with an explicit organization context.</p>
-              </div>
-            ) : null}
-            <div className={`flex ${desktopSidebarCollapsed ? "flex-col" : "flex-col"} gap-2`}>
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
-                type="button"
-                onClick={() => void signOut()}
-                title="Sign out"
-                aria-label="Sign out"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className={desktopSidebarCollapsed ? "sr-only" : ""}>Sign out</span>
-              </button>
-              <Link
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                to="/"
-                title="Public site"
-                aria-label="Public site"
-              >
-                <ExternalLink className="h-4 w-4" />
-                <span className={desktopSidebarCollapsed ? "sr-only" : ""}>Public site</span>
-              </Link>
-            </div>
-          </div>
         </aside>
 
         <div className="min-w-0 flex-1">
@@ -547,12 +517,12 @@ export function PilotWorkspaceLayout() {
                   Refresh session
                 </button>
                 <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}><UserCircle className="h-4 w-4" />Account</button>
-                {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
+                {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><Link className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" to="/"><ExternalLink className="h-4 w-4" />Public site</Link><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => { setAccountMenuOpen(false); void signOut(); }}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
               </div>
             </div>
           </header>
 
-          <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-5 lg:px-6 xl:px-8">
+          <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-5 lg:px-6 xl:h-[calc(100dvh-4.5rem)] xl:overflow-y-auto xl:px-8">
             {error ? (
               <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert" aria-live="polite">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -663,7 +633,8 @@ export function PilotWorkspaceLayout() {
           </div>
         </div>
       ) : null}
-      {settingsOpen && settingsDraft ? <Modal title="Restaurant location settings" size="fullscreen" onClose={() => setSettingsOpen(false)}><div className="mx-auto max-w-5xl space-y-5"><p className="text-sm text-muted">These settings apply to the active restaurant location.</p>{settingsError ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{settingsError}</p> : null}<div className="grid gap-4 lg:grid-cols-3"><section className="rounded-2xl border border-line bg-slate-50 p-4 lg:col-span-2"><p className="text-xs font-bold uppercase tracking-wide text-muted">Restaurant details and address</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{([['name','Location name'],['addressLine1','Address'],['addressLine2','Address line 2'],['city','City'],['region','Province / state'],['postalCode','Postal / ZIP code'],['country','Country']] as const).map(([field,label]) => <label key={field} className="block"><span className="text-sm font-semibold text-ink">{label}</span><input className="input mt-1" value={settingsDraft[field] ?? ""} onChange={(event) => setSettingsDraft((current) => current ? { ...current, [field]: event.target.value } : current)} /></label>)}</div></section><section className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Regional settings</p><label className="mt-4 block"><span className="text-sm font-semibold text-ink">Timezone (IANA)</span><input className="input mt-1" value={settingsDraft.timezone ?? ""} onChange={(event) => setSettingsDraft((current) => current ? { ...current, timezone: event.target.value } : current)} placeholder="America/Toronto" /></label><p className="mt-3 text-sm leading-5 text-muted">Operational timestamps, including waste and stock activity, follow this location.</p></section></div><div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setSettingsOpen(false)}>Cancel</Button><Button type="button" disabled={settingsSaving} onClick={() => void saveSettings()}>{settingsSaving ? 'Saving…' : 'Save settings'}</Button></div></div></Modal> : null}
+      {settingsOpen && settingsDraft ? <Modal title="Restaurant location settings" size="large" onClose={() => setSettingsOpen(false)}><div className="mx-auto max-w-5xl space-y-5">{settingsError ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{settingsError}</p> : null}<div className="grid gap-4 lg:grid-cols-3"><section className="rounded-2xl border border-line bg-slate-50 p-4 lg:col-span-2"><p className="text-xs font-bold uppercase tracking-wide text-muted">Restaurant details and address</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{([['name','Location name'],['addressLine1','Address'],['addressLine2','Address line 2'],['city','City'],['region','Province / state'],['postalCode','Postal / ZIP code'],['country','Country']] as const).map(([field,label]) => <label key={field} className="block"><span className="text-sm font-semibold text-ink">{label}</span><input className="input mt-1" value={settingsDraft[field] ?? ""} onChange={(event) => setSettingsDraft((current) => current ? { ...current, [field]: event.target.value } : current)} /></label>)}</div></section><section className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Regional settings</p><label className="mt-4 block"><span className="text-sm font-semibold text-ink">Timezone (IANA)</span><input className="input mt-1" value={settingsDraft.timezone ?? ""} onChange={(event) => setSettingsDraft((current) => current ? { ...current, timezone: event.target.value } : current)} placeholder="America/Toronto" /></label></section></div><div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setSettingsOpen(false)}>Cancel</Button><Button type="button" disabled={settingsSaving} onClick={() => void saveSettings()}>{settingsSaving ? 'Saving…' : 'Save settings'}</Button></div></div></Modal> : null}
     </div>
   );
 }
+

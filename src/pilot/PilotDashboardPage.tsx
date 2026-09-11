@@ -111,7 +111,7 @@ export function PilotDashboardPage() {
     {
       key: "daily-close",
       title: "Daily Close is outstanding",
-      detail: "Today&apos;s close is still open or has not been started.",
+      detail: "Today's close is still open or has not been started.",
       count: data?.operationalAttention?.dailyClose.count ?? 0,
       to: "/app/daily-close",
       tone: "warning" as const,
@@ -179,7 +179,7 @@ export function PilotDashboardPage() {
       <WorkspacePageHeader
         eyebrow="Dashboard"
         title="What the owner needs to know today"
-        description="Back-office control between POS and accounting, with today&apos;s work and this week&apos;s changes in one place."
+        description="Review today's work and this week's changes in one place."
         actions={
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
             <RefreshCcw className="h-4 w-4" />
@@ -223,7 +223,7 @@ export function PilotDashboardPage() {
       ) : null}
 
       <Card className="workspace-card">
-        <SectionHeader title="Today&apos;s workflow" description="The connected loop from invoice to export readiness." />
+        <SectionHeader title="Today's workflow" />
         <div className="grid gap-3 lg:grid-cols-6">
             {[
             { label: "Invoice", icon: <ClipboardList className="h-4 w-4" />, status: data?.workflow.purchase ?? "Needs review", to: "/app/purchases" },
@@ -239,7 +239,7 @@ export function PilotDashboardPage() {
                 <Badge tone={statusTone(step.status)}>{step.status}</Badge>
               </div>
               <p className="mt-3 text-sm font-bold text-ink">{step.label}</p>
-              {index < list.length - 1 ? <p className="mt-1 text-xs text-muted">Connects to the next step</p> : <p className="mt-1 text-xs text-muted">Ready for bookkeeping export</p>}
+              {index === list.length - 1 ? <p className="mt-1 text-xs text-muted">Ready for bookkeeping export</p> : null}
             </button>
           ))}
         </div>

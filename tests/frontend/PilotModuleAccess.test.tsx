@@ -168,7 +168,7 @@ describe("Pilot module access", () => {
     expect(purchasesLink).toHaveTextContent("Purchases");
   });
 
-  it("removes workspace cards and shows a visible public-site icon when collapsed", async () => {
+  it("removes workspace cards and keeps public site in the account menu", async () => {
     window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", "true");
 
     render(
@@ -181,6 +181,7 @@ describe("Pilot module access", () => {
     expect(screen.queryByText("Organization")).not.toBeInTheDocument();
     expect(screen.queryByText("Variance Cafe")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getAllByRole("button", { name: "Open account menu" })[0]);
     const publicSiteLink = screen.getByRole("link", { name: "Public site" });
     expect(publicSiteLink).toBeVisible();
     expect(publicSiteLink.querySelector("svg")).not.toBeNull();
