@@ -376,7 +376,7 @@ export function PilotMenuCostingPage() {
       <WorkspacePageHeader
         eyebrow="Menu costing"
         title="Recipe and menu pricing"
-        description="Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons."
+
         actions={
           <>
             <span className="rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-muted">

@@ -319,7 +319,6 @@ export function PilotReorderPlanPage() {
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Reorder Plan</p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Plan what needs ordering and preserve the snapshot</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Keep live pressure beside the working draft. Completed plans remain locked history.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>

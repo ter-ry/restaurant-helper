@@ -176,7 +176,6 @@ describe("PilotMenuCostingPage", () => {
     expect(await screen.findByText("Menu costing")).toBeVisible();
     expect(screen.getAllByText("Cheesy Toast").length).toBeGreaterThan(0);
     expect(screen.getByText("Recipe and menu pricing")).toBeVisible();
-    expect(screen.getByText("Live menu costing reads average inventory cost for each ingredient, so recipe and menu margins stay aligned with inventory valuation while latest purchase prices remain visible for supplier comparisons.")).toBeVisible();
     expect(screen.getAllByText("Cost $3.50").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
     expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);

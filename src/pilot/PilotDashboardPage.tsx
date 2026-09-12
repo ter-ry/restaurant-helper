@@ -179,7 +179,6 @@ export function PilotDashboardPage() {
       <WorkspacePageHeader
         eyebrow="Dashboard"
         title="What the owner needs to know today"
-        description="Review today's work and this week's changes in one place."
         actions={
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
             <RefreshCcw className="h-4 w-4" />
