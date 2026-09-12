@@ -391,7 +391,12 @@ export function PilotMenuCostingPage() {
             </button>
           </>
         }
-        metrics={[]}
+        metrics={[
+          { label: "Menu items", value: hasLoaded ? formatNumber(menuItems.length) : "—", helper: "Sellable items" },
+          { label: "Average food cost", value: hasLoaded && menuItems.length ? `${formatNumber(menuItems.reduce((sum, item) => sum + (item.foodCostPercent || 0), 0) / menuItems.length)}%` : "—", helper: "Across priced items" },
+          { label: "Recipe needed", value: hasLoaded ? formatNumber(menuItems.filter((item) => !item.recipeId).length) : "—", helper: "Assign or create a recipe" },
+          { label: "High cost", value: hasLoaded ? formatNumber(menuItems.filter((item) => (item.foodCostPercent ?? 0) > 35).length) : "—", helper: "Review pricing or recipe" },
+        ]}
       />
 
       {loading ? (
@@ -682,7 +687,7 @@ export function PilotMenuCostingPage() {
                       <p className="font-semibold text-ink">{menuItem.name}</p>
                       <p className="mt-1 text-sm text-muted">{menuItem.category}</p>
                     </div>
-                    <Badge tone={statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.costAvailable ? "Cost ready" : "Needs review"}</Badge>
+                    <Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Healthy" : "Needs review"}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted">
                     <span>Price {formatMoney(menuItem.sellingPrice)}</span>

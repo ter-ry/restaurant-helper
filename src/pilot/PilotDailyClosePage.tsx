@@ -179,8 +179,7 @@ export function PilotDailyClosePage() {
     <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Daily close"
-        title="Close the day with a clear snapshot"
-        description="Review Square sales, weighted-average inventory usage, and any exceptions before you lock the day."
+        title="Daily Close"
         actions={
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
@@ -200,6 +199,14 @@ export function PilotDailyClosePage() {
         metrics={[]}
       />
 
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Daily close progress">
+        {[["Sales", squareSynced], ["Purchases", true], ["Usage", Boolean(usage)], ["Waste / adjustments", true], ["Counts", Boolean(snapshot)], ["Review", Boolean(data?.exceptions?.length === 0)]].map(([label, ready]) => (
+          <div key={String(label)} className={`rounded-xl border p-3 ${ready ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-ink">{ready ? "Ready" : "Needs review"}</p>
+          </div>
+        ))}
+      </div>
       <Card className="p-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">

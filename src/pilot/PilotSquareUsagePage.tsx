@@ -127,10 +127,10 @@ function MappingCard({
   );
 }
 
-function UsageRow({ row }: { row: SquareUsageIngredientRow }) {
+function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: () => void }) {
   const discrepancyTone = row.discrepancy == null ? "text-muted" : row.discrepancy > 0 ? "text-amber-700" : "text-emerald-700";
   return (
-    <tr className="border-t border-line">
+    <tr className="border-t border-line cursor-pointer hover:bg-brand-50/40" onClick={onSelect} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(); } }}>
       <td className="px-3 py-3 align-top">
         <div className="font-semibold text-ink">{row.inventoryItemName}</div>
         <div className="text-xs text-muted">{row.unit}</div>
@@ -165,6 +165,7 @@ export function PilotSquareUsagePage() {
   });
   const [usage, setUsage] = useState<SquareUsageReport | null>(null);
   const [drafts, setDrafts] = useState<MappingDraft>({});
+  const [selectedVarianceId, setSelectedVarianceId] = useState<number | null>(null);
 
   useEffect(() => {
     if (selectedLocationId == null && currentLocation?.id != null) {
@@ -250,7 +251,7 @@ export function PilotSquareUsagePage() {
 
   if (loading) {
     return (
-      <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Loading Square sales coverage and variance report.">
+      <PageLayout title="Square usage" eyebrow="Pilot workspace">
         <Card className="p-8 text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-brand-700" />
           <p className="mt-4 text-sm text-muted">Loading usage variance…</p>
@@ -261,7 +262,7 @@ export function PilotSquareUsagePage() {
 
   if (!organization) {
     return (
-      <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Choose an organization to see Square usage.">
+      <PageLayout title="Square usage" eyebrow="Pilot workspace">
         <Card className="p-6">
           <h1 className="text-2xl font-bold text-ink">Choose an organization first</h1>
           <p className="mt-3 text-sm leading-6 text-muted">The usage workspace needs an active organization and location.</p>
@@ -271,7 +272,7 @@ export function PilotSquareUsagePage() {
   }
 
   return (
-    <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Map Square variations to menu items and review theoretical versus actual inventory usage.">
+    <PageLayout title="Square usage" eyebrow="Pilot workspace">
       <div className="flex flex-wrap gap-2">
         <Link className={squareSectionLinkClasses(false)} to="/app/square">
           Setup & Sync
@@ -377,7 +378,7 @@ export function PilotSquareUsagePage() {
               </thead>
               <tbody>
                 {topUsageRows.length > 0 ? (
-                  topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} />)
+                  topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} onSelect={() => setSelectedVarianceId(row.inventoryItemId)} />)
                 ) : (
                   <tr>
                     <td className="px-3 py-8 text-center text-sm text-muted" colSpan={6}>
@@ -390,12 +391,27 @@ export function PilotSquareUsagePage() {
           </div>
         </Card>
 
+
+
+          {selectedVarianceId != null ? (() => {
+            const selected = topUsageRows.find((row) => row.inventoryItemId === selectedVarianceId);
+            if (!selected) return null;
+            return (
+              <Card className="mt-4 border-brand-100 bg-brand-50/40 p-4" aria-label="Selected variance detail">
+                <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-brand-700">Variance detail</p><h2 className="mt-1 text-lg font-bold text-ink">{selected.inventoryItemName}</h2></div><button className="min-h-10 rounded-xl px-3 text-sm font-semibold text-muted hover:bg-white" type="button" onClick={() => setSelectedVarianceId(null)}>Close</button></div>
+                <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm"><div><dt className="text-muted">POS theoretical usage</dt><dd className="font-semibold text-ink">{formatQuantity(selected.theoreticalUsage)}</dd></div><div><dt className="text-muted">Observed usage</dt><dd className="font-semibold text-ink">{selected.actualUsage == null ? "—" : formatQuantity(selected.actualUsage)}</dd></div><div><dt className="text-muted">Variance</dt><dd className="font-semibold text-ink">{selected.discrepancy == null ? "—" : formatQuantity(selected.discrepancy)}</dd></div></dl>
+                <div className="mt-4 flex flex-wrap gap-2"><Link className={squareSectionLinkClasses(false)} to="/app/inventory">Review inventory</Link><Link className={squareSectionLinkClasses(false)} to="/app/purchases">Review purchases</Link></div>
+              </Card>
+            );
+          })() : null}
+
         <div className="space-y-6">
           <Card className="p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
               <Search className="h-4 w-4 text-brand-700" />
               Unmapped Square variations
-            </div>
+
+    </div>
             <p className="mt-2 text-sm leading-6 text-muted">Map the exact Square variation to the Flowtally menu item it actually sells.</p>
             <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {unmappedVariations.length > 0 ? (

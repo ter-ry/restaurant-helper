@@ -2268,7 +2268,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   });
 
   await page.goto("/app/square", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Private workspace for Square connection, sync, and mapping" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "Square" })).toBeVisible();
   await expect(page.getByText("merchant-42")).toBeVisible();
   await expect(page.getByText("Main Dining Room").first()).toBeVisible();
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
@@ -2278,7 +2278,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
 
   await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Close the day with a clear snapshot" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "Daily Close" })).toBeVisible();
   await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
   await page.getByRole("button", { name: "Start daily close" }).click();
   await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();

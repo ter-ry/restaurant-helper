@@ -129,7 +129,7 @@ describe("PilotDailyClosePage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Close the day with a clear snapshot" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Daily Close" })).toBeVisible();
     expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-30");
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Start daily close" }));
