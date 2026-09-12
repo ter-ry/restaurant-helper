@@ -334,7 +334,6 @@ export function PilotSquarePage() {
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={connectionReady ? "Square is connected to this organization." : "Connect Square before syncing data."} tone={squareStatusTone} />
               <MetricCard label="Sync" value={connection?.syncStatus ?? "idle"} detail={connection?.syncError ? connection.syncError : "Manual syncs are available when connected."} tone={connection?.syncStatus === "error" ? "danger" : "neutral"} />
-              <MetricCard label="Merchant" value={connection?.squareMerchantId || "none"} detail="The current Square merchant ID linked to the workspace." tone="neutral" />
               <MetricCard label="Last sync" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "never"} detail="The newest location, catalog, or order sync time." tone="neutral" />
             </div>
 
@@ -433,7 +432,7 @@ export function PilotSquarePage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{location.name}</p>
-                        <p className="mt-1 text-xs text-muted">{location.squareLocationId} · {location.status}</p>
+                        <p className="mt-1 text-xs text-muted">{location.status}</p>
                       </div>
                       <Badge tone={mapped ? "success" : "warning"}>{mapped ? "Mapped" : "Unmapped"}</Badge>
                     </div>
@@ -472,7 +471,6 @@ export function PilotSquarePage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-semibold text-ink">{catalogObject.squareObjectName || catalogObject.squareObjectId}</p>
-                        <p className="mt-1 text-xs text-muted">Square item · {catalogObject.squareObjectId}</p>
                       </div>
                       <Badge tone={mapping?.flowtallyEntityId ? "success" : "warning"}>{mapping?.flowtallyEntityId ? "Mapped" : "Needs mapping"}</Badge>
                     </div>
@@ -518,7 +516,7 @@ export function PilotSquarePage() {
                   {[["New", "new"], ["Already imported / existing", "mapped"], ["Recipe needed", "recipe_needed"], ["Inactive", "inactive"], ["Conflict", "conflict"]].map(([label, key]) => <div key={key} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-lg font-bold text-ink">{menuImport.summary[key] ?? 0}</p></div>)}
                 </div>
                 <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
-                  {menuImport.entries.map((entry) => <div key={entry.squareCatalogObjectId} className="rounded-xl border border-line bg-white p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold text-ink">{entry.parentName ? `${entry.parentName} · ` : ""}{entry.name}</p><p className="mt-1 text-xs text-muted">Square item · {entry.sellingPrice ? formatMoney(entry.sellingPrice) : "Price not set"}{entry.menuItemId ? ` · Flowtally menu item #${entry.menuItemId}` : ""}</p></div><Badge tone={entry.state === "mapped" ? "success" : entry.state === "conflict" ? "danger" : "warning"}>{entry.state === "recipe_needed" ? "Recipe needed" : entry.state}</Badge></div></div>)}
+                  {menuImport.entries.map((entry) => <div key={entry.squareCatalogObjectId} className="rounded-xl border border-line bg-white p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold text-ink">{entry.parentName ? `${entry.parentName} · ` : ""}{entry.name}</p><p className="mt-1 text-xs text-muted">{entry.sellingPrice ? formatMoney(entry.sellingPrice) : "Price not set"}{entry.menuItemId ? " · Already in Flowtally" : ""}</p></div><Badge tone={entry.state === "mapped" ? "success" : entry.state === "conflict" ? "danger" : "warning"}>{entry.state === "recipe_needed" ? "Recipe needed" : entry.state}</Badge></div></div>)}
                   {!menuImport.entries.length ? <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">No sellable Square variations found for this location.</p> : null}
                 </div>
               </div>

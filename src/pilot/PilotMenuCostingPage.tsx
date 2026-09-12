@@ -127,7 +127,7 @@ export function PilotMenuCostingPage() {
   const [selectedRecipeId, setSelectedRecipeId] = useState<number | null>(null);
   const [selectedIngredientId, setSelectedIngredientId] = useState<number | null>(null);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<number | null>(null);
-  const [menuTab, setMenuTab] = useState<"recipes" | "menu-items">("recipes");
+  const [menuTab, setMenuTab] = useState<"recipes" | "menu-items">("menu-items");
   const [recipeEditorMode, setRecipeEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [menuItemEditorMode, setMenuItemEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
@@ -171,7 +171,6 @@ export function PilotMenuCostingPage() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const recipes = useMemo(() => data?.recipes ?? [], [data?.recipes]);
@@ -375,17 +374,12 @@ export function PilotMenuCostingPage() {
     <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Menu costing"
-        title="Recipe and menu pricing"
+        title="Menu Costing"
 
         actions={
           <>
-            <span className="rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-muted">
-              {organization.name}
-            </span>
-            <span className="rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold text-muted">
-              {currentLocation.name}
-            </span>
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
+
+<button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
               <RefreshCcw className="h-4 w-4" />
               Refresh
             </button>
@@ -439,8 +433,8 @@ export function PilotMenuCostingPage() {
       />
 
       {menuTab === "recipes" ? (
-      <div className={`grid gap-5 ${filteredRecipes.length ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)]" : "xl:grid-cols-1"}`}>
-        <Card className={`order-2 p-4 xl:order-1 ${filteredRecipes.length ? "" : "hidden"}`}>
+      <div className="grid gap-5">
+        <Card className={`order-1 p-4 ${filteredRecipes.length ? "" : "hidden"}`}>
               <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
@@ -479,11 +473,12 @@ export function PilotMenuCostingPage() {
           ) : null}
         </Card>
 
-        <Card className="order-1 p-4 xl:order-2">
+        <div className={showRecipeEditor ? "fixed inset-0 z-50 flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-2" : "hidden"} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeEditorMode("hidden"); } }}>
+        <Card role="dialog" aria-modal="true" aria-label={recipeDraft.id ? "Edit recipe" : "New recipe"} className="max-h-[calc(100vh-1rem)] w-full max-w-5xl overflow-y-auto p-4 shadow-2xl">
           <SectionHeader
             title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"}
             description={recipeDraft.id ? "Recipes stay linked to the current location and inherit live inventory costs." : recipeEditorMode === "create" ? "Build the new recipe and save it deliberately." : "Select an existing recipe or start a new one."}
-            action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button" variant="secondary">New recipe</Button>}
+            action={<div className="flex flex-wrap gap-2">{showRecipeEditor ? <Button variant="ghost" type="button" onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeEditorMode("hidden"); }}>Close</Button> : null}<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button" variant="secondary">New recipe</Button></div>}
           />
           {showRecipeEditor ? (
             <>
@@ -665,6 +660,7 @@ export function PilotMenuCostingPage() {
             )}
           </div>
         </Card>
+        </div>
       </div>
       ) : (
       <Card className="p-5">
@@ -693,6 +689,7 @@ export function PilotMenuCostingPage() {
                     <span>Price {formatMoney(menuItem.sellingPrice)}</span>
                     <span>Cost {formatMoney(menuItem.recipeCostPerYield)}</span>
                     <span>Food cost {formatNumber(menuItem.foodCostPercent)}%</span>
+                    <span>Gross profit {formatMoney(menuItem.grossProfit)}</span>
                   </div>
                 </button>
               ))
@@ -702,9 +699,9 @@ export function PilotMenuCostingPage() {
               <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No menu items yet.</div>
             ) : null}
           </div>
-
-          <div className="rounded-2xl border border-line bg-white p-4">
-            <h3 className="text-base font-semibold text-ink">{menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"}</h3>
+          <div className={showMenuItemEditor ? "fixed inset-0 z-50 flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-2" : "hidden"} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedMenuItemId(null); setMenuItemEditorMode("hidden"); } }}>
+          <div role="dialog" aria-modal="true" aria-label={menuItemDraft.id ? "Edit menu item" : "New menu item"} className="max-h-[calc(100vh-1rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-white p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-ink">{menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"}</h3><Button variant="ghost" type="button" onClick={() => { setSelectedMenuItemId(null); setMenuItemEditorMode("hidden"); }}>Close</Button></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm font-medium text-ink">Name</span>
@@ -745,7 +742,7 @@ export function PilotMenuCostingPage() {
               <>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveMenuItem()} type="button" disabled={savingMenuItem}>
-                {savingMenuItem ? "Saving…" : menuItemDraft.id ? "Update menu item" : "Create menu item"}
+                {savingMenuItem ? "Saving…" : menuItemDraft.recipeId === "" ? "Assign recipe" : menuItemDraft.id ? "Update menu item" : "Create menu item"}
               </Button>
               {menuItemDraft.id ? (
                 <Button
@@ -786,6 +783,7 @@ export function PilotMenuCostingPage() {
                 ) : null}
               </div>
             ) : null}
+          </div>
           </div>
         </div>
       </Card>

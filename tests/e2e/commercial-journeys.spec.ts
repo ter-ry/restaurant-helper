@@ -1712,7 +1712,7 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
   });
 
   await page.goto("/app/menu-costing", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Recipe and menu pricing")).toBeVisible();
+  await expect(page.locator("h1", { hasText: "Menu Costing" })).toBeVisible();
   await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
   await expect(page.getByText("Cost $2.00").first()).toBeVisible();
   await page.getByRole("tab", { name: "Menu items" }).click();
@@ -1915,7 +1915,7 @@ test("Square usage variance maps and clears variation links", async ({ page }) =
   await installMockApi(page, state);
 
   await page.goto("/app/square-usage", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Inventory usage and variance" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What should I investigate?" })).toBeVisible();
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
   await page.getByRole("button", { name: "Map" }).click();
   await expect(page.getByText("No unmapped Square variations found for the selected scope.")).toBeVisible();
@@ -2269,7 +2269,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
 
   await page.goto("/app/square", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1").filter({ hasText: "Square" })).toBeVisible();
-  await expect(page.getByText("merchant-42")).toBeVisible();
+  await expect(page.getByText("Ready").first()).toBeVisible();
   await expect(page.getByText("Main Dining Room").first()).toBeVisible();
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
   await page.getByRole("button", { name: "Sync now" }).click();
@@ -2294,13 +2294,13 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Read only").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Sync sales" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save notes" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Finalize daily close" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Finalize daily close" })).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Open / }).first().click();
   await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Add context for unusual sales, waste, or count discrepancies." })).toHaveValue("Square sales synced before finalize.");
   await expect(page.getByText("Read only").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Finalize daily close" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Finalize daily close" })).toHaveCount(0);
 });
 
 test("owner audit history shows filtered organization activity", async ({ page }) => {
