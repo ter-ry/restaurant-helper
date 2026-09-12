@@ -175,24 +175,23 @@ describe("PilotMenuCostingPage", () => {
 
     expect(await screen.findByText("Menu costing")).toBeVisible();
     expect(screen.getAllByText("Cheesy Toast").length).toBeGreaterThan(0);
-    expect(screen.getByText("Recipe and menu pricing")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Menu Costing" })).toBeVisible();
     expect(screen.getAllByText("Cost $3.50").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
     expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);
-    expect(screen.getByText("Line Kitchen")).toBeVisible();
   });
 
   it("starts in browse mode and opens deliberate recipe and menu-item editors", async () => {
     render(<PilotMenuCostingPage />);
 
     await screen.findByText("Menu costing");
-    expect(screen.getByRole("tab", { name: "Recipes" })).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
     expect(screen.getByText("Start a new recipe or select one from the catalog to edit its ingredients and live costing.")).toBeVisible();
     expect(screen.getByText("Each line uses average inventory cost as the recipe basis. Latest purchase price stays visible for comparison when supplier costs change.")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "New recipe" }));
     expect(screen.getByRole("heading", { name: "New recipe" })).toBeVisible();
     expect(screen.getAllByLabelText("Name")[0]).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
     await waitFor(() => expect(screen.getByRole("heading", { name: "Edit recipe" })).toBeVisible());
@@ -205,6 +204,8 @@ describe("PilotMenuCostingPage", () => {
     expect(
       screen.getByText((content) => content.includes("2 kg") && content.includes("$3.50/kg") && content.includes("ingredient cost")),
     ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
     expect(screen.getByText("Start a new menu item or select one from the catalog to edit price, recipe linkage, and margin details.")).toBeVisible();

@@ -192,7 +192,7 @@ describe("PilotSquareUsagePage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Inventory usage and variance" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "What should I investigate?" })).toBeVisible();
     expect(screen.getByText("Sales coverage")).toBeVisible();
     expect(screen.getByText("Classic Cheeseburger - Regular")).toBeVisible();
     expect(screen.getByText("Beef")).toBeVisible();

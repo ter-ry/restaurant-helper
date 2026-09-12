@@ -179,8 +179,7 @@ export function PilotDailyClosePage() {
     <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Daily close"
-        title="Close the day with a clear snapshot"
-        description="Review Square sales, weighted-average inventory usage, and any exceptions before you lock the day."
+        title="Daily Close"
         actions={
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
@@ -200,6 +199,19 @@ export function PilotDailyClosePage() {
         metrics={[]}
       />
 
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Daily close progress">
+        {[
+          ["Sales", currentSession ? (squareSynced ? "Complete" : "Needs review") : "—"],
+          ["Purchases", "Not evaluated"],
+          ["Usage", usage ? "Complete" : currentSession ? "Not evaluated" : "—"],
+          ["Waste / adjustments", snapshot && (snapshot as any).recordedWasteQuantity != null ? "Complete" : currentSession ? "Not evaluated" : "—"],
+          ["Counts / variance", snapshot?.variance?.quantity != null ? "Complete" : currentSession ? "Not evaluated" : "—"],
+          ["Review", data?.exceptions ? (data.exceptions.length ? "Needs review" : "Complete") : "Not evaluated"],
+        ].map(([label, state]) => {
+          const tone = state === "Complete" ? "border-emerald-200 bg-emerald-50" : state === "Needs review" ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50";
+          return <div key={String(label)} className={`rounded-xl border p-3 ${tone}`}><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-sm font-semibold text-ink">{state}</p></div>;
+        })}
+      </div>
       <Card className="p-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
@@ -272,15 +284,7 @@ export function PilotDailyClosePage() {
               Start daily close
             </button>
           ) : null}
-          {completed ? (
-            <>
-              <Badge tone="success"><Lock className="mr-1 h-3.5 w-3.5" /> Completed snapshot</Badge>
-              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-muted" type="button" disabled>
-                <Lock className="h-4 w-4" />
-                Finalize daily close
-              </button>
-            </>
-          ) : null}
+          {completed ? <Badge tone="success"><Lock className="mr-1 h-3.5 w-3.5" /> Completed snapshot</Badge> : null}
         </div>
       </Card>
 

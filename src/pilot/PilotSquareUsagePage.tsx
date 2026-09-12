@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, Loader2, RefreshCw, Save, Search, Trash2, Workflow } from "lucide-react";
+import { AlertTriangle, BarChart3, RefreshCw, Save, Search, Trash2, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
 import { usePilotSession } from "./PilotSessionProvider";
 import {
@@ -127,10 +128,10 @@ function MappingCard({
   );
 }
 
-function UsageRow({ row }: { row: SquareUsageIngredientRow }) {
+function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: () => void }) {
   const discrepancyTone = row.discrepancy == null ? "text-muted" : row.discrepancy > 0 ? "text-amber-700" : "text-emerald-700";
   return (
-    <tr className="border-t border-line">
+    <tr className="border-t border-line cursor-pointer hover:bg-brand-50/40" onClick={onSelect} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(); } }}>
       <td className="px-3 py-3 align-top">
         <div className="font-semibold text-ink">{row.inventoryItemName}</div>
         <div className="text-xs text-muted">{row.unit}</div>
@@ -158,13 +159,9 @@ export function PilotSquareUsagePage() {
   const [menuItems, setMenuItems] = useState<SquareUsageMenuItemSummary[]>([]);
   const [mappings, setMappings] = useState<SquareCatalogMappingCandidate[]>([]);
   const [unmappedVariations, setUnmappedVariations] = useState<SquareCatalogMappingCandidate[]>([]);
-  const [mappingCoverage, setMappingCoverage] = useState<{ mappedVariationCount: number; totalVariationCount: number; mappedPercent: number }>({
-    mappedVariationCount: 0,
-    totalVariationCount: 0,
-    mappedPercent: 0,
-  });
   const [usage, setUsage] = useState<SquareUsageReport | null>(null);
   const [drafts, setDrafts] = useState<MappingDraft>({});
+  const [selectedVarianceId, setSelectedVarianceId] = useState<number | null>(null);
 
   useEffect(() => {
     if (selectedLocationId == null && currentLocation?.id != null) {
@@ -187,7 +184,6 @@ export function PilotSquareUsagePage() {
       setMenuItems(mappingResponse.menuItems);
       setMappings(mappingResponse.mappings);
       setUnmappedVariations(mappingResponse.unmappedVariations);
-      setMappingCoverage(mappingResponse.mappingCoverage);
       setDrafts(
         Object.fromEntries(
           mappingResponse.mappings.map((mapping) => [
@@ -218,9 +214,12 @@ export function PilotSquareUsagePage() {
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+    // These are the actual request inputs; request helper identities can change
+    // during render without requiring another fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organization?.id, selectedLocationId, startAt, endAt]);
 
-  const topUsageRows = useMemo(() => (usage?.ingredientUsage ?? []).slice(0, 20), [usage?.ingredientUsage]);
+  const topUsageRows = useMemo(() => [...(usage?.ingredientUsage ?? [])].sort((a, b) => Math.abs(b.discrepancy ?? 0) - Math.abs(a.discrepancy ?? 0)).slice(0, 20), [usage?.ingredientUsage]);
   const activeMappings = useMemo(() => mappings.filter((mapping) => {
     const detail = getMappingDetail(mapping);
     return detail !== null && detail.status !== "unmapped";
@@ -248,20 +247,9 @@ export function PilotSquareUsagePage() {
     await loadData();
   }
 
-  if (loading) {
-    return (
-      <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Loading Square sales coverage and variance report.">
-        <Card className="p-8 text-center">
-          <Loader2 className="mx-auto h-10 w-10 animate-spin text-brand-700" />
-          <p className="mt-4 text-sm text-muted">Loading usage variance…</p>
-        </Card>
-      </PageLayout>
-    );
-  }
-
   if (!organization) {
     return (
-      <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Choose an organization to see Square usage.">
+      <PageLayout title="Usage & Variance" eyebrow="Pilot workspace">
         <Card className="p-6">
           <h1 className="text-2xl font-bold text-ink">Choose an organization first</h1>
           <p className="mt-3 text-sm leading-6 text-muted">The usage workspace needs an active organization and location.</p>
@@ -271,7 +259,7 @@ export function PilotSquareUsagePage() {
   }
 
   return (
-    <PageLayout title="Square usage" eyebrow="Pilot workspace" description="Map Square variations to menu items and review theoretical versus actual inventory usage.">
+    <PageLayout title="Usage & Variance" eyebrow="Pilot workspace">
       <div className="flex flex-wrap gap-2">
         <Link className={squareSectionLinkClasses(false)} to="/app/square">
           Setup & Sync
@@ -286,8 +274,7 @@ export function PilotSquareUsagePage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Usage window</p>
-              <h1 className="mt-2 text-3xl font-bold text-ink">Inventory usage and variance</h1>
-              <p className="mt-2 text-sm leading-6 text-muted">Square sales feed the theoretical ingredient usage. Completed stock counts provide the actual stock basis when available.</p>
+              <h1 className="mt-2 text-3xl font-bold text-ink">What should I investigate?</h1>
             </div>
             <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void loadData()} disabled={refreshing}>
               <RefreshCw className="h-4 w-4" />
@@ -320,12 +307,12 @@ export function PilotSquareUsagePage() {
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Sales coverage</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage ? `${usage.coverage.mappedSalesCoveragePercent}%` : `${mappingCoverage.mappedPercent}%`}</p>
+              <p className="mt-2 text-2xl font-bold text-ink">{usage ? `${usage.coverage.mappedSalesCoveragePercent}%` : "—"}</p>
               <p className="mt-1 text-xs text-muted">Mapped variation coverage</p>
             </div>
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Theoretical usage</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{formatQuantity(usage?.totals.theoreticalUsage ?? 0)}</p>
+              <p className="mt-2 text-2xl font-bold text-ink">{usage ? formatQuantity(usage.totals.theoreticalUsage) : "—"}</p>
               <p className="mt-1 text-xs text-muted">Across ingredient rows</p>
             </div>
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -340,7 +327,7 @@ export function PilotSquareUsagePage() {
             </div>
           </div>
 
-          {mappingError ? (
+          {loading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">Loading usage and variance…</div> : null}\n          {mappingError ? (
             <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle className="h-4 w-4" />
@@ -377,7 +364,7 @@ export function PilotSquareUsagePage() {
               </thead>
               <tbody>
                 {topUsageRows.length > 0 ? (
-                  topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} />)
+                  topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} onSelect={() => setSelectedVarianceId(row.inventoryItemId)} />)
                 ) : (
                   <tr>
                     <td className="px-3 py-8 text-center text-sm text-muted" colSpan={6}>
@@ -390,12 +377,25 @@ export function PilotSquareUsagePage() {
           </div>
         </Card>
 
+
+
+          {selectedVarianceId != null ? (() => {
+            const selected = topUsageRows.find((row) => row.inventoryItemId === selectedVarianceId);
+            if (!selected) return null;
+            return <Modal title={`Variance detail · ${selected.inventoryItemName}`} onClose={() => setSelectedVarianceId(null)} size="large">
+              <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm"><div><dt className="text-muted">POS theoretical usage</dt><dd className="font-semibold text-ink">{formatQuantity(selected.theoreticalUsage)}</dd></div><div><dt className="text-muted">Recorded waste</dt><dd className="font-semibold text-ink">—</dd></div><div><dt className="text-muted">Other adjustments</dt><dd className="font-semibold text-ink">—</dd></div><div><dt className="text-muted">Physical / actual usage</dt><dd className="font-semibold text-ink">{selected.actualUsage == null ? "—" : formatQuantity(selected.actualUsage)}</dd></div><div><dt className="text-muted">Unexplained variance</dt><dd className="font-semibold text-ink">{selected.discrepancy == null ? "—" : formatQuantity(selected.discrepancy)}</dd></div></dl>
+              {selected.warnings.length ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{selected.warnings.join(" · ")}</div> : null}
+              <div className="mt-5 flex flex-wrap gap-2"><Link className={squareSectionLinkClasses(false)} to="/app/inventory">Review inventory</Link><Link className={squareSectionLinkClasses(false)} to="/app/purchases">Review purchases</Link><Link className={squareSectionLinkClasses(false)} to="/app/menu-costing">Review Menu Costing</Link><Link className={squareSectionLinkClasses(false)} to="/app/stock-counts">Review stock counts</Link></div>
+            </Modal>;
+          })() : null}
+
         <div className="space-y-6">
           <Card className="p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
               <Search className="h-4 w-4 text-brand-700" />
               Unmapped Square variations
-            </div>
+
+    </div>
             <p className="mt-2 text-sm leading-6 text-muted">Map the exact Square variation to the Flowtally menu item it actually sells.</p>
             <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {unmappedVariations.length > 0 ? (
@@ -403,7 +403,7 @@ export function PilotSquareUsagePage() {
                   <MappingCard
                     key={variation.squareCatalogObjectId}
                     title={variation.squareObjectName}
-                    subtitle={`${variation.squareObjectId} · ${formatQuantity(variation.soldUnits)} sold`}
+                    subtitle={`${formatQuantity(variation.soldUnits)} sold`}
                     mapping={variation.mapping}
                     menuItems={menuItems}
                     draftValue={drafts[variation.squareCatalogObjectId] ?? variation.suggestedMenuItemId ?? ""}
@@ -431,7 +431,7 @@ export function PilotSquareUsagePage() {
                   <MappingCard
                     key={mapping.id}
                     title={mapping.squareObjectName}
-                    subtitle={`${mapping.squareObjectId} · ${mapping.mapping?.mappingType ?? "menu_item"}`}
+                    subtitle={mapping.mapping?.mappingType === "menu_item" ? "Menu item mapping" : "Existing mapping"}
                     menuItems={menuItems}
                     mapping={getMappingDetail(mapping)}
                     draftValue={drafts[mapping.squareCatalogObjectId] ?? (getMappingDetail(mapping)?.flowtallyEntityId ? Number(getMappingDetail(mapping)!.flowtallyEntityId) : "")}

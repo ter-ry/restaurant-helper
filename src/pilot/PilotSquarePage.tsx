@@ -244,10 +244,7 @@ export function PilotSquarePage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Square</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Private workspace for Square connection, sync, and mapping</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">
-              Keep the integration practical: connect, sync, map locations, link menu items, and review the usage snapshot without leaving the pilot shell.
-            </p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Square</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button icon={<RefreshCw className="h-4 w-4" />} type="button" variant="secondary" onClick={() => void load()}>
@@ -302,12 +299,26 @@ export function PilotSquarePage() {
         ) : null}
         {loading ? (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
-            Loading Square workspace...
+            Loading…
           </div>
         ) : null}
       </Card>
 
-      <div className="flex flex-wrap gap-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          ["Connection", connectionReady ? "Ready" : "Connect Square", connectionReady ? "success" : "warning"],
+          ["Locations", squareLocations.length ? `${mappedLocations}/${squareLocations.length} mapped` : "Sync locations", mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"],
+          ["Menu import", menuImport ? `${menuImport.summary.recipe_needed ?? 0} recipes needed` : "Review import", menuImport && (menuImport.summary.recipe_needed ?? 0) === 0 ? "success" : "warning"],
+          ["Mapping health", `${mappedMenus}/${mappingCoverage.totalVariationCount || 0} mapped`, mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"],
+          ["Sales sync", connection?.syncStatus === "error" ? "Needs attention" : latestDailySale ? "Up to date" : "Sync sales", connection?.syncStatus === "error" ? "danger" : "success"],
+        ].map(([label, value, tone]) => (
+          <div key={label} className="rounded-2xl border border-line bg-white p-4 shadow-soft">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+            <Badge tone={tone as "success" | "warning" | "danger"}>{value}</Badge>
+          </div>
+        ))}
+      </div>
+<div className="flex flex-wrap gap-2">
         <Link aria-current="page" className={squareSectionLinkClasses(true)} to="/app/square">
           Setup & Sync
         </Link>
@@ -323,7 +334,6 @@ export function PilotSquarePage() {
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={connectionReady ? "Square is connected to this organization." : "Connect Square before syncing data."} tone={squareStatusTone} />
               <MetricCard label="Sync" value={connection?.syncStatus ?? "idle"} detail={connection?.syncError ? connection.syncError : "Manual syncs are available when connected."} tone={connection?.syncStatus === "error" ? "danger" : "neutral"} />
-              <MetricCard label="Merchant" value={connection?.squareMerchantId || "none"} detail="The current Square merchant ID linked to the workspace." tone="neutral" />
               <MetricCard label="Last sync" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "never"} detail="The newest location, catalog, or order sync time." tone="neutral" />
             </div>
 
@@ -422,7 +432,7 @@ export function PilotSquarePage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{location.name}</p>
-                        <p className="mt-1 text-xs text-muted">{location.squareLocationId} · {location.status}</p>
+                        <p className="mt-1 text-xs text-muted">{location.status}</p>
                       </div>
                       <Badge tone={mapped ? "success" : "warning"}>{mapped ? "Mapped" : "Unmapped"}</Badge>
                     </div>
@@ -461,7 +471,6 @@ export function PilotSquarePage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-semibold text-ink">{catalogObject.squareObjectName || catalogObject.squareObjectId}</p>
-                        <p className="mt-1 text-xs text-muted">ITEM_VARIATION · {catalogObject.squareObjectId}</p>
                       </div>
                       <Badge tone={mapping?.flowtallyEntityId ? "success" : "warning"}>{mapping?.flowtallyEntityId ? "Mapped" : "Needs mapping"}</Badge>
                     </div>
@@ -491,7 +500,7 @@ export function PilotSquarePage() {
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Import Square menu" description="Review sellable Square variations, then create variation-level Flowtally menu items that can receive recipes in Menu Costing." />
+            <SectionHeader title="Import Square menu" description="Review sellable Square items, then import them into Flowtally before assigning recipes in Menu Costing." />
             <div className="mt-4 flex flex-wrap gap-2">
               <Button type="button" variant="secondary" disabled={!connectionReady || !currentLocation || menuImportLoading} onClick={() => void reviewMenuImport()}>
                 {menuImportLoading ? "Reviewing..." : "Review import"}
@@ -507,7 +516,7 @@ export function PilotSquarePage() {
                   {[["New", "new"], ["Already imported / existing", "mapped"], ["Recipe needed", "recipe_needed"], ["Inactive", "inactive"], ["Conflict", "conflict"]].map(([label, key]) => <div key={key} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-lg font-bold text-ink">{menuImport.summary[key] ?? 0}</p></div>)}
                 </div>
                 <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
-                  {menuImport.entries.map((entry) => <div key={entry.squareCatalogObjectId} className="rounded-xl border border-line bg-white p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold text-ink">{entry.parentName ? `${entry.parentName} · ` : ""}{entry.name}</p><p className="mt-1 text-xs text-muted">ITEM_VARIATION · {entry.sellingPrice ? formatMoney(entry.sellingPrice) : "Price not set"}{entry.menuItemId ? ` · Flowtally menu item #${entry.menuItemId}` : ""}</p></div><Badge tone={entry.state === "mapped" ? "success" : entry.state === "conflict" ? "danger" : "warning"}>{entry.state === "recipe_needed" ? "Recipe needed" : entry.state}</Badge></div></div>)}
+                  {menuImport.entries.map((entry) => <div key={entry.squareCatalogObjectId} className="rounded-xl border border-line bg-white p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold text-ink">{entry.parentName ? `${entry.parentName} · ` : ""}{entry.name}</p><p className="mt-1 text-xs text-muted">{entry.sellingPrice ? formatMoney(entry.sellingPrice) : "Price not set"}{entry.menuItemId ? " · Already in Flowtally" : ""}</p></div><Badge tone={entry.state === "mapped" ? "success" : entry.state === "conflict" ? "danger" : "warning"}>{entry.state === "recipe_needed" ? "Recipe needed" : entry.state}</Badge></div></div>)}
                   {!menuImport.entries.length ? <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">No sellable Square variations found for this location.</p> : null}
                 </div>
               </div>
