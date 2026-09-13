@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotCountSession,
@@ -91,6 +92,8 @@ export function PilotStockCountsPage() {
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [selectionSeeded, setSelectionSeeded] = useState(false);
   const [workflowTab, setWorkflowTab] = useState<"active" | "history">("active");
+  const [showNewCount, setShowNewCount] = useState(false);
+  const [lineFilter, setLineFilter] = useState<"all" | "uncounted" | "counted" | "changed">("all");
   const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -167,10 +170,12 @@ export function PilotStockCountsPage() {
   const filteredLines = useMemo(
     () =>
       draft?.lines.filter((line) =>
-        `${line.itemNameSnapshot} ${line.stockUnitSnapshot} ${line.status} ${line.note}`.toLowerCase().includes(lineSearch.toLowerCase()),
+        `${line.itemNameSnapshot} ${line.stockUnitSnapshot} ${line.status} ${line.note}`.toLowerCase().includes(lineSearch.toLowerCase()) &&
+        (lineFilter === "all" || (lineFilter === "uncounted" && line.countedQuantity === null) || (lineFilter === "counted" && line.countedQuantity !== null) || (lineFilter === "changed" && line.countedQuantity !== null && line.countedQuantity !== line.expectedQuantity)),
       ) ?? [],
-    [draft?.lines, lineSearch],
+    [draft?.lines, lineFilter, lineSearch],
   );
+  const changedLines = useMemo(() => draft?.lines.filter((line) => line.countedQuantity !== null && line.countedQuantity !== line.expectedQuantity) ?? [], [draft?.lines]);
   const conflictLines = useMemo(() => draft?.lines.filter((line) => line.hasMovementSinceStart) ?? [], [draft?.lines]);
   const isCompleted = draft?.status === "Completed";
   const initialLoading = loading && !hasLoaded;
@@ -262,6 +267,7 @@ export function PilotStockCountsPage() {
       setConfirmConcurrency(false);
       setShowConcurrencyDetails(false);
       setMessage(`Stock count ${created.id} started.`);
+      setShowNewCount(false);
       navigate(`${location.pathname}?sessionId=${created.id}`, { replace: true });
       await load(created.id);
     } catch (err) {
@@ -353,7 +359,7 @@ export function PilotStockCountsPage() {
             <h1 className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">Stock Counts</h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createSession()}>
+            <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>
               New count
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={creating || saving || loading}>
@@ -382,8 +388,13 @@ export function PilotStockCountsPage() {
       </Card>
 
       {workflowTab === "active" && !draft ? (
-        <Card className="workspace-card">
-          <SectionHeader title="Start a count" description="Pick the active inventory items to include, then start or resume a count session." />
+        <Card className="workspace-card p-5">
+          <SectionHeader title="No count in progress" description="Start a count when the team is ready to enter physical quantities." action={<Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>New stock count</Button>} />
+        </Card>
+      ) : null}
+
+      {showNewCount ? <Modal title="New stock count" size="large" onClose={() => setShowNewCount(false)}>
+          <SectionHeader title="Choose items to count" description="Active inventory items are included by default." />
           <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
             <div className="space-y-3">
               <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
@@ -437,8 +448,7 @@ export function PilotStockCountsPage() {
               </div>
             </div>
           </div>
-        </Card>
-      ) : null}
+      </Modal> : null}
 
       <div className="flex flex-col gap-4">
         <Card className="workspace-card p-3">
@@ -520,11 +530,14 @@ export function PilotStockCountsPage() {
 
               <div className="mt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-ink">Count sheet</p>
+                  <div><p className="text-sm font-semibold text-ink">Count sheet</p><p className="text-xs text-muted">Counted {draft.countedLineCount} / {draft.itemCount}</p></div>
                   <label className="flex items-center gap-2 text-xs text-muted">
                     <span>Filter</span>
                     <input className="input h-9 w-48" placeholder="Search items" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
                   </label>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2" aria-label="Count line filters">
+                  {([['all', 'All'], ['uncounted', 'Uncounted'], ['counted', 'Counted'], ['changed', 'Changed']] as const).map(([value, label]) => <Button key={value} type="button" variant={lineFilter === value ? "primary" : "secondary"} onClick={() => setLineFilter(value)}>{label}</Button>)}
                 </div>
                 <div className="mt-2 workspace-table-wrap overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
@@ -550,6 +563,8 @@ export function PilotStockCountsPage() {
                 <span className="text-xs font-semibold text-muted">Notes</span>
                 <input className="input h-9 min-w-0 flex-1" placeholder="Optional count note" value={draft.notes} onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : current))} disabled={draft.status === "Completed"} />
               </label>
+
+              {!isCompleted && draft.uncountedLineCount === 0 && changedLines.length ? <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3"><p className="font-semibold text-amber-900">Review differences before applying</p><div className="mt-2 space-y-1 text-sm text-amber-900">{changedLines.slice(0, 5).map((line) => <p key={line.id}>{line.itemNameSnapshot}: {formatNumber(line.expectedQuantity)} → {formatNumber(line.countedQuantity ?? 0)} {line.stockUnitSnapshot}</p>)}</div></div> : null}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
                 <p className="text-xs text-muted">Counted quantities become inventory adjustments only when applied.</p>

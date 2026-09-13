@@ -44,7 +44,7 @@ function GoogleAuthErrorCard({ message }: { message: string }) {
 }
 
 function ProspectOnboardingForm({
-  session,
+  session: _session,
   onCreated,
 }: {
   session: CustomerSessionResponse;
@@ -56,7 +56,7 @@ function ProspectOnboardingForm({
   const [region, setRegion] = useState("ON");
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("Canada");
-  const [timezone, setTimezone] = useState("America/Toronto");
+  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto");
   const [templateKey, setTemplateKey] = useState("GENERIC_RESTAURANT");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,20 +97,17 @@ function ProspectOnboardingForm({
   return (
     <form className="mt-6 grid gap-4 rounded-3xl border border-line bg-white p-6 shadow-soft md:grid-cols-2" onSubmit={handleSubmit}>
       <div className="md:col-span-2">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted">Create your account</p>
+        <p className="text-xs font-bold uppercase tracking-wide text-muted">Restaurant setup</p>
         <h2 className="mt-1 text-2xl font-bold text-ink">Set up your first restaurant</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          We’ll create one prospective organization for {session.user.email}. You can add more setup details later.
-        </p>
       </div>
 
       <label className="block">
-        <span className="text-sm font-semibold text-ink">Business name</span>
+        <span className="text-sm font-semibold text-ink">Restaurant name</span>
         <input className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" value={name} onChange={(event) => setName(event.target.value)} required />
       </label>
 
       <label className="block">
-        <span className="text-sm font-semibold text-ink">Template</span>
+        <span className="text-sm font-semibold text-ink">Restaurant type</span>
         <select className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" value={templateKey} onChange={(event) => setTemplateKey(event.target.value)}>
           <option value="GENERIC_RESTAURANT">Independent restaurant</option>
           <option value="CAFE">Café</option>
@@ -146,7 +143,7 @@ function ProspectOnboardingForm({
       </label>
 
       <label className="block">
-        <span className="text-sm font-semibold text-ink">Timezone</span>
+        <span className="text-sm font-semibold text-ink">Timezone (IANA)</span>
         <input className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
       </label>
 

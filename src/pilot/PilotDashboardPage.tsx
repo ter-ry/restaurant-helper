@@ -178,7 +178,7 @@ export function PilotDashboardPage() {
     <div className="workspace-page">
       <WorkspacePageHeader
         eyebrow="Dashboard"
-        title="What the owner needs to know today"
+        title="Today"
         actions={
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}>
             <RefreshCcw className="h-4 w-4" />
@@ -206,7 +206,6 @@ export function PilotDashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-800">Needs attention</p>
-              <h2 className="mt-1 text-xl font-bold text-ink">Operational actions are waiting</h2>
             </div>
             <Badge tone="warning">{formatNumber(attentionItems.reduce((sum, item) => sum + item.count, 0))} actions</Badge>
           </div>
@@ -222,7 +221,7 @@ export function PilotDashboardPage() {
       ) : null}
 
       <Card className="workspace-card">
-        <SectionHeader title="Today's workflow" />
+        <SectionHeader title="Today’s operating snapshot" />
         <div className="grid gap-3 lg:grid-cols-6">
             {[
             { label: "Invoice", icon: <ClipboardList className="h-4 w-4" />, status: data?.workflow.purchase ?? "Needs review", to: "/app/purchases" },
@@ -238,14 +237,14 @@ export function PilotDashboardPage() {
                 <Badge tone={statusTone(step.status)}>{step.status}</Badge>
               </div>
               <p className="mt-3 text-sm font-bold text-ink">{step.label}</p>
-              {index === list.length - 1 ? <p className="mt-1 text-xs text-muted">Ready for bookkeeping export</p> : null}
+              {index === list.length - 1 ? <p className="mt-1 text-xs text-muted">Export</p> : null}
             </button>
           ))}
         </div>
       </Card>
 
       <Card className="workspace-card">
-        <SectionHeader title="Continue draft work" description="These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched." />
+        <SectionHeader title="Continue draft work" />
         <div className="grid gap-4 xl:grid-cols-4">
           {draftCards.map((card) => (
             <div key={card.title} className="rounded-3xl border border-brand-100 bg-brand-50/40 p-4">
@@ -278,7 +277,7 @@ export function PilotDashboardPage() {
 
       <div className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
         <Card className="workspace-card">
-          <SectionHeader title="This week&apos;s changes" description="The biggest shifts that affect pricing, stock, and spend." />
+          <SectionHeader title="Recent price changes" />
           <div className="space-y-3">
             {(data?.recentPriceChanges ?? []).slice(0, 5).map((change) => (
               <div key={`${String(change.id)}`} className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -297,14 +296,14 @@ export function PilotDashboardPage() {
         </Card>
 
         <Card className="workspace-card">
-          <SectionHeader title="Operational signals" description="Current exceptions only. Historic completed work stays in its workflow history." />
+          <SectionHeader title="Operational signals" />
           <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-5 text-sm text-muted">{attentionItems.length ? "See the action panel above for current attention items." : "No operational alerts right now."}</p>
         </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="workspace-card">
-          <SectionHeader title="Recent activity" description="New purchases, inventory moves, and count updates." />
+          <SectionHeader title="Recent activity" />
           <div className="space-y-3">
             {(data?.recentMovements ?? []).slice(0, 5).map((movement) => (
               <div key={movement.id} className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-slate-50 px-4 py-3">
@@ -323,7 +322,7 @@ export function PilotDashboardPage() {
         </Card>
 
         <Card className="workspace-card">
-          <SectionHeader title="Reorder plan preview" description="The items that need attention now, from low stock through urgent reorder." />
+          <SectionHeader title="Reorder preview" />
           <div className="space-y-3">
             {(data?.reorderSuggestions ?? []).slice(0, 5).map((item) => (
               <div key={item.id} className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -352,7 +351,7 @@ export function PilotDashboardPage() {
       </div>
 
       <Card className="workspace-card">
-        <SectionHeader title="Supplier spend" description="Who drove this month&apos;s purchasing so far." />
+        <SectionHeader title="Supplier spend" />
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {(data?.supplierSpend ?? []).slice(0, 6).map((supplier) => (
             <div key={String(supplier.supplier ?? supplier.id)} className="rounded-2xl border border-line bg-slate-50 p-4">
