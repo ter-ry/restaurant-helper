@@ -1464,7 +1464,7 @@ test("active customer Google sign-in returns into the app dashboard", async ({ p
 
   await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/app\/dashboard/);
-  await expect(page.getByRole("heading", { name: "What the owner needs to know today" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 });
 
 test("successful logout stays on the login page after session initialization", async ({ page }) => {
@@ -1499,7 +1499,7 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
 
   await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Set up your first restaurant" })).toBeVisible();
-  await page.getByLabel("Business name").fill("Demo Bistro");
+  await page.getByLabel("Restaurant name").fill("Demo Bistro");
   await page.getByLabel("Location name").fill("Main Dining Room");
   await page.getByRole("button", { name: "Create your workspace" }).click();
   await expect(page.getByText("Logged-in prospect", { exact: true })).toBeVisible();
