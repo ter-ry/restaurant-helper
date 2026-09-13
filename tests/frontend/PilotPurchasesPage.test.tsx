@@ -8,6 +8,7 @@ import { PilotApiError, type PilotInventoryItem, type PilotPurchaseInvoice, type
 const mockApi = vi.hoisted(() => ({
   fetchPilotPurchases: vi.fn(),
   fetchPilotInventory: vi.fn(),
+  createPilotInventoryItem: vi.fn(),
   fetchPilotPurchaseInvoice: vi.fn(),
   createPilotPurchaseInvoice: vi.fn(),
   createPilotSupplier: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     ...actual,
     fetchPilotPurchases: mockApi.fetchPilotPurchases,
     fetchPilotInventory: mockApi.fetchPilotInventory,
+    createPilotInventoryItem: mockApi.createPilotInventoryItem,
     fetchPilotPurchaseInvoice: mockApi.fetchPilotPurchaseInvoice,
     createPilotPurchaseInvoice: mockApi.createPilotPurchaseInvoice,
     createPilotSupplier: mockApi.createPilotSupplier,
@@ -190,6 +192,7 @@ describe("PilotPurchasesPage", () => {
   beforeEach(() => {
     mockApi.fetchPilotPurchases.mockResolvedValue(createPurchasesResponse());
     mockApi.fetchPilotInventory.mockResolvedValue(createInventoryResponse());
+    mockApi.createPilotInventoryItem.mockImplementation(async (payload) => ({ ...createInventoryResponse().items[0], ...payload, id: 302, name: payload.name, normalizedName: String(payload.name).toLowerCase() }));
     mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
       const response = createPurchasesResponse();
       const invoice = response.invoices.find((entry) => entry.id === invoiceId);
@@ -357,6 +360,36 @@ describe("PilotPurchasesPage", () => {
     const descriptions = screen.getAllByLabelText("Description");
     fireEvent.change(descriptions[1], { target: { value: "Milk 2L extra" } });
     expect(screen.getAllByLabelText("Inventory item")[1]).toHaveValue("");
+  });
+
+  it("locks the invoice editor while OCR is extracting", async () => {
+    let resolveExtraction!: (value: Awaited<ReturnType<typeof mockApi.uploadPilotInvoiceOcr>>) => void;
+    mockApi.uploadPilotInvoiceOcr.mockReturnValueOnce(new Promise((resolve) => { resolveExtraction = resolve; }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    const file = new File(["%PDF-1.4"], "pending.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+    expect(await screen.findByRole("status")).toHaveTextContent("Reading invoice");
+    expect(screen.getByRole("button", { name: "Save & receive" })).toBeDisabled();
+    resolveExtraction({ provider: "ocr.space", fileName: file.name, contentType: file.type, fields: {}, lineItems: [], needsReview: true, rawText: "" });
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+  });
+
+  it("creates and maps a missing inventory item without losing the invoice draft", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    const descriptions = screen.getAllByLabelText("Description");
+    fireEvent.change(descriptions[1], { target: { value: "Tomato sauce" } });
+    fireEvent.change(screen.getByLabelText("Invoice number"), { target: { value: "KEEP-ME" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "+ Create" })[1]);
+    expect(await screen.findByRole("heading", { name: "Create inventory item" })).toBeVisible();
+    expect(screen.getByLabelText("Item name")).toHaveValue("Tomato sauce");
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    await waitFor(() => expect(screen.getAllByLabelText("Inventory item")[1]).toHaveValue("302"));
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("KEEP-ME");
+    expect(mockApi.createPilotInventoryItem).toHaveBeenCalled();
   });
 
   it("surfaces structured invoice validation details", async () => {

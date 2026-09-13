@@ -258,6 +258,9 @@ describe("PilotSquarePage", () => {
     expect(screen.getByText("Location mapping")).toBeVisible();
     expect(screen.getByText("Menu mapping")).toBeVisible();
     expect(screen.getByText("disconnected")).toBeVisible();
+    expect(screen.getAllByText("Connection").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Private workspace for Square connection")).not.toBeInTheDocument();
+    expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
   });
 
   it("supports connected status, sync, and menu/location mapping updates", async () => {

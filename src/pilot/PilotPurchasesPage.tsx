@@ -8,6 +8,7 @@ import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotPurchaseInvoice,
+  createPilotInventoryItem,
   createPilotSupplier,
   correctPilotPurchaseInvoice,
   fetchPilotInventory,
@@ -304,6 +305,9 @@ export function PilotPurchasesPage() {
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [ocrPreviewType, setOcrPreviewType] = useState<"image" | "pdf" | null>(null);
   const [ocrPreviewName, setOcrPreviewName] = useState("");
+  const [newInventoryItem, setNewInventoryItem] = useState<{ name: string; stockUnit: string; category: string }>({ name: "", stockUnit: "each", category: "Other" });
+  const [inventoryItemTargetIndex, setInventoryItemTargetIndex] = useState<number | null>(null);
+  const [inventoryItemSaving, setInventoryItemSaving] = useState(false);
   const requestedInvoiceId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("invoiceId");
     const parsed = Number(value);
@@ -717,6 +721,27 @@ export function PilotPurchasesPage() {
     }));
   };
 
+  const openInventoryItemCreator = (index: number, line: DraftLine) => {
+    setInventoryItemTargetIndex(index);
+    setNewInventoryItem({ name: line.description.trim(), stockUnit: line.inventoryUnit || line.purchaseUnit || "each", category: "Other" });
+  };
+
+  const createInventoryItemInline = async () => {
+    if (inventoryItemTargetIndex == null || !newInventoryItem.name.trim()) return;
+    setInventoryItemSaving(true);
+    setError(null);
+    try {
+      const created = await createPilotInventoryItem({ name: newInventoryItem.name.trim(), category: newInventoryItem.category.trim() || "Other", stockUnit: newInventoryItem.stockUnit.trim() || "each", currentOnHand: 0, latestPurchasePrice: 0, lastPurchaseUnit: newInventoryItem.stockUnit.trim() || "each", lastPurchaseConversionFactor: 1, minQuantity: 0, parLevel: 0, active: true });
+      setInventoryItems((current) => [...current, created]);
+      setLineInventoryItem(inventoryItemTargetIndex, created.id, draft.lineItems[inventoryItemTargetIndex]?.description ?? created.name);
+      setInventoryItemTargetIndex(null);
+    } catch (err) {
+      setError(purchaseErrorMessage(err));
+    } finally {
+      setInventoryItemSaving(false);
+    }
+  };
+
   return (
     <div className="workspace-page">
       <Card className="surface-panel workspace-card p-3 sm:p-4">
@@ -780,7 +805,8 @@ export function PilotPurchasesPage() {
             </aside>
           ) : null}
           <div ref={editorPanelRef} className="scroll-mt-32">
-          <Card className="workspace-card w-full" data-testid="purchase-editor-card">
+          <Card className={`workspace-card w-full ${ocrLoading ? "pointer-events-none opacity-60" : ""}`} data-testid="purchase-editor-card" aria-busy={ocrLoading}>
+            {ocrLoading ? <div role="status" className="mb-4 flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-900"><span className="h-4 w-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" />Reading invoice… Extracting supplier, totals, and line items.</div> : null}
             {!draft.id && !ocrPreviewUrl ? <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-ink">How would you like to add this purchase?</p><p className="mt-1 text-xs text-muted">Upload an invoice for OCR or enter the purchase details manually.</p></div><div className="flex flex-wrap gap-2"><input ref={ocrInputRef} className="sr-only" aria-label="Invoice file" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadInvoice(file); }} /><Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>{ocrLoading ? "Processing invoice…" : "Upload invoice"}</Button><Button variant="ghost" type="button" onClick={() => editorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Enter manually</Button></div></div> : null}
             {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -797,13 +823,13 @@ export function PilotPurchasesPage() {
                 </div>
                 {!finalizedStatus ? (
                   <div className="flex flex-wrap justify-end gap-2">
-                    <Button variant="secondary" disabled={saving} type="button" onClick={() => void saveDraft("Draft")}>
+                    <Button variant="secondary" disabled={saving || ocrLoading} type="button" onClick={() => void saveDraft("Draft")}>
                       {saving ? "Saving..." : "Save draft"}
                     </Button>
-                    <Button disabled={saving || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
+                    <Button disabled={saving || ocrLoading || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
                       {saving ? "Receiving..." : "Save & receive"}
                     </Button>
-                    <Button variant="ghost" type="button" onClick={() => setShowReview(true)}>
+                    <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
                       Review
                     </Button>
                   </div>
@@ -887,12 +913,12 @@ export function PilotPurchasesPage() {
                             </label>
                             <label className="block">
                               <span className="text-xs font-bold uppercase tracking-wide text-muted">Inventory item</span>
-                              <select className="input mt-1" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus}>
+                              <div className="mt-1 flex gap-2"><select className="input" value={line.inventoryItemId ?? ""} onChange={(event) => setLineInventoryItem(index, event.target.value ? Number(event.target.value) : null, line.description)} disabled={finalizedStatus || ocrLoading}>
                                 <option value="">Unmapped</option>
                                 {inventoryItems.map((item) => (
                                   <option key={item.id} value={item.id}>{item.name}</option>
                                 ))}
-                              </select>
+                              </select><Button variant="secondary" type="button" disabled={finalizedStatus || ocrLoading} onClick={() => openInventoryItemCreator(index, line)}>+ Create</Button></div>
                             </label>
                           </div>
                           <div className="mt-3 grid gap-3 md:grid-cols-[minmax(7rem,0.85fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)]">
@@ -1028,6 +1054,16 @@ export function PilotPurchasesPage() {
             </div>
           </Card>
           </div>
+        </div>
+      </Modal> : null}
+
+      {inventoryItemTargetIndex != null ? <Modal title="Create inventory item" size="small" onClose={() => setInventoryItemTargetIndex(null)}>
+        <p className="text-sm text-muted">Create the missing item and keep this invoice draft open.</p>
+        <div className="mt-4 space-y-3">
+          <label className="block"><span className="text-sm font-semibold text-ink">Item name</span><input className="input mt-1" value={newInventoryItem.name} onChange={(event) => setNewInventoryItem((current) => ({ ...current, name: event.target.value }))} /></label>
+          <label className="block"><span className="text-sm font-semibold text-ink">Category</span><input className="input mt-1" value={newInventoryItem.category} onChange={(event) => setNewInventoryItem((current) => ({ ...current, category: event.target.value }))} /></label>
+          <label className="block"><span className="text-sm font-semibold text-ink">Stock unit</span><input className="input mt-1" value={newInventoryItem.stockUnit} onChange={(event) => setNewInventoryItem((current) => ({ ...current, stockUnit: event.target.value }))} /></label>
+          <div className="flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setInventoryItemTargetIndex(null)}>Cancel</Button><Button type="button" disabled={inventoryItemSaving || !newInventoryItem.name.trim()} onClick={() => void createInventoryItemInline()}>{inventoryItemSaving ? "Creating…" : "Create item"}</Button></div>
         </div>
       </Modal> : null}
 
