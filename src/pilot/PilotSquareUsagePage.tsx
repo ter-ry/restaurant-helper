@@ -327,7 +327,8 @@ export function PilotSquareUsagePage() {
             </div>
           </div>
 
-          {loading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">Loading usage and variance…</div> : null}\n          {mappingError ? (
+          {loading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">{usage || mappings.length ? "Refreshing usage and variance…" : "Loading usage and variance…"}</div> : null}
+          {mappingError ? (
             <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle className="h-4 w-4" />
@@ -350,7 +351,7 @@ export function PilotSquareUsagePage() {
             <BarChart3 className="h-4 w-4 text-brand-700" />
             Theoretical usage by inventory item
           </div>
-          <div className="mt-3 overflow-hidden rounded-2xl border border-line bg-white">
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
                 <tr>
@@ -365,13 +366,13 @@ export function PilotSquareUsagePage() {
               <tbody>
                 {topUsageRows.length > 0 ? (
                   topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} onSelect={() => setSelectedVarianceId(row.inventoryItemId)} />)
-                ) : (
+                ) : !loading ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-sm text-muted" colSpan={6}>
                       No usage rows are available yet.
                     </td>
                   </tr>
-                )}
+                ) : null}
               </tbody>
             </table>
           </div>

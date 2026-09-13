@@ -194,7 +194,7 @@ export function PilotWorkspaceLayout() {
         <AnalyticsTracker />
         <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-4xl items-center gap-8">
           <section className="space-y-5 rounded-3xl border border-line bg-ink p-6 text-white shadow-soft sm:p-8">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Pilot access</p>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Account setup</p>
             <h1 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">Choose the active organization</h1>
             <p className="max-w-2xl text-sm leading-6 text-slate-200 sm:text-base">
               This account has more than one organization membership, so the pilot keeps the active organization explicit instead of guessing.
@@ -203,7 +203,7 @@ export function PilotWorkspaceLayout() {
             <div className="grid gap-3 sm:grid-cols-3">
               {[
                 ["Selection", "Server-checked"],
-                ["Tenant", "One active org"],
+                ["Restaurant", "One active organization"],
                 ["Location", "Must match org"],
               ].map(([label, detail]) => (
                 <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -223,7 +223,7 @@ export function PilotWorkspaceLayout() {
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Organizations</p>
                 <h2 className="mt-1 text-2xl font-bold text-ink">Pick the active workspace</h2>
                 <p className="mt-2 text-sm leading-6 text-muted">
-                  Choose the restaurant you want to work in. The pilot will then load locations for that organization and clear any stale location selection.
+                  Choose the restaurant you want to work in. Flowtally will then load its locations and clear any stale location selection.
                 </p>
               </div>
             </div>
@@ -250,7 +250,7 @@ export function PilotWorkspaceLayout() {
                 </label>
               ) : (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                  No pilot organization has been assigned to this account yet. Ask the owner to add a membership before continuing.
+                  No restaurant has been assigned to this account yet. Ask an administrator to add access before continuing.
                 </div>
               )}
 
@@ -288,10 +288,10 @@ export function PilotWorkspaceLayout() {
       <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-4xl items-center gap-8">
           <section className="space-y-5 rounded-3xl border border-line bg-ink p-6 text-white shadow-soft sm:p-8">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Pilot access</p>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-100">Account setup</p>
             <h1 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">Choose the active location</h1>
             <p className="max-w-2xl text-sm leading-6 text-slate-200 sm:text-base">
-              The selected organization is ready, but the backend still needs a location choice before operational pages can load.
+              The selected organization is ready, but you still need to choose a location before operational pages can load.
             </p>
           </section>
 
@@ -411,7 +411,7 @@ export function PilotWorkspaceLayout() {
                     ))}
                   </select>
                 ) : (
-                <p className="font-semibold text-ink">{organization?.name ?? "Flowtally pilot"}</p>
+                <p className="font-semibold text-ink">{organization?.name ?? "Flowtally"}</p>
                 )}
               </div>
 
