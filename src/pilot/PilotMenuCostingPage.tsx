@@ -21,6 +21,7 @@ import {
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { usePilotSession } from "./PilotSessionProvider";
 import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
@@ -177,6 +178,13 @@ export function PilotMenuCostingPage() {
   const menuItems = useMemo(() => data?.menuItems ?? [], [data?.menuItems]);
   const activeInventoryItems = inventoryItems.filter((item) => item.active);
   const initialLoading = loading && !hasLoaded;
+  const averageFoodCost = useMemo(() => {
+    const costReadyItems = menuItems.filter((item) => item.recipeId != null && item.costAvailable && Number.isFinite(Number(item.foodCostPercent)));
+    if (!costReadyItems.length) {
+      return null;
+    }
+    return costReadyItems.reduce((sum, item) => sum + Number(item.foodCostPercent), 0) / costReadyItems.length;
+  }, [menuItems]);
   const selectedRecipe = useMemo(() => recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null, [recipes, selectedRecipeId]);
   const selectedMenuItem = useMemo(() => menuItems.find((menuItem) => menuItem.id === selectedMenuItemId) ?? null, [menuItems, selectedMenuItemId]);
   const selectedIngredient = useMemo(
@@ -387,9 +395,8 @@ export function PilotMenuCostingPage() {
         }
         metrics={[
           { label: "Menu items", value: hasLoaded ? formatNumber(menuItems.length) : "—", helper: "Sellable items" },
-          { label: "Average food cost", value: hasLoaded && menuItems.length ? `${formatNumber(menuItems.reduce((sum, item) => sum + (item.foodCostPercent || 0), 0) / menuItems.length)}%` : "—", helper: "Across priced items" },
+          { label: "Average food cost", value: hasLoaded && averageFoodCost != null ? `${formatNumber(averageFoodCost)}%` : "—", helper: "Across cost-ready items" },
           { label: "Recipe needed", value: hasLoaded ? formatNumber(menuItems.filter((item) => !item.recipeId).length) : "—", helper: "Assign or create a recipe" },
-          { label: "High cost", value: hasLoaded ? formatNumber(menuItems.filter((item) => (item.foodCostPercent ?? 0) > 35).length) : "—", helper: "Review pricing or recipe" },
         ]}
       />
 
@@ -418,9 +425,6 @@ export function PilotMenuCostingPage() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} onClick={() => void load()} type="button" disabled={loading}>
-          Refresh
-        </Button>
       </div>
 
       <WorkspaceTabs
@@ -435,7 +439,11 @@ export function PilotMenuCostingPage() {
       {menuTab === "recipes" ? (
       <div className="grid gap-5">
         <Card className={`order-1 p-4 ${filteredRecipes.length ? "" : "hidden"}`}>
-              <SectionHeader title="Recipes" description="Create a recipe, then attach the ingredient lines that drive its live cost." />
+              <SectionHeader
+                title="Recipes"
+                description="Create a recipe, then attach the ingredient lines that drive its live cost."
+                action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button">New recipe</Button>}
+              />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
               {filteredRecipes.map((recipe) => {
@@ -473,12 +481,11 @@ export function PilotMenuCostingPage() {
           ) : null}
         </Card>
 
-        <div className={showRecipeEditor ? "fixed inset-0 z-50 flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-2" : "hidden"} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeEditorMode("hidden"); } }}>
-        <Card role="dialog" aria-modal="true" aria-label={recipeDraft.id ? "Edit recipe" : "New recipe"} className="max-h-[calc(100vh-1rem)] w-full max-w-5xl overflow-y-auto p-4 shadow-2xl">
+        {showRecipeEditor ? <Modal title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"} size="large" onClose={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeEditorMode("hidden"); }}>
           <SectionHeader
-            title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"}
+            title="Recipe details"
             description={recipeDraft.id ? "Recipes stay linked to the current location and inherit live inventory costs." : recipeEditorMode === "create" ? "Build the new recipe and save it deliberately." : "Select an existing recipe or start a new one."}
-            action={<div className="flex flex-wrap gap-2">{showRecipeEditor ? <Button variant="ghost" type="button" onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeEditorMode("hidden"); }}>Close</Button> : null}<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button" variant="secondary">New recipe</Button></div>}
+            action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button" variant="secondary">New recipe</Button>}
           />
           {showRecipeEditor ? (
             <>
@@ -659,8 +666,7 @@ export function PilotMenuCostingPage() {
               <div className="mt-4 rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">Select a recipe to manage its ingredients.</div>
             )}
           </div>
-        </Card>
-        </div>
+        </Modal> : null}
       </div>
       ) : (
       <Card className="p-5">
@@ -699,9 +705,7 @@ export function PilotMenuCostingPage() {
               <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No menu items yet.</div>
             ) : null}
           </div>
-          <div className={showMenuItemEditor ? "fixed inset-0 z-50 flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-2" : "hidden"} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedMenuItemId(null); setMenuItemEditorMode("hidden"); } }}>
-          <div role="dialog" aria-modal="true" aria-label={menuItemDraft.id ? "Edit menu item" : "New menu item"} className="max-h-[calc(100vh-1rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-white p-4 shadow-2xl">
-            <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-ink">{menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"}</h3><Button variant="ghost" type="button" onClick={() => { setSelectedMenuItemId(null); setMenuItemEditorMode("hidden"); }}>Close</Button></div>
+          {showMenuItemEditor ? <Modal title={menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"} size="large" onClose={() => { setSelectedMenuItemId(null); setMenuItemEditorMode("hidden"); }}>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm font-medium text-ink">Name</span>
@@ -783,8 +787,7 @@ export function PilotMenuCostingPage() {
                 ) : null}
               </div>
             ) : null}
-          </div>
-          </div>
+          </Modal> : null}
         </div>
       </Card>
       )}
