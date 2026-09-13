@@ -168,8 +168,7 @@ describe("PilotReorderPlanPage", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Nothing needs reordering right now.")).toBeVisible();
-    expect(screen.getByText("All active inventory items are currently above their reorder thresholds.")).toBeVisible();
+    expect(await screen.findByText("No items currently need reorder.")).toBeVisible();
     expect(screen.getByText(/Checked/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Start manual draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "View history" })).toBeVisible();
@@ -183,12 +182,12 @@ describe("PilotReorderPlanPage", () => {
   it("separates live planning from completed history and keeps the draft actions clear", async () => {
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Plan what needs ordering and preserve the snapshot" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "What to buy" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Live planning" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("Current reorder pressure")).toBeVisible();
-    expect(screen.getByText("Supplier groups")).toBeVisible();
+    expect(screen.getAllByText("Needs reorder").length).toBeGreaterThan(0);
+    expect(screen.getByText("By supplier")).toBeVisible();
     expect(screen.getByText("Saved plans")).toBeVisible();
-    expect(screen.getByText("Drafts stay editable. Completed plans preserve their snapshots.")).toBeVisible();
+    expect(screen.getByText("Saved plans")).toBeVisible();
     expect(screen.getAllByText("Week 1 draft").length).toBeGreaterThan(0);
     expect(screen.queryByText("Week 1 completed")).not.toBeInTheDocument();
 

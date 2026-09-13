@@ -317,8 +317,8 @@ export function PilotReorderPlanPage() {
       <Card className="surface-panel workspace-card">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Reorder Plan</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">Plan what needs ordering and preserve the snapshot</h1>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Reorder</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">What to buy</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => void createDraft()} disabled={creating || saving || loading}>
@@ -342,8 +342,8 @@ export function PilotReorderPlanPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
-            { label: "Current suggestions", value: hasLoaded ? formatNumber(currentSuggestions.length) : "—", helper: hasLoaded ? `${formatNumber(currentUrgentCount)} urgent` : "Loading" },
-            { label: "Unknown prices", value: hasLoaded ? formatNumber(currentUnknownPriceCount) : "—", helper: "estimate only" },
+            { label: "Needs reorder", value: hasLoaded ? formatNumber(currentSuggestions.length) : "—", helper: hasLoaded ? `${formatNumber(currentUrgentCount)} below minimum` : "Loading" },
+            { label: "Cost unavailable", value: hasLoaded ? formatNumber(currentUnknownPriceCount) : "—", helper: "estimate unavailable" },
             { label: "Draft plans", value: hasLoaded ? formatNumber(draftPlanCount) : "—", helper: hasLoaded ? `${formatNumber(preparedPlanCount)} prepared` : "Loading" },
             { label: "Completed plans", value: hasLoaded ? formatNumber(completedPlanCount) : "—", helper: "history preserved" },
           ].map((metric) => (
@@ -363,7 +363,6 @@ export function PilotReorderPlanPage() {
             value={workflowTab}
             onChange={(value) => setWorkflowTab(value as "live" | "history")}
           />
-          <p className="mt-3 text-sm text-muted">{workflowTab === "history" ? "Completed plans are locked history snapshots." : "Live pressure stays separate from completed history so the working draft remains obvious."}</p>
         </div>
       </Card>
 
@@ -371,7 +370,7 @@ export function PilotReorderPlanPage() {
       {workflowTab === "history" ? (
         <div className="grid gap-4">
           <Card className="workspace-card">
-            <SectionHeader title="Completed plan history" description="Live reorder pressure stays hidden here so this view reads as history only." />
+            <SectionHeader title="Completed plan history" />
             <div className="space-y-3">
               {historyPlans.slice(0, 5).map((plan) => (
                 <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -393,7 +392,7 @@ export function PilotReorderPlanPage() {
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
+            <SectionHeader title="Saved plans" />
             <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
               {visiblePlans.map((plan) => (
                 <button
@@ -440,7 +439,7 @@ export function PilotReorderPlanPage() {
       ) : showCompactEmptyState ? (
         <div className="space-y-4">
           <Card className="workspace-card border-brand-200 bg-brand-50/30">
-            <SectionHeader title="Nothing needs reordering right now." description="All active inventory items are currently above their reorder thresholds." />
+            <SectionHeader title="No items currently need reorder." />
             <div className="mt-4 rounded-2xl border border-brand-100 bg-white px-4 py-3 text-sm leading-6 text-slate-700">
               Checked <span className="font-bold text-ink">{formatNumber(activeInventoryItemCount)} active inventory item{activeInventoryItemCount === 1 ? "" : "s"}</span>. No current reorder pressure was found.
               {recommendationsRefreshedAt ? <span className="block text-xs text-muted">Recommendations refreshed {new Date(recommendationsRefreshedAt).toLocaleString()}</span> : null}
@@ -454,11 +453,10 @@ export function PilotReorderPlanPage() {
                 View history
               </Button>
             </div>
-            <p className="mt-4 text-sm text-muted">Completed plans stay preserved as history snapshots.</p>
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Completed plan history" description="History stays separate from live reorder pressure." />
+            <SectionHeader title="Completed plan history" />
             <div className="space-y-3">
               {historyPlans.slice(0, 3).map((plan) => (
                 <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -482,14 +480,14 @@ export function PilotReorderPlanPage() {
       ) : (
         <div className={`${draft ? "order-2" : "order-1"} grid gap-6 xl:grid-cols-[1.18fr_0.82fr]`}>
           <Card className="p-6">
-            <SectionHeader title="Current reorder pressure" description="Live suggestions from the current stock picture." />
+            <SectionHeader title="Needs reorder" />
             <div className="workspace-table-wrap max-h-[26rem] overflow-y-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-muted">
                   <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Supplier</th><th className="px-3 py-2">On hand / PAR</th><th className="px-3 py-2">Suggested</th><th className="px-3 py-2">Estimate</th><th className="px-3 py-2">Action</th></tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {(currentSuggestions ?? []).slice(0, 5).map((suggestion) => {
+                  {[...(currentSuggestions ?? [])].sort((a, b) => a.currentQuantity - b.currentQuantity).map((suggestion) => {
                     const isInDraft = draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId);
                     return (
                       <tr key={suggestion.id} className="bg-white">
@@ -508,7 +506,7 @@ export function PilotReorderPlanPage() {
             </div>
 
             <div className="mt-6">
-              <SectionHeader title="Supplier groups" description="What each supplier needs in the current snapshot." />
+              <SectionHeader title="By supplier" />
               <div className="space-y-3">
                 {currentGroups.map((group) => (
                   <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -535,7 +533,7 @@ export function PilotReorderPlanPage() {
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Saved plans" description="Drafts stay editable. Completed plans preserve their snapshots." />
+            <SectionHeader title="Saved plans" />
             <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
               {visiblePlans.map((plan) => (
                 <button

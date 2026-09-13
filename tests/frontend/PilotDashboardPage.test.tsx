@@ -159,15 +159,15 @@ describe("PilotDashboardPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByRole("heading", { name: "What the owner needs to know today" });
+    await screen.findByRole("heading", { name: "Today" });
     expect(screen.getByText("Reorder pressure")).toBeVisible();
     expect(screen.getByText("Open Reorder Plan")).toBeVisible();
     expect(screen.getByText("Square sync needs attention")).toBeVisible();
     expect(screen.getByText("Square variations need mapping")).toBeVisible();
     expect(screen.getByText("Daily Close is outstanding")).toBeVisible();
     expect(screen.getByText("2 item(s) need attention")).toBeVisible();
-    expect(screen.getByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).toBeVisible();
-    expect(screen.getByText("The items that need attention now, from low stock through urgent reorder.")).toBeVisible();
+    expect(screen.queryByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).not.toBeInTheDocument();
+    expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
     expect(screen.getByText("Daily close")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Open reorder plan" }));
