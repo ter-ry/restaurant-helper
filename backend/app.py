@@ -3,6 +3,7 @@ from __future__ import annotations
 import click
 import json
 import os
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse
@@ -19,7 +20,7 @@ from .access import enforce_operational_access
 from .imports import bp as imports_bp
 from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
-from .models import InventoryItem, MenuItem, Organization, Recipe, RestaurantLocation, Supplier, User
+from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, MenuItem, Organization, Recipe, RestaurantLocation, Supplier, User
 from .ocr import bp as ocr_bp
 from .tenant_context import apply_request_tenant_context
 from .daily_close import bp as daily_close_bp
@@ -300,6 +301,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         for name in recipe_names:
             if not Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
                 db.session.add(Recipe(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), description="Canonical demo recipe", yield_quantity=Decimal("1"), yield_unit="batch", created_by_user_id=result.owner_id, updated_by_user_id=result.owner_id))
+        waste_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Chicken Breast").first()
+        if waste_item and not InventoryWasteEvent.query.filter_by(organization_id=organization.id, location_id=location.id, reason="Demo spoilage").first():
+            before = Decimal(str(waste_item.current_on_hand))
+            after = before - Decimal("0.25")
+            movement = InventoryMovement(organization_id=organization.id, location_id=location.id, inventory_item_id=waste_item.id, quantity_delta=Decimal("-0.25"), quantity_before=before, quantity_after=after, unit=waste_item.stock_unit, source_type="waste", source_record_id="demo-waste-1", source_line_id="", reason="Demo spoilage", actor_user_id=result.owner_id)
+            db.session.add(movement)
+            db.session.flush()
+            db.session.add(InventoryWasteEvent(organization_id=organization.id, location_id=location.id, inventory_item_id=waste_item.id, inventory_movement_id=movement.id, quantity=Decimal("0.25"), unit=waste_item.stock_unit, reason="Demo spoilage", note="Seeded operational story", unit_cost=waste_item.latest_purchase_price, total_cost=(waste_item.latest_purchase_price * Decimal("0.25")), created_by_user_id=result.owner_id))
+            waste_item.current_on_hand = after
+        if not DailyCloseSession.query.filter_by(organization_id=organization.id, location_id=location.id).first():
+            db.session.add(DailyCloseSession(organization_id=organization.id, location_id=location.id, business_date=date.today() - timedelta(days=1), status="COMPLETED", summary_snapshot_json={"sales": 1840, "expectedInventory": 1260}, usage_snapshot_json={"square": "demo"}, exceptions_snapshot_json=["Small count variance"], notes="Completed canonical demo close", completed_by_user_id=result.owner_id, created_by_user_id=result.owner_id))
+            db.session.add(DailyCloseSession(organization_id=organization.id, location_id=location.id, business_date=date.today(), status="DRAFT", summary_snapshot_json={}, usage_snapshot_json={}, exceptions_snapshot_json=[], notes="Open demo close", created_by_user_id=result.owner_id))
         menu_overrides = changes.get("menu_items", {}) if isinstance(changes, dict) else {}
         if isinstance(menu_overrides, dict):
             for old_name, new_name in menu_overrides.items():
