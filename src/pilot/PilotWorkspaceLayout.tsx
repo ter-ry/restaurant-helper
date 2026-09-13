@@ -6,6 +6,7 @@ import { Button } from "../components/Button";
 import { usePilotSession } from "./PilotSessionProvider";
 import { fetchPilotAttention, updatePilotLocation, type PilotLocation } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
+import { demoReadOnly } from "./pilotConfig";
 
 const navItems = [
   { to: "/app/dashboard", label: "Dashboard", group: "Overview", icon: LayoutDashboard },
@@ -507,6 +508,7 @@ export function PilotWorkspaceLayout() {
           </header>
 
           <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-5 lg:px-6 xl:h-[calc(100dvh-4.5rem)] xl:overflow-y-auto xl:px-8">
+            {demoReadOnly ? <div className="mb-4 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-center text-xs font-semibold text-brand-900">Demo mode — changes are disabled</div> : null}
             {error ? (
               <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert" aria-live="polite">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_PILOT_APP?: string;
   readonly VITE_FLOWTALLY_API_BASE_URL?: string;
   readonly VITE_PILOT_API_BASE_URL?: string;
+  readonly VITE_FLOWTALLY_DEMO_READ_ONLY?: string;
 }
 
 interface ImportMeta {

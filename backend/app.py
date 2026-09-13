@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import click
+import json
 import os
+from decimal import Decimal
+from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, Response, g, jsonify, request, session
 from flask_wtf.csrf import CSRFError
 from flask_login import logout_user
+from sqlalchemy import inspect
 
 from .auth import bp as auth_bp
 from .commercial import bp as commercial_bp
@@ -15,7 +19,7 @@ from .access import enforce_operational_access
 from .imports import bp as imports_bp
 from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
-from .models import User
+from .models import InventoryItem, MenuItem, Organization, Recipe, RestaurantLocation, Supplier, User
 from .ocr import bp as ocr_bp
 from .tenant_context import apply_request_tenant_context
 from .daily_close import bp as daily_close_bp
@@ -48,6 +52,22 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.before_request
     def assign_request_id() -> None:
         ensure_request_id()
+
+    @app.before_request
+    def enforce_demo_read_only() -> Response | None:
+        """Keep a demo deployment browseable while making every write server-authoritative."""
+        if not app.config.get("FLOWTALLY_DEMO_READ_ONLY") or request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        if not request.path.startswith("/api/"):
+            return None
+        # Authentication/session mechanics must remain available for a demo login and logout.
+        if request.path.startswith("/api/auth/"):
+            return None
+        return json_error("Demo mode is read-only; changes are disabled.", 403)
+
+    # Flask-WTF installs its CSRF hook during csrf.init_app; put the demo guard
+    # ahead of it so blocked writes receive the explicit demo response.
+    app.before_request_funcs.setdefault(None, []).insert(0, enforce_demo_read_only)
 
     @app.before_request
     def enforce_split_origin_browser_boundary():
@@ -227,6 +247,68 @@ def create_app(test_config: dict | None = None) -> Flask:
             "Reset and seeded pilot data: "
             f"organization={result.organization_id}, owner={result.owner_id}, manager={result.manager_id}, location={result.location_id}"
         )
+
+    @app.cli.command("seed-demo")
+    @click.option("--profile", default="casual_restaurant", show_default=True)
+    @click.option("--reset", is_flag=True, help="Reset the canonical demo organization before seeding.")
+    @click.option("--restaurant-name", default=None)
+    @click.option("--location-name", default=None)
+    @click.option("--overlay", type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None)
+    def seed_demo_command(profile: str, reset: bool, restaurant_name: str | None, location_name: str | None, overlay: Path | None) -> None:
+        """Seed the deterministic, isolated demo profile (never production)."""
+        if app.config.get("FLOWTALLY_ENV") == "production":
+            raise click.ClickException("seed-demo is disabled in production; use a separate demo environment.")
+        if profile not in {"casual_restaurant"}:
+            raise click.ClickException("Unknown demo profile. Available profiles: casual_restaurant")
+        if not inspect(db.engine).has_table("audit_events"):
+            db.create_all()
+        result = seed_pilot_data(reset=reset, confirm_production=False)
+        changes: dict[str, object] = {}
+        if overlay:
+            try:
+                changes = json.loads(overlay.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise click.ClickException(f"Could not read demo overlay: {exc}") from exc
+        organization = db.session.get(Organization, result.organization_id)
+        location = db.session.get(RestaurantLocation, result.location_id)
+        if organization is None or location is None:
+            raise click.ClickException("Seeded demo organization or location was not found.")
+        restaurant_name = restaurant_name or changes.get("restaurant_name")
+        location_name = location_name or changes.get("location_name")
+        if restaurant_name:
+            organization.name = str(restaurant_name)
+        if location_name:
+            location.name = str(location_name)
+        supplier = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.id.asc()).first()
+        extra_items = [
+            ("Avocado", "Produce", "kg", 3, 7), ("Pickles", "Prep", "jar", 2, 5),
+            ("Cheddar", "Dairy", "kg", 2, 6), ("Bacon", "Protein", "kg", 2, 5),
+            ("Chicken Thigh", "Protein", "kg", 3, 8), ("Mushrooms", "Produce", "kg", 2, 5),
+            ("Onions", "Produce", "kg", 3, 8), ("Garlic", "Produce", "kg", 1, 3),
+            ("Mayonnaise", "Prep", "L", 2, 4), ("Ketchup", "Prep", "L", 2, 4),
+            ("Mustard", "Prep", "L", 1, 3), ("Butter", "Dairy", "kg", 2, 4),
+            ("Coffee Beans", "Beverage", "kg", 4, 8), ("Sparkling Water", "Beverage", "case", 2, 5),
+        ]
+        for name, category, unit, minimum, par in extra_items:
+            if not InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
+                db.session.add(InventoryItem(organization_id=organization.id, location_id=location.id, supplier_id=supplier.id if supplier else None, name=name, normalized_name=name.lower(), category=category, stock_unit=unit, current_on_hand=Decimal(str(par + 2)), min_quantity=Decimal(str(minimum)), par_level=Decimal(str(par)), preferred_supplier_name=supplier.name if supplier else "", latest_purchase_price=Decimal("4.50"), last_purchase_unit=unit, last_purchase_conversion_factor=Decimal("1"), average_daily_usage=Decimal("0.5")))
+        menu_names = ["Harbour Burger", "Chicken Bowl", "Mushroom Melt", "Toronto Breakfast", "House Salad", "Iced Latte", "Berry Parfait", "Daily Soup"]
+        for name in menu_names:
+            if not MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
+                db.session.add(MenuItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), category="Menu", selling_price=Decimal("16.00"), notes="Canonical demo menu item"))
+        recipe_names = ["Burger Patty", "House Sauce", "Chicken Marinade", "Breakfast Hash", "Roasted Mushrooms", "House Salad", "Soup Base", "Iced Latte", "Berry Parfait", "Pickled Onions", "Garlic Butter", "Daily Dressing"]
+        for name in recipe_names:
+            if not Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
+                db.session.add(Recipe(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), description="Canonical demo recipe", yield_quantity=Decimal("1"), yield_unit="batch", created_by_user_id=result.owner_id, updated_by_user_id=result.owner_id))
+        menu_overrides = changes.get("menu_items", {}) if isinstance(changes, dict) else {}
+        if isinstance(menu_overrides, dict):
+            for old_name, new_name in menu_overrides.items():
+                item = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, name=str(old_name)).first()
+                if item:
+                    item.name = str(new_name)
+                    item.normalized_name = str(new_name).strip().lower()
+        db.session.commit()
+        click.echo(f"Seeded demo profile={profile} organization={organization.id} location={location.id} reset={reset}")
 
     @app.cli.command("init-db")
     def init_db_command() -> None:
