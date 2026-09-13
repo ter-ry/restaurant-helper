@@ -108,6 +108,7 @@ export function PilotSquarePage() {
   const mappedMenus = mappingCoverage.mappedVariationCount;
   const latestDailySale = dailySales[0] ?? null;
   const connectionReady = connection?.status === "connected";
+  const initialLoading = loading && !connection && !menuCosting;
 
   const runAction = async (label: string, action: () => Promise<{ connection: PilotSquareConnectionSummary }>) => {
     if (!currentOrganizationId) {
@@ -210,8 +211,8 @@ export function PilotSquarePage() {
   };
 
   const squareStatusTone = connectionReady ? "success" : "warning";
-  const totalMappedLocations = squareLocations.length > 0 ? `${mappedLocations}/${squareLocations.length}` : "0";
-  const totalMappedMenus = mappingCoverage.totalVariationCount > 0 ? `${mappedMenus}/${mappingCoverage.totalVariationCount}` : "0";
+  const totalMappedLocations = initialLoading ? "—" : squareLocations.length > 0 ? `${mappedLocations}/${squareLocations.length}` : "0";
+  const totalMappedMenus = initialLoading ? "—" : mappingCoverage.totalVariationCount > 0 ? `${mappedMenus}/${mappingCoverage.totalVariationCount}` : "0";
 
   const syncNow = async () => {
     if (!currentOrganizationId || !connectionReady || saving !== null) {
@@ -299,18 +300,18 @@ export function PilotSquarePage() {
         ) : null}
         {loading ? (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
-            Loading…
+            {initialLoading ? "Loading Square…" : "Refreshing Square…"}
           </div>
         ) : null}
       </Card>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
-          ["Connection", connectionReady ? "Ready" : "Connect Square", connectionReady ? "success" : "warning"],
-          ["Locations", squareLocations.length ? `${mappedLocations}/${squareLocations.length} mapped` : "Sync locations", mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"],
-          ["Menu import", menuImport ? `${menuImport.summary.recipe_needed ?? 0} recipes needed` : "Review import", menuImport && (menuImport.summary.recipe_needed ?? 0) === 0 ? "success" : "warning"],
-          ["Mapping health", `${mappedMenus}/${mappingCoverage.totalVariationCount || 0} mapped`, mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"],
-          ["Sales sync", connection?.syncStatus === "error" ? "Needs attention" : latestDailySale ? "Up to date" : "Sync sales", connection?.syncStatus === "error" ? "danger" : "success"],
+          ["Connection", initialLoading ? "—" : connectionReady ? "Ready" : "Connect Square", connectionReady ? "success" : "warning"],
+          ["Locations", initialLoading ? "—" : squareLocations.length ? `${mappedLocations}/${squareLocations.length} mapped` : "Sync locations", mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"],
+          ["Menu import", initialLoading ? "—" : menuImport ? `${menuImport.summary.recipe_needed ?? 0} recipes needed` : "Review import", menuImport && (menuImport.summary.recipe_needed ?? 0) === 0 ? "success" : "warning"],
+          ["Mapping health", initialLoading ? "—" : `${mappedMenus}/${mappingCoverage.totalVariationCount || 0} mapped`, mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"],
+          ["Sales sync", initialLoading ? "—" : connection?.syncStatus === "error" ? "Needs attention" : latestDailySale ? "Up to date" : "Sync sales", connection?.syncStatus === "error" ? "danger" : "success"],
         ].map(([label, value, tone]) => (
           <div key={label} className="rounded-2xl border border-line bg-white p-4 shadow-soft">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>

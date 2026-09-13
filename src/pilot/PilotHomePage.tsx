@@ -11,10 +11,10 @@ export function PilotHomePage() {
         <section className="rounded-3xl border border-line bg-white p-6 shadow-soft sm:p-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Flowtally pilot app</p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">Pilot foundation is live</h1>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Flowtally</p>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">Your workspace is ready</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                This private area is ready for the first restaurant tenant, with session-based access and a single organization context.
+                Your restaurant workspace is ready with secure access and one active organization.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -48,13 +48,13 @@ export function PilotHomePage() {
               icon={<ShieldCheck className="h-5 w-5" />}
               label="Organization"
               value={organization?.name ?? "No organization loaded"}
-              helper={status === "signedIn" ? "Tenant context confirmed" : "Session pending"}
+              helper={status === "signedIn" ? "Organization confirmed" : "Session pending"}
             />
             <StatusCard
               icon={<MapPin className="h-5 w-5" />}
               label="Location"
               value={currentLocation?.name ?? "No location loaded"}
-              helper={locations.length ? `${locations.length} location(s) in this tenant` : "No locations returned"}
+              helper={locations.length ? `${locations.length} location(s) available` : "No locations returned"}
             />
           </div>
         </section>
