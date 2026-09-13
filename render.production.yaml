@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: flowtally-api-production
+    env: python
+    plan: starter
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: flask --app backend.wsgi:app db upgrade && gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLOWTALLY_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: FLOWTALLY_MIGRATION_DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: FLOWTALLY_ALLOWED_ORIGINS
+        value: https://app.flowtally.ca
+      - key: FLOWTALLY_FRONTEND_ORIGIN
+        value: https://app.flowtally.ca
+      - key: FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF
+        value: "true"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SESSION_COOKIE_SAMESITE
+        value: Lax
+      - key: SESSION_COOKIE_NAME
+        value: flowtally_session
+      - key: FLOWTALLY_RATE_LIMIT_STORAGE_URI
+        sync: false
+      - key: FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL
+        value: "false"
+      - key: GOOGLE_OIDC_ENABLED
+        value: "true"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://api.flowtally.ca/api/auth/google/callback
+      - key: SQUARE_ENABLED
+        value: "true"
+      - key: SQUARE_ENVIRONMENT
+        value: production
+      - key: SQUARE_APPLICATION_ID
+        sync: false
+      - key: SQUARE_APPLICATION_SECRET
+        sync: false
+      - key: SQUARE_REDIRECT_URI
+        value: https://api.flowtally.ca/api/integrations/square/callback
+      - key: SQUARE_WEBHOOK_SIGNATURE_KEY
+        sync: false
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false
+      - key: FLOWTALLY_DEMO_READ_ONLY
+        value: "false"
+

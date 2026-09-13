@@ -221,6 +221,7 @@ class BaseConfig:
             "SQUARE_REDIRECT_URI": os.environ.get("SQUARE_REDIRECT_URI", "").strip(),
             "SQUARE_WEBHOOK_SIGNATURE_KEY": os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY", "").strip(),
             "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
+            "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
         }
         validate_runtime_config(config, environment=cls.mode)
         return config
@@ -315,6 +316,13 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
     if not _env_bool("SESSION_COOKIE_SECURE", False):
         raise ConfigurationError("SESSION_COOKIE_SECURE must be true in staging and production.")
 
+    if mode == "production":
+        if not bool(config.get("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF")):
+            raise ConfigurationError("Production must enforce split-origin CSRF.")
+        cookie_name = str(config.get("SESSION_COOKIE_NAME") or "").strip().lower()
+        if not cookie_name or "pilot" in cookie_name or "staging" in cookie_name:
+            raise ConfigurationError("Production must use a commercial session cookie name.")
+
     frontend_origin = str(config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip().rstrip("/")
     if not frontend_origin:
         raise ConfigurationError("FLOWTALLY_FRONTEND_ORIGIN must be set in staging and production.")
@@ -336,6 +344,8 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
         parsed_google_redirect = urlparse(google_redirect_uri)
         if parsed_google_redirect.scheme != "https" or not parsed_google_redirect.netloc:
             raise ConfigurationError("GOOGLE_REDIRECT_URI must be an explicit https URL in staging and production.")
+        if mode == "production" and "staging" in google_redirect_uri.lower():
+            raise ConfigurationError("Production must not use a staging Google callback.")
 
     square_enabled = bool(config.get("SQUARE_ENABLED"))
     if square_enabled:
@@ -357,3 +367,5 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
             raise ConfigurationError("Staging must default to Square Sandbox.")
         if mode == "production" and square_environment != "production":
             raise ConfigurationError("Production must not use Square Sandbox credentials.")
+        if mode == "production" and "staging" in square_redirect_uri.lower():
+            raise ConfigurationError("Production must not use a staging Square callback.")

@@ -35,6 +35,7 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SQUARE_REDIRECT_URI",
         "SQUARE_WEBHOOK_SIGNATURE_KEY",
         "INTEGRATION_ENCRYPTION_KEY",
+        "FLOWTALLY_DEMO_READ_ONLY",
     ]:
         monkeypatch.delenv(name, raising=False)
 
@@ -174,6 +175,24 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
     assert config["FLOWTALLY_FRONTEND_ORIGIN"] == "https://staging.flowtally.ca"
     assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is True
     assert config["WTF_CSRF_SSL_STRICT"] is False
+
+
+def test_production_uses_commercial_cookie_and_split_origin_csrf(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-production-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://app.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://app.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "true")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("SESSION_COOKIE_NAME", "flowtally_session")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+
+    config = choose_config().build()
+
+    assert config["SESSION_COOKIE_NAME"] == "flowtally_session"
+    assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is True
 
 
 def test_split_origin_disabled_keeps_ssl_referrer_strict(monkeypatch: pytest.MonkeyPatch):
