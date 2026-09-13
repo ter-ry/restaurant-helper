@@ -445,13 +445,13 @@ export function PilotMenuCostingPage() {
                 action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button">New recipe</Button>}
               />
               {filteredRecipes.length ? (
-            <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+            <div className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
               {filteredRecipes.map((recipe) => {
                 const active = recipe.id === selectedRecipeId;
                 return (
                   <button
                     key={recipe.id}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${active ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
+                    className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
                     type="button"
                     onClick={() => {
                       setSelectedRecipeId(recipe.id);
@@ -461,11 +461,11 @@ export function PilotMenuCostingPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{recipe.name}</p>
-                        <p className="mt-1 text-sm text-muted">{recipe.description || "No description yet."}</p>
+                        {recipe.description ? <p className="mt-1 text-xs text-muted">{recipe.description}</p> : null}
                       </div>
                       <Badge tone={recipe.active ? "success" : "neutral"}>{recipe.active ? "Active" : "Inactive"}</Badge>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted">
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                       <span>Yield {formatNumber(recipe.yieldQuantity)} {recipe.yieldUnit}</span>
                       <span>Cost {formatMoney(recipe.costPerYield)}</span>
                       <span>{recipe.ingredientCount} ingredients</span>
@@ -672,13 +672,13 @@ export function PilotMenuCostingPage() {
       <Card className="p-5">
         <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
         <div className="grid gap-5 xl:grid-cols-[0.78fr_1.22fr]">
-          <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+          <div className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
             {filteredMenuItems.length ? (
               filteredMenuItems.map((menuItem) => (
                 <button
                   key={menuItem.id}
                   type="button"
-                  className={`w-full rounded-2xl border p-4 text-left transition ${menuItem.id === selectedMenuItemId ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
+                  className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${menuItem.id === selectedMenuItemId ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
                   onClick={() => {
                     setSelectedMenuItemId(menuItem.id);
                     setMenuItemEditorMode("edit");
@@ -691,7 +691,7 @@ export function PilotMenuCostingPage() {
                     </div>
                     <Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Healthy" : "Needs review"}</Badge>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted">
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                     <span>Price {formatMoney(menuItem.sellingPrice)}</span>
                     <span>Cost {formatMoney(menuItem.recipeCostPerYield)}</span>
                     <span>Food cost {formatNumber(menuItem.foodCostPercent)}%</span>

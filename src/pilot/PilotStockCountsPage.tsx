@@ -93,6 +93,8 @@ export function PilotStockCountsPage() {
   const [selectionSeeded, setSelectionSeeded] = useState(false);
   const [workflowTab, setWorkflowTab] = useState<"active" | "history">("active");
   const [showNewCount, setShowNewCount] = useState(false);
+  const [countWorkspaceOpen, setCountWorkspaceOpen] = useState(false);
+  const [countWorkspaceStage, setCountWorkspaceStage] = useState<"count" | "review">("count");
   const [lineFilter, setLineFilter] = useState<"all" | "uncounted" | "counted" | "changed">("all");
   const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -242,6 +244,8 @@ export function PilotStockCountsPage() {
     setSelectedId(sessionId);
     setConfirmConcurrency(false);
     setShowConcurrencyDetails(false);
+    setCountWorkspaceStage("count");
+    setCountWorkspaceOpen(true);
     navigate(`${location.pathname}?sessionId=${sessionId}`, { replace: true });
   };
 
@@ -268,6 +272,8 @@ export function PilotStockCountsPage() {
       setShowConcurrencyDetails(false);
       setMessage(`Stock count ${created.id} started.`);
       setShowNewCount(false);
+      setCountWorkspaceStage("count");
+      setCountWorkspaceOpen(true);
       navigate(`${location.pathname}?sessionId=${created.id}`, { replace: true });
       await load(created.id);
     } catch (err) {
@@ -472,7 +478,7 @@ export function PilotStockCountsPage() {
           </div>
         </Card>
 
-        <Card className="workspace-card w-full p-4">
+        <Card className={`workspace-card w-full p-4 ${countWorkspaceOpen && draft ? "hidden" : ""}`}>
           <SectionHeader
             title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}
@@ -599,6 +605,20 @@ export function PilotStockCountsPage() {
           )}
         </Card>
       </div>
+
+      {countWorkspaceOpen && draft && draft.status !== "Completed" ? <Modal title={`Stock count #${draft.id}`} size="full" onClose={() => setCountWorkspaceOpen(false)}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+          <div><p className="text-sm font-semibold text-ink">{countWorkspaceStage === "review" ? "Review differences" : "Count inventory"}</p><p className="text-xs text-muted">Counted {draft.countedLineCount} / {draft.itemCount}</p></div>
+          <div className="flex flex-wrap gap-2"><Badge tone="neutral">{draft.uncountedLineCount} uncounted</Badge><Badge tone={draft.hasMovementSinceStart ? "warning" : "success"}>{draft.hasMovementSinceStart ? "Review later movements" : "No later movements"}</Badge></div>
+        </div>
+        {error ? <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</div> : null}
+        {countWorkspaceStage === "review" ? <div className="mt-4 space-y-2"><p className="text-sm font-semibold text-ink">Changed items</p>{changedLines.length ? changedLines.map((line) => <div key={line.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm"><span className="font-semibold">{line.itemNameSnapshot}</span><span>{formatNumber(line.expectedQuantity)} → {formatNumber(line.countedQuantity ?? 0)} {line.stockUnitSnapshot}</span></div>) : <p className="rounded-xl border border-dashed border-line px-3 py-4 text-sm text-muted">No differences to review.</p>}</div> : <>
+          <div className="mt-4 flex flex-wrap items-center gap-2"><input className="input max-w-sm" placeholder="Search items" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />{([['all', 'All'], ['uncounted', 'Uncounted'], ['counted', 'Counted'], ['changed', 'Changed']] as const).map(([value, label]) => <Button key={value} type="button" variant={lineFilter === value ? "primary" : "secondary"} onClick={() => setLineFilter(value)}>{label}</Button>)}</div>
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-line"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Expected</th><th className="px-3 py-2">Counted</th><th className="px-3 py-2">Variance</th><th className="px-3 py-2">Note</th></tr></thead><tbody className="divide-y divide-line">{filteredLines.map((line) => <tr key={line.id}><td className="px-3 py-2 font-semibold">{line.itemNameSnapshot}<span className="ml-2 text-xs text-muted">{line.stockUnitSnapshot}</span></td><td className="px-3 py-2">{formatNumber(line.expectedQuantity)}</td><td className="px-3 py-2"><input aria-label={`Counted quantity for ${line.itemNameSnapshot}`} className="input w-24" type="number" min="0" value={line.countedQuantity ?? ""} onChange={(event) => updateLine(line.id, (current) => ({ ...current, countedQuantity: event.target.value ? Number(event.target.value) : null }))} /></td><td className="px-3 py-2">{line.countedQuantity == null ? "—" : formatNumber(line.countedQuantity - line.expectedQuantity)}</td><td className="px-3 py-2"><input aria-label={`Variance note for ${line.itemNameSnapshot}`} className="input min-w-40" value={line.note} onChange={(event) => updateLine(line.id, (current) => ({ ...current, note: event.target.value }))} /></td></tr>)}</tbody></table></div>
+        </>}
+        <div className="mt-5 flex flex-wrap justify-between gap-2 border-t border-line pt-3"><Button variant="secondary" type="button" onClick={() => setCountWorkspaceOpen(false)}>Return to overview</Button><div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={saving} type="button" onClick={() => void saveSession()}>{saving ? "Saving…" : "Save draft"}</Button>{countWorkspaceStage === "review" ? <Button disabled={saving || draft.uncountedLineCount > 0 || (draft.hasMovementSinceStart && !confirmConcurrency)} type="button" onClick={() => void finalizeSession()}>Complete count</Button> : <Button type="button" disabled={draft.uncountedLineCount > 0} onClick={() => setCountWorkspaceStage("review")}>Continue / review</Button>}</div></div>
+        {draft.hasMovementSinceStart ? <label className="mt-3 flex items-center gap-2 text-xs text-muted"><input checked={confirmConcurrency} type="checkbox" onChange={(event) => setConfirmConcurrency(event.target.checked)} /> I reviewed later inventory activity before completing this count.</label> : null}
+      </Modal> : null}
     </div>
   );
 }
