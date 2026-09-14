@@ -13,6 +13,12 @@ services:
         sync: false
       - key: FLOWTALLY_MIGRATION_DATABASE_URL
         sync: false
+      - key: FLOWTALLY_PRODUCTION_DATABASE_NAME
+        value: flowtally_prod
+      - key: FLOWTALLY_PRODUCTION_RUNTIME_ROLE
+        value: flowtally_prod_runtime
+      - key: FLOWTALLY_PRODUCTION_MIGRATOR_ROLE
+        value: flowtally_prod_migrator
       - key: SECRET_KEY
         sync: false
       - key: FLOWTALLY_ALLOWED_ORIGINS
@@ -40,7 +46,7 @@ services:
       - key: GOOGLE_REDIRECT_URI
         value: https://api.flowtally.ca/api/auth/google/callback
       - key: SQUARE_ENABLED
-        value: "true"
+        value: "false"
       - key: SQUARE_ENVIRONMENT
         value: production
       - key: SQUARE_APPLICATION_ID

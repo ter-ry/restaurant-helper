@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from backend.app import create_app
-from backend.config import ConfigurationError, choose_config, validate_runtime_config
+from backend.config import ConfigurationError, choose_config, validate_production_database_targets, validate_runtime_config
 
 
 def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,6 +36,8 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SQUARE_WEBHOOK_SIGNATURE_KEY",
         "INTEGRATION_ENCRYPTION_KEY",
         "FLOWTALLY_DEMO_READ_ONLY",
+        "FLOWTALLY_MIGRATION_DATABASE_URL",
+        "FLOWTALLY_PRODUCTION_DATABASE_NAME",
     ]:
         monkeypatch.delenv(name, raising=False)
 
@@ -162,6 +164,7 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
     monkeypatch.setenv("FLOWTALLY_ENV", "staging")
     monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-staging-secret-key")
     monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
+    monkeypatch.setenv("FLOWTALLY_MIGRATION_DATABASE_URL", "postgresql://example.invalid/flowtally")
     monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://staging.flowtally.ca")
     monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://staging.flowtally.ca")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
@@ -177,17 +180,61 @@ def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.M
     assert config["WTF_CSRF_SSL_STRICT"] is False
 
 
+@pytest.mark.parametrize(
+    ("runtime", "migration", "message"),
+    [
+        ("postgresql://runtime@example/flowtally_prod", "postgresql://migrator@example/defaultdb", "defaultdb"),
+        ("postgresql://runtime@example/defaultdb", "postgresql://migrator@example/defaultdb", "defaultdb"),
+        ("postgresql://runtime@example/flowtally_prod", "postgresql://migrator@example/other", "flowtally_prod"),
+    ],
+)
+def test_production_database_target_validation_rejects_staging_or_mismatch(runtime: str, migration: str, message: str):
+    with pytest.raises(ConfigurationError, match=message):
+        validate_production_database_targets(runtime, migration)
+
+
+def test_production_database_target_validation_accepts_shared_host_separate_database():
+    validate_production_database_targets(
+        "postgresql://flowtally_prod_runtime@aiven.example/flowtally_prod",
+        "postgresql://flowtally_prod_migrator@aiven.example/flowtally_prod",
+    )
+
+
+def test_production_config_rejects_defaultdb(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-production-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://runtime@example/defaultdb")
+    monkeypatch.setenv("FLOWTALLY_MIGRATION_DATABASE_URL", "postgresql://migrator@example/defaultdb")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://app.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://app.flowtally.ca")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+    monkeypatch.setenv("GOOGLE_OIDC_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "production-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "production-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://api.flowtally.ca/api/auth/google/callback")
+
+    with pytest.raises(ConfigurationError, match="defaultdb"):
+        choose_config().build()
+
+
 def test_production_uses_commercial_cookie_and_split_origin_csrf(monkeypatch: pytest.MonkeyPatch):
     _clear_config_env(monkeypatch)
     monkeypatch.setenv("FLOWTALLY_ENV", "production")
     monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-production-secret-key")
-    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally_prod")
+    monkeypatch.setenv("FLOWTALLY_MIGRATION_DATABASE_URL", "postgresql://example.invalid/flowtally_prod")
     monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://app.flowtally.ca")
     monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://app.flowtally.ca")
     monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "true")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
     monkeypatch.setenv("SESSION_COOKIE_NAME", "flowtally_session")
     monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+    monkeypatch.setenv("GOOGLE_OIDC_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "production-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "production-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://api.flowtally.ca/api/auth/google/callback")
 
     config = choose_config().build()
 
