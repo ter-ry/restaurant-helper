@@ -175,6 +175,26 @@ def _database_engine_options(mode: str) -> dict[str, Any]:
     return options
 
 
+def database_name_from_url(value: str) -> str:
+    """Return the logical database name without exposing any URL credentials."""
+    parsed = urlparse(value.strip())
+    return (parsed.path or "").lstrip("/").split("?", 1)[0]
+
+
+def validate_production_database_targets(runtime_url: str, migration_url: str) -> None:
+    expected = os.environ.get("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_prod").strip() or "flowtally_prod"
+    runtime_name = database_name_from_url(runtime_url)
+    migration_name = database_name_from_url(migration_url)
+    if not runtime_name or not migration_name:
+        raise ConfigurationError("Production DATABASE_URL and FLOWTALLY_MIGRATION_DATABASE_URL must include a database name.")
+    if runtime_name == "defaultdb" or migration_name == "defaultdb":
+        raise ConfigurationError("Production database connections must not target staging database defaultdb.")
+    if runtime_name != expected or migration_name != expected:
+        raise ConfigurationError(f"Production database connections must target {expected}.")
+    if runtime_name != migration_name:
+        raise ConfigurationError("Production runtime and migration URLs must target the same database.")
+
+
 class BaseConfig:
     mode = "development"
 
@@ -222,6 +242,7 @@ class BaseConfig:
             "SQUARE_WEBHOOK_SIGNATURE_KEY": os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY", "").strip(),
             "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
+            "FLOWTALLY_PRODUCTION_DATABASE_NAME": os.environ.get("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_prod").strip() or "flowtally_prod",
         }
         validate_runtime_config(config, environment=cls.mode)
         return config
@@ -304,6 +325,11 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
     parsed_database = urlparse(database_url)
     if parsed_database.scheme == "sqlite" and not _env_bool("FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL", False):
         raise ConfigurationError("SQLite is not allowed in staging or production unless FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL is enabled.")
+    if mode == "production":
+        migration_url = os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL", "").strip()
+        if not migration_url:
+            raise ConfigurationError("FLOWTALLY_MIGRATION_DATABASE_URL must be set in production.")
+        validate_production_database_targets(database_url, migration_url)
 
     allowed_origins = [origin.strip() for origin in os.environ.get("FLOWTALLY_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
     if not allowed_origins:
@@ -335,6 +361,8 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
         raise ConfigurationError("Rate-limit storage must not use memory:// in staging or production.")
 
     google_enabled = bool(config.get("GOOGLE_OIDC_ENABLED"))
+    if mode == "production" and not google_enabled:
+        raise ConfigurationError("Production requires GOOGLE_OIDC_ENABLED=true.")
     if google_enabled:
         google_client_id = str(config.get("GOOGLE_CLIENT_ID") or "").strip()
         google_client_secret = str(config.get("GOOGLE_CLIENT_SECRET") or "").strip()

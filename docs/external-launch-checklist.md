@@ -4,11 +4,12 @@ This checklist contains placeholders only. Never paste secrets into the reposito
 
 ## A. Database provider
 
-- Create a new production PostgreSQL service/database; do not restore staging.
-- Create a migration role and a runtime role.
-- Set `DATABASE_URL` to the runtime role and `FLOWTALLY_MIGRATION_DATABASE_URL` to the migration role.
+- Use the existing Aiven service only as a temporary shared host: staging is `defaultdb`; production is `flowtally_prod`.
+- Confirm `flowtally_prod_migrator` and `flowtally_prod_runtime` exist.
+- Set `DATABASE_URL` to the runtime role and `FLOWTALLY_MIGRATION_DATABASE_URL` to the migration role; both must target `flowtally_prod`.
 - Runtime role must be non-superuser, `NOBYPASSRLS`, and must not own protected tables.
 - Success: migrations reach the current Alembic head and catalog checks show RLS/FORCE RLS.
+- Stop if either URL contains `/defaultdb` or the database names differ.
 
 ## B. Render/backend
 
@@ -17,6 +18,7 @@ This checklist contains placeholders only. Never paste secrets into the reposito
 - Set `FLOWTALLY_ENV=production`, `FLOWTALLY_FRONTEND_ORIGIN=https://app.flowtally.ca`, and the production rate-limit store.
 - Do not reuse staging `DATABASE_URL`, `SECRET_KEY`, cookie name, OAuth credentials, or Square secrets.
 - Success: `/api/health` is healthy and startup logs show migration then Gunicorn.
+- Run `python scripts/production_preflight.py` locally before saving Render variables.
 
 ## C. Frontend hosting
 
