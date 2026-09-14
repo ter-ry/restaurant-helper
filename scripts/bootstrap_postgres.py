@@ -35,7 +35,13 @@ def configured_role_names() -> tuple[str, str]:
 
 
 def connect(url: str):
-    return psycopg2.connect(url, connect_timeout=10, application_name="flowtally-production-bootstrap")
+    return psycopg2.connect(normalize_postgres_url(url), connect_timeout=10, application_name="flowtally-production-bootstrap")
+
+
+def normalize_postgres_url(url: str) -> str:
+    if url.startswith("postgresql+psycopg2://"):
+        return "postgresql://" + url[len("postgresql+psycopg2://"):]
+    return url
 
 
 def query_one(connection: Any, sql: str, params: tuple[Any, ...] = ()):
@@ -59,6 +65,13 @@ def validate_admin_database_target(url: str) -> str:
     database = database_name_from_url(url)
     if database != EXPECTED_DATABASE:
         raise RuntimeError("FLOWTALLY_BOOTSTRAP_ADMIN_URL must target flowtally_prod.")
+    return database
+
+
+def validate_migration_database_target(url: str) -> str:
+    database = database_name_from_url(url)
+    if database != EXPECTED_DATABASE:
+        raise RuntimeError("FLOWTALLY_MIGRATION_DATABASE_URL must target flowtally_prod.")
     return database
 
 
@@ -93,8 +106,8 @@ def migrator_default_privilege_statements(runtime_role: str = RUNTIME_ROLE) -> l
 
 
 def ensure_aiven_public_schema_owner(connection: Any, owner: str) -> str:
-    """Claim provider-owned public schema only when it is not already avnadmin-owned."""
-    if owner == "avnadmin":
+    """Claim public schema only when it is not already provider-safe."""
+    if owner in {"avnadmin", "pg_database_owner"}:
         return owner
     try:
         execute_statements(
@@ -113,6 +126,33 @@ def ensure_aiven_public_schema_owner(connection: Any, owner: str) -> str:
             "Aiven public-schema claim failed; ensure aiven_extras is available and "
             "avnadmin may call claim_public_schema_ownership, then rerun provision."
         ) from exc
+
+
+def harden_production_roles(connection: Any, runtime_role: str, migrator_role: str) -> str:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT rolname, rolsuper, rolbypassrls, rolinherit FROM pg_roles WHERE rolname IN (%s, %s)",
+            (migrator_role, runtime_role),
+        )
+        rows = {row[0]: row[1:] for row in cursor.fetchall()}
+    if len(rows) != 2:
+        raise RuntimeError("role hardening failed: production roles are missing")
+    provider_constraint = False
+    for role in (migrator_role, runtime_role):
+        rolsuper, rolbypassrls, rolinherit = rows[role]
+        try:
+            if rolsuper:
+                execute_statements(connection, [(f"ALTER ROLE {role} NOSUPERUSER", ())])
+            if rolbypassrls:
+                execute_statements(connection, [(f"ALTER ROLE {role} NOBYPASSRLS", ())])
+            if rolinherit:
+                execute_statements(connection, [(f"ALTER ROLE {role} NOINHERIT", ())])
+        except Exception as exc:
+            if rolinherit and not rolsuper and not rolbypassrls:
+                provider_constraint = True
+                continue
+            raise RuntimeError("role hardening failed") from exc
+    return "NOINHERIT provider-constrained" if provider_constraint else "verified"
 
 
 def _apply_migrator_default_privileges(migration_url: str, migrator_role: str, runtime_role: str) -> None:
@@ -137,6 +177,13 @@ def provision_database() -> list[tuple[str, bool, str]]:
         return [check("migration connection", False, "FLOWTALLY_MIGRATION_DATABASE_URL is required")]
     try:
         validate_admin_database_target(admin_url)
+        validate_migration_database_target(migration_url)
+        try:
+            _apply_migrator_default_privileges(migration_url, migrator_role, runtime_role)
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError("migrator default privileges failed") from exc
         with connect(admin_url) as admin:
             db_name, current_user = query_one(admin, "SELECT current_database(), current_user")
             if db_name != EXPECTED_DATABASE:
@@ -151,30 +198,34 @@ def provision_database() -> list[tuple[str, bool, str]]:
             if roles != 2:
                 return [check("production roles exist", False, roles)]
             all_statements = provisioning_statements(runtime_role, migrator_role)
-            execute_statements(admin, [(sql, ()) for sql in all_statements if sql.startswith("ALTER ROLE")])
+            try:
+                hardening = harden_production_roles(admin, runtime_role, migrator_role)
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                raise RuntimeError("role hardening failed") from exc
             owner = query_one(admin, "SELECT nspowner::regrole::text FROM pg_namespace WHERE nspname = 'public'")[0]
             if owner != "avnadmin":
                 owner = ensure_aiven_public_schema_owner(admin, owner)
-            execute_statements(
-                admin,
-                [
-                    (sql, ())
-                    for sql in all_statements
-                    if not sql.startswith("ALTER ROLE")
-                ],
-            )
+            try:
+                execute_statements(
+                    admin,
+                    [(sql, ()) for sql in all_statements if not sql.startswith("ALTER ROLE")],
+                )
+            except Exception as exc:
+                raise RuntimeError("database/schema grants failed") from exc
             admin.commit()
-        _apply_migrator_default_privileges(migration_url, migrator_role, runtime_role)
         return [
             check("admin database target", True, EXPECTED_DATABASE),
             check("bootstrap admin identity", True, "avnadmin"),
             check("production roles exist", True, 2),
+            check("role hardening", True, hardening),
             check("public schema owner", True, owner),
             check("production grants applied", True, "idempotent"),
             check("migrator default privileges", True, "applied through migrator connection"),
         ]
     except Exception as exc:
-        safe_detail = str(exc) if isinstance(exc, RuntimeError) and ("Aiven public-schema claim" in str(exc) or "migration connection" in str(exc)) else type(exc).__name__
+        safe_detail = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
         return [check("production provisioning", False, safe_detail)]
 
 
@@ -206,7 +257,7 @@ def verify_database(targets: ProductionTargets) -> list[tuple[str, bool, str]]:
             results.append(check("runtime is not database owner", db_owner != runtime_role, db_owner))
             schema_owner = query_one(migration, "SELECT nspowner::regrole::text FROM pg_namespace WHERE nspname = 'public'")[0]
             results.append(check("runtime is not schema owner", schema_owner != runtime_role, schema_owner))
-            results.append(check("public schema owner is avnadmin", schema_owner == "avnadmin", schema_owner))
+            results.append(check("public schema owner is provider-safe", schema_owner in {"avnadmin", "pg_database_owner"}, schema_owner))
             create = query_one(migration, "SELECT has_schema_privilege(%s, 'public', 'CREATE'), has_database_privilege(%s, current_database(), 'CREATE')", (runtime_role, runtime_role))
             results.append(check("runtime cannot create schema objects", create == (False, False), create))
             public_acl = query_one(migration, "SELECT has_database_privilege('public', current_database(), 'CONNECT'), has_schema_privilege('public', 'public', 'USAGE'), has_schema_privilege('public', 'public', 'CREATE')")
