@@ -63,6 +63,17 @@ def test_admin_database_target_accepts_flowtally_prod():
     assert module.validate_admin_database_target("postgresql://avnadmin@example/flowtally_prod") == "flowtally_prod"
 
 
+def test_migration_database_target_rejects_staging():
+    module = _script_module()
+    with pytest.raises(RuntimeError, match="flowtally_prod"):
+        module.validate_migration_database_target("postgresql+psycopg2://migrator@example/flowtally_staging")
+
+
+def test_sqlalchemy_postgres_url_is_normalized_for_psycopg2():
+    module = _script_module()
+    assert module.normalize_postgres_url("postgresql+psycopg2://user@example/flowtally_prod") == "postgresql://user@example/flowtally_prod"
+
+
 class _FakeCursor:
     def __init__(self, connection):
         self.connection = connection
@@ -106,6 +117,14 @@ def test_avnadmin_owned_public_skips_claim():
     connection = _FakeConnection()
 
     assert module.ensure_aiven_public_schema_owner(connection, "avnadmin") == "avnadmin"
+    assert connection.statements == []
+
+
+def test_provider_owned_public_schema_skips_unavailable_claim():
+    module = _script_module()
+    connection = _FakeConnection()
+
+    assert module.ensure_aiven_public_schema_owner(connection, "pg_database_owner") == "pg_database_owner"
     assert connection.statements == []
 
 
