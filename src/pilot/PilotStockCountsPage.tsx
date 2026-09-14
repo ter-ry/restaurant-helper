@@ -262,7 +262,7 @@ export function PilotStockCountsPage() {
       const activeIds = selectedItemIds.length ? selectedItemIds : inventoryItems.filter((item) => item.active).map((item) => item.id);
       const created = await createPilotCountSession({
         countedBy: "Floor lead",
-        notes: "Quick pilot count",
+        notes: "Quick stock count",
         itemIds: activeIds,
       });
       setSelectedId(created.id);

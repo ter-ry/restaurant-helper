@@ -424,7 +424,7 @@ export function PilotSquarePage() {
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Location mapping" description="Map Square locations to the active pilot workspace locations." />
+            <SectionHeader title="Location mapping" description="Map Square locations to the active restaurant locations." />
             <div className="mt-4 space-y-3">
               {squareLocations.length ? squareLocations.map((location) => {
                 const mapped = location.mappings.find((mapping) => mapping.restaurantLocationId) ?? null;
@@ -527,7 +527,7 @@ export function PilotSquarePage() {
 
         <div className="space-y-6">
           <Card className="p-6">
-            <SectionHeader title="Sync range" description="Orders sync uses a simple manual date range in the pilot workspace." />
+            <SectionHeader title="Sync range" description="Orders sync uses a simple manual date range for this restaurant." />
             <div className="mt-4 grid gap-3">
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Start at</span>
@@ -599,7 +599,7 @@ export function PilotSquarePage() {
       </div>
 
       <Card className="p-6">
-        <SectionHeader title="Menu and usage notes" description="A small, practical reminder for the pilot workspace." />
+        <SectionHeader title="Menu and usage notes" description="A small, practical reminder for this restaurant workspace." />
         <p className="mt-2 text-sm leading-7 text-muted">
           Keep the Square side simple: connect the account, sync the day, map the items that matter, and then open the daily close to reconcile the totals.
         </p>

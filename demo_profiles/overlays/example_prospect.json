@@ -1,0 +1,8 @@
+{
+  "restaurant_name": "Example Restaurant",
+  "location_name": "Downtown Toronto",
+  "menu_items": {
+    "Harbour Burger": "Example Signature Burger",
+    "Chicken Bowl": "Example Chicken Bowl"
+  }
+}

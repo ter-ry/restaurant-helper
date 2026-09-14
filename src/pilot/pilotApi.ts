@@ -1,4 +1,4 @@
-import { pilotApiBaseUrl } from "./pilotConfig";
+import { demoReadOnly, pilotApiBaseUrl } from "./pilotConfig";
 import {
   beginSquareConnection,
   disconnectSquare,
@@ -126,6 +126,10 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method || "GET").toUpperCase();
+  if (demoReadOnly && method !== "GET" && method !== "HEAD" && !path.startsWith("/api/auth/")) {
+    throw new PilotApiError("Demo mode is read-only; changes are disabled.", 403);
+  }
   const response = await fetch(buildUrl(path), {
     ...init,
     credentials: "include",

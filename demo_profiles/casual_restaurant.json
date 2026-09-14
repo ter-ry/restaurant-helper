@@ -1,0 +1,12 @@
+{
+  "profile": "casual_restaurant",
+  "restaurant_name": "Harbour Kitchen & Bar",
+  "location_name": "Toronto",
+  "timezone": "America/Toronto",
+  "story": [
+    "Chicken breast supplier pricing increased recently.",
+    "Fryer oil is below its reorder minimum.",
+    "A recent stock count has a small variance.",
+    "Today's Daily Close remains open."
+  ]
+}
