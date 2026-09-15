@@ -20,7 +20,7 @@ from .access import enforce_operational_access
 from .imports import bp as imports_bp
 from .config import choose_config, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
-from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, MenuItem, Organization, Recipe, RestaurantLocation, Supplier, User
+from .models import AuditEvent, DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, MenuItem, Organization, PlatformRole, Recipe, RestaurantLocation, Supplier, User
 from .ocr import bp as ocr_bp
 from .tenant_context import apply_request_tenant_context
 from .daily_close import bp as daily_close_bp
@@ -327,5 +327,50 @@ def create_app(test_config: dict | None = None) -> Flask:
     def init_db_command() -> None:
         db.create_all()
         print("Database tables created.")
+
+    @app.cli.group("platform-role")
+    def platform_role_group() -> None:
+        """Controlled operator commands for platform role administration."""
+
+    @platform_role_group.command("set")
+    @click.option("--email", required=True)
+    @click.option("--role", required=True, type=click.Choice(("setup_admin", "support")))
+    def set_platform_role_command(email: str, role: str) -> None:
+        """Assign a supported platform role to an existing user."""
+        normalized_email = email.strip().lower()
+        user = User.query.filter(db.func.lower(User.email) == normalized_email).first()
+        if user is None:
+            raise click.ClickException(f"No existing user found for {normalized_email}.")
+
+        platform_role = PlatformRole.query.filter_by(user_id=user.id).first()
+        if platform_role is not None and platform_role.is_active and platform_role.role != role:
+            raise click.ClickException(
+                f"User {user.email} already has active platform role {platform_role.role}; refusing to replace it."
+            )
+
+        if platform_role is None:
+            platform_role = PlatformRole(user_id=user.id, role=role, is_active=True)
+            db.session.add(platform_role)
+            changed = True
+        else:
+            changed = platform_role.role != role or not platform_role.is_active
+            platform_role.role = role
+            platform_role.is_active = True
+
+        if changed:
+            db.session.add(
+                AuditEvent(
+                    actor_user_id=user.id,
+                    event_type="platform_role_assigned",
+                    entity_type="user",
+                    entity_id=str(user.id),
+                    request_id="platform-role-cli",
+                    metadata_json={"role": role, "source": "operator_cli"},
+                )
+            )
+            db.session.commit()
+            click.echo(f"Assigned platform role {role} to {user.email} (user_id={user.id}).")
+        else:
+            click.echo(f"Platform role {role} already assigned to {user.email} (user_id={user.id}).")
 
     return app
