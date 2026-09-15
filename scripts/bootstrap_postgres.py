@@ -24,6 +24,23 @@ RUNTIME_ROLE = "flowtally_prod_runtime"
 MIGRATOR_ROLE = "flowtally_prod_migrator"
 EXPECTED_DATABASE = "flowtally_prod"
 
+# These are deliberately global application-auth/control tables. They are not
+# tenant-owned data and must remain outside the tenant RLS coverage check.
+# Keep this list explicit so a newly-added tenant table cannot silently bypass
+# RLS merely because it lacks an organization_id column or policy today.
+GLOBAL_RLS_EXEMPT_PUBLIC_TABLES = frozenset(
+    {"alembic_version", "users", "external_identities", "platform_roles"}
+)
+
+
+def rls_coverage_is_complete(total_tables: int, rls_tables: int, forced_tables: int) -> bool:
+    return rls_tables == total_tables and forced_tables == total_tables
+
+
+def _tenant_table_filter_sql() -> str:
+    excluded = ", ".join(f"'{table_name}'" for table_name in sorted(GLOBAL_RLS_EXEMPT_PUBLIC_TABLES))
+    return f"c.relname NOT IN ({excluded})"
+
 
 def configured_role_names() -> tuple[str, str]:
     """Return role names only when they are the production roles we guard."""
@@ -268,7 +285,7 @@ def verify_database(targets: ProductionTargets) -> list[tuple[str, bool, str]]:
             results.append(check("migrator can manage public schema", migrator_create is True, migrator_create))
             defaults = query_one(migration, "SELECT count(*) FROM pg_default_acl da JOIN pg_roles r ON r.oid = da.defaclrole WHERE r.rolname = %s AND da.defaclnamespace = 'public'::regnamespace AND da.defaclobjtype IN ('r', 'S', 'f') AND array_to_string(da.defaclacl, ',') LIKE %s", (migrator_role, f"%{runtime_role}%"))[0]
             results.append(check("runtime default privileges configured", defaults == 3, defaults))
-            protected = query_one(migration, "SELECT count(*), count(*) FILTER (WHERE c.relrowsecurity), count(*) FILTER (WHERE c.relforcerowsecurity) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname NOT IN ('alembic_version')")[0:]
+            protected = query_one(migration, f"SELECT count(*), count(*) FILTER (WHERE c.relrowsecurity), count(*) FILTER (WHERE c.relforcerowsecurity) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' AND {_tenant_table_filter_sql()}")[0:]
             results.append(check("protected tables use RLS", protected[1] == protected[0], f"{protected[1]}/{protected[0]}"))
             results.append(check("protected tables use FORCE RLS", protected[2] == protected[0], f"{protected[2]}/{protected[0]}"))
             policy_count = query_one(migration, "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")[0]

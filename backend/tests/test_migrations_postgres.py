@@ -465,7 +465,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -524,6 +524,21 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_table_owned_by_migrator("inventory_waste_events")
         _assert_rls_enabled_and_forced("inventory_waste_events")
         _assert_policy_exists("flowtally_inventory_waste_events_tenant_access", "inventory_waste_events")
+        for table_name in (
+            "audit_events",
+            "square_catalog_objects",
+            "square_locations",
+            "square_sync_cursors",
+            "square_sync_jobs",
+            "square_webhook_events",
+        ):
+            _assert_rls_enabled_and_forced(table_name)
+        _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
+        _assert_policy_exists("flowtally_square_catalog_objects_tenant_access", "square_catalog_objects")
+        _assert_policy_exists("flowtally_square_locations_tenant_access", "square_locations")
+        _assert_policy_exists("flowtally_square_sync_cursors_tenant_access", "square_sync_cursors")
+        _assert_policy_exists("flowtally_square_sync_jobs_tenant_access", "square_sync_jobs")
+        _assert_policy_exists("flowtally_square_webhook_events_tenant_access", "square_webhook_events")
         _assert_foreign_key("inventory_waste_events", "organization_id", "organizations", on_delete="CASCADE")
         _assert_foreign_key("inventory_waste_events", "location_id", "restaurant_locations", on_delete="CASCADE")
         _assert_foreign_key("inventory_waste_events", "inventory_item_id", "inventory_items", on_delete="RESTRICT")
@@ -554,6 +569,62 @@ def test_postgres_migrations_upgrade_from_0018_to_0019():
         _assert_policy_exists("flowtally_inventory_waste_events_tenant_access", "inventory_waste_events")
 
 
+def test_postgres_migrations_upgrade_from_0019_to_0020_enforces_missing_rls():
+    application = _create_app()
+    _reset_public_schema(application)
+    migration_config = _upgrade_to(application, "0019_square_menu_import_and_inventory_waste")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+
+    migration_config = _upgrade_to(application, "0020_enforce_missing_postgres_rls")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        _assert_runtime_connection()
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
+        for table_name in (
+            "audit_events",
+            "square_catalog_objects",
+            "square_locations",
+            "square_sync_cursors",
+            "square_sync_jobs",
+            "square_webhook_events",
+        ):
+            _assert_rls_enabled_and_forced(table_name)
+        _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
+        _assert_policy_exists("flowtally_square_catalog_objects_tenant_access", "square_catalog_objects")
+        _assert_policy_exists("flowtally_square_locations_tenant_access", "square_locations")
+        _assert_policy_exists("flowtally_square_sync_cursors_tenant_access", "square_sync_cursors")
+        _assert_policy_exists("flowtally_square_sync_jobs_tenant_access", "square_sync_jobs")
+        _assert_policy_exists("flowtally_square_webhook_events_tenant_access", "square_webhook_events")
+
+    migration_config = _downgrade_to(application, "0019_square_menu_import_and_inventory_waste")
+    with application.app_context():
+        _assert_migration_identity(migration_config)
+        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        for table_name in (
+            "audit_events",
+            "square_catalog_objects",
+            "square_locations",
+            "square_sync_cursors",
+            "square_sync_jobs",
+            "square_webhook_events",
+        ):
+            row = db.session.execute(
+                text(
+                    """
+                    select c.relrowsecurity, c.relforcerowsecurity
+                    from pg_class c
+                    join pg_namespace n on n.oid = c.relnamespace
+                    where n.nspname = current_schema() and c.relname = :table_name
+                    """
+                ),
+                {"table_name": table_name},
+            ).one()
+            assert row == (False, False)
+        _assert_policy_exists("flowtally_audit_events_tenant_access", "audit_events")
+
+
 def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     application = _create_app()
     _reset_public_schema(application)
@@ -563,7 +634,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -584,7 +655,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -609,7 +680,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -628,7 +699,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -829,7 +900,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0019_square_menu_import_and_inventory_waste"
+        assert _current_revision() == "0020_enforce_missing_postgres_rls"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 

@@ -134,3 +134,26 @@ def test_claim_failure_is_actionable():
 
     with pytest.raises(RuntimeError, match="aiven_extras.*claim_public_schema_ownership"):
         module.ensure_aiven_public_schema_owner(connection, "postgres")
+
+
+def test_verifier_uses_explicit_global_rls_exemptions():
+    module = _script_module()
+
+    assert module.GLOBAL_RLS_EXEMPT_PUBLIC_TABLES == {
+        "alembic_version",
+        "users",
+        "external_identities",
+        "platform_roles",
+    }
+    sql = module._tenant_table_filter_sql()
+    for table_name in module.GLOBAL_RLS_EXEMPT_PUBLIC_TABLES:
+        assert table_name in sql
+    assert "organization_id" not in sql
+
+
+def test_verifier_rejects_any_unprotected_non_exempt_table():
+    module = _script_module()
+
+    assert module.rls_coverage_is_complete(44, 44, 44) is True
+    assert module.rls_coverage_is_complete(45, 44, 44) is False
+    assert module.rls_coverage_is_complete(44, 44, 43) is False
