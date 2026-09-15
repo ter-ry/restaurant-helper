@@ -127,7 +127,17 @@ def test_supplier_import_csv_preview_execute_and_rollback(app, client):
     assert preview_job["blockedRowCount"] == 0
 
     with app.app_context():
-        assert Supplier.query.filter_by(organization_id=organization.id).count() == before_count
+        assert Supplier.query.filter_by(organization_id=organization_id).count() == before_count
+
+    approve_response = client.post(f"/api/imports/jobs/{job['id']}/approve", headers=csrf_headers(client))
+    assert approve_response.status_code == 403
+
+    with app.app_context():
+        organization = db.session.get(Organization, organization_id)
+        organization.lifecycle_status = "ACTIVE"
+        organization.setup_status = "COMPLETE"
+        organization.subscription_status = "ACTIVE"
+        db.session.commit()
 
     approve_response = client.post(f"/api/imports/jobs/{job['id']}/approve", headers=csrf_headers(client))
     assert approve_response.status_code == 200
@@ -138,7 +148,7 @@ def test_supplier_import_csv_preview_execute_and_rollback(app, client):
     assert execute_job["status"] == "COMPLETED"
 
     with app.app_context():
-        supplier_names = {supplier.name for supplier in Supplier.query.filter_by(organization_id=organization.id).all()}
+        supplier_names = {supplier.name for supplier in Supplier.query.filter_by(organization_id=organization_id).all()}
         assert {"Northern Foods", "City Dairy"}.issubset(supplier_names)
 
     rollback_response = client.post(f"/api/imports/jobs/{job['id']}/rollback", headers=csrf_headers(client))
@@ -147,7 +157,7 @@ def test_supplier_import_csv_preview_execute_and_rollback(app, client):
     assert rollback_job["status"] == "ROLLED_BACK"
 
     with app.app_context():
-        assert Supplier.query.filter_by(organization_id=organization.id).count() == before_count
+        assert Supplier.query.filter_by(organization_id=organization_id).count() == before_count
 
 
 def test_xlsx_duplicate_file_is_rejected(app, client):
@@ -232,6 +242,12 @@ def test_cross_tenant_and_unsafe_rollback_denied(app, client):
     supplier_upload = upload_import(client, allowed_org_id, "supplier", "allowed-suppliers.csv", build_supplier_csv())
     assert supplier_upload.status_code == 201
     supplier_job = supplier_upload.get_json()["job"]
+    with app.app_context():
+        allowed_org = db.session.get(Organization, allowed_org_id)
+        allowed_org.lifecycle_status = "ACTIVE"
+        allowed_org.setup_status = "COMPLETE"
+        allowed_org.subscription_status = "ACTIVE"
+        db.session.commit()
     client.post(
         f"/api/imports/jobs/{supplier_job['id']}/mapping",
         headers=csrf_headers(client),

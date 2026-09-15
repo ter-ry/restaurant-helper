@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -556,7 +557,12 @@ def update_locations(organization_id: int):
         location.region = str(item.get("region") or "").strip()
         location.postal_code = str(item.get("postalCode") or "").strip()
         location.country = str(item.get("country") or "Canada").strip() or "Canada"
-        location.timezone = str(item.get("timezone") or "America/Toronto").strip() or "America/Toronto"
+        location_timezone = str(item.get("timezone") or "America/Toronto").strip() or "America/Toronto"
+        try:
+            ZoneInfo(location_timezone)
+        except ZoneInfoNotFoundError:
+            return json_error("Use a valid IANA timezone, such as America/Toronto.", 400, errors={"timezone": "Use a valid IANA timezone, such as America/Toronto."})
+        location.timezone = location_timezone
         updated.append(location.id if location.id is not None else -1)
     record_audit_event(
         event_type="setup.locations_updated",

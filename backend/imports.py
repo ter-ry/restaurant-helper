@@ -35,6 +35,7 @@ from .models import (
     Supplier,
     SupplierItemMapping,
 )
+from .access import organization_is_operational
 from .tenant_context import apply_org_tenant_context
 from .utils import (
     get_platform_role,
@@ -252,6 +253,18 @@ def _require_import_access(organization_id: int | None) -> tuple[Organization | 
         return organization, json_error(message or "Access denied.", 403)
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) and get_platform_role(current_user.id).role == "setup_admin" else None)
     return organization, None
+
+
+def _require_operational_import_access(job: DataImportJob) -> tuple[dict[str, Any], int] | None:
+    db.session.expire_all()
+    organization = (
+        Organization.query.execution_options(populate_existing=True)
+        .filter_by(id=job.organization_id)
+        .first()
+    )
+    if organization_is_operational(organization):
+        return None
+    return json_error("This organization is not ready for operational access yet.", 403)
 
 
 def _safe_int(value: Any) -> int | None:
@@ -1196,6 +1209,9 @@ def approve_import_job(job_id: int):
     job, error = _job_or_404(job_id)
     if error:
         return error
+    operational_error = _require_operational_import_access(job)
+    if operational_error is not None:
+        return operational_error
     if job.blocked_row_count:
         return json_error("Resolve the validation issues before approving the import.", 400)
     job.status = "APPROVED"
@@ -1220,6 +1236,9 @@ def execute_import_job(job_id: int):
     job, error = _job_or_404(job_id)
     if error:
         return error
+    operational_error = _require_operational_import_access(job)
+    if operational_error is not None:
+        return operational_error
     if job.status != "APPROVED":
         return json_error("Approve the import before executing it.", 400)
 
@@ -1290,6 +1309,9 @@ def rollback_import_job(job_id: int):
     job, error = _job_or_404(job_id)
     if error:
         return error
+    operational_error = _require_operational_import_access(job)
+    if operational_error is not None:
+        return operational_error
     if job.status not in {"COMPLETED", "COMPLETED_WITH_WARNINGS"}:
         return json_error("Only completed imports can be rolled back.", 400)
 

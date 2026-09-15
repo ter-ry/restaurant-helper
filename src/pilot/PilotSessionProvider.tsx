@@ -16,7 +16,16 @@ import {
 } from "./pilotApi";
 import { pilotAppEnabled } from "./pilotConfig";
 
-type SessionStatus = "disabled" | "loading" | "signedOut" | "needsSelection" | "signedIn";
+type SessionStatus = "disabled" | "loading" | "signedOut" | "needsSelection" | "needsActivation" | "signedIn";
+
+export function organizationIsOperational(organization: PilotOrganization | null) {
+  return Boolean(
+    organization &&
+      organization.lifecycleStatus === "ACTIVE" &&
+      organization.setupStatus === "COMPLETE" &&
+      organization.subscriptionStatus === "ACTIVE",
+  );
+}
 
 interface PilotSessionValue {
   status: SessionStatus;
@@ -109,7 +118,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
       setCsrfToken(current.csrfToken);
-      setStatus(current.organization ? "signedIn" : "needsSelection");
+      setStatus(current.organization ? (organizationIsOperational(current.organization) ? "signedIn" : "needsActivation") : "needsSelection");
     } catch (err) {
       const apiError = err instanceof PilotApiError ? err : null;
       if (apiError?.status === 401 || apiError?.status === 403) {
@@ -148,7 +157,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole ?? login.membershipRole ?? null);
       setCsrfToken(login.csrfToken);
-      setStatus(current.organization ? "signedIn" : "needsSelection");
+      setStatus(current.organization ? (organizationIsOperational(current.organization) ? "signedIn" : "needsActivation") : "needsSelection");
     } catch (err) {
       setStatus("signedOut");
       setUser(null);
@@ -182,7 +191,7 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setCurrentLocation(current.currentLocation);
       setMembershipRole(current.membershipRole);
       setCsrfToken(current.csrfToken);
-      setStatus("signedIn");
+      setStatus(organizationIsOperational(current.organization) ? "signedIn" : "needsActivation");
     } catch (err) {
       setStatus("signedIn");
       setError(err instanceof Error ? err.message : "Could not switch organizations.");

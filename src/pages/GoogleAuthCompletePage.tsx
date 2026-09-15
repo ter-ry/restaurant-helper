@@ -57,6 +57,10 @@ function ProspectOnboardingForm({
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("Canada");
   const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto");
+  const timezones = useMemo(() => {
+    const supported = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+    return supported.includes("America/Toronto") ? supported : ["America/Toronto", "America/New_York", "America/Los_Angeles", "Europe/London", "Asia/Tokyo", "Australia/Sydney"];
+  }, []);
   const [templateKey, setTemplateKey] = useState("GENERIC_RESTAURANT");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +148,10 @@ function ProspectOnboardingForm({
 
       <label className="block">
         <span className="text-sm font-semibold text-ink">Timezone (IANA)</span>
-        <input className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
+        <select className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" value={timezone} onChange={(event) => setTimezone(event.target.value)}>
+          {!timezones.includes(timezone) ? <option value={timezone}>{timezone}</option> : null}
+          {timezones.map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>
       </label>
 
       {error ? <div className="md:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
