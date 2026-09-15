@@ -5,6 +5,7 @@ import secrets
 import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
@@ -154,6 +155,10 @@ def create_prospect_organization() -> tuple[object, int]:
         return json_error("Location city is required.", 400)
     if template_key not in {template["templateKey"] for template in SETUP_TEMPLATES}:
         return json_error("Unknown setup template.", 400)
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError:
+        return json_error("Use a valid IANA timezone, such as America/Toronto.", 400, errors={"timezone": "Use a valid IANA timezone, such as America/Toronto."})
 
     apply_request_tenant_context(access_scope="setup")
     print("::warning file=backend/commercial.py,line=157::onboarding route: setup scope applied", flush=True)

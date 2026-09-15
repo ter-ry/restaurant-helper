@@ -21,5 +21,9 @@ export function PilotAppGate() {
     return <Navigate to="/" replace />;
   }
 
+  if (status === "needsSelection" || status === "needsActivation") {
+    return <Navigate to="/auth/google/complete?status=success" replace state={{ redirectTo: `${location.pathname}${location.search}` }} />;
+  }
+
   return <Outlet />;
 }

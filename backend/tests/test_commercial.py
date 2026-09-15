@@ -127,3 +127,59 @@ def test_onboarding_tenant_cannot_access_operational_workspace(app, client):
     dashboard = client.get("/api/pilot/dashboard")
     assert dashboard.status_code == 403
     assert dashboard.get_json()["error"] == "This organization is not ready for operational access yet."
+
+
+def test_non_operational_organization_is_blocked_from_every_operational_surface(app, client):
+    login(client)
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = Organization(
+            name=f"Commercial Gate Org {uuid4().hex[:6]}",
+            lifecycle_status="ONBOARDING",
+            setup_status="INTAKE",
+            subscription_status="NONE",
+            setup_template_key="GENERIC_RESTAURANT",
+            setup_fee_status="NONE",
+            is_prospect=True,
+        )
+        db.session.add(organization)
+        db.session.flush()
+        db.session.add(OrganizationMembership(user=owner, organization=organization, role="owner"))
+        location = RestaurantLocation(organization=organization, name="Main", city="Toronto", timezone="America/Toronto")
+        db.session.add(location)
+        for module_key in ("PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "MENU_COSTING", "DAILY_CLOSE", "REPORTING", "SQUARE_INTEGRATION"):
+            db.session.add(OrganizationModule(organization=organization, module_key=module_key, status="ENABLED", enabled_at=datetime.now(timezone.utc)))
+        db.session.commit()
+        organization_id, location_id = organization.id, location.id
+
+    assert client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization_id}).status_code == 200
+    assert client.post("/api/locations/select", headers=csrf_headers(client), json={"locationId": location_id}).status_code == 200
+    endpoints = (
+        "/api/pilot/dashboard",
+        "/api/pilot/purchases",
+        "/api/pilot/inventory",
+        "/api/pilot/suppliers",
+        "/api/pilot/inventory/count-sessions",
+        "/api/pilot/reorder-plan",
+        "/api/pilot/menu-costing",
+        "/api/pilot/daily-close",
+        "/api/pilot/audit-events",
+    )
+    for endpoint in endpoints:
+        response = client.get(endpoint)
+        assert response.status_code == 403, (endpoint, response.get_data(as_text=True))
+        assert response.get_json()["error"] == "This organization is not ready for operational access yet."
+
+    square_response = client.get(f"/api/integrations/square/status?organizationId={organization_id}")
+    assert square_response.status_code == 403
+
+
+def test_onboarding_timezone_must_be_a_valid_iana_name(client):
+    login(client)
+    response = client.post(
+        "/api/onboarding/organizations",
+        headers=csrf_headers(client),
+        json={"name": "Invalid TZ", "templateKey": "CAFE", "locationName": "Main", "city": "Toronto", "timezone": "Not/A_Timezone"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["timezone"]

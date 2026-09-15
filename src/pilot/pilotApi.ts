@@ -32,6 +32,9 @@ export interface PilotUser {
 export interface PilotOrganization {
   id: number;
   name: string;
+  lifecycleStatus?: string;
+  setupStatus?: string;
+  subscriptionStatus?: string;
   createdAt: string | null;
   updatedAt: string | null;
 }
