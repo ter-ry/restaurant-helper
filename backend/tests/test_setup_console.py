@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import Organization, OrganizationModule, PlatformRole, User
+from backend.models import AuditEvent, Organization, OrganizationModule, PlatformRole, User
 from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
@@ -19,6 +19,35 @@ def login(client, email: str = LOCAL_OWNER_EMAIL, password: str = LOCAL_OWNER_PA
 
 def csrf_headers(client):
     return {"X-CSRFToken": client.get("/api/auth/csrf").get_json()["csrfToken"]}
+
+
+def test_platform_role_cli_assigns_existing_user_and_is_idempotent(app):
+    runner = app.test_cli_runner()
+
+    first = runner.invoke(
+        args=["platform-role", "set", "--email", LOCAL_OWNER_EMAIL, "--role", "setup_admin"]
+    )
+    assert first.exit_code == 0, first.output
+    assert f"Assigned platform role setup_admin to {LOCAL_OWNER_EMAIL}" in first.output
+
+    second = runner.invoke(
+        args=["platform-role", "set", "--email", LOCAL_OWNER_EMAIL, "--role", "setup_admin"]
+    )
+    assert second.exit_code == 0, second.output
+    assert "already assigned" in second.output
+
+    with app.app_context():
+        user = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        assert PlatformRole.query.filter_by(user_id=user.id, role="setup_admin", is_active=True).count() == 1
+        assert AuditEvent.query.filter_by(event_type="platform_role_assigned", entity_id=str(user.id)).count() == 1
+
+
+def test_platform_role_cli_refuses_unknown_user(app):
+    result = app.test_cli_runner().invoke(
+        args=["platform-role", "set", "--email", "missing@example.com", "--role", "setup_admin"]
+    )
+    assert result.exit_code != 0
+    assert "No existing user found" in result.output
 
 
 def test_platform_setup_console_can_activate_an_organization(app, client):
