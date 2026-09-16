@@ -24,27 +24,16 @@ def square_environment() -> str:
 def square_notification_signature(raw_body: bytes | str, notification_url: str, signature_key: str) -> str:
     if isinstance(raw_body, str):
         raw_body = raw_body.encode("utf-8")
-    decoded_key = _decode_signature_key(signature_key)
-    digest = hmac.new(decoded_key, notification_url.encode("utf-8") + raw_body, hashlib.sha256).digest()
+    key = signature_key.strip().encode("utf-8")
+    if not key:
+        raise SquareSecurityError("Square signature key is required.")
+    digest = hmac.new(key, notification_url.encode("utf-8") + raw_body, hashlib.sha256).digest()
     return base64.b64encode(digest).decode("utf-8")
 
 
 def verify_square_webhook_signature(*, raw_body: bytes | str, notification_url: str, signature_header: str, signature_key: str) -> bool:
     expected = square_notification_signature(raw_body, notification_url, signature_key)
     return hmac.compare_digest(expected, signature_header)
-
-
-def _decode_signature_key(signature_key: str) -> bytes:
-    signature_key = signature_key.strip()
-    if not signature_key:
-        raise SquareSecurityError("Square signature key is required.")
-    try:
-        decoded = base64.b64decode(signature_key, validate=True)
-        if decoded:
-            return decoded
-    except Exception:
-        pass
-    return signature_key.encode("utf-8")
 
 
 def _integration_fernet() -> Fernet:

@@ -78,6 +78,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             return None
         if not request.path.startswith("/api/"):
             return None
+        # Square sends server-to-server webhooks without browser Origin/Referer
+        # headers. Signature verification remains mandatory in the webhook view.
+        if request.path == "/api/integrations/square/webhooks":
+            return None
 
         allowed_origins = set(app.config.get("ALLOWED_ORIGINS", []))
         frontend_origin = str(app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip().rstrip("/")

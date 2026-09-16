@@ -938,11 +938,37 @@ def test_square_webhook_signature_validation_and_idempotency(app, client, monkey
     )
     assert invalid.status_code == 403
 
+    missing = client.post(
+        "/api/integrations/square/webhooks",
+        data=body_bytes,
+        headers={"Content-Type": "application/json"},
+    )
+    assert missing.status_code == 403
+
     with app.app_context():
         square_connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
         assert square_connection is not None
         assert SquareWebhookEvent.query.filter_by(square_connection_id=square_connection.id).count() == 1
         assert SquareOrder.query.filter_by(square_connection_id=square_connection.id).count() == 1
+
+
+def test_square_webhook_valid_signature_without_connection_returns_not_found(app, client):
+    configure_square(app)
+    body_bytes = json.dumps(
+        {"merchant_id": "synthetic-square-test", "event_id": "synthetic-1", "type": "catalog.version.updated", "data": {}}
+    ).encode("utf-8")
+    signature = square_notification_signature(
+        body_bytes,
+        "http://localhost/api/integrations/square/webhooks",
+        "c2lnbmF0dXJlLWtleQ==",
+    )
+    response = client.post(
+        "/api/integrations/square/webhooks",
+        data=body_bytes,
+        headers={"Content-Type": "application/json", "x-square-hmacsha256-signature": signature},
+    )
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Square connection not found."
 
 
 def test_square_owner_requires_active_organization(app, client, monkeypatch):
