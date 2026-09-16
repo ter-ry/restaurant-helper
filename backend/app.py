@@ -29,7 +29,7 @@ from .organizations import bp as organizations_bp
 from .platform_admin import bp as platform_admin_bp
 from .square_integration import bp as square_integration_bp
 from .policy import enforce_endpoint_permission
-from .seed import seed_pilot_data
+from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data
 from .validation import RequestValidationError
 from .utils import json_error
 
@@ -263,11 +263,25 @@ def create_app(test_config: dict | None = None) -> Flask:
         """Seed the deterministic, isolated demo profile (never production)."""
         if app.config.get("FLOWTALLY_ENV") == "production":
             raise click.ClickException("seed-demo is disabled in production; use a separate demo environment.")
+        database_uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        database_name = urlparse(database_uri).path.rsplit("/", 1)[-1].lower()
+        if database_name in {"flowtally_prod", "defaultdb"}:
+            raise click.ClickException("seed-demo refuses the production/default database; configure an isolated demo database.")
         if profile not in {"casual_restaurant"}:
             raise click.ClickException("Unknown demo profile. Available profiles: casual_restaurant")
         if not inspect(db.engine).has_table("audit_events"):
             db.create_all()
-        result = seed_pilot_data(reset=reset, confirm_production=False)
+        if reset:
+            raise click.ClickException("Demo reset is intentionally disabled by this command; use a disposable demo database and recreate it explicitly.")
+        existing_demo = Organization.query.filter_by(name=DEMO_RESTAURANT_NAME).first()
+        if existing_demo is not None:
+            demo_owner = User.query.filter_by(email="owner@flowtally.local").first()
+            demo_location = RestaurantLocation.query.filter_by(organization_id=existing_demo.id).order_by(RestaurantLocation.id.asc()).first()
+            if demo_owner is None or demo_location is None:
+                raise click.ClickException("The existing demo organization is incomplete; refusing to repair it implicitly.")
+            result = SeedResult(organization_id=existing_demo.id, owner_id=demo_owner.id, manager_id=demo_owner.id, location_id=demo_location.id)
+        else:
+            result = seed_pilot_data(reset=False, confirm_production=False, demo=True)
         changes: dict[str, object] = {}
         if overlay:
             try:
@@ -324,6 +338,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if item:
                     item.name = str(new_name)
                     item.normalized_name = str(new_name).strip().lower()
+        seed_official_demo_data(organization_id=organization.id, location_id=location.id, owner_id=result.owner_id)
         db.session.commit()
         click.echo(f"Seeded demo profile={profile} organization={organization.id} location={location.id} reset={reset}")
 
