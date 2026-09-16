@@ -72,7 +72,7 @@ def login() -> tuple[object, int]:
 @limiter.limit("10 per minute")
 def demo_login() -> tuple[object, int]:
     """Enter the isolated read-only demo without exposing pilot credentials."""
-    if not current_app.config.get("FLOWTALLY_DEMO_READ_ONLY"):
+    if not current_app.config.get("FLOWTALLY_DEMO_READ_ONLY") or not current_app.config.get("FLOWTALLY_DEMO_ISOLATED"):
         return json_error("Demo login is unavailable.", 404)
     user = User.query.filter_by(email="owner@flowtally.local", is_active=True).first()
     if user is None:
