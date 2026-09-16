@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, Loader2, LockKeyhole, Mail } from "lucide-react";
 import { startGoogleLogin } from "../lib/customerAuth";
-import { pilotSeedLoginEnabled } from "./pilotConfig";
+import { demoReadOnly, pilotSeedLoginEnabled } from "./pilotConfig";
 import { usePilotSession } from "./PilotSessionProvider";
 
 function useLoginReturnTo() {
@@ -102,9 +102,23 @@ function SeedLoginForm({ returnTo }: { returnTo: string }) {
 }
 
 export function PilotLoginPage() {
-  const { status, error } = usePilotSession();
+  const { status, error, signInDemo } = usePilotSession();
   const returnTo = useLoginReturnTo();
   const [launchingGoogle, setLaunchingGoogle] = useState(false);
+  const [openingDemo, setOpeningDemo] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
+
+  async function handleDemoLogin() {
+    setOpeningDemo(true);
+    setDemoError(null);
+    try {
+      await signInDemo();
+    } catch (err) {
+      setDemoError(err instanceof Error ? err.message : "Could not open the demo.");
+    } finally {
+      setOpeningDemo(false);
+    }
+  }
 
   if (status === "signedIn" || status === "needsSelection") {
     return <Navigate to={returnTo} replace />;
@@ -157,6 +171,20 @@ export function PilotLoginPage() {
               </>
             )}
           </button>
+
+          {demoReadOnly ? (
+            <button
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={openingDemo || status === "loading"}
+              type="button"
+              onClick={() => void handleDemoLogin()}
+            >
+              {openingDemo ? "Opening demo…" : "Enter read-only demo"}
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          ) : null}
+
+          {demoError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{demoError}</div> : null}
 
           {pilotSeedLoginEnabled() ? <SeedLoginForm returnTo={returnTo} /> : null}
         </section>

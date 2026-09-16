@@ -4,6 +4,7 @@ import {
   fetchPilotOrganizations,
   fetchPilotSession,
   getPilotCsrfToken,
+  loginToDemo,
   loginToPilot,
   logoutOfPilot,
   PilotApiError,
@@ -40,6 +41,7 @@ interface PilotSessionValue {
   csrfToken: string | null;
   refreshSession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInDemo: () => Promise<void>;
   switchOrganization: (organizationId: number) => Promise<void>;
   switchLocation: (locationId: number) => Promise<void>;
   signOut: () => Promise<void>;
@@ -172,6 +174,28 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInDemo = async () => {
+    setStatus("loading");
+    setError(null);
+    try {
+      const login = await loginToDemo();
+      const current = await loadCurrentSession();
+      setUser(login.user);
+      setOrganizations(login.organizations ?? current.organizations);
+      setOrganization(current.organization);
+      setEnabledModuleKeys(current.enabledModuleKeys);
+      setLocations(current.locations);
+      setCurrentLocation(current.currentLocation);
+      setMembershipRole(current.membershipRole ?? login.membershipRole ?? null);
+      setCsrfToken(login.csrfToken);
+      setStatus(current.organization ? (organizationIsOperational(current.organization) ? "signedIn" : "needsActivation") : "needsSelection");
+    } catch (err) {
+      setStatus("signedOut");
+      setError(err instanceof Error ? err.message : "Could not open the demo.");
+      throw err;
+    }
+  };
+
   const switchOrganization = async (organizationId: number) => {
     if (!pilotAppEnabled) {
       return;
@@ -282,12 +306,13 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       csrfToken,
       refreshSession,
       signIn,
+      signInDemo,
       switchOrganization,
       switchLocation,
       signOut,
       signingOut,
     }),
-    [csrfToken, currentLocation, enabledModuleKeys, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signOut, signingOut, status, switchLocation, switchOrganization, user],
+    [csrfToken, currentLocation, enabledModuleKeys, error, locations, membershipRole, organization, organizations, refreshSession, signIn, signInDemo, signOut, signingOut, status, switchLocation, switchOrganization, user],
   );
 
   return <PilotSessionContext.Provider value={value}><div className={signingOut || signOutError ? "pointer-events-none" : undefined}>{children}</div>{signingOut || signOutError ? <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-white"><div className="pointer-events-auto text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">{signingOut ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" /> : <span className="text-lg font-bold">!</span>}</div><p className="mt-4 text-sm font-semibold text-ink">{signingOut ? "Signing out…" : "Could not sign out"}</p>{signOutError ? <div className="mt-4 flex justify-center gap-2"><button type="button" className="min-h-11 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white" onClick={() => void signOut()}>Retry</button><button type="button" className="min-h-11 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink" onClick={() => setSignOutError(null)}>Return to app</button></div> : null}</div></div> : null}</PilotSessionContext.Provider>;

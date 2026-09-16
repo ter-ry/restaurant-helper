@@ -748,10 +748,10 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
         for item in InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
     }
     recipes = {
-        "Harbour Burger": [("Chicken Breast", "0.18", "kg"), ("Bread Buns", "1", "pack"), ("Lettuce", "0.12", "head")],
+        "Harbour Burger": [("Chicken Breast", "0.18", "kg"), ("Bread Buns", "0.25", "pack"), ("Lettuce", "0.12", "head")],
         "Chicken Rice Bowl": [("Chicken Breast", "0.20", "kg"), ("Rice", "0.16", "kg"), ("Onions", "0.03", "kg")],
         "Breakfast Hash": [("Eggs", "0.25", "dozen"), ("Potato", "0.18", "kg"), ("Butter", "0.01", "kg")],
-        "House Salad": [("Lettuce", "0.20", "head"), ("Tomato Sauce", "0.03", "L"), ("Onions", "0.02", "kg")],
+        "House Salad": [("Lettuce", "0.20", "head"), ("Tomatoes", "0.12", "kg"), ("Onions", "0.02", "kg")],
         "Iced Latte": [("Coffee Beans", "0.018", "kg"), ("Milk", "0.30", "L"), ("Cups", "1", "each")],
         "Berry Parfait": [("Cream", "0.12", "L"), ("Sugar", "0.01", "kg")],
     }
@@ -760,6 +760,7 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
     for name, category, unit, price in [
         ("Potato", "Produce", "kg", "2.10"),
         ("Coffee Beans", "Beverage", "kg", "19.50"),
+        ("Tomatoes", "Produce", "kg", "4.20"),
     ]:
         if name not in items:
             supplier = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.id.asc()).first()
@@ -896,11 +897,13 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
             mapping.status = "mapped" if _recipe_name else "imported_recipe_needed"
             mapping.mapped_by_user_id = owner_id
 
-    for order_index in range(1, 8):
+    for order_index in range(1, 22):
         order_id = f"demo-order-{order_index}"
         order = SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id=order_id).first()
         if order is None:
-            ordered_at = datetime.combine(_seed_date(8 - order_index), datetime.min.time(), tzinfo=timezone.utc).replace(hour=12 + order_index)
+            # Three weeks of dated sales make trends and usage meaningful
+            # without bloating the demo database.
+            ordered_at = datetime.combine(_seed_date(3 + order_index), datetime.min.time(), tzinfo=timezone.utc).replace(hour=12 + (order_index % 8))
             order = SquareOrder(
                 square_connection_id=connection.id,
                 square_order_id=order_id,

@@ -14,10 +14,15 @@ customer organization, or a real Square connection. The lowest-cost safe
 deployment is a small Render service plus an isolated managed PostgreSQL
 database; a temporary Render URL is sufficient while validating the demo.
 
-Set `FLOWTALLY_DEMO_READ_ONLY=true` and `SQUARE_ENABLED=false`. Keep the
-production commercial gate and platform-admin routes unchanged. The server
-rejects every non-authentication API write with HTTP 403, so disabled buttons
-are only a usability aid.
+Set `FLOWTALLY_DEMO_READ_ONLY=true`, `FLOWTALLY_DEMO_ISOLATED=true`,
+`FLOWTALLY_DEMO_DATABASE_NAME` to the exact isolated database name, and
+`SQUARE_ENABLED=false`. The seed command refuses to run unless the positive
+isolation flag and database-name match are both present. Keep the production
+commercial gate and platform-admin routes unchanged. The server rejects every
+operational mutation with HTTP 403. The only public session entry is the
+purpose-built **Enter read-only demo** action (`POST /api/auth/demo-login`),
+which signs into the seeded demo owner without displaying pilot credentials;
+ordinary password login and Google callback routes remain blocked in demo mode.
 
 ## Seed command
 
@@ -40,9 +45,9 @@ database by recreating that database rather than risking another environment.
 
 The seeded profile shows a chicken price increase, low-stock ingredients,
 count variance, spoilage waste, recipe-linked menu costing, one unmapped
-seasonal Square variation, several days of synthetic sales, and a completed
-close. The existing calculations consume the seeded records; no KPI is
-hard-coded by the demo seed.
+seasonal Square variation, three weeks of dated synthetic sales, and a
+completed close. The existing calculations consume the seeded records; no KPI
+is hard-coded by the demo seed.
 
 ## Manual launch steps and cost
 

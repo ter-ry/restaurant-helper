@@ -171,6 +171,14 @@ export async function loginToPilot(email: string, password: string) {
   });
 }
 
+export async function loginToDemo() {
+  const csrfToken = await getPilotCsrfToken();
+  return requestJson<PilotLoginResponse>("/api/auth/demo-login", {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
+  });
+}
+
 export async function logoutOfPilot(existingCsrfToken?: string | null) {
   const csrfToken = existingCsrfToken || await getPilotCsrfToken();
   return requestJson<{ ok: true }>("/api/auth/logout", {

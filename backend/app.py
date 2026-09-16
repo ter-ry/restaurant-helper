@@ -57,12 +57,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.before_request
     def enforce_demo_read_only() -> Response | None:
         """Keep a demo deployment browseable while making every write server-authoritative."""
-        if not app.config.get("FLOWTALLY_DEMO_READ_ONLY") or request.method in {"GET", "HEAD", "OPTIONS"}:
+        if not app.config.get("FLOWTALLY_DEMO_READ_ONLY") or request.method in {"HEAD", "OPTIONS"}:
             return None
         if not request.path.startswith("/api/"):
             return None
-        # Authentication/session mechanics must remain available for a demo login and logout.
-        if request.path.startswith("/api/auth/"):
+        # Only the purpose-built demo session entry and normal session teardown
+        # remain available. Password/Google auth and callback routes can write
+        # users, identities, audit events, or session context and stay blocked.
+        if request.path in {"/api/auth/demo-login", "/api/auth/logout"}:
+            return None
+        if request.method == "GET" and request.path in {"/api/auth/csrf", "/api/auth/me"}:
+            return None
+        if request.method == "GET" and not request.path.startswith("/api/auth/"):
             return None
         return json_error("Demo mode is read-only; changes are disabled.", 403)
 
@@ -265,6 +271,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             raise click.ClickException("seed-demo is disabled in production; use a separate demo environment.")
         database_uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
         database_name = urlparse(database_uri).path.rsplit("/", 1)[-1].lower()
+        expected_demo_database = str(app.config.get("FLOWTALLY_DEMO_DATABASE_NAME") or "").strip().lower()
+        if not app.config.get("FLOWTALLY_DEMO_ISOLATED") or not expected_demo_database or database_name != expected_demo_database:
+            raise click.ClickException("seed-demo requires FLOWTALLY_DEMO_ISOLATED=true and an explicitly identified FLOWTALLY_DEMO_DATABASE_NAME matching the selected database.")
         if database_name in {"flowtally_prod", "defaultdb"}:
             raise click.ClickException("seed-demo refuses the production/default database; configure an isolated demo database.")
         if profile not in {"casual_restaurant"}:
