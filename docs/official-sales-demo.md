@@ -24,6 +24,12 @@ purpose-built **Enter read-only demo** action (`POST /api/auth/demo-login`),
 which signs into the seeded demo owner without displaying pilot credentials;
 ordinary password login and Google callback routes remain blocked in demo mode.
 
+The isolated read-only demo may use `FLOWTALLY_RATE_LIMIT_STORAGE_URI=memory://`
+to avoid a paid or shared external cache. Those limits reset whenever the free
+instance cold-starts or restarts, which is acceptable for a single-instance
+sales walkthrough. Memory-backed limits remain rejected for staging and
+production, and must never be used for customer deployments.
+
 ## Seed command
 
 Run against the isolated demo database after migrations:

@@ -2,7 +2,7 @@ services:
   - type: web
     name: flowtally-api-demo
     env: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r backend/requirements.txt
     startCommand: flask --app backend.wsgi:app db upgrade && gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
     healthCheckPath: /api/health
@@ -28,7 +28,7 @@ services:
       - key: SESSION_COOKIE_NAME
         value: flowtally_demo_session
       - key: FLOWTALLY_RATE_LIMIT_STORAGE_URI
-        sync: false
+        value: memory://
       - key: FLOWTALLY_ALLOW_SQLITE_IN_NONLOCAL
         value: "false"
       - key: GOOGLE_OIDC_ENABLED

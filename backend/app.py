@@ -320,10 +320,6 @@ def create_app(test_config: dict | None = None) -> Flask:
         for name, category, unit, minimum, par in extra_items:
             if not InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
                 db.session.add(InventoryItem(organization_id=organization.id, location_id=location.id, supplier_id=supplier.id if supplier else None, name=name, normalized_name=name.lower(), category=category, stock_unit=unit, current_on_hand=Decimal(str(par + 2)), min_quantity=Decimal(str(minimum)), par_level=Decimal(str(par)), preferred_supplier_name=supplier.name if supplier else "", latest_purchase_price=Decimal("4.50"), last_purchase_unit=unit, last_purchase_conversion_factor=Decimal("1"), average_daily_usage=Decimal("0.5")))
-        menu_names = ["Harbour Burger", "Chicken Rice Bowl", "Toronto Breakfast", "House Salad", "Iced Latte", "Berry Parfait", "Seasonal Soup"]
-        for name in menu_names:
-            if not MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
-                db.session.add(MenuItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), category="Menu", selling_price=Decimal("16.00"), notes="Canonical demo menu item"))
         recipe_names = ["Harbour Burger", "Chicken Rice Bowl", "Breakfast Hash", "House Salad", "Iced Latte", "Berry Parfait"]
         for name in recipe_names:
             if not Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():

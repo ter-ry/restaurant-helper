@@ -36,6 +36,8 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SQUARE_WEBHOOK_SIGNATURE_KEY",
         "INTEGRATION_ENCRYPTION_KEY",
         "FLOWTALLY_DEMO_READ_ONLY",
+        "FLOWTALLY_DEMO_ISOLATED",
+        "FLOWTALLY_DEMO_DATABASE_NAME",
         "FLOWTALLY_MIGRATION_DATABASE_URL",
         "FLOWTALLY_PRODUCTION_DATABASE_NAME",
     ]:
@@ -156,6 +158,66 @@ def test_staging_and_production_startup_rejects_unsafe_settings(monkeypatch: pyt
         monkeypatch.setenv(key, value)
 
     with pytest.raises(ConfigurationError, match=message):
+        choose_config().build()
+
+
+def test_isolated_read_only_demo_allows_memory_rate_limits(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "staging")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-demo-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://demo@example.invalid/flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://flowtally-demo.onrender.com")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://flowtally-demo.onrender.com")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "memory://")
+    monkeypatch.setenv("FLOWTALLY_DEMO_DATABASE_NAME", "flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_DEMO_READ_ONLY", "true")
+    monkeypatch.setenv("FLOWTALLY_DEMO_ISOLATED", "true")
+
+    assert choose_config().build()["RATELIMIT_STORAGE_URI"] == "memory://"
+
+
+@pytest.mark.parametrize("missing_flag", ["FLOWTALLY_DEMO_READ_ONLY", "FLOWTALLY_DEMO_ISOLATED"])
+def test_demo_memory_rate_limits_require_both_safety_flags(monkeypatch: pytest.MonkeyPatch, missing_flag: str):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "staging")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-demo-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://demo@example.invalid/flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://flowtally-demo.onrender.com")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://flowtally-demo.onrender.com")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "memory://")
+    monkeypatch.setenv("FLOWTALLY_DEMO_DATABASE_NAME", "flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_DEMO_READ_ONLY", "true")
+    monkeypatch.setenv("FLOWTALLY_DEMO_ISOLATED", "true")
+    monkeypatch.delenv(missing_flag, raising=False)
+
+    with pytest.raises(ConfigurationError, match="Rate-limit storage must not use memory://"):
+        choose_config().build()
+
+
+def test_production_memory_rate_limits_remain_rejected(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-production-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://demo@example.invalid/flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_MIGRATION_DATABASE_URL", "postgresql://demo@example.invalid/flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://flowtally-demo.onrender.com")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://flowtally-demo.onrender.com")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("SESSION_COOKIE_NAME", "flowtally_demo_session")
+    monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "memory://")
+    monkeypatch.setenv("GOOGLE_OIDC_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "demo-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "demo-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://flowtally-demo.onrender.com/api/auth/google/callback")
+    monkeypatch.setenv("FLOWTALLY_DEMO_DATABASE_NAME", "flowtally_demo")
+    monkeypatch.setenv("FLOWTALLY_DEMO_READ_ONLY", "true")
+    monkeypatch.setenv("FLOWTALLY_DEMO_ISOLATED", "true")
+
+    with pytest.raises(ConfigurationError, match="Rate-limit storage must not use memory://"):
         choose_config().build()
 
 
