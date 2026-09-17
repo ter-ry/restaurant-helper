@@ -31,7 +31,16 @@ def test_official_demo_seed_is_populated_and_idempotent(app):
         assert connection.square_merchant_id == "demo-harbour-kitchen"
         assert connection.access_token_ciphertext == ""
         assert Supplier.query.count() >= 6
-        assert MenuItem.query.count() >= 7
+        assert {item.name for item in MenuItem.query.order_by(MenuItem.id.asc()).all()} == {
+            "Harbour Burger",
+            "Chicken Rice Bowl",
+            "Toronto Breakfast",
+            "House Salad",
+            "Iced Latte",
+            "Berry Parfait",
+            "Seasonal Soup",
+        }
+        assert MenuItem.query.count() == 7
         assert RecipeIngredient.query.count() >= 10
         assert SquareCatalogMapping.query.filter_by(status="imported_recipe_needed").count() >= 1
         assert SquareOrder.query.count() == 21

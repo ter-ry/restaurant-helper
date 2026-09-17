@@ -152,7 +152,7 @@ def _session_cookie_secure(mode: str) -> bool:
 def _rate_limit_storage_uri(mode: str) -> str:
     configured = os.environ.get("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "").strip()
     if configured:
-        if mode in PROD_LIKE_MODES and configured.startswith("memory://"):
+        if mode in PROD_LIKE_MODES and configured.startswith("memory://") and not _demo_memory_rate_limit_allowed(mode):
             raise ConfigurationError("Rate-limit storage must not use memory:// in staging or production.")
         return configured
 
@@ -179,6 +179,17 @@ def database_name_from_url(value: str) -> str:
     """Return the logical database name without exposing any URL credentials."""
     parsed = urlparse(value.strip())
     return (parsed.path or "").lstrip("/").split("?", 1)[0]
+
+
+def _demo_memory_rate_limit_allowed(mode: str, database_url: str | None = None) -> bool:
+    """Allow memory-backed limits only for an explicitly isolated demo database."""
+    if mode != "staging":
+        return False
+    if not _env_bool("FLOWTALLY_DEMO_READ_ONLY", False) or not _env_bool("FLOWTALLY_DEMO_ISOLATED", False):
+        return False
+    expected = os.environ.get("FLOWTALLY_DEMO_DATABASE_NAME", "").strip()
+    targeted = database_name_from_url(database_url or os.environ.get("DATABASE_URL", ""))
+    return bool(expected and targeted == expected and expected not in {"defaultdb", "flowtally_prod"})
 
 
 def validate_production_database_targets(runtime_url: str, migration_url: str) -> None:
@@ -359,7 +370,10 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
         raise ConfigurationError("FLOWTALLY_FRONTEND_ORIGIN must be an explicit https URL in staging and production.")
 
     rate_limit_storage = str(config.get("RATELIMIT_STORAGE_URI") or "").strip()
-    if not rate_limit_storage or rate_limit_storage.startswith("memory://"):
+    if not rate_limit_storage or (
+        rate_limit_storage.startswith("memory://")
+        and not _demo_memory_rate_limit_allowed(mode, database_url)
+    ):
         raise ConfigurationError("Rate-limit storage must not use memory:// in staging or production.")
 
     google_enabled = bool(config.get("GOOGLE_OIDC_ENABLED"))
