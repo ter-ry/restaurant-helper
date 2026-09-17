@@ -37,4 +37,8 @@ services:
         value: "false"
       - key: FLOWTALLY_DEMO_READ_ONLY
         value: "true"
+      - key: FLOWTALLY_DEMO_ISOLATED
+        value: "true"
+      - key: FLOWTALLY_DEMO_DATABASE_NAME
+        sync: false
 

@@ -68,6 +68,18 @@ def login() -> tuple[object, int]:
     return _complete_login(user, event_type_success="auth.login.success")
 
 
+@bp.post("/api/auth/demo-login")
+@limiter.limit("10 per minute")
+def demo_login() -> tuple[object, int]:
+    """Enter the isolated read-only demo without exposing pilot credentials."""
+    if not current_app.config.get("FLOWTALLY_DEMO_READ_ONLY") or not current_app.config.get("FLOWTALLY_DEMO_ISOLATED"):
+        return json_error("Demo login is unavailable.", 404)
+    user = User.query.filter_by(email="owner@flowtally.local", is_active=True).first()
+    if user is None:
+        return json_error("Demo workspace is not initialized.", 503)
+    return _complete_login(user, event_type_success="auth.demo.login.success")
+
+
 def _login_payload(user: User, memberships: list[OrganizationMembership], membership: OrganizationMembership | None, organization: Organization | None, current_location) -> dict[str, object]:
     support_grant = support_grant_for_user(user.id, organization.id) if organization is not None else None
     return {

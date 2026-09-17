@@ -29,7 +29,7 @@ from .organizations import bp as organizations_bp
 from .platform_admin import bp as platform_admin_bp
 from .square_integration import bp as square_integration_bp
 from .policy import enforce_endpoint_permission
-from .seed import seed_pilot_data
+from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data
 from .validation import RequestValidationError
 from .utils import json_error
 
@@ -57,12 +57,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.before_request
     def enforce_demo_read_only() -> Response | None:
         """Keep a demo deployment browseable while making every write server-authoritative."""
-        if not app.config.get("FLOWTALLY_DEMO_READ_ONLY") or request.method in {"GET", "HEAD", "OPTIONS"}:
+        if not app.config.get("FLOWTALLY_DEMO_READ_ONLY") or request.method in {"HEAD", "OPTIONS"}:
             return None
         if not request.path.startswith("/api/"):
             return None
-        # Authentication/session mechanics must remain available for a demo login and logout.
-        if request.path.startswith("/api/auth/"):
+        # Only the purpose-built demo session entry and normal session teardown
+        # remain available. Password/Google auth and callback routes can write
+        # users, identities, audit events, or session context and stay blocked.
+        if request.path in {"/api/auth/demo-login", "/api/auth/logout"}:
+            return None
+        if request.method == "GET" and request.path in {"/api/auth/csrf", "/api/auth/me"}:
+            return None
+        if request.method == "GET" and not request.path.startswith("/api/auth/"):
             return None
         return json_error("Demo mode is read-only; changes are disabled.", 403)
 
@@ -263,11 +269,28 @@ def create_app(test_config: dict | None = None) -> Flask:
         """Seed the deterministic, isolated demo profile (never production)."""
         if app.config.get("FLOWTALLY_ENV") == "production":
             raise click.ClickException("seed-demo is disabled in production; use a separate demo environment.")
+        database_uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        database_name = urlparse(database_uri).path.rsplit("/", 1)[-1].lower()
+        expected_demo_database = str(app.config.get("FLOWTALLY_DEMO_DATABASE_NAME") or "").strip().lower()
+        if not app.config.get("FLOWTALLY_DEMO_ISOLATED") or not expected_demo_database or database_name != expected_demo_database:
+            raise click.ClickException("seed-demo requires FLOWTALLY_DEMO_ISOLATED=true and an explicitly identified FLOWTALLY_DEMO_DATABASE_NAME matching the selected database.")
+        if database_name in {"flowtally_prod", "defaultdb"}:
+            raise click.ClickException("seed-demo refuses the production/default database; configure an isolated demo database.")
         if profile not in {"casual_restaurant"}:
             raise click.ClickException("Unknown demo profile. Available profiles: casual_restaurant")
         if not inspect(db.engine).has_table("audit_events"):
             db.create_all()
-        result = seed_pilot_data(reset=reset, confirm_production=False)
+        if reset:
+            raise click.ClickException("Demo reset is intentionally disabled by this command; use a disposable demo database and recreate it explicitly.")
+        existing_demo = Organization.query.filter_by(name=DEMO_RESTAURANT_NAME).first()
+        if existing_demo is not None:
+            demo_owner = User.query.filter_by(email="owner@flowtally.local").first()
+            demo_location = RestaurantLocation.query.filter_by(organization_id=existing_demo.id).order_by(RestaurantLocation.id.asc()).first()
+            if demo_owner is None or demo_location is None:
+                raise click.ClickException("The existing demo organization is incomplete; refusing to repair it implicitly.")
+            result = SeedResult(organization_id=existing_demo.id, owner_id=demo_owner.id, manager_id=demo_owner.id, location_id=demo_location.id)
+        else:
+            result = seed_pilot_data(reset=False, confirm_production=False, demo=True)
         changes: dict[str, object] = {}
         if overlay:
             try:
@@ -297,11 +320,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         for name, category, unit, minimum, par in extra_items:
             if not InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
                 db.session.add(InventoryItem(organization_id=organization.id, location_id=location.id, supplier_id=supplier.id if supplier else None, name=name, normalized_name=name.lower(), category=category, stock_unit=unit, current_on_hand=Decimal(str(par + 2)), min_quantity=Decimal(str(minimum)), par_level=Decimal(str(par)), preferred_supplier_name=supplier.name if supplier else "", latest_purchase_price=Decimal("4.50"), last_purchase_unit=unit, last_purchase_conversion_factor=Decimal("1"), average_daily_usage=Decimal("0.5")))
-        menu_names = ["Harbour Burger", "Chicken Bowl", "Mushroom Melt", "Toronto Breakfast", "House Salad", "Iced Latte", "Berry Parfait", "Daily Soup"]
+        menu_names = ["Harbour Burger", "Chicken Rice Bowl", "Toronto Breakfast", "House Salad", "Iced Latte", "Berry Parfait", "Seasonal Soup"]
         for name in menu_names:
             if not MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
                 db.session.add(MenuItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), category="Menu", selling_price=Decimal("16.00"), notes="Canonical demo menu item"))
-        recipe_names = ["Burger Patty", "House Sauce", "Chicken Marinade", "Breakfast Hash", "Roasted Mushrooms", "House Salad", "Soup Base", "Iced Latte", "Berry Parfait", "Pickled Onions", "Garlic Butter", "Daily Dressing"]
+        recipe_names = ["Harbour Burger", "Chicken Rice Bowl", "Breakfast Hash", "House Salad", "Iced Latte", "Berry Parfait"]
         for name in recipe_names:
             if not Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
                 db.session.add(Recipe(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), description="Canonical demo recipe", yield_quantity=Decimal("1"), yield_unit="batch", created_by_user_id=result.owner_id, updated_by_user_id=result.owner_id))
@@ -324,6 +347,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if item:
                     item.name = str(new_name)
                     item.normalized_name = str(new_name).strip().lower()
+        seed_official_demo_data(organization_id=organization.id, location_id=location.id, owner_id=result.owner_id)
         db.session.commit()
         click.echo(f"Seeded demo profile={profile} organization={organization.id} location={location.id} reset={reset}")
 

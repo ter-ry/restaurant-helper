@@ -34,6 +34,8 @@ CONFIG_ENV_VARS = [
     "SQUARE_WEBHOOK_SIGNATURE_KEY",
     "INTEGRATION_ENCRYPTION_KEY",
     "FLOWTALLY_DEMO_READ_ONLY",
+    "FLOWTALLY_DEMO_DATABASE_NAME",
+    "FLOWTALLY_DEMO_ISOLATED",
 ]
 
 
@@ -49,6 +51,8 @@ def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     for name in CONFIG_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("FLOWTALLY_ENV", "testing")
+    monkeypatch.setenv("FLOWTALLY_DEMO_DATABASE_NAME", "pilot.db")
+    monkeypatch.setenv("FLOWTALLY_DEMO_ISOLATED", "true")
 
     database_path = tmp_path / "pilot.db"
     application = create_app(

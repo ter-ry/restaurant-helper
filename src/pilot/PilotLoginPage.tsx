@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, Loader2, LockKeyhole, Mail } from "lucide-react";
 import { startGoogleLogin } from "../lib/customerAuth";
-import { pilotSeedLoginEnabled } from "./pilotConfig";
+import { demoReadOnly, pilotSeedLoginEnabled } from "./pilotConfig";
 import { usePilotSession } from "./PilotSessionProvider";
 
 function useLoginReturnTo() {
@@ -102,9 +102,23 @@ function SeedLoginForm({ returnTo }: { returnTo: string }) {
 }
 
 export function PilotLoginPage() {
-  const { status, error } = usePilotSession();
+  const { status, error, signInDemo } = usePilotSession();
   const returnTo = useLoginReturnTo();
   const [launchingGoogle, setLaunchingGoogle] = useState(false);
+  const [openingDemo, setOpeningDemo] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
+
+  async function handleDemoLogin() {
+    setOpeningDemo(true);
+    setDemoError(null);
+    try {
+      await signInDemo();
+    } catch (err) {
+      setDemoError(err instanceof Error ? err.message : "Could not open the demo.");
+    } finally {
+      setOpeningDemo(false);
+    }
+  }
 
   if (status === "signedIn" || status === "needsSelection") {
     return <Navigate to={returnTo} replace />;
@@ -129,36 +143,35 @@ export function PilotLoginPage() {
         </section>
 
         <section className="space-y-4 rounded-3xl border border-line bg-white p-6 shadow-soft sm:p-8">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-brand-50 p-3 text-brand-700">
-              <LockKeyhole className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Login</p>
-              <h2 className="mt-1 text-2xl font-bold text-ink">Continue with Google</h2>
-            </div>
-          </div>
+          {demoReadOnly ? (
+            <button
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={openingDemo || status === "loading"}
+              type="button"
+              onClick={() => void handleDemoLogin()}
+            >
+              {openingDemo ? "Opening demo…" : "Enter read-only demo"}
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <>
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl bg-brand-50 p-3 text-brand-700"><LockKeyhole className="h-6 w-6" /></div>
+                <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Login</p><h2 className="mt-1 text-2xl font-bold text-ink">Continue with Google</h2></div>
+              </div>
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={launchingGoogle || status === "loading"}
+                type="button"
+                onClick={() => void handleGoogleLogin()}
+              >
+                {launchingGoogle ? <><Loader2 className="h-4 w-4 animate-spin" />Redirecting to Google…</> : <>Continue with Google<ArrowRight className="h-4 w-4" /></>}
+              </button>
+              {pilotSeedLoginEnabled() ? <SeedLoginForm returnTo={returnTo} /> : null}
+            </>
+          )}
 
-          <button
-            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={launchingGoogle || status === "loading"}
-            type="button"
-            onClick={() => void handleGoogleLogin()}
-          >
-            {launchingGoogle ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Redirecting to Google…
-              </>
-            ) : (
-              <>
-                Continue with Google
-                <ArrowRight className="h-4 w-4" />
-              </>
-            )}
-          </button>
-
-          {pilotSeedLoginEnabled() ? <SeedLoginForm returnTo={returnTo} /> : null}
+          {demoError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{demoError}</div> : null}
         </section>
       </div>
     </main>

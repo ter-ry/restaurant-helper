@@ -37,6 +37,10 @@ from .models import (
     SquareSyncCursor,
     SquareSyncJob,
     SquareWebhookEvent,
+    SquareOrder,
+    SquareOrderLine,
+    SquareOrderLineInventoryConsumption,
+    SquareDailySalesSummary,
     StockCountSession,
     StockCountSessionLine,
     SupportAccessGrant,
@@ -52,6 +56,8 @@ LOCAL_MANAGER_EMAIL = "manager@flowtally.local"
 LOCAL_MANAGER_PASSWORD = "PilotManager123!"
 LOCAL_ORGANIZATION_NAME = "Flowtally Pilot Restaurant"
 LOCAL_LOCATION_NAME = "Flowtally Pilot Kitchen"
+DEMO_RESTAURANT_NAME = "Harbour Kitchen"
+DEMO_LOCATION_NAME = "Harbour Kitchen - Queen West"
 
 
 @dataclass(slots=True)
@@ -656,16 +662,18 @@ def _current_environment() -> str:
     return os.environ.get("FLOWTALLY_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
 
 
-def _allow_seed_reset_in_current_environment(*, confirm_production: bool) -> None:
+def _allow_seed_reset_in_current_environment(*, confirm_production: bool, demo: bool = False) -> None:
     if _current_environment() in {"staging", "production"}:
+        if demo and os.environ.get("FLOWTALLY_DEMO_READ_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}:
+            return
         if not confirm_production:
             raise RuntimeError("Pilot seed/reset is disabled in staging and production unless --confirm-production-seeding is provided.")
         if os.environ.get("FLOWTALLY_ALLOW_PRODUCTION_SEEDING", "").strip().lower() not in {"1", "true", "yes", "on"}:
             raise RuntimeError("FLOWTALLY_ALLOW_PRODUCTION_SEEDING must be enabled to seed or reset in staging and production.")
 
 
-def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) -> SeedResult:
-    _allow_seed_reset_in_current_environment(confirm_production=confirm_production)
+def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False, demo: bool = False) -> SeedResult:
+    _allow_seed_reset_in_current_environment(confirm_production=confirm_production, demo=demo)
     if reset:
         _clear_seed_data()
 
@@ -714,3 +722,229 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False) ->
 
     db.session.commit()
     return SeedResult(organization_id=organization.id, owner_id=owner.id, manager_id=manager.id, location_id=location.id)
+
+
+def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id: int) -> None:
+    """Add the deterministic Harbour Kitchen story on top of the pilot seed.
+
+    This helper only writes to the explicitly selected organization.  It is
+    called by ``seed-demo`` after that command has rejected production mode;
+    it never creates a real Square connection or stores credentials.
+    """
+    organization = db.session.get(Organization, organization_id)
+    location = db.session.get(RestaurantLocation, location_id)
+    if organization is None or location is None:
+        raise RuntimeError("The selected demo organization or location does not exist.")
+
+    organization.name = DEMO_RESTAURANT_NAME
+    location.name = DEMO_LOCATION_NAME
+    location.city = "Toronto"
+    location.region = "ON"
+    location.country = "Canada"
+    location.timezone = "America/Toronto"
+
+    items = {
+        item.name: item
+        for item in InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
+    }
+    recipes = {
+        "Harbour Burger": [("Chicken Breast", "0.18", "kg"), ("Bread Buns", "0.25", "pack"), ("Lettuce", "0.12", "head")],
+        "Chicken Rice Bowl": [("Chicken Breast", "0.20", "kg"), ("Rice", "0.16", "kg"), ("Onions", "0.03", "kg")],
+        "Breakfast Hash": [("Eggs", "0.25", "dozen"), ("Potato", "0.18", "kg"), ("Butter", "0.01", "kg")],
+        "House Salad": [("Lettuce", "0.20", "head"), ("Tomatoes", "0.12", "kg"), ("Onions", "0.02", "kg")],
+        "Iced Latte": [("Coffee Beans", "0.018", "kg"), ("Milk", "0.30", "L"), ("Cups", "1", "each")],
+        "Berry Parfait": [("Cream", "0.12", "L"), ("Sugar", "0.01", "kg")],
+    }
+    # The extra ingredients are part of the official profile, not an excuse to
+    # silently invent costs.  Their values are explicit and reproducible.
+    for name, category, unit, price in [
+        ("Potato", "Produce", "kg", "2.10"),
+        ("Coffee Beans", "Beverage", "kg", "19.50"),
+        ("Tomatoes", "Produce", "kg", "4.20"),
+    ]:
+        if name not in items:
+            supplier = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.id.asc()).first()
+            item = InventoryItem(
+                organization_id=organization.id,
+                location_id=location.id,
+                supplier_id=supplier.id if supplier else None,
+                name=name,
+                normalized_name=_normalize_name(name),
+                category=category,
+                stock_unit=unit,
+                current_on_hand=Decimal("6"),
+                min_quantity=Decimal("2"),
+                par_level=Decimal("8"),
+                preferred_supplier_name=supplier.name if supplier else "",
+                latest_purchase_price=Decimal(price),
+                last_purchase_unit=unit,
+                last_purchase_conversion_factor=Decimal("1"),
+                average_unit_cost=Decimal(price),
+                average_daily_usage=Decimal("0.4"),
+            )
+            db.session.add(item)
+            db.session.flush()
+            items[name] = item
+
+    recipe_by_name: dict[str, Recipe] = {}
+    for name, ingredient_specs in recipes.items():
+        normalized = _normalize_name(name)
+        recipe = Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+        if recipe is None:
+            recipe = Recipe(
+                organization_id=organization.id,
+                location_id=location.id,
+                name=name,
+                normalized_name=normalized,
+                description=f"Harbour Kitchen {name.lower()} recipe",
+                yield_quantity=Decimal("1"),
+                yield_unit="serving",
+                created_by_user_id=owner_id,
+                updated_by_user_id=owner_id,
+            )
+            db.session.add(recipe)
+            db.session.flush()
+        recipe_by_name[name] = recipe
+        existing_ingredients = {ingredient.inventory_item_id: ingredient for ingredient in recipe.ingredients}
+        for sort_order, (item_name, quantity, unit) in enumerate(ingredient_specs):
+            item = items[item_name]
+            ingredient = existing_ingredients.get(item.id)
+            if ingredient is None:
+                ingredient = RecipeIngredient(
+                    organization_id=organization.id,
+                    recipe_id=recipe.id,
+                    inventory_item_id=item.id,
+                    created_by_user_id=owner_id,
+                )
+                db.session.add(ingredient)
+            ingredient.quantity_required = Decimal(quantity)
+            ingredient.unit = unit
+            ingredient.sort_order = sort_order
+            ingredient.updated_by_user_id = owner_id
+
+    menu_specs = [
+        ("Harbour Burger", "Burgers", "18.00", "Harbour Burger"),
+        ("Chicken Rice Bowl", "Bowls", "17.50", "Chicken Rice Bowl"),
+        ("Toronto Breakfast", "Breakfast", "15.00", "Breakfast Hash"),
+        ("House Salad", "Salads", "12.00", "House Salad"),
+        ("Iced Latte", "Coffee", "5.50", "Iced Latte"),
+        ("Berry Parfait", "Breakfast", "8.50", "Berry Parfait"),
+        ("Seasonal Soup", "Soups", "9.50", None),
+    ]
+    menu_by_name: dict[str, MenuItem] = {}
+    for name, category, price, recipe_name in menu_specs:
+        menu = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=_normalize_name(name)).first()
+        if menu is None:
+            menu = MenuItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=_normalize_name(name), created_by_user_id=owner_id)
+            db.session.add(menu)
+        menu.category = category
+        menu.selling_price = Decimal(price)
+        menu.recipe_id = recipe_by_name[recipe_name].id if recipe_name else None
+        menu.notes = "Synthetic Harbour Kitchen demo menu item"
+        menu.updated_by_user_id = owner_id
+        menu_by_name[name] = menu
+    db.session.flush()
+
+    connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
+    if connection is None:
+        connection = SquareConnection(organization_id=organization.id)
+        db.session.add(connection)
+        db.session.flush()
+    connection.environment = "demo"
+    connection.square_merchant_id = "demo-harbour-kitchen"
+    connection.status = "connected"
+    connection.sync_status = "demo"
+    connection.sync_error = "Synthetic catalog and order history; no merchant is connected."
+    connection.access_token_ciphertext = ""
+    connection.refresh_token_ciphertext = ""
+
+    square_location = SquareLocation.query.filter_by(square_connection_id=connection.id, square_location_id="demo-location-queen-west").first()
+    if square_location is None:
+        square_location = SquareLocation(square_connection_id=connection.id, square_location_id="demo-location-queen-west")
+        db.session.add(square_location)
+        db.session.flush()
+    square_location.name = DEMO_LOCATION_NAME
+    square_location.status = "ACTIVE"
+    square_location.raw_payload_json = {"id": square_location.square_location_id, "name": DEMO_LOCATION_NAME, "status": "ACTIVE", "demo": True}
+    location_mapping = SquareLocationMapping.query.filter_by(square_location_id=square_location.id).first()
+    if location_mapping is None:
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id, mapped_by_user_id=owner_id))
+
+    variation_map: dict[str, MenuItem] = {}
+    for index, (name, _category, price, _recipe_name) in enumerate(menu_specs, start=1):
+        variation_id = f"demo-variation-{index}"
+        variation_map[variation_id] = menu_by_name[name]
+        item_id = f"demo-item-{index}"
+        for object_id, object_type, payload in [
+            (item_id, "ITEM", {"id": item_id, "type": "ITEM", "item_data": {"name": name}}),
+            (variation_id, "ITEM_VARIATION", {"id": variation_id, "type": "ITEM_VARIATION", "item_variation_data": {"name": "Regular", "item_id": item_id, "price_money": {"amount": int(Decimal(price) * 100), "currency": "CAD"}}}),
+        ]:
+            catalog = SquareCatalogObject.query.filter_by(square_connection_id=connection.id, square_object_id=object_id).first()
+            if catalog is None:
+                catalog = SquareCatalogObject(square_connection_id=connection.id, square_object_id=object_id)
+                db.session.add(catalog)
+                db.session.flush()
+            catalog.object_type = object_type
+            catalog.version = 1
+            catalog.is_deleted = False
+            catalog.raw_payload_json = payload
+            mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=catalog.id, mapping_type="menu_item").first()
+            if mapping is None:
+                mapping = SquareCatalogMapping(square_catalog_object_id=catalog.id, mapping_type="menu_item")
+                db.session.add(mapping)
+            mapping.flowtally_entity_type = "menu_item"
+            mapping.flowtally_entity_id = str(menu_by_name[name].id)
+            mapping.status = "mapped" if _recipe_name else "imported_recipe_needed"
+            mapping.mapped_by_user_id = owner_id
+
+    for order_index in range(1, 22):
+        order_id = f"demo-order-{order_index}"
+        order = SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id=order_id).first()
+        if order is None:
+            # Three weeks of dated sales make trends and usage meaningful
+            # without bloating the demo database.
+            ordered_at = datetime.combine(_seed_date(3 + order_index), datetime.min.time(), tzinfo=timezone.utc).replace(hour=12 + (order_index % 8))
+            order = SquareOrder(
+                square_connection_id=connection.id,
+                square_order_id=order_id,
+                square_location_id=square_location.square_location_id,
+                restaurant_location_id=location.id,
+                order_state="COMPLETED",
+                currency="CAD",
+                ordered_at=ordered_at,
+                closed_at=ordered_at,
+                raw_payload_json={"id": order_id, "demo": True},
+                last_synced_at=_now(),
+            )
+            db.session.add(order)
+            db.session.flush()
+            line_specs = [("demo-variation-1", 2), ("demo-variation-5", 1)] if order_index % 2 else [("demo-variation-2", 1), ("demo-variation-6", 2)]
+            gross = Decimal("0")
+            for line_index, (variation_id, quantity) in enumerate(line_specs):
+                menu = variation_map[variation_id]
+                amount = menu.selling_price * quantity
+                gross += amount
+                line = SquareOrderLine(square_order_id=order.id, line_uid=f"{order_id}-line-{line_index + 1}", line_index=line_index, square_item_variation_id=variation_id, name=menu.name, quantity=Decimal(quantity), gross_amount=amount, net_amount=amount, raw_payload_json={"demo": True})
+                db.session.add(line)
+                db.session.flush()
+                if menu.recipe_id:
+                    recipe = db.session.get(Recipe, menu.recipe_id)
+                    for ingredient in recipe.ingredients:
+                        db.session.add(SquareOrderLineInventoryConsumption(organization_id=organization.id, location_id=location.id, square_order_line_id=line.id, inventory_item_id=ingredient.inventory_item_id, applied_quantity=ingredient.quantity_required * quantity))
+            order.item_quantity = sum(quantity for _variation, quantity in line_specs)
+            order.line_count = len(line_specs)
+            order.gross_amount = gross
+            order.net_amount = gross
+        summary = SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id, square_location_id=square_location.square_location_id, sale_date=order.ordered_at.date()).first()
+        if summary is None:
+            summary = SquareDailySalesSummary(square_connection_id=connection.id, square_location_id=square_location.square_location_id, restaurant_location_id=location.id, sale_date=order.ordered_at.date(), currency="CAD", raw_payload_json={"demo": True})
+            db.session.add(summary)
+        day_orders = SquareOrder.query.filter_by(
+            square_connection_id=connection.id,
+            square_location_id=square_location.square_location_id,
+        ).all()
+        same_day = [entry for entry in day_orders if entry.ordered_at and entry.ordered_at.date() == order.ordered_at.date()]
+        summary.gross_amount = sum((entry.gross_amount or Decimal("0")) for entry in same_day)
+        summary.net_amount = summary.gross_amount
+        summary.order_count = len(same_day)
+    db.session.commit()
