@@ -16,6 +16,7 @@ from backend.models import (
     User,
 )
 from backend.menu_costing import serialize_menu_item
+from backend.seed import OFFICIAL_DEMO_MODULE_KEYS
 
 
 def test_official_demo_seed_is_populated_and_idempotent(app):
@@ -31,9 +32,7 @@ def test_official_demo_seed_is_populated_and_idempotent(app):
         assert connection.environment == "demo"
         assert connection.square_merchant_id == "demo-harbour-kitchen"
         assert connection.access_token_ciphertext == ""
-        assert {row.module_key for row in OrganizationModule.query.filter_by(organization_id=connection.organization_id).all()} >= {
-            "PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING", "MENU_COSTING", "DAILY_CLOSE", "SQUARE_INTEGRATION"
-        }
+        assert {row.module_key for row in OrganizationModule.query.filter_by(organization_id=connection.organization_id).all()} == set(OFFICIAL_DEMO_MODULE_KEYS)
         assert Supplier.query.count() >= 6
         assert {item.name for item in MenuItem.query.order_by(MenuItem.id.asc()).all()} == {
             "Harbour Burger",
@@ -63,6 +62,7 @@ def test_official_demo_seed_is_populated_and_idempotent(app):
     second = runner.invoke(args=["seed-demo"])
     assert second.exit_code == 0, second.output
     with app.app_context():
+        assert {row.module_key for row in OrganizationModule.query.filter_by(organization_id=connection.organization_id).all()} == set(OFFICIAL_DEMO_MODULE_KEYS)
         assert MenuItem.query.count() == counts["menus"]
         assert RecipeIngredient.query.count() == counts["ingredients"]
         assert SquareOrder.query.count() == counts["orders"]

@@ -24,7 +24,7 @@ services:
       - key: SESSION_COOKIE_SECURE
         value: "true"
       - key: SESSION_COOKIE_SAMESITE
-        value: Lax
+        value: None
       - key: SESSION_COOKIE_NAME
         value: flowtally_demo_session
       - key: FLOWTALLY_RATE_LIMIT_STORAGE_URI

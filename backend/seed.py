@@ -58,6 +58,16 @@ LOCAL_ORGANIZATION_NAME = "Flowtally Pilot Restaurant"
 LOCAL_LOCATION_NAME = "Flowtally Pilot Kitchen"
 DEMO_RESTAURANT_NAME = "Harbour Kitchen"
 DEMO_LOCATION_NAME = "Harbour Kitchen - Queen West"
+OFFICIAL_DEMO_MODULE_KEYS = (
+    "INVENTORY",
+    "PURCHASES",
+    "REORDER_PLANS",
+    "REPORTING",
+    "STOCK_COUNTS",
+    "MENU_COSTING",
+    "DAILY_CLOSE",
+    "SQUARE_INTEGRATION",
+)
 
 
 @dataclass(slots=True)
@@ -736,7 +746,9 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
     if organization is None or location is None:
         raise RuntimeError("The selected demo organization or location does not exist.")
 
-    for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING", "MENU_COSTING", "DAILY_CLOSE", "SQUARE_INTEGRATION"]:
+    # Reconcile the complete module set on every run, including an existing
+    # Harbour Kitchen organization created by an earlier seed version.
+    for module_key in OFFICIAL_DEMO_MODULE_KEYS:
         _upsert_module(organization, module_key)
 
     organization.name = DEMO_RESTAURANT_NAME

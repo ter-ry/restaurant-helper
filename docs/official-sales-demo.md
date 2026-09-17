@@ -23,6 +23,9 @@ operational mutation with HTTP 403. The only public session entry is the
 purpose-built **Enter read-only demo** action (`POST /api/auth/demo-login`),
 which signs into the seeded demo owner without displaying pilot credentials;
 ordinary password login and Google callback routes remain blocked in demo mode.
+The official seed reconciles exactly these eight enabled modules on every run:
+`INVENTORY`, `PURCHASES`, `REORDER_PLANS`, `REPORTING`, `STOCK_COUNTS`,
+`MENU_COSTING`, `DAILY_CLOSE`, and `SQUARE_INTEGRATION`.
 
 The isolated read-only demo may use `FLOWTALLY_RATE_LIMIT_STORAGE_URI=memory://`
 to avoid a paid or shared external cache. Those limits reset whenever the free
@@ -67,7 +70,8 @@ the repository does not provision or purchase those resources automatically.
 For the current temporary Render deployment, set both
 `FLOWTALLY_ALLOWED_ORIGINS` and `FLOWTALLY_FRONTEND_ORIGIN` to
 `https://flowtally-demo.onrender.com`. Keep split-origin CSRF enabled and use
-the demo session cookie settings from `render.demo.yaml`. Synthetic Square
+`SESSION_COOKIE_SECURE=true`, `SESSION_COOKIE_SAMESITE=None`, and the dedicated
+`flowtally_demo_session` cookie from `render.demo.yaml`. Synthetic Square
 status, catalog mappings, menu-import preview, sales, and usage reads are
 available only when the isolated demo flags, database identity, demo
 connection, and empty-token checks all pass; Square mutations and external
