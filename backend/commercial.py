@@ -275,6 +275,12 @@ def request_setup(organization_id: int) -> tuple[object, int]:
     if membership is None or membership.role != "owner":
         return json_error("Only the owner can request setup.", 403)
 
+    # Request submission is idempotent. Once setup has moved past intake, a
+    # retry must never move an organization back to an earlier commercial
+    # state (especially an active customer).
+    if organization.lifecycle_status != "ONBOARDING" or organization.setup_status not in {"NOT_STARTED", "INTAKE"}:
+        return jsonify({"organization": serialize_organization(organization)}), 200
+
     organization.lifecycle_status = "READY_FOR_REVIEW"
     organization.setup_status = "CUSTOMER_REVIEW"
     organization.subscription_status = "SETUP_PAYMENT_PENDING"

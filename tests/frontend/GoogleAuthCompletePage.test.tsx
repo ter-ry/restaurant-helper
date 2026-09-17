@@ -73,7 +73,7 @@ describe("GoogleAuthCompletePage", () => {
       currentOrganizationId: 42,
       organizations: [
         {
-          organization: { id: 42, name: "Demo Bistro", lifecycleStatus: "ONBOARDING", setupStatus: "INTAKE", subscriptionStatus: "NONE", isProspect: true },
+          organization: { id: 42, name: "Demo Bistro", lifecycleStatus: "READY_FOR_REVIEW", setupStatus: "CUSTOMER_REVIEW", subscriptionStatus: "SETUP_PAYMENT_PENDING", isProspect: true },
           membershipRole: "owner",
           selected: true,
         },
@@ -100,6 +100,67 @@ describe("GoogleAuthCompletePage", () => {
     await waitFor(() => expect(authMocks.fetchCustomerSession).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Welcome back, owner@example.com")).toBeVisible();
     expect(screen.getByText("Logged-in prospect")).toBeVisible();
+    expect(screen.getByText(/Request received/)).toBeVisible();
+  });
+
+  it("preserves a created organization when request submission fails and retries without duplicating it", async () => {
+    const initialSession = {
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: null,
+      currentLocationId: null,
+      organizations: [],
+      csrfToken: "csrf-1",
+    };
+    const createdSession = {
+      ...initialSession,
+      currentOrganizationId: 42,
+      organizations: [{ organization: { id: 42, name: "Demo Bistro", lifecycleStatus: "ONBOARDING", setupStatus: "INTAKE", subscriptionStatus: "NONE", isProspect: true }, membershipRole: "owner", selected: true }],
+    };
+    const requestedSession = {
+      ...createdSession,
+      organizations: [{ ...createdSession.organizations[0], organization: { ...createdSession.organizations[0].organization, lifecycleStatus: "READY_FOR_REVIEW", setupStatus: "CUSTOMER_REVIEW", subscriptionStatus: "SETUP_PAYMENT_PENDING" } }],
+    };
+    authMocks.fetchCustomerSession.mockResolvedValueOnce(initialSession).mockResolvedValueOnce(requestedSession);
+    authMocks.createCustomerProspectOrganization.mockResolvedValueOnce({ organization: { id: 42, name: "Demo Bistro" }, membershipRole: "owner", currentLocationId: 8 });
+    authMocks.requestCustomerSetup.mockRejectedValueOnce(new Error("Temporary setup service failure.")).mockResolvedValueOnce({ organization: requestedSession.organizations[0].organization });
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Request Flowtally access" });
+    fireEvent.change(screen.getByLabelText("Restaurant name"), { target: { value: "Demo Bistro" } });
+    fireEvent.change(screen.getByLabelText("Location name"), { target: { value: "Main Dining Room" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Request setup$/i }));
+
+    expect(await screen.findByText(/Information saved, but the request was not submitted/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /Retry Request setup/i }));
+
+    await waitFor(() => expect(authMocks.createCustomerProspectOrganization).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Request received/)).toBeVisible();
+    expect(authMocks.requestCustomerSetup).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores an existing prospect and lets the owner submit its pending request", async () => {
+    const existingSession = {
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: 88,
+      currentLocationId: 9,
+      organizations: [{ organization: { id: 88, name: "Existing Bistro", lifecycleStatus: "ONBOARDING", setupStatus: "INTAKE", subscriptionStatus: "NONE", isProspect: true }, membershipRole: "owner", selected: true }],
+      csrfToken: "csrf-4",
+    };
+    const requestedSession = {
+      ...existingSession,
+      organizations: [{ ...existingSession.organizations[0], organization: { ...existingSession.organizations[0].organization, lifecycleStatus: "READY_FOR_REVIEW", setupStatus: "CUSTOMER_REVIEW", subscriptionStatus: "SETUP_PAYMENT_PENDING" } }],
+    };
+    authMocks.fetchCustomerSession.mockResolvedValueOnce(existingSession).mockResolvedValueOnce(requestedSession);
+    authMocks.requestCustomerSetup.mockResolvedValueOnce({ organization: requestedSession.organizations[0].organization });
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Customer setup" });
+    fireEvent.click(screen.getByRole("button", { name: "Request setup" }));
+
+    await waitFor(() => expect(authMocks.requestCustomerSetup).toHaveBeenCalledWith(88));
+    expect(await screen.findByText(/Request received/)).toBeVisible();
   });
 
   it("automatically resumes a single existing organization session", async () => {

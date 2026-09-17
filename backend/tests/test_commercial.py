@@ -72,6 +72,21 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
         assert OrganizationMembership.query.filter_by(organization_id=organization.id).count() == 1
         assert OrganizationModule.query.filter_by(organization_id=organization.id).count() >= 2
 
+    request_response = client.post(
+        f"/api/onboarding/organizations/{body['organization']['id']}/request-setup",
+        headers=csrf_headers(client),
+    )
+    assert request_response.status_code == 200
+    assert request_response.get_json()["organization"]["setupStatus"] == "CUSTOMER_REVIEW"
+
+    # A retry is safe and must preserve the already-submitted state.
+    retry_response = client.post(
+        f"/api/onboarding/organizations/{body['organization']['id']}/request-setup",
+        headers=csrf_headers(client),
+    )
+    assert retry_response.status_code == 200
+    assert retry_response.get_json()["organization"]["lifecycleStatus"] == "READY_FOR_REVIEW"
+
     duplicate_response = client.post(
         "/api/onboarding/organizations",
         headers=csrf_headers(client),

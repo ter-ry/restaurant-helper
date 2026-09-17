@@ -4,16 +4,19 @@ import {
   CheckCircle2,
   ClipboardList,
   Boxes,
+  Menu,
   ReceiptText,
   ShieldCheck,
   ShoppingCart,
   Sparkles,
   Utensils,
+  X,
 } from "lucide-react";
 import { FlowtallyMark } from "../components/FlowtallyMark";
 import { trackEvent } from "../lib/analytics";
 import { OFFICIAL_DEMO_LOGIN_URL, PRODUCTION_LOGIN_URL, PUBLIC_CONTACT_EMAIL, buildMailtoLink } from "../lib/contactLinks";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 const workflow = [
   ["Supplier invoice", "Capture what arrived and what it cost.", ReceiptText],
@@ -39,20 +42,32 @@ function Pill({ children }: { children: ReactNode }) {
 }
 
 export function LandingPage() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navItems = [
+    ["Product", "#product"],
+    ["How it works", "#how-it-works"],
+    ["Features", "#product"],
+    ["Integrations", "#integrations"],
+    ["Security", "#security"],
+    ["Contact", "#contact"],
+  ] as const;
+
   return (
     <main className="min-h-screen bg-[#f7faf9] text-slate-950">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-[#f7faf9]/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-5 py-4 lg:px-8">
+        <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-5 px-5 py-4 lg:px-8">
           <a href="#top" className="flex items-center gap-2 text-base font-bold tracking-tight"><FlowtallyMark className="h-9 w-9" />Flowtally</a>
-          <nav className="hidden items-center gap-1 text-sm font-semibold text-slate-600 lg:flex" aria-label="Primary navigation">
-            <a className="rounded-full px-3 py-2 hover:bg-white hover:text-slate-950" href="#product">Product</a>
-            <a className="rounded-full px-3 py-2 hover:bg-white hover:text-slate-950" href="#how-it-works">How it works</a>
-            <a className="rounded-full px-3 py-2 hover:bg-white hover:text-slate-950" href="#product">Features</a>
-            <a className="rounded-full px-3 py-2 hover:bg-white hover:text-slate-950" href="#integrations">Integrations</a>
-            <a className="rounded-full px-3 py-2 hover:bg-white hover:text-slate-950" href="#security">Security</a>
-            <a className="rounded-full px-3 py-2 hover:bg-white hover:text-slate-950" href="#contact">Contact</a>
+          <nav id="primary-navigation" className={`${mobileMenuOpen ? "flex" : "hidden"} absolute left-5 right-5 top-full z-40 flex-col gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-600 shadow-xl lg:static lg:flex lg:flex-row lg:items-center lg:gap-1 lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none`} aria-label="Primary navigation">
+            {navItems.map(([label, href]) => (
+              <a key={label} className="rounded-xl px-3 py-3 hover:bg-slate-50 hover:text-slate-950 lg:rounded-full lg:py-2 lg:hover:bg-white" href={href} onClick={() => setMobileMenuOpen(false)}>{label}</a>
+            ))}
           </nav>
-          <a href={PRODUCTION_LOGIN_URL} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-700" onClick={() => trackEvent("cta_sign_in_click", { location: "header" })}>Sign in<ArrowRight className="ml-2 h-4 w-4" /></a>
+          <div className="flex items-center gap-2">
+            <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-950 lg:hidden" aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"} aria-expanded={mobileMenuOpen} aria-controls="primary-navigation" onClick={() => setMobileMenuOpen((open) => !open)}>
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+            <a href={PRODUCTION_LOGIN_URL} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-700" onClick={() => trackEvent("cta_sign_in_click", { location: "header" })}>Sign in<ArrowRight className="ml-2 h-4 w-4" /></a>
+          </div>
         </div>
       </header>
 
