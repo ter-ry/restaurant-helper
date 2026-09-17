@@ -10,6 +10,7 @@ from backend.models import (
     SquareDailySalesSummary,
     SquareOrder,
     Supplier,
+    OrganizationModule,
     PlatformRole,
     SupportAccessGrant,
     User,
@@ -30,6 +31,9 @@ def test_official_demo_seed_is_populated_and_idempotent(app):
         assert connection.environment == "demo"
         assert connection.square_merchant_id == "demo-harbour-kitchen"
         assert connection.access_token_ciphertext == ""
+        assert {row.module_key for row in OrganizationModule.query.filter_by(organization_id=connection.organization_id).all()} >= {
+            "PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING", "MENU_COSTING", "DAILY_CLOSE", "SQUARE_INTEGRATION"
+        }
         assert Supplier.query.count() >= 6
         assert {item.name for item in MenuItem.query.order_by(MenuItem.id.asc()).all()} == {
             "Harbour Burger",
@@ -126,3 +130,23 @@ def test_official_demo_exposes_real_operational_calculations(app):
 
     counts = client.get("/api/pilot/inventory/count-sessions").get_json()
     assert any(line.get("variance") not in (None, 0) for session in counts["countSessions"] for line in session.get("lines", []))
+
+
+def test_official_demo_exposes_synthetic_square_reads_without_live_square(app):
+    assert app.test_cli_runner().invoke(args=["seed-demo"]).exit_code == 0
+    app.config["FLOWTALLY_DEMO_READ_ONLY"] = True
+    app.config["FLOWTALLY_DEMO_ISOLATED"] = True
+    app.config["FLOWTALLY_DEMO_DATABASE_NAME"] = str(app.config["SQLALCHEMY_DATABASE_URI"]).rsplit("/", 1)[-1]
+    client = app.test_client()
+    token = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    assert client.post("/api/auth/demo-login", headers={"X-CSRFToken": token}).status_code == 200
+    status = client.get("/api/integrations/square/status?organizationId=1")
+    assert status.status_code == 200, status.get_json()
+    mappings = client.get("/api/integrations/square/catalog/mappings?organizationId=1&locationId=1")
+    assert mappings.status_code == 200
+    assert len(mappings.get_json()["mappings"]) >= 7
+    preview = client.get("/api/integrations/square/catalog/menu-import?organizationId=1&locationId=1")
+    assert preview.status_code == 200
+    usage = client.get("/api/integrations/square/usage?organizationId=1&locationId=1&startAt=2026-08-01T00:00:00Z&endAt=2026-09-30T00:00:00Z")
+    assert usage.status_code == 200
+    assert client.post("/api/integrations/square/catalog/sync", json={"organizationId": 1}, headers={"X-CSRFToken": token}).status_code == 403

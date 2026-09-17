@@ -736,6 +736,9 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
     if organization is None or location is None:
         raise RuntimeError("The selected demo organization or location does not exist.")
 
+    for module_key in ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "REORDER_PLANS", "REPORTING", "MENU_COSTING", "DAILY_CLOSE", "SQUARE_INTEGRATION"]:
+        _upsert_module(organization, module_key)
+
     organization.name = DEMO_RESTAURANT_NAME
     location.name = DEMO_LOCATION_NAME
     location.city = "Toronto"
