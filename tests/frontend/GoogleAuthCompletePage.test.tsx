@@ -92,10 +92,10 @@ describe("GoogleAuthCompletePage", () => {
 
     renderPage();
 
-    await screen.findByRole("heading", { name: "Set up your first restaurant" });
+    await screen.findByRole("heading", { name: "Request Flowtally access" });
     fireEvent.change(screen.getByLabelText("Restaurant name"), { target: { value: "Demo Bistro" } });
     fireEvent.change(screen.getByLabelText("Location name"), { target: { value: "Main Dining Room" } });
-    fireEvent.click(screen.getByRole("button", { name: /Create your workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Request setup/i }));
 
     await waitFor(() => expect(authMocks.fetchCustomerSession).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Welcome back, owner@example.com")).toBeVisible();
@@ -148,7 +148,7 @@ describe("GoogleAuthCompletePage", () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "Customer setup" });
-    expect(screen.queryByRole("heading", { name: "Set up your first restaurant" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Request Flowtally access" })).not.toBeInTheDocument();
     expect(screen.getByText("Logged-in prospect")).toBeVisible();
     expect(screen.getByText(/Prospect Cafe/)).toBeVisible();
     expect(authMocks.selectCustomerOrganization).toHaveBeenCalledWith(77);
@@ -359,10 +359,10 @@ describe("GoogleAuthCompletePage", () => {
 
     renderPage();
 
-    await screen.findByRole("heading", { name: "Set up your first restaurant" });
+    await screen.findByRole("heading", { name: "Request Flowtally access" });
     fireEvent.change(screen.getByLabelText("Restaurant name"), { target: { value: "Existing Bistro" } });
     fireEvent.change(screen.getByLabelText("Location name"), { target: { value: "Main Dining Room" } });
-    fireEvent.click(screen.getByRole("button", { name: /Create your workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Request setup/i }));
 
     await waitFor(() => expect(authMocks.selectCustomerOrganization).toHaveBeenCalledWith(88));
     expect(await screen.findByRole("heading", { name: "Customer setup" })).toBeVisible();

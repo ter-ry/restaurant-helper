@@ -1,7 +1,7 @@
-import { ArrowLeft, ArrowRight, Mail, Store } from "lucide-react";
+import { ArrowLeft, ArrowRight, Store } from "lucide-react";
 import { Link } from "react-router-dom";
 import { trackEvent } from "../lib/analytics";
-import { buildMailtoLink, PUBLIC_CONTACT_EMAIL } from "../lib/contactLinks";
+import { buildMailtoLink, PRODUCTION_LOGIN_URL, PUBLIC_CONTACT_EMAIL } from "../lib/contactLinks";
 
 export function PilotPage() {
   const pilotEmailHref = buildMailtoLink(
@@ -10,7 +10,7 @@ export function PilotPage() {
     [
       "Hi Terry,",
       "",
-      "I'm interested in the Flowtally pilot.",
+    "I'm interested in Flowtally access.",
       "",
       "Restaurant or business name:",
       "What feels messy today:",
@@ -32,14 +32,13 @@ export function PilotPage() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-[#FFFFFF]/85 px-3 py-1 text-sm font-bold text-[#334155] shadow-sm">
               <Store className="h-4 w-4 text-[#0D9488]" />
-              Flowtally early pilot
+              Flowtally access
             </p>
             <h1 className="heading-balance mt-6 text-4xl font-semibold leading-tight text-[#0F172A] md:text-5xl">
-              Join the Flowtally early pilot list.
+              Request Flowtally access.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-[#64748B]">
-              Flowtally is being shaped with growing independent restaurants that manage staff, recurring suppliers,
-              invoice review, inventory, and reordering every week.
+              Tell us about your restaurant and the workflow you want to bring under control. We will review the request and configure the right workspace before operational access is activated.
             </p>
             <p className="mt-5 text-sm leading-6 text-[#475569]">
               Questions or want a walkthrough?{" "}
@@ -61,20 +60,20 @@ export function PilotPage() {
             <div className="mt-5 flex flex-col gap-3">
               <a
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0F172A] px-5 py-3 text-sm font-bold text-[#F8FAFC] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0F766E]"
-                href={pilotEmailHref}
-                onClick={() => trackEvent("pilot_email_click", { location: "pilot_page" })}
+                href={PRODUCTION_LOGIN_URL}
+                onClick={() => trackEvent("cta_request_access_click", { location: "pilot_page" })}
               >
-                Join Early Pilot
-                <Mail className="h-4 w-4" />
-              </a>
-              <Link
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] transition hover:bg-[#F8FAFC]"
-                onClick={() => trackEvent("cta_view_demo_click", { location: "pilot_page" })}
-                to="/demo"
-              >
-                View the demo
+                Request access
                 <ArrowRight className="h-4 w-4" />
-              </Link>
+              </a>
+              <a
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-5 py-3 text-sm font-bold text-[#0F172A] transition hover:bg-[#F8FAFC]"
+                onClick={() => trackEvent("cta_sign_in_click", { location: "pilot_page" })}
+                href={PRODUCTION_LOGIN_URL}
+              >
+                Sign in
+                <ArrowRight className="h-4 w-4" />
+              </a>
             </div>
             <p className="mt-4 text-sm leading-6 text-[#64748B]">
               Prefer email? Write to{" "}

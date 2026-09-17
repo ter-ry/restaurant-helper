@@ -101,8 +101,9 @@ function ProspectOnboardingForm({
   return (
     <form className="mt-6 grid gap-4 rounded-3xl border border-line bg-white p-6 shadow-soft md:grid-cols-2" onSubmit={handleSubmit}>
       <div className="md:col-span-2">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted">Restaurant setup</p>
-        <h2 className="mt-1 text-2xl font-bold text-ink">Set up your first restaurant</h2>
+        <p className="text-xs font-bold uppercase tracking-wide text-muted">Request access</p>
+        <h2 className="mt-1 text-2xl font-bold text-ink">Request Flowtally access</h2>
+        <p className="mt-2 text-sm leading-6 text-muted">Tell us about the restaurant you want to configure. Your workspace will be reviewed before operational access is activated.</p>
       </div>
 
       <label className="block">
@@ -158,7 +159,7 @@ function ProspectOnboardingForm({
 
       <div className="md:col-span-2 flex flex-wrap gap-3">
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="submit" disabled={submitting}>
-          {submitting ? "Creating workspace..." : "Create your workspace"}
+          {submitting ? "Submitting request..." : "Request setup"}
           <ArrowRight className="h-4 w-4" />
         </button>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={startGoogleLogin}>
@@ -228,13 +229,13 @@ function LoggedInProspectView({
       <div>
         <p className="text-xs font-bold uppercase tracking-wide text-muted">Logged-in prospect</p>
         <h1 className="mt-2 text-3xl font-bold text-ink">Welcome back, {session.user.email}</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
-          Your Flowtally workspace is ready for onboarding. You can review your setup status, add more details, and finish launch preparation from here.
+          <p className="mt-3 text-sm leading-6 text-muted">
+          Your request is in the Flowtally setup queue. Review the status below while the restaurant workspace is being configured.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700" to="/demo">
-            Keep exploring the demo
-          </Link>
+          <a className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700" href="https://flowtally-demo.onrender.com/app/login">
+            View the read-only demo
+          </a>
           <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
             Upload migration files
           </Link>
@@ -257,7 +258,7 @@ function LoggedInProspectView({
             </Link>
           ) : null}
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void handleRequestSetup()} disabled={requestingSetup || !currentOrganization}>
-            {requestingSetup ? "Requesting..." : "Request setup"}
+            {requestingSetup ? "Submitting..." : "Request setup"}
           </button>
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={handleLogout} disabled={loggingOut}>
             <LogOut className="h-4 w-4" />
@@ -413,7 +414,12 @@ export function GoogleAuthCompletePage() {
         current.organizations?.find((entry) => entry.organization.id === current.currentOrganizationId)?.organization ??
         current.organizations?.find((entry) => entry.selected)?.organization ??
         null;
-      if (current.currentOrganizationId && currentOrganization?.lifecycleStatus === "ACTIVE") {
+      if (
+        current.currentOrganizationId &&
+        currentOrganization?.lifecycleStatus === "ACTIVE" &&
+        currentOrganization.setupStatus === "COMPLETE" &&
+        currentOrganization.subscriptionStatus === "ACTIVE"
+      ) {
         navigate(consumeLoginReturnTo() ?? "/app", { replace: true });
         return;
       }
