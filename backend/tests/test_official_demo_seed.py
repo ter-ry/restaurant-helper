@@ -10,6 +10,9 @@ from backend.models import (
     SquareDailySalesSummary,
     SquareOrder,
     Supplier,
+    PlatformRole,
+    SupportAccessGrant,
+    User,
 )
 from backend.menu_costing import serialize_menu_item
 
@@ -20,6 +23,9 @@ def test_official_demo_seed_is_populated_and_idempotent(app):
     assert first.exit_code == 0, first.output
 
     with app.app_context():
+        demo_owner = User.query.filter_by(email="owner@flowtally.local").one()
+        assert PlatformRole.query.filter_by(user_id=demo_owner.id).count() == 0
+        assert SupportAccessGrant.query.filter_by(support_user_id=demo_owner.id).count() == 0
         connection = SquareConnection.query.one()
         assert connection.environment == "demo"
         assert connection.square_merchant_id == "demo-harbour-kitchen"
