@@ -16,9 +16,9 @@ services:
       - key: SECRET_KEY
         sync: false
       - key: FLOWTALLY_ALLOWED_ORIGINS
-        value: https://demo.flowtally.ca
+        value: https://flowtally-demo.onrender.com
       - key: FLOWTALLY_FRONTEND_ORIGIN
-        value: https://demo.flowtally.ca
+        value: https://flowtally-demo.onrender.com
       - key: FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF
         value: "true"
       - key: SESSION_COOKIE_SECURE

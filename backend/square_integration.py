@@ -4,6 +4,7 @@ import json
 import hashlib
 import secrets
 import re
+import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -14,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 from flask_login import current_user, login_required
+from sqlalchemy import text
 
 from .access import support_access_is_active_for_current_user
 from .audit import record_audit_event
@@ -1639,6 +1641,29 @@ def _persist_square_sync_failure(organization_id: int, connection_id: int, error
         db.session.rollback()
 
 
+def _synthetic_demo_read_allowed(connection: SquareConnection) -> bool:
+    """Allow database-backed Square reads for the isolated synthetic demo only."""
+    if square_enabled() or not current_app.config.get("FLOWTALLY_DEMO_READ_ONLY") or not current_app.config.get("FLOWTALLY_DEMO_ISOLATED"):
+        return False
+    expected = str(current_app.config.get("FLOWTALLY_DEMO_DATABASE_NAME") or "").strip().lower()
+    if not expected:
+        return False
+    try:
+        current_database = str(db.session.execute(text("SELECT current_database()")).scalar() or "").strip().lower()
+    except Exception:
+        current_database = os.path.basename(str(db.engine.url.database or "").strip()).lower()
+    return (
+        current_database == expected
+        and str(connection.environment or "").strip().lower() == "demo"
+        and not connection.access_token_ciphertext
+        and not connection.refresh_token_ciphertext
+    )
+
+
+def _square_read_allowed(connection: SquareConnection) -> bool:
+    return square_enabled() or _synthetic_demo_read_allowed(connection)
+
+
 def _square_feature_error(organization: Organization, module_key: str, message: str) -> tuple[dict[str, Any], int] | None:
     if organization_has_enabled_module(organization.id, module_key):
         return None
@@ -1780,6 +1805,8 @@ def square_status():
     if permission_error is not None:
         return permission_error
     connection = _ensure_connection(organization)
+    if not _square_read_allowed(connection):
+        return json_error("Square is not enabled.", 403)
     return jsonify({"connection": _serialize_connection(connection)}), 200
 
 
@@ -1980,10 +2007,12 @@ def square_catalog_mappings():
     permission_error = _require_org_access(organization)
     if permission_error is not None:
         return permission_error
+    connection = _ensure_connection(organization)
+    if not _square_read_allowed(connection):
+        return json_error("Square is not enabled.", 403)
     square_error = _square_feature_error(organization, "SQUARE_INTEGRATION", "Square integration is not enabled for this organization yet.")
     if square_error is not None:
         return square_error
-    connection = _ensure_connection(organization)
     location_id = _parse_location_id_from_request()
     if location_id is not None:
         location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization.id).first()
@@ -2033,6 +2062,8 @@ def preview_square_menu_import():
     if error is not None:
         return error
     assert organization is not None and connection is not None and location is not None
+    if not _square_read_allowed(connection):
+        return json_error("Square is not enabled.", 403)
     rows = _square_menu_import_rows(organization, connection, location)
     return jsonify({"locationId": location.id, "summary": _square_menu_import_summary(rows), "entries": rows}), 200
 
@@ -2209,10 +2240,12 @@ def square_usage():
     permission_error = _require_org_access(organization)
     if permission_error is not None:
         return permission_error
+    connection = _ensure_connection(organization)
+    if not _square_read_allowed(connection):
+        return json_error("Square is not enabled.", 403)
     module_error = _require_usage_modules(organization)
     if module_error is not None:
         return module_error
-    connection = _ensure_connection(organization)
     location_id = _parse_location_id_from_request()
     if location_id is not None:
         location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization.id).first()

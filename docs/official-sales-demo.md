@@ -64,6 +64,11 @@ production OAuth, Square, OCR, encryption, or database secrets. Expect the
 incremental cost to be the chosen database plan plus any Render service fee;
 the repository does not provision or purchase those resources automatically.
 
-The demo is repository-ready, but it is not publicly shareable until that
-isolated service/database and its authentication entry point are deployed and
-smoke-tested.
+For the current temporary Render deployment, set both
+`FLOWTALLY_ALLOWED_ORIGINS` and `FLOWTALLY_FRONTEND_ORIGIN` to
+`https://flowtally-demo.onrender.com`. Keep split-origin CSRF enabled and use
+the demo session cookie settings from `render.demo.yaml`. Synthetic Square
+status, catalog mappings, menu-import preview, sales, and usage reads are
+available only when the isolated demo flags, database identity, demo
+connection, and empty-token checks all pass; Square mutations and external
+network calls remain disabled.
