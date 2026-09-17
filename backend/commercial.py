@@ -278,6 +278,8 @@ def request_setup(organization_id: int) -> tuple[object, int]:
     # Request submission is idempotent once a request is genuinely in review
     # or the customer is active. Other lifecycle states are ineligible and
     # must not be reported as a successful submission.
+    if organization.lifecycle_status in {"CANCELLED", "SUSPENDED"}:
+        return json_error("This organization is not eligible to request setup.", 409)
     if organization.lifecycle_status in {"READY_FOR_REVIEW", "ACTIVE"} or organization.setup_status in {"DATA_REQUESTED", "CONFIGURATION_IN_PROGRESS", "CUSTOMER_REVIEW", "COMPLETE"}:
         return jsonify({"organization": serialize_organization(organization)}), 200
     if organization.lifecycle_status != "ONBOARDING" or organization.setup_status not in {"NOT_STARTED", "INTAKE"}:

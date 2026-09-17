@@ -105,11 +105,11 @@ def test_setup_request_rejects_cancelled_and_suspended_organizations_without_mut
     with app.app_context():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         organizations = []
-        for lifecycle_status in ("CANCELLED", "SUSPENDED"):
+        for lifecycle_status, setup_status in (("CANCELLED", "CUSTOMER_REVIEW"), ("SUSPENDED", "COMPLETE")):
             organization = Organization(
                 name=f"{lifecycle_status.title()} Org {uuid4().hex[:6]}",
                 lifecycle_status=lifecycle_status,
-                setup_status="INTAKE",
+                setup_status=setup_status,
                 subscription_status="NONE",
                 setup_template_key="CAFE",
                 setup_fee_status="NONE",
