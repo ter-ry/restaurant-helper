@@ -72,6 +72,21 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
         assert OrganizationMembership.query.filter_by(organization_id=organization.id).count() == 1
         assert OrganizationModule.query.filter_by(organization_id=organization.id).count() >= 2
 
+    request_response = client.post(
+        f"/api/onboarding/organizations/{body['organization']['id']}/request-setup",
+        headers=csrf_headers(client),
+    )
+    assert request_response.status_code == 200
+    assert request_response.get_json()["organization"]["setupStatus"] == "CUSTOMER_REVIEW"
+
+    # A retry is safe and must preserve the already-submitted state.
+    retry_response = client.post(
+        f"/api/onboarding/organizations/{body['organization']['id']}/request-setup",
+        headers=csrf_headers(client),
+    )
+    assert retry_response.status_code == 200
+    assert retry_response.get_json()["organization"]["lifecycleStatus"] == "READY_FOR_REVIEW"
+
     duplicate_response = client.post(
         "/api/onboarding/organizations",
         headers=csrf_headers(client),
@@ -83,6 +98,38 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
         },
     )
     assert duplicate_response.status_code == 409
+
+
+def test_setup_request_rejects_cancelled_and_suspended_organizations_without_mutating_them(app, client):
+    login(client)
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organizations = []
+        for lifecycle_status, setup_status in (("CANCELLED", "CUSTOMER_REVIEW"), ("SUSPENDED", "COMPLETE")):
+            organization = Organization(
+                name=f"{lifecycle_status.title()} Org {uuid4().hex[:6]}",
+                lifecycle_status=lifecycle_status,
+                setup_status=setup_status,
+                subscription_status="NONE",
+                setup_template_key="CAFE",
+                setup_fee_status="NONE",
+                is_prospect=True,
+            )
+            db.session.add(organization)
+            db.session.flush()
+            db.session.add(OrganizationMembership(user=owner, organization=organization, role="owner"))
+            organizations.append(organization)
+        db.session.commit()
+        organization_ids = [(organization.id, organization.lifecycle_status, organization.setup_status) for organization in organizations]
+
+    for organization_id, lifecycle_status, setup_status in organization_ids:
+        response = client.post(f"/api/onboarding/organizations/{organization_id}/request-setup", headers=csrf_headers(client))
+        assert response.status_code == 409
+        assert response.get_json()["error"] == "This organization is not eligible to request setup."
+        with app.app_context():
+            organization = db.session.get(Organization, organization_id)
+            assert organization.lifecycle_status == lifecycle_status
+            assert organization.setup_status == setup_status
 
 
 def test_onboarding_tenant_cannot_access_operational_workspace(app, client):

@@ -64,23 +64,45 @@ function ProspectOnboardingForm({
   const [templateKey, setTemplateKey] = useState("GENERIC_RESTAURANT");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [organizationId, setOrganizationId] = useState<number | null>(null);
+  const [savedWithoutRequest, setSavedWithoutRequest] = useState(false);
+  const [requestAccepted, setRequestAccepted] = useState(false);
+
+  async function submitSetupRequest(id: number) {
+    try {
+      await requestCustomerSetup(id);
+      setRequestAccepted(true);
+      setSavedWithoutRequest(false);
+      try {
+        await onCreated();
+      } catch (refreshError) {
+        setError(refreshError instanceof Error ? `Request received, but we could not refresh your status. ${refreshError.message} Try Refresh status.` : "Request received, but we could not refresh your status. Try Refresh status.");
+      }
+    } catch (err) {
+      setSavedWithoutRequest(true);
+      setRequestAccepted(false);
+      setError(err instanceof Error ? `Information saved, but the request was not submitted. ${err.message} You can retry Request setup.` : "Information saved, but the request was not submitted. You can retry Request setup.");
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await createCustomerProspectOrganization({
-        name,
-        locationName,
-        city,
-        region,
-        postalCode,
-        country,
-        timezone,
-        templateKey,
-      });
-      await onCreated();
+      const id = organizationId ?? (await createCustomerProspectOrganization({
+          name,
+          locationName,
+          city,
+          region,
+          postalCode,
+          country,
+          timezone,
+          templateKey,
+        })).organization.id;
+      setOrganizationId(id);
+      setSavedWithoutRequest(false);
+      await submitSetupRequest(id);
     } catch (err) {
       const status = typeof err === "object" && err !== null && "status" in err ? Number((err as { status?: number }).status) : null;
       if (status === 409) {
@@ -101,8 +123,9 @@ function ProspectOnboardingForm({
   return (
     <form className="mt-6 grid gap-4 rounded-3xl border border-line bg-white p-6 shadow-soft md:grid-cols-2" onSubmit={handleSubmit}>
       <div className="md:col-span-2">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted">Restaurant setup</p>
-        <h2 className="mt-1 text-2xl font-bold text-ink">Set up your first restaurant</h2>
+        <p className="text-xs font-bold uppercase tracking-wide text-muted">Request access</p>
+        <h2 className="mt-1 text-2xl font-bold text-ink">Request Flowtally access</h2>
+        <p className="mt-2 text-sm leading-6 text-muted">Tell us about the restaurant you want to configure. Your workspace will be reviewed before operational access is activated.</p>
       </div>
 
       <label className="block">
@@ -154,11 +177,12 @@ function ProspectOnboardingForm({
         </select>
       </label>
 
+      {savedWithoutRequest ? <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">Information saved. Your request has not been submitted yet.</div> : null}
       {error ? <div className="md:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
 
       <div className="md:col-span-2 flex flex-wrap gap-3">
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="submit" disabled={submitting}>
-          {submitting ? "Creating workspace..." : "Create your workspace"}
+          {submitting ? "Submitting request..." : requestAccepted ? "Refresh status" : savedWithoutRequest ? "Retry Request setup" : "Request setup"}
           <ArrowRight className="h-4 w-4" />
         </button>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={startGoogleLogin}>
@@ -186,6 +210,7 @@ function LoggedInProspectView({
   const setupStatus = currentOrganization?.setupStatus ?? "NOT_STARTED";
   const lifecycleStatus = currentOrganization?.lifecycleStatus ?? "ONBOARDING";
   const subscriptionStatus = currentOrganization?.subscriptionStatus ?? "NONE";
+  const requestSubmitted = lifecycleStatus === "READY_FOR_REVIEW" || ["DATA_REQUESTED", "CONFIGURATION_IN_PROGRESS", "CUSTOMER_REVIEW", "COMPLETE"].includes(setupStatus);
   const onboardingProgress = session.onboardingProgress;
   const progress = [
     ["Account created", onboardingProgress?.accountCreated ?? Boolean(currentOrganization)],
@@ -215,7 +240,11 @@ function LoggedInProspectView({
     try {
       await requestCustomerSetup(currentOrganization.id);
       setSetupMessage("Setup request sent. We’ll review the workspace and move it forward.");
-      await onRequestSetup();
+      try {
+        await onRequestSetup();
+      } catch (refreshError) {
+        setSetupMessage(refreshError instanceof Error ? `Request received, but status refresh failed. ${refreshError.message} Retry to refresh.` : "Request received, but status refresh failed. Retry to refresh.");
+      }
     } catch (err) {
       setSetupMessage(err instanceof Error ? err.message : "Could not request setup.");
     } finally {
@@ -228,13 +257,13 @@ function LoggedInProspectView({
       <div>
         <p className="text-xs font-bold uppercase tracking-wide text-muted">Logged-in prospect</p>
         <h1 className="mt-2 text-3xl font-bold text-ink">Welcome back, {session.user.email}</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
-          Your Flowtally workspace is ready for onboarding. You can review your setup status, add more details, and finish launch preparation from here.
+          <p className="mt-3 text-sm leading-6 text-muted">
+          {requestSubmitted ? "Request received. Your workspace is pending Flowtally review." : "Information saved. Submit your setup request when the workspace details are ready."}
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700" to="/demo">
-            Keep exploring the demo
-          </Link>
+          <a className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700" href="https://flowtally-demo.onrender.com/app/login">
+            View the read-only demo
+          </a>
           <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/imports">
             Upload migration files
           </Link>
@@ -256,9 +285,11 @@ function LoggedInProspectView({
               Platform setup
             </Link>
           ) : null}
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void handleRequestSetup()} disabled={requestingSetup || !currentOrganization}>
-            {requestingSetup ? "Requesting..." : "Request setup"}
-          </button>
+          {!requestSubmitted && lifecycleStatus !== "ACTIVE" ? (
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void handleRequestSetup()} disabled={requestingSetup || !currentOrganization}>
+              {requestingSetup ? "Submitting..." : "Request setup"}
+            </button>
+          ) : null}
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={handleLogout} disabled={loggingOut}>
             <LogOut className="h-4 w-4" />
             {loggingOut ? "Signing out..." : "Logout"}
@@ -413,7 +444,12 @@ export function GoogleAuthCompletePage() {
         current.organizations?.find((entry) => entry.organization.id === current.currentOrganizationId)?.organization ??
         current.organizations?.find((entry) => entry.selected)?.organization ??
         null;
-      if (current.currentOrganizationId && currentOrganization?.lifecycleStatus === "ACTIVE") {
+      if (
+        current.currentOrganizationId &&
+        currentOrganization?.lifecycleStatus === "ACTIVE" &&
+        currentOrganization.setupStatus === "COMPLETE" &&
+        currentOrganization.subscriptionStatus === "ACTIVE"
+      ) {
         navigate(consumeLoginReturnTo() ?? "/app", { replace: true });
         return;
       }

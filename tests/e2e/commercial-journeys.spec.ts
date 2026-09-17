@@ -1498,10 +1498,10 @@ test("mocked Google registration walks a prospect into onboarding", async ({ pag
   await installMockApi(page, state);
 
   await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Set up your first restaurant" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Request Flowtally access" })).toBeVisible();
   await page.getByLabel("Restaurant name").fill("Demo Bistro");
   await page.getByLabel("Location name").fill("Main Dining Room");
-  await page.getByRole("button", { name: "Create your workspace" }).click();
+  await page.getByRole("button", { name: "Request setup" }).click();
   await expect(page.getByText("Logged-in prospect", { exact: true })).toBeVisible();
   await expect(page.getByText("Welcome back, owner@example.com")).toBeVisible();
 });
@@ -1540,7 +1540,7 @@ test("existing Google prospect sessions resume the workspace instead of recreati
   await expect(page.getByRole("heading", { name: "Customer setup" })).toBeVisible();
   await expect(page.getByText("Logged-in prospect", { exact: true })).toBeVisible();
   await expect(page.getByText(/Prospect Cafe/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Set up your first restaurant" })).not.toBeVisible();
+  await expect(page.getByRole("heading", { name: "Request Flowtally access" })).not.toBeVisible();
 });
 
 test("authenticated menu costing page loads live pricing data", async ({ page }) => {
