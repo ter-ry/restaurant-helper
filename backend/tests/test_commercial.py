@@ -100,6 +100,38 @@ def test_registered_prospect_can_create_one_prospective_organization(app, client
     assert duplicate_response.status_code == 409
 
 
+def test_setup_request_rejects_cancelled_and_suspended_organizations_without_mutating_them(app, client):
+    login(client)
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organizations = []
+        for lifecycle_status in ("CANCELLED", "SUSPENDED"):
+            organization = Organization(
+                name=f"{lifecycle_status.title()} Org {uuid4().hex[:6]}",
+                lifecycle_status=lifecycle_status,
+                setup_status="INTAKE",
+                subscription_status="NONE",
+                setup_template_key="CAFE",
+                setup_fee_status="NONE",
+                is_prospect=True,
+            )
+            db.session.add(organization)
+            db.session.flush()
+            db.session.add(OrganizationMembership(user=owner, organization=organization, role="owner"))
+            organizations.append(organization)
+        db.session.commit()
+        organization_ids = [(organization.id, organization.lifecycle_status, organization.setup_status) for organization in organizations]
+
+    for organization_id, lifecycle_status, setup_status in organization_ids:
+        response = client.post(f"/api/onboarding/organizations/{organization_id}/request-setup", headers=csrf_headers(client))
+        assert response.status_code == 409
+        assert response.get_json()["error"] == "This organization is not eligible to request setup."
+        with app.app_context():
+            organization = db.session.get(Organization, organization_id)
+            assert organization.lifecycle_status == lifecycle_status
+            assert organization.setup_status == setup_status
+
+
 def test_onboarding_tenant_cannot_access_operational_workspace(app, client):
     login(client)
 

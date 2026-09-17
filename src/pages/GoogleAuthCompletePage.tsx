@@ -66,13 +66,21 @@ function ProspectOnboardingForm({
   const [error, setError] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<number | null>(null);
   const [savedWithoutRequest, setSavedWithoutRequest] = useState(false);
+  const [requestAccepted, setRequestAccepted] = useState(false);
 
   async function submitSetupRequest(id: number) {
     try {
       await requestCustomerSetup(id);
-      await onCreated();
+      setRequestAccepted(true);
+      setSavedWithoutRequest(false);
+      try {
+        await onCreated();
+      } catch (refreshError) {
+        setError(refreshError instanceof Error ? `Request received, but we could not refresh your status. ${refreshError.message} Try Refresh status.` : "Request received, but we could not refresh your status. Try Refresh status.");
+      }
     } catch (err) {
       setSavedWithoutRequest(true);
+      setRequestAccepted(false);
       setError(err instanceof Error ? `Information saved, but the request was not submitted. ${err.message} You can retry Request setup.` : "Information saved, but the request was not submitted. You can retry Request setup.");
     }
   }
@@ -174,7 +182,7 @@ function ProspectOnboardingForm({
 
       <div className="md:col-span-2 flex flex-wrap gap-3">
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="submit" disabled={submitting}>
-          {submitting ? "Submitting request..." : savedWithoutRequest ? "Retry Request setup" : "Request setup"}
+          {submitting ? "Submitting request..." : requestAccepted ? "Refresh status" : savedWithoutRequest ? "Retry Request setup" : "Request setup"}
           <ArrowRight className="h-4 w-4" />
         </button>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={startGoogleLogin}>
@@ -232,7 +240,11 @@ function LoggedInProspectView({
     try {
       await requestCustomerSetup(currentOrganization.id);
       setSetupMessage("Setup request sent. We’ll review the workspace and move it forward.");
-      await onRequestSetup();
+      try {
+        await onRequestSetup();
+      } catch (refreshError) {
+        setSetupMessage(refreshError instanceof Error ? `Request received, but status refresh failed. ${refreshError.message} Retry to refresh.` : "Request received, but status refresh failed. Retry to refresh.");
+      }
     } catch (err) {
       setSetupMessage(err instanceof Error ? err.message : "Could not request setup.");
     } finally {

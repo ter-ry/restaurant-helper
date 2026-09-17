@@ -139,6 +139,30 @@ describe("GoogleAuthCompletePage", () => {
     expect(authMocks.requestCustomerSetup).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps request success separate when the follow-up session refresh fails", async () => {
+    const initialSession = {
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: null,
+      currentLocationId: null,
+      organizations: [],
+      csrfToken: "csrf-refresh",
+    };
+    authMocks.fetchCustomerSession.mockResolvedValueOnce(initialSession).mockRejectedValueOnce(new Error("Session refresh unavailable."));
+    authMocks.createCustomerProspectOrganization.mockResolvedValueOnce({ organization: { id: 55, name: "Refresh Bistro" }, membershipRole: "owner", currentLocationId: 8 });
+    authMocks.requestCustomerSetup.mockResolvedValueOnce({ organization: { id: 55, name: "Refresh Bistro" } });
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Request Flowtally access" });
+    fireEvent.change(screen.getByLabelText("Restaurant name"), { target: { value: "Refresh Bistro" } });
+    fireEvent.change(screen.getByLabelText("Location name"), { target: { value: "Main Dining Room" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Request setup$/i }));
+
+    expect(await screen.findByText(/Request received, but we could not refresh your status/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Refresh status" })).toBeVisible();
+    expect(screen.queryByText(/request was not submitted/i)).not.toBeInTheDocument();
+  });
+
   it("restores an existing prospect and lets the owner submit its pending request", async () => {
     const existingSession = {
       user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
