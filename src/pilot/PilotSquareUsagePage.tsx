@@ -284,7 +284,7 @@ export function PilotSquareUsagePage() {
 
   if (!organization) {
     return (
-      <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell">
+      <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
         <Card className="p-6">
           <h1 className="text-2xl font-bold text-ink">Choose an organization first</h1>
           <p className="mt-3 text-sm leading-6 text-muted">The usage workspace needs an active organization and location.</p>
@@ -294,7 +294,7 @@ export function PilotSquareUsagePage() {
   }
 
   return (
-    <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell">
+    <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
       <div className="flex flex-wrap gap-2">
         <Link className={squareSectionLinkClasses(false)} to="/app/square">
           Setup & Sync

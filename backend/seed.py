@@ -869,7 +869,7 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
     connection.square_merchant_id = "demo-harbour-kitchen"
     connection.status = "connected"
     connection.sync_status = "demo"
-    connection.sync_error = "Synthetic catalog and order history; no merchant is connected."
+    connection.sync_error = "Demo-only simulated Square catalog and order history; no merchant account is connected."
     connection.access_token_ciphertext = ""
     connection.refresh_token_ciphertext = ""
 
