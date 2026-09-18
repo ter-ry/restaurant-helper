@@ -745,10 +745,22 @@ export function PilotPurchasesPage() {
   return (
     <div className="workspace-page">
       <Card className="surface-panel workspace-card p-3 sm:p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-3xl">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { label: "This month spend", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
+              { label: "Uploads needing review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
+              { label: "Price changes flagged", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
+              { label: "Mapped items", value: hasLoaded ? formatNumber(data?.summary?.mappedItems ?? 0) : "—" },
+              { label: "Export ready", value: hasLoaded ? formatNumber(data?.summary?.exportReady ?? 0) : "—" },
+            ].map((metric) => (
+              <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
+                <span className="text-sm font-bold text-ink">{metric.value}</span>
+              </div>
+            ))}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
@@ -774,20 +786,6 @@ export function PilotPurchasesPage() {
         {error && !editorOpen ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
         {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          {[
-            { label: "This month spend", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
-            { label: "Uploads needing review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
-            { label: "Price changes flagged", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
-            { label: "Mapped items", value: hasLoaded ? formatNumber(data?.summary?.mappedItems ?? 0) : "—" },
-            { label: "Export ready", value: hasLoaded ? formatNumber(data?.summary?.exportReady ?? 0) : "—" },
-          ].map((metric) => (
-            <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
-              <span className="text-sm font-bold text-ink">{metric.value}</span>
-            </div>
-          ))}
-        </div>
       </Card>
 
       {editorOpen ? <Modal title={ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor"} size="full" onClose={() => setEditorOpen(false)}>

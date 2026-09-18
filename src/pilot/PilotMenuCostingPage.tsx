@@ -429,8 +429,8 @@ export function PilotMenuCostingPage() {
 
       <WorkspaceTabs
         tabs={[
-          { id: "recipes", label: "Recipes", badge: hasLoaded ? formatNumber(recipes.length) : "—" },
           { id: "menu-items", label: "Menu items", badge: hasLoaded ? formatNumber(menuItems.length) : "—" },
+          { id: "recipes", label: "Recipes", badge: hasLoaded ? formatNumber(recipes.length) : "—" },
         ]}
         value={menuTab}
         onChange={(value) => setMenuTab(value as "recipes" | "menu-items")}
@@ -671,34 +671,25 @@ export function PilotMenuCostingPage() {
       ) : (
       <Card className="p-5">
         <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
-        <div className="grid gap-5 xl:grid-cols-[0.78fr_1.22fr]">
-          <div className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
+        <div className="grid gap-5">
+          <div className="workspace-table-wrap max-h-[32rem] overflow-auto">
             {filteredMenuItems.length ? (
-              filteredMenuItems.map((menuItem) => (
-                <button
-                  key={menuItem.id}
-                  type="button"
-                  className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${menuItem.id === selectedMenuItemId ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
-                  onClick={() => {
-                    setSelectedMenuItemId(menuItem.id);
-                    setMenuItemEditorMode("edit");
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{menuItem.name}</p>
-                      <p className="mt-1 text-sm text-muted">{menuItem.category}</p>
-                    </div>
-                    <Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Healthy" : "Needs review"}</Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                    <span>Price {formatMoney(menuItem.sellingPrice)}</span>
-                    <span>Cost {formatMoney(menuItem.recipeCostPerYield)}</span>
-                    <span>Food cost {formatNumber(menuItem.foodCostPercent)}%</span>
-                    <span>Gross profit {formatMoney(menuItem.grossProfit)}</span>
-                  </div>
-                </button>
-              ))
+              <table className="min-w-[760px] text-left text-sm">
+                <thead><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Cost</th><th className="px-3 py-2">Food cost</th><th className="px-3 py-2">Gross profit</th><th className="px-3 py-2">Status</th></tr></thead>
+                <tbody>
+                  {filteredMenuItems.map((menuItem) => (
+                    <tr key={menuItem.id} tabIndex={0} className={`cursor-pointer border-b border-line transition hover:bg-brand-50/60 ${menuItem.id === selectedMenuItemId ? "bg-brand-50" : "bg-white"}`} onClick={() => { setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); } }}>
+                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{menuItem.name}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-muted">{menuItem.category}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Price {formatMoney(menuItem.sellingPrice)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Cost {formatMoney(menuItem.recipeCostPerYield)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Food cost {formatNumber(menuItem.foodCostPercent)}%</td>
+                      <td className="whitespace-nowrap px-3 py-2">Gross profit {formatMoney(menuItem.grossProfit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2"><Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Cost available" : "Needs review"}</Badge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : initialLoading ? (
               <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">Loading menu items…</div>
             ) : !loading && hasLoaded ? (

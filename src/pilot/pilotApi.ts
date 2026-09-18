@@ -1,4 +1,5 @@
 import { demoReadOnly, pilotApiBaseUrl } from "./pilotConfig";
+import { clearPilotDataCache, getPilotCached } from "./pilotDataCache";
 import {
   beginSquareConnection,
   disconnectSquare,
@@ -128,7 +129,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   }
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestJsonUncached<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method || "GET").toUpperCase();
   if (demoReadOnly && method !== "GET" && method !== "HEAD" && !path.startsWith("/api/auth/")) {
     throw new PilotApiError("Demo mode is read-only; changes are disabled.", 403);
@@ -148,6 +149,22 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
   }
 
   return payload as T;
+}
+
+async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method || "GET").toUpperCase();
+  const cacheable = method === "GET" && (path.startsWith("/api/pilot/") || path.startsWith("/api/organizations") || path.startsWith("/api/locations"));
+  if (cacheable) return getPilotCached(path, () => requestJsonUncached<T>(path, init));
+  const response = await requestJsonUncached<T>(path, init);
+  if (method !== "GET" && method !== "HEAD") clearPilotDataCache();
+  return response;
+}
+
+/** Warm only the two most likely operational destinations during browser idle time. */
+export function prefetchPilotData(paths: string[]) {
+  for (const path of paths.slice(0, 2)) {
+    void requestJson(path).catch(() => undefined);
+  }
 }
 
 export async function getPilotCsrfToken() {

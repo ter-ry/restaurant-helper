@@ -742,6 +742,16 @@ async function installMockApi(page: Page, state: MockState) {
           summary: {},
         });
       }
+      // Workspace idle-prefetch is valid for any authenticated customer
+      // session, including journeys that never open Inventory. Keep the
+      // strict mock explicit while returning a minimal tenant-scoped shape.
+      return jsonResponse(route, {
+        items: [],
+        movements: [],
+        countSessions: [],
+        reorderPlan: { suggestions: [], groupedBySupplier: [] },
+        summary: {},
+      });
     }
 
     if (purchaseFlow && path === "/api/pilot/suppliers" && method === "POST") {
@@ -1635,6 +1645,16 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
         summary: {},
       });
     }
+    if (path === "/api/pilot/purchases" && method === "GET") {
+      return jsonResponse(route, {
+        invoices: [],
+        suppliers: [],
+        purchaseLines: [],
+        priceChanges: [],
+        summary: {},
+        exportReadiness: { readyForCsv: 0, needsReview: 0, needsMapping: 0, quickBooksFutureOnly: true },
+      });
+    }
     if (path === "/api/pilot/menu-costing" && method === "GET") {
       return jsonResponse(route, {
         organizationId: organization.id,
@@ -1713,9 +1733,10 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
 
   await page.goto("/app/menu-costing", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1", { hasText: "Menu Costing" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Menu items" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
+  await expect(page.getByText("Price $12.00").first()).toBeVisible();
   await expect(page.getByText("Cost $2.00").first()).toBeVisible();
-  await page.getByRole("tab", { name: "Menu items" }).click();
   await expect(page.getByText("Food cost 16.7%").first()).toBeVisible();
 });
 

@@ -16,6 +16,7 @@ import {
   type PilotUser,
 } from "./pilotApi";
 import { pilotAppEnabled } from "./pilotConfig";
+import { clearPilotDataCache, setPilotCacheScope } from "./pilotDataCache";
 
 type SessionStatus = "disabled" | "loading" | "signedOut" | "needsSelection" | "needsActivation" | "signedIn";
 
@@ -100,6 +101,15 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      clearPilotDataCache();
+      setPilotCacheScope("anonymous");
+      return;
+    }
+    setPilotCacheScope(`${user.id}:${organization?.id ?? "none"}:${currentLocation?.id ?? "none"}`);
+  }, [currentLocation?.id, organization?.id, user]);
 
   const refreshSession = async () => {
     if (!pilotAppEnabled) {

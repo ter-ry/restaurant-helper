@@ -46,7 +46,7 @@ function defaultRange() {
 
 function squareSectionLinkClasses(active: boolean) {
   return [
-    "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition",
+    "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border px-4 py-2 text-sm font-semibold transition",
     active ? "border-ink bg-ink text-white shadow-soft" : "border-line bg-white text-ink hover:bg-slate-50",
   ].join(" ");
 }
@@ -295,7 +295,7 @@ export function PilotSquareUsagePage() {
 
   return (
     <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
         <Link className={squareSectionLinkClasses(false)} to="/app/square">
           Setup & Sync
         </Link>

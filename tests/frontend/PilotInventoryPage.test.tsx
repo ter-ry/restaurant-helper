@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotInventoryPage } from "../../src/pilot/PilotInventoryPage";
 import type { PilotInventoryItem, PilotInventoryItemDetail, PilotInventoryResponse } from "../../src/pilot/pilotApi";
+import { clearPilotDataCache, getPilotCached, setPilotCacheScope } from "../../src/pilot/pilotDataCache";
 
 const navigateMock = vi.hoisted(() => vi.fn());
 
@@ -301,6 +302,29 @@ describe("PilotInventoryPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Inventory" }));
     expect(await screen.findByRole("columnheader", { name: "Item" })).toBeVisible();
+  });
+
+  it("shows a background-revalidated inventory value without remounting", async () => {
+    clearPilotDataCache();
+    setPilotCacheScope("user-1:org-42:location-7");
+    const initial = createInventoryResponse();
+    const refreshed = createInventoryResponse({
+      items: [createInventoryItem({ name: "Fresh Chicken Breast", currentOnHand: 35 }), ...initial.items.slice(1)],
+    });
+    await getPilotCached("/api/pilot/inventory", async () => initial, 1);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    inventoryMocks.fetchPilotInventory.mockResolvedValue(initial);
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("row", { name: /Chicken Breast/ });
+    expect(screen.queryByRole("row", { name: /Fresh Chicken Breast/ })).not.toBeInTheDocument();
+
+    await expect(getPilotCached("/api/pilot/inventory", async () => refreshed, 1)).resolves.toEqual(initial);
+    expect(await screen.findByRole("row", { name: /Fresh Chicken Breast/ })).toBeVisible();
   });
 
   it("cycles inventory numeric sorting through ascending, descending, and default", async () => {
