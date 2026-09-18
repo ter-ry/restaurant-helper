@@ -211,4 +211,30 @@ describe("PilotSquareUsagePage", () => {
       }),
     );
   });
+
+  it("starts mappings and usage together and renders mappings before usage completes", async () => {
+    let resolveMappings!: (value: unknown) => void;
+    let resolveUsage!: (value: unknown) => void;
+    const mappingPromise = new Promise((resolve) => { resolveMappings = resolve; });
+    const usagePromise = new Promise((resolve) => { resolveUsage = resolve; });
+    mockApi.fetchSquareCatalogMappings.mockReturnValue(mappingPromise);
+    mockApi.fetchSquareUsage.mockReturnValue(usagePromise);
+
+    render(
+      <MemoryRouter>
+        <PilotSquareUsagePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockApi.fetchSquareCatalogMappings).toHaveBeenCalled();
+      expect(mockApi.fetchSquareUsage).toHaveBeenCalled();
+    });
+    resolveMappings({ menuItems: [], mappings: [], unmappedVariations: [], mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 0, mappedPercent: 0 } });
+    expect(await screen.findByText("No active mappings yet.")).toBeVisible();
+    expect(screen.getByText("Loading usage variance…")).toBeVisible();
+
+    resolveUsage({ usage: null });
+    await waitFor(() => expect(screen.queryByText("Loading usage variance…")).not.toBeInTheDocument());
+  });
 });

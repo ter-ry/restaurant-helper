@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 from flask_login import current_user, login_required
 from sqlalchemy import text
+from sqlalchemy.orm import joinedload, selectinload
 
 from .access import support_access_is_active_for_current_user
 from .audit import record_audit_event
@@ -26,6 +27,8 @@ from .models import (
     Organization,
     OrganizationMembership,
     MenuItem,
+    Recipe,
+    RecipeIngredient,
     RestaurantLocation,
     SquareCatalogMapping,
     SquareCatalogObject,
@@ -133,7 +136,9 @@ def _serialize_catalog_mapping(mapping: SquareCatalogMapping) -> dict[str, Any]:
     }
 
 
-def _serialize_catalog_object(obj: SquareCatalogObject) -> dict[str, Any]:
+def _serialize_catalog_object(obj: SquareCatalogObject, mappings: list[SquareCatalogMapping] | None = None) -> dict[str, Any]:
+    if mappings is None:
+        mappings = SquareCatalogMapping.query.filter_by(square_catalog_object_id=obj.id).order_by(SquareCatalogMapping.id.asc()).all()
     return {
         "id": obj.id,
         "squareConnectionId": obj.square_connection_id,
@@ -142,7 +147,7 @@ def _serialize_catalog_object(obj: SquareCatalogObject) -> dict[str, Any]:
         "version": obj.version,
         "isDeleted": bool(obj.is_deleted),
         "rawPayload": dict(obj.raw_payload_json or {}),
-        "mappings": [_serialize_catalog_mapping(mapping) for mapping in SquareCatalogMapping.query.filter_by(square_catalog_object_id=obj.id).order_by(SquareCatalogMapping.id.asc()).all()],
+        "mappings": [_serialize_catalog_mapping(mapping) for mapping in mappings],
         "createdAt": isoformat(obj.created_at),
         "updatedAt": isoformat(obj.updated_at),
     }
@@ -156,14 +161,14 @@ def _menu_normalized_name(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.strip().lower())).strip()
 
 
-def _catalog_object_name(obj: SquareCatalogObject) -> str:
+def _catalog_object_name(obj: SquareCatalogObject, parents: dict[str, SquareCatalogObject] | None = None) -> str:
     payload = obj.raw_payload_json or {}
     if not isinstance(payload, dict):
         payload = {}
     variation_data = payload.get("item_variation_data") or payload.get("itemVariationData") or {}
     item_data = payload.get("item_data") or payload.get("itemData") or {}
     variation_name = str(variation_data.get("name") or "").strip()
-    parent_name = _catalog_object_parent_name(obj)
+    parent_name = _catalog_object_parent_name(obj, parents)
     if obj.object_type.upper() == "ITEM_VARIATION" and parent_name:
         return f"{parent_name} · {variation_name}" if variation_name else parent_name
     for candidate in (variation_name, item_data.get("name"), payload.get("name"), payload.get("display_name")):
@@ -176,7 +181,7 @@ def _catalog_object_name(obj: SquareCatalogObject) -> str:
     return obj.square_object_id
 
 
-def _catalog_object_parent_name(obj: SquareCatalogObject) -> str:
+def _catalog_object_parent_name(obj: SquareCatalogObject, parents: dict[str, SquareCatalogObject] | None = None) -> str:
     payload = obj.raw_payload_json or {}
     if not isinstance(payload, dict):
         payload = {}
@@ -185,7 +190,7 @@ def _catalog_object_parent_name(obj: SquareCatalogObject) -> str:
     if obj.object_type.upper() == "ITEM_VARIATION":
         parent_id = str(variation_data.get("item_id") or variation_data.get("itemId") or "").strip()
         if parent_id:
-            parent = SquareCatalogObject.query.filter_by(
+            parent = parents.get(parent_id) if parents is not None else SquareCatalogObject.query.filter_by(
                 square_connection_id=obj.square_connection_id,
                 square_object_id=parent_id,
                 object_type="ITEM",
@@ -221,15 +226,15 @@ def _serialize_menu_item_summary(menu_item: MenuItem) -> dict[str, Any]:
     }
 
 
-def _serialize_catalog_mapping_detail(mapping: SquareCatalogMapping) -> dict[str, Any]:
+def _serialize_catalog_mapping_detail(mapping: SquareCatalogMapping, parents: dict[str, SquareCatalogObject] | None = None) -> dict[str, Any]:
     catalog_object = mapping.square_catalog_object
     return {
         "id": mapping.id,
         "squareCatalogObjectId": mapping.square_catalog_object_id,
         "squareObjectId": catalog_object.square_object_id if catalog_object else "",
         "squareObjectType": catalog_object.object_type if catalog_object else "",
-        "squareObjectName": _catalog_object_name(catalog_object) if catalog_object else "",
-        "squareItemName": _catalog_object_parent_name(catalog_object) if catalog_object else "",
+        "squareObjectName": _catalog_object_name(catalog_object, parents) if catalog_object else "",
+        "squareItemName": _catalog_object_parent_name(catalog_object, parents) if catalog_object else "",
         "mappingType": mapping.mapping_type,
         "flowtallyEntityType": mapping.flowtally_entity_type,
         "flowtallyEntityId": mapping.flowtally_entity_id,
@@ -262,8 +267,8 @@ def _suggest_menu_item_id(menu_items: list[MenuItem], object_name: str, parent_n
     return None
 
 
-def _latest_count_snapshot(organization_id: int, location_id: int, inventory_item_id: int, boundary: datetime) -> dict[str, Any] | None:
-    session_record = (
+def _latest_count_snapshot(organization_id: int, location_id: int, inventory_item_id: int, boundary: datetime, *, sessions: dict[datetime, StockCountSession | None] | None = None) -> dict[str, Any] | None:
+    session_record = sessions.get(boundary) if sessions is not None else (
         StockCountSession.query.filter(
             StockCountSession.organization_id == organization_id,
             StockCountSession.location_id == location_id,
@@ -289,9 +294,9 @@ def _latest_count_snapshot(organization_id: int, location_id: int, inventory_ite
     }
 
 
-def _inventory_usage_basis(organization_id: int, location_id: int, inventory_item_id: int, start_at: datetime, end_at: datetime) -> dict[str, Any]:
-    opening = _latest_count_snapshot(organization_id, location_id, inventory_item_id, start_at)
-    closing = _latest_count_snapshot(organization_id, location_id, inventory_item_id, end_at)
+def _inventory_usage_basis(organization_id: int, location_id: int, inventory_item_id: int, start_at: datetime, end_at: datetime, *, sessions: dict[datetime, StockCountSession | None] | None = None, movement_totals: dict[int, Decimal] | None = None) -> dict[str, Any]:
+    opening = _latest_count_snapshot(organization_id, location_id, inventory_item_id, start_at, sessions=sessions)
+    closing = _latest_count_snapshot(organization_id, location_id, inventory_item_id, end_at, sessions=sessions)
     warnings: list[str] = []
     if opening is None:
         warnings.append("No completed stock count exists before the start of the period.")
@@ -318,7 +323,7 @@ def _inventory_usage_basis(organization_id: int, location_id: int, inventory_ite
         InventoryMovement.created_at > datetime.fromisoformat(opening["completedAt"].replace("Z", "+00:00")),
         InventoryMovement.created_at <= datetime.fromisoformat(closing["completedAt"].replace("Z", "+00:00")),
     ).filter(InventoryMovement.source_type.notin_({"stock count reconciliation", "square sale consumption", "square sale reversal"}))
-    movement_net = sum((Decimal(str(movement.quantity_delta or 0)) for movement in movement_query.all()), start=Decimal("0")).quantize(QTY)
+    movement_net = (Decimal(str(movement_totals.get(inventory_item_id) or 0)) if movement_totals is not None else sum((Decimal(str(movement.quantity_delta or 0)) for movement in movement_query.all()), start=Decimal("0"))).quantize(QTY)
     opening_quantity = Decimal(str(opening["quantity"])).quantize(QTY)
     closing_quantity = Decimal(str(closing["quantity"])).quantize(QTY)
     actual_usage = (opening_quantity + movement_net - closing_quantity).quantize(QTY)
@@ -343,6 +348,48 @@ def _menu_items_for_usage(organization_id: int, location_id: int | None) -> list
     return query.order_by(MenuItem.name.asc(), MenuItem.id.asc()).all()
 
 
+def _usage_basis_inputs(organization_id: int, location_id: int, start_at: datetime, end_at: datetime):
+    # Preserve the original latest-session semantics, including missing lines:
+    # never fall back to an older session just because an ingredient was absent.
+    sessions = {}
+    for boundary in {start_at, end_at}:
+        sessions[boundary] = StockCountSession.query.options(selectinload(StockCountSession.lines)).filter(
+            StockCountSession.organization_id == organization_id,
+            StockCountSession.location_id == location_id,
+            StockCountSession.status == "Completed",
+            StockCountSession.completed_at.is_not(None),
+            StockCountSession.completed_at <= boundary,
+        ).order_by(StockCountSession.completed_at.desc(), StockCountSession.id.desc()).first()
+    opening, closing = sessions[start_at], sessions[end_at]
+    movements = {}
+    if opening is not None and closing is not None:
+        movements = dict(db.session.query(InventoryMovement.inventory_item_id, db.func.sum(InventoryMovement.quantity_delta)).filter(
+            InventoryMovement.organization_id == organization_id,
+            InventoryMovement.location_id == location_id,
+            InventoryMovement.created_at > opening.completed_at,
+            InventoryMovement.created_at <= closing.completed_at,
+            InventoryMovement.source_type.notin_({"stock count reconciliation", "square sale consumption", "square sale reversal"}),
+        ).group_by(InventoryMovement.inventory_item_id).all())
+    return sessions, movements
+
+
+def _catalog_parents(connection_id: int, objects) -> dict[str, SquareCatalogObject]:
+    parent_ids = set()
+    for obj in objects:
+        payload = obj.raw_payload_json if isinstance(obj.raw_payload_json, dict) else {}
+        variation = payload.get("item_variation_data") or payload.get("itemVariationData") or {}
+        parent_id = str(variation.get("item_id") or variation.get("itemId") or "").strip()
+        if parent_id:
+            parent_ids.add(parent_id)
+    if not parent_ids:
+        return {}
+    return {obj.square_object_id: obj for obj in SquareCatalogObject.query.filter(
+        SquareCatalogObject.square_connection_id == connection_id,
+        SquareCatalogObject.object_type == "ITEM",
+        SquareCatalogObject.square_object_id.in_(parent_ids),
+    ).all()}
+
+
 def _square_mapping_summary(organization: Organization, connection: SquareConnection, *, location_id: int | None = None) -> dict[str, Any]:
     catalog_objects = (
         SquareCatalogObject.query.filter_by(square_connection_id=connection.id, object_type="ITEM_VARIATION", is_deleted=False)
@@ -350,29 +397,29 @@ def _square_mapping_summary(organization: Organization, connection: SquareConnec
         .all()
     )
     menu_items = _menu_items_for_usage(organization.id, location_id)
+    parents = _catalog_parents(connection.id, catalog_objects)
+    latest_mappings: dict[int, SquareCatalogMapping] = {}
+    for mapping in SquareCatalogMapping.query.join(SquareCatalogObject).filter(
+        SquareCatalogObject.square_connection_id == connection.id,
+        SquareCatalogObject.object_type == "ITEM_VARIATION",
+        SquareCatalogObject.is_deleted.is_(False),
+        SquareCatalogMapping.mapping_type == "menu_item",
+    ).order_by(SquareCatalogMapping.updated_at.desc(), SquareCatalogMapping.id.desc()).all():
+        latest_mappings.setdefault(mapping.square_catalog_object_id, mapping)
+    sold_by_variation = dict(db.session.query(
+        SquareOrderLine.square_item_variation_id, db.func.sum(SquareOrderLine.quantity),
+    ).join(SquareOrder, SquareOrderLine.square_order_id == SquareOrder.id).filter(
+        SquareOrder.square_connection_id == connection.id,
+    ).group_by(SquareOrderLine.square_item_variation_id).all())
     mappings: list[dict[str, Any]] = []
     unmapped_variations: list[dict[str, Any]] = []
     active_mapping_count = 0
     for catalog_object in catalog_objects:
-        mapping = (
-            SquareCatalogMapping.query.filter_by(square_catalog_object_id=catalog_object.id, mapping_type="menu_item")
-            .order_by(SquareCatalogMapping.updated_at.desc(), SquareCatalogMapping.id.desc())
-            .first()
-        )
-        mapping_detail = _serialize_catalog_mapping_detail(mapping) if mapping else None
-        object_name = _catalog_object_name(catalog_object)
-        parent_name = _catalog_object_parent_name(catalog_object)
-        sold_units = (
-            db.session.query(db.func.coalesce(db.func.sum(SquareOrderLine.quantity), 0))
-            .select_from(SquareOrderLine)
-            .join(SquareOrder, SquareOrderLine.square_order_id == SquareOrder.id)
-            .filter(
-                SquareOrder.square_connection_id == connection.id,
-                SquareOrderLine.square_item_variation_id == catalog_object.square_object_id,
-            )
-            .scalar()
-            or 0
-        )
+        mapping = latest_mappings.get(catalog_object.id)
+        mapping_detail = _serialize_catalog_mapping_detail(mapping, parents) if mapping else None
+        object_name = _catalog_object_name(catalog_object, parents)
+        parent_name = _catalog_object_parent_name(catalog_object, parents)
+        sold_units = sold_by_variation.get(catalog_object.square_object_id) or 0
         suggested_menu_item_id = _suggest_menu_item_id(menu_items, object_name, parent_name)
         row = {
             "id": catalog_object.id,
@@ -520,6 +567,7 @@ def _build_square_usage_report(
             SquareOrder.ordered_at <= end_at,
         )
         .filter(SquareOrder.square_location_id.in_(square_location_ids))
+        .options(selectinload(SquareOrder.lines))
         .order_by(SquareOrder.ordered_at.asc(), SquareOrder.id.asc())
         .all()
     )
@@ -537,6 +585,17 @@ def _build_square_usage_report(
             SquareCatalogMapping.status != "unmapped",
         ).all()
     }
+
+    menu_ids = set()
+    for mapping in active_mappings.values():
+        try:
+            menu_ids.add(int(mapping.flowtally_entity_id))
+        except (TypeError, ValueError):
+            pass  # The canonical resolver still returns the original warning.
+    menu_items = {item.id: item for item in MenuItem.query.filter(
+        MenuItem.organization_id == organization.id, MenuItem.id.in_(menu_ids),
+    ).options(joinedload(MenuItem.recipe).selectinload(Recipe.ingredients).joinedload(RecipeIngredient.inventory_item)).all()} if menu_ids else {}
+    parents = _catalog_parents(connection.id, catalog_objects.values())
 
     total_sold_units = Decimal("0")
     mapped_sold_units = Decimal("0")
@@ -564,6 +623,7 @@ def _build_square_usage_report(
                 current_location_ids=current_location_ids,
                 catalog_objects=catalog_objects,
                 active_mappings=active_mappings,
+                menu_items=menu_items,
             )
             line_quantity = resolution["lineQuantity"]
             if line_quantity <= 0:
@@ -577,8 +637,8 @@ def _build_square_usage_report(
                     variation_key,
                     {
                         "squareItemVariationId": line.square_item_variation_id,
-                        "squareObjectName": _catalog_object_name(catalog_object) if catalog_object else line.name,
-                        "squareItemName": _catalog_object_parent_name(catalog_object) if catalog_object else "",
+                        "squareObjectName": _catalog_object_name(catalog_object, parents) if catalog_object else line.name,
+                        "squareItemName": _catalog_object_parent_name(catalog_object, parents) if catalog_object else "",
                         "soldUnits": Decimal("0"),
                         "recentOrders": [],
                     },
@@ -622,20 +682,17 @@ def _build_square_usage_report(
                 contribution_bucket["theoreticalUsage"] = Decimal(str(contribution_bucket["theoreticalUsage"])) + contribution
 
     ingredient_rows: list[dict[str, Any]] = []
-    ingredient_ids = set(ingredient_aggregates.keys())
-    ingredient_ids.update(item.id for item in InventoryItem.query.filter_by(organization_id=organization.id).all() if item.average_daily_usage is not None)
-    if location is not None:
-        ingredient_ids.update(
-            item.id
-            for item in InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id).all()
-        )
+    inventory_items = {item.id: item for item in InventoryItem.query.filter(
+        InventoryItem.organization_id == organization.id, InventoryItem.id.in_(ingredient_aggregates),
+    ).all()} if ingredient_aggregates else {}
+    sessions, movement_totals = _usage_basis_inputs(organization.id, location.id, start_at, end_at) if location is not None and ingredient_aggregates else (None, None)
 
     for inventory_item_id in sorted(ingredient_aggregates.keys()):
         aggregate = ingredient_aggregates[inventory_item_id]
-        inventory_item = InventoryItem.query.filter_by(id=inventory_item_id, organization_id=organization.id).first()
+        inventory_item = inventory_items.get(inventory_item_id)
         if inventory_item is None:
             continue
-        basis = _inventory_usage_basis(organization.id, location.id if location else inventory_item.location_id, inventory_item.id, start_at, end_at) if location is not None else {
+        basis = _inventory_usage_basis(organization.id, location.id, inventory_item.id, start_at, end_at, sessions=sessions, movement_totals=movement_totals) if location is not None else {
             "available": False,
             "warnings": ["Choose a location to see actual usage basis."],
             "openingQuantity": None,
@@ -846,6 +903,21 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
         for location in SquareLocation.query.filter_by(square_connection_id=connection.id).all()
         if location.square_location_id in current_location_ids
     ]
+    location_mappings: dict[int, list[SquareLocationMapping]] = defaultdict(list)
+    if locations:
+        for mapping in SquareLocationMapping.query.options(joinedload(SquareLocationMapping.restaurant_location)).filter(
+            SquareLocationMapping.square_location_id.in_([location.id for location in locations]),
+        ).order_by(SquareLocationMapping.id.asc()).all():
+            location_mappings[mapping.square_location_id].append(mapping)
+    catalog_objects = SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).order_by(
+        SquareCatalogObject.updated_at.desc(), SquareCatalogObject.id.desc(),
+    ).limit(100).all()
+    catalog_mappings: dict[int, list[SquareCatalogMapping]] = defaultdict(list)
+    if catalog_objects:
+        for mapping in SquareCatalogMapping.query.filter(
+            SquareCatalogMapping.square_catalog_object_id.in_([obj.id for obj in catalog_objects]),
+        ).order_by(SquareCatalogMapping.id.asc()).all():
+            catalog_mappings[mapping.square_catalog_object_id].append(mapping)
     return {
         "id": connection.id,
         "organizationId": connection.organization_id,
@@ -869,14 +941,14 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
                 "name": location.name,
                 "status": location.status,
                 "rawPayload": dict(location.raw_payload_json or {}),
-                "mappings": [_serialize_location_mapping(mapping) for mapping in SquareLocationMapping.query.filter_by(square_location_id=location.id).all()],
+                "mappings": [_serialize_location_mapping(mapping) for mapping in location_mappings[location.id]],
                 "createdAt": isoformat(location.created_at),
                 "updatedAt": isoformat(location.updated_at),
             }
             for location in sorted(locations, key=lambda entry: (entry.name, entry.id))
         ],
-        "catalogObjects": [_serialize_catalog_object(obj) for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).order_by(SquareCatalogObject.updated_at.desc(), SquareCatalogObject.id.desc()).limit(100).all()],
-        "orders": [_serialize_order(order) for order in SquareOrder.query.filter_by(square_connection_id=connection.id).order_by(SquareOrder.updated_at.desc(), SquareOrder.id.desc()).limit(50).all()],
+        "catalogObjects": [_serialize_catalog_object(obj, catalog_mappings[obj.id]) for obj in catalog_objects],
+        "orders": [_serialize_order(order) for order in SquareOrder.query.options(selectinload(SquareOrder.lines)).filter_by(square_connection_id=connection.id).order_by(SquareOrder.updated_at.desc(), SquareOrder.id.desc()).limit(50).all()],
         "dailySales": [_serialize_daily_summary(summary) for summary in SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).order_by(SquareDailySalesSummary.sale_date.desc(), SquareDailySalesSummary.id.desc()).limit(60).all()],
         "syncJobs": [
             {
@@ -1133,6 +1205,7 @@ def _square_line_consumption(
     current_location_ids: set[str] | None = None,
     catalog_objects: dict[str, SquareCatalogObject] | None = None,
     active_mappings: dict[int, SquareCatalogMapping] | None = None,
+    menu_items: dict[int, MenuItem] | None = None,
 ) -> dict[str, Any]:
     """Resolve one Square line through the canonical menu recipe path."""
     line_quantity = _square_line_sale_quantity(order, line)
@@ -1166,7 +1239,7 @@ def _square_line_consumption(
         menu_item_id = int(mapping.flowtally_entity_id)
     except (TypeError, ValueError):
         return {"status": "incomplete", "lineQuantity": line_quantity, "ingredients": [], "warnings": ["Square mapping points to an invalid menu item."], "menuItem": None, "recipe": None}
-    menu_item = MenuItem.query.filter_by(id=menu_item_id, organization_id=organization.id).first()
+    menu_item = menu_items.get(menu_item_id) if menu_items is not None else MenuItem.query.filter_by(id=menu_item_id, organization_id=organization.id).first()
     if menu_item is None or (menu_item.location_id is not None and menu_item.location_id != order.restaurant_location_id):
         return {"status": "incomplete", "lineQuantity": line_quantity, "ingredients": [], "warnings": ["Square mapping points to an unavailable menu item."], "menuItem": None, "recipe": None}
     recipe = menu_item.recipe

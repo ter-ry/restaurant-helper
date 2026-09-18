@@ -32,6 +32,7 @@ from .policy import enforce_endpoint_permission
 from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data
 from .validation import RequestValidationError
 from .utils import json_error
+from .performance import configure_performance, install_performance
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -41,6 +42,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config.update(test_config)
     validate_runtime_config(app.config, environment=app.config.get("FLOWTALLY_ENV"))
 
+    configure_performance(app)
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
@@ -397,4 +399,5 @@ def create_app(test_config: dict | None = None) -> Flask:
         else:
             click.echo(f"Platform role {role} already assigned to {user.email} (user_id={user.id}).")
 
+    install_performance(app)
     return app
