@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
+import { sortRows, type SortDirection } from "../components/DataTable";
 import {
   completePilotReorderPlan,
   createPilotReorderPlan,
@@ -41,6 +42,7 @@ export function PilotReorderPlanPage() {
   const [workflowTab, setWorkflowTab] = useState<"live" | "history">("live");
   const [search, setSearch] = useState("");
   const [inventorySearch, setInventorySearch] = useState("");
+  const [suggestionSort, setSuggestionSort] = useState<{ key: "item" | "supplier" | "current" | "suggested" | "estimate" | "status"; direction: SortDirection } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestedPlanId = useMemo(() => {
@@ -116,6 +118,26 @@ export function PilotReorderPlanPage() {
   const visiblePlans = workflowTab === "history" ? historyPlans : livePlans;
   const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0;
   const initialLoading = loading && !hasLoaded;
+  const sortedSuggestions = useMemo(() => {
+    if (!suggestionSort) return currentSuggestions;
+    const value = (suggestion: PilotReorderSuggestion) => {
+      switch (suggestionSort.key) {
+        case "item": return suggestion.inventoryItemName;
+        case "supplier": return suggestion.supplier || "Unassigned supplier";
+        case "current": return suggestion.currentQuantity;
+        case "suggested": return suggestion.suggestedQuantity;
+        case "estimate": return suggestion.estimatedCost;
+        case "status": return suggestion.stockStatus;
+      }
+    };
+    return sortRows(currentSuggestions, value, suggestionSort.direction, suggestionSort.key === "status" ? ["Out of stock", "Reorder now", "Low stock", "In stock"] : undefined);
+  }, [currentSuggestions, suggestionSort]);
+
+  const cycleSuggestionSort = (key: NonNullable<typeof suggestionSort>["key"]) => {
+    setSuggestionSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null);
+  };
+
+  const suggestionSortLabel = (key: NonNullable<typeof suggestionSort>["key"]) => suggestionSort?.key === key ? suggestionSort.direction === "asc" ? "ascending" : "descending" : "none";
 
   const openPlan = async (planId: number) => {
     if (saving || creating || loading) {
@@ -484,18 +506,26 @@ export function PilotReorderPlanPage() {
             <div className="workspace-table-wrap max-h-[26rem] overflow-y-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-muted">
-                  <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Supplier</th><th className="px-3 py-2">On hand / PAR</th><th className="px-3 py-2">Suggested</th><th className="px-3 py-2">Estimate</th><th className="px-3 py-2">Action</th></tr>
+                  <tr>
+                    {([["item", "Item"], ["supplier", "Supplier"], ["current", "On hand / PAR"], ["suggested", "Suggested"], ["estimate", "Estimate"], ["status", "Status"]] as const).map(([key, label]) => (
+                      <th key={key} className="px-3 py-2" aria-sort={suggestionSortLabel(key)}>
+                        <button type="button" className="font-semibold hover:text-ink" onClick={() => cycleSuggestionSort(key)}>{label}</button>
+                      </th>
+                    ))}
+                    <th className="px-3 py-2">Action</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {[...(currentSuggestions ?? [])].sort((a, b) => a.currentQuantity - b.currentQuantity).map((suggestion) => {
+                  {sortedSuggestions.map((suggestion) => {
                     const isInDraft = draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId);
                     return (
                       <tr key={suggestion.id} className="bg-white">
-                        <td className="px-3 py-3"><p className="font-semibold text-ink">{suggestion.inventoryItemName}</p><Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge></td>
+                        <td className="px-3 py-3"><p className="font-semibold text-ink">{suggestion.inventoryItemName}</p></td>
                         <td className="px-3 py-3 text-muted">{suggestion.supplier || "Unassigned supplier"}</td>
                         <td className="px-3 py-3 text-ink">{formatNumber(suggestion.currentQuantity)} / {formatNumber(suggestion.parLevel)} {suggestion.unit}</td>
                         <td className="px-3 py-3 font-semibold text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</td>
                         <td className="px-3 py-3 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</td>
+                        <td className="px-3 py-3"><Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge></td>
                         <td className="px-3 py-3"><Button variant="secondary" type="button" disabled={creating || saving || loading} onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}>{isInDraft ? "In draft" : "Add to draft"}</Button></td>
                       </tr>
                     );
