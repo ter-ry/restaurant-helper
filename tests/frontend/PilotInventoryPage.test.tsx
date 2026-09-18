@@ -97,6 +97,14 @@ function createInventoryResponse(overrides: Partial<PilotInventoryResponse> = {}
         averageUnitCost: 2.75,
         averageDailyUsage: 1.5,
       }),
+      createInventoryItem({
+        id: 32,
+        name: "Paper Cups",
+        latestPurchasePrice: 4,
+        lastPurchaseUnit: "pack",
+        lastPurchaseConversionFactor: 50,
+        averageUnitCost: 0.08,
+      }),
     ],
     movements: [
       {
@@ -281,6 +289,7 @@ describe("PilotInventoryPage", () => {
     expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Latest cost" })).toBeVisible();
+    expect(screen.getByRole("row", { name: /Paper Cups/ })).toHaveTextContent("$0.08");
     expect(screen.queryByText("Count sessions")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
@@ -303,13 +312,13 @@ describe("PilotInventoryPage", () => {
     await screen.findByRole("columnheader", { name: "Item" });
     const onHand = screen.getByRole("button", { name: /On hand/ });
     const itemNames = () => [...screen.getAllByRole("row")].slice(1).map((row) => row.querySelector("td p")?.textContent);
-    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes"]);
+    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes", "Paper Cups"]);
     fireEvent.click(onHand);
-    expect(itemNames()).toEqual(["Tomatoes", "Chicken Breast"]);
+    expect(itemNames()).toEqual(["Tomatoes", "Chicken Breast", "Paper Cups"]);
     fireEvent.click(onHand);
-    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes"]);
+    expect(itemNames()).toEqual(["Chicken Breast", "Paper Cups", "Tomatoes"]);
     fireEvent.click(onHand);
-    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes"]);
+    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes", "Paper Cups"]);
   });
 
   it("keeps the overview adjustment workflow separate from item notes and blocks zero deltas", async () => {
@@ -325,7 +334,7 @@ describe("PilotInventoryPage", () => {
 
     expect(screen.getByText("Average cost")).toBeVisible();
     expect(screen.getByText("$8.88")).toBeVisible();
-    expect(screen.getByText("Latest cost")).toBeVisible();
+    expect(screen.getByText("Latest cost / stock unit")).toBeVisible();
     expect(screen.getByText("$9.00")).toBeVisible();
     expect(screen.getByText("Inventory value")).toBeVisible();
     expect(screen.getByText("$248.64")).toBeVisible();
@@ -504,7 +513,7 @@ describe("PilotInventoryPage", () => {
     expect(await screen.findByRole("heading", { name: "Create inventory item" })).toBeVisible();
     expect(screen.queryByRole("columnheader", { name: "Item" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Current on hand")).toHaveValue(0);
-    expect(screen.getByLabelText("Latest price")).toHaveValue(0);
+    expect(screen.getByLabelText("Latest purchase package price")).toHaveValue(0);
     expect(screen.getByLabelText("Last purchase unit")).toHaveValue("each");
     expect(screen.getByLabelText("Purchase conversion")).toHaveValue(1);
     expect(screen.queryByText("Count sessions")).not.toBeInTheDocument();

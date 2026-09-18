@@ -307,6 +307,43 @@ textarea.input {
   background: rgba(20, 184, 166, 0.13) !important;
 }
 
+/* Operational feedback surfaces stay dark while retaining semantic colour. */
+.pilot-theme-dark .bg-amber-50,
+.pilot-theme-dark .bg-amber-50\/50,
+.pilot-theme-dark .daily-close-progress-card[data-state="needs-review"],
+.pilot-theme-dark .purchase-review-item {
+  background: rgba(120, 76, 18, 0.2) !important;
+  border-color: rgba(245, 158, 11, 0.42) !important;
+}
+
+.pilot-theme-dark .bg-emerald-50,
+.pilot-theme-dark .daily-close-progress-card[data-state="complete"],
+.pilot-theme-dark .daily-close-no-blockers {
+  background: rgba(11, 78, 71, 0.34) !important;
+  border-color: rgba(45, 212, 191, 0.38) !important;
+}
+
+.pilot-theme-dark .bg-rose-50,
+.pilot-theme-dark .bg-red-50 {
+  background: rgba(127, 29, 29, 0.24) !important;
+  border-color: rgba(248, 113, 113, 0.38) !important;
+}
+
+.pilot-theme-dark .text-amber-900,
+.pilot-theme-dark .text-amber-950 {
+  color: #fcd34d !important;
+}
+
+.pilot-theme-dark .text-emerald-900,
+.pilot-theme-dark .text-emerald-950 {
+  color: #99f6e4 !important;
+}
+
+.pilot-theme-dark .text-rose-900,
+.pilot-theme-dark .text-red-900 {
+  color: #fda4af !important;
+}
+
 .pilot-theme-dark .text-brand-700,
 .pilot-theme-dark .text-brand-900 {
   color: var(--pilot-accent) !important;

@@ -141,6 +141,11 @@ function formatInventoryValue(currentOnHand: number, averageUnitCost: number | n
   return averageUnitCost !== null ? formatMoney(currentOnHand * averageUnitCost) : "Not yet available";
 }
 
+function latestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchasePrice" | "lastPurchaseConversionFactor">) {
+  const conversionFactor = item.lastPurchaseConversionFactor > 0 ? item.lastPurchaseConversionFactor : 1;
+  return item.latestPurchasePrice / conversionFactor;
+}
+
 export function PilotInventoryPage() {
   const navigate = useNavigate();
   const { currentLocation } = usePilotSession();
@@ -246,7 +251,7 @@ export function PilotInventoryPage() {
       unit: (item) => item.stockUnit,
       minimum: (item) => item.minQuantity,
       par: (item) => item.parLevel,
-      latestCost: (item) => item.latestPurchasePrice,
+      latestCost: (item) => latestStockUnitCost(item),
       status: (item) => stockStatus(item),
     };
     return sortRows(filteredItems, getters[itemSort.key] ?? getters.item, itemSort.direction, itemSort.key === "status" ? ["Out of stock", "Reorder now", "Low stock", "In stock"] : undefined);
@@ -549,7 +554,7 @@ export function PilotInventoryPage() {
                     <td className="px-3 py-2.5 text-muted">{formatNumber(item.parLevel)}</td>
                     <td className="px-3 py-2.5 text-muted">
                       <div className="space-y-1">
-                        <p className="font-medium text-ink">{formatMoney(item.latestPurchasePrice)}</p>
+                        <p className="font-medium text-ink">{formatMoney(latestStockUnitCost(item))}</p>
                         <p className="text-xs text-muted">Avg {item.averageUnitCost && item.averageUnitCost > 0 ? formatMoney(item.averageUnitCost) : "not set"}</p>
                       </div>
                     </td>
@@ -879,7 +884,7 @@ export function PilotInventoryPage() {
           <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1 w-28" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
           <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1 w-28" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
           <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
-          <ReadOnlyStat label="Latest cost" value={formatMoney(item.latestPurchasePrice)} />
+          <ReadOnlyStat label="Latest cost / stock unit" value={formatMoney(latestStockUnitCost(item))} />
           <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
           <ReadOnlyStat label="Preferred supplier" value={isEditing ? (suppliers.length ? <select aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}><option value="">Unassigned</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}</select> : <input aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />) : item.preferredSupplierName || "Unassigned"} />
           <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
@@ -1172,7 +1177,7 @@ export function PilotInventoryPage() {
             <input className="input mt-1" type="number" step="1" value={draft.currentOnHand} onChange={(event) => setDraft((current) => ({ ...current, currentOnHand: Number(event.target.value) }))} />
           </label>
           <label className="block">
-            <span className="text-sm font-semibold text-ink">Latest price</span>
+            <span className="text-sm font-semibold text-ink">Latest purchase package price</span>
             <input className="input mt-1" type="number" step="1" value={draft.latestPurchasePrice} onChange={(event) => setDraft((current) => ({ ...current, latestPurchasePrice: Number(event.target.value) }))} />
           </label>
           <label className="block">
