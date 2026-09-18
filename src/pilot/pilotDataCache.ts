@@ -17,7 +17,6 @@ export function setPilotCacheScope(nextScope: string | null | undefined) {
 export function clearPilotDataCache() {
   entries.clear();
   inFlight.clear();
-  listeners.clear();
   generation += 1;
 }
 

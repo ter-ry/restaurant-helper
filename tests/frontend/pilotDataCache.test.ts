@@ -80,7 +80,7 @@ describe("pilot data cache", () => {
 
     const freshLoader = vi.fn().mockResolvedValue("fresh");
     await expect(getPilotCached("/api/pilot/inventory", freshLoader)).resolves.toBe("fresh");
-    expect(updates).toEqual([]);
+    expect(updates).toEqual(["fresh"]);
     expect(freshLoader).toHaveBeenCalledTimes(1);
   });
 });

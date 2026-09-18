@@ -30,6 +30,7 @@ import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./works
 import { usePilotSession } from "./PilotSessionProvider";
 import { demoReadOnly } from "./pilotConfig";
 import { sortRows, type SortDirection } from "../components/DataTable";
+import { subscribePilotCache } from "./pilotDataCache";
 
 interface InventoryDraft {
   id: number | null;
@@ -157,7 +158,7 @@ function formatLatestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchas
 
 export function PilotInventoryPage() {
   const navigate = useNavigate();
-  const { currentLocation } = usePilotSession();
+  const { organization, currentLocation } = usePilotSession();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -232,6 +233,25 @@ export function PilotInventoryPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // Keep a mounted workspace in sync when stale-while-revalidate completes.
+    // The cache scope is captured at subscription time and the cleanup runs
+    // before an organization/location change can apply an old response.
+    const unsubscribeInventory = subscribePilotCache<PilotInventoryResponse>("/api/pilot/inventory", (response) => {
+      setData(response);
+      setHasLoaded(true);
+      setError(null);
+    });
+    const unsubscribeSuppliers = subscribePilotCache<{ suppliers: PilotSupplierSummary[] }>("/api/pilot/suppliers", (response) => {
+      setSuppliers(response.suppliers);
+      setError(null);
+    });
+    return () => {
+      unsubscribeInventory();
+      unsubscribeSuppliers();
+    };
+  }, [organization?.id, currentLocation?.id]);
 
   useEffect(() => {
     if (currentLocation?.timezone) setWasteOccurredAt(locationNowDatetimeLocal(currentLocation.timezone));
