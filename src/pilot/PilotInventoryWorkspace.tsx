@@ -509,8 +509,8 @@ export function PilotInventoryPage() {
       </div>
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
-        <div className="max-h-[62vh] overflow-y-auto">
-          <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+        <div className="max-h-[62vh] overflow-x-auto overflow-y-auto">
+          <table className="min-w-[720px] border-separate border-spacing-0 text-left text-sm sm:min-w-full">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-muted">
               <tr>
                 {(["Item", "Category", "On hand", "Unit", "Minimum", "PAR", "Latest cost", "Reorder status"] as const).map((heading) => {
