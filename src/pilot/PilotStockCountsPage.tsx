@@ -369,7 +369,7 @@ export function PilotStockCountsPage() {
   };
 
   return (
-    <div className="workspace-page">
+    <div className="workspace-page pilot-stock-counts-page">
       <Card className="surface-panel workspace-card p-3">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">

@@ -6,14 +6,15 @@ interface PageLayoutProps {
   eyebrow?: string;
   description?: string;
   children: ReactNode;
+  className?: string;
 }
 
-export function PageLayout({ title, eyebrow, description, children }: PageLayoutProps) {
+export function PageLayout({ title, eyebrow, description, children, className = "" }: PageLayoutProps) {
   const demo = useDemoProfile();
   const resolvedEyebrow = eyebrow ?? `${demo.customization.restaurantName} / ${demo.period}`;
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className={`min-h-screen bg-slate-50 ${className}`}>
       <div className="mx-auto max-w-7xl px-5 py-7 lg:px-8">
         <div className="mb-6">
           <p className="text-sm font-semibold uppercase tracking-wide text-muted">{resolvedEyebrow}</p>
