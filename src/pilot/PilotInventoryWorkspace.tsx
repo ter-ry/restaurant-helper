@@ -497,7 +497,7 @@ export function PilotInventoryPage() {
   };
 
   const renderItemTable = () => (
-    <Card className="workspace-card p-4">
+    <Card className="workspace-card pilot-inventory-reference p-4">
       <SectionHeader title="Items" description="Search, open, and keep the stock list current." />
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-slate-50 px-4 py-3">

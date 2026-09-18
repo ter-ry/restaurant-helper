@@ -32,6 +32,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      try {
+        const theme = localStorage.getItem("flowtally:pilot-theme") === "light" ? "light" : "dark";
+        document.documentElement.dataset.flowtallyTheme = theme;
+      } catch (_) {
+        document.documentElement.dataset.flowtallyTheme = "dark";
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

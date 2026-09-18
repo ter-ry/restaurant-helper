@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
+import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Moon, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, Sun, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -83,6 +83,10 @@ export function PilotWorkspaceLayout() {
   const [settingsDraft, setSettingsDraft] = useState<PilotLocation | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window === "undefined") return "dark";
+    return window.localStorage.getItem("flowtally:pilot-theme") === "light" ? "light" : "dark";
+  });
   const [operationalAttention, setOperationalAttention] = useState<{ reorder: number }>({ reorder: 0 });
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") {
@@ -142,6 +146,11 @@ export function PilotWorkspaceLayout() {
   useEffect(() => {
     window.localStorage.setItem("flowtally:pilot-sidebar-collapsed", String(desktopSidebarCollapsed));
   }, [desktopSidebarCollapsed]);
+
+  useEffect(() => {
+    window.localStorage.setItem("flowtally:pilot-theme", theme);
+    document.documentElement.dataset.flowtallyTheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -374,7 +383,7 @@ export function PilotWorkspaceLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-ink">
+    <div className={`pilot-theme pilot-theme-${theme} min-h-screen text-ink`}>
       <AnalyticsTracker />
       <div className="xl:flex xl:h-dvh xl:overflow-hidden">
         <aside
@@ -475,7 +484,7 @@ export function PilotWorkspaceLayout() {
               <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}>
                 <UserCircle className="h-4 w-4" />
               </button>
-              {accountMenuOpen ? <div className="absolute right-4 top-14 z-40 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
+              {accountMenuOpen ? <div className="absolute right-4 top-14 z-40 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><span aria-hidden="true">{theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</span>{theme === "dark" ? "Use light theme" : "Use dark theme"}</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => void signOut()}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
             </div>
 
             <div className="hidden items-center justify-between gap-4 px-5 py-3 xl:flex">
@@ -500,6 +509,16 @@ export function PilotWorkspaceLayout() {
                 >
                   <RefreshCw className="h-4 w-4" />
                   Refresh session
+                </button>
+                <button
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  type="button"
+                  aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+                  title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+                  onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+                >
+                  {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  {theme === "dark" ? "Light" : "Dark"}
                 </button>
                 <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" aria-expanded={accountMenuOpen} aria-label="Open account menu" onClick={() => setAccountMenuOpen((value) => !value)}><UserCircle className="h-4 w-4" />Account</button>
                 {accountMenuOpen ? <div className="absolute right-5 top-16 z-40 w-80 rounded-2xl border border-line bg-white p-4 shadow-xl" role="menu"><p className="truncate font-semibold text-ink">{user?.email}</p><p className="mt-1 text-sm text-muted">{organization.name} · {locationLabel}</p><button className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" type="button" onClick={openSettings}><Settings className="h-4 w-4" />Settings</button><Link className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold hover:bg-slate-50" to="/"><ExternalLink className="h-4 w-4" />Public site</Link><button className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50" type="button" onClick={() => { setAccountMenuOpen(false); void signOut(); }}><LogOut className="h-4 w-4" />Sign out</button></div> : null}
