@@ -4,7 +4,7 @@ import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, Clipboa
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
 import { usePilotSession } from "./PilotSessionProvider";
-import { fetchPilotAttention, updatePilotLocation, type PilotLocation } from "./pilotApi";
+import { fetchPilotAttention, prefetchPilotData, updatePilotLocation, type PilotLocation } from "./pilotApi";
 import { initAnalytics, trackPageView } from "../lib/analytics";
 import { demoReadOnly } from "./pilotConfig";
 
@@ -140,6 +140,18 @@ export function PilotWorkspaceLayout() {
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+    };
+  }, [activeOrganizationId, activeLocationId]);
+
+  useEffect(() => {
+    if (!activeOrganizationId || !activeLocationId) return;
+    const run = () => prefetchPilotData(["/api/pilot/inventory", "/api/pilot/purchases"]);
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number; cancelIdleCallback?: (handle: number) => void };
+    const usesIdleCallback = Boolean(idleWindow.requestIdleCallback);
+    const idle = usesIdleCallback ? idleWindow.requestIdleCallback!(run, { timeout: 1500 }) : window.setTimeout(run, 350);
+    return () => {
+      if (usesIdleCallback) idleWindow.cancelIdleCallback?.(idle);
+      else window.clearTimeout(idle);
     };
   }, [activeOrganizationId, activeLocationId]);
 

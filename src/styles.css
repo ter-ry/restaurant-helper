@@ -404,14 +404,15 @@ textarea.input {
 }
 
 .pilot-theme .pilot-reorder-badge {
-  background: var(--pilot-text) !important;
-  color: var(--pilot-surface) !important;
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
   box-shadow: none;
 }
 
 .pilot-theme-dark .pilot-reorder-badge {
-  background: #f3f6f8 !important;
-  color: #0a0f14 !important;
+  background: #334155 !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px #64748b;
 }
 
 .pilot-theme-dark .text-amber-900,
@@ -526,6 +527,11 @@ textarea.input {
   border-color: var(--pilot-line);
 }
 
+.pilot-theme .workspace-table-wrap {
+  max-height: min(60vh, 34rem);
+  overflow: auto;
+}
+
 .pilot-theme-dark .workspace-table-wrap th,
 .pilot-theme-dark .pilot-inventory-reference thead {
   background: #17232d !important;
@@ -547,7 +553,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .pilot-stock-counts-page .workspace-table-wrap {
-  overflow-y: hidden;
+  overflow: auto;
 }
 
 .pilot-theme-dark .pilot-stock-counts-page,

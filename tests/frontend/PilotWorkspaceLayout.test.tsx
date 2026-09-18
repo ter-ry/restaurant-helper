@@ -89,7 +89,9 @@ describe("PilotWorkspaceLayout", () => {
   it("shows an actionable reorder badge and omits it when pressure is clear", async () => {
     const firstRender = renderLayout("/app/inventory");
 
-    expect(await screen.findByLabelText("1 needs attention")).toBeVisible();
+    const badge = await screen.findByLabelText("1 needs attention");
+    expect(badge).toBeVisible();
+    expect(badge).toHaveClass("pilot-reorder-badge");
 
     mockAttention.fetchPilotAttention.mockResolvedValueOnce({ reorder: { count: 0 } });
     firstRender.unmount();

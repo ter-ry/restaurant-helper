@@ -160,6 +160,13 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
   return response;
 }
 
+/** Warm only the two most likely operational destinations during browser idle time. */
+export function prefetchPilotData(paths: string[]) {
+  for (const path of paths.slice(0, 2)) {
+    void requestJson(path).catch(() => undefined);
+  }
+}
+
 export async function getPilotCsrfToken() {
   const payload = await requestJson<{ csrfToken: string }>("/api/auth/csrf");
   return payload.csrfToken;

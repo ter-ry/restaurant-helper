@@ -27,4 +27,14 @@ describe("pilot data cache", () => {
     await getPilotCached("/api/pilot/dashboard", loader);
     expect(loader).toHaveBeenCalledTimes(2);
   });
+
+  it("serves expired data immediately while revalidating in the background", async () => {
+    clearPilotDataCache();
+    setPilotCacheScope("user-1:org-1:location-1");
+    const loader = vi.fn().mockResolvedValueOnce("first").mockResolvedValueOnce("fresh");
+    await expect(getPilotCached("/api/pilot/dashboard", loader, 1)).resolves.toBe("first");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await expect(getPilotCached("/api/pilot/dashboard", loader, 1)).resolves.toBe("first");
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
 });

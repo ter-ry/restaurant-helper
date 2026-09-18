@@ -203,6 +203,15 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByText("29.2%")).toBeVisible();
     expect(screen.queryByText("High cost")).not.toBeInTheDocument();
     expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Item",
+      "Category",
+      "Price",
+      "Cost",
+      "Food cost",
+      "Gross profit",
+      "Status",
+    ]);
   });
 
   it("starts in browse mode and opens deliberate recipe and menu-item editors", async () => {
