@@ -345,7 +345,7 @@ export function PilotSquarePage() {
           <Card className="workspace-card">
             <SectionHeader title="Connection and sync" description="Connection state, sync controls, and the latest imported sales summary." />
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={connectionReady ? "Square is connected to this organization." : "Connect Square before syncing data."} tone={squareStatusTone} />
+              <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={connectionReady ? "Simulated Square connection for this public demo; no merchant account is connected." : "The demo connection is unavailable. Real merchant connections are not used here."} tone={squareStatusTone} />
               <MetricCard label="Sync" value={connection?.syncStatus ?? "idle"} detail={connection?.syncError ? connection.syncError : "Manual syncs are available when connected."} tone={connection?.syncStatus === "error" ? "danger" : "neutral"} />
               <MetricCard label="Last sync" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "never"} detail="The newest location, catalog, or order sync time." tone="neutral" />
             </div>

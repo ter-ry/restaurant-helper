@@ -178,18 +178,6 @@ textarea.input {
   background: #f8fafc;
 }
 
-.pilot-usage-shell > div {
-  width: 100%;
-  max-width: 1760px;
-  padding: 1rem 2rem;
-}
-
-@media (max-width: 639px) {
-  .pilot-usage-shell > div {
-    padding: 1rem;
-  }
-}
-
 .reveal {
   animation: reveal-up 0.8s ease both;
   animation-timeline: view();
@@ -264,7 +252,7 @@ textarea.input {
   --pilot-line: #e2e8f0;
   --pilot-text: #0f172a;
   --pilot-muted: #64748b;
-  --pilot-accent: #14b8a6;
+  --pilot-accent: #1e3a5f;
   background: var(--pilot-bg);
   color: var(--pilot-text);
 }
@@ -276,7 +264,7 @@ textarea.input {
   --pilot-line: #293743;
   --pilot-text: #e7eef3;
   --pilot-muted: #91a2af;
-  --pilot-accent: #2dd4bf;
+  --pilot-accent: #dbe7f3;
 }
 
 .pilot-theme-dark .bg-slate-50,
@@ -351,6 +339,63 @@ textarea.input {
 .pilot-theme-dark .pilot-usage-shell {
   min-height: 0;
   background: transparent !important;
+}
+
+/* Operational surfaces use a restrained navy/neutral palette. Semantic text,
+   icons, and labels continue to carry status meaning without loud panels. */
+.pilot-theme .bg-brand-50,
+.pilot-theme .bg-brand-50\/40,
+.pilot-theme .bg-brand-50\/50,
+.pilot-theme .bg-amber-50,
+.pilot-theme .bg-amber-50\/50,
+.pilot-theme .bg-amber-50\/70,
+.pilot-theme .bg-amber-100,
+.pilot-theme .bg-orange-50,
+.pilot-theme .bg-orange-100,
+.pilot-theme .bg-orange-200,
+.pilot-theme .bg-yellow-50,
+.pilot-theme .bg-emerald-50,
+.pilot-theme .bg-emerald-50\/50,
+.pilot-theme .bg-emerald-100 {
+  background-color: var(--pilot-surface-muted) !important;
+  background-image: none !important;
+}
+
+.pilot-theme .border-brand-100,
+.pilot-theme .border-amber-200,
+.pilot-theme .border-amber-300,
+.pilot-theme .border-orange-200,
+.pilot-theme .border-yellow-200,
+.pilot-theme .border-emerald-200,
+.pilot-theme .border-emerald-300 {
+  border-color: var(--pilot-line) !important;
+}
+
+.pilot-theme .text-brand-700,
+.pilot-theme .text-brand-800,
+.pilot-theme .text-brand-900,
+.pilot-theme .text-amber-700,
+.pilot-theme .text-amber-800,
+.pilot-theme .text-amber-900,
+.pilot-theme .text-amber-950,
+.pilot-theme .text-orange-700,
+.pilot-theme .text-orange-900,
+.pilot-theme .text-emerald-700,
+.pilot-theme .text-emerald-800,
+.pilot-theme .text-emerald-900,
+.pilot-theme .text-emerald-950 {
+  color: var(--pilot-text) !important;
+}
+
+.pilot-theme .pilot-reorder-badge {
+  background: var(--pilot-text) !important;
+  color: var(--pilot-surface) !important;
+  box-shadow: none;
+}
+
+.pilot-theme-dark .pilot-reorder-badge {
+  background: #f3f6f8 !important;
+  color: #0a0f14 !important;
 }
 
 .pilot-theme-dark .text-amber-900,

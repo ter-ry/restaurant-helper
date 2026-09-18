@@ -7,15 +7,16 @@ interface PageLayoutProps {
   description?: string;
   children: ReactNode;
   className?: string;
+  embedded?: boolean;
 }
 
-export function PageLayout({ title, eyebrow, description, children, className = "" }: PageLayoutProps) {
+export function PageLayout({ title, eyebrow, description, children, className = "", embedded = false }: PageLayoutProps) {
   const demo = useDemoProfile();
   const resolvedEyebrow = eyebrow ?? `${demo.customization.restaurantName} / ${demo.period}`;
 
   return (
-    <main className={`min-h-screen bg-slate-50 ${className}`}>
-      <div className="mx-auto max-w-7xl px-5 py-7 lg:px-8">
+    <main className={`${embedded ? "" : "min-h-screen bg-slate-50"} ${className}`}>
+      <div className={embedded ? "" : "mx-auto max-w-7xl px-5 py-7 lg:px-8"}>
         <div className="mb-6">
           <p className="text-sm font-semibold uppercase tracking-wide text-muted">{resolvedEyebrow}</p>
           <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
