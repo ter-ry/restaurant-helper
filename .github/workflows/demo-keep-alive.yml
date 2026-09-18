@@ -1,0 +1,60 @@
+name: Demo backend keep-alive
+
+on:
+  # Non-boundary minutes reduce scheduler congestion. This is intentionally
+  # disabled unless the repository variable is exactly "true".
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Run one warm-up request (does not enable keep-alive)"
+        required: true
+        default: warm-up
+        type: choice
+        options:
+          - warm-up
+
+concurrency:
+  group: demo-backend-keep-alive
+  cancel-in-progress: false
+
+env:
+  DEMO_HEALTH_URL: https://flowtally-api-demo.onrender.com/api/health
+
+jobs:
+  scheduled-health-check:
+    name: Scheduled demo health check
+    if: ${{ github.event_name == 'schedule' && vars.DEMO_KEEP_ALIVE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping isolated demo backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          echo "GET ${DEMO_HEALTH_URL}"
+          curl --fail --silent --show-error --max-time 90 \
+            --retry 1 --retry-delay 5 --retry-max-time 105 \
+            --output /dev/null "${DEMO_HEALTH_URL}"
+          elapsed=$(( $(date +%s) - started ))
+          echo "Demo health responded successfully in ${elapsed}s."
+
+  manual-warm-up:
+    name: Warm up demo now
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'warm-up' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send one bounded warm-up request
+        shell: bash
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          echo "One-time warm-up: GET ${DEMO_HEALTH_URL}"
+          curl --fail --silent --show-error --max-time 90 \
+            --retry 1 --retry-delay 5 --retry-max-time 105 \
+            --output /dev/null "${DEMO_HEALTH_URL}"
+          elapsed=$(( $(date +%s) - started ))
+          echo "Demo warm-up succeeded in ${elapsed}s. This did not enable recurring keep-alive."
