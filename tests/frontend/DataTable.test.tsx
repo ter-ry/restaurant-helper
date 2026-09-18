@@ -45,4 +45,23 @@ describe("DataTable sorting", () => {
     fireEvent.click(screen.getByRole("button", { name: /Amount/ }));
     expect(names()).toEqual(["Apple", "bread", "Zucchini"]);
   });
+
+  it("keeps invalid dates last when sorting descending", () => {
+    const dateRows = [
+      { name: "Missing", date: new Date("invalid") },
+      { name: "Older", date: new Date("2026-01-01") },
+      { name: "Newer", date: new Date("2026-02-01") },
+    ];
+    render(
+      <DataTable
+        columns={[{ header: "Date", accessor: (row) => Number.isFinite(row.date.getTime()) ? row.date.toISOString() : "Invalid", sortValue: (row) => row.date }, { header: "Name", accessor: "name" }]}
+        data={dateRows}
+        getRowKey={(row) => row.name}
+      />,
+    );
+    const date = screen.getByRole("button", { name: /Date/ });
+    fireEvent.click(date);
+    fireEvent.click(date);
+    expect([...screen.getAllByRole("row")].slice(1).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["Newer", "Older", "Missing"]);
+  });
 });

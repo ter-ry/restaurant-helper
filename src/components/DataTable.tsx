@@ -30,10 +30,11 @@ export function sortRows<T>(data: T[], getValue: (row: T) => string | number | D
       const bt = b instanceof Date ? b.getTime() : new Date(String(b)).getTime();
       const aValid = Number.isFinite(at);
       const bValid = Number.isFinite(bt);
-      if (!aValid && !bValid) result = 0;
-      else if (!aValid) result = 1;
-      else if (!bValid) result = -1;
-      else result = at - bt;
+      // Invalid dates are missing values and must remain last in either direction.
+      if (!aValid && !bValid) return 0;
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+      result = at - bt;
     } else if (typeof a === "number" && typeof b === "number") result = a - b;
     else result = String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
     return direction === "asc" ? result : -result;
