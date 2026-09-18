@@ -103,7 +103,7 @@ async function capture(browser, name, viewport, theme) {
   if (!(await page.getByRole("heading", { name: "Inventory" }).count())) {
     throw new Error(`Inventory fixture did not render: ${(await page.locator("body").innerText()).slice(0, 500)}`);
   }
-  await page.screenshot({ path: path.join(artifactDir, `${name}.png`), fullPage: true });
+  await page.screenshot({ path: path.join(artifactDir, `${name}.png`), fullPage: false });
   await page.close();
 }
 
