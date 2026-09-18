@@ -20,25 +20,25 @@ export function ReportsPage() {
     .slice(0, 5);
 
   const supplierColumns: Column<SupplierSpend>[] = [
-    { header: "Supplier", accessor: "supplier" },
-    { header: "Monthly spend", accessor: (row) => formatCurrency(row.spend) },
-    { header: "Invoices", accessor: "invoices" },
-    { header: "Avg price move", accessor: (row) => <Badge tone={row.change >= 8 ? "danger" : row.change >= 5 ? "warning" : "neutral"}>{formatPercent(row.change)}</Badge> },
+    { header: "Supplier", accessor: "supplier", sortValue: (row) => row.supplier },
+    { header: "Monthly spend", accessor: (row) => formatCurrency(row.spend), sortValue: (row) => row.spend },
+    { header: "Invoices", accessor: "invoices", sortValue: (row) => row.invoices },
+    { header: "Avg price move", accessor: (row) => <Badge tone={row.change >= 8 ? "danger" : row.change >= 5 ? "warning" : "neutral"}>{formatPercent(row.change)}</Badge>, sortValue: (row) => row.change },
   ];
 
   const categoryColumns: Column<CategorySpend>[] = [
-    { header: "Category", accessor: "category" },
-    { header: "Spend", accessor: (row) => formatCurrency(row.spend) },
-    { header: "Share of spend", accessor: (row) => `${row.share.toFixed(1)}%` },
+    { header: "Category", accessor: "category", sortValue: (row) => row.category },
+    { header: "Spend", accessor: (row) => formatCurrency(row.spend), sortValue: (row) => row.spend },
+    { header: "Share of spend", accessor: (row) => `${row.share.toFixed(1)}%`, sortValue: (row) => row.share },
   ];
 
   const increaseColumns: Column<PriceChange>[] = [
-    { header: "Item", accessor: "item" },
-    { header: "Supplier", accessor: "supplier" },
-    { header: "Category", accessor: "category" },
-    { header: "Was", accessor: (row) => formatCurrency(row.previousPrice) },
-    { header: "Now", accessor: (row) => formatCurrency(row.currentPrice) },
-    { header: "Change", accessor: (row) => <Badge tone={row.severity === "High" ? "danger" : "warning"}>{formatPercent(row.changePercent)}</Badge> },
+    { header: "Item", accessor: "item", sortValue: (row) => row.item },
+    { header: "Supplier", accessor: "supplier", sortValue: (row) => row.supplier },
+    { header: "Category", accessor: "category", sortValue: (row) => row.category },
+    { header: "Was", accessor: (row) => formatCurrency(row.previousPrice), sortValue: (row) => row.previousPrice },
+    { header: "Now", accessor: (row) => formatCurrency(row.currentPrice), sortValue: (row) => row.currentPrice },
+    { header: "Change", accessor: (row) => <Badge tone={row.severity === "High" ? "danger" : "warning"}>{formatPercent(row.changePercent)}</Badge>, sortValue: (row) => row.changePercent },
   ];
 
   const showExportMessage = () => {

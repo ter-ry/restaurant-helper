@@ -30,16 +30,17 @@ export function ItemsPage() {
   );
 
   const columns: Column<TrackedItem>[] = [
-    { header: "Normalized item name", accessor: "name" },
-    { header: "Category", accessor: "category" },
-    { header: "Preferred supplier", accessor: "preferredSupplier" },
-    { header: "Last price", accessor: (row) => formatCurrency(row.lastPrice) },
-    { header: "Previous price", accessor: (row) => formatCurrency(row.previousPrice) },
+    { header: "Normalized item name", accessor: "name", sortValue: (row) => row.name },
+    { header: "Category", accessor: "category", sortValue: (row) => row.category },
+    { header: "Preferred supplier", accessor: "preferredSupplier", sortValue: (row) => row.preferredSupplier },
+    { header: "Last price", accessor: (row) => formatCurrency(row.lastPrice), sortValue: (row) => row.lastPrice },
+    { header: "Previous price", accessor: (row) => formatCurrency(row.previousPrice), sortValue: (row) => row.previousPrice },
     {
       header: "Change %",
+      sortValue: (row) => row.changePercent,
       accessor: (row) => <Badge tone={row.changePercent > 10 ? "danger" : row.changePercent >= 5 ? "warning" : row.changePercent < 0 ? "success" : "neutral"}>{formatPercent(row.changePercent)}</Badge>,
     },
-    { header: "Last purchased date", accessor: (row) => formatDate(row.lastPurchasedDate) },
+    { header: "Last purchased date", accessor: (row) => formatDate(row.lastPurchasedDate), sortValue: (row) => new Date(row.lastPurchasedDate) },
   ];
 
   return (
