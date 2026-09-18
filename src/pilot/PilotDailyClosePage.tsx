@@ -209,7 +209,7 @@ export function PilotDailyClosePage() {
           ["Review", data?.exceptions ? (data.exceptions.length ? "Needs review" : "Complete") : "Not evaluated"],
         ].map(([label, state]) => {
           const tone = state === "Complete" ? "border-emerald-200 bg-emerald-50" : state === "Needs review" ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50";
-          return <div key={String(label)} className={`rounded-xl border p-3 ${tone}`}><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-sm font-semibold text-ink">{state}</p></div>;
+          return <div key={String(label)} data-state={String(state).toLowerCase().replace(/\s+/g, "-")} className={`daily-close-progress-card rounded-xl border p-3 ${tone}`}><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-sm font-semibold text-ink">{state}</p></div>;
         })}
       </div>
       <Card className="p-3">
@@ -404,7 +404,7 @@ export function PilotDailyClosePage() {
               </div>
 
               {data?.exceptions?.length ? (
-                <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
                   <p className="text-sm font-bold text-amber-900">Exceptions to review</p>
                   <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
                     {data.exceptions.map((exception) => (
@@ -416,7 +416,7 @@ export function PilotDailyClosePage() {
                   </ul>
                 </div>
               ) : (
-                <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
+                <div className="daily-close-no-blockers rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
                   <div className="flex items-center gap-2 font-bold">
                     <CheckCircle2 className="h-4 w-4" />
                     No blockers

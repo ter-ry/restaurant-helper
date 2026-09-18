@@ -1072,7 +1072,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
             {(data?.invoices ?? []).filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
-              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className="w-full rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-3 text-left transition hover:shadow-soft">
+              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className="purchase-review-item w-full rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-3 text-left transition hover:shadow-soft">
                 <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></div>
                 <div className="mt-2 flex items-center justify-between text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} items</span></div>
               </button>

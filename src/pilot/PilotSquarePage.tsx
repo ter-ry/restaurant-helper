@@ -325,7 +325,7 @@ export function PilotSquarePage() {
           ["Mapping health", initialLoading ? "—" : `${mappedMenus}/${mappingCoverage.totalVariationCount || 0} mapped`, mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"],
           ["Sales sync", initialLoading ? "—" : connection?.syncStatus === "error" ? "Needs attention" : latestDailySale ? "Up to date" : "Sync sales", connection?.syncStatus === "error" ? "danger" : "success"],
         ].map(([label, value, tone]) => (
-          <div key={label} className="rounded-2xl border border-line bg-white p-4 shadow-soft">
+          <div key={label} className="square-status-card flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-line bg-white p-4 shadow-soft">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
             <Badge tone={tone as "success" | "warning" | "danger"}>{value}</Badge>
           </div>
