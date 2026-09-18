@@ -244,6 +244,192 @@ textarea.input {
   }
 }
 
+/* Operational theme tokens. The public marketing/demo surfaces keep their existing palette. */
+.pilot-theme {
+  --pilot-bg: #f8fafc;
+  --pilot-surface: #ffffff;
+  --pilot-surface-muted: #f1f5f9;
+  --pilot-line: #e2e8f0;
+  --pilot-text: #0f172a;
+  --pilot-muted: #64748b;
+  --pilot-accent: #14b8a6;
+  background: var(--pilot-bg);
+  color: var(--pilot-text);
+}
+
+.pilot-theme-dark {
+  --pilot-bg: #0a0f14;
+  --pilot-surface: #111820;
+  --pilot-surface-muted: #18232d;
+  --pilot-line: #293743;
+  --pilot-text: #e7eef3;
+  --pilot-muted: #91a2af;
+  --pilot-accent: #2dd4bf;
+}
+
+.pilot-theme-dark .bg-slate-50,
+.pilot-theme-dark .bg-white,
+.pilot-theme-dark .surface-card,
+.pilot-theme-dark .surface-panel,
+.pilot-theme-dark .surface-section {
+  background: var(--pilot-surface) !important;
+  background-image: none;
+}
+
+.pilot-theme-dark .bg-slate-50,
+.pilot-theme-dark .surface-section {
+  background: var(--pilot-surface-muted) !important;
+}
+
+.pilot-theme-dark .text-ink,
+.pilot-theme-dark .text-slate-700,
+.pilot-theme-dark .text-slate-600 {
+  color: var(--pilot-text) !important;
+}
+
+.pilot-theme-dark .text-muted,
+.pilot-theme-dark .text-slate-500,
+.pilot-theme-dark .text-slate-400 {
+  color: var(--pilot-muted) !important;
+}
+
+.pilot-theme-dark .border-line,
+.pilot-theme-dark .border-slate-200,
+.pilot-theme-dark .border-slate-300 {
+  border-color: var(--pilot-line) !important;
+}
+
+.pilot-theme-dark .bg-ink {
+  background: #1b2731 !important;
+}
+
+.pilot-theme-dark .bg-brand-50 {
+  background: rgba(20, 184, 166, 0.13) !important;
+}
+
+.pilot-theme-dark .text-brand-700,
+.pilot-theme-dark .text-brand-900 {
+  color: var(--pilot-accent) !important;
+}
+
+.pilot-theme-dark .text-brand-100 {
+  color: #99f6e4 !important;
+}
+
+.pilot-theme-dark .input {
+  background: #0d151c;
+  border-color: var(--pilot-line);
+  color: var(--pilot-text);
+}
+
+.pilot-theme-dark .input::placeholder {
+  color: #718391;
+}
+
+.pilot-theme-dark .pilot-badge-neutral,
+.pilot-theme-dark .pilot-badge-info {
+  background: #1b2a34 !important;
+  color: #c2d1da !important;
+}
+
+.pilot-theme-dark .pilot-badge-success {
+  background: rgba(20, 184, 166, 0.16) !important;
+  color: #6ee7d8 !important;
+}
+
+.pilot-theme-dark .pilot-badge-warning,
+.pilot-theme-dark .pilot-badge-orange {
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fcd34d !important;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.4);
+}
+
+.pilot-theme-dark .pilot-badge-danger,
+.pilot-theme-dark .pilot-badge-critical {
+  background: rgba(248, 113, 113, 0.14) !important;
+  color: #fda4af !important;
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32);
+}
+
+.pilot-theme-dark .pilot-context select {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.pilot-theme-dark .pilot-tabs {
+  background: #14212c !important;
+}
+
+.pilot-theme-dark .pilot-tab-badge {
+  background: rgba(20, 184, 166, 0.14) !important;
+  color: #6ee7d8 !important;
+}
+
+.pilot-theme-dark .pilot-tabs [role="tab"][aria-selected="true"] {
+  background: #0d1821 !important;
+  color: #f8fafc !important;
+}
+
+.pilot-theme-dark .hover\:bg-slate-100:hover,
+.pilot-theme-dark .hover\:bg-slate-50:hover {
+  background: #1b2a34 !important;
+}
+
+.pilot-theme-dark .hover\:bg-brand-50:hover {
+  background: rgba(20, 184, 166, 0.13) !important;
+}
+
+.pilot-theme-dark .disabled\:bg-slate-100:disabled {
+  background: #18232d !important;
+}
+
+@media (max-width: 639px) {
+  .pilot-inventory-reference .section-header {
+    margin-bottom: 0.5rem;
+  }
+}
+
+.pilot-theme-dark .workspace-table-wrap,
+.pilot-theme-dark .pilot-inventory-reference > div {
+  border-color: var(--pilot-line);
+}
+
+.pilot-theme-dark .workspace-table-wrap th,
+.pilot-theme-dark .pilot-inventory-reference thead {
+  background: #17232d !important;
+  color: var(--pilot-muted) !important;
+}
+
+.pilot-theme-dark .workspace-table-wrap td,
+.pilot-theme-dark .workspace-table-wrap th,
+.pilot-theme-dark .pilot-inventory-reference td,
+.pilot-theme-dark .pilot-inventory-reference th {
+  border-color: var(--pilot-line) !important;
+}
+
+.pilot-theme-dark .pilot-inventory-reference tbody tr,
+.pilot-theme-dark .pilot-inventory-reference tbody tr.bg-white {
+  background: var(--pilot-surface) !important;
+}
+
+.pilot-theme-dark .pilot-inventory-reference tbody tr:hover {
+  background: #1a3033 !important;
+}
+
+.pilot-theme-dark .shadow-soft,
+.pilot-theme-dark .shadow-xl,
+.pilot-theme-dark .shadow-2xl {
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28) !important;
+}
+
+.pilot-theme-dark .rounded-2xl {
+  border-radius: 0.65rem;
+}
+
+.pilot-theme-dark .rounded-3xl {
+  border-radius: 0.8rem;
+}
+
 @media (max-width: 767px) {
   .hero-grid {
     min-height: auto;

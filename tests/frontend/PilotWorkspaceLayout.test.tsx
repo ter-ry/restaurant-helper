@@ -48,6 +48,7 @@ function renderLayout(initialPath = "/app/dashboard") {
 
 describe("PilotWorkspaceLayout", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mockAttention.fetchPilotAttention.mockReset();
     mockAttention.fetchPilotAttention.mockResolvedValue({ reorder: { count: 1 } });
     mockSession.signOut.mockReset();
@@ -71,6 +72,18 @@ describe("PilotWorkspaceLayout", () => {
     expect(screen.getByText("Operations")).toBeVisible();
     expect(screen.getByText("Menu & Cost")).toBeVisible();
     expect(screen.getByText("Sales & Close")).toBeVisible();
+  });
+
+  it("defaults to dark theme and persists an accessible light-theme toggle", () => {
+    renderLayout();
+
+    const toggle = screen.getByRole("button", { name: "Switch to light theme" });
+    expect(document.documentElement.dataset.flowtallyTheme).toBe("dark");
+    fireEvent.click(toggle);
+
+    expect(document.documentElement.dataset.flowtallyTheme).toBe("light");
+    expect(window.localStorage.getItem("flowtally:pilot-theme")).toBe("light");
+    expect(screen.getByRole("button", { name: "Switch to dark theme" })).toBeVisible();
   });
 
   it("shows an actionable reorder badge and omits it when pressure is clear", async () => {

@@ -17,7 +17,7 @@ export function WorkspaceTabs({ tabs, value, onChange, className, ariaLabel = "W
   return (
     <div
       aria-label={ariaLabel}
-      className={`flex flex-wrap gap-2 rounded-2xl border border-line bg-slate-50 p-2 ${className ?? ""}`.trim()}
+      className={`pilot-tabs flex flex-wrap gap-2 rounded-2xl border border-line bg-slate-50 p-2 ${className ?? ""}`.trim()}
       role="tablist"
     >
       {tabs.map((tab) => {
@@ -36,7 +36,7 @@ export function WorkspaceTabs({ tabs, value, onChange, className, ariaLabel = "W
             type="button"
           >
             <span>{tab.label}</span>
-            {tabBadge !== undefined && tabBadge !== null ? <span className={`rounded-full px-2 py-0.5 text-xs ${active ? "bg-brand-50 text-brand-700" : "bg-slate-200 text-muted"}`}>{tabBadge}</span> : null}
+            {tabBadge !== undefined && tabBadge !== null ? <span className={`pilot-tab-badge rounded-full px-2 py-0.5 text-xs ${active ? "bg-brand-50 text-brand-700" : "bg-slate-200 text-muted"}`}>{tabBadge}</span> : null}
           </button>
         );
       })}

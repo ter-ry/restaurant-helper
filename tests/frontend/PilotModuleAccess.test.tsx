@@ -159,8 +159,8 @@ describe("Pilot module access", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Organization")).toBeVisible();
-    expect(screen.getByText("Location")).toBeVisible();
+    expect(screen.getByText("Variance Cafe")).toBeVisible();
+    expect(screen.getByText("Line Kitchen")).toBeVisible();
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
     expect(screen.queryByText("Variance Cafe · Line Kitchen")).not.toBeInTheDocument();
 
