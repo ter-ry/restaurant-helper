@@ -68,7 +68,7 @@ function NavItem({
       <span className="flex h-7 w-7 shrink-0 items-center justify-center text-current">{icon}</span>
       <span className={collapsed ? "sr-only" : "flex min-w-0 flex-1 items-center justify-between gap-2 truncate"}>
         <span className="truncate">{label}</span>
-        {badge && badge > 0 ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900" aria-label={`${badge} needs attention`}>{badge}</span> : null}
+        {badge && badge > 0 ? <span className="pilot-reorder-badge inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900" aria-label={`${badge} needs attention`}>{badge}</span> : null}
       </span>
     </NavLink>
   );
