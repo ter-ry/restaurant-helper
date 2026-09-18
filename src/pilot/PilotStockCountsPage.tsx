@@ -373,8 +373,7 @@ export function PilotStockCountsPage() {
       <Card className="surface-panel workspace-card p-3">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Stock Counts</p>
-            <h1 className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">Stock Counts</h1>
+            <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Stock Counts</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>

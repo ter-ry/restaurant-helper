@@ -429,8 +429,8 @@ export function PilotMenuCostingPage() {
 
       <WorkspaceTabs
         tabs={[
-          { id: "recipes", label: "Recipes", badge: hasLoaded ? formatNumber(recipes.length) : "—" },
           { id: "menu-items", label: "Menu items", badge: hasLoaded ? formatNumber(menuItems.length) : "—" },
+          { id: "recipes", label: "Recipes", badge: hasLoaded ? formatNumber(recipes.length) : "—" },
         ]}
         value={menuTab}
         onChange={(value) => setMenuTab(value as "recipes" | "menu-items")}
@@ -671,8 +671,8 @@ export function PilotMenuCostingPage() {
       ) : (
       <Card className="p-5">
         <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
-        <div className="grid gap-5 xl:grid-cols-[0.78fr_1.22fr]">
-          <div className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
+        <div className="grid gap-5">
+          <div className="max-h-[32rem] space-y-1 overflow-y-auto pr-1">
             {filteredMenuItems.length ? (
               filteredMenuItems.map((menuItem) => (
                 <button

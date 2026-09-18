@@ -536,7 +536,7 @@ export function PilotInventoryPage() {
                   const key = ({ Item: "item", Category: "category", "On hand": "onHand", Unit: "unit", Minimum: "minimum", PAR: "par", "Latest cost": "latestCost", "Reorder status": "status" } as const)[heading];
                   const active = itemSort?.key === key;
                   return (
-                    <th key={heading} className="border-b border-line px-3 py-2.5 font-bold" aria-sort={active ? (itemSort?.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <th key={heading} title={heading === "PAR" ? "PAR: target stock level" : heading === "Minimum" ? "Minimum: urgent reorder threshold" : undefined} className="border-b border-line px-3 py-2.5 font-bold" aria-sort={active ? (itemSort?.direction === "asc" ? "ascending" : "descending") : "none"}>
                     <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => setItemSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>
                       {heading}<span aria-hidden="true" className="text-[10px]">{active ? (itemSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span>
                     </button>
@@ -580,11 +580,6 @@ export function PilotInventoryPage() {
         </div>
       </div>
       <p className="mt-2 text-xs text-muted sm:hidden">Swipe horizontally to see cost and reorder status.</p>
-
-      <div className="mt-3 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted">
-        <p className="font-semibold text-ink">PAR and Minimum</p>
-        <p className="mt-1">PAR is the target stock level. Minimum is the point where reorder becomes urgent.</p>
-      </div>
 
       <div className="mt-3">
         <SectionHeader title="Recent movements" description="What changed most recently." />

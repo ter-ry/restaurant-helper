@@ -257,6 +257,22 @@ textarea.input {
   color: var(--pilot-text);
 }
 
+.pilot-theme > div {
+  min-height: 100dvh;
+  background: var(--pilot-bg);
+}
+
+.pilot-usage-shell > div {
+  width: 100%;
+  max-width: 1760px;
+  margin: 0 auto;
+  padding: 1rem 2rem;
+}
+
+.pilot-usage-shell > div > .mb-6 {
+  margin-bottom: 0.75rem;
+}
+
 .pilot-theme-dark {
   --pilot-bg: #0a0f14;
   --pilot-surface: #111820;
@@ -532,6 +548,23 @@ textarea.input {
 
 .pilot-theme-dark .pilot-stock-counts-page .workspace-table-wrap {
   overflow-y: hidden;
+}
+
+.pilot-theme-dark .pilot-stock-counts-page,
+.pilot-theme-dark .pilot-stock-counts-page > * {
+  background-color: transparent;
+}
+
+.pilot-theme-dark .pilot-stock-counts-page .workspace-table-wrap tbody,
+.pilot-theme-dark .pilot-stock-counts-page .workspace-table-wrap tbody tr,
+.pilot-theme-dark .pilot-stock-counts-page .workspace-table-wrap tbody tr.bg-white {
+  background: var(--pilot-surface) !important;
+}
+
+@media (max-width: 767px) {
+  .pilot-usage-shell > div {
+    padding: 0.75rem 1rem;
+  }
 }
 
 .pilot-theme-dark .pilot-inventory-reference tbody tr:hover {
