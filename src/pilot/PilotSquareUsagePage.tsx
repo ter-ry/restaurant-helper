@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, RefreshCw, Save, Search, Trash2, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
@@ -152,8 +152,10 @@ export function PilotSquareUsagePage() {
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [mappingLoading, setMappingLoading] = useState(true);
+  const [usageLoading, setUsageLoading] = useState(true);
   const [mappingError, setMappingError] = useState<string | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [menuItems, setMenuItems] = useState<SquareUsageMenuItemSummary[]>([]);
@@ -162,6 +164,7 @@ export function PilotSquareUsagePage() {
   const [usage, setUsage] = useState<SquareUsageReport | null>(null);
   const [drafts, setDrafts] = useState<MappingDraft>({});
   const [selectedVarianceId, setSelectedVarianceId] = useState<number | null>(null);
+  const loadGeneration = useRef(0);
 
   useEffect(() => {
     if (selectedLocationId == null && currentLocation?.id != null) {
@@ -175,12 +178,34 @@ export function PilotSquareUsagePage() {
   );
 
   const loadData = useCallback(async () => {
-    if (!organization) return;
+    if (!organization) {
+      ++loadGeneration.current;
+      setLoading(false);
+      setRefreshing(false);
+      setMappingLoading(false);
+      setUsageLoading(false);
+      setMappings([]);
+      setUnmappedVariations([]);
+      setUsage(null);
+      return;
+    }
     setRefreshing(true);
+    setLoading(true);
+    setMappingLoading(true);
+    setUsageLoading(true);
     setMappingError(null);
     setUsageError(null);
-    try {
-      const mappingResponse = await fetchSquareCatalogMappings({ organizationId: organization.id, locationId: selectedLocationId ?? undefined });
+    const generation = ++loadGeneration.current;
+    const isCurrent = () => generation === loadGeneration.current;
+    const mappingRequest = fetchSquareCatalogMappings({ organizationId: organization.id, locationId: selectedLocationId ?? undefined });
+    const usageRequest = fetchSquareUsage({
+      organizationId: organization.id,
+      locationId: selectedLocationId ?? undefined,
+      startAt: new Date(startAt).toISOString(),
+      endAt: new Date(endAt).toISOString(),
+    });
+    const applyMapping = (mappingResponse: Awaited<typeof mappingRequest>) => {
+      if (!isCurrent()) return;
       setMenuItems(mappingResponse.menuItems);
       setMappings(mappingResponse.mappings);
       setUnmappedVariations(mappingResponse.unmappedVariations);
@@ -192,21 +217,31 @@ export function PilotSquareUsagePage() {
           ]),
         ),
       );
-      try {
-        const usageResponse = await fetchSquareUsage({
-          organizationId: organization.id,
-          locationId: selectedLocationId ?? undefined,
-          startAt: new Date(startAt).toISOString(),
-          endAt: new Date(endAt).toISOString(),
-        });
-        setUsage(usageResponse.usage);
-      } catch (error) {
-        setUsage(null);
-        setUsageError(error instanceof Error ? error.message : "Could not load usage variance.");
-      }
-    } catch (error) {
-      setMappingError(error instanceof Error ? error.message : "Could not load Square mappings.");
-    } finally {
+    };
+    const applyUsage = (usageResponse: Awaited<typeof usageRequest>) => {
+      if (isCurrent()) setUsage(usageResponse.usage);
+    };
+    void mappingRequest
+      .then(applyMapping)
+      .catch((error: unknown) => {
+        if (isCurrent()) setMappingError(error instanceof Error ? error.message : "Could not load Square mappings.");
+      })
+      .finally(() => {
+        if (isCurrent()) setMappingLoading(false);
+      });
+    void usageRequest
+      .then(applyUsage)
+      .catch((error: unknown) => {
+        if (isCurrent()) {
+          setUsage(null);
+          setUsageError(error instanceof Error ? error.message : "Could not load usage variance.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent()) setUsageLoading(false);
+      });
+    await Promise.allSettled([mappingRequest, usageRequest]);
+    if (isCurrent()) {
       setLoading(false);
       setRefreshing(false);
     }
@@ -327,7 +362,9 @@ export function PilotSquareUsagePage() {
             </div>
           </div>
 
-          {loading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">{usage || mappings.length ? "Refreshing usage and variance…" : "Loading usage and variance…"}</div> : null}
+          {mappingLoading || usageLoading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">
+            {mappingLoading && usageLoading ? "Loading mappings and usage variance…" : mappingLoading ? "Loading Square mappings…" : "Loading usage variance…"}
+          </div> : null}
           {mappingError ? (
             <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
               <div className="flex items-center gap-2 font-semibold">
@@ -366,7 +403,7 @@ export function PilotSquareUsagePage() {
               <tbody>
                 {topUsageRows.length > 0 ? (
                   topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} onSelect={() => setSelectedVarianceId(row.inventoryItemId)} />)
-                ) : !loading ? (
+                ) : !usageLoading ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-sm text-muted" colSpan={6}>
                       No usage rows are available yet.

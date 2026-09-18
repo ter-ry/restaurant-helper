@@ -2595,6 +2595,7 @@ def _menu_costing_context():
 def _menu_costing_recipe_response(organization_id: int, location_id: int):
     recipes = (
         Recipe.query.filter_by(organization_id=organization_id, location_id=location_id)
+        .options(selectinload(Recipe.ingredients).joinedload(RecipeIngredient.inventory_item))
         .order_by(Recipe.active.desc(), Recipe.name.asc(), Recipe.id.asc())
         .all()
     )
@@ -2604,6 +2605,7 @@ def _menu_costing_recipe_response(organization_id: int, location_id: int):
 def _menu_costing_menu_item_response(organization_id: int, location_id: int):
     menu_items = (
         MenuItem.query.filter_by(organization_id=organization_id, location_id=location_id)
+        .options(joinedload(MenuItem.recipe).selectinload(Recipe.ingredients).joinedload(RecipeIngredient.inventory_item))
         .order_by(MenuItem.active.desc(), MenuItem.category.asc(), MenuItem.name.asc(), MenuItem.id.asc())
         .all()
     )

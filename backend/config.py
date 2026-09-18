@@ -222,6 +222,7 @@ class BaseConfig:
             "SECRET_KEY": _secret_key(cls.mode),
             "SQLALCHEMY_DATABASE_URI": _database_uri(cls.mode),
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+            "FLOWTALLY_PERFORMANCE_DIAGNOSTICS": _env_bool("FLOWTALLY_PERFORMANCE_DIAGNOSTICS", False),
             "SQLALCHEMY_ENGINE_OPTIONS": _database_engine_options(cls.mode),
             "JSON_SORT_KEYS": False,
             "SESSION_COOKIE_NAME": os.environ.get("SESSION_COOKIE_NAME", "flowtally_pilot_session"),
