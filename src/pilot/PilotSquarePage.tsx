@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
@@ -6,6 +6,7 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { SectionHeader } from "../components/SectionHeader";
 import { usePilotSession } from "./PilotSessionProvider";
+import { demoReadOnly } from "./pilotConfig";
 import {
   beginPilotSquareConnection,
   disconnectPilotSquare,
@@ -68,6 +69,7 @@ export function PilotSquarePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [menuImport, setMenuImport] = useState<Awaited<ReturnType<typeof previewPilotSquareMenuImport>> | null>(null);
   const [menuImportLoading, setMenuImportLoading] = useState(false);
+  const loadGeneration = useRef(0);
 
   const currentOrganizationId = organization?.id ?? null;
 
@@ -78,21 +80,27 @@ export function PilotSquarePage() {
 
     setLoading(true);
     setError(null);
-    try {
-      const [status, costing, mappingResponse] = await Promise.all([
-        fetchPilotSquareStatus(currentOrganizationId),
-        fetchPilotMenuCosting(),
-        fetchPilotSquareCatalogMappings(currentOrganizationId),
-      ]);
-      setConnection(status.connection);
-      setMenuCosting(costing);
-      setCatalogMappings(mappingResponse.mappings.length ? mappingResponse.mappings : mappingResponse.unmappedVariations);
-      setMappingCoverage(mappingResponse.mappingCoverage);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load Square.");
-    } finally {
-      setLoading(false);
-    }
+    const generation = ++loadGeneration.current;
+    const isCurrent = () => generation === loadGeneration.current;
+    const failures: string[] = [];
+    const loadSection = async <T,>(request: Promise<T>, onSuccess: (value: T) => void) => {
+      try {
+        const value = await request;
+        if (isCurrent()) onSuccess(value);
+      } catch (err) {
+        failures.push(err instanceof Error ? err.message : "Could not load Square.");
+      }
+    };
+    await Promise.all([
+      loadSection(fetchPilotSquareStatus(currentOrganizationId), (status) => setConnection(status.connection)),
+      loadSection(fetchPilotMenuCosting(), setMenuCosting),
+      loadSection(fetchPilotSquareCatalogMappings(currentOrganizationId), (mappingResponse) => {
+        setCatalogMappings(mappingResponse.mappings.length ? mappingResponse.mappings : mappingResponse.unmappedVariations);
+        setMappingCoverage(mappingResponse.mappingCoverage);
+      }),
+    ]);
+    if (isCurrent() && failures.length) setError(failures.join(" "));
+    if (isCurrent()) setLoading(false);
   };
 
   useEffect(() => {
@@ -255,6 +263,8 @@ export function PilotSquarePage() {
               <Button
                 icon={<Send className="h-4 w-4" />}
                 type="button"
+                disabled={demoReadOnly}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => {
                   if (!currentOrganizationId) {
                     return;
@@ -268,6 +278,8 @@ export function PilotSquarePage() {
               <Button
                 icon={<ExternalLink className="h-4 w-4" />}
                 type="button"
+                disabled={demoReadOnly}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => {
                   if (!currentOrganizationId) {
                     return;
@@ -341,7 +353,8 @@ export function PilotSquarePage() {
             <div className="mt-5 flex flex-wrap gap-2">
               <Button
                 type="button"
-                disabled={!connectionReady || saving !== null}
+                disabled={demoReadOnly || !connectionReady || saving !== null}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => void syncNow()}
               >
                 {saving === "sync-now" ? "Syncing..." : "Sync now"}
@@ -349,7 +362,8 @@ export function PilotSquarePage() {
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!connectionReady || saving !== null}
+                disabled={demoReadOnly || !connectionReady || saving !== null}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => {
                   if (!currentOrganizationId) {
                     return;
@@ -362,7 +376,8 @@ export function PilotSquarePage() {
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!connectionReady || saving !== null}
+                disabled={demoReadOnly || !connectionReady || saving !== null}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => {
                   if (!currentOrganizationId) {
                     return;
@@ -375,7 +390,8 @@ export function PilotSquarePage() {
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!connectionReady || saving !== null}
+                disabled={demoReadOnly || !connectionReady || saving !== null}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => void syncOrders()}
               >
                 {saving === "orders-sync" ? "Syncing orders..." : "Sync orders"}
@@ -486,7 +502,8 @@ export function PilotSquarePage() {
                       </select>
                       <Button
                         type="button"
-                        disabled={!connectionReady || saving !== null || !menuItems.length}
+                        disabled={demoReadOnly || !connectionReady || saving !== null || !menuItems.length}
+                        title={demoReadOnly ? "Read-only demo" : undefined}
                         onClick={() => void saveCatalogMapping(catalogObject.id)}
                       >
                         {saving === `catalog-${catalogObject.id}` ? "Saving..." : "Save mapping"}
@@ -503,10 +520,10 @@ export function PilotSquarePage() {
           <Card className="workspace-card">
             <SectionHeader title="Import Square menu" description="Review sellable Square items, then import them into Flowtally before assigning recipes in Menu Costing." />
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" disabled={!connectionReady || !currentLocation || menuImportLoading} onClick={() => void reviewMenuImport()}>
+              <Button type="button" variant="secondary" disabled={demoReadOnly || !connectionReady || !currentLocation || menuImportLoading} title={demoReadOnly ? "Read-only demo" : undefined} onClick={() => void reviewMenuImport()}>
                 {menuImportLoading ? "Reviewing..." : "Review import"}
               </Button>
-              <Button type="button" disabled={!connectionReady || !currentLocation || menuImportLoading || !menuImport} onClick={() => void runMenuImport()}>
+              <Button type="button" disabled={demoReadOnly || !connectionReady || !currentLocation || menuImportLoading || !menuImport} title={demoReadOnly ? "Read-only demo" : undefined} onClick={() => void runMenuImport()}>
                 {menuImportLoading ? "Importing..." : "Import menu"}
               </Button>
               <Link className="inline-flex min-h-11 items-center rounded-2xl border border-line px-4 py-2 text-sm font-semibold text-ink hover:bg-slate-50" to="/app/menu-costing">Assign recipes in Menu Costing</Link>

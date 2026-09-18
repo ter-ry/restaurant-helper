@@ -56,18 +56,19 @@ export function PriceChangesPage() {
   const highRiskItems = demo.priceChanges.filter((item) => item.severity === "High");
 
   const columns: Column<PriceChange>[] = [
-    { header: "Item", accessor: "item" },
-    { header: "Supplier", accessor: "supplier" },
-    { header: "Category", accessor: "category" },
-    { header: "Previous price", accessor: (row) => formatCurrency(row.previousPrice) },
-    { header: "Current price", accessor: (row) => formatCurrency(row.currentPrice) },
+    { header: "Item", accessor: "item", sortValue: (row) => row.item },
+    { header: "Supplier", accessor: "supplier", sortValue: (row) => row.supplier },
+    { header: "Category", accessor: "category", sortValue: (row) => row.category },
+    { header: "Previous price", accessor: (row) => formatCurrency(row.previousPrice), sortValue: (row) => row.previousPrice },
+    { header: "Current price", accessor: (row) => formatCurrency(row.currentPrice), sortValue: (row) => row.currentPrice },
     {
       header: "% change",
+      sortValue: (row) => row.changePercent,
       accessor: (row) => <Badge tone={row.status === "Increased" ? "danger" : row.status === "Decreased" ? "success" : "neutral"}>{formatPercent(row.changePercent)}</Badge>,
     },
-    { header: "Last updated", accessor: (row) => formatDate(row.dateDetected) },
-    { header: "Status", accessor: (row) => <Badge tone={statusTone(row.status)}>{row.status}</Badge> },
-    { header: "Risk", accessor: (row) => <Badge tone={severityTone(row.severity)}>{row.severity}</Badge> },
+    { header: "Last updated", accessor: (row) => formatDate(row.dateDetected), sortValue: (row) => new Date(row.dateDetected) },
+    { header: "Status", accessor: (row) => <Badge tone={statusTone(row.status)}>{row.status}</Badge>, sortValue: (row) => row.status, sortOrder: ["Increased", "Decreased", "Stable"] },
+    { header: "Risk", accessor: (row) => <Badge tone={severityTone(row.severity)}>{row.severity}</Badge>, sortValue: (row) => row.severity, sortOrder: ["High", "Medium", "Low"] },
   ];
 
   return (

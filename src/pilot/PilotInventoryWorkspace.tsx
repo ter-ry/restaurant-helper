@@ -29,6 +29,8 @@ import {
 import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
 import { usePilotSession } from "./PilotSessionProvider";
+import { demoReadOnly } from "./pilotConfig";
+import { sortRows, type SortDirection } from "../components/DataTable";
 
 interface InventoryDraft {
   id: number | null;
@@ -174,6 +176,7 @@ export function PilotInventoryPage() {
   const [supplierEditorOpen, setSupplierEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -234,6 +237,20 @@ export function PilotInventoryPage() {
     () => suppliers.filter((supplier) => `${supplier.name} ${supplier.categoryFocus} ${supplier.contactName} ${supplier.contactPhone} ${supplier.contactEmail}`.toLowerCase().includes(supplierSearch.toLowerCase())),
     [supplierSearch, suppliers],
   );
+  const sortedItems = useMemo(() => {
+    if (!itemSort) return filteredItems;
+    const getters: Record<string, (item: PilotInventoryItem) => string | number | null> = {
+      item: (item) => item.name,
+      category: (item) => item.category,
+      onHand: (item) => item.currentOnHand,
+      unit: (item) => item.stockUnit,
+      minimum: (item) => item.minQuantity,
+      par: (item) => item.parLevel,
+      latestCost: (item) => item.latestPurchasePrice,
+      status: (item) => stockStatus(item),
+    };
+    return sortRows(filteredItems, getters[itemSort.key] ?? getters.item, itemSort.direction, itemSort.key === "status" ? ["Out of stock", "Reorder now", "Low stock", "In stock"] : undefined);
+  }, [filteredItems, itemSort]);
 
   useEffect(() => {
     if (selectedItem && workspaceMode === "existing" && !isEditing) {
@@ -496,15 +513,21 @@ export function PilotInventoryPage() {
           <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-muted">
               <tr>
-                {["Item", "Category", "On hand", "Unit", "Minimum", "PAR", "Latest cost", "Reorder status"].map((heading) => (
-                  <th key={heading} className="border-b border-line px-4 py-3 font-bold">
-                    {heading}
+                {(["Item", "Category", "On hand", "Unit", "Minimum", "PAR", "Latest cost", "Reorder status"] as const).map((heading) => {
+                  const key = ({ Item: "item", Category: "category", "On hand": "onHand", Unit: "unit", Minimum: "minimum", PAR: "par", "Latest cost": "latestCost", "Reorder status": "status" } as const)[heading];
+                  const active = itemSort?.key === key;
+                  return (
+                  <th key={heading} className="border-b border-line px-4 py-3 font-bold" aria-sort={active ? (itemSort?.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => setItemSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>
+                      {heading}<span aria-hidden="true" className="text-[10px]">{active ? (itemSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span>
+                    </button>
                   </th>
-                ))}
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => {
+              {sortedItems.map((item) => {
                 const status = stockStatus(item);
                 return (
                   <tr key={item.id} className="cursor-pointer border-b border-line bg-white transition hover:bg-brand-50/60" onClick={() => openItem(item.id)}>
@@ -1156,8 +1179,8 @@ export function PilotInventoryPage() {
           </label>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button disabled={saving} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
-            Create item
+          <Button disabled={demoReadOnly || saving} title={demoReadOnly ? "Read-only demo" : undefined} icon={<SquarePen className="h-4 w-4" />} type="button" onClick={() => void saveItem()}>
+            {demoReadOnly ? "Read-only demo" : "Create item"}
           </Button>
         </div>
         {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
@@ -1177,11 +1200,13 @@ export function PilotInventoryPage() {
               <Button
                 icon={<Plus className="h-4 w-4" />}
                 type="button"
+                disabled={demoReadOnly}
+                title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => {
                   setInventoryTab("items");
                   startNewItem();
                 }}
-              >Create item</Button>
+              >{demoReadOnly ? "Read-only demo" : "Create item"}</Button>
               <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
                 Refresh
               </Button>
@@ -1230,7 +1255,7 @@ export function PilotInventoryPage() {
             </label>
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="secondary" type="button" disabled={saving} onClick={() => setAdjustmentModalOpen(false)}>Cancel</Button>
-              <Button disabled={saving || adjustmentDelta === 0} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
+              <Button disabled={demoReadOnly || saving || adjustmentDelta === 0} title={demoReadOnly ? "Read-only demo" : undefined} icon={<Scale className="h-4 w-4" />} type="button" onClick={() => void saveAdjustment()}>
                 {saving ? "Saving…" : "Save stock movement"}
               </Button>
             </div>
@@ -1249,7 +1274,7 @@ export function PilotInventoryPage() {
           <p className="mt-4 text-xs text-muted">Current cost estimate: {(selectedItemDetail?.averageUnitCost ?? draft.averageUnitCost) > 0 ? formatMoney(wasteQuantity * (selectedItemDetail?.averageUnitCost ?? draft.averageUnitCost)) : "Not available until a purchase cost is recorded"}.</p>
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             <Button variant="secondary" type="button" disabled={saving} onClick={() => setWasteModalOpen(false)}>Cancel</Button>
-            <Button disabled={saving || wasteQuantity <= 0} type="button" onClick={() => void saveWaste()}>{saving ? "Saving…" : "Record waste"}</Button>
+            <Button disabled={demoReadOnly || saving || wasteQuantity <= 0} title={demoReadOnly ? "Read-only demo" : undefined} type="button" onClick={() => void saveWaste()}>{demoReadOnly ? "Read-only demo" : saving ? "Saving…" : "Record waste"}</Button>
           </div>
         </Modal>
       ) : null}

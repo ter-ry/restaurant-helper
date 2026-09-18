@@ -412,7 +412,7 @@ export function PilotWorkspaceLayout() {
                     ))}
                   </select>
                 ) : (
-                <p className="font-semibold text-ink">{organization?.name ?? "Flowtally"}</p>
+                <p className="min-w-0 max-w-[9rem] truncate font-semibold text-ink" title={organization?.name ?? "Flowtally"}>{organization?.name ?? "Flowtally"}</p>
                 )}
               </div>
 
@@ -432,7 +432,7 @@ export function PilotWorkspaceLayout() {
                     ))}
                   </select>
                 ) : (
-                  <p className="font-semibold text-ink">{locationLabel}</p>
+                  <p className="min-w-0 max-w-[9rem] truncate font-semibold text-ink" title={locationLabel}>{locationLabel}</p>
                 )}
               </div>
             </div>

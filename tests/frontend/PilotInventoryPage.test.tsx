@@ -294,6 +294,24 @@ describe("PilotInventoryPage", () => {
     expect(await screen.findByRole("columnheader", { name: "Item" })).toBeVisible();
   });
 
+  it("cycles inventory numeric sorting through ascending, descending, and default", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("columnheader", { name: "Item" });
+    const onHand = screen.getByRole("button", { name: /On hand/ });
+    const itemNames = () => [...screen.getAllByRole("row")].slice(1).map((row) => row.querySelector("td p")?.textContent);
+    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes"]);
+    fireEvent.click(onHand);
+    expect(itemNames()).toEqual(["Tomatoes", "Chicken Breast"]);
+    fireEvent.click(onHand);
+    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes"]);
+    fireEvent.click(onHand);
+    expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes"]);
+  });
+
   it("keeps the overview adjustment workflow separate from item notes and blocks zero deltas", async () => {
     render(
       <MemoryRouter initialEntries={["/app/inventory"]}>

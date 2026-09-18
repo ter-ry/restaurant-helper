@@ -18,18 +18,18 @@ export function SuppliersPage() {
 
   const items = demo.trackedItems.filter((item) => item.preferredSupplier === selected.name);
   const columns: Column<Supplier>[] = [
-    { header: "Supplier name", accessor: "name" },
-    { header: "Category focus", accessor: "categoryFocus" },
-    { header: "Spend this period", accessor: (row) => formatCurrency(row.totalSpendMonth) },
-    { header: "Invoices", accessor: "invoicesMonth" },
-    { header: "Items tracked", accessor: "itemsTracked" },
-    { header: "Avg price move", accessor: (row) => <Badge tone={row.averagePriceChange > 7 ? "danger" : "warning"}>{formatPercent(row.averagePriceChange)}</Badge> },
-    { header: "Owner note", accessor: "notes" },
+    { header: "Supplier name", accessor: "name", sortValue: (row) => row.name },
+    { header: "Category focus", accessor: "categoryFocus", sortValue: (row) => row.categoryFocus },
+    { header: "Spend this period", accessor: (row) => formatCurrency(row.totalSpendMonth), sortValue: (row) => row.totalSpendMonth },
+    { header: "Invoices", accessor: "invoicesMonth", sortValue: (row) => row.invoicesMonth },
+    { header: "Items tracked", accessor: "itemsTracked", sortValue: (row) => row.itemsTracked },
+    { header: "Avg price move", accessor: (row) => <Badge tone={row.averagePriceChange > 7 ? "danger" : "warning"}>{formatPercent(row.averagePriceChange)}</Badge>, sortValue: (row) => row.averagePriceChange },
+    { header: "Owner note", accessor: "notes", sortValue: (row) => row.notes },
   ];
   const itemColumns: Column<TrackedItem>[] = [
-    { header: "Item", accessor: "name" },
-    { header: "Last Price", accessor: (row) => formatCurrency(row.lastPrice) },
-    { header: "Change", accessor: (row) => formatPercent(row.changePercent) },
+    { header: "Item", accessor: "name", sortValue: (row) => row.name },
+    { header: "Last Price", accessor: (row) => formatCurrency(row.lastPrice), sortValue: (row) => row.lastPrice },
+    { header: "Change", accessor: (row) => formatPercent(row.changePercent), sortValue: (row) => row.changePercent },
   ];
 
   return (

@@ -183,6 +183,20 @@ describe("PilotStockCountsPage", () => {
     expect(screen.getByText("Count applied")).toBeVisible();
   });
 
+  it("cycles count-sheet expected quantities through ascending, descending, and default", async () => {
+    renderPage();
+    await screen.findByRole("heading", { name: "Stock Counts" });
+    const expected = screen.getByRole("button", { name: /Expected/ });
+    const lineNames = () => [...screen.getAllByRole("row")].slice(-2).map((row) => row.querySelector("td p")?.textContent);
+    expect(lineNames()).toEqual(["Chicken Breast", "Salsa"]);
+    fireEvent.click(expected);
+    expect(lineNames()).toEqual(["Chicken Breast", "Salsa"]);
+    fireEvent.click(expected);
+    expect(lineNames()).toEqual(["Salsa", "Chicken Breast"]);
+    fireEvent.click(expected);
+    expect(lineNames()).toEqual(["Chicken Breast", "Salsa"]);
+  });
+
   it("shows later movement warnings without a fake review action", async () => {
     const draftSession = createCountSession("Draft", 7);
     draftSession.hasMovementSinceStart = true;
