@@ -62,7 +62,15 @@ function startLoad<T>(cacheKey: string, loader: () => Promise<T>, ttlMs: number)
     if (requestGeneration === generation && scope && cacheKey.startsWith(`${scope}:`)) {
       const expiresAt = Date.now() + ttlMs;
       entries.set(cacheKey, { value, expiresAt, staleUntil: expiresAt + 60_000 });
-      listeners.get(cacheKey)?.forEach((listener) => listener(value));
+      listeners.get(cacheKey)?.forEach((listener) => {
+        // A consumer callback must not turn a successful request into a
+        // rejected request or affect other mounted consumers.
+        try {
+          listener(value);
+        } catch {
+          // Consumers own their render/update errors.
+        }
+      });
     }
     return value;
   }).finally(() => { if (inFlight.get(cacheKey) === request) inFlight.delete(cacheKey); });
