@@ -388,6 +388,16 @@ textarea.input {
   box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32);
 }
 
+.square-status-card {
+  min-width: 0;
+}
+
+.square-status-card .pilot-badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .pilot-theme-dark .pilot-context select {
   background-color: transparent !important;
   border-color: transparent !important;

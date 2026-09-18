@@ -321,6 +321,34 @@ describe("PilotInventoryPage", () => {
     expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes", "Paper Cups"]);
   });
 
+  it("treats missing or invalid purchase conversion factors as unavailable costs", async () => {
+    const response = createInventoryResponse({
+      items: [
+        createInventoryItem({ id: 40, name: "Valid Case", latestPurchasePrice: 10, lastPurchaseConversionFactor: 2 }),
+        createInventoryItem({ id: 41, name: "Missing Factor", latestPurchasePrice: 10, lastPurchaseConversionFactor: null as unknown as number }),
+        createInventoryItem({ id: 42, name: "Invalid Factor", latestPurchasePrice: 10, lastPurchaseConversionFactor: 0 }),
+      ],
+    });
+    inventoryMocks.fetchPilotInventory.mockResolvedValueOnce(response);
+
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("columnheader", { name: "Item" });
+    expect(screen.getByRole("row", { name: /Valid Case/ })).toHaveTextContent("$5.00");
+    expect(screen.getByRole("row", { name: /Missing Factor/ })).toHaveTextContent("Not yet available");
+    expect(screen.getByRole("row", { name: /Invalid Factor/ })).toHaveTextContent("Not yet available");
+
+    const latestCost = screen.getByRole("button", { name: /Latest cost/ });
+    fireEvent.click(latestCost);
+    fireEvent.click(latestCost);
+    const itemNames = () => [...screen.getAllByRole("row")].slice(1).map((row) => row.querySelector("td p")?.textContent);
+    expect(itemNames().at(-1)).toBe("Invalid Factor");
+  });
+
   it("keeps the overview adjustment workflow separate from item notes and blocks zero deltas", async () => {
     render(
       <MemoryRouter initialEntries={["/app/inventory"]}>

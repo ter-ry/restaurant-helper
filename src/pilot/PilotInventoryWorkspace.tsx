@@ -142,8 +142,17 @@ function formatInventoryValue(currentOnHand: number, averageUnitCost: number | n
 }
 
 function latestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchasePrice" | "lastPurchaseConversionFactor">) {
-  const conversionFactor = item.lastPurchaseConversionFactor > 0 ? item.lastPurchaseConversionFactor : 1;
-  return item.latestPurchasePrice / conversionFactor;
+  const price = Number(item.latestPurchasePrice);
+  const conversionFactor = Number(item.lastPurchaseConversionFactor);
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(conversionFactor) || conversionFactor <= 0) {
+    return null;
+  }
+  return price / conversionFactor;
+}
+
+function formatLatestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchasePrice" | "lastPurchaseConversionFactor">) {
+  const cost = latestStockUnitCost(item);
+  return cost === null ? "Not yet available" : formatMoney(cost);
 }
 
 export function PilotInventoryPage() {
@@ -554,7 +563,7 @@ export function PilotInventoryPage() {
                     <td className="px-3 py-2.5 text-muted">{formatNumber(item.parLevel)}</td>
                     <td className="px-3 py-2.5 text-muted">
                       <div className="space-y-1">
-                        <p className="font-medium text-ink">{formatMoney(latestStockUnitCost(item))}</p>
+                        <p className="font-medium text-ink">{formatLatestStockUnitCost(item)}</p>
                         <p className="text-xs text-muted">Avg {item.averageUnitCost && item.averageUnitCost > 0 ? formatMoney(item.averageUnitCost) : "not set"}</p>
                       </div>
                     </td>
@@ -884,7 +893,7 @@ export function PilotInventoryPage() {
           <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1 w-28" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
           <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1 w-28" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
           <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
-          <ReadOnlyStat label="Latest cost / stock unit" value={formatMoney(latestStockUnitCost(item))} />
+          <ReadOnlyStat label="Latest cost / stock unit" value={formatLatestStockUnitCost(item)} />
           <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
           <ReadOnlyStat label="Preferred supplier" value={isEditing ? (suppliers.length ? <select aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}><option value="">Unassigned</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}</select> : <input aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />) : item.preferredSupplierName || "Unassigned"} />
           <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />

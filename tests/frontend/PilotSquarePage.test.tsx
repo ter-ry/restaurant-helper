@@ -259,6 +259,7 @@ describe("PilotSquarePage", () => {
     expect(screen.getByText("Menu mapping")).toBeVisible();
     expect(screen.getByText("disconnected")).toBeVisible();
     expect(screen.getAllByText("Connection").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".square-status-card")).toHaveLength(5);
     expect(screen.queryByText("Private workspace for Square connection")).not.toBeInTheDocument();
     expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
   });
@@ -279,6 +280,7 @@ describe("PilotSquarePage", () => {
     expect(screen.getByText("Main Bar")).toBeVisible();
     expect(screen.getByText("Classic Milk Tea")).toBeVisible();
     expect(screen.getByText("Test Burger · Regular")).toBeVisible();
+    expect(document.querySelectorAll(".square-status-card")).toHaveLength(5);
     expect(screen.queryByText("ITEM · ITEM-55")).not.toBeInTheDocument();
 
     const locationSelect = container.querySelector<HTMLSelectElement>("#pilot-square-location-10");
