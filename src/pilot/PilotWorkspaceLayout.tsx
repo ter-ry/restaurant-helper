@@ -409,26 +409,29 @@ export function PilotWorkspaceLayout() {
           </div>
 
           {!desktopSidebarCollapsed ? (
-            <div className="mt-3 rounded-xl border border-line bg-slate-50 px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>
+            <div className="pilot-context mt-3 rounded-xl border border-line bg-slate-50 px-3 py-2">
+              <div className="min-w-0">
                 {organizations.length > 1 ? (
-                  <select className="input mt-1" value={organization.id} onChange={handleOrganizationChange}>
+                  <label className="block">
+                    <span className="sr-only">Organization</span>
+                    <select className="input w-full truncate bg-transparent px-0 py-0 font-semibold shadow-none" value={organization.id} onChange={handleOrganizationChange}>
                     {organizations.map((entry) => (
                       <option key={entry.organization.id} value={entry.organization.id}>
                         {entry.organization.name} {entry.membershipRole === "owner" ? "(Owner)" : "(Manager)"}
                       </option>
                     ))}
-                  </select>
+                    </select>
+                  </label>
                 ) : (
-                <p className="min-w-0 max-w-[9rem] truncate font-semibold text-ink" title={organization?.name ?? "Flowtally"}>{organization?.name ?? "Flowtally"}</p>
+                  <p className="truncate font-semibold text-ink" title={organization?.name ?? "Flowtally"}>{organization?.name ?? "Flowtally"}</p>
                 )}
               </div>
 
-              <div className="mt-1 flex items-center justify-between gap-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
+              <div className="mt-0.5 min-w-0">
                 {locations.length > 1 ? (
-                  <select className="input mt-1" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
+                  <label className="block">
+                    <span className="sr-only">Location</span>
+                    <select className="input w-full truncate bg-transparent px-0 py-0 text-xs shadow-none" value={currentLocation?.id ?? ""} onChange={handleLocationChange}>
                     {!currentLocation ? (
                       <option value="" disabled>
                         Select a location
@@ -439,9 +442,10 @@ export function PilotWorkspaceLayout() {
                         {entry.name}
                       </option>
                     ))}
-                  </select>
+                    </select>
+                  </label>
                 ) : (
-                  <p className="min-w-0 max-w-[9rem] truncate font-semibold text-ink" title={locationLabel}>{locationLabel}</p>
+                  <p className="truncate text-xs text-muted" title={locationLabel}>{locationLabel}</p>
                 )}
               </div>
             </div>

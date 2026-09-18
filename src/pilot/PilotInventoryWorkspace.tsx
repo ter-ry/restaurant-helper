@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
-import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotInventoryAdjustment,
@@ -150,6 +149,7 @@ export function PilotInventoryPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<InventoryWorkspaceMode>("browse");
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>("items");
+  const [inventoryActionMenuOpen, setInventoryActionMenuOpen] = useState(false);
   const [itemDetailTab, setItemDetailTab] = useState<ItemDetailTab>("overview");
   const [isEditing, setIsEditing] = useState(false);
   const [itemHistoryTab, setItemHistoryTab] = useState<ItemHistoryTab>("purchases");
@@ -497,19 +497,24 @@ export function PilotInventoryPage() {
   };
 
   const renderItemTable = () => (
-    <Card className="workspace-card pilot-inventory-reference p-4">
-      <SectionHeader title="Items" description="Search, open, and keep the stock list current." />
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-slate-50 px-4 py-3">
+    <Card className="workspace-card pilot-inventory-reference p-3 sm:p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-base font-bold text-ink">Items</h2>
+        {loading && hasLoaded ? <span className="text-xs font-semibold text-muted">Refreshing…</span> : null}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-slate-50 px-3 py-2.5">
           <Search className="h-4 w-4 text-muted" />
           <input className="w-full bg-transparent text-sm outline-none" placeholder="Search item, supplier, category, or unit" value={search} onChange={(event) => setSearch(event.target.value)} />
         </div>
-        <Badge tone="neutral">{hasLoaded ? filteredItems.length : "—"} visible</Badge>
-        <Badge tone="neutral">{hasLoaded ? data?.items.length ?? 0 : "—"} total</Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge tone="neutral">{hasLoaded ? filteredItems.length : "—"} visible</Badge>
+          <Badge tone="neutral">{hasLoaded ? data?.items.length ?? 0 : "—"} total</Badge>
+        </div>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
-        <div className="max-h-[62vh] overflow-x-auto overflow-y-auto">
+      <div className="mt-3 overflow-hidden rounded-xl border border-line bg-white">
+        <div className="max-h-[62vh] overflow-x-auto overflow-y-auto" role="region" aria-label="Inventory items table" tabIndex={0}>
           <table className="min-w-[720px] border-separate border-spacing-0 text-left text-sm sm:min-w-full">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -517,7 +522,7 @@ export function PilotInventoryPage() {
                   const key = ({ Item: "item", Category: "category", "On hand": "onHand", Unit: "unit", Minimum: "minimum", PAR: "par", "Latest cost": "latestCost", "Reorder status": "status" } as const)[heading];
                   const active = itemSort?.key === key;
                   return (
-                  <th key={heading} className="border-b border-line px-4 py-3 font-bold" aria-sort={active ? (itemSort?.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <th key={heading} className="border-b border-line px-3 py-2.5 font-bold" aria-sort={active ? (itemSort?.direction === "asc" ? "ascending" : "descending") : "none"}>
                     <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => setItemSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>
                       {heading}<span aria-hidden="true" className="text-[10px]">{active ? (itemSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span>
                     </button>
@@ -531,24 +536,24 @@ export function PilotInventoryPage() {
                 const status = stockStatus(item);
                 return (
                   <tr key={item.id} className="cursor-pointer border-b border-line bg-white transition hover:bg-brand-50/60" onClick={() => openItem(item.id)}>
-                    <td className="px-4 py-3 font-semibold text-ink">
+                    <td className="px-3 py-2.5 font-semibold text-ink">
                       <div>
                         <p>{item.name}</p>
                         <p className="mt-1 text-xs text-muted">{item.preferredSupplierName || "No supplier"}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted">{item.category}</td>
-                    <td className="px-4 py-3 font-medium text-ink">{formatNumber(item.currentOnHand)}</td>
-                    <td className="px-4 py-3 text-muted">{item.stockUnit}</td>
-                    <td className="px-4 py-3 text-muted">{formatNumber(item.minQuantity)}</td>
-                    <td className="px-4 py-3 text-muted">{formatNumber(item.parLevel)}</td>
-                    <td className="px-4 py-3 text-muted">
+                    <td className="px-3 py-2.5 text-muted">{item.category}</td>
+                    <td className="px-3 py-2.5 font-medium text-ink">{formatNumber(item.currentOnHand)}</td>
+                    <td className="px-3 py-2.5 text-muted">{item.stockUnit}</td>
+                    <td className="px-3 py-2.5 text-muted">{formatNumber(item.minQuantity)}</td>
+                    <td className="px-3 py-2.5 text-muted">{formatNumber(item.parLevel)}</td>
+                    <td className="px-3 py-2.5 text-muted">
                       <div className="space-y-1">
                         <p className="font-medium text-ink">{formatMoney(item.latestPurchasePrice)}</p>
                         <p className="text-xs text-muted">Avg {item.averageUnitCost && item.averageUnitCost > 0 ? formatMoney(item.averageUnitCost) : "not set"}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5">
                       <Badge tone={statusTone(status)}>{status}</Badge>
                     </td>
                   </tr>
@@ -560,13 +565,14 @@ export function PilotInventoryPage() {
           {!loading && hasLoaded && !filteredItems.length ? <p className="px-4 py-8 text-sm text-muted">No inventory items match this search.</p> : null}
         </div>
       </div>
+      <p className="mt-2 text-xs text-muted sm:hidden">Swipe horizontally to see cost and reorder status.</p>
 
-      <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
+      <div className="mt-3 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted">
         <p className="font-semibold text-ink">PAR and Minimum</p>
         <p className="mt-1">PAR is the target stock level. Minimum is the point where reorder becomes urgent.</p>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-3">
         <SectionHeader title="Recent movements" description="What changed most recently." />
         <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
           {(data?.movements ?? []).slice(0, 8).map((movement) => (
@@ -1192,46 +1198,49 @@ export function PilotInventoryPage() {
     <div className="workspace-page">
       {error ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
-        <WorkspacePageHeader
-          eyebrow="Inventory"
-          title="Inventory"
-          actions={
-            <>
-              <Button
-                icon={<Plus className="h-4 w-4" />}
-                type="button"
-                disabled={demoReadOnly}
-                title={demoReadOnly ? "Read-only demo" : undefined}
-                onClick={() => {
-                  setInventoryTab("items");
-                  startNewItem();
-                }}
-              >{demoReadOnly ? "Read-only demo" : "Create item"}</Button>
-              <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
-                Refresh
-              </Button>
-              <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>
-                Reorder list ({hasLoaded ? reorderCount : "—"})
-              </Button>
-            </>
-          }
-          metrics={[]}
-        />
-      ) : (
-        <></>
-      )}
-
-      {workspaceMode === "browse" ? (
         <>
+          <div className="inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-3">
+                <h1 className="shrink-0 text-lg font-semibold tracking-tight text-ink sm:text-xl">Inventory</h1>
+                <WorkspaceTabs
+                tabs={[
+                  { id: "items", label: "Items", badge: hasLoaded ? formatNumber(data?.summary.inventoryItemCount ?? 0) : "—" },
+                  { id: "suppliers", label: "Suppliers", badge: hasLoaded ? formatNumber(suppliers.length) : "—" },
+                ]}
+                value={inventoryTab}
+                onChange={(value) => setInventoryTab(value as InventoryTab)}
+                />
+              </div>
+              <div className="hidden items-center gap-2 sm:flex">
+                <Button
+                  icon={<Plus className="h-4 w-4" />}
+                  type="button"
+                  disabled={demoReadOnly}
+                  title={demoReadOnly ? "Read-only demo" : undefined}
+                  onClick={() => {
+                    setInventoryTab("items");
+                    startNewItem();
+                  }}
+                >{demoReadOnly ? "Read-only demo" : "Create item"}</Button>
+                <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>Refresh</Button>
+                <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
+              </div>
+              <div className="relative sm:hidden">
+                <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-ink" type="button" aria-label="Open inventory actions" aria-expanded={inventoryActionMenuOpen} onClick={() => setInventoryActionMenuOpen((open) => !open)}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                {inventoryActionMenuOpen ? (
+                  <div className="absolute right-0 top-12 z-20 w-52 rounded-xl border border-line bg-white p-2 shadow-xl">
+                    <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={demoReadOnly} onClick={() => { setInventoryActionMenuOpen(false); setInventoryTab("items"); startNewItem(); }}><Plus className="h-4 w-4" />{demoReadOnly ? "Read-only demo" : "Create item"}</button>
+                    <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={loading} onClick={() => { setInventoryActionMenuOpen(false); void load(); }}><RefreshCcw className="h-4 w-4" />Refresh</button>
+                    <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/reorder-plan"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"})</button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
           {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
-          <WorkspaceTabs
-            tabs={[
-              { id: "items", label: "Items", badge: hasLoaded ? formatNumber(data?.summary.inventoryItemCount ?? 0) : "—" },
-              { id: "suppliers", label: "Suppliers", badge: hasLoaded ? formatNumber(suppliers.length) : "—" },
-            ]}
-            value={inventoryTab}
-            onChange={(value) => setInventoryTab(value as InventoryTab)}
-          />
           {inventoryTab === "suppliers" ? renderSupplierWorkspace() : renderItemTable()}
         </>
       ) : null}

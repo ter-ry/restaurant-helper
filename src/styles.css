@@ -326,6 +326,69 @@ textarea.input {
   color: #718391;
 }
 
+.pilot-theme-dark .pilot-badge-neutral,
+.pilot-theme-dark .pilot-badge-info {
+  background: #1b2a34 !important;
+  color: #c2d1da !important;
+}
+
+.pilot-theme-dark .pilot-badge-success {
+  background: rgba(20, 184, 166, 0.16) !important;
+  color: #6ee7d8 !important;
+}
+
+.pilot-theme-dark .pilot-badge-warning,
+.pilot-theme-dark .pilot-badge-orange {
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fcd34d !important;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.4);
+}
+
+.pilot-theme-dark .pilot-badge-danger,
+.pilot-theme-dark .pilot-badge-critical {
+  background: rgba(248, 113, 113, 0.14) !important;
+  color: #fda4af !important;
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32);
+}
+
+.pilot-theme-dark .pilot-context select {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.pilot-theme-dark .pilot-tabs {
+  background: #14212c !important;
+}
+
+.pilot-theme-dark .pilot-tab-badge {
+  background: rgba(20, 184, 166, 0.14) !important;
+  color: #6ee7d8 !important;
+}
+
+.pilot-theme-dark .pilot-tabs [role="tab"][aria-selected="true"] {
+  background: #0d1821 !important;
+  color: #f8fafc !important;
+}
+
+.pilot-theme-dark .hover\:bg-slate-100:hover,
+.pilot-theme-dark .hover\:bg-slate-50:hover {
+  background: #1b2a34 !important;
+}
+
+.pilot-theme-dark .hover\:bg-brand-50:hover {
+  background: rgba(20, 184, 166, 0.13) !important;
+}
+
+.pilot-theme-dark .disabled\:bg-slate-100:disabled {
+  background: #18232d !important;
+}
+
+@media (max-width: 639px) {
+  .pilot-inventory-reference .section-header {
+    margin-bottom: 0.5rem;
+  }
+}
+
 .pilot-theme-dark .workspace-table-wrap,
 .pilot-theme-dark .pilot-inventory-reference > div {
   border-color: var(--pilot-line);
