@@ -25,6 +25,8 @@ The diagnostics can measure application/handler time, SQL execution time, statem
 
 The local benchmark is `scripts/benchmark_operational.py`. It refuses to seed an existing fixture, clears inherited deployment configuration, uses a disposable SQLite fixture, and records no response bodies in its timing samples. Run it twice against the same fixture before and after a revision, then compare the summaries and snapshots.
 
+The checked-in fixture summary is in `docs/operational-performance-results.md`; it records the exact SQL-count and optimized timing values used in this PR.
+
 Targeted frontend tests: 23 files, 96 tests passed, including a regression test that holds usage open while mappings render. Backend query-count and Square security tests passed (1 and 2 tests respectively); the broader pilot API suite requires the repository PostgreSQL service in this Windows environment. Typecheck, Vite build, and lint complete; lint retains pre-existing warnings only. The benchmark's optional `--concurrent` probe records an in-process fixture result and explicitly does not model Gunicorn scheduling or Render worker capacity.
 
 The live demo was not redeployed from this branch, so a post-change Render measurement is intentionally not claimed. The remaining acceptance step is to run the same warm and concurrent endpoint probe against an authorized staging deployment of this branch, then compare live `Server-Timing` fields and request IDs. No production deployment is needed.
