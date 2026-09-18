@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
@@ -69,6 +69,7 @@ export function PilotSquarePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [menuImport, setMenuImport] = useState<Awaited<ReturnType<typeof previewPilotSquareMenuImport>> | null>(null);
   const [menuImportLoading, setMenuImportLoading] = useState(false);
+  const loadGeneration = useRef(0);
 
   const currentOrganizationId = organization?.id ?? null;
 
@@ -79,10 +80,13 @@ export function PilotSquarePage() {
 
     setLoading(true);
     setError(null);
+    const generation = ++loadGeneration.current;
+    const isCurrent = () => generation === loadGeneration.current;
     const failures: string[] = [];
     const loadSection = async <T,>(request: Promise<T>, onSuccess: (value: T) => void) => {
       try {
-        onSuccess(await request);
+        const value = await request;
+        if (isCurrent()) onSuccess(value);
       } catch (err) {
         failures.push(err instanceof Error ? err.message : "Could not load Square.");
       }
@@ -95,8 +99,8 @@ export function PilotSquarePage() {
         setMappingCoverage(mappingResponse.mappingCoverage);
       }),
     ]);
-    if (failures.length) setError(failures.join(" "));
-    setLoading(false);
+    if (isCurrent() && failures.length) setError(failures.join(" "));
+    if (isCurrent()) setLoading(false);
   };
 
   useEffect(() => {

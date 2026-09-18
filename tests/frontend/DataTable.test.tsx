@@ -42,5 +42,7 @@ describe("DataTable sorting", () => {
     expect(names()).toEqual(["Apple", "Zucchini", "bread"]);
     fireEvent.click(screen.getByRole("button", { name: /Amount/ }));
     expect(names()).toEqual(["bread", "Apple", "Zucchini"]);
+    fireEvent.click(screen.getByRole("button", { name: /Amount/ }));
+    expect(names()).toEqual(["Apple", "bread", "Zucchini"]);
   });
 });

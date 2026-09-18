@@ -8,6 +8,39 @@ export interface Column<T> {
   sortOrder?: readonly string[];
 }
 
+export type SortDirection = "asc" | "desc";
+
+export function sortRows<T>(data: T[], getValue: (row: T) => string | number | Date | null | undefined, direction: SortDirection, sortOrder?: readonly string[]) {
+  const priority = sortOrder;
+  const compare = (left: T, right: T) => {
+    const a = getValue(left);
+    const b = getValue(right);
+    // Missing values remain at the bottom in both directions.
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    let result: number;
+    if (priority) {
+      const ai = priority.indexOf(String(a));
+      const bi = priority.indexOf(String(b));
+      if (ai !== bi) result = (ai < 0 ? priority.length : ai) - (bi < 0 ? priority.length : bi);
+      else result = 0;
+    } else if (a instanceof Date || b instanceof Date) {
+      const at = a instanceof Date ? a.getTime() : new Date(String(a)).getTime();
+      const bt = b instanceof Date ? b.getTime() : new Date(String(b)).getTime();
+      const aValid = Number.isFinite(at);
+      const bValid = Number.isFinite(bt);
+      if (!aValid && !bValid) result = 0;
+      else if (!aValid) result = 1;
+      else if (!bValid) result = -1;
+      else result = at - bt;
+    } else if (typeof a === "number" && typeof b === "number") result = a - b;
+    else result = String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
+    return direction === "asc" ? result : -result;
+  };
+  return [...data].sort(compare);
+}
+
 interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
@@ -21,23 +54,7 @@ export function DataTable<T>({ columns, data, getRowKey, onRowClick }: DataTable
     if (!sort) return data;
     const column = columns[sort.index];
     if (!column.sortValue) return data;
-    const priority = column.sortOrder;
-    const compare = (left: T, right: T) => {
-      const a = column.sortValue?.(left);
-      const b = column.sortValue?.(right);
-      if (a == null && b == null) return 0;
-      if (a == null) return 1;
-      if (b == null) return -1;
-      if (priority) {
-        const ai = priority.indexOf(String(a));
-        const bi = priority.indexOf(String(b));
-        if (ai !== bi) return (ai < 0 ? priority.length : ai) - (bi < 0 ? priority.length : bi);
-      }
-      if (a instanceof Date || b instanceof Date) return new Date(a).getTime() - new Date(b).getTime();
-      if (typeof a === "number" && typeof b === "number") return a - b;
-      return String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
-    };
-    return [...data].sort((left, right) => (sort.direction === "asc" ? compare(left, right) : -compare(left, right)));
+    return sortRows(data, column.sortValue, sort.direction, column.sortOrder);
   }, [columns, data, sort]);
 
   const toggleSort = (index: number) => {

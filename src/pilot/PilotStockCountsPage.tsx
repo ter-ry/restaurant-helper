@@ -18,6 +18,7 @@ import {
 } from "./pilotApi";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatDateTime, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { sortRows, type SortDirection } from "../components/DataTable";
 
 interface CountLineDraft {
   id: number;
@@ -99,6 +100,7 @@ export function PilotStockCountsPage() {
   const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lineSort, setLineSort] = useState<{ key: "item" | "expected" | "counted" | "variance"; direction: SortDirection } | null>(null);
   const previousSelectedId = useRef<number | null>(null);
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("sessionId");
@@ -177,6 +179,16 @@ export function PilotStockCountsPage() {
       ) ?? [],
     [draft?.lines, lineFilter, lineSearch],
   );
+  const sortedLines = useMemo(() => {
+    if (!lineSort) return filteredLines;
+    const getters = {
+      item: (line: CountLineDraft) => line.itemNameSnapshot,
+      expected: (line: CountLineDraft) => line.expectedQuantity,
+      counted: (line: CountLineDraft) => line.countedQuantity,
+      variance: (line: CountLineDraft) => line.countedQuantity == null ? null : line.countedQuantity - line.expectedQuantity,
+    };
+    return sortRows(filteredLines, getters[lineSort.key], lineSort.direction);
+  }, [filteredLines, lineSort]);
   const changedLines = useMemo(() => draft?.lines.filter((line) => line.countedQuantity !== null && line.countedQuantity !== line.expectedQuantity) ?? [], [draft?.lines]);
   const conflictLines = useMemo(() => draft?.lines.filter((line) => line.hasMovementSinceStart) ?? [], [draft?.lines]);
   const isCompleted = draft?.status === "Completed";
@@ -547,9 +559,9 @@ export function PilotStockCountsPage() {
                 </div>
                 <div className="mt-2 workspace-table-wrap overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
-                    <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-muted"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Expected</th><th className="px-3 py-2">Counted</th><th className="px-3 py-2">Variance</th><th className="px-3 py-2">Variance note</th></tr></thead>
+                    <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-muted"><tr>{([['Item','item'],['Expected','expected'],['Counted','counted'],['Variance','variance']] as const).map(([label,key]) => { const active = lineSort?.key === key; return <th key={key} className="px-3 py-2" aria-sort={active ? (lineSort?.direction === "asc" ? "ascending" : "descending") : "none"}><button type="button" className="inline-flex items-center gap-1" onClick={() => setLineSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>{label}<span aria-hidden="true">{active ? (lineSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span></button></th>})}<th className="px-3 py-2">Variance note</th></tr></thead>
                     <tbody className="divide-y divide-line">
-                      {filteredLines.map((line) => (
+                      {sortedLines.map((line) => (
                         <tr key={line.id} className="bg-white align-middle">
                           <td className="px-3 py-2"><p className="font-semibold text-ink">{line.itemNameSnapshot}</p><div className="mt-1 flex flex-wrap gap-1"><Badge tone={statusTone(line.status)}>{line.status}</Badge>{line.hasMovementSinceStart ? <Badge tone="warning">{line.movementCountSinceStart} later movements</Badge> : null}</div></td>
                           <td className="px-3 py-2 font-semibold text-ink">{formatNumber(line.expectedQuantity)} {line.stockUnitSnapshot}</td>
