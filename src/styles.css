@@ -19,6 +19,14 @@ body {
   overflow-x: hidden;
 }
 
+body[data-flowtally-theme="dark"] {
+  background: #0a0f14;
+}
+
+body[data-flowtally-theme="light"] {
+  background: #f8fafc;
+}
+
 button,
 input,
 select,

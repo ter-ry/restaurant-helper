@@ -304,7 +304,7 @@ export function PilotSquareUsagePage() {
         </Link>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="space-y-6">
         <Card className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -388,7 +388,7 @@ export function PilotSquareUsagePage() {
             <BarChart3 className="h-4 w-4 text-brand-700" />
             Theoretical usage by inventory item
           </div>
-          <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white">
+          <div className="mt-3 max-h-[34rem] overflow-auto rounded-2xl border border-line bg-white">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
                 <tr>
@@ -427,7 +427,7 @@ export function PilotSquareUsagePage() {
             </Modal>;
           })() : null}
 
-        <div className="space-y-6">
+        <div className="grid gap-6 lg:grid-cols-2">
           <Card className="p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
               <Search className="h-4 w-4 text-brand-700" />
