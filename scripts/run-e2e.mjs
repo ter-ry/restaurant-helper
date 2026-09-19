@@ -18,7 +18,9 @@ function findCliPath(relativePath) {
 
 const viteCli = findCliPath("node_modules/vite/bin/vite.js");
 const playwrightCli = findCliPath("node_modules/@playwright/test/cli.js");
-const serverUrl = "http://127.0.0.1:4173";
+const port = Number(process.env.E2E_PORT ?? 4173);
+const serverUrl = `http://127.0.0.1:${port}`;
+const testedCommit = process.env.FLOWTALLY_E2E_COMMIT ?? "unknown";
 
 if (!existsSync(viteCli)) {
   throw new Error(`Could not find Vite CLI at ${viteCli}`);
@@ -44,6 +46,7 @@ async function waitForServer() {
     try {
       const response = await fetch(serverUrl, { method: "GET" });
       if (response.ok || response.status === 404) {
+        console.log(`E2E server ready at ${serverUrl} (commit ${testedCommit})`);
         return;
       }
     } catch {
@@ -52,6 +55,15 @@ async function waitForServer() {
     await delay(1000);
   }
   throw new Error(`Timed out waiting for the Vite dev server at ${serverUrl}`);
+}
+
+async function assertPortFree() {
+  try {
+    await fetch(serverUrl, { method: "GET" });
+    throw new Error(`E2E port ${port} is already in use. Stop the existing preview server before running Playwright; refusing to test an unknown commit.`);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("E2E port")) throw error;
+  }
 }
 
 function killProcessTree(pid) {
@@ -79,8 +91,10 @@ function killProcessTree(pid) {
   return Promise.resolve();
 }
 
-const vite = spawnNode(viteCli, ["--host", "127.0.0.1", "--port", "4173"], {
+await assertPortFree();
+const vite = spawnNode(viteCli, ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
   VITE_ENABLE_PILOT_APP: "true",
+  FLOWTALLY_E2E_COMMIT: testedCommit,
 });
 const viteEarlyExit = new Promise((_, reject) => {
   vite.on("exit", (code) => {
@@ -112,6 +126,8 @@ try {
 
   const playwright = spawnNode(playwrightCli, ["test", "--config", "playwright.config.ts"], {
     VITE_ENABLE_PILOT_APP: "true",
+    E2E_BASE_URL: serverUrl,
+    FLOWTALLY_E2E_COMMIT: testedCommit,
   });
   const exitCode = await new Promise((resolveExit, rejectExit) => {
     playwright.on("exit", (code, signal) => {

@@ -98,6 +98,8 @@ describe("pilot data cache", () => {
       expect(loader).toHaveBeenCalledTimes(2);
 
       vi.advanceTimersByTime(5 * 60_000 + 13_000);
+      await expect(getPilotCached("/api/pilot/square", loader)).resolves.toBe("after-minute");
+      await vi.waitFor(() => expect(loader).toHaveBeenCalledTimes(3));
       await expect(getPilotCached("/api/pilot/square", loader)).resolves.toBe("after-five-minutes");
       expect(loader).toHaveBeenCalledTimes(3);
     } finally {
