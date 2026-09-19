@@ -699,6 +699,45 @@ textarea.input {
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
+/* Semantic landing cards keep foreground and surface together. These rules
+   intentionally outrank the utility classes on the marketing markup. */
+.landing-dark .landing-card {
+  background: var(--landing-surface) !important;
+  background-image: none !important;
+  border-color: var(--landing-line) !important;
+  color: var(--landing-text) !important;
+}
+
+.landing-dark .landing-workflow-preview {
+  background: #0d151c !important;
+}
+
+.landing-dark .landing-workflow-row {
+  background: var(--landing-surface-raised) !important;
+}
+
+.landing-dark .landing-icon-tile {
+  background: #1c3037 !important;
+  color: #7ce9dc !important;
+  box-shadow: none !important;
+}
+
+.landing-dark .landing-card h3,
+.landing-dark .landing-card p:not(.text-slate-500),
+.landing-dark .landing-card .text-sm.font-bold,
+.landing-dark .landing-card .text-xl.font-bold {
+  color: var(--landing-text) !important;
+}
+
+.landing-dark .landing-card .text-slate-500,
+.landing-dark .landing-card .text-slate-600 {
+  color: #b3c2cc !important;
+}
+
+.landing-dark .landing-card .text-teal-700 {
+  color: #72e6d7 !important;
+}
+
 /* Shared operational action language. Buttons keep their existing semantics;
    these tokens only make the contrast consistent in each theme. */
 .pilot-theme {
