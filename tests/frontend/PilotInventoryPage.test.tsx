@@ -345,6 +345,24 @@ describe("PilotInventoryPage", () => {
     expect(itemNames()).toEqual(["Chicken Breast", "Tomatoes", "Paper Cups"]);
   });
 
+  it("keeps threshold help separate from the sortable header control", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("columnheader", { name: /PAR/ });
+    const parSort = screen.getAllByRole("button", { name: /PAR/ }).find((button) => !button.getAttribute("aria-label")) as HTMLElement;
+    const help = screen.getByRole("button", { name: "Explain PAR" });
+    expect(parSort.closest("th")?.querySelectorAll("button")).toHaveLength(2);
+    fireEvent.click(parSort);
+    expect(screen.getByRole("columnheader", { name: /PAR/ })).toHaveAttribute("aria-sort", "ascending");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.click(help);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Target stock level");
+    expect(screen.getByRole("tooltip")).toBeVisible();
+  });
+
   it("treats missing or invalid purchase conversion factors as unavailable costs", async () => {
     const response = createInventoryResponse({
       items: [
