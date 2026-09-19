@@ -613,7 +613,7 @@ textarea.input {
   background-color: var(--landing-bg) !important;
 }
 
-\.landing-dark .bg-white {
+.landing-dark .bg-white {
   background-color: var(--landing-surface) !important;
 }
 
