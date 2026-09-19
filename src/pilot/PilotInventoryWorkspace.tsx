@@ -558,10 +558,13 @@ export function PilotInventoryPage() {
                   const active = itemSort?.key === key;
                   return (
                     <th key={heading} className="border-b border-line px-3 py-2.5 font-bold" aria-sort={active ? (itemSort?.direction === "asc" ? "ascending" : "descending") : "none"}>
-                    <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => setItemSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>
-                      {heading === "PAR" ? <InfoTooltip label="PAR">Target stock level used to plan replenishment.</InfoTooltip> : heading === "Minimum" ? <InfoTooltip label="Minimum">Urgent reorder threshold for this item.</InfoTooltip> : heading}<span aria-hidden="true" className="text-[10px]">{active ? (itemSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span>
-                    </button>
-                  </th>
+                      <span className="inline-flex items-center gap-1">
+                        <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => setItemSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>
+                          {heading}<span aria-hidden="true" className="text-[10px]">{active ? (itemSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span>
+                        </button>
+                        {heading === "PAR" ? <InfoTooltip label="PAR">Target stock level used to plan replenishment.</InfoTooltip> : heading === "Minimum" ? <InfoTooltip label="Minimum">Urgent reorder threshold for this item.</InfoTooltip> : null}
+                      </span>
+                    </th>
                   );
                 })}
               </tr>

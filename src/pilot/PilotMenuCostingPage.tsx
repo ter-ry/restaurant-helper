@@ -27,6 +27,7 @@ import { usePilotSession } from "./PilotSessionProvider";
 import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { sortRows, type SortDirection } from "../components/DataTable";
 
 interface RecipeDraft {
   id: number | null;
@@ -142,6 +143,7 @@ export function PilotMenuCostingPage() {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recipeSort, setRecipeSort] = useState<{ key: "name" | "yield" | "cost" | "ingredients" | "status"; direction: SortDirection } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -222,6 +224,17 @@ export function PilotMenuCostingPage() {
     () => recipes.filter((recipe) => `${recipe.name} ${recipe.description} ${recipe.yieldUnit}`.toLowerCase().includes(search.toLowerCase())),
     [recipes, search],
   );
+  const sortedRecipes = useMemo(() => {
+    if (!recipeSort) return filteredRecipes;
+    const getters = {
+      name: (recipe: PilotMenuCostingRecipe) => recipe.name,
+      yield: (recipe: PilotMenuCostingRecipe) => recipe.yieldQuantity,
+      cost: (recipe: PilotMenuCostingRecipe) => recipe.costPerYield,
+      ingredients: (recipe: PilotMenuCostingRecipe) => recipe.ingredientCount,
+      status: (recipe: PilotMenuCostingRecipe) => (recipe.active ? "Active" : "Inactive"),
+    } as const;
+    return sortRows(filteredRecipes, getters[recipeSort.key], recipeSort.direction);
+  }, [filteredRecipes, recipeSort]);
   const filteredMenuItems = useMemo(
     () => menuItems.filter((menuItem) => `${menuItem.name} ${menuItem.category} ${menuItem.notes}`.toLowerCase().includes(search.toLowerCase())),
     [menuItems, search],
@@ -445,34 +458,27 @@ export function PilotMenuCostingPage() {
                 action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button">New recipe</Button>}
               />
               {filteredRecipes.length ? (
-            <div className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
-              {filteredRecipes.map((recipe) => {
-                const active = recipe.id === selectedRecipeId;
-                return (
-                  <button
-                    key={recipe.id}
-                    className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:border-brand-100 hover:bg-brand-25"}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedRecipeId(recipe.id);
-                      setRecipeEditorMode("edit");
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-ink">{recipe.name}</p>
-                        {recipe.description ? <p className="mt-1 text-xs text-muted">{recipe.description}</p> : null}
-                      </div>
-                      <Badge tone={recipe.active ? "success" : "neutral"}>{recipe.active ? "Active" : "Inactive"}</Badge>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                      <span>Yield {formatNumber(recipe.yieldQuantity)} {recipe.yieldUnit}</span>
-                      <span>Cost {formatMoney(recipe.costPerYield)}</span>
-                      <span>{recipe.ingredientCount} ingredients</span>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="max-h-[28rem] overflow-auto rounded-xl border border-line">
+              <table className="min-w-[680px] w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+                  <tr>{([['Name', 'name'], ['Yield', 'yield'], ['Cost', 'cost'], ['Ingredients', 'ingredients'], ['Status', 'status']] as const).map(([label, key]) => {
+                    const active = recipeSort?.key === key;
+                    return <th key={key} className="px-3 py-2" aria-sort={active ? (recipeSort?.direction === "asc" ? "ascending" : "descending") : "none"}><button type="button" className="inline-flex items-center gap-1 font-bold" onClick={() => setRecipeSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>{label}<span aria-hidden="true">{active ? (recipeSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span></button></th>;
+                  })}</tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {sortedRecipes.map((recipe) => {
+                    const active = recipe.id === selectedRecipeId;
+                    return <tr key={recipe.id} className={active ? "bg-brand-50" : "bg-white hover:bg-brand-25"}>
+                      <td className="px-3 py-2"><button type="button" className="text-left font-semibold text-ink" onClick={() => { setSelectedRecipeId(recipe.id); setRecipeEditorMode("edit"); }}>{recipe.name}<span className="mt-1 block text-xs font-normal text-muted">{recipe.description || "No description"}</span></button></td>
+                      <td className="px-3 py-2 text-muted">{formatNumber(recipe.yieldQuantity)} {recipe.yieldUnit}</td>
+                      <td className="px-3 py-2 text-muted">{formatMoney(recipe.costPerYield)}</td>
+                      <td className="px-3 py-2 text-muted">{recipe.ingredientCount}</td>
+                      <td className="px-3 py-2"><Badge tone={recipe.active ? "success" : "neutral"}>{recipe.active ? "Active" : "Inactive"}</Badge></td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
             </div>
           ) : initialLoading ? (
             <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-5 text-sm text-muted">Loading recipes…</div>

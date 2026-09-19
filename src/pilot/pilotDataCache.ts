@@ -60,7 +60,7 @@ function startLoad<T>(cacheKey: string, loader: () => Promise<T>, ttlMs: number)
   request = loader().then((value) => {
     if (requestGeneration === generation && scope && cacheKey.startsWith(`${scope}:`)) {
       const expiresAt = Date.now() + ttlMs;
-      entries.set(cacheKey, { value, expiresAt, staleUntil: expiresAt + 60_000 });
+      entries.set(cacheKey, { value, expiresAt, staleUntil: expiresAt + 5 * 60_000 });
       listeners.get(cacheKey)?.forEach((listener) => {
         // A consumer callback must not turn a successful request into a
         // rejected request or affect other mounted consumers.
