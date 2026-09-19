@@ -310,10 +310,14 @@ export function PilotSquarePage() {
             <p className="mt-1">{error}</p>
           </div>
         ) : null}
-        {loading ? (
+        {initialLoading ? (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
-            {initialLoading ? "Loading Square…" : "Refreshing Square…"}
+            Loading Square…
           </div>
+        ) : loading ? (
+          <p className="mt-3 text-xs font-medium text-muted" aria-live="polite">
+            Refreshing Square data…
+          </p>
         ) : null}
       </Card>
 
@@ -638,9 +642,9 @@ function MetricCard({
 }) {
   return (
     <div className="rounded-2xl border border-line bg-slate-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
-        <Badge tone={tone}>{value}</Badge>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <p className="min-w-0 text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+        <span className="max-w-full break-words text-right"><Badge tone={tone}>{value}</Badge></span>
       </div>
       <p className="mt-2 text-sm leading-6 text-slate-700">{detail}</p>
     </div>

@@ -83,4 +83,27 @@ describe("pilot data cache", () => {
     expect(updates).toEqual(["fresh"]);
     expect(freshLoader).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps navigation data usable at one minute and refreshes again after five minutes", async () => {
+    vi.useFakeTimers();
+    try {
+      clearPilotDataCache();
+      setPilotCacheScope("user-1:org-1:location-1");
+      const loader = vi.fn().mockResolvedValueOnce("first").mockResolvedValueOnce("after-minute").mockResolvedValueOnce("after-five-minutes");
+      await expect(getPilotCached("/api/pilot/square", loader)).resolves.toBe("first");
+
+      vi.advanceTimersByTime(60_001);
+      await expect(getPilotCached("/api/pilot/square", loader)).resolves.toBe("first");
+      await Promise.resolve();
+      expect(loader).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(5 * 60_000 + 13_000);
+      await expect(getPilotCached("/api/pilot/square", loader)).resolves.toBe("after-minute");
+      await vi.waitFor(() => expect(loader).toHaveBeenCalledTimes(3));
+      await expect(getPilotCached("/api/pilot/square", loader)).resolves.toBe("after-five-minutes");
+      expect(loader).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

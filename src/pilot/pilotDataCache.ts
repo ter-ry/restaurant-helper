@@ -1,4 +1,5 @@
-type Entry = { value: unknown; expiresAt: number; staleUntil: number };
+type Entry = { value: unknown; expiresAt: number; lastAccessAt: number };
+const MAX_ENTRIES = 64;
 const entries = new Map<string, Entry>();
 const inFlight = new Map<string, Promise<unknown>>();
 const listeners = new Map<string, Set<(value: unknown) => void>>();
@@ -40,15 +41,15 @@ export async function getPilotCached<T>(key: string, loader: () => Promise<T>, t
   const cacheKey = `${scope}:${key}`;
   const cached = entries.get(cacheKey);
   const now = Date.now();
-  if (cached && cached.expiresAt > now) return cached.value as T;
-  if (cached && cached.staleUntil > now) {
-    // A stale read is intentionally resolved immediately. Consume a possible
-    // revalidation failure so it cannot become an unhandled rejection; the
-    // stale value remains available until a later request succeeds.
-    void startLoad(cacheKey, loader, ttlMs).catch(() => undefined);
+  if (cached) {
+    cached.lastAccessAt = now;
+    if (cached.expiresAt <= now) {
+      // A successful session read is retained indefinitely until explicit
+      // invalidation or bounded LRU eviction. Revalidate independently.
+      void startLoad(cacheKey, loader, ttlMs).catch(() => undefined);
+    }
     return cached.value as T;
   }
-  if (cached) entries.delete(cacheKey);
   return startLoad(cacheKey, loader, ttlMs);
 }
 
@@ -60,7 +61,12 @@ function startLoad<T>(cacheKey: string, loader: () => Promise<T>, ttlMs: number)
   request = loader().then((value) => {
     if (requestGeneration === generation && scope && cacheKey.startsWith(`${scope}:`)) {
       const expiresAt = Date.now() + ttlMs;
-      entries.set(cacheKey, { value, expiresAt, staleUntil: expiresAt + 60_000 });
+      entries.set(cacheKey, { value, expiresAt, lastAccessAt: Date.now() });
+      while (entries.size > MAX_ENTRIES) {
+        const oldest = [...entries.entries()].sort(([, left], [, right]) => left.lastAccessAt - right.lastAccessAt)[0]?.[0];
+        if (!oldest) break;
+        entries.delete(oldest);
+      }
       listeners.get(cacheKey)?.forEach((listener) => {
         // A consumer callback must not turn a successful request into a
         // rejected request or affect other mounted consumers.

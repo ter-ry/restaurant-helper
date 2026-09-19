@@ -162,6 +162,11 @@ export function PilotWorkspaceLayout() {
   useEffect(() => {
     window.localStorage.setItem("flowtally:pilot-theme", theme);
     document.documentElement.dataset.flowtallyTheme = theme;
+    document.body.dataset.flowtallyTheme = theme;
+    return () => {
+      delete document.documentElement.dataset.flowtallyTheme;
+      delete document.body.dataset.flowtallyTheme;
+    };
   }, [theme]);
 
   useEffect(() => {
