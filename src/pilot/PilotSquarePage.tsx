@@ -310,10 +310,14 @@ export function PilotSquarePage() {
             <p className="mt-1">{error}</p>
           </div>
         ) : null}
-        {loading ? (
+        {initialLoading ? (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted">
-            {initialLoading ? "Loading Square…" : "Refreshing Square…"}
+            Loading Square…
           </div>
+        ) : loading ? (
+          <p className="mt-3 text-xs font-medium text-muted" aria-live="polite">
+            Refreshing Square data…
+          </p>
         ) : null}
       </Card>
 
