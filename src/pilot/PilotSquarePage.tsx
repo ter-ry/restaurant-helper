@@ -638,9 +638,9 @@ function MetricCard({
 }) {
   return (
     <div className="rounded-2xl border border-line bg-slate-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
-        <Badge tone={tone}>{value}</Badge>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <p className="min-w-0 text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+        <span className="max-w-full break-words text-right"><Badge tone={tone}>{value}</Badge></span>
       </div>
       <p className="mt-2 text-sm leading-6 text-slate-700">{detail}</p>
     </div>

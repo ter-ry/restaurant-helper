@@ -2,12 +2,14 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 
 export function Modal({ title, children, onClose, labelledBy, size = "large" }: { title: string; children: ReactNode; onClose: () => void; labelledBy?: string; size?: "small" | "large" | "full" | "fullscreen" }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
   const generatedHeadingId = useId();
+  onCloseRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { onClose(); return; }
+      if (event.key === "Escape") { onCloseRef.current(); return; }
       if (event.key !== "Tab") return;
       const dialog = closeRef.current?.closest("section");
       const focusable = dialog ? Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute("hidden")) : [];
@@ -19,7 +21,7 @@ export function Modal({ title, children, onClose, labelledBy, size = "large" }: 
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
     return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", onKeyDown); previous?.focus(); };
-  }, [onClose]);
+  }, []);
   const width = size === "small" ? "max-w-lg" : size === "full" ? "max-w-[98vw]" : size === "fullscreen" ? "max-w-none" : "max-w-5xl";
   const shell = size === "fullscreen" ? "h-full max-h-none rounded-none" : "max-h-[calc(100vh-1rem)] rounded-t-3xl sm:rounded-3xl";
   const headingId = labelledBy || generatedHeadingId;
