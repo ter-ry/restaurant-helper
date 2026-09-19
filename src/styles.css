@@ -581,6 +581,166 @@ textarea.input {
   }
 }
 
+/* Public landing page design system. Keep this scope separate from the
+   authenticated workspace so the marketing surface can evolve independently. */
+.landing-dark {
+  --landing-bg: #080d12;
+  --landing-surface: #101820;
+  --landing-surface-raised: #151f29;
+  --landing-line: #263542;
+  --landing-text: #f1f5f7;
+  --landing-muted: #9aacb8;
+  --landing-accent: #2dd4bf;
+  --landing-accent-strong: #0f766e;
+  background: var(--landing-bg) !important;
+  color: var(--landing-text) !important;
+}
+
+.landing-dark header,
+.landing-dark section,
+.landing-dark footer {
+  border-color: var(--landing-line) !important;
+}
+
+.landing-dark header {
+  background: rgba(8, 13, 18, 0.9) !important;
+}
+
+.landing-dark section,
+.landing-dark section.bg-white,
+.landing-dark section[class*="bg-[#f7faf9]"],
+.landing-dark section[class*="bg-[#f8fbfa]"] {
+  background-color: var(--landing-bg) !important;
+}
+
+\.landing-dark .bg-white {
+  background-color: var(--landing-surface) !important;
+}
+
+.landing-dark [class*="bg-slate-50"],
+.landing-dark [class*="bg-[#f8fbfa]"] {
+  background-color: var(--landing-surface-raised) !important;
+}
+
+.landing-dark [class*="border-slate-100"],
+.landing-dark [class*="border-slate-200"],
+.landing-dark [class*="border-slate-300"] {
+  border-color: var(--landing-line) !important;
+}
+
+.landing-dark .text-slate-950,
+.landing-dark .text-slate-900,
+.landing-dark .text-slate-800,
+.landing-dark .text-slate-700 {
+  color: var(--landing-text) !important;
+}
+
+.landing-dark .text-slate-600,
+.landing-dark .text-slate-500,
+.landing-dark .text-slate-400 {
+  color: var(--landing-muted) !important;
+}
+
+.landing-dark [class*="bg-gradient-to-br"] {
+  background-image: linear-gradient(135deg, #080d12 0%, #0c1720 52%, #10252a 100%) !important;
+}
+
+.landing-dark .text-teal-700,
+.landing-dark .text-teal-800,
+.landing-dark .text-teal-900 {
+  color: var(--landing-accent) !important;
+}
+
+.landing-dark .bg-emerald-50 {
+  background: rgba(45, 212, 191, 0.14) !important;
+  color: #7ce9dc !important;
+}
+
+.landing-dark .bg-slate-950 {
+  background-color: #05090d !important;
+}
+
+.landing-dark .bg-teal-800 {
+  background-color: var(--landing-accent-strong) !important;
+}
+
+.landing-dark a.bg-slate-950,
+.landing-dark button.bg-slate-950 {
+  background: #e6f4f1 !important;
+  color: #071015 !important;
+}
+
+.landing-dark a.bg-slate-950:hover,
+.landing-dark button.bg-slate-950:hover {
+  background: var(--landing-accent) !important;
+}
+
+.landing-dark a[class*="border-slate-300"],
+.landing-dark button[class*="border-slate-200"] {
+  background: transparent !important;
+  border-color: #4b6170 !important;
+  color: var(--landing-text) !important;
+}
+
+.landing-dark a[class*="border-slate-300"]:hover,
+.landing-dark button[class*="border-slate-200"]:hover {
+  border-color: var(--landing-accent) !important;
+  color: var(--landing-accent) !important;
+}
+
+.landing-dark .shadow-sm,
+.landing-dark .shadow-xl,
+.landing-dark [class*="shadow-[0_24px"] {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28) !important;
+}
+
+.landing-dark a:hover,
+.landing-dark button:hover {
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+/* Shared operational action language. Buttons keep their existing semantics;
+   these tokens only make the contrast consistent in each theme. */
+.pilot-theme {
+  --action-primary-bg: #0f172a;
+  --action-primary-fg: #ffffff;
+  --action-primary-hover: #1e293b;
+  --action-secondary-bg: var(--pilot-surface);
+  --action-secondary-fg: var(--pilot-text);
+}
+
+.pilot-theme .bg-ink {
+  background: var(--action-primary-bg) !important;
+  color: var(--action-primary-fg) !important;
+}
+
+.pilot-theme .bg-ink:hover {
+  background: var(--action-primary-hover) !important;
+}
+
+.pilot-theme-dark {
+  --action-primary-bg: #e6f4f1;
+  --action-primary-fg: #071015;
+  --action-primary-hover: #99f6e4;
+  --action-secondary-bg: #14212c;
+  --action-secondary-fg: #f1f5f7;
+}
+
+.pilot-theme-dark .bg-ink {
+  box-shadow: 0 0 0 1px rgba(230, 244, 241, 0.14), 0 8px 22px rgba(0, 0, 0, 0.2);
+}
+
+.pilot-theme .border-line.bg-white,
+.pilot-theme .border-line[class*="bg-white"] {
+  background: var(--action-secondary-bg) !important;
+  color: var(--action-secondary-fg) !important;
+}
+
+.pilot-theme .border-line.bg-white:hover,
+.pilot-theme .border-line[class*="bg-white"]:hover {
+  border-color: var(--pilot-accent) !important;
+}
+
 .pilot-theme-dark .pilot-inventory-reference tbody tr:hover {
   background: #1a3033 !important;
 }
