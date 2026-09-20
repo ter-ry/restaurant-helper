@@ -45,7 +45,7 @@ function ProductShowcase() {
   const rows = [["Milk", "12 L", "In stock"], ["Lettuce", "0.5 head", "Reorder now"], ["Chicken breast", "3.5 kg", "Low stock"]] as const;
   return (
     <div className="landing-showcase landing-reveal landing-showcase-reveal" aria-label="Illustrative Flowtally inventory workspace preview">
-      <div className="landing-showcase-bar"><span className="landing-window-dots"><i /><i /><i /></span><span>flowtally / inventory</span><span className="landing-showcase-live">LIVE WORKSPACE</span></div>
+      <div className="landing-showcase-bar"><span className="landing-window-dots"><i /><i /><i /></span><span>flowtally / inventory</span><span className="landing-showcase-live">PRODUCT PREVIEW</span></div>
       <div className="landing-showcase-body">
         <aside><div className="landing-mini-logo"><FlowtallyMark className="h-5 w-5" /></div><span className="landing-side-active" /><span /><span /><span /><span /></aside>
         <div className="landing-dashboard-preview">
