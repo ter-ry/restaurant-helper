@@ -6,7 +6,9 @@ test.describe("dark landing card contrast", () => {
     await page.goto("/", { waitUntil: "networkidle" });
 
     await expect(page.locator(".landing-showcase")).toBeVisible();
-    await expect(page.getByRole("link", { name: /Explore the live demo/i })).toHaveAttribute("href", /demo/);
+    await expect(page.getByRole("link", { name: "Request access" }).first()).toHaveAttribute("href", /login/);
+    await expect(page.getByRole("link", { name: "See how it works" })).toHaveAttribute("href", "#how-it-works");
+    await expect(page.getByRole("link", { name: "View Live Demo" })).toHaveAttribute("href", /demo/);
     const cards = page.locator(".landing-card");
     await expect(cards).toHaveCount(13);
     const styles = await cards.evaluateAll((elements) => elements.map((element) => {

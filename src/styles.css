@@ -880,6 +880,76 @@ textarea.input {
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3) !important;
 }
 
+.landing-dark .landing-atmospheric-section {
+  position: relative;
+  isolation: isolate;
+  background: radial-gradient(circle at 76% 10%, rgba(37, 60, 145, 0.16), transparent 36%), linear-gradient(180deg, #080d12 0%, #0b131e 100%) !important;
+}
+
+.landing-dark .landing-atmospheric-section::after {
+  position: absolute;
+  inset: 18% 0 0;
+  z-index: -1;
+  background: radial-gradient(circle at 18% 80%, rgba(15, 85, 112, 0.14), transparent 32%);
+  content: "";
+  pointer-events: none;
+}
+
+.landing-dark .landing-section-panel,
+.landing-dark .landing-tab-surface {
+  border: 1px solid #263a55;
+  border-radius: 1.25rem;
+  background: rgba(13, 21, 32, 0.66);
+  box-shadow: inset 0 1px 0 rgba(157, 187, 231, 0.04), 0 24px 70px rgba(0, 0, 0, 0.18);
+}
+
+.landing-dark .landing-section-panel {
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.landing-dark .landing-tab-surface {
+  position: relative;
+  padding: 1rem;
+}
+
+.landing-dark .landing-tab-surface::before {
+  display: block;
+  grid-column: 1 / -1;
+  padding: 0.25rem 0.35rem 0.45rem;
+  border-bottom: 1px solid #263a55;
+  color: #7f91a8;
+  content: "CONNECTED SYSTEMS  /  EXPORT READY";
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.landing-dark .landing-demo-panel {
+  background: linear-gradient(135deg, #111d30, #0d1825) !important;
+  border: 1px solid #31445c;
+}
+
+.landing-dark .landing-demo-primary {
+  background: #e6f4f1 !important;
+  color: #071015 !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+}
+
+.landing-dark .landing-demo-primary:hover {
+  background: #5eead4 !important;
+}
+
+.landing-dark .landing-demo-secondary {
+  background: transparent !important;
+  border-color: #63829a !important;
+  color: #edf4ff !important;
+}
+
+.landing-dark .landing-demo-secondary:hover {
+  background: rgba(94, 234, 212, 0.12) !important;
+  border-color: #72e6d7 !important;
+}
+
 @keyframes landing-glow-drift {
   from { transform: translate3d(-2%, -1%, 0) scale(0.98); }
   to { transform: translate3d(3%, 2%, 0) scale(1.04); }
