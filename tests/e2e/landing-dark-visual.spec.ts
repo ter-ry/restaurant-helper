@@ -8,7 +8,7 @@ test.describe("dark landing card contrast", () => {
     await expect(page.locator(".landing-showcase")).toBeVisible();
     await expect(page.getByRole("link", { name: /Explore the live demo/i })).toHaveAttribute("href", /demo/);
     const cards = page.locator(".landing-card");
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(13);
     const styles = await cards.evaluateAll((elements) => elements.map((element) => {
       const style = getComputedStyle(element);
       const heading = element.querySelector("h3, .text-sm.font-bold, .text-xl.font-bold") as HTMLElement | null;
@@ -36,5 +36,17 @@ test.describe("dark landing card contrast", () => {
     await expect(page.locator("#primary-navigation")).toBeVisible();
     const backgrounds = await page.locator(".landing-card").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).backgroundColor));
     expect(backgrounds.every((background) => background !== "rgb(255, 255, 255)")).toBe(true);
+  });
+
+  test("reveals sections once and shows everything immediately with reduced motion", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/", { waitUntil: "networkidle" });
+    await page.mouse.wheel(0, 4000);
+    await page.mouse.wheel(0, -4000);
+    await expect(page.locator(".landing-hero")).toHaveClass(/landing-reveal-visible/);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload({ waitUntil: "networkidle" });
+    const states = await page.locator(".landing-reveal").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).opacity));
+    expect(states.every((opacity) => opacity === "1")).toBe(true);
   });
 });
