@@ -41,6 +41,23 @@ function Pill({ children }: { children: ReactNode }) {
   return <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 shadow-sm">{children}</span>;
 }
 
+function ProductShowcase() {
+  const rows = [["Milk", "12 L", "In stock"], ["Lettuce", "0.5 head", "Reorder now"], ["Chicken breast", "3.5 kg", "Low stock"]] as const;
+  return (
+    <div className="landing-showcase" aria-label="Illustrative Flowtally inventory workspace preview">
+      <div className="landing-showcase-bar"><span className="landing-window-dots"><i /><i /><i /></span><span>flowtally / inventory</span><span className="landing-showcase-live">LIVE WORKSPACE</span></div>
+      <div className="landing-showcase-body">
+        <aside><div className="landing-mini-logo"><FlowtallyMark className="h-5 w-5" /></div><span className="landing-side-active" /><span /><span /><span /><span /></aside>
+        <div className="landing-dashboard-preview">
+          <div className="landing-preview-heading"><div><small>OPERATIONS WORKSPACE</small><strong>Inventory overview</strong></div><span className="landing-preview-location">Harbour Kitchen · Queen West</span></div>
+          <div className="landing-preview-metrics"><div><small>Items tracked</small><b>34</b></div><div><small>Below PAR</small><b className="is-warning">5</b></div><div><small>Latest spend</small><b>$422.16</b></div></div>
+          <div className="landing-preview-table"><div className="landing-preview-table-head"><span>ITEM</span><span>ON HAND</span><span>STATUS</span></div>{rows.map(([name, qty, status]) => <div className="landing-preview-row" key={name}><span><b>{name}</b><small>Harbour Dry Goods</small></span><span>{qty}</span><em className={status === "In stock" ? "is-good" : "is-warning"}>{status}</em></div>)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navItems = [
@@ -71,22 +88,20 @@ export function LandingPage() {
         </div>
       </header>
 
-      <section id="top" className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-[#f7faf9] via-white to-[#e4f1ed]">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-28">
+      <section id="top" className="landing-hero relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-[#f7faf9] via-white to-[#e4f1ed]">
+        <div className="landing-ambient-glow landing-ambient-glow-one" aria-hidden="true" /><div className="landing-ambient-glow landing-ambient-glow-two" aria-hidden="true" /><div className="landing-grid" aria-hidden="true" />
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:px-8 lg:py-28">
           <div>
             <Pill>Restaurant operations, connected</Pill>
             <h1 className="mt-6 max-w-3xl text-5xl font-semibold leading-[1.03] tracking-[-0.04em] text-slate-950 md:text-6xl">Run the back office without chasing spreadsheets.</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">Flowtally connects purchasing, inventory, recipes, supplier costs, and POS sales so restaurant owners can see what is happening without manually piecing everything together.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href={PRODUCTION_LOGIN_URL} className="inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700" onClick={() => trackEvent("cta_request_access_click", { location: "hero" })}>Request access<ArrowRight className="ml-2 h-4 w-4" /></a>
-              <a href="#how-it-works" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:border-teal-500 hover:text-teal-800">See how it works</a>
+              <a href={OFFICIAL_DEMO_LOGIN_URL} className="landing-cta-primary inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700" onClick={() => trackEvent("cta_view_live_demo_click", { location: "hero" })}>Explore the live demo<ArrowRight className="ml-2 h-4 w-4" /></a>
+              <a href={PRODUCTION_LOGIN_URL} className="landing-cta-secondary inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:border-teal-500 hover:text-teal-800" onClick={() => trackEvent("cta_request_access_click", { location: "hero" })}>Request access</a>
             </div>
             <p className="mt-5 max-w-xl text-sm leading-6 text-slate-500">Keep your POS. Keep your accounting. Flowtally runs the operational layer between them.</p>
           </div>
-          <div className="landing-card landing-workflow-preview rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] md:p-7">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-700">Today at a glance</p><p className="mt-1 text-lg font-semibold">Restaurant workflow</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Connected</span></div>
-            <div className="mt-5 space-y-3">{workflow.map(([title, text, Icon], index) => <div key={title} className="landing-card landing-workflow-row flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3.5"><div className="landing-icon-tile flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-sm"><Icon className="h-5 w-5" /></div><div className="min-w-0"><p className="text-sm font-bold">{index + 1}. {title}</p><p className="mt-0.5 text-sm text-slate-500">{text}</p></div></div>)}</div>
-          </div>
+          <ProductShowcase />
         </div>
       </section>
 
