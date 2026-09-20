@@ -15,8 +15,8 @@ import {
 import { FlowtallyMark } from "../components/FlowtallyMark";
 import { trackEvent } from "../lib/analytics";
 import { OFFICIAL_DEMO_LOGIN_URL, PRODUCTION_LOGIN_URL, PUBLIC_CONTACT_EMAIL, buildMailtoLink } from "../lib/contactLinks";
-import type { ReactNode } from "react";
-import { useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 const workflow = [
   ["Supplier invoice", "Capture what arrived and what it cost.", ReceiptText],
@@ -41,8 +41,49 @@ function Pill({ children }: { children: ReactNode }) {
   return <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 shadow-sm">{children}</span>;
 }
 
+function ProductShowcase() {
+  const rows = [["Milk", "12 L", "In stock"], ["Lettuce", "0.5 head", "Reorder now"], ["Chicken breast", "3.5 kg", "Low stock"]] as const;
+  return (
+    <div className="landing-showcase landing-reveal landing-showcase-reveal" aria-label="Illustrative Flowtally inventory workspace preview">
+      <div className="landing-showcase-bar"><span className="landing-window-dots"><i /><i /><i /></span><span>flowtally / inventory</span><span className="landing-showcase-live">PRODUCT PREVIEW</span></div>
+      <div className="landing-showcase-body">
+        <aside><div className="landing-mini-logo"><FlowtallyMark className="h-5 w-5" /></div><span className="landing-side-active" /><span /><span /><span /><span /></aside>
+        <div className="landing-dashboard-preview">
+          <div className="landing-preview-heading"><div><small>OPERATIONS WORKSPACE</small><strong>Inventory overview</strong></div><span className="landing-preview-location">Harbour Kitchen · Queen West</span></div>
+          <div className="landing-preview-metrics"><div><small>Items tracked</small><b>34</b></div><div><small>Below PAR</small><b className="is-warning">5</b></div><div><small>Latest spend</small><b>$422.16</b></div></div>
+          <div className="landing-preview-table"><div className="landing-preview-table-head"><span>ITEM</span><span>ON HAND</span><span>STATUS</span></div>{rows.map(([name, qty, status]) => <div className="landing-preview-row" key={name}><span><b>{name}</b><small>Harbour Dry Goods</small></span><span>{qty}</span><em className={status === "In stock" ? "is-good" : "is-warning"}>{status}</em></div>)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  useEffect(() => {
+    const elements = Array.from(document.querySelectorAll<HTMLElement>(".landing-reveal"));
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (reducedMotion || !("IntersectionObserver" in window)) {
+      elements.forEach((element) => element.classList.add("landing-reveal-ready", "landing-reveal-visible"));
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => elements.forEach((element) => element.classList.add("landing-reveal-ready")));
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const element = entry.target as HTMLElement;
+        element.classList.add("landing-reveal-visible");
+        observer.unobserve(element);
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -8%" });
+    elements.forEach((element) => observer.observe(element));
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
   const navItems = [
     ["Product", "#product"],
     ["How it works", "#how-it-works"],
@@ -71,36 +112,34 @@ export function LandingPage() {
         </div>
       </header>
 
-      <section id="top" className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-[#f7faf9] via-white to-[#e4f1ed]">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-28">
+      <section id="top" className="landing-hero landing-reveal relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-[#f7faf9] via-white to-[#e4f1ed]">
+        <div className="landing-ambient-glow landing-ambient-glow-one" aria-hidden="true" /><div className="landing-ambient-glow landing-ambient-glow-two" aria-hidden="true" /><div className="landing-grid" aria-hidden="true" />
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:px-8 lg:py-28">
           <div>
             <Pill>Restaurant operations, connected</Pill>
             <h1 className="mt-6 max-w-3xl text-5xl font-semibold leading-[1.03] tracking-[-0.04em] text-slate-950 md:text-6xl">Run the back office without chasing spreadsheets.</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">Flowtally connects purchasing, inventory, recipes, supplier costs, and POS sales so restaurant owners can see what is happening without manually piecing everything together.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href={PRODUCTION_LOGIN_URL} className="inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700" onClick={() => trackEvent("cta_request_access_click", { location: "hero" })}>Request access<ArrowRight className="ml-2 h-4 w-4" /></a>
-              <a href="#how-it-works" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:border-teal-500 hover:text-teal-800">See how it works</a>
+              <a href={OFFICIAL_DEMO_LOGIN_URL} className="landing-cta-primary inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700" onClick={() => trackEvent("cta_view_live_demo_click", { location: "hero" })}>Explore the live demo<ArrowRight className="ml-2 h-4 w-4" /></a>
+              <a href={PRODUCTION_LOGIN_URL} className="landing-cta-secondary inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:border-teal-500 hover:text-teal-800" onClick={() => trackEvent("cta_request_access_click", { location: "hero" })}>Request access</a>
             </div>
             <p className="mt-5 max-w-xl text-sm leading-6 text-slate-500">Keep your POS. Keep your accounting. Flowtally runs the operational layer between them.</p>
           </div>
-          <div className="landing-card landing-workflow-preview rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] md:p-7">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-700">Today at a glance</p><p className="mt-1 text-lg font-semibold">Restaurant workflow</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Connected</span></div>
-            <div className="mt-5 space-y-3">{workflow.map(([title, text, Icon], index) => <div key={title} className="landing-card landing-workflow-row flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3.5"><div className="landing-icon-tile flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-sm"><Icon className="h-5 w-5" /></div><div className="min-w-0"><p className="text-sm font-bold">{index + 1}. {title}</p><p className="mt-0.5 text-sm text-slate-500">{text}</p></div></div>)}</div>
-          </div>
+          <ProductShowcase />
         </div>
       </section>
 
-      <section id="how-it-works" className="mx-auto max-w-7xl px-5 py-20 lg:px-8"><div className="max-w-3xl"><Pill>How it fits</Pill><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">The operating layer between sales and the stockroom.</h2><p className="mt-4 text-base leading-7 text-slate-600">Supplier invoices become purchasing records. Counts, waste, and receiving stay connected to inventory. Recipes and POS sales make usage and variance reviewable.</p></div><div className="mt-10 grid gap-4 md:grid-cols-5">{workflow.map(([title, text, Icon]) => <div key={title} className="landing-card landing-workflow-card rounded-2xl border border-slate-200 bg-white p-5"><Icon className="h-6 w-6 text-teal-700" /><p className="mt-5 text-sm font-bold">{title}</p><p className="mt-2 text-sm leading-6 text-slate-500">{text}</p></div>)}</div></section>
+      <section id="how-it-works" className="landing-reveal mx-auto max-w-7xl px-5 py-20 lg:px-8"><div className="max-w-3xl"><Pill>How it fits</Pill><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">The operating layer between sales and the stockroom.</h2><p className="mt-4 text-base leading-7 text-slate-600">Supplier invoices become purchasing records. Counts, waste, and receiving stay connected to inventory. Recipes and POS sales make usage and variance reviewable.</p></div><div className="landing-feature-grid mt-10 grid gap-4 md:grid-cols-5">{workflow.map(([title, text, Icon], index) => <div key={title} style={{ "--landing-reveal-delay": `${index * 80}ms` } as CSSProperties} className="landing-card landing-reveal landing-workflow-card rounded-2xl border border-slate-200 bg-white p-5"><Icon className="h-6 w-6 text-teal-700" /><p className="mt-5 text-sm font-bold">{title}</p><p className="mt-2 text-sm leading-6 text-slate-500">{text}</p></div>)}</div></section>
 
-      <section id="product" className="border-y border-slate-200 bg-white"><div className="mx-auto max-w-7xl px-5 py-20 lg:px-8"><Pill>Product</Pill><h2 className="mt-4 max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">A clear daily workflow for independent restaurants.</h2><div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{featureGroups.map(({ title, text, Icon }) => <article key={title} className="rounded-2xl border border-slate-200 bg-[#f8fbfa] p-6"><Icon className="h-6 w-6 text-teal-700" /><h3 className="mt-5 text-lg font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></article>)}</div></div></section>
+      <section id="product" className="landing-reveal border-y border-slate-200 bg-white"><div className="mx-auto max-w-7xl px-5 py-20 lg:px-8"><Pill>Product</Pill><h2 className="mt-4 max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">A clear daily workflow for independent restaurants.</h2><div className="landing-feature-grid mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{featureGroups.map(({ title, text, Icon }, index) => <article key={title} style={{ "--landing-reveal-delay": `${index * 80}ms` } as CSSProperties} className="landing-card landing-reveal landing-feature-card rounded-2xl border border-slate-200 bg-[#f8fbfa] p-6"><Icon className="h-6 w-6 text-teal-700" /><h3 className="mt-5 text-lg font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></article>)}</div></div></section>
 
-      <section id="integrations" className="mx-auto grid max-w-7xl gap-10 px-5 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:px-8"><div><Pill>Integrations</Pill><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Keep the systems you already trust.</h2><p className="mt-4 text-base leading-7 text-slate-600">Flowtally is not a POS replacement or an accounting system. It organizes the operational records that connect them.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="landing-card landing-integration-card rounded-2xl border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">POS</p><h3 className="mt-3 text-xl font-bold">Square</h3><p className="mt-2 text-sm leading-6 text-slate-600">Catalog mappings, sales history, and theoretical ingredient usage where supported.</p></div><div className="landing-card landing-integration-card rounded-2xl border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">Accounting</p><h3 className="mt-3 text-xl font-bold">Export-ready records</h3><p className="mt-2 text-sm leading-6 text-slate-600">Keep reviewed purchasing and operational records organized for accounting workflows.</p></div></div></section>
+      <section id="integrations" className="landing-reveal mx-auto grid max-w-7xl gap-10 px-5 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:px-8"><div><Pill>Integrations</Pill><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Keep the systems you already trust.</h2><p className="mt-4 text-base leading-7 text-slate-600">Flowtally is not a POS replacement or an accounting system. It organizes the operational records that connect them.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="landing-card landing-reveal landing-integration-card rounded-2xl border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">POS</p><h3 className="mt-3 text-xl font-bold">Square</h3><p className="mt-2 text-sm leading-6 text-slate-600">Catalog mappings, sales history, and theoretical ingredient usage where supported.</p></div><div className="landing-card landing-reveal landing-integration-card rounded-2xl border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">Accounting</p><h3 className="mt-3 text-xl font-bold">Export-ready records</h3><p className="mt-2 text-sm leading-6 text-slate-600">Keep reviewed purchasing and operational records organized for accounting workflows.</p></div></div></section>
 
-      <section id="security" className="border-y border-slate-200 bg-slate-950 text-white"><div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 lg:grid-cols-[0.8fr_1.2fr] lg:px-8"><div><Pill>Trust & security</Pill><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Operational data stays controlled.</h2><p className="mt-4 text-base leading-7 text-slate-300">Flowtally uses authenticated access and organization-level controls so each restaurant sees the workspace it is authorized to use.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/5 p-5"><ShieldCheck className="h-6 w-6 text-teal-300" /><p className="mt-4 font-bold">Organization isolation</p><p className="mt-2 text-sm leading-6 text-slate-300">Tenant-aware access and PostgreSQL row-level security protect customer workspaces.</p></div><div className="rounded-2xl border border-white/10 bg-white/5 p-5"><Sparkles className="h-6 w-6 text-teal-300" /><p className="mt-4 font-bold">Controlled setup</p><p className="mt-2 text-sm leading-6 text-slate-300">Access is configured for the restaurant rather than opened as an unreviewed self-serve account.</p></div></div></div></section>
+      <section id="security" className="landing-reveal border-y border-slate-200 bg-slate-950 text-white"><div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 lg:grid-cols-[0.8fr_1.2fr] lg:px-8"><div><Pill>Trust & security</Pill><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Operational data stays controlled.</h2><p className="mt-4 text-base leading-7 text-slate-300">Flowtally uses authenticated access and organization-level controls so each restaurant sees the workspace it is authorized to use.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/5 p-5"><ShieldCheck className="h-6 w-6 text-teal-300" /><p className="mt-4 font-bold">Organization isolation</p><p className="mt-2 text-sm leading-6 text-slate-300">Tenant-aware access and PostgreSQL row-level security protect customer workspaces.</p></div><div className="rounded-2xl border border-white/10 bg-white/5 p-5"><Sparkles className="h-6 w-6 text-teal-300" /><p className="mt-4 font-bold">Controlled setup</p><p className="mt-2 text-sm leading-6 text-slate-300">Access is configured for the restaurant rather than opened as an unreviewed self-serve account.</p></div></div></div></section>
 
-      <section id="demo" className="mx-auto max-w-7xl px-5 py-20 lg:px-8"><div className="rounded-[2rem] bg-teal-800 px-6 py-12 text-white shadow-[0_24px_70px_rgba(15,118,110,0.22)] md:px-12"><Pill>See Flowtally in action</Pill><h2 className="mt-5 max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">Walk through a populated restaurant workspace.</h2><p className="mt-4 max-w-2xl text-base leading-7 text-teal-50">Harbour Kitchen is a fictional restaurant with realistic purchasing, inventory, menu costing, Square history, and daily close records. It is fully read-only and separate from customer accounts.</p><div className="mt-8 flex flex-col gap-3 sm:flex-row"><a href={OFFICIAL_DEMO_LOGIN_URL} className="inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-bold text-teal-900 transition hover:bg-teal-50" onClick={() => trackEvent("cta_view_live_demo_click", { location: "demo_section" })}>View Live Demo<ArrowRight className="ml-2 h-4 w-4" /></a><a href={PRODUCTION_LOGIN_URL} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-teal-300 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-700" onClick={() => trackEvent("cta_request_access_click", { location: "demo_section" })}>Request access</a></div></div></section>
+      <section id="demo" className="landing-reveal mx-auto max-w-7xl px-5 py-20 lg:px-8"><div className="rounded-[2rem] bg-teal-800 px-6 py-12 text-white shadow-[0_24px_70px_rgba(15,118,110,0.22)] md:px-12"><Pill>See Flowtally in action</Pill><h2 className="mt-5 max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">Walk through a populated restaurant workspace.</h2><p className="mt-4 max-w-2xl text-base leading-7 text-teal-50">Harbour Kitchen is a fictional restaurant with realistic purchasing, inventory, menu costing, Square history, and daily close records. It is fully read-only and separate from customer accounts.</p><div className="mt-8 flex flex-col gap-3 sm:flex-row"><a href={OFFICIAL_DEMO_LOGIN_URL} className="inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-bold text-teal-900 transition hover:bg-teal-50" onClick={() => trackEvent("cta_view_live_demo_click", { location: "demo_section" })}>View Live Demo<ArrowRight className="ml-2 h-4 w-4" /></a><a href={PRODUCTION_LOGIN_URL} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-teal-300 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-700" onClick={() => trackEvent("cta_request_access_click", { location: "demo_section" })}>Request access</a></div></div></section>
 
-      <section id="contact" className="border-t border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-14 md:flex-row md:items-center md:justify-between lg:px-8"><div><Pill>Contact</Pill><h2 className="mt-4 text-2xl font-semibold">Ready to see your workflow in Flowtally?</h2><p className="mt-2 text-sm leading-6 text-slate-600">Sign in to request access, or email {PUBLIC_CONTACT_EMAIL} for a walkthrough.</p></div><a href={mailto} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-700">Email Flowtally<ArrowRight className="ml-2 h-4 w-4" /></a></div></section>
+      <section id="contact" className="landing-reveal border-t border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-14 md:flex-row md:items-center md:justify-between lg:px-8"><div><Pill>Contact</Pill><h2 className="mt-4 text-2xl font-semibold">Ready to see your workflow in Flowtally?</h2><p className="mt-2 text-sm leading-6 text-slate-600">Sign in to request access, or email {PUBLIC_CONTACT_EMAIL} for a walkthrough.</p></div><a href={mailto} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-700">Email Flowtally<ArrowRight className="ml-2 h-4 w-4" /></a></div></section>
 
       <footer className="bg-slate-950 px-5 py-8 text-slate-300 lg:px-8"><div className="mx-auto flex max-w-7xl flex-col gap-3 text-sm md:flex-row md:items-center md:justify-between"><div><p className="font-bold text-white">Flowtally</p><p className="mt-1">Restaurant purchasing, inventory, and daily close control.</p></div><p>Built in Toronto, Canada · <a className="text-white hover:text-teal-300" href={mailto}>{PUBLIC_CONTACT_EMAIL}</a></p></div></footer>
     </main>
