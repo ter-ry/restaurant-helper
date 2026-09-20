@@ -5,8 +5,10 @@ test.describe("dark landing card contrast", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/", { waitUntil: "networkidle" });
 
+    await expect(page.locator(".landing-showcase")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Explore the live demo/i })).toHaveAttribute("href", /demo/);
     const cards = page.locator(".landing-card");
-    await expect(cards).toHaveCount(13);
+    await expect(cards).toHaveCount(7);
     const styles = await cards.evaluateAll((elements) => elements.map((element) => {
       const style = getComputedStyle(element);
       const heading = element.querySelector("h3, .text-sm.font-bold, .text-xl.font-bold") as HTMLElement | null;
