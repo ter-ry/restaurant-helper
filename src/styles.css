@@ -950,6 +950,69 @@ textarea.input {
   border-color: #72e6d7 !important;
 }
 
+/* Keep the marketing page on one connected surface. Section rhythm comes
+   from space and soft lighting, rather than full-width rules or stacked slabs. */
+.landing-dark {
+  background:
+    radial-gradient(70% 38% at 72% 2%, rgba(37, 60, 145, 0.2), transparent 72%),
+    radial-gradient(58% 34% at 14% 58%, rgba(15, 85, 112, 0.12), transparent 72%),
+    linear-gradient(180deg, #070c12 0%, #0a111b 46%, #070c12 100%) !important;
+}
+
+.landing-dark header,
+.landing-dark > section,
+.landing-dark footer {
+  border: 0 !important;
+}
+
+.landing-dark header {
+  background: rgba(7, 12, 18, 0.76) !important;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.14);
+}
+
+.landing-dark > section:not(#top) {
+  margin-block: clamp(1.75rem, 4vw, 4rem);
+  background: transparent !important;
+}
+
+.landing-dark .landing-atmospheric-section {
+  background: transparent !important;
+}
+
+.landing-dark .landing-atmospheric-section::after {
+  inset: 8% 4% 8%;
+  background:
+    radial-gradient(ellipse at 80% 12%, rgba(55, 81, 171, 0.12), transparent 55%),
+    radial-gradient(ellipse at 15% 86%, rgba(15, 111, 132, 0.1), transparent 58%);
+  filter: blur(10px);
+}
+
+.landing-dark .landing-section-panel,
+.landing-dark .landing-tab-surface {
+  border-color: rgba(93, 126, 164, 0.34);
+  background: rgba(13, 21, 32, 0.52);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(157, 187, 231, 0.035);
+}
+
+.landing-dark .landing-card {
+  border-color: rgba(93, 126, 164, 0.23) !important;
+}
+
+.landing-dark .landing-tab-surface::before {
+  border-bottom-color: rgba(93, 126, 164, 0.24);
+}
+
+@media (max-width: 767px) {
+  .landing-dark > section:not(#top) {
+    margin-block: 1.25rem;
+  }
+
+  .landing-dark .landing-section-panel,
+  .landing-dark .landing-tab-surface {
+    border-radius: 1rem;
+  }
+}
+
 @keyframes landing-glow-drift {
   from { transform: translate3d(-2%, -1%, 0) scale(0.98); }
   to { transform: translate3d(3%, 2%, 0) scale(1.04); }
