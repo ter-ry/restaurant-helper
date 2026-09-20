@@ -51,4 +51,30 @@ test.describe("dark landing card contrast", () => {
     const states = await page.locator(".landing-reveal").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).opacity));
     expect(states.every((opacity) => opacity === "1")).toBe(true);
   });
+
+  test("paints the initial reveal state before showing the hero", async ({ page }) => {
+    await page.addInitScript(() => {
+      const events: Array<{ time: number; tokens: string[]; target: string }> = [];
+      (window as typeof window & { __landingRevealEvents?: typeof events }).__landingRevealEvents = events;
+      const add = DOMTokenList.prototype.add;
+      DOMTokenList.prototype.add = function (...tokens: string[]) {
+        if (tokens.includes("landing-reveal-ready") || tokens.includes("landing-reveal-visible")) {
+          events.push({ time: performance.now(), tokens, target: this.value });
+        }
+        return add.apply(this, tokens);
+      };
+    });
+    await page.goto("/", { waitUntil: "networkidle" });
+
+    const timing = await page.evaluate(() => {
+      const events = (window as typeof window & { __landingRevealEvents?: Array<{ time: number; tokens: string[]; target: string }> }).__landingRevealEvents ?? [];
+      const ready = events.find((event) => event.target.includes("landing-hero") && event.tokens.includes("landing-reveal-ready"));
+      const visible = events.find((event) => event.target.includes("landing-hero") && event.tokens.includes("landing-reveal-visible"));
+      const style = getComputedStyle(document.querySelector(".landing-hero") as HTMLElement);
+      return { gap: ready && visible ? visible.time - ready.time : 0, transition: style.transition };
+    });
+
+    expect(timing.gap).toBeGreaterThan(0);
+    expect(timing.transition).toContain("0.56s");
+  });
 });

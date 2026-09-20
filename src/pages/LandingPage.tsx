@@ -68,7 +68,7 @@ export function LandingPage() {
       return;
     }
 
-    const frame = window.requestAnimationFrame(() => elements.forEach((element) => element.classList.add("landing-reveal-ready")));
+    let observeFrame = 0;
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
@@ -77,10 +77,17 @@ export function LandingPage() {
         observer.unobserve(element);
       });
     }, { threshold: 0.12, rootMargin: "0px 0px -8%" });
-    elements.forEach((element) => observer.observe(element));
+    const frame = window.requestAnimationFrame(() => {
+      elements.forEach((element) => element.classList.add("landing-reveal-ready"));
+      // Let the hidden starting state paint once before observing the initial
+      // viewport. Without this second frame, initially visible elements can
+      // receive ready and visible in the same render and skip their reveal.
+      observeFrame = window.requestAnimationFrame(() => elements.forEach((element) => observer.observe(element)));
+    });
 
     return () => {
       window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(observeFrame);
       observer.disconnect();
     };
   }, []);
