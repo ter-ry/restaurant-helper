@@ -69,26 +69,70 @@ export function LandingPage() {
     }
 
     let observeFrame = 0;
-    const observer = new IntersectionObserver((entries) => {
+    let lastScrollY = window.scrollY;
+    let scrollDirection: "down" | "up" = "down";
+    const revealFrames = new Map<HTMLElement, number>();
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (Math.abs(currentScrollY - lastScrollY) > 1) {
+        scrollDirection = currentScrollY > lastScrollY ? "down" : "up";
+        lastScrollY = currentScrollY;
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    const revealObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
         const element = entry.target as HTMLElement;
-        element.classList.add("landing-reveal-visible");
-        observer.unobserve(element);
+        const pendingFrame = revealFrames.get(element);
+        if (pendingFrame) window.cancelAnimationFrame(pendingFrame);
+        element.classList.toggle("landing-reveal-from-above", scrollDirection === "up");
+        // Commit the directional starting transform before scheduling the
+        // visible state so upward entries do not begin from the downward pose.
+        const existingTransition = element.style.transition;
+        element.style.transition = "none";
+        void element.offsetWidth;
+        element.style.transition = existingTransition;
+        const firstFrame = window.requestAnimationFrame(() => {
+          // IntersectionObserver callbacks run before paint. A second frame
+          // gives the directional starting transform one rendered frame before
+          // the transition begins.
+          revealFrames.set(element, window.requestAnimationFrame(() => {
+            if (element.classList.contains("landing-reveal-ready")) element.classList.add("landing-reveal-visible");
+            revealFrames.delete(element);
+          }));
+        });
+        revealFrames.set(element, firstFrame);
       });
     }, { threshold: 0.12, rootMargin: "0px 0px -8%" });
+    const resetObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) return;
+        const element = entry.target as HTMLElement;
+        const pendingFrame = revealFrames.get(element);
+        if (pendingFrame) window.cancelAnimationFrame(pendingFrame);
+        revealFrames.delete(element);
+        element.classList.remove("landing-reveal-visible", "landing-reveal-from-above");
+      });
+    }, { threshold: 0, rootMargin: "80px 0px" });
     const frame = window.requestAnimationFrame(() => {
       elements.forEach((element) => element.classList.add("landing-reveal-ready"));
       // Let the hidden starting state paint once before observing the initial
       // viewport. Without this second frame, initially visible elements can
       // receive ready and visible in the same render and skip their reveal.
-      observeFrame = window.requestAnimationFrame(() => elements.forEach((element) => observer.observe(element)));
+      observeFrame = window.requestAnimationFrame(() => elements.forEach((element) => {
+        revealObserver.observe(element);
+        resetObserver.observe(element);
+      }));
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
       window.cancelAnimationFrame(observeFrame);
-      observer.disconnect();
+      revealFrames.forEach((pendingFrame) => window.cancelAnimationFrame(pendingFrame));
+      window.removeEventListener("scroll", handleScroll);
+      revealObserver.disconnect();
+      resetObserver.disconnect();
     };
   }, []);
   const navItems = [
