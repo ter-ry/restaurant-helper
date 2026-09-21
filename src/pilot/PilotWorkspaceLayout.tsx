@@ -58,7 +58,7 @@ function NavItem({
       title={label}
       className={({ isActive }) =>
         [
-          "flex items-center justify-start gap-2 rounded-2xl py-3 text-sm font-semibold transition",
+          "pilot-nav-item flex items-center justify-start gap-2 rounded-2xl py-3 text-sm font-semibold transition",
           collapsed ? "justify-center px-2" : "justify-start px-3",
           isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100 hover:text-ink",
         ].join(" ")
@@ -400,11 +400,11 @@ export function PilotWorkspaceLayout() {
   }
 
   return (
-    <div className={`pilot-theme pilot-theme-${theme} min-h-screen text-ink`}>
+    <div className={`pilot-theme pilot-theme-${theme} pilot-shell min-h-screen text-ink`}>
       <AnalyticsTracker />
       <div className="xl:flex xl:h-dvh xl:overflow-hidden">
         <aside
-          className={`sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-4 shadow-sm transition-[width] duration-200 xl:flex xl:flex-col ${
+          className={`pilot-sidebar sticky top-0 hidden h-screen shrink-0 border-r border-line bg-white px-4 py-4 shadow-sm transition-[width] duration-200 xl:flex xl:flex-col ${
             desktopSidebarCollapsed ? "xl:w-16" : "xl:w-60"
           }`}
         >
@@ -426,7 +426,7 @@ export function PilotWorkspaceLayout() {
           </div>
 
           {!desktopSidebarCollapsed ? (
-            <div className="pilot-context mt-3 rounded-xl border border-line bg-slate-50 px-3 py-2">
+            <div className="pilot-context pilot-context-card mt-3 rounded-xl border border-line bg-slate-50 px-3 py-2">
               <div className="min-w-0">
                 {organizations.length > 1 ? (
                   <label className="block">
@@ -486,7 +486,7 @@ export function PilotWorkspaceLayout() {
         </aside>
 
         <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 border-b border-line bg-white/92 backdrop-blur">
+          <header className="pilot-topbar sticky top-0 z-20 border-b border-line bg-white/92 backdrop-blur">
             <div className="flex items-center gap-3 px-4 py-3 sm:px-5 xl:hidden">
               <button
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-white text-ink shadow-sm"
@@ -547,7 +547,7 @@ export function PilotWorkspaceLayout() {
             </div>
           </header>
 
-          <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-5 lg:px-6 xl:h-[calc(100dvh-4.5rem)] xl:overflow-y-auto xl:px-8">
+          <main className="pilot-main mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-5 lg:px-6 xl:h-[calc(100dvh-4.5rem)] xl:overflow-y-auto xl:px-8">
             {demoReadOnly ? <div className="mb-4 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-center text-xs font-semibold text-brand-900">Demo mode — changes are disabled</div> : null}
             {error ? (
               <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert" aria-live="polite">
@@ -577,7 +577,7 @@ export function PilotWorkspaceLayout() {
       {mobileNavOpen ? (
         <div className="fixed inset-0 z-30 xl:hidden">
           <button className="absolute inset-0 bg-slate-900/35" type="button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />
-          <div className="absolute left-0 top-0 flex h-full w-[86%] max-w-sm flex-col border-r border-line bg-white p-4 shadow-2xl">
+          <div className="pilot-mobile-nav absolute left-0 top-0 flex h-full w-[86%] max-w-sm flex-col border-r border-line bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-muted">Workspace</p>
@@ -592,7 +592,7 @@ export function PilotWorkspaceLayout() {
               </button>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-line bg-slate-50 p-4">
+            <div className="pilot-context-card mt-5 rounded-2xl border border-line bg-slate-50 p-4">
               {organizations.length > 1 ? (
                 <div className="mb-4">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Organization</p>

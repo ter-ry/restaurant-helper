@@ -69,10 +69,10 @@ export function DataTable<T>({ columns, data, getRowKey, onRowClick }: DataTable
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-white">
+    <div className="pilot-table-wrap overflow-hidden rounded-lg border border-line bg-white">
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-line text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+        <table className="pilot-table min-w-full divide-y divide-line text-left text-sm">
+          <thead className="pilot-table-header bg-slate-50 text-xs uppercase tracking-wide text-muted">
             <tr>
               {columns.map((column, index) => (
                 <th key={column.header} className={`px-4 py-3 font-bold ${column.className ?? ""}`} aria-sort={sort?.index === index ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
@@ -91,7 +91,7 @@ export function DataTable<T>({ columns, data, getRowKey, onRowClick }: DataTable
               <tr
                 key={getRowKey(row)}
                 onClick={() => onRowClick?.(row)}
-                className={onRowClick ? "cursor-pointer transition hover:bg-slate-50" : ""}
+                className={`pilot-table-row ${onRowClick ? "cursor-pointer transition hover:bg-slate-50" : ""}`}
               >
                 {columns.map((column) => {
                   const value =
