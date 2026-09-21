@@ -766,6 +766,14 @@ textarea.input {
   transform: none;
 }
 
+.landing-reveal-ready.landing-reveal-from-above:not(.landing-reveal-visible) {
+  transform: translate3d(0, -20px, 0);
+}
+
+.landing-showcase-reveal.landing-reveal-ready.landing-reveal-from-above:not(.landing-reveal-visible) {
+  transform: translate3d(0, -20px, 0) scale(0.985);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing-reveal-ready,
   .landing-showcase-reveal.landing-reveal-ready {
