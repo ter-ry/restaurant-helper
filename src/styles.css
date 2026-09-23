@@ -1267,3 +1267,108 @@ textarea.input {
 .pilot-theme-dark .pilot-inventory-toolbar.bg-white { background: color-mix(in srgb, var(--pilot-surface) 96%, transparent) !important; }
 .pilot-theme-dark .pilot-inventory-table-surface .bg-slate-50 { background: color-mix(in srgb, var(--pilot-surface-muted) 82%, transparent) !important; }
 .pilot-theme-dark .pilot-mobile-actions > button { background: var(--pilot-surface-muted) !important; border-color: var(--pilot-line-strong) !important; }
+
+/* Interaction polish: status colour carries meaning; focus and hover only
+   communicate position and keyboard location. */
+.pilot-theme {
+  --pilot-focus: rgba(59, 130, 246, 0.34);
+  --pilot-attention-bg: rgba(129, 140, 248, 0.15);
+  --pilot-attention-fg: #4f46a5;
+  --pilot-attention-line: rgba(99, 102, 241, 0.24);
+}
+
+.pilot-theme-dark {
+  --pilot-focus: rgba(96, 165, 250, 0.42);
+  --pilot-attention-bg: rgba(129, 140, 248, 0.18);
+  --pilot-attention-fg: #c7d2fe;
+  --pilot-attention-line: rgba(129, 140, 248, 0.28);
+}
+
+.pilot-theme :is(a, button, input, select, textarea):focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.pilot-theme :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--pilot-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.pilot-theme .input:focus {
+  border-color: var(--pilot-line-strong);
+  box-shadow: none;
+}
+
+.pilot-theme .input:focus-visible {
+  border-color: var(--pilot-focus);
+  box-shadow: 0 0 0 2px var(--pilot-focus);
+}
+
+.pilot-theme .pilot-button-secondary:hover {
+  border-color: var(--pilot-line-strong) !important;
+}
+
+.pilot-theme .pilot-table-row:hover,
+.pilot-theme .pilot-inventory-table-surface table tbody tr:hover {
+  background: color-mix(in srgb, var(--pilot-surface-muted) 78%, var(--pilot-surface)) !important;
+  box-shadow: none;
+}
+
+.pilot-theme-dark .pilot-table-row:hover,
+.pilot-theme-dark .pilot-inventory-table-surface table tbody tr:hover {
+  background: color-mix(in srgb, #203243 72%, var(--pilot-surface)) !important;
+}
+
+.pilot-theme .pilot-badge {
+  border: 1px solid transparent;
+  box-shadow: none !important;
+  font-weight: 600;
+  padding: 0.22rem 0.55rem;
+}
+
+.pilot-theme .pilot-badge-neutral,
+.pilot-theme .pilot-badge-info {
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-muted) !important;
+  border-color: transparent;
+}
+
+.pilot-theme .pilot-badge-success {
+  background: rgba(13, 148, 136, 0.13) !important;
+  color: var(--pilot-accent) !important;
+}
+
+.pilot-theme .pilot-badge-warning,
+.pilot-theme .pilot-badge-orange {
+  background: var(--pilot-attention-bg) !important;
+  color: var(--pilot-attention-fg) !important;
+  border-color: var(--pilot-attention-line);
+}
+
+.pilot-theme .pilot-badge-danger,
+.pilot-theme .pilot-badge-critical {
+  background: rgba(244, 114, 114, 0.14) !important;
+  color: var(--pilot-danger) !important;
+  border-color: rgba(244, 114, 114, 0.24);
+}
+
+.pilot-theme-dark .pilot-badge-success { color: #8cebdd !important; }
+.pilot-theme-dark .pilot-badge-danger,
+.pilot-theme-dark .pilot-badge-critical { color: #fda4af !important; }
+
+.pilot-theme-dark .bg-amber-50,
+.pilot-theme-dark .bg-amber-50\/50,
+.pilot-theme-dark .bg-amber-50\/70,
+.pilot-theme-dark .purchase-review-item,
+.pilot-theme-dark .daily-close-progress-card[data-state="needs-review"] {
+  border-color: var(--pilot-attention-line) !important;
+}
+
+/* Parent surfaces must not inherit an accent outline just because a child is
+   hovered or focused. */
+.pilot-theme .border-line.bg-white:hover,
+.pilot-theme .pilot-inventory-table-surface:hover,
+.pilot-theme .pilot-inventory-toolbar:hover {
+  border-color: var(--pilot-line-strong) !important;
+}
