@@ -532,7 +532,7 @@ export function PilotInventoryPage() {
   };
 
   const renderItemTable = () => (
-    <Card className="workspace-card pilot-inventory-reference p-3 sm:p-4">
+    <Card className="workspace-card pilot-inventory-reference pilot-inventory-table-surface p-3 sm:p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-base font-bold text-ink">Items</h2>
         {loading && hasLoaded ? <span className="text-xs font-semibold text-muted">Refreshing…</span> : null}
@@ -605,11 +605,11 @@ export function PilotInventoryPage() {
       </div>
       <p className="mt-2 text-xs text-muted sm:hidden">Swipe horizontally to see cost and reorder status.</p>
 
-      <div className="mt-3">
+      <div className="pilot-inventory-movements mt-4">
         <SectionHeader title="Recent movements" description="What changed most recently." />
         <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
           {(data?.movements ?? []).slice(0, 8).map((movement) => (
-            <div key={movement.id} className="rounded-2xl border border-line bg-slate-50 px-4 py-3">
+            <div key={movement.id} className="pilot-movement-card rounded-2xl border border-line bg-slate-50 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-semibold text-ink">{movement.inventoryItemName}</p>
@@ -1232,7 +1232,7 @@ export function PilotInventoryPage() {
       {error ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
         <>
-          <div className="inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
+          <div className="inventory-toolbar pilot-inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-3">
                 <h1 className="shrink-0 text-lg font-semibold tracking-tight text-ink sm:text-xl">Inventory</h1>
@@ -1259,7 +1259,7 @@ export function PilotInventoryPage() {
                 <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>Refresh</Button>
                 <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
               </div>
-              <div className="relative sm:hidden">
+              <div className="pilot-mobile-actions relative sm:hidden">
                 <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-ink" type="button" aria-label="Open inventory actions" aria-expanded={inventoryActionMenuOpen} onClick={() => setInventoryActionMenuOpen((open) => !open)}>
                   <MoreHorizontal className="h-4 w-4" />
                 </button>

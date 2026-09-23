@@ -1161,8 +1161,9 @@ textarea.input {
 .pilot-shell {
   min-height: 100dvh;
   background:
-    radial-gradient(circle at 82% -8%, rgba(37, 99, 235, 0.11), transparent 34rem),
-    radial-gradient(circle at 12% 0%, rgba(13, 148, 136, 0.08), transparent 28rem),
+    radial-gradient(circle at 78% -10%, rgba(37, 99, 235, 0.18), transparent 38rem),
+    radial-gradient(circle at 8% 8%, rgba(13, 148, 136, 0.12), transparent 30rem),
+    radial-gradient(circle at 72% 82%, rgba(30, 64, 175, 0.08), transparent 34rem),
     var(--pilot-bg);
 }
 
@@ -1185,28 +1186,33 @@ textarea.input {
 .pilot-theme .workspace-card,
 .pilot-theme .workspace-table-wrap,
 .pilot-theme .pilot-table-wrap {
-  border-color: var(--pilot-line) !important;
+  border-color: color-mix(in srgb, var(--pilot-line) 72%, transparent) !important;
   box-shadow: var(--pilot-shadow);
 }
-.pilot-page-header { background: var(--pilot-surface) !important; }
+.pilot-page-header { background: color-mix(in srgb, var(--pilot-surface) 92%, transparent) !important; }
 .pilot-metric-card { background: var(--pilot-surface-muted) !important; border-color: var(--pilot-line) !important; }
 .pilot-theme-dark .pilot-metric-card { background: var(--pilot-surface-raised) !important; }
 
-.pilot-theme .pilot-button { border-radius: 0.65rem; box-shadow: none; }
-.pilot-theme .pilot-button-primary { background: var(--pilot-accent) !important; color: #ffffff !important; box-shadow: 0 8px 20px rgba(13, 148, 136, 0.18); }
+.pilot-theme .pilot-button { border-radius: 0.6rem; box-shadow: none; transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+.pilot-theme .pilot-button-primary { background: var(--pilot-accent) !important; color: #ffffff !important; box-shadow: 0 8px 20px rgba(13, 148, 136, 0.22); }
 .pilot-theme .pilot-button-primary:hover { background: #0b625d !important; }
 .pilot-theme-dark .pilot-button-primary { color: #061312 !important; }
+.pilot-theme .pilot-button-primary:active { transform: translateY(1px); box-shadow: 0 4px 12px rgba(13, 148, 136, 0.18); }
 .pilot-theme .pilot-button-secondary { background: var(--pilot-surface) !important; color: var(--pilot-text) !important; border-color: var(--pilot-line-strong) !important; }
 .pilot-theme .pilot-button-secondary:hover { background: var(--pilot-surface-muted) !important; border-color: var(--pilot-accent) !important; }
 .pilot-theme .pilot-button-ghost:hover { background: var(--pilot-surface-muted) !important; }
+.pilot-theme .pilot-button:disabled { opacity: 0.54; box-shadow: none; transform: none; }
 
-.pilot-theme .pilot-table-wrap { overflow: hidden; background: var(--pilot-surface); }
+.pilot-theme .pilot-table-wrap { overflow: hidden; background: color-mix(in srgb, var(--pilot-surface) 94%, transparent); }
 .pilot-theme .pilot-table-header { background: var(--pilot-surface-muted) !important; color: var(--pilot-muted) !important; }
 .pilot-theme .pilot-table-header th { border-color: var(--pilot-line) !important; }
 .pilot-theme .pilot-table-row { background: var(--pilot-surface) !important; }
-.pilot-theme .pilot-table-row:hover { background: var(--pilot-surface-muted) !important; }
+.pilot-theme .pilot-table-row:hover { background: color-mix(in srgb, var(--pilot-accent-soft) 42%, var(--pilot-surface)) !important; }
 .pilot-theme .pilot-table td { color: var(--pilot-text); border-color: var(--pilot-line) !important; }
 .pilot-theme .pilot-table th { border-color: var(--pilot-line) !important; }
+.pilot-theme .pilot-table th[aria-sort] { white-space: nowrap; }
+.pilot-theme .pilot-table td:not(:first-child),
+.pilot-theme .pilot-table th:not(:first-child) { font-variant-numeric: tabular-nums; }
 
 .pilot-theme .input { background: var(--pilot-surface-raised); color: var(--pilot-text); border-color: var(--pilot-line); }
 .pilot-theme .input::placeholder { color: var(--pilot-muted); }
@@ -1228,7 +1234,36 @@ textarea.input {
 }
 
 @media (max-width: 639px) {
-  .pilot-shell { background: var(--pilot-bg); }
+  .pilot-shell {
+    background:
+      radial-gradient(circle at 50% -8%, rgba(37, 99, 235, 0.16), transparent 22rem),
+      radial-gradient(circle at 0% 38%, rgba(13, 148, 136, 0.1), transparent 18rem),
+      var(--pilot-bg);
+  }
   .pilot-main { padding-inline: 0.75rem; }
   .pilot-page-header { border-radius: 0.75rem; }
+  .pilot-inventory-toolbar { padding: 0.65rem !important; }
+  .pilot-inventory-toolbar > div:first-child { align-items: center; }
+  .pilot-inventory-toolbar h1 { font-size: 1rem; }
+  .pilot-inventory-toolbar [role="tablist"] { gap: 0.15rem; }
+  .pilot-inventory-toolbar [role="tab"] { min-height: 2.25rem; padding-inline: 0.65rem; }
+  .pilot-inventory-table-surface { padding: 0.75rem !important; }
+  .pilot-inventory-table-surface > .mb-3 { margin-bottom: 0.65rem; }
+  .pilot-inventory-table-surface .pilot-table-wrap,
+  .pilot-inventory-table-surface > div > div.rounded-xl { border-radius: 0.7rem; }
+  .pilot-inventory-movements { margin-top: 0.9rem; }
 }
+
+/* Inventory keeps the working surface visually connected to its toolbar while
+   retaining a clear scroll boundary for wide data on small screens. */
+.pilot-inventory-toolbar { background: color-mix(in srgb, var(--pilot-surface) 94%, transparent) !important; }
+.pilot-inventory-table-surface { background: color-mix(in srgb, var(--pilot-surface) 96%, transparent) !important; }
+.pilot-inventory-table-surface .rounded-xl.border { border-color: color-mix(in srgb, var(--pilot-line) 78%, transparent) !important; }
+.pilot-inventory-table-surface table thead { box-shadow: inset 0 -1px 0 var(--pilot-line); }
+.pilot-inventory-table-surface table tbody tr { transition: background-color 150ms ease; }
+.pilot-inventory-table-surface table tbody tr:hover { background: color-mix(in srgb, var(--pilot-accent-soft) 36%, var(--pilot-surface)) !important; }
+.pilot-movement-card { border-color: color-mix(in srgb, var(--pilot-line) 74%, transparent) !important; background: color-mix(in srgb, var(--pilot-surface-muted) 74%, transparent) !important; }
+.pilot-theme-dark .pilot-inventory-table-surface .bg-white,
+.pilot-theme-dark .pilot-inventory-toolbar.bg-white { background: color-mix(in srgb, var(--pilot-surface) 96%, transparent) !important; }
+.pilot-theme-dark .pilot-inventory-table-surface .bg-slate-50 { background: color-mix(in srgb, var(--pilot-surface-muted) 82%, transparent) !important; }
+.pilot-theme-dark .pilot-mobile-actions > button { background: var(--pilot-surface-muted) !important; border-color: var(--pilot-line-strong) !important; }
