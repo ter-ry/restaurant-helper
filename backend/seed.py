@@ -785,6 +785,8 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
         ("Potato", "Produce", "kg", "2.10"),
         ("Coffee Beans", "Beverage", "kg", "19.50"),
         ("Tomatoes", "Produce", "kg", "4.20"),
+        ("Onions", "Produce", "kg", "2.40"),
+        ("Butter", "Dairy", "kg", "8.75"),
     ]:
         if name not in items:
             supplier = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.id.asc()).first()
