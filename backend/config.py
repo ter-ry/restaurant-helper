@@ -256,6 +256,7 @@ class BaseConfig:
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
             "FLOWTALLY_DEMO_DATABASE_NAME": os.environ.get("FLOWTALLY_DEMO_DATABASE_NAME", "").strip(),
             "FLOWTALLY_DEMO_ISOLATED": _env_bool("FLOWTALLY_DEMO_ISOLATED", False),
+            "FLOWTALLY_SHOWCASE_ORGANIZATION_ID": os.environ.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID", "").strip(),
             "FLOWTALLY_PRODUCTION_DATABASE_NAME": os.environ.get("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_prod").strip() or "flowtally_prod",
         }
         validate_runtime_config(config, environment=cls.mode)

@@ -601,7 +601,21 @@ def _apply_invoice_receipt(invoice: PurchaseInvoice, actor_id: int) -> None:
     invoice.updated_by_user_id = actor_id
 
 
-def _seed_count_session(organization: Organization, location: RestaurantLocation, item_by_name: dict[str, InventoryItem], *, actor_id: int) -> StockCountSession:
+def _seed_count_session(
+    organization: Organization,
+    location: RestaurantLocation,
+    item_by_name: dict[str, InventoryItem],
+    *,
+    actor_id: int,
+    seed_label: str = "Pilot closing count",
+) -> StockCountSession:
+    existing = StockCountSession.query.filter_by(
+        organization_id=organization.id,
+        location_id=location.id,
+        notes=seed_label,
+    ).first()
+    if existing is not None:
+        return existing
     session_record = StockCountSession(
         organization_id=organization.id,
         location_id=location.id,
@@ -609,7 +623,7 @@ def _seed_count_session(organization: Organization, location: RestaurantLocation
         started_at=_now() - timedelta(days=2),
         completed_at=_now() - timedelta(days=2, hours=-1),
         counted_by="Manager on duty",
-        notes="Pilot closing count",
+        notes=seed_label,
         item_count=5,
         created_by_user_id=actor_id,
         finalized_by_user_id=actor_id,
@@ -646,6 +660,61 @@ def _seed_count_session(organization: Organization, location: RestaurantLocation
         item.last_counted_at = _now() - timedelta(days=2)
         item.updated_by_user_id = actor_id
     return session_record
+
+
+def _ensure_showcase_base_data(organization: Organization, location: RestaurantLocation, *, actor_id: int) -> None:
+    """Ensure purchasing and inventory foundations exist for one tenant."""
+    for module_key in OFFICIAL_DEMO_MODULE_KEYS:
+        _upsert_module(organization, module_key)
+
+    suppliers = [_get_or_create_supplier(organization, spec) for spec in SUPPLIER_SEED]
+    db.session.flush()
+    supplier_by_name = {supplier.name: supplier for supplier in suppliers}
+    items = [_get_or_create_inventory_item(organization, location, supplier_by_name, spec) for spec in INVENTORY_SEED]
+    db.session.flush()
+    item_by_name = {item.name: item for item in items}
+    for spec in INVOICE_SEED:
+        _seed_invoice(organization, location, supplier_by_name, item_by_name, spec, actor_id=actor_id)
+    db.session.flush()
+    _seed_count_session(organization, location, item_by_name, actor_id=actor_id, seed_label="Flowtally Showcase seed count")
+    _seed_reorder_intents(organization, location, item_by_name, actor_id=actor_id)
+
+
+def seed_showcase_tenant(*, organization_id: int, location_id: int, owner_id: int) -> None:
+    """Seed only the explicitly configured production showcase tenant."""
+    organization = db.session.get(Organization, organization_id)
+    location = db.session.get(RestaurantLocation, location_id)
+    owner = db.session.get(User, owner_id)
+    if organization is None or location is None or owner is None:
+        raise RuntimeError("The configured showcase organization, location, or owner was not found.")
+    if location.organization_id != organization.id:
+        raise RuntimeError("The configured showcase location does not belong to the showcase organization.")
+    if organization.name != "Flowtally Showcase" or location.name != "Harbour Kitchen":
+        raise RuntimeError("The configured showcase organization or location marker does not match.")
+    if not OrganizationMembership.query.filter_by(user_id=owner.id, organization_id=organization.id, role="owner").first():
+        raise RuntimeError("The configured showcase owner is not an owner of the showcase organization.")
+
+    _ensure_showcase_base_data(organization, location, actor_id=owner.id)
+    db.session.flush()
+    seed_official_demo_data(
+        organization_id=organization.id,
+        location_id=location.id,
+        owner_id=owner.id,
+        organization_name="Flowtally Showcase",
+        location_name="Harbour Kitchen",
+    )
+    db.session.add(
+        AuditEvent(
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=owner.id,
+            event_type="showcase.seeded",
+            entity_type="organization",
+            entity_id=str(organization.id),
+            metadata_json={"source": "showcase-seed", "organizationId": organization.id, "locationId": location.id},
+        )
+    )
+    db.session.commit()
 
 
 def _seed_reorder_intents(organization: Organization, location: RestaurantLocation, item_by_name: dict[str, InventoryItem], *, actor_id: int) -> None:
@@ -734,7 +803,14 @@ def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False, de
     return SeedResult(organization_id=organization.id, owner_id=owner.id, manager_id=manager.id, location_id=location.id)
 
 
-def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id: int) -> None:
+def seed_official_demo_data(
+    *,
+    organization_id: int,
+    location_id: int,
+    owner_id: int,
+    organization_name: str | None = None,
+    location_name: str | None = None,
+) -> None:
     """Add the deterministic Harbour Kitchen story on top of the pilot seed.
 
     This helper only writes to the explicitly selected organization.  It is
@@ -751,8 +827,8 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
     for module_key in OFFICIAL_DEMO_MODULE_KEYS:
         _upsert_module(organization, module_key)
 
-    organization.name = DEMO_RESTAURANT_NAME
-    location.name = DEMO_LOCATION_NAME
+    organization.name = organization_name or DEMO_RESTAURANT_NAME
+    location.name = location_name or DEMO_LOCATION_NAME
     location.city = "Toronto"
     location.region = "ON"
     location.country = "Canada"
@@ -776,6 +852,8 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
         ("Potato", "Produce", "kg", "2.10"),
         ("Coffee Beans", "Beverage", "kg", "19.50"),
         ("Tomatoes", "Produce", "kg", "4.20"),
+        ("Onions", "Produce", "kg", "2.40"),
+        ("Butter", "Dairy", "kg", "8.75"),
     ]:
         if name not in items:
             supplier = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.id.asc()).first()
@@ -878,9 +956,9 @@ def seed_official_demo_data(*, organization_id: int, location_id: int, owner_id:
         square_location = SquareLocation(square_connection_id=connection.id, square_location_id="demo-location-queen-west")
         db.session.add(square_location)
         db.session.flush()
-    square_location.name = DEMO_LOCATION_NAME
+    square_location.name = location.name
     square_location.status = "ACTIVE"
-    square_location.raw_payload_json = {"id": square_location.square_location_id, "name": DEMO_LOCATION_NAME, "status": "ACTIVE", "demo": True}
+    square_location.raw_payload_json = {"id": square_location.square_location_id, "name": location.name, "status": "ACTIVE", "demo": True}
     location_mapping = SquareLocationMapping.query.filter_by(square_location_id=square_location.id).first()
     if location_mapping is None:
         db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id, mapped_by_user_id=owner_id))
