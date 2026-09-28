@@ -1,0 +1,83 @@
+services:
+  - type: web
+    name: flowtally-api-showcase
+    env: python
+    plan: starter
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: flask --app backend.wsgi:app db upgrade && gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLOWTALLY_ENV
+        value: staging
+      - key: FLOWTALLY_SHOWCASE_ENABLED
+        value: "true"
+      - key: FLOWTALLY_SHOWCASE_DATABASE_NAME
+        value: flowtally_showcase
+      - key: FLOWTALLY_SHOWCASE_ORGANIZATION_NAME
+        value: Harbour Kitchen
+      - key: DATABASE_URL
+        sync: false
+      - key: FLOWTALLY_MIGRATION_DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: FLOWTALLY_ALLOWED_ORIGINS
+        sync: false
+      - key: FLOWTALLY_FRONTEND_ORIGIN
+        sync: false
+      - key: FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF
+        value: "true"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SESSION_COOKIE_SAMESITE
+        value: "None"
+      - key: SESSION_COOKIE_NAME
+        value: flowtally_showcase_session
+      - key: FLOWTALLY_RATE_LIMIT_STORAGE_URI
+        sync: false
+      - key: GOOGLE_OIDC_ENABLED
+        value: "true"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: OCR_SPACE_API_KEY
+        sync: false
+      - key: OCR_SPACE_ENDPOINT
+        value: https://api.ocr.space/parse/image
+      - key: OCR_SPACE_LANGUAGE
+        value: eng
+      - key: OCR_SPACE_ENGINE
+        value: "2"
+      - key: OCR_SPACE_TIMEOUT
+        value: "90"
+      - key: SQUARE_ENABLED
+        value: "true"
+      - key: SQUARE_ENVIRONMENT
+        value: sandbox
+      - key: SQUARE_APPLICATION_ID
+        sync: false
+      - key: SQUARE_APPLICATION_SECRET
+        sync: false
+      - key: SQUARE_REDIRECT_URI
+        sync: false
+      - key: SQUARE_WEBHOOK_SIGNATURE_KEY
+        sync: false
+      - key: SQUARE_WEBHOOK_NOTIFICATION_URL
+        sync: false
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false
+  - type: web
+    name: flowtally-showcase
+    env: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_ENABLE_PILOT_APP
+        value: "true"
+      - key: VITE_PILOT_API_BASE_URL
+        sync: false
+      - key: VITE_DEMO_READ_ONLY
+        value: "false"

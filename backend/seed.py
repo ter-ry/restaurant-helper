@@ -5,7 +5,10 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import os
 
+from flask import current_app
+
 from .costing import stock_unit_cost_from_purchase, weighted_average_inventory_cost
+from .config import database_name_from_url
 from .extensions import db
 from .models import (
     AuditEvent,
@@ -672,8 +675,14 @@ def _current_environment() -> str:
     return os.environ.get("FLOWTALLY_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
 
 
-def _allow_seed_reset_in_current_environment(*, confirm_production: bool, demo: bool = False) -> None:
+def _allow_seed_reset_in_current_environment(*, confirm_production: bool, demo: bool = False, showcase: bool = False) -> None:
     if _current_environment() in {"staging", "production"}:
+        if showcase:
+            expected = os.environ.get("FLOWTALLY_SHOWCASE_DATABASE_NAME", "").strip()
+            targeted = database_name_from_url(str(current_app.config.get("SQLALCHEMY_DATABASE_URI") or os.environ.get("DATABASE_URL", "")))
+            if _current_environment() != "staging" or os.environ.get("FLOWTALLY_SHOWCASE_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"} or not expected or targeted != expected or targeted in {"defaultdb", "flowtally_prod"}:
+                raise RuntimeError("Showcase reset requires FLOWTALLY_SHOWCASE_ENABLED=true and the explicitly named isolated showcase database.")
+            return
         if demo and os.environ.get("FLOWTALLY_DEMO_READ_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}:
             return
         if not confirm_production:
@@ -682,8 +691,8 @@ def _allow_seed_reset_in_current_environment(*, confirm_production: bool, demo: 
             raise RuntimeError("FLOWTALLY_ALLOW_PRODUCTION_SEEDING must be enabled to seed or reset in staging and production.")
 
 
-def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False, demo: bool = False) -> SeedResult:
-    _allow_seed_reset_in_current_environment(confirm_production=confirm_production, demo=demo)
+def seed_pilot_data(*, reset: bool = False, confirm_production: bool = False, demo: bool = False, showcase: bool = False) -> SeedResult:
+    _allow_seed_reset_in_current_environment(confirm_production=confirm_production, demo=demo, showcase=showcase)
     if reset:
         _clear_seed_data()
 

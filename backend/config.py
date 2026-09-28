@@ -192,6 +192,15 @@ def _demo_memory_rate_limit_allowed(mode: str, database_url: str | None = None) 
     return bool(expected and targeted == expected and expected not in {"defaultdb", "flowtally_prod"})
 
 
+def _showcase_database_target_allowed(mode: str, database_url: str | None = None) -> bool:
+    """Require an explicitly named, non-production database for the private showcase."""
+    if mode != "staging" or not _env_bool("FLOWTALLY_SHOWCASE_ENABLED", False):
+        return False
+    expected = os.environ.get("FLOWTALLY_SHOWCASE_DATABASE_NAME", "").strip()
+    targeted = database_name_from_url(database_url or os.environ.get("DATABASE_URL", ""))
+    return bool(expected and targeted == expected and targeted not in {"defaultdb", "flowtally_prod"})
+
+
 def validate_production_database_targets(runtime_url: str, migration_url: str) -> None:
     expected = os.environ.get("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_prod").strip() or "flowtally_prod"
     runtime_name = database_name_from_url(runtime_url)
@@ -252,10 +261,14 @@ class BaseConfig:
             "SQUARE_APPLICATION_SECRET": os.environ.get("SQUARE_APPLICATION_SECRET", "").strip(),
             "SQUARE_REDIRECT_URI": os.environ.get("SQUARE_REDIRECT_URI", "").strip(),
             "SQUARE_WEBHOOK_SIGNATURE_KEY": os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY", "").strip(),
+            "SQUARE_WEBHOOK_NOTIFICATION_URL": os.environ.get("SQUARE_WEBHOOK_NOTIFICATION_URL", "").strip(),
             "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
             "FLOWTALLY_DEMO_DATABASE_NAME": os.environ.get("FLOWTALLY_DEMO_DATABASE_NAME", "").strip(),
             "FLOWTALLY_DEMO_ISOLATED": _env_bool("FLOWTALLY_DEMO_ISOLATED", False),
+            "FLOWTALLY_SHOWCASE_ENABLED": _env_bool("FLOWTALLY_SHOWCASE_ENABLED", False),
+            "FLOWTALLY_SHOWCASE_DATABASE_NAME": os.environ.get("FLOWTALLY_SHOWCASE_DATABASE_NAME", "").strip(),
+            "FLOWTALLY_SHOWCASE_ORGANIZATION_NAME": os.environ.get("FLOWTALLY_SHOWCASE_ORGANIZATION_NAME", "Harbour Kitchen").strip() or "Harbour Kitchen",
             "FLOWTALLY_PRODUCTION_DATABASE_NAME": os.environ.get("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_prod").strip() or "flowtally_prod",
         }
         validate_runtime_config(config, environment=cls.mode)
@@ -345,6 +358,13 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
             raise ConfigurationError("FLOWTALLY_MIGRATION_DATABASE_URL must be set in production.")
         validate_production_database_targets(database_url, migration_url)
 
+    showcase_enabled = bool(config.get("FLOWTALLY_SHOWCASE_ENABLED"))
+    if showcase_enabled:
+        if mode != "staging" or not _showcase_database_target_allowed(mode, database_url):
+            raise ConfigurationError("Showcase mode requires staging and an explicitly named isolated showcase database.")
+        if not str(config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_NAME") or "").strip():
+            raise ConfigurationError("FLOWTALLY_SHOWCASE_ORGANIZATION_NAME must be set when showcase mode is enabled.")
+
     allowed_origins = [origin.strip() for origin in os.environ.get("FLOWTALLY_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
     if not allowed_origins:
         raise ConfigurationError("FLOWTALLY_ALLOWED_ORIGINS must be set in staging and production.")
@@ -376,6 +396,8 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
         and not _demo_memory_rate_limit_allowed(mode, database_url)
     ):
         raise ConfigurationError("Rate-limit storage must not use memory:// in staging or production.")
+    if showcase_enabled and rate_limit_storage.startswith("memory://"):
+        raise ConfigurationError("Showcase mode requires external rate-limit storage; memory:// is reserved for the read-only demo.")
 
     google_enabled = bool(config.get("GOOGLE_OIDC_ENABLED"))
     if mode == "production" and not google_enabled:
