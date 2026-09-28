@@ -349,6 +349,29 @@ def create_app(test_config: dict | None = None) -> Flask:
         db.session.commit()
         click.echo(f"Seeded demo profile={profile} organization={organization.id} location={location.id} reset={reset}")
 
+    @app.cli.command("showcase-reset")
+    @click.option("--confirm-showcase", is_flag=True, help="Required acknowledgement that this is the isolated private showcase database.")
+    @click.option("--database-name", required=True, help="Must exactly match FLOWTALLY_SHOWCASE_DATABASE_NAME.")
+    def showcase_reset_command(confirm_showcase: bool, database_name: str) -> None:
+        """Reset and reseed only the explicitly configured private showcase database."""
+        if not confirm_showcase:
+            raise click.ClickException("Pass --confirm-showcase to acknowledge the isolated showcase target.")
+        if not app.config.get("FLOWTALLY_SHOWCASE_ENABLED"):
+            raise click.ClickException("Showcase reset requires FLOWTALLY_SHOWCASE_ENABLED=true.")
+        configured_name = str(app.config.get("FLOWTALLY_SHOWCASE_DATABASE_NAME") or "").strip()
+        selected_name = database_name.strip()
+        current_name = urlparse(str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")).path.rsplit("/", 1)[-1].lower()
+        if not configured_name or selected_name != configured_name or current_name != configured_name.lower():
+            raise click.ClickException("Showcase reset requires an exact match between the selected, configured, and current database names.")
+        if current_name in {"flowtally_prod", "defaultdb"}:
+            raise click.ClickException("Showcase reset refuses production and staging databases.")
+        if not inspect(db.engine).has_table("audit_events"):
+            db.create_all()
+        result = seed_pilot_data(reset=True, confirm_production=False, showcase=True)
+        seed_official_demo_data(organization_id=result.organization_id, location_id=result.location_id, owner_id=result.owner_id)
+        db.session.commit()
+        click.echo(f"Showcase reset and seeded organization={result.organization_id} location={result.location_id}")
+
     @app.cli.command("init-db")
     def init_db_command() -> None:
         db.create_all()

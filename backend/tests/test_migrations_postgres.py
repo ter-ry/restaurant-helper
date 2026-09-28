@@ -22,18 +22,14 @@ def _postgres_url(*names: str) -> str:
     return ""
 
 
-ADMIN_POSTGRES_URL = _postgres_url("FLOWTALLY_TEST_POSTGRES_ADMIN_URL", "DATABASE_URL")
+ADMIN_POSTGRES_URL = _postgres_url("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
 MIGRATION_POSTGRES_URL = _postgres_url(
-    "FLOWTALLY_MIGRATION_DATABASE_URL",
     "FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL",
     "FLOWTALLY_TEST_POSTGRES_ADMIN_URL",
     "FLOWTALLY_TEST_POSTGRES_URL",
-    "DATABASE_URL",
 )
 RUNTIME_POSTGRES_URL = _postgres_url(
     "FLOWTALLY_TEST_POSTGRES_URL",
-    "DATABASE_URL",
-    "FLOWTALLY_MIGRATION_DATABASE_URL",
 )
 POSTGRES_URL = RUNTIME_POSTGRES_URL or MIGRATION_POSTGRES_URL
 
@@ -44,21 +40,19 @@ pytestmark = pytest.mark.skipif(
 
 
 def _runtime_postgres_url() -> str:
-    return _postgres_url("FLOWTALLY_TEST_POSTGRES_URL", "DATABASE_URL", "FLOWTALLY_MIGRATION_DATABASE_URL")
+    return _postgres_url("FLOWTALLY_TEST_POSTGRES_URL")
 
 
 def _migration_postgres_url() -> str:
     return _postgres_url(
-        "FLOWTALLY_MIGRATION_DATABASE_URL",
         "FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL",
         "FLOWTALLY_TEST_POSTGRES_ADMIN_URL",
         "FLOWTALLY_TEST_POSTGRES_URL",
-        "DATABASE_URL",
     )
 
 
 def _admin_postgres_url() -> str:
-    return _postgres_url("FLOWTALLY_TEST_POSTGRES_ADMIN_URL", "DATABASE_URL")
+    return _postgres_url("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
 
 
 def _migration_engine():

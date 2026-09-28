@@ -10,6 +10,7 @@ from backend.models import (
     SquareDailySalesSummary,
     SquareOrder,
     Supplier,
+    Organization,
     OrganizationModule,
     PlatformRole,
     SupportAccessGrant,
@@ -88,6 +89,36 @@ def test_official_demo_seed_refuses_production(app, monkeypatch):
     guarded = app.test_cli_runner().invoke(args=["seed-demo"])
     assert guarded.exit_code != 0
     assert "explicitly identified" in guarded.output
+
+
+def test_private_showcase_reset_requires_explicit_confirmation_and_is_repeatable(app):
+    app.config.update(
+        FLOWTALLY_SHOWCASE_ENABLED=True,
+        FLOWTALLY_SHOWCASE_DATABASE_NAME="pilot.db",
+        FLOWTALLY_SHOWCASE_ORGANIZATION_NAME="Harbour Kitchen",
+    )
+    runner = app.test_cli_runner()
+    refused = runner.invoke(args=["showcase-reset", "--database-name", "pilot.db"])
+    assert refused.exit_code != 0
+    assert "confirm-showcase" in refused.output
+
+    first = runner.invoke(args=["showcase-reset", "--confirm-showcase", "--database-name", "pilot.db"])
+    assert first.exit_code == 0, first.output
+    with app.app_context():
+        assert Organization.query.filter_by(name="Harbour Kitchen").count() == 1
+        first_counts = (MenuItem.query.count(), SquareOrder.query.count(), OrganizationModule.query.count())
+
+    second = runner.invoke(args=["showcase-reset", "--confirm-showcase", "--database-name", "pilot.db"])
+    assert second.exit_code == 0, second.output
+    with app.app_context():
+        assert (MenuItem.query.count(), SquareOrder.query.count(), OrganizationModule.query.count()) == first_counts
+
+
+def test_private_showcase_reset_rejects_wrong_database(app):
+    app.config.update(FLOWTALLY_SHOWCASE_ENABLED=True, FLOWTALLY_SHOWCASE_DATABASE_NAME="pilot.db")
+    result = app.test_cli_runner().invoke(args=["showcase-reset", "--confirm-showcase", "--database-name", "defaultdb"])
+    assert result.exit_code != 0
+    assert "exact match" in result.output
 
 
 def test_official_demo_dashboard_reads_seeded_records(app):
