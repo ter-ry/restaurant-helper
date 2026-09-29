@@ -63,6 +63,7 @@ export interface PlatformSetupDetail extends PlatformSetupOrganizationSummary {
   auditEvents: Array<Record<string, unknown>>;
   platformRole: string | null;
   customerIdentity?: PlatformCustomerIdentity;
+  showcaseSeedAvailable?: boolean;
 }
 
 export interface PlatformSetupListResponse {
@@ -146,6 +147,14 @@ export async function updateOrganizationName(organizationId: number, name: strin
       "X-CSRFToken": csrfToken,
     },
     body: JSON.stringify({ name }),
+  });
+}
+
+export async function seedShowcaseOrganization(organizationId: number) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<PlatformSetupDetail>(`/api/platform/setup/organizations/${organizationId}/seed-showcase`, {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
   });
 }
 

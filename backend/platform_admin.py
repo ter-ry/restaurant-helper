@@ -5,13 +5,16 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
+from sqlalchemy import text
 
 from .audit import record_audit_event
+from .config import database_name_from_url
 from .extensions import db
 from .models import AuditEvent, DashboardLayout, DataImportJob, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, SupportAccessGrant, User
 from .modules import MODULE_REGISTRY, module_dependency_keys
+from .seed import seed_showcase_tenant
 from .tenant_context import apply_request_tenant_context
 from .utils import get_platform_role, get_user_memberships, json_error, isoformat, serialize_location, serialize_organization, serialize_user, serialize_audit_event
 from .validation import clean_email
@@ -296,6 +299,12 @@ def _serialize_organization_detail(organization: Organization) -> dict[str, Any]
         "checklist": _checklist(organization),
         "auditEvents": [serialize_audit_event(event) for event in AuditEvent.query.filter_by(organization_id=organization.id).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(50).all()],
         "platformRole": platform_role.role if platform_role else None,
+        "showcaseSeedAvailable": bool(
+            platform_role is not None
+            and platform_role.role == "setup_admin"
+            and str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() == "production"
+            and str(current_app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID") or "").strip() == str(organization.id)
+        ),
     }
     if platform_role is not None and platform_role.role in {"setup_admin", "support"}:
         payload["customerIdentity"] = _customer_identity(organization)
@@ -419,6 +428,72 @@ def update_organization_name(organization_id: int):
         )
     payload = _serialize_organization_detail(organization)
     return _commit_json_response(payload)
+
+
+@bp.post("/api/platform/setup/organizations/<int:organization_id>/seed-showcase")
+@login_required
+def seed_showcase_organization(organization_id: int):
+    """Seed only the explicitly configured production showcase organization."""
+    permission_error = _require_platform_role("setup_admin")
+    if permission_error is not None:
+        return permission_error
+    if str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() != "production":
+        return json_error("Showcase seeding is only available in production.", 403)
+    configured_id = str(current_app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID") or "").strip()
+    if not configured_id or configured_id != str(organization_id):
+        return json_error("The organization id must exactly match the configured showcase organization.", 403)
+    configured_database = str(current_app.config.get("FLOWTALLY_PRODUCTION_DATABASE_NAME") or "flowtally_prod").strip().lower()
+    database_uri = str(current_app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+    configured_uri_database = database_name_from_url(database_uri).strip().lower()
+    if not configured_uri_database or configured_uri_database != configured_database or configured_uri_database in {"defaultdb", "staging"}:
+        return json_error("Showcase seeding requires the explicitly configured production database.", 503)
+    if db.engine.dialect.name == "postgresql":
+        try:
+            current_database = str(db.session.execute(text("SELECT current_database()")).scalar() or "").strip().lower()
+        except Exception:
+            db.session.rollback()
+            return json_error("Could not verify the production database identity.", 503)
+        if current_database != configured_database or current_database in {"defaultdb", "staging"}:
+            return json_error("Showcase seeding requires the explicitly configured production database.", 503)
+    organization = Organization.query.filter_by(id=organization_id).first()
+    locations = RestaurantLocation.query.filter_by(organization_id=organization_id, name="Harbour Kitchen").order_by(RestaurantLocation.id.asc()).all()
+    owner_membership = (
+        OrganizationMembership.query.filter_by(organization_id=organization_id, role="owner")
+        .order_by(OrganizationMembership.created_at.asc(), OrganizationMembership.id.asc())
+        .first()
+    )
+    if organization is None or organization.name != "Flowtally Showcase":
+        return json_error("The target is not the configured Flowtally Showcase organization.", 409)
+    if len(locations) != 1:
+        return json_error("The configured Harbour Kitchen location was not found.", 409)
+    location = locations[0]
+    if owner_membership is None or owner_membership.user is None:
+        return json_error("The showcase organization must have an owner.", 409)
+    if not (
+        organization.lifecycle_status == "ACTIVE"
+        and organization.setup_status == "COMPLETE"
+        and organization.subscription_status == "ACTIVE"
+    ):
+        return json_error("The showcase organization must be active, complete, and subscribed.", 409)
+    try:
+        seed_showcase_tenant(
+            organization_id=organization.id,
+            location_id=location.id,
+            owner_id=owner_membership.user_id,
+        )
+        record_audit_event(
+            event_type="setup.showcase_seeded",
+            entity_type="organization",
+            entity_id=organization.id,
+            organization_id=organization.id,
+            actor_user_id=current_user.id,
+            metadata={"source": "platform_setup", "locationId": location.id, "ownerId": owner_membership.user_id},
+        )
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return json_error(f"Showcase seed failed safely: {exc}", 409)
+    return jsonify({"success": True, "message": "Showcase data seeded.", **_serialize_organization_detail(organization)}), 200
 
 
 def _update_configuration_json(organization: Organization, updater: Any):
