@@ -294,6 +294,132 @@ def test_non_platform_user_cannot_access_setup_customer_identity(client):
     login(client, LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD)
     response = client.get("/api/platform/setup/organizations")
     assert response.status_code == 403
+
+
+def test_showcase_seed_action_is_setup_admin_only_and_guarded(app, client, monkeypatch):
+    import backend.platform_admin as platform_admin
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        organization = Organization(
+            name="Flowtally Showcase",
+            lifecycle_status="ACTIVE",
+            setup_status="COMPLETE",
+            subscription_status="ACTIVE",
+            setup_fee_status="confirmed",
+            setup_template_key="GENERIC_RESTAURANT",
+            is_prospect=False,
+        )
+        db.session.add(organization)
+        db.session.flush()
+        from backend.models import OrganizationMembership, RestaurantLocation
+        location = RestaurantLocation(
+            organization_id=organization.id,
+            name="Harbour Kitchen",
+            city="Toronto",
+            region="ON",
+            country="Canada",
+            timezone="America/Toronto",
+        )
+        db.session.add_all([
+            location,
+            OrganizationMembership(
+                organization_id=organization.id, user_id=owner.id, role="owner"
+            ),
+        ])
+        db.session.add(PlatformRole(user_id=owner.id, role="setup_admin", is_active=True))
+        db.session.commit()
+        organization_id = organization.id
+        location_id = location.id
+        owner_id = owner.id
+        app.config.update(
+            FLOWTALLY_ENV="production",
+            FLOWTALLY_SHOWCASE_ORGANIZATION_ID=str(organization_id),
+            FLOWTALLY_PRODUCTION_DATABASE_NAME="flowtally_prod",
+            SQLALCHEMY_DATABASE_URI="postgresql://test/flowtally_prod",
+        )
+
+    calls = []
+    monkeypatch.setattr(platform_admin, "seed_showcase_tenant", lambda **kwargs: calls.append(kwargs))
+
+    unauthenticated = app.test_client()
+    assert unauthenticated.post(f"/api/platform/setup/organizations/{organization_id}/seed-showcase").status_code in {401, 302}
+
+    login(client)
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 200
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 200
+    assert calls == [
+        {"organization_id": organization_id, "location_id": location_id, "owner_id": owner_id},
+        {"organization_id": organization_id, "location_id": location_id, "owner_id": owner_id},
+    ]
+
+    with app.app_context():
+        assert AuditEvent.query.filter_by(event_type="setup.showcase_seeded", organization_id=organization_id).count() == 2
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://test/defaultdb"
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 503
+    app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://test/flowtally_prod"
+    with app.app_context():
+        Organization.query.filter_by(id=organization_id).one().lifecycle_status = "SUSPENDED"
+        db.session.commit()
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 409
+
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id + 99999}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 403
+    app.config["FLOWTALLY_SHOWCASE_ORGANIZATION_ID"] = ""
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 403
+
+
+def test_showcase_seed_action_rejects_ineligible_tenant_and_support_role(app, client):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        organization = Organization(
+            name="Flowtally Showcase",
+            lifecycle_status="SUSPENDED",
+            setup_status="COMPLETE",
+            subscription_status="ACTIVE",
+            setup_fee_status="confirmed",
+            setup_template_key="GENERIC_RESTAURANT",
+            is_prospect=False,
+        )
+        db.session.add(organization)
+        db.session.flush()
+        from backend.models import OrganizationMembership, RestaurantLocation
+        db.session.add_all([
+            RestaurantLocation(organization_id=organization.id, name="Harbour Kitchen", city="Toronto", region="ON", country="Canada", timezone="America/Toronto"),
+            OrganizationMembership(organization_id=organization.id, user_id=owner.id, role="owner"),
+            PlatformRole(user_id=owner.id, role="support", is_active=True),
+        ])
+        db.session.commit()
+        organization_id = organization.id
+        app.config.update(
+            FLOWTALLY_ENV="production",
+            FLOWTALLY_SHOWCASE_ORGANIZATION_ID=str(organization_id),
+            FLOWTALLY_PRODUCTION_DATABASE_NAME="flowtally_prod",
+            SQLALCHEMY_DATABASE_URI="postgresql://test/flowtally_prod",
+        )
+    login(client)
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/seed-showcase",
+        headers=csrf_headers(client),
+    ).status_code == 403
     response = client.post(
         "/api/platform/setup/organizations/1/name",
         headers=csrf_headers(client),

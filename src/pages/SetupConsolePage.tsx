@@ -22,6 +22,7 @@ import {
   updateLocations,
   updateModuleEntitlements,
   updateOrganizationName,
+  seedShowcaseOrganization,
   updateSetupState,
   updateSetupTemplate,
   updateSquareStatus,
@@ -324,6 +325,16 @@ export function SetupConsolePage() {
     const name = readValue("organization-name", selected.organization.name).trim();
     return mutate("organization-name", "Organization name saved", () =>
       updateOrganizationName(selected.organization.id, name).then(() => undefined),
+    );
+  }
+
+  function seedShowcase() {
+    if (!selected?.showcaseSeedAvailable) return;
+    if (!window.confirm("Seed the production Flowtally Showcase data for this organization? This is idempotent and only targets the configured showcase tenant.")) {
+      return;
+    }
+    return mutate("showcase-seed", "Showcase data seeded", () =>
+      seedShowcaseOrganization(selected.organization.id).then(() => undefined),
     );
   }
 
@@ -650,6 +661,11 @@ export function SetupConsolePage() {
                   <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveOrganizationName()} disabled={savingAction !== null || refreshing}>
                     {mutationButtonLabel("organization-name", "Save organization name", "Saving...", "Name saved")}
                   </button>
+                  {selected.showcaseSeedAvailable ? (
+                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void seedShowcase()} disabled={savingAction !== null || refreshing}>
+                      {mutationButtonLabel("showcase-seed", "Seed Showcase Data", "Seeding...", "Seeded")}
+                    </button>
+                  ) : null}
                 </div>
               {selected.customerIdentity ? (
                 <div className="mt-5 rounded-2xl border border-brand-100 bg-brand-50/50 p-4" data-testid="customer-identity">

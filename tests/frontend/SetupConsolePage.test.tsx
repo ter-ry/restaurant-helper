@@ -24,6 +24,7 @@ const platformSetupMocks = vi.hoisted(() => ({
   activateSetupOrganization: vi.fn(),
   createSupportGrant: vi.fn(),
   revokeSupportGrant: vi.fn(),
+  seedShowcaseOrganization: vi.fn(),
 }));
 
 vi.mock("../../src/lib/customerAuth", () => ({
@@ -50,6 +51,7 @@ vi.mock("../../src/lib/platformSetup", () => ({
   activateSetupOrganization: platformSetupMocks.activateSetupOrganization,
   createSupportGrant: platformSetupMocks.createSupportGrant,
   revokeSupportGrant: platformSetupMocks.revokeSupportGrant,
+  seedShowcaseOrganization: platformSetupMocks.seedShowcaseOrganization,
 }));
 
 function renderPage() {
@@ -247,6 +249,7 @@ function makeDetail(
     },
     auditEvents: [],
     platformRole: "setup_admin",
+    showcaseSeedAvailable: false,
   };
 }
 
@@ -419,6 +422,22 @@ describe("SetupConsolePage", () => {
     expect(alert).toHaveTextContent("Request failed with status 500");
     expect(screen.queryByText("Modules saved")).not.toBeInTheDocument();
     expect(screen.getByText("Save failed")).toBeVisible();
+  });
+
+  it("offers showcase seeding only for the configured tenant and confirms the action", async () => {
+    const detail = makeDetail([]) as any;
+    detail.showcaseSeedAvailable = true;
+    detail.organization = { ...detail.organization, id: 1, name: "Flowtally Showcase" };
+    platformSetupMocks.fetchSetupOrganization.mockResolvedValue(detail);
+    platformSetupMocks.seedShowcaseOrganization.mockResolvedValue(detail);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    const seedButton = await screen.findByRole("button", { name: "Seed Showcase Data" });
+    fireEvent.click(seedButton);
+    await waitFor(() => expect(platformSetupMocks.seedShowcaseOrganization).toHaveBeenCalledWith(1));
+    expect(window.confirm).toHaveBeenCalled();
   });
 });
 
