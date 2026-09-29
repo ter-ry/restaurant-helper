@@ -51,23 +51,21 @@ from backend.utils import utc_now
 
 MIGRATION_POSTGRES_URL = (
     os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
-    or os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
-    or os.environ.get("DATABASE_URL", "")
+    or ""
 )
 ADMIN_POSTGRES_URL = (
     os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
-    or os.environ.get("DATABASE_URL", "")
+    or ""
 )
 CATALOG_POSTGRES_URL = (
-    os.environ.get("FLOWTALLY_MIGRATION_DATABASE_URL")
-    or os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
+    os.environ.get("FLOWTALLY_TEST_POSTGRES_MIGRATOR_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_ADMIN_URL")
     or os.environ.get("FLOWTALLY_TEST_POSTGRES_URL")
-    or os.environ.get("DATABASE_URL", "")
+    or ""
 )
-RUNTIME_POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL") or os.environ.get("DATABASE_URL", "")
+RUNTIME_POSTGRES_URL = os.environ.get("FLOWTALLY_TEST_POSTGRES_URL", "")
 POSTGRES_URL = RUNTIME_POSTGRES_URL or MIGRATION_POSTGRES_URL
 DIAGNOSTIC_STATEMENT_TIMEOUT = "5s"
 DIAGNOSTIC_LOCK_TIMEOUT = "3s"

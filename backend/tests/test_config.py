@@ -34,10 +34,14 @@ def _clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SQUARE_APPLICATION_SECRET",
         "SQUARE_REDIRECT_URI",
         "SQUARE_WEBHOOK_SIGNATURE_KEY",
+        "SQUARE_WEBHOOK_NOTIFICATION_URL",
         "INTEGRATION_ENCRYPTION_KEY",
         "FLOWTALLY_DEMO_READ_ONLY",
         "FLOWTALLY_DEMO_ISOLATED",
         "FLOWTALLY_DEMO_DATABASE_NAME",
+        "FLOWTALLY_SHOWCASE_ENABLED",
+        "FLOWTALLY_SHOWCASE_DATABASE_NAME",
+        "FLOWTALLY_SHOWCASE_ORGANIZATION_NAME",
         "FLOWTALLY_MIGRATION_DATABASE_URL",
         "FLOWTALLY_PRODUCTION_DATABASE_NAME",
     ]:
@@ -346,6 +350,26 @@ def test_staging_render_config_runs_migrations_before_backend_startup():
     )
     assert "FLOWTALLY_MIGRATION_DATABASE_URL" in render_config
     assert procfile == "web: gunicorn backend.wsgi:app --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -"
+
+
+def test_showcase_requires_named_database_and_external_rate_limits(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "staging")
+    monkeypatch.setenv("FLOWTALLY_SHOWCASE_ENABLED", "true")
+    monkeypatch.setenv("FLOWTALLY_SHOWCASE_DATABASE_NAME", "flowtally_showcase")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally_showcase")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-showcase-secret-key")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://showcase.example")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://showcase.example")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "memory://")
+    with pytest.raises(ConfigurationError, match="memory://"):
+        choose_config().build()
+
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+    config = choose_config().build()
+    assert config["FLOWTALLY_SHOWCASE_ENABLED"] is True
+    assert config["FLOWTALLY_SHOWCASE_DATABASE_NAME"] == "flowtally_showcase"
 
 
 def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.MonkeyPatch):

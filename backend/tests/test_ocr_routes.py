@@ -88,6 +88,67 @@ def test_pilot_invoice_ocr_requires_purchase_permission_and_preserves_response_c
     assert pdf_response.status_code == 200
 
 
+def test_showcase_invoice_review_receive_updates_inventory_cost(client, monkeypatch):
+    """Exercise the provider boundary, review payload, receipt and cost state together."""
+    import backend.pilot_api as pilot_module
+
+    monkeypatch.setattr(
+        pilot_module,
+        "extract_invoice_document",
+        lambda *_args: {
+            "provider": "stub",
+            "fileName": "showcase.pdf",
+            "contentType": "application/pdf",
+            "rawText": "Milk 1 10.00",
+            "fields": {"supplier": {"value": "Fresh Dairy Toronto", "confidence": 1, "needsReview": False}},
+            "lineItems": [{"itemName": "Milk", "quantity": 1, "unit": "L", "unitPrice": 10, "lineTotal": 10, "confidence": 1, "needsReview": False}],
+            "warnings": [],
+            "overallConfidence": 1,
+            "needsReview": False,
+        },
+    )
+    assert login(client, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD).status_code == 200
+    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    ocr = client.post(
+        "/api/pilot/purchases/ocr",
+        data={"file": (io.BytesIO(b"%PDF-1.4\n"), "showcase.pdf")},
+        content_type="multipart/form-data",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert ocr.status_code == 200
+    extracted = ocr.get_json()["lineItems"][0]
+    inventory = client.get("/api/pilot/inventory").get_json()
+    milk = next(item for item in inventory["items"] if item["name"] == "Milk")
+    invoice = client.post(
+        "/api/pilot/purchases/invoices",
+        headers={"X-CSRFToken": csrf},
+        json={
+            "supplierName": "Fresh Dairy Toronto",
+            "invoiceNumber": "SHOWCASE-OCR-1",
+            "invoiceDate": "2027-01-20",
+            "subtotal": 10,
+            "tax": 0,
+            "totalAmount": 10,
+            "status": "Draft",
+            "sourceFileName": "showcase.pdf",
+            "sourceFileType": "application/pdf",
+            "extractionStatus": "complete",
+            "extractedText": "Milk 1 10.00",
+            "lineItems": [{
+                "description": extracted["itemName"], "inventoryItemId": milk["id"], "purchaseUnit": "L",
+                "inventoryUnit": "L", "conversionFactor": 1, "quantity": 1, "unitPrice": 10,
+                "lineTotal": 10, "confidence": 1, "needsReview": False, "note": "",
+            }],
+        },
+    )
+    assert invoice.status_code == 201
+    received = client.post(f"/api/pilot/purchases/invoices/{invoice.get_json()['id']}/receive", headers={"X-CSRFToken": csrf})
+    assert received.status_code == 200
+    refreshed = client.get("/api/pilot/inventory").get_json()
+    refreshed_milk = next(item for item in refreshed["items"] if item["id"] == milk["id"])
+    assert refreshed_milk["latestPurchasePrice"] == 10
+
+
 def test_pilot_invoice_ocr_rejects_anonymous_invalid_and_provider_failure(client, monkeypatch):
     anonymous = client.post(
         "/api/pilot/purchases/ocr",
