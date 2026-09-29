@@ -266,6 +266,7 @@ class BaseConfig:
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
             "FLOWTALLY_DEMO_DATABASE_NAME": os.environ.get("FLOWTALLY_DEMO_DATABASE_NAME", "").strip(),
             "FLOWTALLY_DEMO_ISOLATED": _env_bool("FLOWTALLY_DEMO_ISOLATED", False),
+            "FLOWTALLY_SHOWCASE_ORGANIZATION_ID": os.environ.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID", "").strip(),
             "FLOWTALLY_SHOWCASE_ENABLED": _env_bool("FLOWTALLY_SHOWCASE_ENABLED", False),
             "FLOWTALLY_SHOWCASE_DATABASE_NAME": os.environ.get("FLOWTALLY_SHOWCASE_DATABASE_NAME", "").strip(),
             "FLOWTALLY_SHOWCASE_ORGANIZATION_NAME": os.environ.get("FLOWTALLY_SHOWCASE_ORGANIZATION_NAME", "Harbour Kitchen").strip() or "Harbour Kitchen",

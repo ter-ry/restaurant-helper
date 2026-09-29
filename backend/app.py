@@ -18,9 +18,9 @@ from .commercial import bp as commercial_bp
 from .audit import ensure_request_id
 from .access import enforce_operational_access
 from .imports import bp as imports_bp
-from .config import choose_config, validate_runtime_config
+from .config import choose_config, database_name_from_url, validate_runtime_config
 from .extensions import csrf, db, limiter, login_manager, migrate
-from .models import AuditEvent, DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, MenuItem, Organization, PlatformRole, Recipe, RestaurantLocation, Supplier, User
+from .models import AuditEvent, DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, MenuItem, Organization, OrganizationMembership, PlatformRole, Recipe, RestaurantLocation, Supplier, User
 from .ocr import bp as ocr_bp
 from .tenant_context import apply_request_tenant_context
 from .daily_close import bp as daily_close_bp
@@ -29,7 +29,7 @@ from .organizations import bp as organizations_bp
 from .platform_admin import bp as platform_admin_bp
 from .square_integration import bp as square_integration_bp
 from .policy import enforce_endpoint_permission
-from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data
+from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data, seed_showcase_tenant
 from .validation import RequestValidationError
 from .utils import json_error
 from .performance import configure_performance, install_performance
@@ -348,6 +348,42 @@ def create_app(test_config: dict | None = None) -> Flask:
         seed_official_demo_data(organization_id=organization.id, location_id=location.id, owner_id=result.owner_id)
         db.session.commit()
         click.echo(f"Seeded demo profile={profile} organization={organization.id} location={location.id} reset={reset}")
+
+    @app.cli.command("showcase-seed")
+    @click.option("--organization-id", type=click.IntRange(min=1), required=True)
+    @click.option("--location-id", type=click.IntRange(min=1), required=True)
+    @click.option("--owner-id", type=click.IntRange(min=1), required=True)
+    @click.option("--confirm-production", is_flag=True, help="Required acknowledgement that this targets the configured production showcase tenant.")
+    def showcase_seed_command(organization_id: int, location_id: int, owner_id: int, confirm_production: bool) -> None:
+        """Seed only the configured Flowtally Showcase production tenant."""
+        if not confirm_production:
+            raise click.ClickException("Pass --confirm-production to acknowledge the production showcase target.")
+        if str(app.config.get("FLOWTALLY_ENV") or "").strip().lower() != "production":
+            raise click.ClickException("showcase-seed is production-only.")
+        configured_id = str(app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID") or "").strip()
+        if not configured_id or configured_id != str(organization_id):
+            raise click.ClickException("The organization id must exactly match FLOWTALLY_SHOWCASE_ORGANIZATION_ID.")
+        configured_database = str(app.config.get("FLOWTALLY_PRODUCTION_DATABASE_NAME") or "flowtally_prod").strip().lower()
+        current_database = database_name_from_url(str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")).strip().lower()
+        if not current_database or current_database != configured_database or current_database in {"defaultdb", "staging"}:
+            raise click.ClickException("showcase-seed requires the explicitly configured production database.")
+        organization = Organization.query.filter_by(id=organization_id).first()
+        location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization_id).first()
+        owner = User.query.filter_by(id=owner_id).first()
+        if organization is None or organization.name != "Flowtally Showcase":
+            raise click.ClickException("The target is not the configured Flowtally Showcase organization.")
+        if location is None or location.name != "Harbour Kitchen":
+            raise click.ClickException("The target location is not Harbour Kitchen in the showcase organization.")
+        if owner is None or OrganizationMembership.query.filter_by(user_id=owner_id, organization_id=organization_id, role="owner").first() is None:
+            raise click.ClickException("The owner id must be an owner of the showcase organization.")
+        if not (organization.lifecycle_status == "ACTIVE" and organization.setup_status == "COMPLETE" and organization.subscription_status == "ACTIVE"):
+            raise click.ClickException("The showcase organization must already be an active, completed production tenant.")
+        try:
+            seed_showcase_tenant(organization_id=organization_id, location_id=location_id, owner_id=owner_id)
+        except Exception as exc:
+            db.session.rollback()
+            raise click.ClickException(f"Showcase seed failed safely: {exc}") from exc
+        click.echo(f"Seeded configured showcase organization={organization_id} location={location_id}")
 
     @app.cli.command("showcase-reset")
     @click.option("--confirm-showcase", is_flag=True, help="Required acknowledgement that this is the isolated private showcase database.")
