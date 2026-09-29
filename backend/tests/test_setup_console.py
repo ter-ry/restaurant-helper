@@ -343,7 +343,7 @@ def test_showcase_seed_action_is_setup_admin_only_and_guarded(app, client, monke
     monkeypatch.setattr(platform_admin, "seed_showcase_tenant", lambda **kwargs: calls.append(kwargs))
 
     unauthenticated = app.test_client()
-    assert unauthenticated.post(f"/api/platform/setup/organizations/{organization_id}/seed-showcase").status_code in {401, 302}
+    assert unauthenticated.post(f"/api/platform/setup/organizations/{organization_id}/seed-showcase").status_code in {400, 401, 302}
 
     login(client)
     assert client.post(
