@@ -93,6 +93,23 @@ def test_platform_setup_console_can_activate_an_organization(app, client):
     assert identity["locations"][0]["city"] == "Toronto"
     assert identity["setupRequestedAt"] is None
 
+    rename_response = client.post(
+        f"/api/platform/setup/organizations/{organization_id}/name",
+        headers=csrf_headers(client),
+        json={"name": "  Renamed Setup Org  "},
+    )
+    assert rename_response.status_code == 200
+    assert rename_response.get_json()["organization"]["name"] == "Renamed Setup Org"
+    assert client.post(
+        f"/api/platform/setup/organizations/{organization_id}/name",
+        headers=csrf_headers(client),
+        json={"name": "   "},
+    ).status_code == 400
+    with app.app_context():
+        renamed = Organization.query.filter_by(id=organization_id).one()
+        assert renamed.name == "Renamed Setup Org"
+        assert AuditEvent.query.filter_by(event_type="setup.organization_name_updated", organization_id=organization_id).count() == 1
+
     template_response = client.post(
         f"/api/platform/setup/organizations/{organization_id}/template",
         headers=csrf_headers(client),
@@ -276,4 +293,10 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
 def test_non_platform_user_cannot_access_setup_customer_identity(client):
     login(client, LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD)
     response = client.get("/api/platform/setup/organizations")
+    assert response.status_code == 403
+    response = client.post(
+        "/api/platform/setup/organizations/1/name",
+        headers=csrf_headers(client),
+        json={"name": "Should Not Change"},
+    )
     assert response.status_code == 403

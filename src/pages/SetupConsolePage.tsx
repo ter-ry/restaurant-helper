@@ -21,6 +21,7 @@ import {
   updateLaunchBlockers,
   updateLocations,
   updateModuleEntitlements,
+  updateOrganizationName,
   updateSetupState,
   updateSetupTemplate,
   updateSquareStatus,
@@ -315,6 +316,14 @@ export function SetupConsolePage() {
         subscriptionStatus: readValue("subscription", selected.organization.subscriptionStatus),
         setupFeeStatus: readValue("fee", selected.organization.setupFeeStatus),
       }).then(() => undefined),
+    );
+  }
+
+  function saveOrganizationName() {
+    if (!selected) return;
+    const name = readValue("organization-name", selected.organization.name).trim();
+    return mutate("organization-name", "Organization name saved", () =>
+      updateOrganizationName(selected.organization.id, name).then(() => undefined),
     );
   }
 
@@ -627,12 +636,21 @@ export function SetupConsolePage() {
                   <SetupStateChip label="Ready" value={selected.checklist.readyForActivation ? "Yes" : "No"} />
                 </div>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 <SetupStateChip label="Locations" value={String(selected.checklist.locationCount)} />
                 <SetupStateChip label="Owners" value={String(selected.checklist.ownerCount)} />
                 <SetupStateChip label="Missing modules" value={selected.checklist.missingModules.length ? selected.checklist.missingModules.join(", ") : "None"} />
                 <SetupStateChip label="Launch blockers" value={selected.checklist.launchBlockers.length ? selected.checklist.launchBlockers.join(", ") : "None"} />
-              </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-end gap-2">
+                  <label className="block min-w-[18rem] flex-1">
+                    <span className="text-sm font-semibold text-ink">Organization name</span>
+                    <input id="organization-name" className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-3 py-2 text-sm outline-none" defaultValue={selected.organization.name} />
+                  </label>
+                  <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void saveOrganizationName()} disabled={savingAction !== null || refreshing}>
+                    {mutationButtonLabel("organization-name", "Save organization name", "Saving...", "Name saved")}
+                  </button>
+                </div>
               {selected.customerIdentity ? (
                 <div className="mt-5 rounded-2xl border border-brand-100 bg-brand-50/50 p-4" data-testid="customer-identity">
                   <div className="flex flex-wrap items-start justify-between gap-3">
