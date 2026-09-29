@@ -137,6 +137,18 @@ export async function fetchSetupOrganization(organizationId: number) {
   return requestJson<PlatformSetupDetail>(`/api/platform/setup/organizations/${organizationId}`);
 }
 
+export async function updateOrganizationName(organizationId: number, name: string) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<PlatformSetupDetail>(`/api/platform/setup/organizations/${organizationId}/name`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function updateSetupTemplate(organizationId: number, templateKey: string) {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<PlatformSetupDetail>(`/api/platform/setup/organizations/${organizationId}/template`, {

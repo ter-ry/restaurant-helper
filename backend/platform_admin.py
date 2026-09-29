@@ -388,6 +388,39 @@ def get_setup_organization(organization_id: int):
     return jsonify(_serialize_organization_detail(organization)), 200
 
 
+@bp.post("/api/platform/setup/organizations/<int:organization_id>/name")
+@login_required
+def update_organization_name(organization_id: int):
+    """Update an organization name from the setup console.
+
+    This is intentionally limited to setup administrators and an explicit
+    organization id so renames cannot be used as a cross-tenant operation.
+    """
+    permission_error = _require_platform_role("setup_admin")
+    if permission_error is not None:
+        return permission_error
+    organization = Organization.query.filter_by(id=organization_id).first()
+    if organization is None:
+        return json_error("Organization not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return json_error("Organization name is required.", 400)
+    previous_name = organization.name
+    if name != previous_name:
+        organization.name = name
+        record_audit_event(
+            event_type="setup.organization_name_updated",
+            entity_type="organization",
+            entity_id=organization.id,
+            organization_id=organization.id,
+            actor_user_id=current_user.id,
+            metadata={"previousName": previous_name, "name": name},
+        )
+    payload = _serialize_organization_detail(organization)
+    return _commit_json_response(payload)
+
+
 def _update_configuration_json(organization: Organization, updater: Any):
     configuration = _ensure_configuration(organization)
     version = _current_configuration(configuration)
