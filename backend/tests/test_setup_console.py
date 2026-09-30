@@ -1,9 +1,28 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import AuditEvent, Organization, OrganizationModule, PlatformRole, User
+from backend.models import (
+    AuditEvent,
+    InventoryItem,
+    Organization,
+    OrganizationModule,
+    PlatformRole,
+    SquareCatalogMapping,
+    SquareCatalogObject,
+    SquareConnection,
+    SquareDailySalesSummary,
+    SquareLocation,
+    SquareLocationMapping,
+    SquareOrder,
+    SquareOrderLine,
+    SquareSyncCursor,
+    SquareSyncJob,
+    SquareWebhookEvent,
+    User,
+)
 from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 
 
@@ -294,6 +313,76 @@ def test_non_platform_user_cannot_access_setup_customer_identity(client):
     login(client, LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD)
     response = client.get("/api/platform/setup/organizations")
     assert response.status_code == 403
+
+
+def test_showcase_square_reset_is_setup_admin_only_scoped_and_idempotent(app, client):
+    login(client)
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        platform_role = PlatformRole.query.filter_by(user_id=owner.id).first()
+        if platform_role is None:
+            platform_role = PlatformRole(user_id=owner.id, role="setup_admin", is_active=True)
+            db.session.add(platform_role)
+        else:
+            platform_role.role = "setup_admin"
+        showcase = Organization.query.filter_by(name="Flowtally Pilot Restaurant").first()
+        if showcase is None:
+            showcase = Organization.query.first()
+        showcase.name = "Flowtally Showcase"
+        app.config.update(FLOWTALLY_ENV="production", FLOWTALLY_SHOWCASE_ORGANIZATION_ID=str(showcase.id), FLOWTALLY_PRODUCTION_DATABASE_NAME="pilot.db", SQUARE_ENVIRONMENT="production")
+        other = Organization(name="Other Tenant", lifecycle_status="ACTIVE", setup_status="COMPLETE", subscription_status="ACTIVE", setup_template_key="CAFE", setup_fee_status="confirmed", is_prospect=False)
+        db.session.add(other)
+        db.session.flush()
+        connection = SquareConnection(organization_id=showcase.id, environment="sandbox", status="connected", square_merchant_id="synthetic")
+        other_connection = SquareConnection(organization_id=other.id, environment="sandbox", status="connected", square_merchant_id="other")
+        db.session.add_all([connection, other_connection])
+        db.session.flush()
+        location = SquareLocation(square_connection_id=connection.id, square_location_id="synthetic-location")
+        other_location = SquareLocation(square_connection_id=other_connection.id, square_location_id="other-location")
+        db.session.add_all([location, other_location])
+        db.session.flush()
+        db.session.add_all([
+            SquareLocationMapping(square_location_id=location.id, restaurant_location_id=1),
+            SquareCatalogObject(square_connection_id=connection.id, square_object_id="synthetic-catalog"),
+            SquareSyncJob(square_connection_id=connection.id, job_type="orders"),
+            SquareSyncCursor(square_connection_id=connection.id, cursor_key="orders"),
+            SquareWebhookEvent(square_connection_id=connection.id, event_id="synthetic-event", event_type="order.created"),
+            SquareDailySalesSummary(square_connection_id=connection.id, square_location_id="synthetic-location", sale_date=datetime.now(timezone.utc).date()),
+            SquareOrder(square_connection_id=connection.id, square_order_id="synthetic-order"),
+            SquareCatalogObject(square_connection_id=other_connection.id, square_object_id="other-catalog"),
+        ])
+        db.session.flush()
+        catalog = SquareCatalogObject.query.filter_by(square_connection_id=connection.id).first()
+        order = SquareOrder.query.filter_by(square_connection_id=connection.id).first()
+        db.session.add_all([SquareCatalogMapping(square_catalog_object_id=catalog.id, mapping_type="menu_item"), SquareOrderLine(square_order_id=order.id, line_uid="synthetic-line")])
+        inventory_count = InventoryItem.query.filter_by(organization_id=showcase.id).count()
+        showcase_id = showcase.id
+        db.session.commit()
+
+    response = client.post(f"/api/platform/setup/organizations/{showcase_id}/square/reset-showcase", headers=csrf_headers(client))
+    assert response.status_code == 200
+    assert sum(response.get_json()["squareReset"]["deleted"].values()) >= 9
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(organization_id=showcase_id).first()
+        assert connection.status == "disconnected"
+        assert connection.square_merchant_id == ""
+        assert SquareLocation.query.filter_by(square_connection_id=connection.id).count() == 0
+        assert SquareOrder.query.filter_by(square_connection_id=connection.id).count() == 0
+        assert SquareCatalogObject.query.filter_by(square_connection_id=connection.id).count() == 0
+        assert SquareWebhookEvent.query.filter_by(square_connection_id=connection.id).count() == 0
+        assert InventoryItem.query.filter_by(organization_id=showcase_id).count() == inventory_count
+        assert SquareCatalogObject.query.filter_by(square_object_id="other-catalog").count() == 1
+        assert AuditEvent.query.filter_by(event_type="setup.showcase_square_reset", organization_id=showcase_id).count() == 1
+
+    repeat = client.post(f"/api/platform/setup/organizations/{showcase_id}/square/reset-showcase", headers=csrf_headers(client))
+    assert repeat.status_code == 200
+    assert sum(repeat.get_json()["squareReset"]["deleted"].values()) == 0
+    with app.app_context():
+        role = PlatformRole.query.filter_by(user_id=owner_id).first()
+        role.role = "support"
+        db.session.commit()
+    assert client.post(f"/api/platform/setup/organizations/{showcase_id}/square/reset-showcase", headers=csrf_headers(client)).status_code == 403
 
 
 def test_showcase_seed_action_is_setup_admin_only_and_guarded(app, client, monkeypatch):

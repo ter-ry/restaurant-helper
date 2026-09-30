@@ -64,6 +64,7 @@ export interface PlatformSetupDetail extends PlatformSetupOrganizationSummary {
   platformRole: string | null;
   customerIdentity?: PlatformCustomerIdentity;
   showcaseSeedAvailable?: boolean;
+  showcaseOrganizationId?: string | number | null;
 }
 
 export interface PlatformSetupListResponse {
@@ -153,6 +154,14 @@ export async function updateOrganizationName(organizationId: number, name: strin
 export async function seedShowcaseOrganization(organizationId: number) {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<PlatformSetupDetail>(`/api/platform/setup/organizations/${organizationId}/seed-showcase`, {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
+  });
+}
+
+export async function resetShowcaseSquare(organizationId: number) {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<PlatformSetupDetail & { squareReset?: { connectionId: number | null; deleted: Record<string, number> } }>(`/api/platform/setup/organizations/${organizationId}/square/reset-showcase`, {
     method: "POST",
     headers: { "X-CSRFToken": csrfToken },
   });

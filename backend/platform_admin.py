@@ -7,6 +7,7 @@ from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
+from pathlib import Path
 from sqlalchemy import text
 
 from .audit import record_audit_event
@@ -15,6 +16,7 @@ from .extensions import db
 from .models import AuditEvent, DashboardLayout, DataImportJob, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, SupportAccessGrant, User
 from .modules import MODULE_REGISTRY, module_dependency_keys
 from .seed import seed_showcase_tenant
+from .square_integration import reset_square_connection_data
 from .tenant_context import apply_request_tenant_context
 from .utils import get_platform_role, get_user_memberships, json_error, isoformat, serialize_location, serialize_organization, serialize_user, serialize_audit_event
 from .validation import clean_email
@@ -305,6 +307,7 @@ def _serialize_organization_detail(organization: Organization) -> dict[str, Any]
             and str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() == "production"
             and str(current_app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID") or "").strip() == str(organization.id)
         ),
+        "showcaseOrganizationId": current_app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID", ""),
     }
     if platform_role is not None and platform_role.role in {"setup_admin", "support"}:
         payload["customerIdentity"] = _customer_identity(organization)
@@ -860,6 +863,52 @@ def update_square_status(organization_id: int):
     )
     payload = _serialize_organization_detail(organization)
     return _commit_json_response(payload)
+
+
+@bp.post("/api/platform/setup/organizations/<int:organization_id>/square/reset-showcase")
+@login_required
+def reset_showcase_square(organization_id: int):
+    """Prepare the configured production showcase tenant for real Square OAuth."""
+    permission_error = _require_platform_role("setup_admin")
+    if permission_error is not None:
+        return permission_error
+    if str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() != "production":
+        return json_error("Showcase Square reset is available only in production.", 409)
+    expected_database = str(current_app.config.get("FLOWTALLY_PRODUCTION_DATABASE_NAME") or "").strip().lower()
+    if not expected_database:
+        return json_error("Production database identity is not configured.", 409)
+    if db.engine.dialect.name == "postgresql":
+        current_database = str(db.session.execute(text("SELECT current_database()")).scalar() or "").strip().lower()
+    else:
+        current_database = Path(str(db.engine.url.database or "")).name.strip().lower()
+    if current_database != expected_database:
+        return json_error("The connected database is not the configured production database.", 409)
+    configured_id = str(current_app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID") or "").strip()
+    if configured_id != str(organization_id) or organization_id != 1:
+        return json_error("Only the configured showcase organization may be reset.", 403)
+    organization = Organization.query.filter_by(id=organization_id).first()
+    if organization is None:
+        return json_error("Organization not found.", 404)
+    if organization.name != "Flowtally Showcase":
+        return json_error("The configured showcase organization identity does not match.", 409)
+    try:
+        connection = SquareConnection.query.filter_by(organization_id=organization.id).first()
+        deleted = reset_square_connection_data(connection) if connection is not None else {}
+        record_audit_event(
+            event_type="setup.showcase_square_reset",
+            entity_type="organization",
+            entity_id=organization.id,
+            organization_id=organization.id,
+            actor_user_id=current_user.id,
+            metadata={"deleted": deleted},
+        )
+        payload = _serialize_organization_detail(organization)
+        payload["squareReset"] = {"connectionId": connection.id if connection is not None else None, "deleted": deleted}
+        db.session.commit()
+        return jsonify(payload), 200
+    except Exception:
+        db.session.rollback()
+        return json_error("Could not reset showcase Square data.", 500)
 
 
 @bp.post("/api/platform/setup/organizations/<int:organization_id>/review")
