@@ -385,6 +385,8 @@ def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.Monkey
     monkeypatch.setenv("SQUARE_APPLICATION_SECRET", "square-secret")
     monkeypatch.setenv("SQUARE_REDIRECT_URI", "http://127.0.0.1:5001/api/integrations/square/callback")
     monkeypatch.setenv("SQUARE_WEBHOOK_SIGNATURE_KEY", "square-webhook-secret")
+    monkeypatch.setenv("SQUARE_WEBHOOK_NOTIFICATION_URL", "https://api.example.test/api/integrations/square/webhooks")
+    monkeypatch.setenv("FLOWTALLY_SHOWCASE_ORGANIZATION_ID", "1")
     monkeypatch.setenv("INTEGRATION_ENCRYPTION_KEY", "x" * 32)
 
     config = choose_config().build()
@@ -395,6 +397,9 @@ def test_runtime_config_exposes_google_and_square_env(monkeypatch: pytest.Monkey
     assert config["SQUARE_ENABLED"] is True
     assert config["SQUARE_ENVIRONMENT"] == "sandbox"
     assert config["SQUARE_APPLICATION_ID"] == "square-app"
+    assert config["SQUARE_WEBHOOK_NOTIFICATION_URL"].endswith("/api/integrations/square/webhooks")
+    assert config["FLOWTALLY_SHOWCASE_ORGANIZATION_ID"] == "1"
+    assert config["FLOWTALLY_PRODUCTION_DATABASE_NAME"] == "flowtally_prod"
     assert config["INTEGRATION_ENCRYPTION_KEY"] == "x" * 32
 
 

@@ -1113,6 +1113,41 @@ def _ensure_connection(organization: Organization) -> SquareConnection:
     return connection
 
 
+def reset_square_connection_data(connection: SquareConnection) -> dict[str, int]:
+    """Remove all Square-owned records for one connection and clear credentials.
+
+    This deliberately keeps the connection row so organization-level uniqueness and
+    audit history remain intact. Callers own the transaction and must commit it.
+    """
+    location_ids = [row.id for row in SquareLocation.query.filter_by(square_connection_id=connection.id).all()]
+    catalog_ids = [row.id for row in SquareCatalogObject.query.filter_by(square_connection_id=connection.id).all()]
+    order_ids = [row.id for row in SquareOrder.query.filter_by(square_connection_id=connection.id).all()]
+
+    deleted = {
+        "squareOrderLines": SquareOrderLine.query.filter(SquareOrderLine.square_order_id.in_(order_ids)).delete(synchronize_session=False) if order_ids else 0,
+        "squareCatalogMappings": SquareCatalogMapping.query.filter(SquareCatalogMapping.square_catalog_object_id.in_(catalog_ids)).delete(synchronize_session=False) if catalog_ids else 0,
+        "squareLocationMappings": SquareLocationMapping.query.filter(SquareLocationMapping.square_location_id.in_(location_ids)).delete(synchronize_session=False) if location_ids else 0,
+        "squareWebhookEvents": SquareWebhookEvent.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+        "squareSyncCursors": SquareSyncCursor.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+        "squareSyncJobs": SquareSyncJob.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+        "squareDailySalesSummaries": SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+        "squareOrders": SquareOrder.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+        "squareCatalogObjects": SquareCatalogObject.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+        "squareLocations": SquareLocation.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False),
+    }
+    connection.environment = square_environment()
+    connection.square_merchant_id = ""
+    connection.status = "disconnected"
+    connection.access_token_ciphertext = ""
+    connection.refresh_token_ciphertext = ""
+    connection.token_expires_at = None
+    connection.revoked_at = None
+    connection.last_sync_at = None
+    connection.sync_status = "idle"
+    connection.sync_error = ""
+    return deleted
+
+
 def _connection_token(connection: SquareConnection) -> str:
     token = decrypt_square_secret(connection.access_token_ciphertext)
     if not token:

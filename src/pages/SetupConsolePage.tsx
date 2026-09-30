@@ -23,6 +23,7 @@ import {
   updateModuleEntitlements,
   updateOrganizationName,
   seedShowcaseOrganization,
+  resetShowcaseSquare,
   updateSetupState,
   updateSetupTemplate,
   updateSquareStatus,
@@ -335,6 +336,15 @@ export function SetupConsolePage() {
     }
     return mutate("showcase-seed", "Showcase data seeded", () =>
       seedShowcaseOrganization(selected.organization.id).then(() => undefined),
+    );
+  }
+
+  function resetShowcaseSquareData() {
+    if (!selected || session?.platformRole !== "setup_admin") return;
+    if (String(selected.showcaseOrganizationId ?? "") !== String(selected.organization.id) || selected.organization.name !== "Flowtally Showcase") return;
+    if (!window.confirm("Reset only this tenant's seeded Square data so a real Production OAuth connection can be added?")) return;
+    return mutate("showcase-square-reset", "Showcase Square data reset", () =>
+      resetShowcaseSquare(selected.organization.id).then(() => undefined),
     );
   }
 
@@ -664,6 +674,11 @@ export function SetupConsolePage() {
                   {selected.showcaseSeedAvailable ? (
                     <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void seedShowcase()} disabled={savingAction !== null || refreshing}>
                       {mutationButtonLabel("showcase-seed", "Seed Showcase Data", "Seeding...", "Seeded")}
+                    </button>
+                  ) : null}
+                  {session?.platformRole === "setup_admin" && String(selected.showcaseOrganizationId ?? "") === String(selected.organization.id) && selected.organization.name === "Flowtally Showcase" ? (
+                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:opacity-60" type="button" onClick={() => void resetShowcaseSquareData()} disabled={savingAction !== null || refreshing}>
+                      {mutationButtonLabel("showcase-square-reset", "Reset seeded Square data", "Resetting...", "Square reset")}
                     </button>
                   ) : null}
                 </div>
