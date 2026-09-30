@@ -16,6 +16,12 @@ from backend.square import square_notification_signature
 from backend.tests.conftest import make_operational_organization
 
 
+def test_square_oauth_requests_minimum_read_scopes():
+    from backend.square_integration import SQUARE_SCOPES
+
+    assert SQUARE_SCOPES == ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"]
+
+
 class FakeResponse:
     def __init__(self, payload: dict[str, object]):
         self._payload = payload
