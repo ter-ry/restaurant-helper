@@ -25,6 +25,7 @@ const platformSetupMocks = vi.hoisted(() => ({
   createSupportGrant: vi.fn(),
   revokeSupportGrant: vi.fn(),
   seedShowcaseOrganization: vi.fn(),
+  diagnoseSquareCredentials: vi.fn(),
 }));
 
 vi.mock("../../src/lib/customerAuth", () => ({
@@ -52,6 +53,7 @@ vi.mock("../../src/lib/platformSetup", () => ({
   createSupportGrant: platformSetupMocks.createSupportGrant,
   revokeSupportGrant: platformSetupMocks.revokeSupportGrant,
   seedShowcaseOrganization: platformSetupMocks.seedShowcaseOrganization,
+  diagnoseSquareCredentials: platformSetupMocks.diagnoseSquareCredentials,
 }));
 
 function renderPage() {
@@ -437,6 +439,36 @@ describe("SetupConsolePage", () => {
     const seedButton = await screen.findByRole("button", { name: "Seed Showcase Data" });
     fireEvent.click(seedButton);
     await waitFor(() => expect(platformSetupMocks.seedShowcaseOrganization).toHaveBeenCalledWith(1));
+    expect(window.confirm).toHaveBeenCalled();
+  });
+
+  it("offers the read-only Square credential diagnostic to setup admins and renders safe metadata", async () => {
+    const detail = makeDetail([]) as any;
+    detail.showcaseOrganizationId = 42;
+    platformSetupMocks.fetchSetupOrganization.mockResolvedValue(detail);
+    platformSetupMocks.diagnoseSquareCredentials.mockResolvedValue({
+      success: true,
+      diagnostic: {
+        classification: "rejected",
+        environment: "production",
+        host: "connect.squareup.com",
+        applicationSuffix: "PMJA",
+        statusCode: 401,
+        errorTypes: ["SERVICE_NOT_AUTHORIZED"],
+        requestId: "safe-request-id",
+        scopes: ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"],
+      },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    fireEvent.click(screen.getByRole("button", { name: "Diagnose Square Credentials" }));
+    await waitFor(() => expect(platformSetupMocks.diagnoseSquareCredentials).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("square-diagnostic")).toHaveTextContent("rejected");
+    expect(screen.getByTestId("square-diagnostic")).toHaveTextContent("••••PMJA");
+    expect(screen.getByTestId("square-diagnostic")).toHaveTextContent("safe-request-id");
+    expect(screen.getByTestId("square-diagnostic")).not.toHaveTextContent("client_secret");
     expect(window.confirm).toHaveBeenCalled();
   });
 });

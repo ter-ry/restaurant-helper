@@ -159,9 +159,35 @@ export async function seedShowcaseOrganization(organizationId: number) {
   });
 }
 
+export interface SquareCredentialDiagnostic {
+  classification: string;
+  environment?: string;
+  host?: string;
+  applicationFingerprint?: string;
+  applicationSuffix?: string;
+  redirectUri?: string;
+  scopes?: string[];
+  statusCode?: number | null;
+  errorTypes?: string[];
+  requestId?: string | null;
+}
+
+export interface SquareCredentialDiagnosticResponse {
+  success: boolean;
+  diagnostic: SquareCredentialDiagnostic;
+}
+
 export async function resetShowcaseSquare(organizationId: number) {
   const csrfToken = await getCustomerCsrfToken();
   return requestJson<PlatformSetupDetail & { squareReset?: { connectionId: number | null; deleted: Record<string, number> } }>(`/api/platform/setup/organizations/${organizationId}/square/reset-showcase`, {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
+  });
+}
+
+export async function diagnoseSquareCredentials() {
+  const csrfToken = await getCustomerCsrfToken();
+  return requestJson<SquareCredentialDiagnosticResponse>("/api/platform/setup/square/diagnose-credentials", {
     method: "POST",
     headers: { "X-CSRFToken": csrfToken },
   });

@@ -1171,25 +1171,25 @@ def diagnose_square_credentials() -> dict[str, Any]:
     This helper returns only classification and safe metadata; it is never called
     during normal requests.
     """
+    metadata = {
+        "environment": square_environment(),
+        "host": _square_base_url().split("//", 1)[-1],
+        "applicationFingerprint": _square_app_fingerprint(),
+        "applicationSuffix": str(current_app.config.get("SQUARE_APPLICATION_ID") or "")[-4:] or "missing",
+        "redirectUri": str(current_app.config.get("SQUARE_REDIRECT_URI") or ""),
+        "scopes": list(SQUARE_SCOPES),
+        "statusCode": None,
+        "errorTypes": [],
+        "requestId": None,
+    }
     try:
         _square_request("POST", "/oauth2/token", payload=credential_probe_payload(), stage="credential_diagnostic")
     except SquareRequestError as exc:
         classification = classify_square_credential_probe(exc)
-        return {
-            "classification": classification,
-            "environment": square_environment(),
-            "host": _square_base_url().split("//", 1)[-1],
-            "applicationFingerprint": _square_app_fingerprint(),
-            "applicationSuffix": str(current_app.config.get("SQUARE_APPLICATION_ID") or "")[-4:] or "missing",
-            "redirectUri": str(current_app.config.get("SQUARE_REDIRECT_URI") or ""),
-            "scopes": list(SQUARE_SCOPES),
-            "statusCode": exc.status_code,
-            "errorTypes": list(exc.error_types),
-            "requestId": exc.request_id,
-        }
+        return {"classification": classification, **metadata, "statusCode": exc.status_code, "errorTypes": list(exc.error_types), "requestId": exc.request_id}
     except Exception:
-        return {"classification": "inconclusive", "environment": square_environment(), "scopes": list(SQUARE_SCOPES)}
-    return {"classification": "accepted", "environment": square_environment(), "scopes": list(SQUARE_SCOPES)}
+        return {"classification": "inconclusive", **metadata}
+    return {"classification": "accepted", **metadata}
 
 
 def _reset_square_merchant_data(connection: SquareConnection) -> None:
