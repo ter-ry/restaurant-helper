@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import re
 import os
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -54,8 +55,75 @@ bp = Blueprint("square_integration", __name__)
 SQUARE_API_VERSION = "2026-07-15"
 SQUARE_OAUTH_STATE_KEY = "square_oauth_context"
 SQUARE_OAUTH_STATE_TTL_SECONDS = 600
-SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ITEMS_WRITE", "ORDERS_READ", "ORDERS_WRITE"]
+SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"]
 QTY = Decimal("0.0001")
+logger = logging.getLogger(__name__)
+
+
+class SquareRequestError(RuntimeError):
+    """Safe, structured Square failure without provider payloads or secrets."""
+
+    def __init__(self, message: str, *, status_code: int | None = None, error_types: tuple[str, ...] = (), request_id: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_types = error_types
+        self.request_id = request_id
+
+
+def _square_error_metadata(body: str, *, status_code: int | None, headers: Any = None) -> tuple[tuple[str, ...], str | None]:
+    error_types: list[str] = []
+    request_id = None
+    try:
+        payload = json.loads(body or "{}")
+        for error in payload.get("errors", []) if isinstance(payload, dict) else []:
+            if not isinstance(error, dict):
+                continue
+            for key in ("category", "code"):
+                value = str(error.get(key) or "").strip()
+                if value and value not in error_types:
+                    error_types.append(value[:80])
+            candidate = str(error.get("request_id") or "").strip()
+            if candidate:
+                request_id = candidate[:120]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    if headers is not None:
+        request_id = request_id or headers.get("x-request-id") or headers.get("Square-Request-Id")
+    return tuple(error_types), (str(request_id)[:120] if request_id else None)
+
+
+def _square_app_fingerprint() -> str:
+    app_id = str(current_app.config.get("SQUARE_APPLICATION_ID") or "")
+    return hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:12] if app_id else "missing"
+
+
+def _log_square_event(*, stage: str, organization_id: int | None = None, connection_id: int | None = None, status_code: int | None = None, error_types: tuple[str, ...] = (), request_id: str | None = None) -> None:
+    logger.info(
+        "square.oauth stage=%s environment=%s host=%s app_fingerprint=%s app_suffix=%s redirect_uri=%s scopes=%s http_status=%s error_types=%s request_id=%s organization_id=%s connection_id=%s",
+        stage,
+        square_environment(),
+        _square_base_url().split("//", 1)[-1],
+        _square_app_fingerprint(),
+        str(current_app.config.get("SQUARE_APPLICATION_ID") or "")[-4:] or "missing",
+        str(current_app.config.get("SQUARE_REDIRECT_URI") or ""),
+        ",".join(SQUARE_SCOPES),
+        status_code,
+        ",".join(error_types),
+        request_id,
+        organization_id,
+        connection_id,
+    )
+
+
+def _safe_square_error_code(exc: Exception, fallback: str) -> str:
+    if isinstance(exc, SquareRequestError):
+        if "SERVICE_NOT_AUTHORIZED" in exc.error_types:
+            return "square_service_not_authorized"
+        if exc.status_code == 401:
+            return "square_unauthorized"
+        if exc.status_code and exc.status_code >= 500:
+            return "square_unavailable"
+    return fallback
 
 
 def _now() -> datetime:
@@ -72,6 +140,14 @@ def _square_api_base() -> str:
 
 def _frontend_origin() -> str:
     return str(current_app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").strip().rstrip("/")
+
+
+def _oauth_failure_redirect(organization_id: int | None, error_code: str) -> Any:
+    """Return a frontend redirect carrying only a stable, non-secret error code."""
+    query = {"error": error_code}
+    if organization_id:
+        query["organizationId"] = str(organization_id)
+    return redirect(f"{_frontend_origin()}/app/square?{urlencode(query)}", code=302)
 
 
 def _platform_role() -> str | None:
@@ -994,7 +1070,7 @@ def _square_authorize_url(*, state: str, organization_id: int) -> str:
     return f"{_square_base_url()}/oauth2/authorize?{query}"
 
 
-def _square_request(method: str, path: str, *, token: str | None = None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def _square_request(method: str, path: str, *, token: str | None = None, payload: dict[str, Any] | None = None, stage: str = "square_api") -> dict[str, Any]:
     url = f"{_square_api_base()}{path}"
     headers = {"Content-Type": "application/json", "Square-Version": SQUARE_API_VERSION}
     if token:
@@ -1009,15 +1085,20 @@ def _square_request(method: str, path: str, *, token: str | None = None, payload
             body = exc.read().decode("utf-8")
         except Exception:
             body = ""
-        raise RuntimeError(f"Square request failed ({exc.code}). {body[:400]}".strip()) from exc
+        error_types, request_id = _square_error_metadata(body, status_code=exc.code, headers=exc.headers)
+        _log_square_event(stage=stage, status_code=exc.code, error_types=error_types, request_id=request_id)
+        raise SquareRequestError("Square request failed.", status_code=exc.code, error_types=error_types, request_id=request_id) from exc
     except URLError as exc:
-        raise RuntimeError(f"Square request failed: {exc.reason}") from exc
+        _log_square_event(stage=stage, error_types=("transport_error",))
+        raise SquareRequestError("Square request failed due to a transport error.", error_types=("transport_error",)) from exc
     try:
         parsed = json.loads(body or "{}")
     except json.JSONDecodeError as exc:
-        raise RuntimeError("Square response was not valid JSON.") from exc
+        _log_square_event(stage=stage, error_types=("invalid_json",))
+        raise SquareRequestError("Square response was not valid JSON.", error_types=("invalid_json",)) from exc
     if not isinstance(parsed, dict):
-        raise RuntimeError("Square response was not a JSON object.")
+        _log_square_event(stage=stage, error_types=("invalid_response",))
+        raise SquareRequestError("Square response was not a JSON object.", error_types=("invalid_response",))
     return parsed
 
 
@@ -1032,6 +1113,7 @@ def _exchange_token(code: str) -> dict[str, Any]:
             "grant_type": "authorization_code",
             "redirect_uri": current_app.config.get("SQUARE_REDIRECT_URI", ""),
         },
+        stage="oauth_token_exchange",
     )
 
 
@@ -1048,7 +1130,66 @@ def _refresh_token(connection: SquareConnection) -> dict[str, Any]:
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         },
+        stage="oauth_token_refresh",
     )
+
+
+def classify_square_credential_probe(error: SquareRequestError | None) -> str:
+    """Classify a probe using a deliberately invalid grant without exposing secrets.
+
+    A probe must never be run automatically: callers should invoke it only from an
+    explicitly authorized maintenance command. A normal invalid-grant response
+    proves that Square accepted the application pair far enough to validate the
+    grant; service.not_authorized indicates the pair/application is rejected.
+    """
+    if error is None:
+        return "accepted"
+    if "SERVICE_NOT_AUTHORIZED" in error.error_types:
+        return "rejected"
+    if error.status_code in {400, 401} and any(code in error.error_types for code in ("INVALID_REQUEST_ERROR", "INVALID_GRANT", "INVALID_REFRESH_TOKEN")):
+        return "accepted"
+    if error.status_code and error.status_code >= 500:
+        return "unavailable"
+    return "inconclusive"
+
+
+def credential_probe_payload() -> dict[str, str]:
+    """Return a non-sensitive invalid-grant payload for an authorized diagnostic."""
+    return {
+        "client_id": str(current_app.config.get("SQUARE_APPLICATION_ID") or ""),
+        "client_secret": str(current_app.config.get("SQUARE_APPLICATION_SECRET") or ""),
+        "refresh_token": "flowtally-diagnostic-invalid-grant",
+        "grant_type": "refresh_token",
+    }
+
+
+def diagnose_square_credentials() -> dict[str, Any]:
+    """Run an explicitly invoked, read-only credential-pair diagnostic.
+
+    The deliberately invalid refresh grant lets Square validate the application
+    pair without connecting a merchant or changing any Square/Flowtally data.
+    This helper returns only classification and safe metadata; it is never called
+    during normal requests.
+    """
+    try:
+        _square_request("POST", "/oauth2/token", payload=credential_probe_payload(), stage="credential_diagnostic")
+    except SquareRequestError as exc:
+        classification = classify_square_credential_probe(exc)
+        return {
+            "classification": classification,
+            "environment": square_environment(),
+            "host": _square_base_url().split("//", 1)[-1],
+            "applicationFingerprint": _square_app_fingerprint(),
+            "applicationSuffix": str(current_app.config.get("SQUARE_APPLICATION_ID") or "")[-4:] or "missing",
+            "redirectUri": str(current_app.config.get("SQUARE_REDIRECT_URI") or ""),
+            "scopes": list(SQUARE_SCOPES),
+            "statusCode": exc.status_code,
+            "errorTypes": list(exc.error_types),
+            "requestId": exc.request_id,
+        }
+    except Exception:
+        return {"classification": "inconclusive", "environment": square_environment(), "scopes": list(SQUARE_SCOPES)}
+    return {"classification": "accepted", "environment": square_environment(), "scopes": list(SQUARE_SCOPES)}
 
 
 def _reset_square_merchant_data(connection: SquareConnection) -> None:
@@ -1174,7 +1315,10 @@ def _money_to_decimal(money: dict[str, Any] | None) -> Decimal:
 def _parse_iso_datetime(value: Any) -> datetime | None:
     if value in {None, ""}:
         return None
-    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError, OverflowError):
+        return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
@@ -1724,6 +1868,7 @@ def _mark_square_sync_success(connection: SquareConnection) -> None:
 def _persist_square_sync_failure(organization_id: int, connection_id: int, error_message: str, *, job_type: str | None = None) -> None:
     """Record sync failure state in a fresh tenant-scoped transaction."""
     db.session.rollback()
+    safe_error = error_message if len(error_message) <= 240 and "Square request failed." not in error_message else "Square synchronization failed."
     try:
         apply_request_tenant_context(organization_id=organization_id)
         connection = SquareConnection.query.filter_by(id=connection_id, organization_id=organization_id).first()
@@ -1731,7 +1876,7 @@ def _persist_square_sync_failure(organization_id: int, connection_id: int, error
             db.session.rollback()
             return
         connection.sync_status = "error"
-        connection.sync_error = error_message
+        connection.sync_error = safe_error
         if job_type:
             db.session.add(
                 SquareSyncJob(
@@ -1741,7 +1886,7 @@ def _persist_square_sync_failure(organization_id: int, connection_id: int, error
                     requested_at=_now(),
                     started_at=_now(),
                     completed_at=_now(),
-                    error_message=error_message,
+                    error_message=safe_error,
                 )
             )
         db.session.commit()
@@ -1847,8 +1992,11 @@ def square_callback():
     code = str(request.args.get("code") or "").strip()
     error = str(request.args.get("error") or "").strip()
     if error:
+        context = _load_oauth_context()
         _clear_oauth_context()
-        return json_error("Square authorization was not completed.", 400)
+        organization_id = int(context.get("organization_id") or 0) or None
+        _log_square_event(stage="oauth_provider_denied", organization_id=organization_id, error_types=("authorization_denied",))
+        return _oauth_failure_redirect(organization_id, "square_authorization_denied")
     context = _load_oauth_context()
     if not query_state or not code or context.get("state") != query_state:
         _clear_oauth_context()
@@ -1871,7 +2019,14 @@ def square_callback():
         token_payload = _exchange_token(code)
     except Exception as exc:
         _clear_oauth_context()
-        return json_error(f"Square token exchange failed: {exc}", 400)
+        _log_square_event(
+            stage="oauth_callback",
+            organization_id=organization.id,
+            status_code=getattr(exc, "status_code", None),
+            error_types=getattr(exc, "error_types", ("token_exchange_failed",)),
+            request_id=getattr(exc, "request_id", None),
+        )
+        return _oauth_failure_redirect(organization.id, _safe_square_error_code(exc, "square_token_exchange_failed"))
 
     connection = _ensure_connection(organization)
     _upsert_connection_tokens(connection, token_payload)
@@ -1896,8 +2051,16 @@ def square_callback():
         db.session.commit()
     except Exception as exc:
         _persist_square_sync_failure(organization_id, connection_id, str(exc), job_type="catalog")
+        _log_square_event(
+            stage="oauth_initial_sync",
+            organization_id=organization_id,
+            connection_id=connection_id,
+            status_code=getattr(exc, "status_code", None),
+            error_types=getattr(exc, "error_types", ("initial_sync_failed",)),
+            request_id=getattr(exc, "request_id", None),
+        )
         _clear_oauth_context()
-        return json_error(f"Square sync failed after connection: {exc}", 400)
+        return _oauth_failure_redirect(organization_id, _safe_square_error_code(exc, "square_sync_failed"))
 
     _clear_oauth_context()
     return redirect(f"{_frontend_origin()}/app/square?organizationId={organization_id}&connected=1", code=302)

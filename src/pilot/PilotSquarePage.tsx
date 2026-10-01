@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Send } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Card } from "../components/Card";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -56,6 +56,7 @@ function squareSectionLinkClasses(active: boolean) {
 }
 
 export function PilotSquarePage() {
+  const location = useLocation();
   const { organization, locations, currentLocation } = usePilotSession();
   const [connection, setConnection] = useState<PilotSquareConnectionSummary | null>(null);
   const [catalogMappings, setCatalogMappings] = useState<Awaited<ReturnType<typeof fetchPilotSquareCatalogMappings>>["mappings"]>([]);
@@ -70,6 +71,20 @@ export function PilotSquarePage() {
   const [menuImport, setMenuImport] = useState<Awaited<ReturnType<typeof previewPilotSquareMenuImport>> | null>(null);
   const [menuImportLoading, setMenuImportLoading] = useState(false);
   const loadGeneration = useRef(0);
+
+  useEffect(() => {
+    const code = new URLSearchParams(location.search).get("error");
+    const messages: Record<string, string> = {
+      square_service_not_authorized: "Square rejected the application credentials. Check the Production application configuration and try again.",
+      square_unauthorized: "Square could not authorize this connection. Check the Production application configuration and try again.",
+      square_token_exchange_failed: "Square authorization could not be completed. Try again or contact support.",
+      square_sync_failed: "Square authorized the connection, but the initial import could not be completed. Try again.",
+      square_authorization_denied: "Square authorization was cancelled.",
+    };
+    if (code && messages[code]) {
+      setError(messages[code]);
+    }
+  }, [location.search]);
 
   const currentOrganizationId = organization?.id ?? null;
 
