@@ -16,7 +16,7 @@ from .extensions import db
 from .models import AuditEvent, DashboardLayout, DataImportJob, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, SupportAccessGrant, User
 from .modules import MODULE_REGISTRY, module_dependency_keys
 from .seed import seed_showcase_tenant
-from .square_integration import reset_square_connection_data
+from .square_integration import diagnose_square_credentials as run_square_credential_diagnostic, reset_square_connection_data
 from .tenant_context import apply_request_tenant_context
 from .utils import get_platform_role, get_user_memberships, json_error, isoformat, serialize_location, serialize_organization, serialize_user, serialize_audit_event
 from .validation import clean_email
@@ -497,6 +497,37 @@ def seed_showcase_organization(organization_id: int):
         db.session.rollback()
         return json_error(f"Showcase seed failed safely: {exc}", 409)
     return jsonify({"success": True, "message": "Showcase data seeded.", **_serialize_organization_detail(organization)}), 200
+
+
+@bp.post("/api/platform/setup/square/diagnose-credentials")
+@login_required
+def diagnose_square_credentials_action():
+    """Run the explicitly authorized, read-only production Square probe."""
+    permission_error = _require_platform_role("setup_admin")
+    if permission_error is not None:
+        return permission_error
+    if str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() != "production":
+        return json_error("Square credential diagnostics are only available in production.", 403)
+    if not bool(current_app.config.get("SQUARE_ENABLED")):
+        return json_error("Square integration is disabled.", 409)
+    configured_id = str(current_app.config.get("FLOWTALLY_SHOWCASE_ORGANIZATION_ID") or "").strip()
+    if not configured_id:
+        return json_error("The production showcase organization is not configured.", 503)
+    payload = request.get_json(silent=True) or {}
+    requested_id = str(payload.get("organizationId") or "").strip()
+    if requested_id and requested_id != configured_id:
+        return json_error("The organization does not match the configured showcase tenant.", 403)
+    try:
+        diagnostic = run_square_credential_diagnostic()
+    except Exception:
+        db.session.rollback()
+        return json_error("Square credential diagnostic failed safely.", 503)
+    allowed_keys = {
+        "classification", "environment", "host", "applicationFingerprint", "applicationSuffix",
+        "redirectUri", "scopes", "statusCode", "errorTypes", "requestId",
+    }
+    safe_diagnostic = {key: value for key, value in diagnostic.items() if key in allowed_keys}
+    return jsonify({"success": True, "diagnostic": safe_diagnostic}), 200
 
 
 def _update_configuration_json(organization: Organization, updater: Any):

@@ -24,6 +24,8 @@ import {
   updateOrganizationName,
   seedShowcaseOrganization,
   resetShowcaseSquare,
+  diagnoseSquareCredentials,
+  type SquareCredentialDiagnostic,
   updateSetupState,
   updateSetupTemplate,
   updateSquareStatus,
@@ -122,6 +124,7 @@ export function SetupConsolePage() {
   const [savingAction, setSavingAction] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<MutationNotice | null>(null);
+  const [squareDiagnostic, setSquareDiagnostic] = useState<SquareCredentialDiagnostic | null>(null);
   const [selectedRevision, setSelectedRevision] = useState(0);
   const [supportGrantEmail, setSupportGrantEmail] = useState("");
   const [supportGrantReason, setSupportGrantReason] = useState("");
@@ -346,6 +349,21 @@ export function SetupConsolePage() {
     return mutate("showcase-square-reset", "Showcase Square data reset", () =>
       resetShowcaseSquare(selected.organization.id).then(() => undefined),
     );
+  }
+
+  async function diagnoseSquare() {
+    if (session?.platformRole !== "setup_admin") return;
+    if (!window.confirm("Run a read-only Production Square credential diagnostic? No OAuth connection or data will be changed.")) return;
+    setSavingAction("square-diagnostic");
+    try {
+      const response = await diagnoseSquareCredentials();
+      setSquareDiagnostic(response.diagnostic);
+      showSuccess("square-diagnostic", `Diagnostic: ${response.diagnostic.classification}`);
+    } catch (err) {
+      showError("square-diagnostic", err instanceof Error ? err.message : "Could not run the Square credential diagnostic.");
+    } finally {
+      setSavingAction(null);
+    }
   }
 
   function saveTemplate() {
@@ -681,7 +699,26 @@ export function SetupConsolePage() {
                       {mutationButtonLabel("showcase-square-reset", "Reset seeded Square data", "Resetting...", "Square reset")}
                     </button>
                   ) : null}
+                  {session?.platformRole === "setup_admin" ? (
+                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void diagnoseSquare()} disabled={savingAction !== null || refreshing}>
+                      {mutationButtonLabel("square-diagnostic", "Diagnose Square Credentials", "Diagnosing...", "Diagnostic complete")}
+                    </button>
+                  ) : null}
                 </div>
+              {squareDiagnostic ? (
+                <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm" data-testid="square-diagnostic">
+                  <p className="font-semibold text-ink">Square credential diagnostic</p>
+                  <dl className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Classification</dt><dd className="font-semibold text-ink">{squareDiagnostic.classification}</dd></div>
+                    <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Environment</dt><dd className="text-ink">{squareDiagnostic.environment ?? "Unknown"}</dd></div>
+                    <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Application</dt><dd className="text-ink">{squareDiagnostic.applicationSuffix ? `••••${squareDiagnostic.applicationSuffix}` : "Unavailable"}</dd></div>
+                    <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">HTTP status</dt><dd className="text-ink">{squareDiagnostic.statusCode ?? "No response"}</dd></div>
+                    <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Host</dt><dd className="text-ink">{squareDiagnostic.host ?? "Unavailable"}</dd></div>
+                    <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Request ID</dt><dd className="break-all text-ink">{squareDiagnostic.requestId ?? "None"}</dd></div>
+                  </dl>
+                  {squareDiagnostic.errorTypes?.length ? <p className="mt-2 text-xs text-muted">Square error types: {squareDiagnostic.errorTypes.join(", ")}</p> : null}
+                </div>
+              ) : null}
               {selected.customerIdentity ? (
                 <div className="mt-5 rounded-2xl border border-brand-100 bg-brand-50/50 p-4" data-testid="customer-identity">
                   <div className="flex flex-wrap items-start justify-between gap-3">

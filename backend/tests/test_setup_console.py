@@ -315,6 +315,99 @@ def test_non_platform_user_cannot_access_setup_customer_identity(client):
     assert response.status_code == 403
 
 
+def test_square_credential_diagnostic_is_setup_admin_only_safe_and_non_mutating(app, client, monkeypatch):
+    import backend.platform_admin as platform_admin
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        owner_id = owner.id
+        role = PlatformRole.query.filter_by(user_id=owner.id).first()
+        if role is None:
+            db.session.add(PlatformRole(user_id=owner.id, role="setup_admin", is_active=True))
+        else:
+            role.role = "setup_admin"
+            role.is_active = True
+        db.session.commit()
+        app.config.update(
+            FLOWTALLY_ENV="production",
+            FLOWTALLY_SHOWCASE_ORGANIZATION_ID="1",
+            SQUARE_ENABLED=True,
+        )
+        before_connections = SquareConnection.query.count()
+
+    monkeypatch.setattr(platform_admin, "run_square_credential_diagnostic", lambda: {
+        "classification": "rejected",
+        "environment": "production",
+        "host": "connect.squareup.com",
+        "applicationFingerprint": "safe-fingerprint",
+        "applicationSuffix": "PMJA",
+        "redirectUri": "https://api.flowtally.ca/api/integrations/square/callback",
+        "scopes": ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"],
+        "statusCode": 401,
+        "errorTypes": ["SERVICE_NOT_AUTHORIZED"],
+        "requestId": "safe-request-id",
+        "client_secret": "must-not-escape",
+    })
+
+    assert client.post("/api/platform/setup/square/diagnose-credentials").status_code in {400, 401, 302, 403}
+    login(client)
+    with app.app_context():
+        audit_count_after_login = AuditEvent.query.count()
+    wrong_org = client.post(
+        "/api/platform/setup/square/diagnose-credentials",
+        headers=csrf_headers(client),
+        json={"organizationId": "999"},
+    )
+    assert wrong_org.status_code == 403
+
+    response = client.post(
+        "/api/platform/setup/square/diagnose-credentials",
+        headers=csrf_headers(client),
+        json={"organizationId": "1"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()["diagnostic"]
+    assert body["classification"] == "rejected"
+    assert body["requestId"] == "safe-request-id"
+    assert "client_secret" not in body
+    with app.app_context():
+        assert AuditEvent.query.count() == audit_count_after_login  # diagnostic writes no audit row
+        assert SquareConnection.query.count() == before_connections
+
+        role = PlatformRole.query.filter_by(user_id=owner_id).one()
+        role.role = "support"
+        db.session.commit()
+    assert client.post(
+        "/api/platform/setup/square/diagnose-credentials",
+        headers=csrf_headers(client),
+    ).status_code == 403
+
+    with app.app_context():
+        role = PlatformRole.query.filter_by(user_id=owner_id).one()
+        role.role = "setup_admin"
+        app.config["FLOWTALLY_ENV"] = "staging"
+        db.session.commit()
+    assert client.post(
+        "/api/platform/setup/square/diagnose-credentials",
+        headers=csrf_headers(client),
+    ).status_code == 403
+
+    with app.app_context():
+        app.config.update(FLOWTALLY_ENV="production", SQUARE_ENABLED=False)
+    assert client.post(
+        "/api/platform/setup/square/diagnose-credentials",
+        headers=csrf_headers(client),
+    ).status_code == 409
+
+    with app.app_context():
+        app.config["SQUARE_ENABLED"] = True
+        app.config["FLOWTALLY_SHOWCASE_ORGANIZATION_ID"] = ""
+    assert client.post(
+        "/api/platform/setup/square/diagnose-credentials",
+        headers=csrf_headers(client),
+    ).status_code == 503
+
+
 def test_showcase_square_reset_is_setup_admin_only_scoped_and_idempotent(app, client):
     login(client)
     with app.app_context():
