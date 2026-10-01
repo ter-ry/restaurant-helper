@@ -13,6 +13,7 @@ from backend.extensions import db
 from backend.models import InventoryItem, InventoryMovement, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareOrderLineInventoryConsumption, SquareSyncCursor, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.square import square_notification_signature
+from backend.square_integration import SquareRequestError, classify_square_credential_probe, credential_probe_payload
 from backend.tests.conftest import make_operational_organization
 
 
@@ -252,6 +253,60 @@ def test_square_oauth_callback_rejects_invalid_state(app, client, monkeypatch):
     assert fake_urlopen.calls["catalog"] == 0
     assert fake_urlopen.calls["orders"] == 0
     assert fake_urlopen.calls["token_requests"] == []
+
+
+def test_square_oauth_exchange_failure_redirects_without_provider_details(app, client, monkeypatch):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name=f"Square OAuth Failure {uuid4().hex[:6]}", location_name="Main Kitchen")
+    assert client.post("/api/organizations/select", headers=csrf_headers(client), json={"organizationId": organization.id}).status_code == 200
+    configure_square(app)
+    start_response = client.get(f"/api/integrations/square/start?organizationId={organization.id}")
+    assert start_response.status_code == 302
+    with client.session_transaction() as session:
+        context = dict(session["square_oauth_context"])
+    monkeypatch.setattr(
+        "backend.square_integration._exchange_token",
+        lambda code: (_ for _ in ()).throw(SquareRequestError("Square request failed.", status_code=401, error_types=("SERVICE_NOT_AUTHORIZED",), request_id="sq-req-1")),
+    )
+    response = client.get("/api/integrations/square/callback", query_string={"state": context["state"], "code": "provider-code"})
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert "error=square_service_not_authorized" in location
+    assert "provider-code" not in location
+    assert "SERVICE_NOT_AUTHORIZED" not in location
+    assert "sq-req-1" not in location
+    with client.session_transaction() as session:
+        assert "square_oauth_context" not in session
+
+
+def test_square_credential_probe_classification_is_safe(app):
+    with app.app_context():
+        configure_square(app)
+        assert classify_square_credential_probe(SquareRequestError("Square request failed.", status_code=401, error_types=("INVALID_REQUEST_ERROR",))) == "accepted"
+        assert classify_square_credential_probe(SquareRequestError("Square request failed.", status_code=401, error_types=("SERVICE_NOT_AUTHORIZED",))) == "rejected"
+        assert classify_square_credential_probe(SquareRequestError("Square request failed.", status_code=503, error_types=("SERVICE_UNAVAILABLE",))) == "unavailable"
+        assert classify_square_credential_probe(None) == "accepted"
+        payload = credential_probe_payload()
+        assert payload["grant_type"] == "refresh_token"
+        assert payload["refresh_token"] == "flowtally-diagnostic-invalid-grant"
+
+
+def test_square_oauth_requests_read_only_scopes(app):
+    from backend.square_integration import SQUARE_SCOPES, _square_authorize_url
+
+    with app.app_context():
+        configure_square(app)
+        authorize_url = _square_authorize_url(state="state", organization_id=1)
+        assert SQUARE_SCOPES == ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"]
+        assert "ITEMS_WRITE" not in authorize_url
+        assert "ORDERS_WRITE" not in authorize_url
+
+
+def test_invalid_square_datetime_is_ignored(app):
+    from backend.square_integration import _parse_iso_datetime
+
+    assert _parse_iso_datetime("not-a-date") is None
 
 
 def _create_square_usage_fixture(app, owner: User, *, organization_name: str):
