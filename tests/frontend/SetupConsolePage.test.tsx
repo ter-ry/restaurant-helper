@@ -25,6 +25,7 @@ const platformSetupMocks = vi.hoisted(() => ({
   createSupportGrant: vi.fn(),
   revokeSupportGrant: vi.fn(),
   seedShowcaseOrganization: vi.fn(),
+  resetShowcaseSquare: vi.fn(),
   diagnoseSquareCredentials: vi.fn(),
 }));
 
@@ -53,6 +54,7 @@ vi.mock("../../src/lib/platformSetup", () => ({
   createSupportGrant: platformSetupMocks.createSupportGrant,
   revokeSupportGrant: platformSetupMocks.revokeSupportGrant,
   seedShowcaseOrganization: platformSetupMocks.seedShowcaseOrganization,
+  resetShowcaseSquare: platformSetupMocks.resetShowcaseSquare,
   diagnoseSquareCredentials: platformSetupMocks.diagnoseSquareCredentials,
 }));
 
@@ -291,6 +293,7 @@ beforeEach(() => {
   platformSetupMocks.activateSetupOrganization.mockResolvedValue(makeDetail([]));
   platformSetupMocks.createSupportGrant.mockResolvedValue({ grant: { id: 1 } });
   platformSetupMocks.revokeSupportGrant.mockResolvedValue({ grant: { id: 1 } });
+  platformSetupMocks.resetShowcaseSquare.mockResolvedValue(makeDetail([]));
 });
 
 describe("SetupConsolePage", () => {
@@ -426,20 +429,21 @@ describe("SetupConsolePage", () => {
     expect(screen.getByText("Save failed")).toBeVisible();
   });
 
-  it("offers showcase seeding only for the configured tenant and confirms the action", async () => {
+  it("offers showcase seeding only for the configured tenant and confirms the action in-app", async () => {
     const detail = makeDetail([]) as any;
     detail.showcaseSeedAvailable = true;
     detail.organization = { ...detail.organization, id: 1, name: "Flowtally Showcase" };
     platformSetupMocks.fetchSetupOrganization.mockResolvedValue(detail);
     platformSetupMocks.seedShowcaseOrganization.mockResolvedValue(detail);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     renderPage();
     await screen.findByRole("heading", { name: "Internal setup console" });
     const seedButton = await screen.findByRole("button", { name: "Seed Showcase Data" });
     fireEvent.click(seedButton);
+    expect(await screen.findByRole("dialog", { name: "Seed Showcase Data" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Seed data" }));
     await waitFor(() => expect(platformSetupMocks.seedShowcaseOrganization).toHaveBeenCalledWith(1));
-    expect(window.confirm).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Seed Showcase Data" })).not.toBeInTheDocument();
   });
 
   it("offers the read-only Square credential diagnostic to setup admins and renders safe metadata", async () => {
@@ -459,17 +463,46 @@ describe("SetupConsolePage", () => {
         scopes: ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"],
       },
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     renderPage();
     await screen.findByRole("heading", { name: "Internal setup console" });
     fireEvent.click(screen.getByRole("button", { name: "Diagnose Square Credentials" }));
+    expect(await screen.findByRole("dialog", { name: "Diagnose Square Credentials" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Run diagnostic" }));
     await waitFor(() => expect(platformSetupMocks.diagnoseSquareCredentials).toHaveBeenCalledTimes(1));
     expect(await screen.findByTestId("square-diagnostic")).toHaveTextContent("rejected");
     expect(screen.getByTestId("square-diagnostic")).toHaveTextContent("••••PMJA");
     expect(screen.getByTestId("square-diagnostic")).toHaveTextContent("safe-request-id");
     expect(screen.getByTestId("square-diagnostic")).not.toHaveTextContent("client_secret");
-    expect(window.confirm).toHaveBeenCalled();
+  });
+
+  it("supports cancelling and keyboard closing a sensitive action without invoking it", async () => {
+    const detail = makeDetail([]) as any;
+    detail.showcaseSeedAvailable = true;
+    detail.organization = { ...detail.organization, id: 1, name: "Flowtally Showcase" };
+    platformSetupMocks.fetchSetupOrganization.mockResolvedValue(detail);
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    fireEvent.click(await screen.findByRole("button", { name: "Seed Showcase Data" }));
+    expect(await screen.findByRole("dialog", { name: "Seed Showcase Data" })).toBeVisible();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Seed Showcase Data" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Seed Showcase Data" })).not.toBeInTheDocument();
+    expect(platformSetupMocks.seedShowcaseOrganization).not.toHaveBeenCalled();
+  });
+
+  it("confirms the destructive Square reset only for the configured showcase tenant", async () => {
+    const detail = makeDetail([]) as any;
+    detail.showcaseOrganizationId = 1;
+    detail.organization = { ...detail.organization, id: 1, name: "Flowtally Showcase" };
+    platformSetupMocks.fetchSetupOrganization.mockResolvedValue(detail);
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Internal setup console" });
+    fireEvent.click(await screen.findByRole("button", { name: "Reset seeded Square data" }));
+    expect(await screen.findByRole("dialog", { name: "Reset seeded Square data" })).toHaveTextContent("Inventory, purchases, menu data and other tenants will remain unchanged.");
+    fireEvent.click(screen.getByRole("button", { name: "Reset Square data" }));
+    await waitFor(() => expect(platformSetupMocks.resetShowcaseSquare).toHaveBeenCalledWith(1));
   });
 });
 
