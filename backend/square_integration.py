@@ -75,6 +75,19 @@ def _square_error_metadata(body: str, *, status_code: int | None, headers: Any =
     request_id = None
     try:
         payload = json.loads(body or "{}")
+        if isinstance(payload, dict):
+            # Square's OAuth endpoint returns a different envelope from the
+            # regular API: {"type": "service.not_authorized", ...}. Keep
+            # provider messages out of logs, but normalize the stable type so
+            # the existing safe classification and redirect code can handle it.
+            oauth_type = str(payload.get("type") or "").strip()
+            if oauth_type:
+                normalized_type = oauth_type.upper().replace(".", "_")
+                if normalized_type not in error_types:
+                    error_types.append(normalized_type[:80])
+            candidate = str(payload.get("request_id") or "").strip()
+            if candidate:
+                request_id = candidate[:120]
         for error in payload.get("errors", []) if isinstance(payload, dict) else []:
             if not isinstance(error, dict):
                 continue

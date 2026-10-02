@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from urllib.error import HTTPError
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
@@ -13,7 +15,15 @@ from backend.extensions import db
 from backend.models import InventoryItem, InventoryMovement, MenuItem, Organization, OrganizationMembership, Recipe, RecipeIngredient, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, SquareOrderLineInventoryConsumption, SquareSyncCursor, SquareSyncJob, SquareWebhookEvent, StockCountSession, StockCountSessionLine, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.square import square_notification_signature
-from backend.square_integration import SquareRequestError, classify_square_credential_probe, credential_probe_payload
+from backend.square_integration import (
+    SquareRequestError,
+    _safe_square_error_code,
+    _square_error_metadata,
+    _square_request,
+    classify_square_credential_probe,
+    credential_probe_payload,
+    diagnose_square_credentials,
+)
 from backend.tests.conftest import make_operational_organization
 
 
@@ -290,6 +300,100 @@ def test_square_credential_probe_classification_is_safe(app):
         payload = credential_probe_payload()
         assert payload["grant_type"] == "refresh_token"
         assert payload["refresh_token"] == "flowtally-diagnostic-invalid-grant"
+
+
+def test_square_oauth_service_not_authorized_envelope_is_normalized():
+    error_types, request_id = _square_error_metadata(
+        json.dumps({"message": "Not Authorized", "type": "service.not_authorized"}),
+        status_code=401,
+        headers={"x-request-id": "sq-oauth-1"},
+    )
+
+    assert error_types == ("SERVICE_NOT_AUTHORIZED",)
+    assert request_id == "sq-oauth-1"
+    assert classify_square_credential_probe(
+        SquareRequestError("Square request failed.", status_code=401, error_types=error_types, request_id=request_id)
+    ) == "rejected"
+    assert _safe_square_error_code(
+        SquareRequestError("Square request failed.", status_code=401, error_types=error_types, request_id=request_id),
+        "square_token_exchange_failed",
+    ) == "square_service_not_authorized"
+
+
+def test_square_credential_diagnostic_classifies_service_not_authorized(app, monkeypatch):
+    with app.app_context():
+        configure_square(app)
+        monkeypatch.setattr(
+            "backend.square_integration._square_request",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                SquareRequestError(
+                    "Square request failed.",
+                    status_code=401,
+                    error_types=("SERVICE_NOT_AUTHORIZED",),
+                    request_id="sq-diagnostic-1",
+                )
+            ),
+        )
+
+        result = diagnose_square_credentials()
+
+    assert result["classification"] == "rejected"
+    assert result["statusCode"] == 401
+    assert result["errorTypes"] == ["SERVICE_NOT_AUTHORIZED"]
+    assert result["requestId"] == "sq-diagnostic-1"
+
+
+def test_square_request_parses_oauth_service_not_authorized_shape(app, monkeypatch):
+    with app.app_context():
+        configure_square(app)
+
+        def rejected_request(*args, **kwargs):
+            raise HTTPError(
+                "https://connect.squareup.com/oauth2/token",
+                401,
+                "Unauthorized",
+                {"x-request-id": "sq-http-1"},
+                BytesIO(json.dumps({"message": "Not Authorized", "type": "service.not_authorized"}).encode()),
+            )
+
+        monkeypatch.setattr("backend.square_integration.urlopen", rejected_request)
+        with pytest.raises(SquareRequestError) as caught:
+            _square_request("POST", "/oauth2/token", payload=credential_probe_payload(), stage="credential_diagnostic")
+
+    assert caught.value.error_types == ("SERVICE_NOT_AUTHORIZED",)
+    assert caught.value.request_id == "sq-http-1"
+    assert classify_square_credential_probe(caught.value) == "rejected"
+
+
+def test_square_invalid_grant_envelope_is_accepted():
+    error_types, request_id = _square_error_metadata(
+        json.dumps({"errors": [{"category": "INVALID_REQUEST_ERROR", "code": "INVALID_REFRESH_TOKEN"}]}),
+        status_code=401,
+        headers={"Square-Request-Id": "sq-invalid-grant-1"},
+    )
+
+    assert error_types == ("INVALID_REQUEST_ERROR", "INVALID_REFRESH_TOKEN")
+    assert request_id == "sq-invalid-grant-1"
+    assert classify_square_credential_probe(
+        SquareRequestError("Square request failed.", status_code=401, error_types=error_types, request_id=request_id)
+    ) == "accepted"
+
+
+def test_square_error_metadata_keeps_standard_errors_array_support():
+    error_types, request_id = _square_error_metadata(
+        json.dumps(
+            {
+                "errors": [
+                    {"category": "AUTHENTICATION_ERROR", "code": "UNAUTHORIZED", "request_id": "sq-standard-1"},
+                    {"category": "AUTHENTICATION_ERROR", "code": "UNAUTHORIZED"},
+                ]
+            }
+        ),
+        status_code=401,
+    )
+
+    assert error_types == ("AUTHENTICATION_ERROR", "UNAUTHORIZED")
+    assert request_id == "sq-standard-1"
 
 
 def test_square_oauth_requests_read_only_scopes(app):
