@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Loader2, RefreshCw, Sh
 import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
 import {
@@ -39,6 +40,15 @@ type MutationNotice = {
   kind: "success" | "error";
   action: string;
   message: string;
+};
+
+type ConfirmationRequest = {
+  action: "showcase-seed" | "showcase-square-reset" | "square-diagnostic";
+  title: string;
+  message: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  organizationId?: number;
 };
 
 const templateOptions = ["GENERIC_RESTAURANT", "CAFE", "BAKERY", "QSR", "MULTI_LOCATION"];
@@ -125,6 +135,8 @@ export function SetupConsolePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<MutationNotice | null>(null);
   const [squareDiagnostic, setSquareDiagnostic] = useState<SquareCredentialDiagnostic | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
+  const [confirmationSubmitting, setConfirmationSubmitting] = useState(false);
   const [selectedRevision, setSelectedRevision] = useState(0);
   const [supportGrantEmail, setSupportGrantEmail] = useState("");
   const [supportGrantReason, setSupportGrantReason] = useState("");
@@ -332,37 +344,73 @@ export function SetupConsolePage() {
     );
   }
 
+  function requestConfirmation(request: ConfirmationRequest) {
+    if (savingAction !== null || refreshing || confirmationSubmitting) return;
+    setConfirmation(request);
+  }
+
   function seedShowcase() {
     if (!selected?.showcaseSeedAvailable) return;
-    if (!window.confirm("Seed the production Flowtally Showcase data for this organization? This is idempotent and only targets the configured showcase tenant.")) {
-      return;
-    }
-    return mutate("showcase-seed", "Showcase data seeded", () =>
-      seedShowcaseOrganization(selected.organization.id).then(() => undefined),
-    );
+    requestConfirmation({
+      action: "showcase-seed",
+      title: "Seed Showcase Data",
+      message: "Seed the production Flowtally Showcase data for this organization? This is idempotent and only targets the configured showcase tenant.",
+      confirmLabel: "Seed data",
+      organizationId: selected.organization.id,
+    });
   }
 
   function resetShowcaseSquareData() {
     if (!selected || session?.platformRole !== "setup_admin") return;
     if (String(selected.showcaseOrganizationId ?? "") !== String(selected.organization.id) || selected.organization.name !== "Flowtally Showcase") return;
-    if (!window.confirm("Reset only this tenant's seeded Square data so a real Production OAuth connection can be added?")) return;
-    return mutate("showcase-square-reset", "Showcase Square data reset", () =>
-      resetShowcaseSquare(selected.organization.id).then(() => undefined),
-    );
+    requestConfirmation({
+      action: "showcase-square-reset",
+      title: "Reset seeded Square data",
+      message: "Remove only this showcase tenant's seeded Square data so a real Production OAuth connection can be added. Inventory, purchases, menu data and other tenants will remain unchanged.",
+      confirmLabel: "Reset Square data",
+      destructive: true,
+      organizationId: selected.organization.id,
+    });
   }
 
-  async function diagnoseSquare() {
+  function diagnoseSquare() {
     if (session?.platformRole !== "setup_admin") return;
-    if (!window.confirm("Run a read-only Production Square credential diagnostic? No OAuth connection or data will be changed.")) return;
-    setSavingAction("square-diagnostic");
+    requestConfirmation({
+      action: "square-diagnostic",
+      title: "Diagnose Square Credentials",
+      message: "Run a read-only Production Square credential diagnostic. No OAuth connection or data will be changed.",
+      confirmLabel: "Run diagnostic",
+    });
+  }
+
+  async function confirmPendingAction() {
+    const request = confirmation;
+    if (!request || confirmationSubmitting || savingAction !== null) return;
+    setConfirmationSubmitting(true);
+    setConfirmation(null);
     try {
-      const response = await diagnoseSquareCredentials();
-      setSquareDiagnostic(response.diagnostic);
-      showSuccess("square-diagnostic", `Diagnostic: ${response.diagnostic.classification}`);
-    } catch (err) {
-      showError("square-diagnostic", err instanceof Error ? err.message : "Could not run the Square credential diagnostic.");
+      if (request.action === "showcase-seed") {
+        if (selected?.showcaseSeedAvailable && selected.organization.id === request.organizationId) {
+          await mutate("showcase-seed", "Showcase data seeded", () => seedShowcaseOrganization(selected.organization.id).then(() => undefined));
+        }
+      } else if (request.action === "showcase-square-reset") {
+        if (selected && session?.platformRole === "setup_admin" && selected.organization.id === request.organizationId && String(selected.showcaseOrganizationId ?? "") === String(selected.organization.id) && selected.organization.name === "Flowtally Showcase") {
+          await mutate("showcase-square-reset", "Showcase Square data reset", () => resetShowcaseSquare(selected.organization.id).then(() => undefined));
+        }
+      } else if (session?.platformRole === "setup_admin") {
+        setSavingAction("square-diagnostic");
+        try {
+          const response = await diagnoseSquareCredentials();
+          setSquareDiagnostic(response.diagnostic);
+          showSuccess("square-diagnostic", `Diagnostic: ${response.diagnostic.classification}`);
+        } catch (err) {
+          showError("square-diagnostic", err instanceof Error ? err.message : "Could not run the Square credential diagnostic.");
+        } finally {
+          setSavingAction(null);
+        }
+      }
     } finally {
-      setSavingAction(null);
+      setConfirmationSubmitting(false);
     }
   }
 
@@ -593,6 +641,42 @@ export function SetupConsolePage() {
 
   return (
     <PageLayout title="Internal setup console" eyebrow={`Flowtally platform · ${session?.platformRole ?? "platform"}`} description="Configure organizations before launch and track their readiness.">
+      {confirmation ? (
+        <Modal
+          title={confirmation.title}
+          size="small"
+          onClose={() => {
+            if (!confirmationSubmitting && savingAction === null) setConfirmation(null);
+          }}
+        >
+          <div className="space-y-4" data-testid="setup-confirmation-dialog">
+            <div className={`rounded-2xl border p-4 ${confirmation.destructive ? "border-rose-200 bg-rose-50 text-rose-950" : "border-line bg-slate-50 text-ink"}`}>
+              <div className="flex items-start gap-3">
+                <ShieldAlert className={`mt-0.5 h-5 w-5 shrink-0 ${confirmation.destructive ? "text-rose-700" : "text-brand-700"}`} aria-hidden="true" />
+                <p className="text-sm leading-6">{confirmation.message}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="min-h-11 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setConfirmation(null)}
+                disabled={confirmationSubmitting || savingAction !== null}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${confirmation.destructive ? "bg-rose-700 hover:bg-rose-800" : "bg-ink hover:bg-slate-800"}`}
+                onClick={() => void confirmPendingAction()}
+                disabled={confirmationSubmitting || savingAction !== null}
+              >
+                {confirmationSubmitting ? "Working..." : confirmation.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {notice ? (
         <div
           aria-atomic="true"
