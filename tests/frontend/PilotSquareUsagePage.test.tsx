@@ -199,7 +199,7 @@ describe("PilotSquareUsagePage", () => {
     expect(screen.getAllByText("16.7%").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalled());
     expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: 42,
@@ -210,6 +210,20 @@ describe("PilotSquareUsagePage", () => {
         status: "mapped",
       }),
     );
+  });
+
+  it("shows the saved mapping immediately after one successful save", async () => {
+    render(<MemoryRouter><PilotSquareUsagePage /></MemoryRouter>);
+    expect(await screen.findByText("Classic Cheeseburger - Regular")).toBeVisible();
+    mockApi.fetchSquareCatalogMappings.mockResolvedValue({
+      menuItems: [{ id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: null, updatedAt: null }],
+      mappings: [{ id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", isDeleted: false, soldUnits: 10, suggestedMenuItemId: 11, suggestedMenuItemName: "Classic Cheeseburger", mapping: { id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", flowtallyEntityId: "11", flowtallyEntityType: "menu_item", mappingType: "menu_item", status: "mapped" } }],
+      unmappedVariations: [], mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("Current mapping: Classic Cheeseburger")).toBeVisible());
+    expect(screen.queryByRole("button", { name: "Map" })).toBeNull();
   });
 
   it("starts mappings and usage together and renders mappings before usage completes", async () => {

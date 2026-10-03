@@ -1719,49 +1719,55 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
     return order
 
 
+_FINALIZED_ORDER_STATE = "COMPLETED"
+_CANCELLED_ORDER_STATES = {"CANCELED", "CANCELLED", "VOIDED", "REFUNDED"}
+
+
 def _rebuild_daily_summaries(connection: SquareConnection, orders: list[SquareOrder]) -> None:
-    aggregates: dict[tuple[date, str], dict[str, Any]] = defaultdict(lambda: {"gross": Decimal("0"), "discount": Decimal("0"), "tax": Decimal("0"), "tip": Decimal("0"), "refund": Decimal("0"), "net": Decimal("0"), "count": 0, "cancelled": 0, "currency": "CAD", "restaurant_location_id": None})
+    """Recompute finalized sales metrics from the complete persisted order set."""
+    aggregates: dict[tuple[date, str], dict[str, Any]] = defaultdict(
+        lambda: {"gross": Decimal("0"), "discount": Decimal("0"), "tax": Decimal("0"), "tip": Decimal("0"), "refund": Decimal("0"), "net": Decimal("0"), "count": 0, "cancelled": 0, "currency": "CAD", "restaurant_location_id": None},
+    )
     for order in orders:
+        state = str(order.order_state or "").upper()
+        if state not in {_FINALIZED_ORDER_STATE, *_CANCELLED_ORDER_STATES}:
+            continue
         sale_source = order.closed_at or order.ordered_at or _now()
         sale_date = sale_source.date()
-        key = _order_summary_key(sale_date, order.square_location_id)
-        aggregate = aggregates[key]
+        aggregate = aggregates[_order_summary_key(sale_date, order.square_location_id)]
+        aggregate["refund"] += Decimal(str(order.refund_amount or 0))
+        aggregate["currency"] = order.currency or aggregate["currency"]
+        aggregate["restaurant_location_id"] = order.restaurant_location_id
+        if state in _CANCELLED_ORDER_STATES:
+            aggregate["cancelled"] += 1
+            continue
         aggregate["gross"] += Decimal(str(order.gross_amount or 0))
         aggregate["discount"] += Decimal(str(order.discount_amount or 0))
         aggregate["tax"] += Decimal(str(order.tax_amount or 0))
         aggregate["tip"] += Decimal(str(order.tip_amount or 0))
-        aggregate["refund"] += Decimal(str(order.refund_amount or 0))
         aggregate["net"] += Decimal(str(order.net_amount or 0))
         aggregate["count"] += 1
-        aggregate["cancelled"] += 1 if order.order_state in {"CANCELED", "CANCELLED", "VOIDED", "REFUNDED"} else 0
-        aggregate["currency"] = order.currency or aggregate["currency"]
-        aggregate["restaurant_location_id"] = order.restaurant_location_id
 
+    # Summaries are derived data: replace this connection's rows so state
+    # transitions and date-limited syncs cannot leave stale totals behind.
+    SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).delete(synchronize_session=False)
     for (sale_date, square_location_id), aggregate in aggregates.items():
-        summary = SquareDailySalesSummary.query.filter_by(
+        db.session.add(SquareDailySalesSummary(
             square_connection_id=connection.id,
             sale_date=sale_date,
             square_location_id=square_location_id,
-        ).first()
-        if summary is None:
-            summary = SquareDailySalesSummary(
-                square_connection_id=connection.id,
-                sale_date=sale_date,
-                square_location_id=square_location_id,
-            )
-            db.session.add(summary)
-        summary.restaurant_location_id = aggregate["restaurant_location_id"]
-        summary.currency = aggregate["currency"]
-        summary.gross_amount = aggregate["gross"]
-        summary.discount_amount = aggregate["discount"]
-        summary.tax_amount = aggregate["tax"]
-        summary.tip_amount = aggregate["tip"]
-        summary.refund_amount = aggregate["refund"]
-        summary.net_amount = aggregate["net"]
-        summary.order_count = aggregate["count"]
-        summary.cancelled_order_count = aggregate["cancelled"]
-        summary.raw_payload_json = {"saleDate": sale_date.isoformat(), "squareLocationId": square_location_id, "source": "square-orders-sync"}
-
+            restaurant_location_id=aggregate["restaurant_location_id"],
+            currency=aggregate["currency"],
+            gross_amount=aggregate["gross"],
+            discount_amount=aggregate["discount"],
+            tax_amount=aggregate["tax"],
+            tip_amount=aggregate["tip"],
+            refund_amount=aggregate["refund"],
+            net_amount=aggregate["net"],
+            order_count=aggregate["count"],
+            cancelled_order_count=aggregate["cancelled"],
+            raw_payload_json={"saleDate": sale_date.isoformat(), "squareLocationId": square_location_id, "source": "square-orders-sync"},
+        ))
 
 def _sync_orders(organization: Organization, connection: SquareConnection, token: str, *, start_at: str, end_at: str, location_ids: list[str]) -> dict[str, Any]:
     cursor = ""
@@ -1806,7 +1812,7 @@ def _sync_orders(organization: Organization, connection: SquareConnection, token
             break
     SquareSyncCursor.query.filter_by(square_connection_id=connection.id, cursor_key="orders").delete()
     db.session.add(SquareSyncCursor(square_connection_id=connection.id, cursor_key="orders", cursor_value=cursor))
-    _rebuild_daily_summaries(connection, synced_orders)
+    _rebuild_daily_summaries(connection, SquareOrder.query.filter_by(square_connection_id=connection.id).all())
     return {"orderCount": order_count, "pages": pages, "cursor": cursor, "locationIds": location_ids, "inventoryWarnings": sorted(set(sync_warnings))}
 
 
