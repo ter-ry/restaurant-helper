@@ -281,6 +281,16 @@ describe("PilotSquarePage", () => {
     expect(await screen.findByText("Simulated Square connection for this public demo; no merchant account is connected.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Connect again" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[1]).toBeDisabled();
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    expect(screen.getAllByRole("combobox")[0]).toBeDisabled();
+    expect(screen.getAllByRole("combobox")[1]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review import" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }));
+    expect(await screen.findByRole("button", { name: "Import menu" })).toBeDisabled();
   });
 
   it("uses connected-merchant wording outside demo mode", async () => {
@@ -298,8 +308,15 @@ describe("PilotSquarePage", () => {
     );
 
     expect(await screen.findByRole("button", { name: "Disconnect" })).toBeVisible();
+    expect(screen.getByText("Connected Square merchant; imported sales are available.")).toBeVisible();
+    expect(screen.queryByText("Simulated Square connection for this public demo; no merchant account is connected.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync now" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Sync locations" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[0]).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[1]).toBeEnabled();
+    expect(screen.getAllByRole("combobox")[0]).toBeEnabled();
+    expect(screen.getAllByRole("combobox")[1]).toBeEnabled();
     expect(screen.getByRole("link", { name: "Usage & Variance" })).toHaveAttribute("href", "/app/square-usage");
     expect(screen.getByText("Main Bar")).toBeVisible();
     expect(screen.getByText("Classic Milk Tea")).toBeVisible();
