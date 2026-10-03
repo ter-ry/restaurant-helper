@@ -2,7 +2,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PilotSquarePage } from "../../src/pilot/PilotSquarePage";
+import { PilotSquarePage, squareConnectionDetail } from "../../src/pilot/PilotSquarePage";
 import type { PilotMenuCostingResponse, PilotSquareConnectionSummary } from "../../src/pilot/pilotApi";
 
 const mockApi = vi.hoisted(() => ({
@@ -19,6 +19,13 @@ const mockApi = vi.hoisted(() => ({
   previewPilotSquareMenuImport: vi.fn(),
   importPilotSquareMenu: vi.fn(),
 }));
+
+const configMocks = vi.hoisted(() => ({ demoReadOnly: false }));
+
+vi.mock("../../src/pilot/pilotConfig", async () => {
+  const actual = await vi.importActual<typeof import("../../src/pilot/pilotConfig")>("../../src/pilot/pilotConfig");
+  return { ...actual, get demoReadOnly() { return configMocks.demoReadOnly; } };
+});
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
   usePilotSession: () => ({
@@ -218,6 +225,7 @@ function createCatalogMappingResponse() {
 
 describe("PilotSquarePage", () => {
   beforeEach(() => {
+    configMocks.demoReadOnly = false;
     mockApi.fetchPilotSquareStatus.mockReset();
     mockApi.fetchPilotSquareCatalogMappings.mockReset();
     mockApi.fetchPilotMenuCosting.mockReset();
@@ -264,6 +272,32 @@ describe("PilotSquarePage", () => {
     expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
   });
 
+  it("keeps simulated wording and controls limited to read-only demo mode", async () => {
+    configMocks.demoReadOnly = true;
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
+
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Simulated Square connection for this public demo; no merchant account is connected.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Connect again" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[1]).toBeDisabled();
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    expect(screen.getAllByRole("combobox")[0]).toBeDisabled();
+    expect(screen.getAllByRole("combobox")[1]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review import" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }));
+    expect(await screen.findByRole("button", { name: "Import menu" })).toBeDisabled();
+  });
+
+  it("uses connected-merchant wording outside demo mode", async () => {
+    expect(squareConnectionDetail(true, false)).toBe("Connected Square merchant; imported sales are available.");
+    expect(squareConnectionDetail(true, true)).toContain("Simulated Square connection");
+  });
+
   it("supports connected status, sync, and menu/location mapping updates", async () => {
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
 
@@ -274,8 +308,15 @@ describe("PilotSquarePage", () => {
     );
 
     expect(await screen.findByRole("button", { name: "Disconnect" })).toBeVisible();
+    expect(screen.getByText("Connected Square merchant; imported sales are available.")).toBeVisible();
+    expect(screen.queryByText("Simulated Square connection for this public demo; no merchant account is connected.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync now" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Sync locations" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[0]).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Save mapping" })[1]).toBeEnabled();
+    expect(screen.getAllByRole("combobox")[0]).toBeEnabled();
+    expect(screen.getAllByRole("combobox")[1]).toBeEnabled();
     expect(screen.getByRole("link", { name: "Usage & Variance" })).toHaveAttribute("href", "/app/square-usage");
     expect(screen.getByText("Main Bar")).toBeVisible();
     expect(screen.getByText("Classic Milk Tea")).toBeVisible();

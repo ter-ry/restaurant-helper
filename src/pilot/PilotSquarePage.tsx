@@ -55,6 +55,15 @@ function squareSectionLinkClasses(active: boolean) {
   ].join(" ");
 }
 
+export function squareConnectionDetail(connectionReady: boolean, isDemo: boolean) {
+  if (isDemo) {
+    return connectionReady
+      ? "Simulated Square connection for this public demo; no merchant account is connected."
+      : "The demo connection is unavailable. Real merchant connections are not used here.";
+  }
+  return connectionReady ? "Connected Square merchant; imported sales are available." : "No Square merchant is connected.";
+}
+
 export function PilotSquarePage() {
   const location = useLocation();
   const { organization, locations, currentLocation } = usePilotSession();
@@ -364,7 +373,7 @@ export function PilotSquarePage() {
           <Card className="workspace-card">
             <SectionHeader title="Connection and sync" description="Connection state, sync controls, and the latest imported sales summary." />
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={connectionReady ? "Simulated Square connection for this public demo; no merchant account is connected." : "The demo connection is unavailable. Real merchant connections are not used here."} tone={squareStatusTone} />
+              <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={squareConnectionDetail(connectionReady, demoReadOnly)} tone={squareStatusTone} />
               <MetricCard label="Sync" value={connection?.syncStatus ?? "idle"} detail={connection?.syncError ? connection.syncError : "Manual syncs are available when connected."} tone={connection?.syncStatus === "error" ? "danger" : "neutral"} />
               <MetricCard label="Last sync" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "never"} detail="The newest location, catalog, or order sync time." tone="neutral" />
             </div>
@@ -419,7 +428,8 @@ export function PilotSquarePage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  disabled={saving !== null}
+                  disabled={demoReadOnly || saving !== null}
+                  title={demoReadOnly ? "Read-only demo" : undefined}
                   onClick={() => {
                     if (!currentOrganizationId) {
                       return;
@@ -473,7 +483,7 @@ export function PilotSquarePage() {
                       <Badge tone={mapped ? "success" : "warning"}>{mapped ? "Mapped" : "Unmapped"}</Badge>
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-                      <select id={`pilot-square-location-${location.id}`} className="input" defaultValue={mapped?.restaurantLocationId ?? ""} disabled={!connectionReady}>
+                      <select id={`pilot-square-location-${location.id}`} className="input" defaultValue={mapped?.restaurantLocationId ?? ""} disabled={demoReadOnly || !connectionReady}>
                         <option value="">Choose a Flowtally location</option>
                         {locations.map((entry) => (
                           <option key={entry.id} value={entry.id}>
@@ -483,7 +493,8 @@ export function PilotSquarePage() {
                       </select>
                       <Button
                         type="button"
-                        disabled={!connectionReady || saving !== null || !locations.length}
+                        disabled={demoReadOnly || !connectionReady || saving !== null || !locations.length}
+                        title={demoReadOnly ? "Read-only demo" : undefined}
                         onClick={() => void saveLocationMapping(location.id)}
                       >
                         {saving === `location-${location.id}` ? "Saving..." : "Save mapping"}
@@ -511,7 +522,7 @@ export function PilotSquarePage() {
                       <Badge tone={mapping?.flowtallyEntityId ? "success" : "warning"}>{mapping?.flowtallyEntityId ? "Mapped" : "Needs mapping"}</Badge>
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-                      <select id={`pilot-square-menu-item-${catalogObject.id}`} className="input" defaultValue={mapping?.flowtallyEntityId ?? ""} disabled={!connectionReady}>
+                      <select id={`pilot-square-menu-item-${catalogObject.id}`} className="input" defaultValue={mapping?.flowtallyEntityId ?? ""} disabled={demoReadOnly || !connectionReady}>
                         <option value="">Choose a Flowtally menu item</option>
                         {menuItems.map((menuItem) => (
                           <option key={menuItem.id} value={menuItem.id}>
@@ -539,7 +550,7 @@ export function PilotSquarePage() {
           <Card className="workspace-card">
             <SectionHeader title="Import Square menu" description="Review sellable Square items, then import them into Flowtally before assigning recipes in Menu Costing." />
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" disabled={demoReadOnly || !connectionReady || !currentLocation || menuImportLoading} title={demoReadOnly ? "Read-only demo" : undefined} onClick={() => void reviewMenuImport()}>
+              <Button type="button" variant="secondary" disabled={!connectionReady || !currentLocation || menuImportLoading} onClick={() => void reviewMenuImport()}>
                 {menuImportLoading ? "Reviewing..." : "Review import"}
               </Button>
               <Button type="button" disabled={demoReadOnly || !connectionReady || !currentLocation || menuImportLoading || !menuImport} title={demoReadOnly ? "Read-only demo" : undefined} onClick={() => void runMenuImport()}>
