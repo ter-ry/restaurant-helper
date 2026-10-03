@@ -998,6 +998,48 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
         assert float(summary.refund_amount) == 2.5
 
 
+def test_daily_summaries_include_only_finalized_orders_and_rebuild_idempotently(app):
+    from backend.square_integration import _rebuild_daily_summaries
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Summary Semantics {uuid4().hex[:6]}", location_name="Main Kitchen")
+        connection = SquareConnection(organization_id=organization.id, environment="sandbox", square_merchant_id="merchant-summary", status="connected")
+        db.session.add(connection)
+        db.session.flush()
+        sale_time = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
+        def make_order(order_id, state, gross, net, refund=0):
+            return SquareOrder(square_connection_id=connection.id, square_order_id=order_id, square_location_id="LOC-SUMMARY", restaurant_location_id=organization.locations[0].id, order_state=state, currency="CAD", gross_amount=Decimal(str(gross)), net_amount=Decimal(str(net)), refund_amount=Decimal(str(refund)), ordered_at=sale_time, closed_at=sale_time)
+        open_order = make_order("OPEN", "OPEN", 20, 20)
+        completed_order = make_order("COMPLETED", "COMPLETED", 15, 15)
+        canceled_order = make_order("CANCELED", "CANCELED", 7, 7)
+        voided_order = make_order("VOIDED", "VOIDED", 8, 8)
+        refunded_order = make_order("REFUNDED", "REFUNDED", 9, 9, refund=9)
+        db.session.add_all([open_order, completed_order, canceled_order, voided_order, refunded_order])
+        db.session.flush()
+
+        _rebuild_daily_summaries(connection, [open_order, completed_order, canceled_order, voided_order, refunded_order])
+        db.session.commit()
+        summary = SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).one()
+        assert summary.order_count == 1
+        assert summary.cancelled_order_count == 3
+        assert summary.gross_amount == Decimal("15.00")
+        assert summary.net_amount == Decimal("15.00")
+        assert summary.refund_amount == Decimal("9.00")
+
+        open_order.order_state = "COMPLETED"
+        open_order.gross_amount = Decimal("20.00")
+        open_order.net_amount = Decimal("20.00")
+        _rebuild_daily_summaries(connection, SquareOrder.query.filter_by(square_connection_id=connection.id).all())
+        db.session.commit()
+        _rebuild_daily_summaries(connection, SquareOrder.query.filter_by(square_connection_id=connection.id).all())
+        db.session.commit()
+        summaries = SquareDailySalesSummary.query.filter_by(square_connection_id=connection.id).all()
+        assert len(summaries) == 1
+        assert summaries[0].order_count == 2
+        assert summaries[0].cancelled_order_count == 3
+        assert summaries[0].gross_amount == Decimal("35.00")
+
 def test_square_catalog_sync_rolls_back_failed_transaction_before_recording_error(app, client, monkeypatch):
     login(client)
     owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()

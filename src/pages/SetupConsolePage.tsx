@@ -587,7 +587,7 @@ export function SetupConsolePage() {
           <h1 className="mt-3 text-2xl font-bold text-ink">Continue with Google</h1>
           <p className="mt-3 text-sm leading-6 text-muted">This internal console is restricted to platform staff accounts.</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={startGoogleLogin}>
+            <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => startGoogleLogin({ returnTo: "/platform/setup" })}>
               Continue with Google
             </button>
             <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/">
@@ -801,6 +801,11 @@ export function SetupConsolePage() {
                     <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Request ID</dt><dd className="break-all text-ink">{squareDiagnostic.requestId ?? "None"}</dd></div>
                   </dl>
                   {squareDiagnostic.errorTypes?.length ? <p className="mt-2 text-xs text-muted">Square error types: {squareDiagnostic.errorTypes.join(", ")}</p> : null}
+                  {squareDiagnostic.classification === "inconclusive" ? (
+                    <p className="mt-2 text-xs leading-5 text-muted">
+                      This result is inconclusive: the diagnostic uses a synthetic invalid-refresh probe and cannot determine whether the credentials are valid. A successful real OAuth connection is stronger evidence; use this result alongside the current connection status.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {selected.customerIdentity ? (

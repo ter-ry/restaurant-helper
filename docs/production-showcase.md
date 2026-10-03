@@ -50,3 +50,7 @@ environment and credential-routing change.
 
 The public demo's isolated database, read-only guard, synthetic Square data,
 and dedicated origins remain unchanged.
+
+## Production OAuth incident record
+
+An earlier Production OAuth attempt failed because the Render deployment held an incorrect or stale SQUARE_APPLICATION_SECRET. The deployment configuration was corrected, and a real seller OAuth/token, location, catalog, order, and inventory workflow was subsequently validated. This record intentionally contains no secrets, tokens, authorization codes, or merchant identifiers.
