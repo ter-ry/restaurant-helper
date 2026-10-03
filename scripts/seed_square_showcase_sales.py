@@ -25,8 +25,7 @@ from urllib.request import Request, urlopen
 SQUARE_API_VERSION = "2026-07-15"
 SQUARE_API_BASE = "https://connect.squareup.com"
 TARGET_VARIATION = "Flowtally Test Burger · Base"
-DEFAULT_LOCATION_NAME = "Harbour Kitchen"
-DEFAULT_ORDER_COUNT = 3
+DEFAULT_ORDER_COUNT = 1
 MAX_ORDER_COUNT = 5
 MAX_TOTAL_BURGERS = 8
 
@@ -224,33 +223,72 @@ def seed_sales(
     order_count: int,
     manifest_path: Path,
     dry_run: bool,
+    confirm_inventory_reviewed: bool = False,
 ) -> dict[str, Any]:
     order_plans = plans(order_count)
+    if order_count > DEFAULT_ORDER_COUNT and not confirm_inventory_reviewed:
+        raise SquareShowcaseError("larger fixtures require --confirm-inventory-reviewed after checking Flowtally ingredient stock")
     planned: list[dict[str, Any]] = []
     for plan in order_plans:
         subtotal = variation.price_cents * plan.quantity
         discount = subtotal * plan.discount_percent // 100
         net = subtotal - discount
         tip = net * plan.tip_percent // 100
-        planned.append({"number": plan.number, "quantity": plan.quantity, "grossCents": subtotal, "discountCents": discount, "tipCents": tip, "totalCents": net + tip})
+        planned.append({
+            "fixtureName": fixture_name,
+            "orderNumber": plan.number,
+            "quantity": plan.quantity,
+            "grossAmount": {"amount": subtotal, "currency": variation.currency},
+            "discountAmount": {"amount": discount, "currency": variation.currency},
+            "tipAmount": {"amount": tip, "currency": variation.currency},
+            "finalTotal": {"amount": net + tip, "currency": variation.currency},
+            "currency": variation.currency,
+            "catalogVariationId": variation.object_id,
+            "squareLocationId": identity.location_id,
+            "paymentType": "CASH",
+            "grossCents": subtotal,
+            "discountCents": discount,
+            "tipCents": tip,
+            "totalCents": net + tip,
+        })
+    total_planned = {
+        "orderCount": len(planned),
+        "totalBurgerQuantity": sum(item["quantity"] for item in planned),
+        "grossAmount": {"amount": sum(item["grossCents"] for item in planned), "currency": variation.currency},
+        "discountAmount": {"amount": sum(item["discountCents"] for item in planned), "currency": variation.currency},
+        "tipAmount": {"amount": sum(item["tipCents"] for item in planned), "currency": variation.currency},
+        "finalTotal": {"amount": sum(item["totalCents"] for item in planned), "currency": variation.currency},
+    }
+    warning = (
+        f"This fixture contains {total_planned['totalBurgerQuantity']} burger serving(s). "
+        "Flowtally sync will consume the mapped burger recipe inventory; verify ingredient stock before running a larger fixture."
+    )
     if dry_run:
-        return {"fixture": fixture_name, "identity": identity.__dict__, "variation": variation.__dict__, "orders": planned, "writes": False}
+        return {"fixture": fixture_name, "identity": identity.__dict__, "variation": variation.__dict__, "paymentType": "CASH", "plannedTotals": total_planned, "inventoryWarning": warning, "orders": planned, "writes": False}
 
     manifest = _manifest_load(manifest_path)
     if manifest.get("fixture") not in (None, fixture_name):
         raise SquareShowcaseError("fixture manifest belongs to a different fixture")
-    manifest["fixture"] = fixture_name
+    manifest.update({
+        "fixture": fixture_name,
+        "currency": variation.currency,
+        "catalogVariationId": variation.object_id,
+        "squareLocationId": identity.location_id,
+        "paymentType": "CASH",
+        "plannedTotals": total_planned,
+    })
     manifest.setdefault("orders", {})
     results: list[dict[str, Any]] = []
     for plan, summary in zip(order_plans, planned):
         key = str(plan.number)
         entry = manifest["orders"].setdefault(key, {})
-        order_id = str(entry.get("orderId") or "")
+        order_id = str(entry.get("squareOrderId") or entry.get("orderId") or "")
         if order_id:
             current = client.request("GET", f"/v2/orders/{order_id}").get("order") or {}
             state = str(current.get("state") or "")
             if state == "COMPLETED":
-                results.append({**summary, "orderId": order_id, "status": "existing"})
+                entry.update({**summary, "squareOrderId": order_id, "status": "existing", "createdAt": current.get("created_at"), "closedAt": current.get("closed_at")})
+                results.append(dict(entry))
                 continue
         if not order_id:
             created = client.request("POST", "/v2/orders", {"idempotency_key": _key(fixture_name, "order", plan.number), "order": _order_payload(plan, variation, fixture_name, identity.location_id)})
@@ -258,7 +296,7 @@ def seed_sales(
             order_id = str(order.get("id") or "")
             if not order_id:
                 raise SquareShowcaseError(f"Square did not return an order ID for order {plan.number}")
-            entry.update({"orderId": order_id, "referenceId": _order_payload(plan, variation, fixture_name, identity.location_id)["reference_id"]})
+            entry.update({**summary, "squareOrderId": order_id, "referenceId": _order_payload(plan, variation, fixture_name, identity.location_id)["reference_id"]})
             _manifest_save(manifest_path, manifest)
         payment_id = str(entry.get("paymentId") or "")
         if not payment_id:
@@ -283,12 +321,25 @@ def seed_sales(
             raise SquareShowcaseError(f"Square did not complete order {plan.number}")
         entry.update({
             "status": "completed",
+            "squareOrderId": order_id,
+            "paymentId": payment_id,
             "createdAt": final_order.get("created_at"),
             "closedAt": final_order.get("closed_at"),
         })
-        results.append({**summary, "orderId": order_id, "status": "created"})
+        results.append(dict(entry))
         _manifest_save(manifest_path, manifest)
-    return {"fixture": fixture_name, "identity": identity.__dict__, "variation": variation.__dict__, "orders": results, "writes": True}
+    completed = [item for item in results if item.get("status") in {"created", "existing"}]
+    completed_totals = {
+        "orderCount": len(completed),
+        "totalBurgerQuantity": sum(item.get("quantity", 0) for item in completed),
+        "grossAmount": {"amount": sum(item.get("grossCents", 0) for item in completed), "currency": variation.currency},
+        "discountAmount": {"amount": sum(item.get("discountCents", 0) for item in completed), "currency": variation.currency},
+        "tipAmount": {"amount": sum(item.get("tipCents", 0) for item in completed), "currency": variation.currency},
+        "finalTotal": {"amount": sum(item.get("totalCents", 0) for item in completed), "currency": variation.currency},
+    }
+    manifest["completedTotals"] = completed_totals
+    _manifest_save(manifest_path, manifest)
+    return {"fixture": fixture_name, "identity": identity.__dict__, "variation": variation.__dict__, "paymentType": "CASH", "plannedTotals": total_planned, "completedTotals": completed_totals, "inventoryWarning": warning, "orders": results, "writes": True}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -299,6 +350,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, default=None, help="local non-secret manifest path")
     parser.add_argument("--dry-run", action="store_true", help="discover and print the plan without writes")
     parser.add_argument("--confirm-showcase-production", action="store_true", help="required for Production writes")
+    parser.add_argument("--confirm-inventory-reviewed", action="store_true", help="required for more than the one-order safe default after checking Flowtally ingredient stock")
     return parser
 
 
@@ -310,19 +362,30 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run and not args.confirm_showcase_production:
         print("ERROR: Production writes require --confirm-showcase-production.", file=sys.stderr)
         return 2
+    try:
+        plans(args.orders)
+    except SquareShowcaseError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if args.orders > DEFAULT_ORDER_COUNT and not args.confirm_inventory_reviewed:
+        print("ERROR: larger fixtures require --confirm-inventory-reviewed after checking Flowtally ingredient stock.", file=sys.stderr)
+        return 2
     token = os.environ.get("SQUARE_SHOWCASE_ACCESS_TOKEN", "").strip()
     if not token:
         print("ERROR: SQUARE_SHOWCASE_ACCESS_TOKEN is required and was not printed.", file=sys.stderr)
         return 2
     merchant_id = os.environ.get("SQUARE_SHOWCASE_EXPECTED_MERCHANT_ID", "").strip()
     location_id = os.environ.get("SQUARE_SHOWCASE_EXPECTED_LOCATION_ID", "").strip()
-    location_name = os.environ.get("SQUARE_SHOWCASE_EXPECTED_LOCATION_NAME", DEFAULT_LOCATION_NAME).strip()
+    location_name = os.environ.get("SQUARE_SHOWCASE_EXPECTED_LOCATION_NAME", "").strip()
+    if not location_name:
+        print("ERROR: SQUARE_SHOWCASE_EXPECTED_LOCATION_NAME is required; configure the Square seller location name explicitly.", file=sys.stderr)
+        return 2
     manifest = args.manifest or Path.cwd() / f"square-showcase-{args.fixture_name}.manifest.json"
     try:
         client = SquareClient(token)
         identity = verify_identity(client, merchant_id=merchant_id, location_id=location_id, location_name=location_name)
         variation = discover_variation(client)
-        result = seed_sales(client, fixture_name=args.fixture_name, identity=identity, variation=variation, order_count=args.orders, manifest_path=manifest, dry_run=args.dry_run)
+        result = seed_sales(client, fixture_name=args.fixture_name, identity=identity, variation=variation, order_count=args.orders, manifest_path=manifest, dry_run=args.dry_run, confirm_inventory_reviewed=args.confirm_inventory_reviewed)
     except SquareShowcaseError as exc:
         details = f" status={exc.status}" if exc.status is not None else ""
         if _safe_request_id(exc):

@@ -53,7 +53,7 @@ class FakeSquare:
             merchant_id = path.rsplit("/", 1)[-1]
             return FakeResponse({"merchant": {"id": "MERCHANT" if merchant_id == "MERCHANT" else "OTHER"}})
         if path == "/v2/locations/LOCATION":
-            return FakeResponse({"location": {"id": "LOCATION", "name": "Harbour Kitchen"}})
+            return FakeResponse({"location": {"id": "LOCATION", "name": "Flowtally"}})
         if path.startswith("/v2/catalog/list"):
             return FakeResponse({"objects": [
                 {"type": "ITEM", "id": "ITEM", "item_data": {"name": "Flowtally Test Burger"}},
@@ -82,20 +82,26 @@ def client(fake):
 
 def test_identity_and_exact_catalog_variation():
     fake = FakeSquare()
-    identity = verify_identity(client(fake), merchant_id="MERCHANT", location_id="LOCATION", location_name="Harbour Kitchen")
+    identity = verify_identity(client(fake), merchant_id="MERCHANT", location_id="LOCATION", location_name="Flowtally")
     variation = discover_variation(client(fake))
-    assert identity == Identity("MERCHANT", "LOCATION", "Harbour Kitchen")
+    assert identity == Identity("MERCHANT", "LOCATION", "Flowtally")
     assert variation == Variation("VARIATION", TARGET_VARIATION, 1800, "CAD")
 
 
 def test_wrong_identity_is_rejected():
     fake = FakeSquare()
     with pytest.raises(SquareShowcaseError, match="merchant identity"):
-        verify_identity(client(fake), merchant_id="WRONG", location_id="LOCATION", location_name="Harbour Kitchen")
+        verify_identity(client(fake), merchant_id="WRONG", location_id="LOCATION", location_name="Flowtally")
+
+
+def test_square_location_name_mismatch_is_rejected():
+    fake = FakeSquare()
+    with pytest.raises(SquareShowcaseError, match="location name"):
+        verify_identity(client(fake), merchant_id="MERCHANT", location_id="LOCATION", location_name="Harbour Kitchen")
 
 
 def test_default_and_max_order_guardrails():
-    assert [plan.quantity for plan in plans(3)] == [1, 2, 1]
+    assert [plan.quantity for plan in plans(1)] == [1]
     assert plans(3)[1].tip_percent == 15
     assert plans(3)[2].discount_percent == 10
     assert len(plans(5)) == 5
@@ -105,8 +111,11 @@ def test_default_and_max_order_guardrails():
 
 def test_dry_run_never_calls_write_endpoints(tmp_path: Path):
     fake = FakeSquare()
-    result = seed_sales(client(fake), fixture_name="test-fixture", identity=Identity("MERCHANT", "LOCATION", "Harbour Kitchen"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=3, manifest_path=tmp_path / "manifest.json", dry_run=True)
+    result = seed_sales(client(fake), fixture_name="test-fixture", identity=Identity("MERCHANT", "LOCATION", "Flowtally"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=1, manifest_path=tmp_path / "manifest.json", dry_run=True)
     assert result["writes"] is False
+    assert result["paymentType"] == "CASH"
+    assert result["plannedTotals"]["totalBurgerQuantity"] == 1
+    assert "Flowtally sync will consume" in result["inventoryWarning"]
     assert not [call for call in fake.calls if call[0] == "POST"]
     assert not (tmp_path / "manifest.json").exists()
 
@@ -119,18 +128,32 @@ def test_order_payload_keeps_catalog_variation_and_discount():
 
 def test_completed_sequence_and_safe_manifest_idempotency(tmp_path: Path):
     fake = FakeSquare()
-    kwargs = dict(fixture_name="test-fixture", identity=Identity("MERCHANT", "LOCATION", "Harbour Kitchen"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=3, manifest_path=tmp_path / "manifest.json")
+    kwargs = dict(fixture_name="test-fixture", identity=Identity("MERCHANT", "LOCATION", "Flowtally"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=3, manifest_path=tmp_path / "manifest.json", confirm_inventory_reviewed=True)
     first = seed_sales(client(fake), dry_run=False, **kwargs)
-    assert [entry["status"] for entry in first["orders"]] == ["created"] * 3
+    assert [entry["status"] for entry in first["orders"]] == ["completed"] * 3
     assert [call[1] for call in fake.calls if call[0] == "POST"] == ["/v2/orders", "/v2/payments", "/v2/orders/ORDER-1/pay", "/v2/orders", "/v2/payments", "/v2/orders/ORDER-2/pay", "/v2/orders", "/v2/payments", "/v2/orders/ORDER-3/pay"]
     second = seed_sales(client(fake), dry_run=False, **kwargs)
     assert [entry["status"] for entry in second["orders"]] == ["existing"] * 3
 
 
+def test_larger_fixture_requires_inventory_review_confirmation(tmp_path: Path):
+    fake = FakeSquare()
+    kwargs = dict(fixture_name="test-fixture", identity=Identity("MERCHANT", "LOCATION", "Flowtally"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=3, manifest_path=tmp_path / "manifest.json", dry_run=True)
+    with pytest.raises(SquareShowcaseError, match="inventory-reviewed"):
+        seed_sales(client(fake), **kwargs)
+    result = seed_sales(client(fake), confirm_inventory_reviewed=True, **kwargs)
+    assert result["plannedTotals"]["totalBurgerQuantity"] == 4
+
+
 def test_manifest_never_contains_token(tmp_path: Path):
     fake = FakeSquare()
-    seed_sales(client(fake), fixture_name="safe-fixture", identity=Identity("MERCHANT", "LOCATION", "Harbour Kitchen"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=1, manifest_path=tmp_path / "manifest.json", dry_run=False)
-    assert "token-is-never-printed" not in (tmp_path / "manifest.json").read_text()
+    seed_sales(client(fake), fixture_name="safe-fixture", identity=Identity("MERCHANT", "LOCATION", "Flowtally"), variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), order_count=1, manifest_path=tmp_path / "manifest.json", dry_run=False)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    order = manifest["orders"]["1"]
+    assert manifest["paymentType"] == "CASH"
+    assert manifest["plannedTotals"]["totalBurgerQuantity"] == 1
+    assert {"fixtureName", "orderNumber", "quantity", "squareOrderId", "paymentId", "grossAmount", "discountAmount", "tipAmount", "finalTotal", "currency", "catalogVariationId", "squareLocationId", "paymentType", "status"}.issubset(order)
+    assert "token-is-never-printed" not in json.dumps(manifest)
 
 
 def test_missing_token_is_a_safe_cli_failure(monkeypatch):
