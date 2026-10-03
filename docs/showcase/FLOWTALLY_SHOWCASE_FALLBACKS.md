@@ -8,6 +8,6 @@
 | No controlled completed order | Explain the causal path with a mapped variation and recipe. | Live Square-to-inventory verification.
 | Missing mapping | Use Menu Costing and explain the prerequisite. | Automated depletion is active.
 | Session expires | Use the documented sign-in path; do not expose credentials or bypass controls. | That the session is healthy.
-| Daily Close is blank | Use Stock Counts or Reorder Plan. | A close exception exists.
+| Daily Close is blank | Use Reorder Plan. | A close exception exists.
 | Data differs from seed map | Read the current screen and choose the closest verified anchor. | The seed values are current production truth.
 | Page is slow or blank | Move to the next prepared page and note the limitation. | An unobserved workflow completed.

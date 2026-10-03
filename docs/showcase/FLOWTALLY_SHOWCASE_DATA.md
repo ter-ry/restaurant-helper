@@ -1,6 +1,6 @@
 # Flowtally Showcase Data Map
 
-This is the verified live rehearsal map from the Flowtally Showcase / Harbour Kitchen production workspace, audited on 2026-10-02. Values can change; read the live screen before presenting them.
+This is the verified live rehearsal map from the Flowtally Showcase / Harbour Kitchen production workspace, rechecked on 2026-10-03. Values can change; read the live screen before presenting them.
 
 ## Tenant and location
 

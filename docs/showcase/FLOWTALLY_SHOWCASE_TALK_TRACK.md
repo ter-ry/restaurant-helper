@@ -4,7 +4,7 @@
 
 “Flowtally is not trying to replace the POS. It connects the evidence around the POS—purchases, inventory, recipes, daily close, and owner follow-up—so a restaurant can act before a small variance becomes a large one.”
 
-## Use case 1: invoice/OCR → inventory
+## Use case 1: purchase review → inventory
 
 “A supplier invoice is not just an attachment. The useful outcome is a reviewable supplier, item, quantity, unit price, and downstream inventory movement. Here the completed rehearsal anchor is Oak Valley Meat Co invoice OV-1041, where Chicken Breast is $7.80. OV-1038 gives us a prior $7.20 reference, so an owner can ask what changed before approving the next purchase.”
 

@@ -2,13 +2,13 @@
 
 ## Status
 
-The production API was rechecked on 2026-10-02 and returned HTTP 200 Flowtally JSON. The frontend and production login loaded, and the existing Flowtally Showcase / Harbour Kitchen account was audited read-only. The Square integration page currently reports disconnected, so the Square story must be framed as persisted traceability evidence rather than a currently connected merchant flow.
+The production API was rechecked on 2026-10-03 and returned HTTP 200 Flowtally JSON. The frontend and production login loaded, and the existing Flowtally Showcase / Harbour Kitchen account was audited read-only. The Square integration page currently reports disconnected, so the Square story must be framed as persisted traceability evidence rather than a currently connected merchant flow.
 
 ## Demo promise
 
 Flowtally is the operating layer between POS activity, supplier invoices, inventory, daily close, and accounting export. It is not a POS replacement, accounting system, or reporting product. Keep the story on three connected controls:
 
-1. invoice/OCR review to inventory movement;
+1. purchase review to inventory movement;
 2. Square sale to mapped recipe consumption;
 3. owner attention to an action loop.
 
@@ -20,7 +20,7 @@ Do not mutate production during the showcase. Do not upload an invoice, create a
 
 Open the private production workspace, select Harbour Kitchen, and show the dashboard. Say: “This is the control layer that turns daily activity into actions an owner can review.” If the dashboard is unavailable, use the one-pager and the prepared screenshots once captured.
 
-### 0:30–4:00 — invoice/OCR to inventory
+### 0:30–4:00 — purchase review to inventory
 
 Open Purchases and use the completed Oak Valley Meat Co invoice `OV-1041` as the rehearsal anchor. Show Chicken Breast 1kg at $7.80, total $8.81, source PDF, 92% mapping confidence, and the read-only completed record. Use `OV-1038` at $7.20 as the price comparison. Label this as a stored purchase/OCR-review record: its extraction status is manual and its raw OCR text is seeded pilot invoice.
 

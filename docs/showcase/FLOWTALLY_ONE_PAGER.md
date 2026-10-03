@@ -6,7 +6,7 @@ Flowtally is the operational control layer between a restaurant’s POS, supplie
 
 ## Three connected moments
 
-1. Supplier invoice/OCR creates reviewable purchasing evidence and an inventory movement.
+1. Supplier invoice review creates reviewable purchasing evidence and an inventory movement.
 2. A mapped Square variation connects a completed sale to recipe ingredients and usage.
 3. Low stock, price changes, and review states become an owner attention loop: count, reorder, review, or follow up.
 
@@ -16,7 +16,7 @@ Small restaurants often have the data in several places but not the handoff betw
 
 ## What this showcase proves
 
-The walkthrough proves the product shape and the control points. It should claim live integration only where the current production UI visibly verifies it. Reporting and any blank or unverified workflow are out of scope for this presentation.
+The walkthrough proves the product shape and the control points. The current showcase demonstrates a completed purchase review record and persisted historical usage traceability; it does not demonstrate live OCR capture or a currently connected Square merchant. Reporting and any blank or unverified workflow are out of scope for this presentation.
 
 ## The ask
 
