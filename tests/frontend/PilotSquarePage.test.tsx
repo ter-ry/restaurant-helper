@@ -2,7 +2,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PilotSquarePage } from "../../src/pilot/PilotSquarePage";
+import { PilotSquarePage, squareConnectionDetail } from "../../src/pilot/PilotSquarePage";
 import type { PilotMenuCostingResponse, PilotSquareConnectionSummary } from "../../src/pilot/pilotApi";
 
 const mockApi = vi.hoisted(() => ({
@@ -19,6 +19,13 @@ const mockApi = vi.hoisted(() => ({
   previewPilotSquareMenuImport: vi.fn(),
   importPilotSquareMenu: vi.fn(),
 }));
+
+const configMocks = vi.hoisted(() => ({ demoReadOnly: false }));
+
+vi.mock("../../src/pilot/pilotConfig", async () => {
+  const actual = await vi.importActual<typeof import("../../src/pilot/pilotConfig")>("../../src/pilot/pilotConfig");
+  return { ...actual, get demoReadOnly() { return configMocks.demoReadOnly; } };
+});
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
   usePilotSession: () => ({
@@ -218,6 +225,7 @@ function createCatalogMappingResponse() {
 
 describe("PilotSquarePage", () => {
   beforeEach(() => {
+    configMocks.demoReadOnly = false;
     mockApi.fetchPilotSquareStatus.mockReset();
     mockApi.fetchPilotSquareCatalogMappings.mockReset();
     mockApi.fetchPilotMenuCosting.mockReset();
@@ -262,6 +270,22 @@ describe("PilotSquarePage", () => {
     expect(document.querySelectorAll(".square-status-card")).toHaveLength(5);
     expect(screen.queryByText("Private workspace for Square connection")).not.toBeInTheDocument();
     expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
+  });
+
+  it("keeps simulated wording and controls limited to read-only demo mode", async () => {
+    configMocks.demoReadOnly = true;
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
+
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Simulated Square connection for this public demo; no merchant account is connected.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeDisabled();
+  });
+
+  it("uses connected-merchant wording outside demo mode", async () => {
+    expect(squareConnectionDetail(true, false)).toBe("Connected Square merchant; imported sales are available.");
+    expect(squareConnectionDetail(true, true)).toContain("Simulated Square connection");
   });
 
   it("supports connected status, sync, and menu/location mapping updates", async () => {
