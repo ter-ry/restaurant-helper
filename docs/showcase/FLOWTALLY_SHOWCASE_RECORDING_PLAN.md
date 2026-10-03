@@ -2,7 +2,7 @@
 
 ## Capture rules
 
-Record only the existing private production showcase state. Do not log in on camera, upload, save, receive, adjust, count, sync, create an order, change a mapping, or start a close. Wait for data to finish loading before each shot. The current Square state is disconnected, so describe Usage / Variance and Inventory History as persisted traceability evidence, not a live merchant sync.
+Record only the existing private production showcase state. Do not log in on camera, upload, save, receive, adjust, count, sync, create an order, change a mapping, or start a close. Wait for data to finish loading before each shot. Square is connected in Production; show only the existing controlled Oct 2 test order and its persisted Usage / Variance and Inventory History evidence.
 
 ## 60–90 second product highlight
 
@@ -13,7 +13,7 @@ Record only the existing private production showcase state. Do not log in on cam
 | 25–35s | Inventory → Chicken Breast | Hold on 3.1kg, minimum 4, PAR 8, latest $7.80, Reorder now. | “The reviewed purchase is connected to the stock picture.” Open History → Movements.
 | 35–45s | Inventory History | Hold on the two invoice receipts and the persisted Square-order consumption movement. | “The record preserves what changed and why.” Cut to Menu Costing.
 | 45–60s | Menu Costing → Recipes | Open Harbour Burger and hold on $2.21 cost plus three ingredient lines. | “A menu item makes expected ingredient usage understandable.” Cut to Usage / Variance.
-| 60–75s | Usage / Variance | Hold on `Flowtally Test Burger · Base`, Harbour Burger mapping, one sold unit, and theoretical usage. | “A mapped sale can be translated into theoretical ingredient usage; this showcase uses persisted evidence because the current Square connection is disconnected.” Cut to Reorder Plan.
+| 60–75s | Usage / Variance | Hold on `Flowtally Test Burger · Base`, Harbour Burger mapping, one sold unit, and theoretical usage. | “This controlled Production test order is mapped to a recipe and translated into theoretical ingredient usage.” Cut to Reorder Plan.
 | 75–90s | Reorder Plan | Hold on Chicken Breast and Eggs recommendations. | “Flowtally turns the operational signal into the owner’s next action.” End on Dashboard branding.
 
 Final frame: `Purchases → Inventory → Recipes → Sales Usage → Action`.
@@ -71,7 +71,7 @@ Final frame: `Purchases → Inventory → Recipes → Sales Usage → Action`.
 - Object: Existing mapping and selected Harbour Kitchen usage window
 - Visible: `Flowtally Test Burger · Base` mapped to Harbour Burger, one sold unit, 100% coverage, theoretical usage 0.18kg / 0.25 pack / 0.12 head.
 - Cursor: Rest over mapping and theoretical-usage table.
-- Narration: “This is the persisted sales-to-recipe trace. The current Square setup is disconnected, so we do not claim a live sync.”
+- Narration: “This is the persisted sales-to-recipe trace from the controlled Production test order; we do not create another transaction during the showcase.”
 - Transition: Open Reorder Plan.
 
 ### Shot 7 — Owner action, 25–35s
@@ -85,7 +85,7 @@ Final frame: `Purchases → Inventory → Recipes → Sales Usage → Action`.
 
 ## What to omit
 
-Do not record the login screen, Square Setup & Sync, blank Stock Counts, blank Daily Close, Reporting, account menus, browser clutter, or loading states. If a page is slow, hold until it is complete or cut to the next verified shot.
+Do not record the login screen, internal setup/admin screens, connection controls, blank Daily Close, Reporting, account menus, browser clutter, or loading states. Stock Counts is optional only if its completed history is loaded. If a page is slow, hold until it is complete or cut to the next verified shot.
 
 ## Recording status
 

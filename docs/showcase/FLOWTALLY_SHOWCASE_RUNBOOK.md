@@ -2,7 +2,7 @@
 
 ## Status
 
-The production API was rechecked on 2026-10-03 and returned HTTP 200 Flowtally JSON. The frontend and production login loaded, and the existing Flowtally Showcase / Harbour Kitchen account was audited read-only. The Square integration page currently reports disconnected, so the Square story must be framed as persisted traceability evidence rather than a currently connected merchant flow.
+The production API was rechecked on 2026-10-03 and returned HTTP 200 Flowtally JSON. The frontend and production login loaded, and the existing Flowtally Showcase / Harbour Kitchen account was audited read-only. Square is connected in Production, with one mapped location, one mapped variation, completed sync jobs, and a persisted Oct 2 controlled test order. Daily Close has no session/history and remains out of scope.
 
 ## Demo promise
 
@@ -32,11 +32,11 @@ Open Inventory, select Chicken Breast, and show 3.1 kg on hand, minimum 4, PAR 8
 
 ### 6:00–9:30 — Square sale to recipe consumption
 
-Open Menu Costing → Recipes → Harbour Burger first. Show the live $2.21 cost and 0.2 kg Chicken Breast, 0.3 pack Bread Buns, and 0.1 head Lettuce. Then open Usage / Variance: show `Flowtally Test Burger · Base` mapped to Harbour Burger, one sold unit, 100% sales coverage, and theoretical usage. Finally show the Inventory History movement. Square Setup itself is currently disconnected; say so explicitly and do not create or sync an order.
+Open Menu Costing → Recipes → Harbour Burger first. Show the live $2.21 cost and 0.2 kg Chicken Breast, 0.3 pack Bread Buns, and 0.1 head Lettuce. Then open Usage / Variance: show `Flowtally Test Burger · Base` mapped to Harbour Burger, one sold unit, 100% sales coverage, and theoretical usage. Finally show the Inventory History movement for order `Umhs2cLYmUVXyhU9cS8GyOfxu3LZY`. Call this a controlled Production test order; do not create or sync another order.
 
 ### 9:30–12:00 — owner attention loop
 
-Return to Dashboard, show the 16 attention actions and 15 reorder items, then open Reorder Plan. Do not open Daily Close or Stock Counts in the main route: live audit found no close history and zero stock-count sessions.
+Return to Dashboard, show the 16 attention actions and 15 reorder items, then open Reorder Plan. If time permits, show the completed Stock Counts history (#2, total variance -0.5) as an optional proof point. Do not open Daily Close: live audit found no close history or current session.
 
 ### 12:00–15:00 — close
 
@@ -44,7 +44,7 @@ Summarize: “The value is the handoff: supplier evidence becomes inventory trut
 
 ## Five-minute version
 
-Dashboard (30s) → OV-1041 completed purchase and OV-1038 comparison (1m 30s) → Chicken Breast overview and Movement History (1m) → Harbour Burger recipe and Usage / Variance traceability (1m 30s) → Reorder Plan (30s) → close (30s).
+Dashboard (30s) → OV-1041 completed purchase and OV-1038 comparison (1m 30s) → Chicken Breast overview and Movement History (1m) → Harbour Burger recipe and Square Usage / Variance trace (1m 30s) → Reorder Plan (30s) → close (30s).
 
 ## Presenter discipline
 

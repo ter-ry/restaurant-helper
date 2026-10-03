@@ -19,10 +19,10 @@ The production browser session produced clean in-session screenshots of the Dash
 
 ## State boundaries
 
-- Square Setup & Sync currently reports disconnected, no mapped locations, no mapped menu items, and no imported sales summaries.
-- Usage / Variance and Inventory History retain persisted historical evidence, but it must not be described as a currently connected Square transaction.
+- Square Setup & Sync currently reports connected/Ready, 1/1 mapped location, 1/1 mapped variation, and one imported Oct 2 controlled test order.
+- Usage / Variance and Inventory History are the strongest safe live proof; describe the order as a controlled Production test transaction, not customer revenue.
 - `OV-1041` extraction status is manual and its raw OCR text is seeded pilot invoice; it is not a live OCR-capture asset.
-- Daily Close and Stock Counts are intentionally omitted because they are empty/incomplete.
+- Daily Close is intentionally omitted because it has no current session or history. Stock Counts is optional because one completed locked history session is available.
 
 ## Video assets
 

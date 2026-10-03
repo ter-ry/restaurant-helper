@@ -37,14 +37,14 @@ Seasonal Soup is intentionally a no-recipe example; do not use it to demonstrate
 
 ## Square status and strongest available proof
 
-The live Square integration page currently says `disconnected`, last sync `never`, 0 mapped locations, 0 mapped menu items, and 0 daily sales summaries. Do not present it as a currently connected merchant integration.
+The live Square integration is connected in Production and reports Ready, 1/1 mapped location, 1/1 mapped variation, and Up to date sales sync. The connection page last synced on Oct 3 at 12:18 p.m.; the visible location is Harbour Kitchen and the mapped variation is `Flowtally Test Burger · Base` → Harbour Burger. The page’s connected-state detail text was misleadingly hard-coded as “simulated/no merchant”; the application fix is tracked separately from this documentation PR. Do not show that stale sentence during the presentation.
 
-The strongest existing persisted proof is in Usage / Variance for Harbour Kitchen: sales coverage 100%, one sold unit, mapping `Flowtally Test Burger · Base` → Harbour Burger, and theoretical usage of Chicken Breast 0.18 kg, Bread Buns 0.25 pack, and Lettuce 0.12 head. Actual usage and variance are blank because no completed stock count exists for the selected window. The corresponding Inventory History row shows the real persisted Square order reference above and the -0.2 kg Chicken Breast movement. This is suitable as a traceability illustration, but the Square connection/order detail is not currently available for a fully live end-to-end claim.
+The strongest existing persisted proof is in Usage / Variance for Harbour Kitchen: sales coverage 100%, one sold unit, mapping `Flowtally Test Burger · Base` → Harbour Burger, and theoretical usage of Chicken Breast 0.18 kg, Bread Buns 0.25 pack, and Lettuce 0.12 head. The corresponding Inventory History row shows the persisted Square order reference above and the -0.2 kg Chicken Breast movement. This is the controlled live integration proof; it is a zero-dollar test order, so describe it as a controlled Production test transaction rather than customer revenue.
 
 The seeded public-demo IDs such as `demo-order-1` remain synthetic and must not be used as production evidence.
 
 ## Stock counts, close, and dashboard state
 
-Stock Counts is empty: 0 sessions, 0 active, 0 history. Daily Close is not started, Square is not connected for the location, and there is no close history. Keep both out of the main live route.
+Stock Counts has one completed, locked history session: count #2, Manager on duty, Sep 29, 5/5 counted, total variance -0.5. The useful line is Tapioca Pearls, expected 1.5 kg and counted 1 kg (-0.5); Chicken Breast 3.5/3.5 kg, Rice 12/12 kg, Cups 224/224 each, and Eggs 0/0 dozen are zero variance. Use Stock Counts only as an optional proof point. Daily Close has no current session and no history; keep it out of the route and do not create a close.
 
 Dashboard currently shows $430.30 month-to-date spend across 9 invoices, inventory value $1,179.56 across 23 items, 15 items needing reorder, 2 invoices to review, 18 count checks due, 8 price changes this week, and 16 attention actions. The strongest owner signal is the Reorder Plan plus the Chicken Breast price comparison. Recent price-change examples include Milk 2L +7.5%, Tapioca Pearls 0.25kg +9.1%, and Tea Base 2kg +3.4%.

@@ -12,7 +12,7 @@ If asked whether this is live OCR: “This is a stored completed purchase with a
 
 ## Use case 2: Square sale → recipe consumption
 
-“The POS knows the sale. Flowtally needs the mapping that turns a sold variation into the recipe ingredients an operator manages. Here `Flowtally Test Burger · Base` is mapped to Harbour Burger, with one sold unit and theoretical usage for Chicken Breast, Bread Buns, and Lettuce. Inventory History contains the corresponding persisted Square-order consumption movement. The current Square connection is disconnected, so this is traceability evidence rather than a live sync demonstration.”
+“The POS knows the sale. Flowtally needs the mapping that turns a sold variation into the recipe ingredients an operator manages. Here `Flowtally Test Burger · Base` is mapped to Harbour Burger, with one sold unit and theoretical usage for Chicken Breast, Bread Buns, and Lettuce. This controlled Production test order is already imported, and Inventory History contains the corresponding -0.2 kg Chicken Breast consumption movement.”
 
 If Square is unavailable: “The integration status and mapping are the important control points. I’m not going to manufacture or sync a transaction during a production showcase; the existing persisted movement and Usage / Variance record are the safe evidence.”
 
