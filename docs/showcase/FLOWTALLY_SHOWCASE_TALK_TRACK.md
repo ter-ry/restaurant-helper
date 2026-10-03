@@ -6,15 +6,15 @@
 
 ## Use case 1: invoice/OCR → inventory
 
-“A supplier invoice is not just an attachment. The useful outcome is a reviewable supplier, item, quantity, unit price, and downstream inventory movement. Here the rehearsal anchor is Oak Valley Meat Co invoice OV-1041, where Chicken Breast is $7.80. OV-1038 gives us a prior $7.20 reference, so an owner can ask what changed before approving the next purchase.”
+“A supplier invoice is not just an attachment. The useful outcome is a reviewable supplier, item, quantity, unit price, and downstream inventory movement. Here the completed rehearsal anchor is Oak Valley Meat Co invoice OV-1041, where Chicken Breast is $7.80. OV-1038 gives us a prior $7.20 reference, so an owner can ask what changed before approving the next purchase.”
 
-If asked whether this is live OCR: “This is the prepared review path. I will verify the live capture path before presenting it as production functionality.”
+If asked whether this is live OCR: “This is a stored completed purchase with a manual extraction status and seeded pilot invoice text. It demonstrates the review and inventory record, not a live OCR capture.”
 
 ## Use case 2: Square sale → recipe consumption
 
-“The POS knows the sale. Flowtally needs the mapping that turns a sold variation into the recipe ingredients an operator manages. For Harbour Burger, the recipe consumes Chicken Breast, Bread Buns, and Lettuce. A completed mapped sale can therefore explain ingredient usage without asking the owner to re-key every item.”
+“The POS knows the sale. Flowtally needs the mapping that turns a sold variation into the recipe ingredients an operator manages. Here `Flowtally Test Burger · Base` is mapped to Harbour Burger, with one sold unit and theoretical usage for Chicken Breast, Bread Buns, and Lettuce. Inventory History contains the corresponding persisted Square-order consumption movement. The current Square connection is disconnected, so this is traceability evidence rather than a live sync demonstration.”
 
-If Square is unavailable: “The integration status and mapping are the important control points. I’m not going to manufacture a transaction during a production showcase; the existing mapped order or a prepared screenshot is the safe evidence.”
+If Square is unavailable: “The integration status and mapping are the important control points. I’m not going to manufacture or sync a transaction during a production showcase; the existing persisted movement and Usage / Variance record are the safe evidence.”
 
 ## Use case 3: owner attention loop
 
