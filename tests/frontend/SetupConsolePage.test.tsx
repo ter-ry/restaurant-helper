@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupConsolePage } from "../../src/pages/SetupConsolePage";
 
 const platformSetupMocks = vi.hoisted(() => ({
+  CustomerApiError: class MockCustomerApiError extends Error { status: number; constructor(message: string, status: number) { super(message); this.status = status; Object.setPrototypeOf(this, new.target.prototype); } },
   fetchCustomerSession: vi.fn(),
   fetchSetupOrganizations: vi.fn(),
   fetchSetupOrganization: vi.fn(),
@@ -27,11 +28,13 @@ const platformSetupMocks = vi.hoisted(() => ({
   seedShowcaseOrganization: vi.fn(),
   resetShowcaseSquare: vi.fn(),
   diagnoseSquareCredentials: vi.fn(),
+  startGoogleLogin: vi.fn(),
 }));
 
 vi.mock("../../src/lib/customerAuth", () => ({
   fetchCustomerSession: platformSetupMocks.fetchCustomerSession,
-  startGoogleLogin: vi.fn(),
+  CustomerApiError: platformSetupMocks.CustomerApiError,
+  startGoogleLogin: platformSetupMocks.startGoogleLogin,
 }));
 
 vi.mock("../../src/lib/platformSetup", () => ({
@@ -297,6 +300,14 @@ beforeEach(() => {
 });
 
 describe("SetupConsolePage", () => {
+  it("preserves the setup console return path when signed out", async () => {
+    platformSetupMocks.fetchCustomerSession.mockRejectedValueOnce(new platformSetupMocks.CustomerApiError("signed out", 401));
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    expect(platformSetupMocks.startGoogleLogin).toHaveBeenCalledWith({ returnTo: "/platform/setup" });
+  });
+
   it("shows compact customer identity and humanizes readiness checks", async () => {
     renderPage();
 
