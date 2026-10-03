@@ -287,7 +287,13 @@ def seed_sales(
             current = client.request("GET", f"/v2/orders/{order_id}").get("order") or {}
             state = str(current.get("state") or "")
             if state == "COMPLETED":
-                entry.update({**summary, "squareOrderId": order_id, "status": "existing", "createdAt": current.get("created_at"), "closedAt": current.get("closed_at")})
+                entry.update({
+                    **summary,
+                    "squareOrderId": order_id,
+                    "status": "completed",
+                    "createdAt": current.get("created_at") or entry.get("createdAt"),
+                    "closedAt": current.get("closed_at") or entry.get("closedAt"),
+                })
                 results.append(dict(entry))
                 continue
         if not order_id:
@@ -328,7 +334,7 @@ def seed_sales(
         })
         results.append(dict(entry))
         _manifest_save(manifest_path, manifest)
-    completed = [item for item in results if item.get("status") in {"created", "existing"}]
+    completed = [item for item in results if item.get("status") == "completed"]
     completed_totals = {
         "orderCount": len(completed),
         "totalBurgerQuantity": sum(item.get("quantity", 0) for item in completed),

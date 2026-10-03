@@ -132,8 +132,42 @@ def test_completed_sequence_and_safe_manifest_idempotency(tmp_path: Path):
     first = seed_sales(client(fake), dry_run=False, **kwargs)
     assert [entry["status"] for entry in first["orders"]] == ["completed"] * 3
     assert [call[1] for call in fake.calls if call[0] == "POST"] == ["/v2/orders", "/v2/payments", "/v2/orders/ORDER-1/pay", "/v2/orders", "/v2/payments", "/v2/orders/ORDER-2/pay", "/v2/orders", "/v2/payments", "/v2/orders/ORDER-3/pay"]
+    first_totals = first["completedTotals"]
+    manifest_before = json.loads((tmp_path / "manifest.json").read_text())
+    post_count = len([call for call in fake.calls if call[0] == "POST"])
     second = seed_sales(client(fake), dry_run=False, **kwargs)
-    assert [entry["status"] for entry in second["orders"]] == ["existing"] * 3
+    assert [entry["status"] for entry in second["orders"]] == ["completed"] * 3
+    assert second["completedTotals"] == first_totals
+    assert len([call for call in fake.calls if call[0] == "POST"]) == post_count
+    assert json.loads((tmp_path / "manifest.json").read_text()) == manifest_before
+
+
+def test_single_order_completed_totals_are_reported_and_reused(tmp_path: Path):
+    fake = FakeSquare()
+    kwargs = dict(
+        fixture_name="single-order",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"),
+        order_count=1,
+        manifest_path=tmp_path / "manifest.json",
+    )
+    first = seed_sales(client(fake), dry_run=False, **kwargs)
+    expected = {
+        "orderCount": 1,
+        "totalBurgerQuantity": 1,
+        "grossAmount": {"amount": 1800, "currency": "CAD"},
+        "discountAmount": {"amount": 0, "currency": "CAD"},
+        "tipAmount": {"amount": 0, "currency": "CAD"},
+        "finalTotal": {"amount": 1800, "currency": "CAD"},
+    }
+    assert first["completedTotals"] == expected
+    manifest_before = json.loads((tmp_path / "manifest.json").read_text())
+    post_count = len([call for call in fake.calls if call[0] == "POST"])
+    second = seed_sales(client(fake), dry_run=False, **kwargs)
+    assert second["completedTotals"] == expected
+    assert second["orders"][0]["status"] == "completed"
+    assert len([call for call in fake.calls if call[0] == "POST"]) == post_count
+    assert json.loads((tmp_path / "manifest.json").read_text()) == manifest_before
 
 
 def test_larger_fixture_requires_inventory_review_confirmation(tmp_path: Path):
