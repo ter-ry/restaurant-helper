@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,34 @@ class SquareShowcaseError(RuntimeError):
         self.request_id = request_id
 
 
+def _square_error_metadata(raw: bytes | str) -> str | None:
+    """Return only structured, non-sensitive Square error fields."""
+    try:
+        payload = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    entries = payload.get("errors")
+    if not isinstance(entries, list):
+        entries = [payload] if any(key in payload for key in ("category", "code", "detail", "type")) else []
+    summaries: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        parts: list[str] = []
+        for key in ("category", "code", "type", "detail"):
+            value = entry.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            safe = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", value.strip())
+            safe = re.sub(r"(?i)((?:token|secret|authorization)\s*[:=])\s*\S+", r"\1 [redacted]", safe)
+            parts.append(f"{key}={safe[:200]}")
+        if parts:
+            summaries.append(" ".join(parts))
+    return "; ".join(summaries) or None
+
+
 class SquareClient:
     def __init__(self, token: str, *, opener: Callable[..., Any] = urlopen):
         self._token = token
@@ -60,7 +89,14 @@ class SquareClient:
                 status = getattr(response, "status", 200)
         except HTTPError as exc:
             request_id = exc.headers.get("x-square-request-id") if exc.headers else None
-            raise SquareShowcaseError("Square request failed.", status=exc.code, request_id=request_id) from exc
+            try:
+                metadata = _square_error_metadata(exc.read())
+            except OSError:
+                metadata = None
+            message = "Square request failed."
+            if metadata:
+                message += f" {metadata}"
+            raise SquareShowcaseError(message, status=exc.code, request_id=request_id) from exc
         except URLError as exc:
             raise SquareShowcaseError("Square request could not reach the Production API.") from exc
         except TimeoutError as exc:
@@ -100,6 +136,11 @@ class OrderPlan:
 def _key(fixture_name: str, kind: str, number: int) -> str:
     digest = hashlib.sha256(f"flowtally:{fixture_name}:{kind}:{number}".encode("utf-8")).hexdigest()
     return f"flowtally-showcase-{digest[:32]}"
+
+
+def _reference_id(fixture_name: str, order_number: int) -> str:
+    digest = hashlib.sha256(f"flowtally:{fixture_name}:order:{order_number}".encode("utf-8")).hexdigest()
+    return f"ft-showcase-{digest[:28]}"
 
 
 def plans(order_count: int) -> list[OrderPlan]:
@@ -180,7 +221,7 @@ def discover_variation(client: SquareClient) -> Variation:
 
 def _order_payload(plan: OrderPlan, variation: Variation, fixture_name: str, location_id: str) -> dict[str, Any]:
     order: dict[str, Any] = {
-        "reference_id": f"flowtally-showcase:{fixture_name}:order-{plan.number}",
+        "reference_id": _reference_id(fixture_name, plan.number),
         "location_id": location_id,
         "line_items": [{"catalog_object_id": variation.object_id, "quantity": str(plan.quantity)}],
     }

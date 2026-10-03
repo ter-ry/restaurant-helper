@@ -13,6 +13,8 @@ from scripts.seed_square_showcase_sales import (
     TARGET_VARIATION,
     Variation,
     _order_payload,
+    _reference_id,
+    _square_error_metadata,
     discover_variation,
     plans,
     seed_sales,
@@ -124,6 +126,24 @@ def test_order_payload_keeps_catalog_variation_and_discount():
     payload = _order_payload(plans(3)[2], Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), "fixture", "LOCATION")
     assert payload["line_items"] == [{"catalog_object_id": "VARIATION", "quantity": "1"}]
     assert payload["discounts"][0]["percentage"] == "10"
+    assert payload["location_id"] == "LOCATION"
+    assert len(payload["reference_id"]) <= 40
+
+
+def test_reference_id_is_deterministic_distinct_and_bounded():
+    first = _reference_id("alpha-video-2026-10", 1)
+    assert first == _reference_id("alpha-video-2026-10", 1)
+    assert len(first) <= 40
+    assert first != _reference_id("alpha-video-2026-10", 2)
+    assert first != _reference_id("different-fixture", 1)
+    assert len(_reference_id("x" * 500, 1)) <= 40
+    assert _order_payload(plans(1)[0], Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"), "alpha-video-2026-10", "LQ5R7NF4W2MTZ")["reference_id"] == _reference_id("alpha-video-2026-10", 1)
+
+
+def test_square_error_metadata_is_structured_and_sanitized():
+    metadata = _square_error_metadata(json.dumps({"errors": [{"category": "INVALID_REQUEST_ERROR", "code": "INVALID_VALUE", "detail": "reference_id is too long"}]}))
+    assert metadata == "category=INVALID_REQUEST_ERROR code=INVALID_VALUE detail=reference_id is too long"
+    assert "secret-value" not in (_square_error_metadata(json.dumps({"errors": [{"category": "INVALID_REQUEST_ERROR", "detail": "Bearer secret-value"}]})) or "")
 
 
 def test_completed_sequence_and_safe_manifest_idempotency(tmp_path: Path):
@@ -226,3 +246,22 @@ def test_square_http_failure_does_not_expose_token():
     assert "temporary-token" not in str(raised.value)
     assert raised.value.status == 401
     assert raised.value.request_id == "safe-request-id"
+
+
+def test_square_http_failure_includes_safe_structured_metadata():
+    class Body:
+        def read(self):
+            return b'{"errors":[{"category":"INVALID_REQUEST_ERROR","code":"INVALID_VALUE","detail":"reference_id is too long"}]}'
+
+        def close(self):
+            return None
+
+    def failing(request, timeout=30):
+        raise HTTPError(request.full_url, 400, "Bad Request", {"x-square-request-id": "safe-400-id"}, Body())
+
+    with pytest.raises(SquareShowcaseError) as raised:
+        SquareClient("temporary-token", opener=failing).request("POST", "/v2/orders", {})
+    assert raised.value.status == 400
+    assert raised.value.request_id == "safe-400-id"
+    assert "code=INVALID_VALUE" in str(raised.value)
+    assert "reference_id is too long" in str(raised.value)
