@@ -132,6 +132,16 @@ def test_completed_sequence_and_safe_manifest_idempotency(tmp_path: Path):
     first = seed_sales(client(fake), dry_run=False, **kwargs)
     assert [entry["status"] for entry in first["orders"]] == ["completed"] * 3
     assert [call[1] for call in fake.calls if call[0] == "POST"] == ["/v2/orders", "/v2/payments", "/v2/orders/ORDER-1/pay", "/v2/orders", "/v2/payments", "/v2/orders/ORDER-2/pay", "/v2/orders", "/v2/payments", "/v2/orders/ORDER-3/pay"]
+    payment_request = next(body for method, path, body in fake.calls if method == "POST" and path == "/v2/payments")
+    assert payment_request["source_id"] == "CASH"
+    assert payment_request["autocomplete"] is False
+    assert payment_request["amount_money"] == {"amount": 1800, "currency": "CAD"}
+    assert payment_request["tip_money"] == {"amount": 0, "currency": "CAD"}
+    assert payment_request["order_id"] == "ORDER-1"
+    assert payment_request["location_id"] == "LOCATION"
+    assert payment_request["cash_details"]["buyer_supplied_money"] == {"amount": 1800, "currency": "CAD"}
+    assert "buyer_tendered_money" not in payment_request["cash_details"]
+    assert "change_back_money" not in payment_request["cash_details"]
     first_totals = first["completedTotals"]
     manifest_before = json.loads((tmp_path / "manifest.json").read_text())
     post_count = len([call for call in fake.calls if call[0] == "POST"])

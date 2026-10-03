@@ -8,7 +8,7 @@ This runbook is for the dedicated Flowtally Production showcase seller only. It 
 - Use the separate temporary Square utility app's Production personal/access token for this dedicated showcase seller.
 - Do not copy or reuse Flowtally's merchant OAuth token, Flowtally's OAuth client secret, or credentials from another seller.
 - The utility requires `SQUARE_SHOWCASE_ACCESS_TOKEN`, `SQUARE_SHOWCASE_EXPECTED_MERCHANT_ID`, `SQUARE_SHOWCASE_EXPECTED_LOCATION_ID`, and `SQUARE_SHOWCASE_EXPECTED_LOCATION_NAME=Flowtally`.
-- Set `SQUARE_SHOWCASE_API_BASE_URL` only if the documented Production endpoint must be overridden; the default is Square Production.
+- The utility uses Square's fixed Production API host; do not override it with another environment or host.
 
 ## Safe dry run
 

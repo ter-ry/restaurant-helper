@@ -314,7 +314,7 @@ def seed_sales(
                 "order_id": order_id,
                 "location_id": identity.location_id,
                 "autocomplete": False,
-                "cash_details": {"buyer_tendered_money": _money(summary["totalCents"], variation.currency), "change_back_money": _money(0, variation.currency)},
+                "cash_details": {"buyer_supplied_money": _money(summary["totalCents"], variation.currency)},
             })
             payment_id = str((payment.get("payment") or {}).get("id") or "")
             if not payment_id:
