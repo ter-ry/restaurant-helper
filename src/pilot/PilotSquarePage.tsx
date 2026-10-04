@@ -143,7 +143,7 @@ export function PilotSquarePage() {
   const dailySales = connection?.dailySales ?? [];
   const syncJobs = connection?.syncJobs ?? [];
   const recentOrders = [...(connection?.orders ?? [])]
-    .filter((order) => !order.isDeleted)
+    .filter((order) => !order.isDeleted && ["COMPLETED", "CANCELED", "CANCELLED"].includes(order.orderState.toUpperCase()))
     .sort((left, right) => new Date(right.orderedAt || right.closedAt || 0).getTime() - new Date(left.orderedAt || left.closedAt || 0).getTime());
   const menuItems = menuCosting?.menuItems ?? [];
   const mappedLocations = squareLocations.filter((location) => location.mappings.some((mapping) => mapping.restaurantLocationId)).length;

@@ -1284,13 +1284,75 @@ def test_daily_close_does_not_call_missing_counts_a_mapping_gap():
         {
             "coverage": {"unmappedVariationCount": 0},
             "contributingMenuItems": [],
-            "ingredientUsage": [{"warnings": ["No completed stock count exists after the start of the period."]}],
+            "ingredientUsage": [{"actualUsage": None, "discrepancyPercent": 80, "warnings": ["No completed stock count exists after the start of the period."]}],
             "totals": {"actualUsage": None, "discrepancyPercent": None},
         },
     )
 
     assert "Recipe or inventory mapping gaps exist." not in exceptions
     assert "Actual usage unavailable — stock-count basis is incomplete." in exceptions
+    assert "Material usage variance exceeds threshold." not in exceptions
+
+
+@pytest.mark.parametrize("percent", [30, -30])
+def test_daily_close_flags_any_material_per_item_variance(percent):
+    from backend.daily_close import _daily_close_exceptions
+
+    exceptions = _daily_close_exceptions(
+        None,
+        {"locationMapped": True, "refunds": 0, "cancelledOrders": 0},
+        {
+            "coverage": {"unmappedVariationCount": 0},
+            "contributingMenuItems": [],
+            "ingredientUsage": [{"actualUsage": 1, "discrepancyPercent": percent, "warnings": []}],
+            "totals": {"actualUsage": None, "discrepancyPercent": None},
+        },
+    )
+
+    assert "Material usage variance exceeds threshold." in exceptions
+
+
+def test_daily_close_does_not_cancel_opposite_item_variances_or_alarm_missing_counts():
+    from backend.daily_close import _daily_close_exceptions
+
+    exceptions = _daily_close_exceptions(
+        None,
+        {"locationMapped": True, "refunds": 0, "cancelledOrders": 0},
+        {
+            "coverage": {"unmappedVariationCount": 0},
+            "contributingMenuItems": [],
+            "ingredientUsage": [
+                {"actualUsage": 1, "discrepancyPercent": 30, "warnings": []},
+                {"actualUsage": 1, "discrepancyPercent": -30, "warnings": []},
+                {"actualUsage": None, "discrepancyPercent": 80, "warnings": ["No completed stock count exists after the start of the period."]},
+            ],
+            "totals": {"actualUsage": None, "discrepancyPercent": None},
+        },
+    )
+
+    assert "Material usage variance exceeds threshold." in exceptions
+    assert "Actual usage unavailable — stock-count basis is incomplete." in exceptions
+
+
+def test_daily_close_mixed_units_with_complete_counts_has_no_false_incomplete_exception():
+    from backend.daily_close import _daily_close_exceptions
+
+    exceptions = _daily_close_exceptions(
+        None,
+        {"locationMapped": True, "refunds": 0, "cancelledOrders": 0},
+        {
+            "coverage": {"unmappedVariationCount": 0},
+            "contributingMenuItems": [],
+            "ingredientUsage": [
+                {"unit": "kg", "actualUsage": 1, "discrepancyPercent": 4, "warnings": []},
+                {"unit": "pack", "actualUsage": 2, "discrepancyPercent": -3, "warnings": []},
+            ],
+            "totals": {"actualUsage": None, "discrepancyPercent": None},
+        },
+    )
+
+    assert "Actual usage unavailable — stock-count basis is incomplete." not in exceptions
+    assert "Material usage variance exceeds threshold." not in exceptions
 
 
 def test_completed_square_sales_deplete_inventory_idempotently_and_reverse_on_cancel(app, client):

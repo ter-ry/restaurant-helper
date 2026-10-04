@@ -417,4 +417,34 @@ describe("PilotSquarePage", () => {
     expect(screen.getByText(/Test Burger ×1/)).toBeVisible();
     expect(screen.getAllByRole("combobox")[1]).toHaveValue("901");
   });
+
+  it("shows only finalized Square orders in newest-first transaction history", async () => {
+    const connection = createConnectedConnection();
+    const order = (id: string, state: string, orderedAt: string, refundedAt: string | null = null) => ({
+      id: Number(id.replace(/\D/g, "")) || 1, squareOrderId: id, squareLocationId: "SQ-10", restaurantLocationId: 7,
+      orderState: state, currency: "CAD", grossAmount: 18, discountAmount: 0, taxAmount: 2, tipAmount: 0,
+      refundAmount: refundedAt ? 18 : 0, netAmount: refundedAt ? 0 : 18, itemQuantity: 1, lineCount: 1,
+      orderedAt, closedAt: orderedAt, cancelledAt: state === "CANCELED" ? orderedAt : null, refundedAt,
+      isDeleted: false, rawPayload: {}, lines: [],
+    });
+    connection.orders = [
+      order("ORDER-OPEN", "OPEN", "2026-08-29T23:00:00.000Z"),
+      order("ORDER-DRAFT", "DRAFT", "2026-08-29T22:50:00.000Z"),
+      order("ORDER-CANCELED", "CANCELED", "2026-08-29T22:30:00.000Z"),
+      order("ORDER-REFUNDED", "COMPLETED", "2026-08-29T22:20:00.000Z", "2026-08-29T22:40:00.000Z"),
+      order("ORDER-COMPLETED", "COMPLETED", "2026-08-29T22:10:00.000Z"),
+    ];
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
+
+    const { container } = render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByText(/ORDER-CANCELED/)).toBeVisible();
+    expect(screen.getByText(/ORDER-REFUNDED/)).toBeVisible();
+    expect(screen.getByText(/ORDER-COMPLETED/)).toBeVisible();
+    expect(screen.queryByText(/ORDER-OPEN/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ORDER-DRAFT/)).not.toBeInTheDocument();
+    const finalized = [...container.querySelectorAll("p")].filter((node) => /ORDER-(CANCELED|REFUNDED|COMPLETED)/.test(node.textContent || ""));
+    expect(finalized.map((node) => node.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("ORDER-CANCELED"), expect.stringContaining("ORDER-REFUNDED"), expect.stringContaining("ORDER-COMPLETED")]));
+    expect(finalized.findIndex((node) => node.textContent?.includes("ORDER-CANCELED"))).toBeLessThan(finalized.findIndex((node) => node.textContent?.includes("ORDER-REFUNDED")));
+  });
 });
