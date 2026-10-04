@@ -408,8 +408,8 @@ describe("PilotSquarePage", () => {
     }];
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
     const response = createCatalogMappingResponse();
-    response.mappings[0].mapping = { ...response.mappings[0], flowtallyEntityId: "901" };
-    mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue(response);
+    const mappedRow = { ...response.mappings[0], mapping: { ...response.mappings[0], flowtallyEntityId: "901" } };
+    mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue({ ...response, mappings: [mappedRow], unmappedVariations: [mappedRow] });
 
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
 
