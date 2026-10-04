@@ -395,4 +395,26 @@ describe("PilotSquarePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import menu" }));
     await waitFor(() => expect(mockApi.importPilotSquareMenu).toHaveBeenCalledWith(42, 7));
   });
+
+  it("renders imported transactions and keeps a resolved catalog mapping selected", async () => {
+    const connection = createConnectedConnection();
+    connection.orders = [{
+      id: 701, squareOrderId: "ORDER-RECENT", squareLocationId: "SQ-10", restaurantLocationId: 7,
+      orderState: "COMPLETED", currency: "CAD", grossAmount: 18, discountAmount: 0, taxAmount: 2,
+      tipAmount: 0, refundAmount: 0, netAmount: 18, itemQuantity: 1, lineCount: 1,
+      orderedAt: "2026-08-29T22:00:00.000Z", closedAt: "2026-08-29T22:05:00.000Z", cancelledAt: null,
+      refundedAt: null, isDeleted: false, rawPayload: {},
+      lines: [{ id: 1, lineUid: "line-1", lineIndex: 0, squareItemVariationId: "VAR-1", name: "Test Burger", quantity: 1, grossAmount: 18, discountAmount: 0, taxAmount: 2, tipAmount: 0, netAmount: 18, rawPayload: {} }],
+    }];
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
+    const response = createCatalogMappingResponse();
+    response.mappings[0].mapping = { ...response.mappings[0], flowtallyEntityId: "901" };
+    mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue(response);
+
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Recent transactions")).toBeVisible();
+    expect(screen.getByText(/Test Burger ×1/)).toBeVisible();
+    expect(screen.getAllByRole("combobox")[1]).toHaveValue("901");
+  });
 });

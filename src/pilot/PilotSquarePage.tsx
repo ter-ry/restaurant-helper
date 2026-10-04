@@ -25,6 +25,10 @@ import {
 } from "./pilotApi";
 import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
+function resolvedCatalogMapping(candidate: { mapping?: { flowtallyEntityId?: string | null } | null; flowtallyEntityId?: string | null }) {
+  return candidate.mapping ?? (candidate.flowtallyEntityId !== undefined ? candidate : null);
+}
+
 function readValue(id: string, fallback: string) {
   return (document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null)?.value ?? fallback;
 }
@@ -69,6 +73,7 @@ export function PilotSquarePage() {
   const { organization, locations, currentLocation } = usePilotSession();
   const [connection, setConnection] = useState<PilotSquareConnectionSummary | null>(null);
   const [catalogMappings, setCatalogMappings] = useState<Awaited<ReturnType<typeof fetchPilotSquareCatalogMappings>>["mappings"]>([]);
+  const [catalogSelections, setCatalogSelections] = useState<Record<number, string>>({});
   const [mappingCoverage, setMappingCoverage] = useState<Awaited<ReturnType<typeof fetchPilotSquareCatalogMappings>>["mappingCoverage"]>({ mappedVariationCount: 0, totalVariationCount: 0, mappedPercent: 0 });
   const [menuCosting, setMenuCosting] = useState<PilotMenuCostingResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,7 +124,9 @@ export function PilotSquarePage() {
       loadSection(fetchPilotSquareStatus(currentOrganizationId), (status) => setConnection(status.connection)),
       loadSection(fetchPilotMenuCosting(), setMenuCosting),
       loadSection(fetchPilotSquareCatalogMappings(currentOrganizationId), (mappingResponse) => {
-        setCatalogMappings(mappingResponse.mappings.length ? mappingResponse.mappings : mappingResponse.unmappedVariations);
+        const rows = mappingResponse.mappings.length ? mappingResponse.mappings : mappingResponse.unmappedVariations;
+        setCatalogMappings(rows);
+        setCatalogSelections(Object.fromEntries(rows.map((row) => [row.id, resolvedCatalogMapping(row)?.flowtallyEntityId ?? ""])));
         setMappingCoverage(mappingResponse.mappingCoverage);
       }),
     ]);
@@ -135,6 +142,9 @@ export function PilotSquarePage() {
   const squareLocations = connection?.locations ?? [];
   const dailySales = connection?.dailySales ?? [];
   const syncJobs = connection?.syncJobs ?? [];
+  const recentOrders = [...(connection?.orders ?? [])]
+    .filter((order) => !order.isDeleted)
+    .sort((left, right) => new Date(right.orderedAt || right.closedAt || 0).getTime() - new Date(left.orderedAt || left.closedAt || 0).getTime());
   const menuItems = menuCosting?.menuItems ?? [];
   const mappedLocations = squareLocations.filter((location) => location.mappings.some((mapping) => mapping.restaurantLocationId)).length;
   const mappedMenus = mappingCoverage.mappedVariationCount;
@@ -509,10 +519,30 @@ export function PilotSquarePage() {
           </Card>
 
           <Card className="workspace-card">
+            <SectionHeader title="Recent transactions" description="Imported Square orders, newest first. Amounts reflect the order totals Flowtally received." />
+            <div className="mt-4 space-y-3">
+              {recentOrders.length ? recentOrders.slice(0, 8).map((order) => (
+                <div key={order.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{formatDateTime(order.orderedAt || order.closedAt)} · {order.squareOrderId}</p>
+                      <p className="mt-1 text-xs text-muted">{order.lines.map((line) => `${line.name} ×${formatNumber(line.quantity)}`).join(" · ") || "No line items"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-ink">Final {formatMoney(order.netAmount)} {order.currency}</p><p className="mt-1 text-xs text-muted">Gross {formatMoney(order.grossAmount)} · Discount {formatMoney(order.discountAmount)}</p>
+                      <Badge tone={order.cancelledAt ? "danger" : order.refundedAt ? "warning" : statusTone(order.orderState)}>{order.cancelledAt ? "Cancelled" : order.refundedAt ? "Refunded" : order.orderState}</Badge>
+                    </div>
+                  </div>
+                </div>
+              )) : <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No imported Square transactions yet.</p>}
+            </div>
+          </Card>
+
+          <Card className="workspace-card">
             <SectionHeader title="Menu mapping" description="Map each Square variation to a Flowtally menu item. Recipes are assigned later in Menu Costing." />
             <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {catalogMappings.length ? catalogMappings.slice(0, 16).map((catalogObject) => {
-                const mapping = catalogObject.mapping;
+                const mapping = resolvedCatalogMapping(catalogObject);
                 return (
                   <div key={catalogObject.id} className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -522,7 +552,7 @@ export function PilotSquarePage() {
                       <Badge tone={mapping?.flowtallyEntityId ? "success" : "warning"}>{mapping?.flowtallyEntityId ? "Mapped" : "Needs mapping"}</Badge>
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-                      <select id={`pilot-square-menu-item-${catalogObject.id}`} className="input" defaultValue={mapping?.flowtallyEntityId ?? ""} disabled={demoReadOnly || !connectionReady}>
+                      <select id={`pilot-square-menu-item-${catalogObject.id}`} className="input" value={catalogSelections[catalogObject.id] ?? mapping?.flowtallyEntityId ?? ""} disabled={demoReadOnly || !connectionReady} onChange={(event) => setCatalogSelections((current) => ({ ...current, [catalogObject.id]: event.target.value }))}>
                         <option value="">Choose a Flowtally menu item</option>
                         {menuItems.map((menuItem) => (
                           <option key={menuItem.id} value={menuItem.id}>
@@ -600,7 +630,7 @@ export function PilotSquarePage() {
           </Card>
 
           <Card className="p-6">
-            <SectionHeader title="Usage variance" description="A fast look at sales import health and any strange sync states." />
+            <SectionHeader title="Recent sync activity" description="Recent sync jobs and any failures that need attention." />
             <div className="mt-4 space-y-3">
               {syncJobs.length ? syncJobs.slice(0, 5).map((job) => (
                 <div key={job.id} className="rounded-2xl border border-line bg-slate-50 p-4">

@@ -389,8 +389,33 @@ def _inventory_usage_basis(organization_id: int, location_id: int, inventory_ite
     warnings: list[str] = []
     if opening is None:
         warnings.append("No completed stock count exists before the start of the period.")
+    # A single count cannot establish usage. If the latest count at both
+    # boundaries is the same session, require a later completed count instead
+    # of presenting the opening snapshot as a false closing value.
+    if opening is not None and closing is not None and opening["sessionId"] == closing["sessionId"]:
+        opening_completed_at = datetime.fromisoformat(opening["completedAt"].replace("Z", "+00:00"))
+        later_session = StockCountSession.query.options(selectinload(StockCountSession.lines)).filter(
+            StockCountSession.organization_id == organization_id,
+            StockCountSession.location_id == location_id,
+            StockCountSession.status == "Completed",
+            StockCountSession.completed_at.is_not(None),
+            StockCountSession.completed_at > opening_completed_at,
+            StockCountSession.completed_at <= end_at,
+        ).order_by(StockCountSession.completed_at.desc(), StockCountSession.id.desc()).first()
+        later_line = next((entry for entry in later_session.lines if entry.inventory_item_id == inventory_item_id), None) if later_session else None
+        later_quantity = later_line.resulting_quantity if later_line and later_line.resulting_quantity is not None else (later_line.counted_quantity if later_line else None)
+        if later_session is not None and later_quantity is not None:
+            closing = {
+                "sessionId": later_session.id,
+                "completedAt": isoformat(later_session.completed_at),
+                "quantity": float(later_quantity),
+            }
+        else:
+            closing = None
+            warnings.append("No completed stock count exists after the start of the period.")
     if closing is None:
-        warnings.append("No completed stock count exists before the end of the period.")
+        if not any("after the start" in warning for warning in warnings):
+            warnings.append("No completed stock count exists before the end of the period.")
     if opening is None or closing is None:
         return {
             "available": False,

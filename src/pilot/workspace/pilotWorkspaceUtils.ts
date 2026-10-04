@@ -8,6 +8,10 @@ export const numberFormatter = new Intl.NumberFormat("en-CA", {
   maximumFractionDigits: 1,
 });
 
+export const inventoryQuantityFormatter = new Intl.NumberFormat("en-CA", {
+  maximumFractionDigits: 2,
+});
+
 export const wholeNumberFormatter = new Intl.NumberFormat("en-CA", {
   maximumFractionDigits: 0,
 });
@@ -33,6 +37,13 @@ export function formatNumber(value: number | null | undefined) {
     return "—";
   }
   return numberFormatter.format(value);
+}
+
+export function formatInventoryQuantity(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  return inventoryQuantityFormatter.format(value);
 }
 
 export function formatWholeNumber(value: number | null | undefined) {

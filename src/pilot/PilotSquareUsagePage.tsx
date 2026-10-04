@@ -346,19 +346,19 @@ export function PilotSquareUsagePage() {
               <p className="mt-1 text-xs text-muted">Mapped variation coverage</p>
             </div>
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Theoretical usage</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage ? formatQuantity(usage.totals.theoreticalUsage) : "—"}</p>
-              <p className="mt-1 text-xs text-muted">Across ingredient rows</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Sold menu units</p>
+              <p className="mt-2 text-2xl font-bold text-ink">{usage ? formatQuantity(usage.coverage.totalSoldUnits) : "—"}</p>
+              <p className="mt-1 text-xs text-muted">Across mapped Square variations</p>
             </div>
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Actual usage</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage?.totals.actualUsage == null ? "—" : formatQuantity(usage.totals.actualUsage)}</p>
-              <p className="mt-1 text-xs text-muted">Based on stock-count snapshots</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Ingredient rows tracked</p>
+              <p className="mt-2 text-2xl font-bold text-ink">{usage ? formatQuantity(usage.ingredientUsage.length) : "—"}</p>
+              <p className="mt-1 text-xs text-muted">Each row keeps its own stock unit</p>
             </div>
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Variance</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage?.totals.discrepancy == null ? "—" : formatQuantity(usage.totals.discrepancy)}</p>
-              <p className="mt-1 text-xs text-muted">{usage?.totals.discrepancyPercent == null ? "Awaiting counts" : `${formatQuantity(usage.totals.discrepancyPercent)}%`}</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Physical count coverage</p>
+              <p className="mt-2 text-2xl font-bold text-ink">{usage ? `${usage.ingredientUsage.filter((row) => row.actualUsage != null).length}/${usage.ingredientUsage.length}` : "—"}</p>
+              <p className="mt-1 text-xs text-muted">Actual usage needs distinct counts</p>
             </div>
           </div>
 

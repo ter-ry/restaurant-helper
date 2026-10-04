@@ -185,7 +185,16 @@ def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[s
         exceptions.append("Sold Square variation unmapped.")
     if any(item.get("warnings") for item in usage.get("contributingMenuItems", [])):
         exceptions.extend(sorted({warning for item in usage.get("contributingMenuItems", []) for warning in item.get("warnings", []) if "recipe" in warning.lower()}))
-    if any(row.get("warnings") for row in usage.get("ingredientUsage", [])):
+    # Missing physical counts make actual usage unavailable, but are not a
+    # recipe or mapping defect. Only surface warnings that describe a real
+    # mapping/recipe problem as a mapping exception.
+    mapping_warnings = [
+        warning
+        for row in usage.get("ingredientUsage", [])
+        for warning in (row.get("warnings") or [])
+        if "stock count" not in warning.lower()
+    ]
+    if mapping_warnings:
         exceptions.append("Recipe or inventory mapping gaps exist.")
     if usage.get("totals", {}).get("actualUsage") is None:
         exceptions.append("Actual usage unavailable — stock-count basis is incomplete.")
@@ -201,6 +210,21 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     connection = _connection_for_organization(organization.id)
     summary = _sales_summary_for_day(connection, location, business_date)
     usage = _daily_close_usage(organization, location, business_date, connection)
+    usage_units = {str(row.get("unit") or "").strip() for row in usage.get("ingredientUsage", []) if row.get("unit") }
+    if len(usage_units) > 1:
+        # Totals across kg, L, each, etc. are not a meaningful Daily Close
+        # quantity. Keep detailed per-item rows, but make aggregate
+        # reconciliation unavailable unless all rows share one unit.
+        usage = {
+            **usage,
+            "totals": {
+                **(usage.get("totals") or {}),
+                "theoreticalUsage": None,
+                "actualUsage": None,
+                "discrepancy": None,
+                "discrepancyPercent": None,
+            },
+        }
     exceptions = _daily_close_exceptions(connection, summary, usage)
     actual_usage = usage.get("totals", {}).get("actualUsage")
     theoretical_usage = usage.get("totals", {}).get("theoreticalUsage") or 0

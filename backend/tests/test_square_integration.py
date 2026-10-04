@@ -1252,6 +1252,47 @@ def test_square_usage_report_calculates_theoretical_and_actual_usage(app, client
     assert payload["usage"]["ingredientUsage"][0]["actualUsageBasis"]["available"] is True
 
 
+def test_inventory_usage_requires_a_distinct_later_closing_count(app, client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization, location = _create_square_usage_fixture(app, owner, organization_name=f"Square Usage Basis {uuid4().hex[:6]}")
+    with app.app_context():
+        from backend.square_integration import _inventory_usage_basis
+
+        inventory_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Beef").one()
+        basis = _inventory_usage_basis(
+            organization.id,
+            location.id,
+            inventory_item.id,
+            datetime(2026, 8, 5, tzinfo=timezone.utc),
+            datetime(2026, 8, 10, tzinfo=timezone.utc),
+        )
+
+    assert basis["available"] is False
+    assert basis["actualUsage"] is None
+    assert basis["closingQuantity"] is None
+    assert any("after the start" in warning for warning in basis["warnings"])
+
+
+def test_daily_close_does_not_call_missing_counts_a_mapping_gap():
+    from backend.daily_close import _daily_close_exceptions
+
+    exceptions = _daily_close_exceptions(
+        None,
+        {"locationMapped": True, "refunds": 0, "cancelledOrders": 0},
+        {
+            "coverage": {"unmappedVariationCount": 0},
+            "contributingMenuItems": [],
+            "ingredientUsage": [{"warnings": ["No completed stock count exists after the start of the period."]}],
+            "totals": {"actualUsage": None, "discrepancyPercent": None},
+        },
+    )
+
+    assert "Recipe or inventory mapping gaps exist." not in exceptions
+    assert "Actual usage unavailable — stock-count basis is incomplete." in exceptions
+
+
 def test_completed_square_sales_deplete_inventory_idempotently_and_reverse_on_cancel(app, client):
     login(client)
     owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
