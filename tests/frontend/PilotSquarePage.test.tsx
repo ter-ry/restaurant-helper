@@ -413,8 +413,11 @@ describe("PilotSquarePage", () => {
 
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
 
-    expect(await screen.findByText("Recent transactions")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Recent sales" })).toBeVisible();
+    expect(screen.getAllByText(/Aug 29/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Net sales $1,600.00")).toBeVisible();
     expect(screen.getByText(/Test Burger ×1/)).toBeVisible();
+    expect(screen.queryByText("Sales summary")).not.toBeInTheDocument();
     expect(screen.getAllByRole("combobox")[1]).toHaveValue("901");
   });
 
@@ -438,7 +441,8 @@ describe("PilotSquarePage", () => {
 
     const { container } = render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
 
-    expect(await screen.findByText(/ORDER-CANCELED/)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Recent sales" })).toBeVisible();
+    expect(screen.getByText(/ORDER-CANCELED/)).toBeVisible();
     expect(screen.getByText(/ORDER-REFUNDED/)).toBeVisible();
     expect(screen.getByText(/ORDER-COMPLETED/)).toBeVisible();
     expect(screen.queryByText(/ORDER-OPEN/)).not.toBeInTheDocument();

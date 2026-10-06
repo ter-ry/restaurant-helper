@@ -998,6 +998,51 @@ def test_square_location_mapping_catalog_pagination_and_orders(app, client, monk
         assert float(summary.refund_amount) == 2.5
 
 
+def test_square_order_cancellation_timestamp_only_reflects_cancellation(app):
+    from backend.square_integration import _upsert_order
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Cancellation semantics {uuid4().hex[:6]}", location_name="Main Kitchen")
+        connection = SquareConnection(organization_id=organization.id, environment="sandbox", square_merchant_id="merchant-cancel", status="connected")
+        db.session.add(connection)
+        db.session.flush()
+
+        base = {
+            "id": "ORDER-CANCEL-SEMANTICS",
+            "location_id": "LOC-1",
+            "total_money": {"amount": 1500, "currency": "CAD"},
+            "created_at": "2026-08-08T12:00:00Z",
+            "updated_at": "2026-08-08T12:05:00Z",
+            "line_items": [],
+        }
+
+        order = _upsert_order(connection, {**base, "state": "COMPLETED"})
+        assert order is not None
+        assert order.cancelled_at is None
+
+        order = _upsert_order(connection, {**base, "state": "OPEN"})
+        assert order is not None
+        assert order.cancelled_at is None
+
+        order = _upsert_order(
+            connection,
+            {**base, "state": "CANCELED", "canceled_at": "2026-08-08T12:06:00Z"},
+        )
+        assert order is not None
+        assert order.cancelled_at == datetime(2026, 8, 8, 12, 6, tzinfo=timezone.utc)
+
+        order = _upsert_order(connection, {**base, "state": "CANCELLED", "canceled_at": None})
+        assert order is not None
+        assert order.cancelled_at == datetime(2026, 8, 8, 12, 5, tzinfo=timezone.utc)
+
+        order.cancelled_at = datetime(2026, 8, 8, 12, 7, tzinfo=timezone.utc)
+        db.session.flush()
+        order = _upsert_order(connection, {**base, "state": "COMPLETED"})
+        assert order is not None
+        assert order.cancelled_at is None
+
+
 def test_daily_summaries_include_only_finalized_orders_and_rebuild_idempotently(app):
     from backend.square_integration import _rebuild_daily_summaries
 
