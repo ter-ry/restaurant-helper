@@ -16,6 +16,7 @@ from scripts.seed_square_showcase_sales import (
     _reference_id,
     _square_error_metadata,
     discover_variation,
+    fixture_plans,
     plans,
     seed_sales,
     verify_identity,
@@ -109,6 +110,18 @@ def test_default_and_max_order_guardrails():
     assert len(plans(5)) == 5
     with pytest.raises(SquareShowcaseError):
         plans(6)
+
+
+def test_recording_fixture_is_fixed_at_eight_orders_and_ten_burgers():
+    recording = fixture_plans("alpha-video-full-sales-2026-10", None)
+    assert len(recording) == 8
+    assert sum(plan.quantity for plan in recording) == 10
+    assert recording[2].tip_percent == 15
+    assert recording[3].discount_percent == 10
+    assert recording[5].tip_percent == 10
+    assert recording[7].discount_percent == 5
+    with pytest.raises(SquareShowcaseError, match="fixed at 8 orders"):
+        fixture_plans("alpha-video-full-sales-2026-10", 3)
 
 
 def test_dry_run_never_calls_write_endpoints(tmp_path: Path):
@@ -207,6 +220,80 @@ def test_larger_fixture_requires_inventory_review_confirmation(tmp_path: Path):
         seed_sales(client(fake), **kwargs)
     result = seed_sales(client(fake), confirm_inventory_reviewed=True, **kwargs)
     assert result["plannedTotals"]["totalBurgerQuantity"] == 4
+
+
+def test_recording_fixture_dry_run_has_exact_totals(tmp_path: Path):
+    fake = FakeSquare()
+    result = seed_sales(
+        client(fake),
+        fixture_name="alpha-video-full-sales-2026-10",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"),
+        order_count=None,
+        manifest_path=tmp_path / "manifest.json",
+        dry_run=True,
+        confirm_inventory_reviewed=True,
+    )
+    assert result["plannedTotals"]["orderCount"] == 8
+    assert result["plannedTotals"]["totalBurgerQuantity"] == 10
+    assert result["paymentType"] == "CASH"
+    assert not [call for call in fake.calls if call[0] == "POST"]
+
+
+def test_recording_totals_follow_discovered_catalog_price(tmp_path: Path):
+    fake = FakeSquare()
+    result = seed_sales(
+        client(fake),
+        fixture_name="alpha-video-full-sales-2026-10",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1500, "CAD"),
+        order_count=None,
+        manifest_path=tmp_path / "manifest.json",
+        dry_run=True,
+        confirm_inventory_reviewed=True,
+    )
+    assert result["plannedTotals"] == {
+        "orderCount": 8,
+        "totalBurgerQuantity": 10,
+        "grossAmount": {"amount": 15000, "currency": "CAD"},
+        "discountAmount": {"amount": 225, "currency": "CAD"},
+        "tipAmount": {"amount": 375, "currency": "CAD"},
+        "finalTotal": {"amount": 15150, "currency": "CAD"},
+    }
+    different_price = seed_sales(
+        client(FakeSquare()),
+        fixture_name="alpha-video-full-sales-2026-10",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"),
+        order_count=None,
+        manifest_path=tmp_path / "different-price.json",
+        dry_run=True,
+        confirm_inventory_reviewed=True,
+    )
+    assert different_price["plannedTotals"]["grossAmount"] != result["plannedTotals"]["grossAmount"]
+
+
+def test_recording_fixture_completed_totals_are_idempotent(tmp_path: Path):
+    fake = FakeSquare()
+    kwargs = dict(
+        fixture_name="alpha-video-full-sales-2026-10",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"),
+        order_count=None,
+        manifest_path=tmp_path / "manifest.json",
+        confirm_inventory_reviewed=True,
+    )
+    first = seed_sales(client(fake), dry_run=False, **kwargs)
+    assert first["completedTotals"]["orderCount"] == 8
+    assert first["completedTotals"]["totalBurgerQuantity"] == 10
+    assert first["completedTotals"]["grossAmount"] == {"amount": 18000, "currency": "CAD"}
+    assert first["completedTotals"]["discountAmount"] == {"amount": 270, "currency": "CAD"}
+    assert first["completedTotals"]["tipAmount"] == {"amount": 450, "currency": "CAD"}
+    assert first["completedTotals"]["finalTotal"] == {"amount": 18180, "currency": "CAD"}
+    post_count = len([call for call in fake.calls if call[0] == "POST"])
+    second = seed_sales(client(fake), dry_run=False, **kwargs)
+    assert second["completedTotals"] == first["completedTotals"]
+    assert len([call for call in fake.calls if call[0] == "POST"]) == post_count
 
 
 def test_manifest_never_contains_token(tmp_path: Path):

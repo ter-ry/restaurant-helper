@@ -27,8 +27,11 @@ SQUARE_API_VERSION = "2026-07-15"
 SQUARE_API_BASE = "https://connect.squareup.com"
 TARGET_VARIATION = "Flowtally Test Burger · Base"
 DEFAULT_ORDER_COUNT = 1
+VIDEO_FIXTURE_NAME = "alpha-video-full-sales-2026-10"
 MAX_ORDER_COUNT = 5
 MAX_TOTAL_BURGERS = 8
+VIDEO_ORDER_COUNT = 8
+VIDEO_TOTAL_BURGERS = 10
 
 
 class SquareShowcaseError(RuntimeError):
@@ -160,6 +163,27 @@ def plans(order_count: int) -> list[OrderPlan]:
     return selected
 
 
+def fixture_plans(fixture_name: str, requested_order_count: int | None) -> list[OrderPlan]:
+    """Resolve the safe default or the explicitly named recording fixture."""
+    if fixture_name == VIDEO_FIXTURE_NAME:
+        if requested_order_count not in (None, VIDEO_ORDER_COUNT):
+            raise SquareShowcaseError(f"{VIDEO_FIXTURE_NAME} is fixed at 8 orders and 10 burger servings")
+        selected = [
+            OrderPlan(1, 1),
+            OrderPlan(2, 2),
+            OrderPlan(3, 1, tip_percent=15),
+            OrderPlan(4, 1, discount_percent=10),
+            OrderPlan(5, 2),
+            OrderPlan(6, 1, tip_percent=10),
+            OrderPlan(7, 1),
+            OrderPlan(8, 1, discount_percent=5),
+        ]
+        if len(selected) != VIDEO_ORDER_COUNT or sum(plan.quantity for plan in selected) != VIDEO_TOTAL_BURGERS:
+            raise SquareShowcaseError(f"{VIDEO_FIXTURE_NAME} fixture definition is invalid")
+        return selected
+    return plans(requested_order_count if requested_order_count is not None else DEFAULT_ORDER_COUNT)
+
+
 def _money(amount: int, currency: str) -> dict[str, Any]:
     return {"amount": int(amount), "currency": currency}
 
@@ -261,13 +285,13 @@ def seed_sales(
     fixture_name: str,
     identity: Identity,
     variation: Variation,
-    order_count: int,
+    order_count: int | None,
     manifest_path: Path,
     dry_run: bool,
     confirm_inventory_reviewed: bool = False,
 ) -> dict[str, Any]:
-    order_plans = plans(order_count)
-    if order_count > DEFAULT_ORDER_COUNT and not confirm_inventory_reviewed:
+    order_plans = fixture_plans(fixture_name, order_count)
+    if len(order_plans) > DEFAULT_ORDER_COUNT and not confirm_inventory_reviewed:
         raise SquareShowcaseError("larger fixtures require --confirm-inventory-reviewed after checking Flowtally ingredient stock")
     planned: list[dict[str, Any]] = []
     for plan in order_plans:
@@ -393,7 +417,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Seed a small guarded Square Production showcase fixture.")
     parser.add_argument("--environment", required=True, choices=("production",), help="must be production")
     parser.add_argument("--fixture-name", required=True, help="stable fixture name used in references and idempotency keys")
-    parser.add_argument("--orders", type=int, default=DEFAULT_ORDER_COUNT, help=f"number of orders (default {DEFAULT_ORDER_COUNT}, max {MAX_ORDER_COUNT})")
+    parser.add_argument("--orders", type=int, default=None, help=f"number of orders (default {DEFAULT_ORDER_COUNT}, max {MAX_ORDER_COUNT}; {VIDEO_FIXTURE_NAME} is fixed at 8)")
     parser.add_argument("--manifest", type=Path, default=None, help="local non-secret manifest path")
     parser.add_argument("--dry-run", action="store_true", help="discover and print the plan without writes")
     parser.add_argument("--confirm-showcase-production", action="store_true", help="required for Production writes")
@@ -410,11 +434,12 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: Production writes require --confirm-showcase-production.", file=sys.stderr)
         return 2
     try:
-        plans(args.orders)
+        fixture_plans(args.fixture_name, args.orders)
     except SquareShowcaseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if args.orders > DEFAULT_ORDER_COUNT and not args.confirm_inventory_reviewed:
+    effective_order_count = len(fixture_plans(args.fixture_name, args.orders))
+    if effective_order_count > DEFAULT_ORDER_COUNT and not args.confirm_inventory_reviewed:
         print("ERROR: larger fixtures require --confirm-inventory-reviewed after checking Flowtally ingredient stock.", file=sys.stderr)
         return 2
     token = os.environ.get("SQUARE_SHOWCASE_ACCESS_TOKEN", "").strip()

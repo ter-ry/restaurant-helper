@@ -1317,7 +1317,58 @@ def test_inventory_usage_requires_a_distinct_later_closing_count(app, client):
     assert basis["available"] is False
     assert basis["actualUsage"] is None
     assert basis["closingQuantity"] is None
-    assert any("after the start" in warning for warning in basis["warnings"])
+    assert any("later completed stock count" in warning for warning in basis["warnings"])
+
+
+@pytest.mark.parametrize(
+    "opening,closing,available",
+    [
+        (
+            {"sessionId": 2, "completedAt": "2026-08-04T09:30:00Z", "quantity": 3.3},
+            {"sessionId": 2, "completedAt": "2026-08-04T09:30:00Z", "quantity": 3.3},
+            False,
+        ),
+        (
+            {"sessionId": 2, "completedAt": "2026-08-04T09:30:00Z", "quantity": 3.3},
+            {"sessionId": 3, "completedAt": "2026-08-04T09:00:00Z", "quantity": 2.94},
+            False,
+        ),
+        (
+            {"sessionId": 2, "completedAt": "2026-08-04T09:30:00Z", "quantity": 3.3},
+            {"sessionId": 3, "completedAt": "2026-08-11T09:30:00Z", "quantity": 2.94},
+            True,
+        ),
+    ],
+)
+def test_inventory_usage_requires_distinct_strictly_later_boundaries(app, client, monkeypatch, opening, closing, available):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization, location = _create_square_usage_fixture(app, owner, organization_name=f"Square Boundary {uuid4().hex[:6]}")
+    with app.app_context():
+        from backend.square_integration import _inventory_usage_basis
+
+        inventory_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Beef").one()
+        start_at = datetime(2026, 8, 4, tzinfo=timezone.utc)
+        end_at = datetime(2026, 8, 11, 23, 59, tzinfo=timezone.utc)
+        def fake_snapshot(_organization_id, _location_id, _inventory_item_id, boundary, *, sessions=None):
+            return opening if boundary == start_at else closing
+
+        monkeypatch.setattr("backend.square_integration._latest_count_snapshot", fake_snapshot)
+        basis = _inventory_usage_basis(
+            organization.id,
+            location.id,
+            inventory_item.id,
+            start_at,
+            end_at,
+            movement_totals={inventory_item.id: Decimal("0")},
+        )
+
+    assert basis["available"] is available
+    if available:
+        assert basis["actualUsage"] == 0.36
+    else:
+        assert basis["actualUsage"] is None
+        assert any("later completed stock count" in warning for warning in basis["warnings"])
 
 
 def test_daily_close_does_not_call_missing_counts_a_mapping_gap():

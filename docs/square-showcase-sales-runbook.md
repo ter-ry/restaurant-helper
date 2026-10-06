@@ -36,6 +36,52 @@ python scripts/seed_square_showcase_sales.py --environment production --fixture-
 
 Do not run the richer fixture until inventory has been reviewed and replenished if needed. Flowtally Sync Orders causes mapped recipe inventory consumption.
 
+## Recording fixture
+
+The named recording profile is deliberately fixed at 8 completed orders and 10 burger servings:
+
+```powershell
+python scripts/seed_square_showcase_sales.py --environment production --fixture-name alpha-video-full-sales-2026-10 --dry-run --confirm-inventory-reviewed
+```
+
+Review every planned order, the total gross/discount/tip/final totals, and the inventory warning before using the explicit write command. Totals are calculated from the price returned by Square's discovered Production catalog variation; the utility does not assume a fixed live price. For reference only, at a CAD 15.00 variation price this profile is gross CAD 150.00, discounts CAD 2.25, tips CAD 3.75, and final CAD 151.50. The live dry-run remains authoritative.
+
+```powershell
+python scripts/seed_square_showcase_sales.py --environment production --fixture-name alpha-video-full-sales-2026-10 --confirm-inventory-reviewed --confirm-showcase-production --manifest .\square-showcase-alpha-video-full-sales-2026-10.manifest.json
+```
+
+The profile cannot be changed to another order count. Reusing the same fixture name preserves its idempotency keys and manifest.
+
+## Showcase inventory preparation
+
+Before the recording fixture, inspect the live target quantities with the guarded application command. It verifies the production database, organization, location, exact item names and stock units and makes no changes in dry-run mode:
+
+```powershell
+flask --app backend.wsgi showcase-replenish --organization-id 1 --location-id 1 --owner-id 1 --dry-run
+```
+
+The target-based write, after reviewing the dry run, requires the explicit production acknowledgement:
+
+```powershell
+flask --app backend.wsgi showcase-replenish --organization-id 1 --location-id 1 --owner-id 1 --confirm-production
+```
+
+It records normal inventory movements and audit events with reason `showcase inventory replenishment`; running it again at the targets adds zero. It never fabricates a supplier invoice and never changes costs or prices.
+
+## Variance recording sequence
+
+To demonstrate Usage / Variance with physical evidence:
+
+1. Replenish the three Harbour Burger ingredients and complete an opening physical stock count.
+2. Run and sync the 8-order/10-burger Square recording fixture.
+3. Confirm recipe-driven inventory consumption in Inventory History.
+4. Complete a later physical stock count for the same ingredients.
+5. Usage / Variance then compares the distinct count boundaries with POS theoretical usage. A same-session or non-later boundary is unavailable by design and cannot produce a zero-usage or `-100%` variance.
+
+Positive variance means more physical stock disappeared than recipe/POS usage predicted; negative means less disappeared; zero means the two agree. Do not create synthetic stock-count rows through SQL. Any intentional discrepancy must be documented as synthetic showcase data.
+
+Future enhancement: add Production Square catalog variations for Chicken Rice Bowl, Toronto Breakfast, House Salad and Iced Latte, then map them to existing Flowtally menu/recipe records. This is documented only and is not part of the current alpha fixture.
+
 ## Manifest
 
 The local, non-secret manifest is idempotent state for this fixture. It records the fixture name, order number, quantity, Square order ID, payment ID, gross/discount/tip/final totals, currency, catalog variation ID, Square location ID, `paymentType: CASH`, status, and returned created/closed timestamps. Fixture-level planned and completed totals include order count, total burger quantity, and money totals. It never stores an access token, OAuth secret, authorization header, or payment credential. Re-running the same fixture reuses completed orders and leaves completed totals unchanged.

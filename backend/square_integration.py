@@ -389,33 +389,16 @@ def _inventory_usage_basis(organization_id: int, location_id: int, inventory_ite
     warnings: list[str] = []
     if opening is None:
         warnings.append("No completed stock count exists before the start of the period.")
-    # A single count cannot establish usage. If the latest count at both
-    # boundaries is the same session, require a later completed count instead
-    # of presenting the opening snapshot as a false closing value.
-    if opening is not None and closing is not None and opening["sessionId"] == closing["sessionId"]:
-        opening_completed_at = datetime.fromisoformat(opening["completedAt"].replace("Z", "+00:00"))
-        later_session = StockCountSession.query.options(selectinload(StockCountSession.lines)).filter(
-            StockCountSession.organization_id == organization_id,
-            StockCountSession.location_id == location_id,
-            StockCountSession.status == "Completed",
-            StockCountSession.completed_at.is_not(None),
-            StockCountSession.completed_at > opening_completed_at,
-            StockCountSession.completed_at <= end_at,
-        ).order_by(StockCountSession.completed_at.desc(), StockCountSession.id.desc()).first()
-        later_line = next((entry for entry in later_session.lines if entry.inventory_item_id == inventory_item_id), None) if later_session else None
-        later_quantity = later_line.resulting_quantity if later_line and later_line.resulting_quantity is not None else (later_line.counted_quantity if later_line else None)
-        if later_session is not None and later_quantity is not None:
-            closing = {
-                "sessionId": later_session.id,
-                "completedAt": isoformat(later_session.completed_at),
-                "quantity": float(later_quantity),
-            }
-        else:
-            closing = None
-            warnings.append("No completed stock count exists after the start of the period.")
     if closing is None:
-        if not any("after the start" in warning for warning in warnings):
-            warnings.append("No completed stock count exists before the end of the period.")
+        warnings.append("A later completed stock count is required to calculate physical usage.")
+    if opening is not None and closing is not None:
+        opening_completed_at = datetime.fromisoformat(opening["completedAt"].replace("Z", "+00:00"))
+        closing_completed_at = datetime.fromisoformat(closing["completedAt"].replace("Z", "+00:00"))
+        if opening["sessionId"] == closing["sessionId"] or closing_completed_at <= opening_completed_at:
+            closing = None
+            warnings.append("A later completed stock count is required to calculate physical usage.")
+    if closing is None:
+        warnings = list(dict.fromkeys(warnings))
     if opening is None or closing is None:
         return {
             "available": False,
@@ -820,6 +803,27 @@ def _build_square_usage_report(
         }
         theoretical_usage = Decimal(str(aggregate["theoreticalUsage"])).quantize(QTY)
         actual_usage_value = basis.get("actualUsage")
+        # Keep the report boundary invariant defensive: a physical usage value
+        # is meaningful only when two distinct completed count sessions form a
+        # strictly ordered interval.
+        basis_opening_id = basis.get("openingCountSessionId")
+        basis_closing_id = basis.get("closingCountSessionId")
+        basis_opening_at = _parse_iso_datetime(basis.get("openingCountCompletedAt"))
+        basis_closing_at = _parse_iso_datetime(basis.get("closingCountCompletedAt"))
+        if (
+            not basis.get("available")
+            or basis_opening_id is None
+            or basis_closing_id is None
+            or basis_opening_id == basis_closing_id
+            or basis_opening_at is None
+            or basis_closing_at is None
+            or basis_closing_at <= basis_opening_at
+        ):
+            actual_usage_value = None
+            basis["available"] = False
+            basis["actualUsage"] = None
+            warning = "A later completed stock count is required to calculate physical usage."
+            basis["warnings"] = list(dict.fromkeys([*(basis.get("warnings") or []), warning]))
         discrepancy = None
         discrepancy_percent = None
         if actual_usage_value is not None:

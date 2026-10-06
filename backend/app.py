@@ -30,6 +30,7 @@ from .platform_admin import bp as platform_admin_bp
 from .square_integration import bp as square_integration_bp
 from .policy import enforce_endpoint_permission
 from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data, seed_showcase_tenant
+from .showcase_inventory import ShowcaseInventoryError, replenish_showcase_inventory
 from .validation import RequestValidationError
 from .utils import json_error
 from .performance import configure_performance, install_performance
@@ -384,6 +385,30 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.session.rollback()
             raise click.ClickException(f"Showcase seed failed safely: {exc}") from exc
         click.echo(f"Seeded configured showcase organization={organization_id} location={location_id}")
+
+    @app.cli.command("showcase-replenish")
+    @click.option("--organization-id", type=click.IntRange(min=1), required=True)
+    @click.option("--location-id", type=click.IntRange(min=1), required=True)
+    @click.option("--owner-id", type=click.IntRange(min=1), required=True)
+    @click.option("--confirm-production", is_flag=True, help="Required acknowledgement that this targets the configured production showcase tenant.")
+    @click.option("--dry-run", is_flag=True, help="Inspect target quantities without writing movements.")
+    def showcase_replenish_command(organization_id: int, location_id: int, owner_id: int, confirm_production: bool, dry_run: bool) -> None:
+        """Preview or apply target-based inventory preparation for the showcase tenant."""
+        if not dry_run and not confirm_production:
+            raise click.ClickException("Pass --confirm-production for showcase inventory writes.")
+        try:
+            result = replenish_showcase_inventory(
+                organization_id=organization_id,
+                location_id=location_id,
+                actor_id=owner_id,
+                dry_run=dry_run,
+            )
+        except ShowcaseInventoryError as exc:
+            db.session.rollback()
+            raise click.ClickException(str(exc)) from exc
+        click.echo(json.dumps(result, indent=2, sort_keys=True))
+        if dry_run:
+            click.echo("DRY RUN: no inventory movements were written.")
 
     @app.cli.command("showcase-reset")
     @click.option("--confirm-showcase", is_flag=True, help="Required acknowledgement that this is the isolated private showcase database.")
