@@ -20,15 +20,18 @@ from .models import InventoryItem, InventoryMovement, Organization, Organization
 SHOWCASE_ORGANIZATION_NAME = "Flowtally Showcase"
 SHOWCASE_LOCATION_NAME = "Harbour Kitchen"
 SHOWCASE_REASON = "showcase inventory replenishment"
-TARGETS: tuple[tuple[str, str, Decimal], ...] = (
-    ("Chicken Breast", "kg", Decimal("10.00")),
-    ("Bread Buns", "pack", Decimal("20.00")),
-    ("Lettuce", "head", Decimal("8.00")),
-)
-
-
 class ShowcaseInventoryError(RuntimeError):
     """A safe validation error for the explicit showcase operation."""
+
+
+@dataclass(frozen=True)
+class ShowcaseTargetSpec:
+    item_name: str
+    unit: str
+    target_quantity: Decimal
+    minimum_quantity: Decimal
+    par_level: Decimal
+    intended_status: str
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,9 @@ class ShowcaseInventoryTarget:
     current_quantity: Decimal
     target_quantity: Decimal
     adjustment: Decimal
+    minimum_quantity: Decimal
+    par_level: Decimal
+    intended_status: str
 
     @property
     def status(self) -> str:
@@ -47,6 +53,33 @@ class ShowcaseInventoryTarget:
         if self.current_quantity == self.target_quantity:
             return "at_target"
         return "needs_replenishment"
+
+
+TARGETS: tuple[ShowcaseTargetSpec, ...] = (
+    ShowcaseTargetSpec("Chicken Breast", "kg", Decimal("10.00"), Decimal("4"), Decimal("8"), "healthy"),
+    ShowcaseTargetSpec("Rice", "kg", Decimal("22.00"), Decimal("8"), Decimal("20"), "healthy"),
+    ShowcaseTargetSpec("Noodles", "kg", Decimal("9.00"), Decimal("4"), Decimal("10"), "low"),
+    ShowcaseTargetSpec("Pasta", "kg", Decimal("5.50"), Decimal("2"), Decimal("6"), "low"),
+    ShowcaseTargetSpec("Tomato Sauce", "L", Decimal("1.00"), Decimal("2"), Decimal("5"), "reorder"),
+    ShowcaseTargetSpec("Cream", "L", Decimal("9.00"), Decimal("3"), Decimal("9"), "healthy"),
+    ShowcaseTargetSpec("Eggs", "dozen", Decimal("0.00"), Decimal("1"), Decimal("3"), "out_of_stock"),
+    ShowcaseTargetSpec("Bread Buns", "pack", Decimal("20.00"), Decimal("6"), Decimal("14"), "healthy"),
+    ShowcaseTargetSpec("Lettuce", "head", Decimal("8.00"), Decimal("1"), Decimal("4"), "healthy"),
+    ShowcaseTargetSpec("Sugar", "kg", Decimal("12.00"), Decimal("5"), Decimal("12"), "healthy"),
+    ShowcaseTargetSpec("Vegetable Oil", "L", Decimal("12.00"), Decimal("4"), Decimal("10"), "healthy"),
+    ShowcaseTargetSpec("Tea Base", "kg", Decimal("20.00"), Decimal("10"), Decimal("18"), "healthy"),
+    ShowcaseTargetSpec("Milk", "L", Decimal("12.00"), Decimal("6"), Decimal("12"), "healthy"),
+    ShowcaseTargetSpec("Tapioca Pearls", "kg", Decimal("0.50"), Decimal("2"), Decimal("6"), "reorder"),
+    ShowcaseTargetSpec("Cups", "each", Decimal("80.00"), Decimal("12"), Decimal("24"), "healthy"),
+    ShowcaseTargetSpec("Lids", "each", Decimal("72.00"), Decimal("8"), Decimal("20"), "healthy"),
+    ShowcaseTargetSpec("Straws", "each", Decimal("160.00"), Decimal("10"), Decimal("30"), "healthy"),
+    ShowcaseTargetSpec("Napkins", "each", Decimal("220.00"), Decimal("20"), Decimal("40"), "healthy"),
+    ShowcaseTargetSpec("Potato", "kg", Decimal("8.00"), Decimal("2"), Decimal("8"), "healthy"),
+    ShowcaseTargetSpec("Coffee Beans", "kg", Decimal("7.00"), Decimal("2"), Decimal("8"), "low"),
+    ShowcaseTargetSpec("Tomatoes", "kg", Decimal("9.00"), Decimal("2"), Decimal("8"), "healthy"),
+    ShowcaseTargetSpec("Onions", "kg", Decimal("6.50"), Decimal("2"), Decimal("8"), "low"),
+    ShowcaseTargetSpec("Butter", "kg", Decimal("8.50"), Decimal("2"), Decimal("8"), "healthy"),
+)
 
 
 def _production_identity_guard(organization_id: int, location_id: int) -> tuple[Organization, RestaurantLocation]:
@@ -75,16 +108,35 @@ def _production_identity_guard(organization_id: int, location_id: int) -> tuple[
 def inspect_showcase_replenishment(*, organization_id: int, location_id: int) -> tuple[Organization, RestaurantLocation, list[ShowcaseInventoryTarget]]:
     organization, location = _production_identity_guard(organization_id, location_id)
     targets: list[ShowcaseInventoryTarget] = []
-    for name, unit, target in TARGETS:
-        matches = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name=name).all()
+    for spec in TARGETS:
+        matches = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name=spec.item_name).all()
         if len(matches) != 1:
-            raise ShowcaseInventoryError(f"Expected exactly one {name} item in {SHOWCASE_LOCATION_NAME}; found {len(matches)}.")
+            raise ShowcaseInventoryError(f"Expected exactly one {spec.item_name} item in {SHOWCASE_LOCATION_NAME}; found {len(matches)}.")
         item = matches[0]
-        if item.stock_unit != unit:
-            raise ShowcaseInventoryError(f"{name} must use stock unit {unit}; found {item.stock_unit}.")
+        if item.stock_unit != spec.unit:
+            raise ShowcaseInventoryError(f"{spec.item_name} must use stock unit {spec.unit}; found {item.stock_unit}.")
+        minimum_quantity = Decimal(str(item.min_quantity or 0)).quantize(Decimal("0.01"))
+        par_level = Decimal(str(item.par_level or 0)).quantize(Decimal("0.01"))
+        if minimum_quantity != spec.minimum_quantity or par_level != spec.par_level:
+            raise ShowcaseInventoryError(
+                f"{spec.item_name} minimum/PAR changed; expected {spec.minimum_quantity}/{spec.par_level}, "
+                f"found {minimum_quantity}/{par_level}."
+            )
         current_quantity = Decimal(str(item.current_on_hand or 0)).quantize(Decimal("0.01"))
-        adjustment = max(target - current_quantity, Decimal("0")).quantize(Decimal("0.01"))
-        targets.append(ShowcaseInventoryTarget(item.id, item.name, unit, current_quantity, target, adjustment))
+        adjustment = max(spec.target_quantity - current_quantity, Decimal("0")).quantize(Decimal("0.01"))
+        targets.append(
+            ShowcaseInventoryTarget(
+                item.id,
+                item.name,
+                spec.unit,
+                current_quantity,
+                spec.target_quantity,
+                adjustment,
+                minimum_quantity,
+                par_level,
+                spec.intended_status,
+            )
+        )
     return organization, location, targets
 
 
@@ -108,6 +160,10 @@ def replenish_showcase_inventory(*, organization_id: int, location_id: int, acto
                 "target": float(target.target_quantity),
                 "adjustment": float(target.adjustment),
                 "status": target.status,
+                "minimum": float(target.minimum_quantity),
+                "par": float(target.par_level),
+                "intendedStatus": target.intended_status,
+                "write": target.adjustment > 0,
             }
             for target in targets
         ],
