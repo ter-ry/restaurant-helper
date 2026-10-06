@@ -25,7 +25,7 @@ import {
   updatePilotInventoryItem,
   updatePilotSupplier,
 } from "./pilotApi";
-import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { formatDateTime, formatInventoryQuantity, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
 import { usePilotSession } from "./PilotSessionProvider";
 import { demoReadOnly } from "./pilotConfig";
@@ -443,7 +443,7 @@ export function PilotInventoryPage() {
         note: adjustmentNote,
       });
       setDraft((current) => (current ? { ...current, currentOnHand: afterOnHand } : current));
-      setMessage(`Inventory updated: ${formatNumber(beforeOnHand)} ${draft.stockUnit} → ${formatNumber(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatNumber(delta)} ${draft.stockUnit}).`);
+      setMessage(`Inventory updated: ${formatInventoryQuantity(beforeOnHand)} ${draft.stockUnit} → ${formatInventoryQuantity(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatInventoryQuantity(delta)} ${draft.stockUnit}).`);
       setAdjustmentDelta(0);
       setAdjustmentNote("");
       setAdjustmentModalOpen(false);
@@ -477,7 +477,7 @@ export function PilotInventoryPage() {
       setWasteQuantity(0);
       setWasteNote("");
       setWasteModalOpen(false);
-      setMessage(`Waste recorded: ${formatNumber(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
+      setMessage(`Waste recorded: ${formatInventoryQuantity(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
       await load();
       setSelectedId(draft.id);
     } catch (err) {
@@ -581,10 +581,10 @@ export function PilotInventoryPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-muted">{item.category}</td>
-                    <td className="px-3 py-2.5 font-medium text-ink">{formatNumber(item.currentOnHand)}</td>
+                    <td className="px-3 py-2.5 font-medium text-ink">{formatInventoryQuantity(item.currentOnHand)}</td>
                     <td className="px-3 py-2.5 text-muted">{item.stockUnit}</td>
-                    <td className="px-3 py-2.5 text-muted">{formatNumber(item.minQuantity)}</td>
-                    <td className="px-3 py-2.5 text-muted">{formatNumber(item.parLevel)}</td>
+                    <td className="px-3 py-2.5 text-muted">{formatInventoryQuantity(item.minQuantity)}</td>
+                    <td className="px-3 py-2.5 text-muted">{formatInventoryQuantity(item.parLevel)}</td>
                     <td className="px-3 py-2.5 text-muted">
                       <div className="space-y-1">
                         <p className="font-medium text-ink">{formatLatestStockUnitCost(item)}</p>
@@ -617,7 +617,7 @@ export function PilotInventoryPage() {
                 </div>
                 <p className={`text-sm font-semibold ${movement.quantityDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                   {movement.quantityDelta >= 0 ? "+" : ""}
-                  {formatNumber(movement.quantityDelta)} {movement.unit}
+                  {formatInventoryQuantity(movement.quantityDelta)} {movement.unit}
                 </p>
               </div>
             </div>
@@ -822,7 +822,7 @@ export function PilotInventoryPage() {
                           <p className="font-semibold text-ink">{mapping.supplierItemName}</p>
                           <p className="text-xs text-muted">{mapping.inventoryItemName || "Unlinked inventory item"}</p>
                           <p className="mt-2 text-muted">
-                            {mapping.purchaseUnit} → {mapping.inventoryUnit} · x{formatNumber(mapping.conversionFactor)}
+                            {mapping.purchaseUnit} → {mapping.inventoryUnit} · x{formatInventoryQuantity(mapping.conversionFactor)}
                           </p>
                         </div>
                       ))
@@ -862,7 +862,7 @@ export function PilotInventoryPage() {
                   </label>
                 ) : <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{item.name || "Inventory item"}</h1>}
                 <p className="mt-2 text-sm text-muted">
-                  {formatNumber(item.currentOnHand)} {item.stockUnit} on hand · {item.preferredSupplierName || "Unassigned supplier"}
+                  {formatInventoryQuantity(item.currentOnHand)} {item.stockUnit} on hand · {item.preferredSupplierName || "Unassigned supplier"}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge tone={statusTone(status)}>{status}</Badge>
@@ -908,9 +908,9 @@ export function PilotInventoryPage() {
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <ReadOnlyStat label="On hand" value={`${formatNumber(item.currentOnHand)} ${item.stockUnit}`} />
-          <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1 w-28" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatNumber(item.minQuantity)} />
-          <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1 w-28" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatNumber(item.parLevel)} />
+          <ReadOnlyStat label="On hand" value={`${formatInventoryQuantity(item.currentOnHand)} ${item.stockUnit}`} />
+          <ReadOnlyStat label="Minimum" value={isEditing ? <input aria-label="Minimum" className="input mt-1 w-28" type="number" step="1" value={draft.minQuantity} onChange={(event) => setDraft((current) => ({ ...current, minQuantity: Number(event.target.value) }))} /> : formatInventoryQuantity(item.minQuantity)} />
+          <ReadOnlyStat label="PAR" value={isEditing ? <input aria-label="PAR" className="input mt-1 w-28" type="number" step="1" value={draft.parLevel} onChange={(event) => setDraft((current) => ({ ...current, parLevel: Number(event.target.value) }))} /> : formatInventoryQuantity(item.parLevel)} />
           <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
           <ReadOnlyStat label="Latest cost / stock unit" value={formatLatestStockUnitCost(item)} />
           <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
@@ -947,7 +947,7 @@ export function PilotInventoryPage() {
                   <label className="sm:col-span-2"><span className="text-sm font-semibold text-ink">Item notes</span><textarea className="input mt-1 min-h-10" rows={1} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
                 </div>
               ) : (
-                <span className="whitespace-pre-wrap"> · Category {item.category || "Other"} · Base unit {item.stockUnit || "each"} · Avg daily usage {item.averageDailyUsage !== null ? formatNumber(item.averageDailyUsage) : "Not set"} · Item notes {item.notes || "None"} · Purchase unit {item.lastPurchaseUnit || "each"} ×{formatNumber(item.lastPurchaseConversionFactor)}</span>
+                <span className="whitespace-pre-wrap"> · Category {item.category || "Other"} · Base unit {item.stockUnit || "each"} · Avg daily usage {item.averageDailyUsage !== null ? formatInventoryQuantity(item.averageDailyUsage) : "Not set"} · Item notes {item.notes || "None"} · Purchase unit {item.lastPurchaseUnit || "each"} ×{formatNumber(item.lastPurchaseConversionFactor)}</span>
               )}
             </div>
           </div>
@@ -993,7 +993,7 @@ export function PilotInventoryPage() {
                               <td className="px-4 py-3 font-semibold text-ink">{line.invoiceNumber}</td>
                               <td className="px-4 py-3 text-muted">{line.invoiceDate}</td>
                               <td className="px-4 py-3 text-muted">{line.supplierName}</td>
-                              <td className="px-4 py-3 text-muted">{formatNumber(line.quantity)}</td>
+                              <td className="px-4 py-3 text-muted">{formatInventoryQuantity(line.quantity)}</td>
                               <td className="px-4 py-3 text-muted">{line.purchaseUnit}</td>
                               <td className="px-4 py-3 text-muted">{formatMoney(line.lineTotal)}</td>
                             </tr>
@@ -1040,7 +1040,7 @@ export function PilotInventoryPage() {
                               <td className="px-4 py-3 font-semibold text-ink">{movement.sourceType}</td>
                               <td className={`px-4 py-3 font-semibold ${movement.quantityDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                                 {movement.quantityDelta >= 0 ? "+" : ""}
-                                {formatNumber(movement.quantityDelta)} {movement.unit}
+                                {formatInventoryQuantity(movement.quantityDelta)} {movement.unit}
                               </td>
                               <td className="px-4 py-3 text-muted">{movement.reason}</td>
                               <td className="px-4 py-3 text-muted">{movement.sourceType} · {movement.sourceRecordId}</td>
@@ -1089,7 +1089,7 @@ export function PilotInventoryPage() {
                               <td className="px-4 py-3 font-semibold text-ink">{mapping.supplierItemName}</td>
                               <td className="px-4 py-3 text-muted">{mapping.purchaseUnit}</td>
                               <td className="px-4 py-3 text-muted">{mapping.inventoryUnit}</td>
-                              <td className="px-4 py-3 text-muted">x{formatNumber(mapping.conversionFactor)}</td>
+                              <td className="px-4 py-3 text-muted">x{formatInventoryQuantity(mapping.conversionFactor)}</td>
                               <td className="px-4 py-3 text-muted">{mapping.lastSeenAt ? formatDateTime(mapping.lastSeenAt) : "No last-seen date"}</td>
                             </tr>
                           ))

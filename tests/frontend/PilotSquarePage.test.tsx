@@ -395,4 +395,56 @@ describe("PilotSquarePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import menu" }));
     await waitFor(() => expect(mockApi.importPilotSquareMenu).toHaveBeenCalledWith(42, 7));
   });
+
+  it("renders imported transactions and keeps a resolved catalog mapping selected", async () => {
+    const connection = createConnectedConnection();
+    connection.orders = [{
+      id: 701, squareOrderId: "ORDER-RECENT", squareLocationId: "SQ-10", restaurantLocationId: 7,
+      orderState: "COMPLETED", currency: "CAD", grossAmount: 18, discountAmount: 0, taxAmount: 2,
+      tipAmount: 0, refundAmount: 0, netAmount: 18, itemQuantity: 1, lineCount: 1,
+      orderedAt: "2026-08-29T22:00:00.000Z", closedAt: "2026-08-29T22:05:00.000Z", cancelledAt: null,
+      refundedAt: null, isDeleted: false, rawPayload: {},
+      lines: [{ id: 1, lineUid: "line-1", lineIndex: 0, squareItemVariationId: "VAR-1", name: "Test Burger", quantity: 1, grossAmount: 18, discountAmount: 0, taxAmount: 2, tipAmount: 0, netAmount: 18, rawPayload: {} }],
+    }];
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
+    const response = createCatalogMappingResponse();
+    const mappedRow = { ...response.mappings[0], mapping: { ...response.mappings[0], flowtallyEntityId: "901" } };
+    mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue({ ...response, mappings: [mappedRow], unmappedVariations: [mappedRow] });
+
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Recent transactions")).toBeVisible();
+    expect(screen.getByText(/Test Burger ×1/)).toBeVisible();
+    expect(screen.getAllByRole("combobox")[1]).toHaveValue("901");
+  });
+
+  it("shows only finalized Square orders in newest-first transaction history", async () => {
+    const connection = createConnectedConnection();
+    const order = (id: string, state: string, orderedAt: string, refundedAt: string | null = null) => ({
+      id: Number(id.replace(/\D/g, "")) || 1, squareOrderId: id, squareLocationId: "SQ-10", restaurantLocationId: 7,
+      orderState: state, currency: "CAD", grossAmount: 18, discountAmount: 0, taxAmount: 2, tipAmount: 0,
+      refundAmount: refundedAt ? 18 : 0, netAmount: refundedAt ? 0 : 18, itemQuantity: 1, lineCount: 1,
+      orderedAt, closedAt: orderedAt, cancelledAt: state === "CANCELED" ? orderedAt : null, refundedAt,
+      isDeleted: false, rawPayload: {}, lines: [],
+    });
+    connection.orders = [
+      order("ORDER-OPEN", "OPEN", "2026-08-29T23:00:00.000Z"),
+      order("ORDER-DRAFT", "DRAFT", "2026-08-29T22:50:00.000Z"),
+      order("ORDER-CANCELED", "CANCELED", "2026-08-29T22:30:00.000Z"),
+      order("ORDER-REFUNDED", "COMPLETED", "2026-08-29T22:20:00.000Z", "2026-08-29T22:40:00.000Z"),
+      order("ORDER-COMPLETED", "COMPLETED", "2026-08-29T22:10:00.000Z"),
+    ];
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
+
+    const { container } = render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByText(/ORDER-CANCELED/)).toBeVisible();
+    expect(screen.getByText(/ORDER-REFUNDED/)).toBeVisible();
+    expect(screen.getByText(/ORDER-COMPLETED/)).toBeVisible();
+    expect(screen.queryByText(/ORDER-OPEN/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ORDER-DRAFT/)).not.toBeInTheDocument();
+    const finalized = [...container.querySelectorAll("p")].filter((node) => /ORDER-(CANCELED|REFUNDED|COMPLETED)/.test(node.textContent || ""));
+    expect(finalized.map((node) => node.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("ORDER-CANCELED"), expect.stringContaining("ORDER-REFUNDED"), expect.stringContaining("ORDER-COMPLETED")]));
+    expect(finalized.findIndex((node) => node.textContent?.includes("ORDER-CANCELED"))).toBeLessThan(finalized.findIndex((node) => node.textContent?.includes("ORDER-REFUNDED")));
+  });
 });

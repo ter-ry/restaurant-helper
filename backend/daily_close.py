@@ -185,12 +185,27 @@ def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[s
         exceptions.append("Sold Square variation unmapped.")
     if any(item.get("warnings") for item in usage.get("contributingMenuItems", [])):
         exceptions.extend(sorted({warning for item in usage.get("contributingMenuItems", []) for warning in item.get("warnings", []) if "recipe" in warning.lower()}))
-    if any(row.get("warnings") for row in usage.get("ingredientUsage", [])):
+    # Missing physical counts make actual usage unavailable, but are not a
+    # recipe or mapping defect. Only surface warnings that describe a real
+    # mapping/recipe problem as a mapping exception.
+    mapping_warnings = [
+        warning
+        for row in usage.get("ingredientUsage", [])
+        for warning in (row.get("warnings") or [])
+        if "stock count" not in warning.lower()
+    ]
+    if mapping_warnings:
         exceptions.append("Recipe or inventory mapping gaps exist.")
-    if usage.get("totals", {}).get("actualUsage") is None:
+    ingredient_rows = usage.get("ingredientUsage", [])
+    if ingredient_rows and any(row.get("actualUsage") is None for row in ingredient_rows):
         exceptions.append("Actual usage unavailable — stock-count basis is incomplete.")
-    discrepancy_percent = usage.get("totals", {}).get("discrepancyPercent")
-    if discrepancy_percent is not None and abs(float(discrepancy_percent)) >= float(VARIANCE_ALERT_PERCENT):
+    if any(
+        row.get("actualUsage") is not None
+        and
+        row.get("discrepancyPercent") is not None
+        and abs(float(row["discrepancyPercent"])) >= float(VARIANCE_ALERT_PERCENT)
+        for row in ingredient_rows
+    ):
         exceptions.append("Material usage variance exceeds threshold.")
     if summary["refunds"] or summary["cancelledOrders"]:
         exceptions.append("Refunds/cancellations present.")
@@ -201,6 +216,21 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     connection = _connection_for_organization(organization.id)
     summary = _sales_summary_for_day(connection, location, business_date)
     usage = _daily_close_usage(organization, location, business_date, connection)
+    usage_units = {str(row.get("unit") or "").strip() for row in usage.get("ingredientUsage", []) if row.get("unit") }
+    if len(usage_units) > 1:
+        # Totals across kg, L, each, etc. are not a meaningful Daily Close
+        # quantity. Keep detailed per-item rows, but make aggregate
+        # reconciliation unavailable unless all rows share one unit.
+        usage = {
+            **usage,
+            "totals": {
+                **(usage.get("totals") or {}),
+                "theoreticalUsage": None,
+                "actualUsage": None,
+                "discrepancy": None,
+                "discrepancyPercent": None,
+            },
+        }
     exceptions = _daily_close_exceptions(connection, summary, usage)
     actual_usage = usage.get("totals", {}).get("actualUsage")
     theoretical_usage = usage.get("totals", {}).get("theoreticalUsage") or 0
@@ -230,14 +260,13 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
         start=Decimal("0"),
     )
     variance_value = 0.0
-    if discrepancy is not None:
-        for row in usage.get("ingredientUsage", []):
-            if row.get("discrepancy") is None:
-                continue
-            item = InventoryItem.query.filter_by(id=row["inventoryItemId"], organization_id=organization.id, location_id=location.id).first()
-            if item is None:
-                continue
-            variance_value += float(Decimal(str(row["discrepancy"])) * Decimal(str(item.average_unit_cost or 0)))
+    for row in usage.get("ingredientUsage", []):
+        if row.get("discrepancy") is None:
+            continue
+        item = InventoryItem.query.filter_by(id=row["inventoryItemId"], organization_id=organization.id, location_id=location.id).first()
+        if item is None or item.average_unit_cost is None:
+            continue
+        variance_value += float(Decimal(str(row["discrepancy"])) * Decimal(str(item.average_unit_cost)))
     health_status = "Incomplete"
     if connection is None or connection.status != "connected":
         health_status = "Ready with warnings" if theoretical_usage or summary["orders"] else "Incomplete"

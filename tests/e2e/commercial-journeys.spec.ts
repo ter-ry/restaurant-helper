@@ -2295,7 +2295,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByText("Sync now completed.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Usage variance" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent sync activity" })).toBeVisible();
   await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
 
   await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
@@ -2305,7 +2305,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();
   await page.getByRole("button", { name: "Sync sales" }).click();
   await expect(page.getByText("Synced Square sales for")).toBeVisible();
-  await expect(page.getByText("Theoretical usage").first()).toBeVisible();
+  await expect(page.getByText("Ingredient rows tracked").first()).toBeVisible();
   await expect(page.getByText("Actual usage").first()).toBeVisible();
   await expect(page.getByText("Exceptions to review", { exact: true })).toBeVisible();
   await page.getByPlaceholder("Add context for unusual sales, waste, or count discrepancies.").fill("Square sales synced before finalize.");

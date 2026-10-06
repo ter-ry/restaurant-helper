@@ -357,8 +357,8 @@ export function PilotDailyClosePage() {
                       <dd className="font-semibold text-ink">{formatMoney(Number(snapshot?.inventoryValue ?? 0))}</dd>
                     </div>
                     <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Theoretical usage</dt>
-                      <dd className="font-semibold text-ink">{formatNumber(Number(usage?.totals?.theoreticalUsage ?? 0))}</dd>
+                      <dt className="text-muted">Ingredient rows tracked</dt>
+                      <dd className="font-semibold text-ink">{usage ? formatNumber(usage.ingredientUsage?.length ?? 0) : "—"}</dd>
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <dt className="text-muted">Actual usage</dt>
@@ -366,7 +366,7 @@ export function PilotDailyClosePage() {
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <dt className="text-muted">Variance</dt>
-                      <dd className="font-semibold text-ink">{snapshot ? `${formatSignedNumber(snapshot.variance.quantity)} · ${snapshot.variance.percent == null ? "—" : `${formatNumber(snapshot.variance.percent)}%`}` : "—"}</dd>
+                      <dd className="font-semibold text-ink">{snapshot?.variance?.quantity == null ? "Unavailable" : `${formatSignedNumber(snapshot.variance.quantity)} · ${snapshot.variance.percent == null ? "—" : `${formatNumber(snapshot.variance.percent)}%`}`}</dd>
                     </div>
                   </dl>
                 </div>
