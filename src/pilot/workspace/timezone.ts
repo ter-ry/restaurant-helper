@@ -6,6 +6,12 @@ function partsFor(date: Date, timezone: string) {
   return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
 }
 
+export function locationDateKey(value: string | null | undefined, timezone: string) {
+  if (!value) return "";
+  const parts = partsFor(new Date(value), timezone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 export function locationNowDatetimeLocal(timezone: string, now = new Date()) {
   const parts = partsFor(now, timezone);
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;

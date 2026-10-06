@@ -23,7 +23,8 @@ import {
   type PilotMenuCostingResponse,
   type PilotSquareConnectionSummary,
 } from "./pilotApi";
-import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { locationDateKey } from "./workspace/timezone";
 
 function resolvedCatalogMapping(candidate: { mapping?: { flowtallyEntityId?: string | null } | null; flowtallyEntityId?: string | null }) {
   return candidate.mapping ?? (candidate.flowtallyEntityId !== undefined ? candidate : null);
@@ -50,13 +51,6 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <span className="min-w-0 break-words text-sm text-ink sm:max-w-56 sm:text-right">{value}</span>
     </div>
   );
-}
-
-function formatSalesDate(value: string) {
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime())
-    ? value
-    : parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function squareSectionLinkClasses(active: boolean) {
@@ -152,16 +146,17 @@ export function PilotSquarePage() {
   const recentOrders = [...(connection?.orders ?? [])]
     .filter((order) => !order.isDeleted && ["COMPLETED", "CANCELED", "CANCELLED", "REFUNDED"].includes(String(order.orderState || "").toUpperCase()))
     .sort((left, right) => new Date(right.orderedAt || right.closedAt || 0).getTime() - new Date(left.orderedAt || left.closedAt || 0).getTime());
+  const businessTimezone = currentLocation?.timezone || "UTC";
   const recentSales = (() => {
     const summaries = new Map(dailySales.map((entry) => [entry.saleDate, entry]));
     const dates = new Set([
       ...dailySales.map((entry) => entry.saleDate),
-      ...recentOrders.map((order) => (order.orderedAt || order.closedAt || "").slice(0, 10)).filter(Boolean),
+      ...recentOrders.map((order) => locationDateKey(order.orderedAt || order.closedAt, businessTimezone)).filter(Boolean),
     ]);
     return [...dates].sort((left, right) => right.localeCompare(left)).map((date) => ({
       date,
       summary: summaries.get(date) ?? null,
-      orders: recentOrders.filter((order) => (order.orderedAt || order.closedAt || "").slice(0, 10) === date),
+      orders: recentOrders.filter((order) => locationDateKey(order.orderedAt || order.closedAt, businessTimezone) === date),
     }));
   })();
   const menuItems = menuCosting?.menuItems ?? [];
@@ -544,7 +539,7 @@ export function PilotSquarePage() {
                 <div key={date} className="rounded-2xl border border-line bg-slate-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-ink">{formatSalesDate(date)}</p>
+                      <p className="font-semibold text-ink">{formatDate(date)}</p>
                       <p className="mt-1 text-xs text-muted">{summary?.orderCount ?? orders.length} orders · {summary?.squareLocationId || "Imported Square sales"}</p>
                     </div>
                     <p className="text-sm font-bold text-ink">Net sales {formatMoney(summary?.netAmount ?? orders.reduce((total, order) => total + order.netAmount, 0))}</p>
@@ -559,7 +554,7 @@ export function PilotSquarePage() {
                     <div className="mt-4 space-y-2 border-t border-line pt-3">
                       {orders.slice(0, 8).map((order) => {
                         const normalizedState = String(order.orderState || "").toUpperCase();
-                        const label = normalizedState === "COMPLETED" && order.refundedAt ? "Refunded" : ["CANCELED", "CANCELLED", "REFUNDED"].includes(normalizedState) ? "Cancelled" : "Completed";
+                        const label = normalizedState === "REFUNDED" || (normalizedState === "COMPLETED" && order.refundedAt) ? "Refunded" : ["CANCELED", "CANCELLED"].includes(normalizedState) ? "Cancelled" : "Completed";
                         return (
                           <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                             <div className="min-w-0">
