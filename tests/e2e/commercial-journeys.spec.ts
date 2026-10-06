@@ -2481,3 +2481,4 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(page.getByRole("heading", { name: "New purchase" })).toBeVisible();
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });
+
