@@ -251,4 +251,15 @@ describe("PilotSquareUsagePage", () => {
     resolveUsage({ usage: null });
     await waitFor(() => expect(screen.queryByText("Loading usage variance…")).not.toBeInTheDocument());
   });
+
+  it("shows the backend stock-count basis and equations when a variance row is opened", async () => {
+    render(<MemoryRouter><PilotSquareUsagePage /></MemoryRouter>);
+    fireEvent.click(await screen.findByText("Beef"));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(screen.getByText("Opening count")).toBeVisible();
+    expect(screen.getByText("Closing count")).toBeVisible();
+    expect(screen.getByText("Qualifying movement net")).toBeVisible();
+    expect(screen.getByText(/Opening \+ qualifying movements/)).toBeVisible();
+    expect(screen.getByText(/POS-driven Square inventory consumption is excluded/)).toBeVisible();
+  });
 });

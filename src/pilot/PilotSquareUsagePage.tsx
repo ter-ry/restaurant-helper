@@ -29,6 +29,12 @@ function formatQuantity(value: number | null | undefined) {
   return new Intl.NumberFormat("en-CA", { maximumFractionDigits: 4 }).format(Number(value ?? 0));
 }
 
+function formatBoundary(quantity: number | null, completedAt: string | null, sessionId: number | null) {
+  if (quantity == null || !completedAt) return "Unavailable";
+  const timestamp = new Intl.DateTimeFormat("en-CA", { dateStyle: "medium", timeStyle: "short" }).format(new Date(completedAt));
+  return `${formatQuantity(quantity)} · ${timestamp}${sessionId == null ? "" : ` · session ${sessionId}`}`;
+}
+
 function toLocalDateTime(value: Date) {
   const pad = (part: number) => String(part).padStart(2, "0");
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
@@ -358,7 +364,7 @@ export function PilotSquareUsagePage() {
             <div className="rounded-2xl border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Physical count coverage</p>
               <p className="mt-2 text-2xl font-bold text-ink">{usage ? `${usage.ingredientUsage.filter((row) => row.actualUsage != null).length}/${usage.ingredientUsage.length}` : "—"}</p>
-              <p className="mt-1 text-xs text-muted">Actual usage needs distinct counts</p>
+              <p className="mt-1 text-xs text-muted">Requires opening and closing physical counts</p>
             </div>
           </div>
 
@@ -395,7 +401,7 @@ export function PilotSquareUsagePage() {
                   <th className="px-3 py-3">Inventory item</th>
                   <th className="px-3 py-3 text-right">Sold menu units</th>
                   <th className="px-3 py-3 text-right">Theoretical usage</th>
-                  <th className="px-3 py-3 text-right">Actual usage</th>
+                  <th className="px-3 py-3 text-right">Count-derived usage</th>
                   <th className="px-3 py-3 text-right">Variance</th>
                   <th className="px-3 py-3 text-right">Variance %</th>
                 </tr>
@@ -420,8 +426,13 @@ export function PilotSquareUsagePage() {
           {selectedVarianceId != null ? (() => {
             const selected = topUsageRows.find((row) => row.inventoryItemId === selectedVarianceId);
             if (!selected) return null;
+            const basis = selected.actualUsageBasis;
+            const boundaryMissing = basis.available && (basis.openingQuantity == null || basis.closingQuantity == null || basis.openingCountCompletedAt == null || basis.closingCountCompletedAt == null);
             return <Modal title={`Variance detail · ${selected.inventoryItemName}`} onClose={() => setSelectedVarianceId(null)} size="large">
-              <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm"><div><dt className="text-muted">POS theoretical usage</dt><dd className="font-semibold text-ink">{formatQuantity(selected.theoreticalUsage)}</dd></div><div><dt className="text-muted">Recorded waste</dt><dd className="font-semibold text-ink">—</dd></div><div><dt className="text-muted">Other adjustments</dt><dd className="font-semibold text-ink">—</dd></div><div><dt className="text-muted">Physical / actual usage</dt><dd className="font-semibold text-ink">{selected.actualUsage == null ? "—" : formatQuantity(selected.actualUsage)}</dd></div><div><dt className="text-muted">Unexplained variance</dt><dd className="font-semibold text-ink">{selected.discrepancy == null ? "—" : formatQuantity(selected.discrepancy)}</dd></div></dl>
+              <p className="text-sm leading-6 text-muted">Count-derived usage is based on physical stock counts and qualifying Flowtally inventory movements. POS-driven Square inventory consumption is excluded.</p>
+              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted">Opening count</dt><dd className="font-semibold text-ink">{formatBoundary(basis.openingQuantity, basis.openingCountCompletedAt, basis.openingCountSessionId)}</dd></div><div><dt className="text-muted">Closing count</dt><dd className="font-semibold text-ink">{formatBoundary(basis.closingQuantity, basis.closingCountCompletedAt, basis.closingCountSessionId)}</dd></div><div><dt className="text-muted">Qualifying movement net</dt><dd className="font-semibold text-ink">{basis.movementNet == null ? "Unavailable" : formatQuantity(basis.movementNet)}</dd></div><div><dt className="text-muted">Count-derived usage</dt><dd className="font-semibold text-ink">{selected.actualUsage == null ? "Unavailable" : formatQuantity(selected.actualUsage)}</dd></div><div><dt className="text-muted">POS theoretical usage</dt><dd className="font-semibold text-ink">{formatQuantity(selected.theoreticalUsage)}</dd></div><div><dt className="text-muted">Variance</dt><dd className="font-semibold text-ink">{selected.discrepancy == null ? "Unavailable" : formatQuantity(selected.discrepancy)}{selected.discrepancyPercent == null ? "" : ` (${formatQuantity(selected.discrepancyPercent)}%)`}</dd></div></dl>
+              <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted"><p className="font-semibold text-ink">Calculation</p><p className="mt-1">Opening + qualifying movements − closing = count-derived usage</p><p className="mt-1">{basis.openingQuantity == null || basis.movementNet == null || basis.closingQuantity == null ? "Boundary counts or movements are unavailable." : `${formatQuantity(basis.openingQuantity)} + ${formatQuantity(basis.movementNet)} − ${formatQuantity(basis.closingQuantity)} = ${formatQuantity(selected.actualUsage)}`}</p><p className="mt-1">Count-derived usage − theoretical usage = variance</p></div>
+              {boundaryMissing || !basis.available ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Physical usage is unavailable until both boundary stock counts exist for this period.</div> : null}
               {selected.warnings.length ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{selected.warnings.join(" · ")}</div> : null}
               <div className="mt-5 flex flex-wrap gap-2"><Link className={squareSectionLinkClasses(false)} to="/app/inventory">Review inventory</Link><Link className={squareSectionLinkClasses(false)} to="/app/purchases">Review purchases</Link><Link className={squareSectionLinkClasses(false)} to="/app/menu-costing">Review Menu Costing</Link><Link className={squareSectionLinkClasses(false)} to="/app/stock-counts">Review stock counts</Link></div>
             </Modal>;

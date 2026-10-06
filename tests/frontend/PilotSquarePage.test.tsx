@@ -479,4 +479,27 @@ describe("PilotSquarePage", () => {
     expect(screen.getByText("Oct 4")).toBeVisible();
     expect(screen.getByText(/Late Burger ×1/)).toBeVisible();
   });
+
+  it("keeps bounded sync history available beyond the visible rows", async () => {
+    const connection = createConnectedConnection();
+    connection.syncJobs = Array.from({ length: 12 }, (_, index) => ({
+      id: 500 + index,
+      jobType: `sync-${index + 1}`,
+      status: index === 3 ? "failed" : "completed",
+      requestedAt: `2026-08-29T${String(12 - Math.min(index, 9)).padStart(2, "0")}:00:00.000Z`,
+      startedAt: null,
+      completedAt: null,
+      errorMessage: index === 3 ? "Square request failed" : "",
+      cursorJson: {},
+    }));
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
+
+    const { container } = render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "Recent sync activity" })).toBeVisible();
+    expect(screen.getByText("sync-4")).toBeVisible();
+    expect(screen.getByText("sync-12")).toBeVisible();
+    expect(screen.getByText("Square request failed")).toBeVisible();
+    expect(container.querySelectorAll(".max-h-44.overflow-y-auto")).toHaveLength(1);
+  });
 });
