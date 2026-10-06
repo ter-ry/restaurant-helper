@@ -1707,7 +1707,15 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
     order.net_amount = _money_to_decimal(entry.get("net_amount") or entry.get("netAmount") or entry.get("total_money") or entry.get("totalMoney"))
     order.ordered_at = _parse_iso_datetime(entry.get("created_at") or entry.get("createdAt"))
     order.closed_at = _parse_iso_datetime(entry.get("closed_at") or entry.get("closedAt"))
-    order.cancelled_at = _parse_iso_datetime(entry.get("canceled_at") or entry.get("cancelled_at") or entry.get("updated_at"))
+    explicit_cancelled_at = (
+        entry.get("canceled_at")
+        or entry.get("cancelled_at")
+        or entry.get("canceledAt")
+        or entry.get("cancelledAt")
+    )
+    order.cancelled_at = _parse_iso_datetime(explicit_cancelled_at)
+    if order.cancelled_at is None and order.order_state in {"CANCELED", "CANCELLED"}:
+        order.cancelled_at = _parse_iso_datetime(entry.get("updated_at") or entry.get("updatedAt"))
     order.refunded_at = _parse_iso_datetime(entry.get("refunded_at") or entry.get("refundedAt"))
     order.raw_payload_json = dict(entry)
     order.last_synced_at = _now()

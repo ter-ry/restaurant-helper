@@ -30,10 +30,10 @@ vi.mock("../../src/pilot/pilotConfig", async () => {
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
   usePilotSession: () => ({
     organization: { id: 42, name: "Pilot Cafe" },
-    currentLocation: { id: 7, name: "Line Kitchen" },
+    currentLocation: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
     locations: [
-      { id: 7, name: "Line Kitchen" },
-      { id: 8, name: "Front Counter" },
+      { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      { id: 8, name: "Front Counter", timezone: "America/Toronto" },
     ],
   }),
 }));
@@ -413,8 +413,11 @@ describe("PilotSquarePage", () => {
 
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
 
-    expect(await screen.findByText("Recent transactions")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Recent sales" })).toBeVisible();
+    expect(screen.getAllByText(/Aug 29/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Net sales $1,600.00")).toBeVisible();
     expect(screen.getByText(/Test Burger ×1/)).toBeVisible();
+    expect(screen.queryByText("Sales summary")).not.toBeInTheDocument();
     expect(screen.getAllByRole("combobox")[1]).toHaveValue("901");
   });
 
@@ -432,19 +435,48 @@ describe("PilotSquarePage", () => {
       order("ORDER-DRAFT", "DRAFT", "2026-08-29T22:50:00.000Z"),
       order("ORDER-CANCELED", "CANCELED", "2026-08-29T22:30:00.000Z"),
       order("ORDER-REFUNDED", "COMPLETED", "2026-08-29T22:20:00.000Z", "2026-08-29T22:40:00.000Z"),
+      order("ORDER-REFUNDED-STATE", "REFUNDED", "2026-08-29T22:15:00.000Z"),
       order("ORDER-COMPLETED", "COMPLETED", "2026-08-29T22:10:00.000Z"),
     ];
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
 
     const { container } = render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
 
-    expect(await screen.findByText(/ORDER-CANCELED/)).toBeVisible();
-    expect(screen.getByText(/ORDER-REFUNDED/)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Recent sales" })).toBeVisible();
+    expect(screen.getByText(/ORDER-CANCELED/)).toBeVisible();
+    expect(screen.getAllByText(/ORDER-REFUNDED/).length).toBeGreaterThan(0);
     expect(screen.getByText(/ORDER-COMPLETED/)).toBeVisible();
+    expect(screen.getAllByText("Refunded").some((node) => node.className.includes("pilot-badge"))).toBe(true);
+    expect(screen.getAllByText("Cancelled").some((node) => node.className.includes("pilot-badge"))).toBe(true);
     expect(screen.queryByText(/ORDER-OPEN/)).not.toBeInTheDocument();
     expect(screen.queryByText(/ORDER-DRAFT/)).not.toBeInTheDocument();
     const finalized = [...container.querySelectorAll("p")].filter((node) => /ORDER-(CANCELED|REFUNDED|COMPLETED)/.test(node.textContent || ""));
     expect(finalized.map((node) => node.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("ORDER-CANCELED"), expect.stringContaining("ORDER-REFUNDED"), expect.stringContaining("ORDER-COMPLETED")]));
     expect(finalized.findIndex((node) => node.textContent?.includes("ORDER-CANCELED"))).toBeLessThan(finalized.findIndex((node) => node.textContent?.includes("ORDER-REFUNDED")));
+  });
+
+  it("groups sales by the active restaurant business date", async () => {
+    const connection = createConnectedConnection();
+    connection.dailySales = [{
+      ...connection.dailySales[0],
+      saleDate: "2026-10-04",
+      orderCount: 1,
+      netAmount: 15,
+    }];
+    connection.orders = [{
+      id: 702, squareOrderId: "ORDER-LATE", squareLocationId: "SQ-10", restaurantLocationId: 7,
+      orderState: "COMPLETED", currency: "CAD", grossAmount: 15, discountAmount: 0, taxAmount: 0,
+      tipAmount: 0, refundAmount: 0, netAmount: 15, itemQuantity: 1, lineCount: 1,
+      orderedAt: "2026-10-05T03:30:00.000Z", closedAt: "2026-10-05T03:30:00.000Z", cancelledAt: null,
+      refundedAt: null, isDeleted: false, rawPayload: {},
+      lines: [{ id: 2, lineUid: "line-late", lineIndex: 0, squareItemVariationId: "VAR-1", name: "Late Burger", quantity: 1, grossAmount: 15, discountAmount: 0, taxAmount: 0, tipAmount: 0, netAmount: 15, rawPayload: {} }],
+    }];
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection });
+
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "Recent sales" })).toBeVisible();
+    expect(screen.getByText("Oct 4")).toBeVisible();
+    expect(screen.getByText(/Late Burger ×1/)).toBeVisible();
   });
 });

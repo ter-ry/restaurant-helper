@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatInventoryQuantity } from "../../src/pilot/workspace/pilotWorkspaceUtils";
+import { formatDate, formatInventoryQuantity } from "../../src/pilot/workspace/pilotWorkspaceUtils";
 
 describe("formatInventoryQuantity", () => {
   it("keeps up to two meaningful decimals without trailing zeroes", () => {
@@ -8,5 +8,11 @@ describe("formatInventoryQuantity", () => {
     expect(formatInventoryQuantity(1.25)).toBe("1.25");
     expect(formatInventoryQuantity(1.256)).toBe("1.26");
     expect(formatInventoryQuantity(null)).toBe("—");
+  });
+});
+
+describe("formatDate", () => {
+  it("preserves date-only business dates regardless of browser timezone", () => {
+    expect(formatDate("2026-10-04")).toBe("Oct 4");
   });
 });

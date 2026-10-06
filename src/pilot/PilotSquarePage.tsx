@@ -23,7 +23,8 @@ import {
   type PilotMenuCostingResponse,
   type PilotSquareConnectionSummary,
 } from "./pilotApi";
-import { formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { locationDateKey } from "./workspace/timezone";
 
 function resolvedCatalogMapping(candidate: { mapping?: { flowtallyEntityId?: string | null } | null; flowtallyEntityId?: string | null }) {
   return candidate.mapping ?? (candidate.flowtallyEntityId !== undefined ? candidate : null);
@@ -143,8 +144,21 @@ export function PilotSquarePage() {
   const dailySales = connection?.dailySales ?? [];
   const syncJobs = connection?.syncJobs ?? [];
   const recentOrders = [...(connection?.orders ?? [])]
-    .filter((order) => !order.isDeleted && ["COMPLETED", "CANCELED", "CANCELLED"].includes(order.orderState.toUpperCase()))
+    .filter((order) => !order.isDeleted && ["COMPLETED", "CANCELED", "CANCELLED", "REFUNDED"].includes(String(order.orderState || "").toUpperCase()))
     .sort((left, right) => new Date(right.orderedAt || right.closedAt || 0).getTime() - new Date(left.orderedAt || left.closedAt || 0).getTime());
+  const businessTimezone = currentLocation?.timezone || "UTC";
+  const recentSales = (() => {
+    const summaries = new Map(dailySales.map((entry) => [entry.saleDate, entry]));
+    const dates = new Set([
+      ...dailySales.map((entry) => entry.saleDate),
+      ...recentOrders.map((order) => locationDateKey(order.orderedAt || order.closedAt, businessTimezone)).filter(Boolean),
+    ]);
+    return [...dates].sort((left, right) => right.localeCompare(left)).map((date) => ({
+      date,
+      summary: summaries.get(date) ?? null,
+      orders: recentOrders.filter((order) => locationDateKey(order.orderedAt || order.closedAt, businessTimezone) === date),
+    }));
+  })();
   const menuItems = menuCosting?.menuItems ?? [];
   const mappedLocations = squareLocations.filter((location) => location.mappings.some((mapping) => mapping.restaurantLocationId)).length;
   const mappedMenus = mappingCoverage.mappedVariationCount;
@@ -519,22 +533,45 @@ export function PilotSquarePage() {
           </Card>
 
           <Card className="workspace-card">
-            <SectionHeader title="Recent transactions" description="Imported Square orders, newest first. Amounts reflect the order totals Flowtally received." />
-            <div className="mt-4 space-y-3">
-              {recentOrders.length ? recentOrders.slice(0, 8).map((order) => (
-                <div key={order.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+            <SectionHeader title="Recent sales" description="Daily imported sales with the finalized transactions that make up each day." />
+            <div className="mt-4 space-y-5">
+              {recentSales.length ? recentSales.slice(0, 8).map(({ date, summary, orders }) => (
+                <div key={date} className="rounded-2xl border border-line bg-slate-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-ink">{formatDateTime(order.orderedAt || order.closedAt)} · {order.squareOrderId}</p>
-                      <p className="mt-1 text-xs text-muted">{order.lines.map((line) => `${line.name} ×${formatNumber(line.quantity)}`).join(" · ") || "No line items"}</p>
+                      <p className="font-semibold text-ink">{formatDate(date)}</p>
+                      <p className="mt-1 text-xs text-muted">{summary?.orderCount ?? orders.length} orders · {summary?.squareLocationId || "Imported Square sales"}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-ink">Final {formatMoney(order.netAmount)} {order.currency}</p><p className="mt-1 text-xs text-muted">Gross {formatMoney(order.grossAmount)} · Discount {formatMoney(order.discountAmount)}</p>
-                      <Badge tone={order.cancelledAt ? "danger" : order.refundedAt ? "warning" : statusTone(order.orderState)}>{order.cancelledAt ? "Cancelled" : order.refundedAt ? "Refunded" : order.orderState}</Badge>
-                    </div>
+                    <p className="text-sm font-bold text-ink">Net sales {formatMoney(summary?.netAmount ?? orders.reduce((total, order) => total + order.netAmount, 0))}</p>
                   </div>
+                  <div className="mt-3 grid gap-2 text-sm text-muted sm:grid-cols-4">
+                    <SummaryRow label="Refunds" value={formatMoney(summary?.refundAmount ?? orders.reduce((total, order) => total + order.refundAmount, 0))} />
+                    <SummaryRow label="Tips" value={formatMoney(summary?.tipAmount ?? orders.reduce((total, order) => total + order.tipAmount, 0))} />
+                    <SummaryRow label="Cancelled" value={formatNumber(summary?.cancelledOrderCount ?? orders.filter((order) => ["CANCELED", "CANCELLED"].includes(order.orderState.toUpperCase())).length)} />
+                    <SummaryRow label="Gross" value={formatMoney(summary?.grossAmount ?? orders.reduce((total, order) => total + order.grossAmount, 0))} />
+                  </div>
+                  {orders.length ? (
+                    <div className="mt-4 space-y-2 border-t border-line pt-3">
+                      {orders.slice(0, 8).map((order) => {
+                        const normalizedState = String(order.orderState || "").toUpperCase();
+                        const label = normalizedState === "REFUNDED" || (normalizedState === "COMPLETED" && order.refundedAt) ? "Refunded" : ["CANCELED", "CANCELLED"].includes(normalizedState) ? "Cancelled" : "Completed";
+                        return (
+                          <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-ink">{formatDateTime(order.orderedAt || order.closedAt)} · {order.lines.map((line) => `${line.name} ×${formatNumber(line.quantity)}`).join(" · ") || "No line items"}</p>
+                              <p className="mt-1 text-xs text-muted">Square order {order.squareOrderId}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-ink">{formatMoney(order.netAmount)} {order.currency}</span>
+                              <Badge tone={label === "Cancelled" ? "danger" : label === "Refunded" ? "warning" : "success"}>{label}</Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
-              )) : <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No imported Square transactions yet.</p>}
+              )) : <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No imported Square sales yet.</p>}
             </div>
           </Card>
 
@@ -629,51 +666,22 @@ export function PilotSquarePage() {
             </div>
           </Card>
 
-          <Card className="p-6">
-            <SectionHeader title="Recent sync activity" description="Recent sync jobs and any failures that need attention." />
-            <div className="mt-4 space-y-3">
-              {syncJobs.length ? syncJobs.slice(0, 5).map((job) => (
-                <div key={job.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{job.jobType}</p>
-                      <p className="mt-1 text-xs text-muted">{job.requestedAt ? formatDateTime(job.requestedAt) : "No timestamp"}</p>
-                    </div>
-                    <Badge tone={statusTone(job.status)}>{job.status}</Badge>
-                  </div>
-                  {job.errorMessage ? <p className="mt-2 text-sm text-rose-700">{job.errorMessage}</p> : null}
-                </div>
-              )) : (
-                <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-8 text-sm text-muted">Sync jobs will appear here after a Square sync runs.</p>
-              )}
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <SectionHeader title="Sales summary" description="Recent imported sales by location." />
-            <div className="mt-4 space-y-3">
-              {dailySales.length ? dailySales.slice(0, 6).map((entry) => (
-                <div key={`${entry.saleDate}-${entry.squareLocationId}`} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{entry.saleDate}</p>
-                      <p className="mt-1 text-xs text-muted">{entry.squareLocationId || "Unmapped location"} · {formatNumber(entry.orderCount)} orders</p>
-                    </div>
-                    <p className="text-sm font-bold text-ink">{formatMoney(entry.netAmount)}</p>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-muted">
-                    <SummaryRow label="Refunds" value={formatMoney(entry.refundAmount)} />
-                    <SummaryRow label="Tips" value={formatMoney(entry.tipAmount)} />
-                    <SummaryRow label="Cancelled" value={formatNumber(entry.cancelledOrderCount)} />
-                  </div>
-                </div>
-              )) : (
-                <p className="rounded-2xl border border-dashed border-line bg-slate-50 px-4 py-8 text-sm text-muted">No sales summaries imported yet.</p>
-              )}
-            </div>
-          </Card>
         </div>
       </div>
+
+      <Card className="p-4">
+        <SectionHeader title="Recent sync activity" description="Diagnostic sync history and failures." />
+        <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
+          {syncJobs.length ? syncJobs.slice(0, 12).map((job) => (
+            <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm">
+              <span className="font-semibold text-ink">{job.jobType}</span>
+              <Badge tone={statusTone(job.status)}>{job.status}</Badge>
+              <span className="text-xs text-muted">{job.requestedAt ? formatDateTime(job.requestedAt) : "No timestamp"}</span>
+              {job.errorMessage ? <span className="basis-full text-xs text-rose-700">{job.errorMessage}</span> : null}
+            </div>
+          )) : <p className="rounded-xl border border-dashed border-line bg-slate-50 px-3 py-4 text-sm text-muted">Sync jobs will appear here after a Square sync runs.</p>}
+        </div>
+      </Card>
 
       <Card className="p-6">
         <SectionHeader title="Menu and usage notes" description="A small, practical reminder for this restaurant workspace." />

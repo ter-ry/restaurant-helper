@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatLocationDateTime, locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "../../src/pilot/workspace/timezone";
+import { formatLocationDateTime, locationDateKey, locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "../../src/pilot/workspace/timezone";
 
 describe("restaurant timezone utilities", () => {
   it("renders and converts Toronto summer and winter local times through UTC", () => {
@@ -11,5 +11,7 @@ describe("restaurant timezone utilities", () => {
   it("uses the active location timezone rather than browser UTC", () => {
     expect(locationDatetimeLocalToUtcIso("2026-07-15T09:30", "America/Vancouver")).toBe("2026-07-15T16:30:00.000Z");
     expect(locationNowDatetimeLocal("America/Vancouver", new Date("2026-07-15T16:30:00.000Z"))).toBe("2026-07-15T09:30");
+    expect(locationDateKey("2026-10-05T03:30:00.000Z", "America/Toronto")).toBe("2026-10-04");
+    expect(locationDateKey("2026-10-04T16:30:00.000Z", "America/Toronto")).toBe("2026-10-04");
   });
 });
