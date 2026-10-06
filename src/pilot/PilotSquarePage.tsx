@@ -569,12 +569,38 @@ export function PilotSquarePage() {
               </div>
             ) : <p className="mt-4 text-sm text-muted">Review the import to see what will be created or reused.</p>}
           </Card>
+
+          <Card className="workspace-card">
+            <SectionHeader title="Coverage snapshot" description="What is ready, what is mapped, and what still needs work." />
+            <div className="mt-4 grid gap-3">
+              <MetricCard label="Locations mapped" value={totalMappedLocations} detail="Square locations matched to Flowtally locations." tone={mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"} />
+              <MetricCard label="Menu items mapped" value={totalMappedMenus} detail="Sellable Square item variations linked to menu items." tone={mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"} />
+              <MetricCard label="Daily sales summaries" value={formatNumber(dailySales.length)} detail="Recent Square sales summaries imported for the close." />
+            </div>
+          </Card>
         </div>
 
         <div className="space-y-6">
-          <Card className="workspace-card">
+          <Card className="workspace-card order-first">
+            <SectionHeader title="Sync range" description="Orders sync uses a simple manual date range for this restaurant." />
+            <div className="mt-4 grid gap-3">
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">Start at</span>
+                <input className="input mt-1" type="datetime-local" value={rangeStartAt} onChange={(event) => setRangeStartAt(event.target.value)} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-ink">End at</span>
+                <input className="input mt-1" type="datetime-local" value={rangeEndAt} onChange={(event) => setRangeEndAt(event.target.value)} />
+              </label>
+              <p className="text-sm leading-6 text-muted">
+                Orders sync is for review only. The workspace shows imported sales summaries and mapping coverage before any close is finalized.
+              </p>
+            </div>
+          </Card>
+
+          <Card className="workspace-card order-2">
             <SectionHeader title="Recent sales" description="Daily imported sales with the finalized transactions that make up each day." />
-            <div className="mt-4 max-h-[42rem] space-y-5 overflow-y-auto pr-1">
+            <div className="mt-4 max-h-[42rem] space-y-5 overflow-y-auto pr-1" aria-label="Recent sales history">
               {recentSales.length ? recentSales.slice(0, 8).map(({ date, summary, orders }) => (
                 <div key={date} className="rounded-2xl border border-line bg-slate-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -609,33 +635,7 @@ export function PilotSquarePage() {
             </div>
           </Card>
 
-          <Card className="p-6">
-            <SectionHeader title="Sync range" description="Orders sync uses a simple manual date range for this restaurant." />
-            <div className="mt-4 grid gap-3">
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">Start at</span>
-                <input className="input mt-1" type="datetime-local" value={rangeStartAt} onChange={(event) => setRangeStartAt(event.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">End at</span>
-                <input className="input mt-1" type="datetime-local" value={rangeEndAt} onChange={(event) => setRangeEndAt(event.target.value)} />
-              </label>
-              <p className="text-sm leading-6 text-muted">
-                Orders sync is for review only. The workspace shows imported sales summaries and mapping coverage before any close is finalized.
-              </p>
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <SectionHeader title="Coverage snapshot" description="What is ready, what is mapped, and what still needs work." />
-            <div className="mt-4 grid gap-3">
-              <MetricCard label="Locations mapped" value={totalMappedLocations} detail="Square locations matched to Flowtally locations." tone={mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"} />
-              <MetricCard label="Menu items mapped" value={totalMappedMenus} detail="Sellable Square item variations linked to menu items." tone={mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"} />
-              <MetricCard label="Daily sales summaries" value={formatNumber(dailySales.length)} detail="Recent Square sales summaries imported for the close." />
-            </div>
-          </Card>
-
-          <Card className="p-4">
+          <Card className="p-4 order-3">
             <SectionHeader title="Recent sync activity" description="Diagnostic sync history and failures." />
             <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
               {syncJobs.length ? syncJobs.slice(0, 12).map((job) => (
