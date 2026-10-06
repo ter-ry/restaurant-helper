@@ -143,12 +143,10 @@ export function PilotStockCountsPage() {
         setDraft(sessionToDraft(activeSession));
         setSavedDraftSignature(JSON.stringify(sessionToDraft(activeSession)));
         setConfirmConcurrency(false);
-        setShowConcurrencyDetails(false);
       } else {
         setDraft(null);
         setSavedDraftSignature(null);
         setConfirmConcurrency(false);
-        setShowConcurrencyDetails(false);
       }
       setHasLoaded(true);
     } catch (err) {
