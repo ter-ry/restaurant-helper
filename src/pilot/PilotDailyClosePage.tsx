@@ -491,13 +491,6 @@ export function PilotDailyClosePage() {
                 <p className="mt-2 font-semibold text-ink">{locationMapped ? "Mapped" : "Unmapped"}</p>
                 <p className="mt-1 text-muted">Daily close uses the mapped Square location when one is available.</p>
               </div>
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Next step</p>
-                <Link className="mt-2 inline-flex items-center gap-2 font-semibold text-brand-700 transition hover:text-brand-800" to="/app/square">
-                  Open Square integration
-                  <ExternalLink className="h-4 w-4" />
-                </Link>
-              </div>
             </div>
           </Card>
 

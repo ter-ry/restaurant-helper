@@ -638,7 +638,7 @@ export function PilotSquarePage() {
           <Card className="p-4">
             <SectionHeader title="Recent sync activity" description="Diagnostic sync history and failures." />
             <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
-              {syncJobs.length ? syncJobs.slice(0, 3).map((job) => (
+              {syncJobs.length ? syncJobs.slice(0, 12).map((job) => (
                 <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm">
                   <span className="font-semibold text-ink">{job.jobType}</span><Badge tone={statusTone(job.status)}>{job.status}</Badge><span className="text-xs text-muted">{job.requestedAt ? formatDateTime(job.requestedAt) : "No timestamp"}</span>
                   {job.errorMessage ? <span className="basis-full text-xs text-rose-700">{job.errorMessage}</span> : null}
