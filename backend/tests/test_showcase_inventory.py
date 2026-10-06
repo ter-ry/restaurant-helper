@@ -108,3 +108,55 @@ def test_showcase_replenishment_is_idempotent_at_target(app):
         for row in first["targets"]
     ]
     assert InventoryMovement.query.filter_by(organization_id=organization.id, source_type="showcase inventory replenishment").count() == 3
+
+
+def test_showcase_replenishment_can_run_again_after_later_consumption(app):
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Flowtally Showcase", location_name="Harbour Kitchen")
+    location = organization.locations[0]
+    _add_targets(organization, location, owner)
+    _configure_showcase(app, organization.id)
+
+    first = replenish_showcase_inventory(organization_id=organization.id, location_id=location.id, actor_id=owner.id)
+    chicken = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Chicken Breast").one()
+    chicken.current_on_hand = Decimal("8.20")
+    db.session.add(
+        InventoryMovement(
+            organization_id=organization.id,
+            location_id=location.id,
+            inventory_item_id=chicken.id,
+            quantity_delta=Decimal("-1.80"),
+            quantity_before=Decimal("10.00"),
+            quantity_after=Decimal("8.20"),
+            unit=chicken.stock_unit,
+            source_type="square sale",
+            source_record_id="later-sale-1",
+            source_line_id="burger",
+            reason="Later legitimate consumption",
+            actor_user_id=owner.id,
+        )
+    )
+    db.session.commit()
+
+    second = replenish_showcase_inventory(organization_id=organization.id, location_id=location.id, actor_id=owner.id)
+    chicken_replenishments = InventoryMovement.query.filter_by(
+        organization_id=organization.id,
+        location_id=location.id,
+        inventory_item_id=chicken.id,
+        source_type="showcase inventory replenishment",
+    ).order_by(InventoryMovement.id).all()
+
+    assert first["targets"][0]["adjustment"] == 7.06
+    assert second["targets"][0]["current"] == 8.2
+    assert second["targets"][0]["adjustment"] == 1.8
+    assert chicken.current_on_hand == Decimal("10.00")
+    assert len(chicken_replenishments) == 2
+
+    immediate = replenish_showcase_inventory(organization_id=organization.id, location_id=location.id, actor_id=owner.id)
+    assert immediate["targets"][0]["adjustment"] == 0.0
+    assert len(InventoryMovement.query.filter_by(
+        organization_id=organization.id,
+        location_id=location.id,
+        inventory_item_id=chicken.id,
+        source_type="showcase inventory replenishment",
+    ).all()) == 2

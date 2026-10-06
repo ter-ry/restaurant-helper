@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 from flask import current_app
 from sqlalchemy import text
@@ -119,17 +120,6 @@ def replenish_showcase_inventory(*, organization_id: int, location_id: int, acto
             continue
         before = Decimal(str(target.current_quantity))
         after = target.target_quantity
-        source_record_id = f"showcase-replenishment:{target.item_id}:{before}:{after}"
-        existing = InventoryMovement.query.filter_by(
-            organization_id=organization.id,
-            location_id=location.id,
-            inventory_item_id=target.item_id,
-            source_type=SHOWCASE_REASON,
-            source_record_id=source_record_id,
-            source_line_id="target",
-        ).first()
-        if existing is not None:
-            continue
         item = db.session.get(InventoryItem, target.item_id)
         if item is None or Decimal(str(item.current_on_hand or 0)).quantize(Decimal("0.01")) != before:
             raise ShowcaseInventoryError(f"{target.item_name} changed while replenishment was being prepared; rerun the dry-run.")
@@ -145,7 +135,10 @@ def replenish_showcase_inventory(*, organization_id: int, location_id: int, acto
             quantity_after=after,
             unit=item.stock_unit,
             source_type=SHOWCASE_REASON,
-            source_record_id=source_record_id,
+            # A target-based replenishment may legitimately run again after
+            # later sales consume stock.  Use a unique operation id rather
+            # than treating an old before/after pair as permanently applied.
+            source_record_id=f"showcase-replenishment:{target.item_id}:{uuid4().hex}",
             source_line_id="target",
             reason=SHOWCASE_REASON,
             actor_user_id=actor_id,
