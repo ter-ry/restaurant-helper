@@ -240,6 +240,39 @@ def test_recording_fixture_dry_run_has_exact_totals(tmp_path: Path):
     assert not [call for call in fake.calls if call[0] == "POST"]
 
 
+def test_recording_totals_follow_discovered_catalog_price(tmp_path: Path):
+    fake = FakeSquare()
+    result = seed_sales(
+        client(fake),
+        fixture_name="alpha-video-full-sales-2026-10",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1500, "CAD"),
+        order_count=None,
+        manifest_path=tmp_path / "manifest.json",
+        dry_run=True,
+        confirm_inventory_reviewed=True,
+    )
+    assert result["plannedTotals"] == {
+        "orderCount": 8,
+        "totalBurgerQuantity": 10,
+        "grossAmount": {"amount": 15000, "currency": "CAD"},
+        "discountAmount": {"amount": 225, "currency": "CAD"},
+        "tipAmount": {"amount": 375, "currency": "CAD"},
+        "finalTotal": {"amount": 15150, "currency": "CAD"},
+    }
+    different_price = seed_sales(
+        client(FakeSquare()),
+        fixture_name="alpha-video-full-sales-2026-10",
+        identity=Identity("MERCHANT", "LOCATION", "Flowtally"),
+        variation=Variation("VARIATION", TARGET_VARIATION, 1800, "CAD"),
+        order_count=None,
+        manifest_path=tmp_path / "different-price.json",
+        dry_run=True,
+        confirm_inventory_reviewed=True,
+    )
+    assert different_price["plannedTotals"]["grossAmount"] != result["plannedTotals"]["grossAmount"]
+
+
 def test_recording_fixture_completed_totals_are_idempotent(tmp_path: Path):
     fake = FakeSquare()
     kwargs = dict(

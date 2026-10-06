@@ -39,6 +39,14 @@ class ShowcaseInventoryTarget:
     target_quantity: Decimal
     adjustment: Decimal
 
+    @property
+    def status(self) -> str:
+        if self.current_quantity > self.target_quantity:
+            return "already_above_target"
+        if self.current_quantity == self.target_quantity:
+            return "at_target"
+        return "needs_replenishment"
+
 
 def _production_identity_guard(organization_id: int, location_id: int) -> tuple[Organization, RestaurantLocation]:
     if str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() != "production":
@@ -74,7 +82,8 @@ def inspect_showcase_replenishment(*, organization_id: int, location_id: int) ->
         if item.stock_unit != unit:
             raise ShowcaseInventoryError(f"{name} must use stock unit {unit}; found {item.stock_unit}.")
         current_quantity = Decimal(str(item.current_on_hand or 0)).quantize(Decimal("0.01"))
-        targets.append(ShowcaseInventoryTarget(item.id, item.name, unit, current_quantity, target, (target - current_quantity).quantize(Decimal("0.01"))))
+        adjustment = max(target - current_quantity, Decimal("0")).quantize(Decimal("0.01"))
+        targets.append(ShowcaseInventoryTarget(item.id, item.name, unit, current_quantity, target, adjustment))
     return organization, location, targets
 
 
@@ -97,6 +106,7 @@ def replenish_showcase_inventory(*, organization_id: int, location_id: int, acto
                 "current": float(target.current_quantity),
                 "target": float(target.target_quantity),
                 "adjustment": float(target.adjustment),
+                "status": target.status,
             }
             for target in targets
         ],

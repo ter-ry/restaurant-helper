@@ -44,7 +44,7 @@ The named recording profile is deliberately fixed at 8 completed orders and 10 b
 python scripts/seed_square_showcase_sales.py --environment production --fixture-name alpha-video-full-sales-2026-10 --dry-run --confirm-inventory-reviewed
 ```
 
-Review every planned order, the total gross/discount/tip/final totals, and the inventory warning before using the explicit write command:
+Review every planned order, the total gross/discount/tip/final totals, and the inventory warning before using the explicit write command. Totals are calculated from the price returned by Square's discovered Production catalog variation; the utility does not assume a fixed live price. For reference only, at a CAD 15.00 variation price this profile is gross CAD 150.00, discounts CAD 2.25, tips CAD 3.75, and final CAD 151.50. The live dry-run remains authoritative.
 
 ```powershell
 python scripts/seed_square_showcase_sales.py --environment production --fixture-name alpha-video-full-sales-2026-10 --confirm-inventory-reviewed --confirm-showcase-production --manifest .\square-showcase-alpha-video-full-sales-2026-10.manifest.json
