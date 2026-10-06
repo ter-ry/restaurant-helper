@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from backend.extensions import db
 from backend.models import InventoryItem, InventoryMovement, User
+from backend.pilot_api import _status_for_item
 from backend.showcase_inventory import TARGETS, replenish_showcase_inventory
 from backend.seed import LOCAL_OWNER_EMAIL
 from backend.tests.conftest import make_operational_organization
@@ -189,3 +190,25 @@ def test_showcase_replenishment_does_not_touch_another_tenant(app):
     }
     assert after == before
     assert InventoryMovement.query.filter_by(organization_id=other.id).count() == 0
+
+
+def test_showcase_targets_match_actual_reorder_status_rules(app):
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Flowtally Showcase", location_name="Harbour Kitchen")
+    location = organization.locations[0]
+    _add_targets(organization, location, owner)
+
+    expected = {
+        "healthy": "In stock",
+        "low": "Low stock",
+        "reorder": "Reorder now",
+        "out_of_stock": "Out of stock",
+    }
+    for spec in TARGETS:
+        item = InventoryItem.query.filter_by(
+            organization_id=organization.id,
+            location_id=location.id,
+            name=spec.item_name,
+        ).one()
+        item.current_on_hand = spec.target_quantity
+        assert _status_for_item(item)["status"] == expected[spec.intended_status]
