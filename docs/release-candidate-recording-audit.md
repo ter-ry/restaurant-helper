@@ -38,7 +38,7 @@ Existing lint warnings and dependency audit findings were not introduced by this
 
 - Backend suite: **222 passed, 48 skipped, 2 warnings** locally. The skips are PostgreSQL-backed tests unavailable in this environment; they are not counted as passes.
 - Showcase inventory/status regression: **6 passed**.
-- Python compile check: run before publishing this audit branch.
+- Python compileall (`backend`, `scripts`): passed.
 - Frontend typecheck: passed.
 - Frontend lint: passed, 74 warnings, 0 errors.
 - Production frontend build: passed.
