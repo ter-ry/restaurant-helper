@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 
 SQUARE_API_VERSION = "2026-07-15"
 SQUARE_API_BASE = "https://connect.squareup.com"
-TARGET_VARIATION = "Flowtally Test Burger · Base"
+TARGET_VARIATION = "Harbour Burger · Base"
 DEFAULT_ORDER_COUNT = 1
 VIDEO_FIXTURE_NAME = "alpha-video-full-sales-2026-10"
 MAX_ORDER_COUNT = 5
@@ -239,7 +239,7 @@ def discover_variation(client: SquareClient) -> Variation:
                 raise SquareShowcaseError("the showcase burger variation is not priced in CAD")
             matches.append(Variation(str(entry.get("id") or ""), display or TARGET_VARIATION, amount, currency))
     if len(matches) != 1:
-        raise SquareShowcaseError("expected exactly one Flowtally Test Burger · Base variation")
+        raise SquareShowcaseError("expected exactly one Harbour Burger · Base variation")
     return matches[0]
 
 

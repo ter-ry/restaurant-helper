@@ -32,7 +32,7 @@ Open Inventory, select Chicken Breast, and show 3.1 kg on hand, minimum 4, PAR 8
 
 ### 6:00–9:30 — Square sale to recipe consumption
 
-Open Menu Costing → Recipes → Harbour Burger first. Show the live $2.21 cost and 0.2 kg Chicken Breast, 0.3 pack Bread Buns, and 0.1 head Lettuce. Then open Usage / Variance: show `Flowtally Test Burger · Base` mapped to Harbour Burger, one sold unit, 100% sales coverage, and theoretical usage. Finally show the Inventory History movement for order `Umhs2cLYmUVXyhU9cS8GyOfxu3LZY`. Call this a controlled Production test order; do not create or sync another order.
+Open Menu Costing → Recipes → Harbour Burger first. Show the live $2.21 cost and 0.2 kg Chicken Breast, 0.3 pack Bread Buns, and 0.1 head Lettuce. Then open Usage / Variance: show `Harbour Burger · Base` mapped to Harbour Burger, one sold unit, 100% sales coverage, and theoretical usage. Finally show the Inventory History movement for order `Umhs2cLYmUVXyhU9cS8GyOfxu3LZY`. Call this a controlled Production test order; do not create or sync another order.
 
 ### 9:30–12:00 — owner attention loop
 

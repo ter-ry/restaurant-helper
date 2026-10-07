@@ -37,9 +37,9 @@ Seasonal Soup is intentionally a no-recipe example; do not use it to demonstrate
 
 ## Square status and strongest available proof
 
-The live Square integration is connected in Production and reports Ready, 1/1 mapped location, 1/1 mapped variation, and Up to date sales sync. The connection page last synced on Oct 3 at 12:18 p.m.; the visible location is Harbour Kitchen and the mapped variation is `Flowtally Test Burger · Base` → Harbour Burger. The page’s connected-state detail text was misleadingly hard-coded as “simulated/no merchant”; the application fix is tracked separately from this documentation PR. Do not show that stale sentence during the presentation.
+The live Square integration is connected in Production and reports Ready, 1/1 mapped location, 1/1 mapped variation, and Up to date sales sync. The connection page last synced on Oct 3 at 12:18 p.m.; the visible location is Harbour Kitchen and the mapped variation is `Harbour Burger · Base` → Harbour Burger. The public read-only demo may describe its own simulated connection, but the private showcase should show the connected Production state.
 
-The strongest existing persisted proof is in Usage / Variance for Harbour Kitchen: sales coverage 100%, one sold unit, mapping `Flowtally Test Burger · Base` → Harbour Burger, and theoretical usage of Chicken Breast 0.18 kg, Bread Buns 0.25 pack, and Lettuce 0.12 head. The corresponding Inventory History row shows the persisted Square order reference above and the -0.2 kg Chicken Breast movement. This is the controlled live integration proof; it is a zero-dollar test order, so describe it as a controlled Production test transaction rather than customer revenue.
+The strongest existing persisted proof is in Usage / Variance for Harbour Kitchen: sales coverage 100%, one sold unit, mapping `Harbour Burger · Base` → Harbour Burger, and theoretical usage of Chicken Breast 0.18 kg, Bread Buns 0.25 pack, and Lettuce 0.12 head. The corresponding Inventory History row shows the persisted Square order reference above and the -0.2 kg Chicken Breast movement. This is the controlled live integration proof; it is a zero-dollar test order, so describe it as a controlled Production test transaction rather than customer revenue.
 
 The seeded public-demo IDs such as `demo-order-1` remain synthetic and must not be used as production evidence.
 

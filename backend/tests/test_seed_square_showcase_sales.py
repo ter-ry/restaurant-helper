@@ -59,7 +59,7 @@ class FakeSquare:
             return FakeResponse({"location": {"id": "LOCATION", "name": "Flowtally"}})
         if path.startswith("/v2/catalog/list"):
             return FakeResponse({"objects": [
-                {"type": "ITEM", "id": "ITEM", "item_data": {"name": "Flowtally Test Burger"}},
+                {"type": "ITEM", "id": "ITEM", "item_data": {"name": "Harbour Burger"}},
                 {"type": "ITEM_VARIATION", "id": "VARIATION", "item_variation_data": {"item_id": "ITEM", "name": "Base", "price_money": {"amount": 1800, "currency": "CAD"}}},
             ]})
         if path.startswith("/v2/orders/") and method == "GET":
