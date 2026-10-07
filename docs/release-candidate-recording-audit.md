@@ -1,55 +1,124 @@
-# Release-candidate recording audit
+# Final Flowtally recording handoff
 
-**Audited commit:** `c54e7551caf5d30c8cd071e50f7f51029cfe88cc` (latest `origin/main`)
+**Audit date:** 2026-10-07
+**Repository baseline:** `origin/main` at `9d821f0701a9cfdb5bc660715ecc08f9364c4fa2`
+**Production workspace:** Flowtally Showcase / Harbour Kitchen
 
-This review covers the production showcase recording surface only. No Production database, Render setting, Square account, or Square data was changed, and no Production Square write was executed.
+This is the authoritative read-only recording handoff for the current Production state. No Production data, Square data, credentials, mappings, configuration, or close sessions were changed during this audit.
 
-## Routes and integrated workflows reviewed
+## Baseline and merged delta
 
-The authenticated recording routes were reviewed in the shared pilot implementation: Dashboard, Purchases/OCR, Inventory and movements, Stock Counts, Reorder Plan, Menu Costing, Square Setup & Sync, Usage / Variance, and Daily Close. The public read-only demo route and legacy local-data demo routes were reviewed separately so their intentionally simulated copy is not confused with the Production showcase.
+The audit branch starts from the current `origin/main`, which includes the merged showcase work in PRs #108–#114. The relevant delta covers Square reference/idempotency safety (#108), Square and usage correctness (#109), timezone and presentation cleanup (#110), variance/read-only layout polish (#111), guarded showcase sales and inventory preparation (#112), the 23-item inventory profile (#113), and recording-readiness/audit documentation plus the Harbour Burger fixture alignment (#114).
 
-The repository has coverage for these integrated paths:
+GitHub CI and the deploy workflow for `9d821f0` completed successfully. The current branch has no application-code changes.
 
-- OCR invoice review → purchase receive → inventory movement → cost/menu-cost impact (`test_showcase_invoice_review_receive_updates_inventory_cost`).
-- Square catalog/location mapping → finalized order sync → recipe theoretical consumption, refunds/reversals, idempotency, and restaurant-timezone grouping.
-- Stock-count completion and usage/variance evidence, including missing-count warnings and movement evidence.
-- Dashboard/Reorder status derived from the same backend rules used by the operational API.
+## Production availability
 
-This audit added a regression assertion that every configured showcase target maps to the actual reorder status classifier (healthy, low, reorder, or out of stock). The 23-item profile is 16 healthy, 4 low, 2 reorder, and 1 out of stock; no target is merely an `intendedStatus` label disconnected from displayed status logic.
+`https://api.flowtally.ca/api/health` returned HTTP 200 and the actual JSON response:
 
-## Recording findings
+```json
+{"csrfEnabled":true,"databaseUrlConfigured":true,"environment":"production","googleOidcEnabled":true,"ocrConfigured":true,"service":"flowtally-pilot-backend","squareEnabled":true,"status":"ok"}
+```
 
-### Code decision: Square catalog presentation is supported
+The Production frontend loaded at `https://app.flowtally.ca/app/dashboard`, and the existing showcase login/session worked. The first load of several authenticated pages briefly showed the normal pilot loading state, then resolved; this was not a Render loading-page failure. No Render intervention was required.
 
-The recording utility now expects the production-facing **`Harbour Burger · Base`** variation and continues to discover its CAD price from Square at runtime. The Flowtally menu item remains **Harbour Burger · CAD 18.00**; sale calculations do not hardcode that price.
+## Verified live data
 
-### Remaining operator data action
+### Tenant, location, and Square
 
-Before recording, the operator must edit the existing Square Production catalog item in place: rename `Flowtally Test Burger` to `Harbour Burger`, retain the `Base` variation, set its existing price to CAD 18.00, and preserve the existing catalog object ID/mapping. Afterward, refresh/sync the Square catalog in Flowtally and verify that the existing variation still maps to Flowtally Harbour Burger. This audit performed no Square or Production data mutation.
+- Organization: `Flowtally Showcase`
+- Restaurant location: `Harbour Kitchen`
+- Square seller location displayed in Flowtally: `Flowtally`
+- Flowtally location mapping: `Flowtally` → `Harbour Kitchen`, `1/1 mapped`
+- Square catalog variation: `Harbour Burger · Base`
+- Flowtally mapping: `Harbour Burger · Base` → `Harbour Burger`, `1/1 mapped`
+- Connection state: Ready / connected
+- Last sync shown: Oct 7, 2:32 p.m.
+- Catalog concern: resolved in the live screen; the old `Flowtally Test Burger` name was not present.
 
-### After recording
+### Inventory and counts
 
-- The local Windows worktree could not run Vite/Playwright or frontend unit tests because the managed environment rejects `realpath` with `EPERM`. The runner has strict port, readiness, commit-identification, and cleanup checks; GitHub CI remains the authoritative browser environment.
-- Legacy `/demo` pages contain intentional placeholder/demo wording. The public read-only demo also correctly identifies simulated Square data. Neither is the Production showcase copy and neither was changed.
-- A stale explanatory sentence in showcase documentation refers to an earlier simulated-state bug; it is documentation-only and does not affect the application.
-- The guarded `showcase-replenish` and Square showcase write commands remain explicit operator actions. They were not run here.
+The live Inventory page shows the expected 23-item profile: 16 in stock/healthy, 4 low stock, 2 Reorder now, and 1 Out of stock.
 
-### Ignore for now
+Presentation anchors:
 
-Existing lint warnings and dependency audit findings were not introduced by this audit and do not affect the recording routes. They should be handled in their normal maintenance work.
+| Item | Current quantity | Status |
+|---|---:|---|
+| Chicken Breast | 8.2 kg | In stock |
+| Bread Buns | 17.5 pack | In stock |
+| Lettuce | 6.7 head | In stock |
+| Cups | 224 each | In stock |
+| Eggs | 0 dozen | Out of stock |
+| Tomato Sauce | 1 L | Reorder now |
+| Tapioca Pearls | 1 kg | Reorder now |
 
-## Test matrix
+Completed Stock Counts #3 and #4 exist on Oct 7. Count #4 is the visible closing snapshot: Chicken Breast 8.2 kg, Bread Buns 17.5 pack, and Lettuce 6.7 head, with a deliberate Lettuce variance of -0.1 head.
 
-- Backend suite: **222 passed, 48 skipped, 2 warnings** locally. The skips are PostgreSQL-backed tests unavailable in this environment; they are not counted as passes.
-- Showcase inventory/status regression: **6 passed**.
-- Python compileall (`backend`, `scripts`): passed.
-- Frontend typecheck: passed.
-- Frontend lint: passed, 74 warnings, 0 errors.
-- Production frontend build: passed.
-- Frontend unit tests and Playwright: local execution blocked before test collection by the managed-worktree `EPERM realpath` limitation; GitHub CI is required for the complete browser/security matrix.
-- PostgreSQL migration/RLS tests: not locally executable; GitHub's PostgreSQL service job is authoritative.
+### Purchase proof
 
-## Release decision
+The strongest existing completed purchase is `HD-5501` from Harbour Dry Goods, received Sep 29, total `$49.55`, locked/read-only, six invoice items, and 92% line confidence. It includes Rice, Noodles, Pasta, Sugar, Vegetable Oil, and Bread Buns. Its source is `HD-5501.pdf`; the record identifies its extraction status as manual/seeded, so it must not be described as a live OCR capture.
 
-**CODE RECORDING READY** for the code release candidate. The documented operator data action remains required before filming: update the dedicated Square catalog in place, refresh/sync it in Flowtally, and re-verify the existing mapping. The code, tenant/security checks, and GitHub frontend/Playwright/PostgreSQL matrix are green; this remaining work is operator-side, not a code defect.
+### Menu and recipe proof
 
+- Menu item: `Harbour Burger`
+- Selling price: `$18.00`
+- Recipe: Harbour Burger, active, yield 1 serving
+- Recipe cost: `$2.21`; food cost `12.3%`; gross profit `$15.79`
+- Ingredients shown in the recipe: Chicken Breast 0.2 kg, Bread Buns 0.3 pack, Lettuce 0.1 head
+- Usage / Variance preserves higher precision for the theoretical usage calculation; use that page for exact 0.18 / 0.25 / 0.12 per-serving proof.
+
+### Square sales and movement proof
+
+The Square page shows eight completed Oct 7 orders at the `Flowtally` location, with displayed line quantities summing to ten Harbour Burger servings and displayed daily net/gross sales of `$181.80`. It also shows zero refunds, zero tips, and zero cancelled orders. The visible order references include `82FrRkqSK4TPBAEcCgnbhMIDVWTZY`, `CdNskqRiBB6O3MtXKPnxtpXrK3eZY`, `kuvHzNrWfLF0UQT63dSfHi0P8OFZY`, `UsIazvdfva2e2gO4VHftzpT7VU7YY`, `mNuhayPUHeHeLbuWnM5yOB1burMZY`, `sSDnK9rE9wlG73x1VFBWN7UcC4cZY`, `EIIXuLLpekFnx7LVPCZp37ZdLGOZY`, and `0kGvLpwK36D0ebLq3fAMH2WFU5RZY`.
+
+The live Usage / Variance page, however, reports **12 sold menu units**, 3 ingredient rows, and 100% mapped coverage even when the read-only window is narrowed to Oct 7 2:23–2:25 p.m. It reports Chicken Breast theoretical usage 2.16 kg and count-derived usage 4.16 kg, while Bread Buns and Lettuce have no physical usage available. This conflicts with the eight-order/ten-serving handoff and the expected 1.80 / 2.50 / 1.20 theoretical usage.
+
+The inventory movement history does show persisted Square recipe-consumption rows for the Oct 7 order references, including Chicken Breast, Bread Buns, and Lettuce. The exact sales-to-usage/count evidence is not currently coherent enough to record as the promised 10-serving proof.
+
+### Reorder proof
+
+Reorder Plan currently contains seven items below PAR: Eggs, Tapioca Pearls, Tomato Sauce, Coffee Beans, Noodles, Onions, and Pasta. The three urgent rows are Eggs (Out of stock), Tapioca Pearls (Reorder now), and Tomato Sauce (Reorder now). The Inventory button `Reorder list (2)` counts only the two `Reorder now` statuses; Reorder Plan’s `Needs reorder 7` includes low-stock and out-of-stock items. These are different scopes, not the same metric.
+
+### Daily Close
+
+There is no current Daily Close session and no completed close history. Drafts for Oct 6 and Oct 4 are present. Do not start, edit, or complete a close during recording.
+
+## Concern classifications
+
+- **A — Square catalog stale:** **RESOLVED.** Production shows `Harbour Burger · Base` and the existing mapping is healthy. Do not sync again during recording.
+- **B — Gross / Tips / Net semantics:** **AFTER RECORDING / AVOID.** The live summary shows `$181.80` for both Net and Gross and `$0.00` Tips. Do not narrate those fields as a tip-inclusive financial reconciliation. If this is shown, describe it only as imported Square order activity. The guarded fixture’s planned totals and the persisted order summary should be reconciled in a separate code/data investigation.
+- **C — Reorder counts:** **IGNORE.** `Reorder list (2)` is the immediate Reorder-now count; `Needs reorder 7` is the full below-PAR list. Use the Reorder Plan rows, not the two badges interchangeably.
+- **D — Recipe precision:** **AFTER RECORDING / AVOID.** Menu Costing displays recipe quantities to one decimal (`0.2`, `0.3`, `0.1`); Usage / Variance displays the precise per-serving quantities. Use Usage / Variance for precision-sensitive narration.
+
+## Recording decision
+
+**NOT READY TO RECORD.** Production availability, tenant identity, catalog mapping, inventory anchors, and a real Square order-to-movement trail are present. Recording is blocked by the unresolved 10-versus-12 sales-unit discrepancy and incomplete/incorrect physical Usage / Variance evidence for the promised Oct 7 window. No new Square transaction, sync, count, reseed, or Production mutation is authorized by this handoff.
+
+## Candidate recording sequence after the blocker is resolved
+
+### 10–15 minutes
+
+1. Dashboard — owner attention panel, current reorder pressure, and recent Square-driven activity (1:00).
+2. Purchases — open completed `HD-5501`; show supplier, six mapped lines, total, locked/read-only state, and the manual/seeded extraction note (1:30).
+3. Inventory — show Chicken Breast 8.2 kg, Bread Buns 17.5 pack, Lettuce 6.7 head, Cups 224 each; open Chicken Breast history and show receipts plus the verified Square movement (2:00).
+4. Menu Costing — open Harbour Burger recipe and cost; avoid presenting rounded quantities as the exact sales calculation (1:30).
+5. Square — show Ready, `Flowtally` location, Harbour Burger mapping, and the existing completed order list. Avoid the misleading Gross/Tips/Net narrative until semantics are reconciled (2:00).
+6. Usage / Variance — set the verified final window only after the data discrepancy is resolved; show 100% coverage, exact theoretical usage, count-derived usage, and one deliberate Lettuce variance (3:00).
+7. Reorder Plan — show Eggs, Tapioca Pearls, and Tomato Sauce; do not click Add to draft (1:00).
+8. Return to Dashboard for the owner close (1:00).
+
+### 5-minute abbreviated version
+
+1. Dashboard attention panel (0:45).
+2. Square mapping and one real completed order (1:00).
+3. Usage / Variance exact sale-to-recipe-to-ingredient proof (1:30).
+4. Inventory movement history for the same order (0:45).
+5. Reorder Plan urgent rows and Dashboard close (1:00).
+
+## Recording risks and fallbacks
+
+- Do not record until the Usage / Variance discrepancy is explained and the exact window shows the intended servings and count coverage.
+- Do not create another Square transaction. The existing Oct 7 activity is sufficient for investigation.
+- Do not show Daily Close, draft records, connection controls, Save mapping, Import menu, Sync controls, New count, Add to draft, or any browser/developer tooling.
+- If the Square financial summary remains semantically ambiguous, skip that summary block and use the order list plus Usage / Variance movement proof only after the unit discrepancy is resolved.
+- If the production data cannot be reconciled read-only, stop the rehearsal and report the missing proof rather than changing Production.
