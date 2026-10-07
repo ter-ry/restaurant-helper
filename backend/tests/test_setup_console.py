@@ -315,6 +315,37 @@ def test_non_platform_user_cannot_access_setup_customer_identity(client):
     assert response.status_code == 403
 
 
+def test_showcase_usage_diagnostic_is_setup_admin_only_and_get_only(app, client):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        role = PlatformRole.query.filter_by(user_id=owner.id).first()
+        if role is None:
+            role = PlatformRole(user_id=owner.id, role="setup_admin", is_active=True)
+            db.session.add(role)
+        else:
+            role.role = "setup_admin"
+            role.is_active = True
+        before_orders = SquareOrder.query.count()
+        before_lines = SquareOrderLine.query.count()
+        db.session.commit()
+
+    login(client, LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD)
+    assert client.get(
+        "/api/platform/setup/showcase/usage-diagnostic",
+        query_string={"organizationId": 1, "locationId": 1, "startAt": "2026-10-07T17:45:00Z", "endAt": "2026-10-07T18:45:00Z"},
+    ).status_code == 403
+
+    login(client)
+    with app.app_context():
+        before_audits = AuditEvent.query.count()
+    response = client.get("/api/platform/setup/showcase/usage-diagnostic")
+    assert response.status_code == 400
+    with app.app_context():
+        assert AuditEvent.query.count() == before_audits
+        assert SquareOrder.query.count() == before_orders
+        assert SquareOrderLine.query.count() == before_lines
+
+
 def test_square_credential_diagnostic_is_setup_admin_only_safe_and_non_mutating(app, client, monkeypatch):
     import backend.platform_admin as platform_admin
 
