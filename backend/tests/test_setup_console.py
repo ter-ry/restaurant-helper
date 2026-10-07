@@ -325,7 +325,6 @@ def test_showcase_usage_diagnostic_is_setup_admin_only_and_get_only(app, client)
         else:
             role.role = "setup_admin"
             role.is_active = True
-        before_audits = AuditEvent.query.count()
         before_orders = SquareOrder.query.count()
         before_lines = SquareOrderLine.query.count()
         db.session.commit()
@@ -337,6 +336,8 @@ def test_showcase_usage_diagnostic_is_setup_admin_only_and_get_only(app, client)
     ).status_code == 403
 
     login(client)
+    with app.app_context():
+        before_audits = AuditEvent.query.count()
     response = client.get("/api/platform/setup/showcase/usage-diagnostic")
     assert response.status_code == 400
     with app.app_context():
