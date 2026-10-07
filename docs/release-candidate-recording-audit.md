@@ -19,9 +19,13 @@ This audit added a regression assertion that every configured showcase target ma
 
 ## Recording findings
 
-### Blocker: Square catalog presentation needs an operator decision
+### Code decision: Square catalog presentation is supported
 
-The dedicated Square fixture is named **`Flowtally Test Burger · Base`**, and the utility discovers the live catalog price at runtime. The seeded Flowtally menu item is **Harbour Burger** at the current application seed price of CAD 18.00, while the dedicated Square variation has historically been CAD 15.00. This can produce visibly contradictory name/price footage. Before recording, an operator must choose and apply a production-facing Square variation name (for example, `Harbour Burger · Base`) and confirm whether the mapped Flowtally menu price should agree with the live Square price. No automatic mutation is appropriate in this audit.
+The recording utility now expects the production-facing **`Harbour Burger · Base`** variation and continues to discover its CAD price from Square at runtime. The Flowtally menu item remains **Harbour Burger · CAD 18.00**; sale calculations do not hardcode that price.
+
+### Remaining operator data action
+
+Before recording, the operator must edit the existing Square Production catalog item in place: rename `Flowtally Test Burger` to `Harbour Burger`, retain the `Base` variation, set its existing price to CAD 18.00, and preserve the existing catalog object ID/mapping. Afterward, refresh/sync the Square catalog in Flowtally and verify that the existing variation still maps to Flowtally Harbour Burger. This audit performed no Square or Production data mutation.
 
 ### After recording
 
@@ -47,4 +51,5 @@ Existing lint warnings and dependency audit findings were not introduced by this
 
 ## Release decision
 
-**NOT RECORDING READY** until the dedicated Square catalog name and price are reconciled and the full GitHub frontend/Playwright/PostgreSQL matrix is green. The application flows and tenant/security checks are covered by the passing backend suite and the added reorder-status regression; the remaining blocker is visible Square catalog coherence plus the required CI/browser evidence, not a code-path failure found in this audit.
+**CODE RECORDING READY** for the code release candidate. The documented operator data action remains required before filming: update the dedicated Square catalog in place, refresh/sync it in Flowtally, and re-verify the existing mapping. The code, tenant/security checks, and GitHub frontend/Playwright/PostgreSQL matrix are green; this remaining work is operator-side, not a code defect.
+

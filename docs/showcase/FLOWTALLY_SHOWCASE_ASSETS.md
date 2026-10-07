@@ -14,7 +14,7 @@ The production browser session produced clean in-session screenshots of the Dash
 | `06-inventory-movements.png` | Not persisted; capture after opening History | Chicken Breast movements | Invoice receipts and -0.2kg persisted Square-order consumption | Traceability proof | persisted historical integration evidence |
 | `07-harbour-burger-costing.png` | Not persisted; capture after data loads | Menu Costing | $18 price, $2.21 cost, 12.3% food cost | Costing proof | live production showcase state |
 | `08-harbour-burger-recipe.png` | Not persisted; capture after opening recipe | Harbour Burger recipe | 0.2kg Chicken Breast, 0.3 pack Bread Buns, 0.1 head Lettuce | Recipe proof | live production showcase state |
-| `09-square-usage.png` | Not persisted; loaded in-session capture possible | Usage / Variance | `Flowtally Test Burger · Base` → Harbour Burger, 1 sold, theoretical usage | Historical usage trace | persisted historical integration evidence |
+| `09-square-usage.png` | Not persisted; loaded in-session capture possible | Usage / Variance | `Harbour Burger · Base` → Harbour Burger, 1 sold, theoretical usage | Historical usage trace | persisted historical integration evidence |
 | `10-reorder-plan.png` | Not persisted; capture after data loads | Reorder Plan | Chicken Breast 4.9kg/$36.66 and Eggs 3 dozen/$17.70 | Owner action proof | live production showcase state |
 
 ## State boundaries

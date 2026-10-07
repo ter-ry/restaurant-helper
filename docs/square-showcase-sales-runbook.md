@@ -5,6 +5,7 @@ This runbook is for the dedicated Flowtally Production showcase seller only. It 
 ## Identities and credentials
 
 - The Square seller location is **Flowtally**. This is the location returned by Square and is distinct from the Flowtally mapped restaurant location, **Harbour Kitchen**.
+- The expected Production catalog variation is **Harbour Burger · Base**, mapping to the Flowtally menu item **Harbour Burger**. The utility discovers the live CAD price from Square and fails safely if this exact variation is absent.
 - Use the separate temporary Square utility app's Production personal/access token for this dedicated showcase seller.
 - Do not copy or reuse Flowtally's merchant OAuth token, Flowtally's OAuth client secret, or credentials from another seller.
 - The utility requires `SQUARE_SHOWCASE_ACCESS_TOKEN`, `SQUARE_SHOWCASE_EXPECTED_MERCHANT_ID`, `SQUARE_SHOWCASE_EXPECTED_LOCATION_ID`, and `SQUARE_SHOWCASE_EXPECTED_LOCATION_NAME=Flowtally`.
