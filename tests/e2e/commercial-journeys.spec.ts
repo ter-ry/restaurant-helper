@@ -1930,6 +1930,28 @@ test("Square usage variance maps and clears variation links", async ({ page }) =
       syncJobs: [],
       webhookEvents: [],
     },
+    squareUsage: {
+      connection: { id: 1, organizationId: 42, status: "connected" },
+      menuItems: [
+        { id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: nowIso(), updatedAt: nowIso() },
+      ],
+      mappings: [],
+      unmappedVariations: [
+        { id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", isDeleted: false, soldUnits: 10, suggestedMenuItemId: 11, suggestedMenuItemName: "Classic Cheeseburger", mapping: null },
+      ],
+      mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 1, mappedPercent: 0 },
+      usage: {
+        organizationId: 42,
+        locationId: 7,
+        period: { startAt: nowIso(), endAt: nowIso() },
+        coverage: { totalSoldUnits: 10, mappedSoldUnits: 0, calculableSoldUnits: 0, excludedUnmappedUnits: 10, excludedIncompleteUnits: 0, excludedCancelledUnits: 0, mappedSalesCoveragePercent: 0, calculableSalesCoveragePercent: 0, mappedVariationCount: 0, unmappedVariationCount: 1 },
+        ingredientUsage: [],
+        totals: { theoreticalUsage: 0, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+        contributingMenuItems: [],
+        unmappedVariations: [],
+        warnings: [],
+      },
+    },
     importJobs: [],
     importJob: null,
   };

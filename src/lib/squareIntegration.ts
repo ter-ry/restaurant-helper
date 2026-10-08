@@ -213,6 +213,15 @@ export interface SquareUsageReport {
   warnings: string[];
 }
 
+export interface SquareUsageResponse {
+  connection: SquareConnectionSummary;
+  menuItems: SquareUsageMenuItemSummary[];
+  mappings: SquareCatalogMappingCandidate[];
+  unmappedVariations: SquareCatalogMappingCandidate[];
+  mappingCoverage: SquareUsageMappingCoverage;
+  usage: SquareUsageReport;
+}
+
 export interface SquareOrderLineSummary {
   id: number;
   lineUid: string;
@@ -452,22 +461,5 @@ export async function fetchSquareUsage(payload: { organizationId: number; locati
   if (payload.locationId != null) {
     params.set("locationId", String(payload.locationId));
   }
-  return requestJson<{
-    connection: SquareConnectionSummary;
-    menuItems: SquareUsageMenuItemSummary[];
-    mappings: SquareCatalogMappingSummary[];
-    unmappedVariations: Array<{
-      squareItemVariationId: string;
-      squareObjectName: string;
-      squareItemName: string;
-      soldUnits: number;
-      recentOrders: Array<{
-        squareOrderId: string;
-        orderedAt: string | null;
-        quantity: number;
-      }>;
-    }>;
-    mappingCoverage: SquareUsageMappingCoverage;
-    usage: SquareUsageReport;
-  }>(`/api/integrations/square/usage?${params.toString()}`);
+  return requestJson<SquareUsageResponse>(`/api/integrations/square/usage?${params.toString()}`);
 }
