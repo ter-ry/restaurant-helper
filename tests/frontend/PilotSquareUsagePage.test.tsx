@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotSquareUsagePage } from "../../src/pilot/PilotSquareUsagePage";
+import { locationDatetimeLocalToUtcIso } from "../../src/pilot/workspace/timezone";
 
 const mockApi = vi.hoisted(() => ({
   fetchSquareCatalogMappings: vi.fn(),
@@ -14,8 +15,8 @@ const mockApi = vi.hoisted(() => ({
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
   usePilotSession: () => ({
     organization: { id: 42, name: "Variance Cafe" },
-    currentLocation: { id: 7, name: "Line Kitchen" },
-    locations: [{ id: 7, name: "Line Kitchen" }],
+    currentLocation: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+    locations: [{ id: 7, name: "Line Kitchen", timezone: "America/Toronto" }],
   }),
 }));
 
@@ -72,6 +73,11 @@ describe("PilotSquareUsagePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(1));
     expect(mockApi.fetchSquareUsage).toHaveBeenCalledWith(expect.objectContaining({ startAt: "2026-10-07T17:45:00.000Z", endAt: "2026-10-07T18:45:00.000Z" }));
+  });
+
+  it("converts Usage drafts with the restaurant timezone, independent of the runtime timezone", () => {
+    expect(locationDatetimeLocalToUtcIso("2026-10-07T13:45", "America/Toronto")).toBe("2026-10-07T17:45:00.000Z");
+    expect(locationDatetimeLocalToUtcIso("2026-10-07T13:45", "Asia/Hong_Kong")).toBe("2026-10-07T05:45:00.000Z");
   });
 
   it("clears stale values while a new Usage request is pending", async () => {

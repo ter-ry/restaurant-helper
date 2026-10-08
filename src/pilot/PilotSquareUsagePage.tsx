@@ -5,6 +5,7 @@ import { Card } from "../components/Card";
 import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
 import { usePilotSession } from "./PilotSessionProvider";
+import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
 import {
   deleteSquareCatalogMapping,
   fetchSquareUsage,
@@ -34,18 +35,13 @@ function formatBoundary(quantity: number | null, completedAt: string | null, ses
   return `${formatQuantity(quantity)} · ${timestamp}${sessionId == null ? "" : ` · session ${sessionId}`}`;
 }
 
-function toLocalDateTime(value: Date) {
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
-}
-
-function defaultRange() {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(end.getDate() - 7);
+function defaultRange(timezone: string) {
+  const now = new Date();
+  const endAt = locationNowDatetimeLocal(timezone, now);
+  const startAt = locationNowDatetimeLocal(timezone, new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   return {
-    startAt: toLocalDateTime(start),
-    endAt: toLocalDateTime(end),
+    startAt,
+    endAt,
   };
 }
 
@@ -153,8 +149,9 @@ function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: 
 
 export function PilotSquareUsagePage() {
   const { organization, currentLocation, locations } = usePilotSession();
-  const initialRange = useMemo(() => defaultRange(), []);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
+  const selectedLocationTimezone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? currentLocation?.timezone ?? "America/Toronto";
+  const initialRange = useMemo(() => defaultRange(selectedLocationTimezone), [selectedLocationTimezone]);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
   const [appliedRange, setAppliedRange] = useState(initialRange);
@@ -202,8 +199,8 @@ export function PilotSquareUsagePage() {
     const usageRequest = fetchSquareUsage({
       organizationId: organization.id,
       locationId: selectedLocationId ?? undefined,
-      startAt: new Date(appliedRange.startAt).toISOString(),
-      endAt: new Date(appliedRange.endAt).toISOString(),
+      startAt: locationDatetimeLocalToUtcIso(appliedRange.startAt, selectedLocationTimezone),
+      endAt: locationDatetimeLocalToUtcIso(appliedRange.endAt, selectedLocationTimezone),
     });
     const applyResponse = (response: Awaited<typeof usageRequest>) => {
       if (!isCurrent()) return;
@@ -239,7 +236,7 @@ export function PilotSquareUsagePage() {
           setRefreshing(false);
         }
       });
-  }, [appliedRange.endAt, appliedRange.startAt, organization, selectedLocationId]);
+  }, [appliedRange.endAt, appliedRange.startAt, organization, selectedLocationId, selectedLocationTimezone]);
 
   useEffect(() => {
     void loadData();
