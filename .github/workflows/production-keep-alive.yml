@@ -1,0 +1,60 @@
+name: Production backend keep-alive
+
+on:
+  # Non-boundary minutes reduce scheduler congestion. This is intentionally
+  # disabled unless the repository variable is exactly "true".
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Run one warm-up request (does not enable keep-alive)"
+        required: true
+        default: warm-up
+        type: choice
+        options:
+          - warm-up
+
+concurrency:
+  group: production-backend-keep-alive
+  cancel-in-progress: false
+
+env:
+  PRODUCTION_HEALTH_URL: https://flowtally-api-production.onrender.com/api/health
+
+jobs:
+  scheduled-health-check:
+    name: Scheduled Production health check
+    if: ${{ github.event_name == 'schedule' && vars.PRODUCTION_KEEP_ALIVE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping direct Production Render backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          echo "GET ${PRODUCTION_HEALTH_URL}"
+          curl --fail --silent --show-error --max-time 90 \
+            --retry 1 --retry-delay 5 --retry-max-time 105 \
+            --output /dev/null "${PRODUCTION_HEALTH_URL}"
+          elapsed=$(( $(date +%s) - started ))
+          echo "Production health responded successfully in ${elapsed}s."
+
+  manual-warm-up:
+    name: Warm up Production now
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'warm-up' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send one bounded warm-up request
+        shell: bash
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          echo "One-time warm-up: GET ${PRODUCTION_HEALTH_URL}"
+          curl --fail --silent --show-error --max-time 90 \
+            --retry 1 --retry-delay 5 --retry-max-time 105 \
+            --output /dev/null "${PRODUCTION_HEALTH_URL}"
+          elapsed=$(( $(date +%s) - started ))
+          echo "Production warm-up succeeded in ${elapsed}s. This did not enable recurring traffic."
