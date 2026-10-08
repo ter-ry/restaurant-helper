@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 
 from backend.extensions import db
 from backend.models import (
     AuditEvent,
     InventoryItem,
+    InventoryMovement,
+    MenuItem,
     Organization,
     OrganizationModule,
     PlatformRole,
@@ -18,12 +21,17 @@ from backend.models import (
     SquareLocationMapping,
     SquareOrder,
     SquareOrderLine,
+    Recipe,
+    RecipeIngredient,
+    StockCountSession,
+    StockCountSessionLine,
     SquareSyncCursor,
     SquareSyncJob,
     SquareWebhookEvent,
     User,
 )
 from backend.seed import LOCAL_MANAGER_EMAIL, LOCAL_MANAGER_PASSWORD, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
+from backend.tests.conftest import make_operational_organization
 
 
 def login(client, email: str = LOCAL_OWNER_EMAIL, password: str = LOCAL_OWNER_PASSWORD):
@@ -344,6 +352,197 @@ def test_showcase_usage_diagnostic_is_setup_admin_only_and_get_only(app, client)
         assert AuditEvent.query.count() == before_audits
         assert SquareOrder.query.count() == before_orders
         assert SquareOrderLine.query.count() == before_lines
+
+
+def test_showcase_usage_diagnostic_serializes_complete_non_empty_recipe(app, client):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        role = PlatformRole.query.filter_by(user_id=owner.id).first()
+        if role is None:
+            db.session.add(PlatformRole(user_id=owner.id, role="setup_admin", is_active=True))
+        else:
+            role.role = "setup_admin"
+            role.is_active = True
+
+        organization = make_operational_organization(
+            owner,
+            name=f"Diagnostic Org {uuid4().hex[:8]}",
+            location_name="Diagnostic Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY", "REPORTING", "STOCK_COUNTS", "SQUARE_INTEGRATION"),
+        )
+        location = organization.locations[0]
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            square_merchant_id="diagnostic-merchant",
+            status="connected",
+            sync_status="idle",
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(
+            square_connection_id=connection.id,
+            square_location_id="DIAGNOSTIC-LOCATION",
+            name="Diagnostic Kitchen",
+            status="active",
+            raw_payload_json={"id": "DIAGNOSTIC-LOCATION"},
+        )
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
+
+        inventory_item = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Diagnostic Chicken",
+            normalized_name="diagnostic chicken",
+            category="Meat",
+            stock_unit="kg",
+            current_on_hand=Decimal("8"),
+            min_quantity=Decimal("0"),
+            par_level=Decimal("0"),
+            preferred_supplier_name="",
+            latest_purchase_price=Decimal("0"),
+            last_purchase_unit="kg",
+            last_purchase_conversion_factor=Decimal("1"),
+            average_daily_usage=Decimal("0"),
+            active=True,
+            notes="",
+        )
+        db.session.add(inventory_item)
+        db.session.flush()
+        recipe = Recipe(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Diagnostic Burger Recipe",
+            normalized_name="diagnostic burger recipe",
+            yield_quantity=Decimal("1"),
+            yield_unit="servings",
+            active=True,
+        )
+        db.session.add(recipe)
+        db.session.flush()
+        db.session.add(RecipeIngredient(
+            organization_id=organization.id,
+            recipe_id=recipe.id,
+            inventory_item_id=inventory_item.id,
+            quantity_required=Decimal("0.2"),
+            unit="kg",
+            notes="",
+            sort_order=0,
+        ))
+        menu_item = MenuItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            recipe_id=recipe.id,
+            name="Diagnostic Burger",
+            normalized_name="diagnostic burger",
+            category="Burgers",
+            selling_price=Decimal("15"),
+            active=True,
+            notes="",
+        )
+        db.session.add(menu_item)
+        db.session.flush()
+        catalog_object = SquareCatalogObject(
+            square_connection_id=connection.id,
+            square_object_id="DIAGNOSTIC-VARIATION",
+            object_type="ITEM_VARIATION",
+            version=1,
+            is_deleted=False,
+            raw_payload_json={"id": "DIAGNOSTIC-VARIATION", "type": "ITEM_VARIATION"},
+        )
+        db.session.add(catalog_object)
+        db.session.flush()
+        db.session.add(SquareCatalogMapping(
+            square_catalog_object_id=catalog_object.id,
+            mapping_type="menu_item",
+            flowtally_entity_type="menu_item",
+            flowtally_entity_id=str(menu_item.id),
+            status="mapped",
+            mapped_by_user_id=owner.id,
+        ))
+
+        start_at = datetime(2026, 10, 7, 17, 45, tzinfo=timezone.utc)
+        end_at = datetime(2026, 10, 7, 18, 45, tzinfo=timezone.utc)
+        opening = StockCountSession(
+            organization_id=organization.id,
+            location_id=location.id,
+            status="Completed",
+            started_at=datetime(2026, 10, 7, 17, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 10, 7, 17, 30, tzinfo=timezone.utc),
+            counted_by="Owner",
+            item_count=1,
+        )
+        closing = StockCountSession(
+            organization_id=organization.id,
+            location_id=location.id,
+            status="Completed",
+            started_at=datetime(2026, 10, 7, 18, 15, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 10, 7, 18, 30, tzinfo=timezone.utc),
+            counted_by="Owner",
+            item_count=1,
+        )
+        db.session.add_all([opening, closing])
+        db.session.flush()
+        db.session.add_all([
+            StockCountSessionLine(session_id=opening.id, inventory_item_id=inventory_item.id, line_index=0, item_name_snapshot=inventory_item.name, stock_unit_snapshot="kg", expected_quantity=Decimal("0"), counted_quantity=Decimal("8"), resulting_quantity=Decimal("8"), variance=Decimal("0"), status="completed"),
+            StockCountSessionLine(session_id=closing.id, inventory_item_id=inventory_item.id, line_index=0, item_name_snapshot=inventory_item.name, stock_unit_snapshot="kg", expected_quantity=Decimal("0"), counted_quantity=Decimal("7.8"), resulting_quantity=Decimal("7.8"), variance=Decimal("0"), status="completed"),
+        ])
+        db.session.add(InventoryMovement(
+            organization_id=organization.id,
+            location_id=location.id,
+            inventory_item_id=inventory_item.id,
+            quantity_delta=Decimal("0"),
+            quantity_before=Decimal("8"),
+            quantity_after=Decimal("8"),
+            unit="kg",
+            source_type="manual_adjustment",
+            source_record_id="diagnostic",
+            source_line_id="diagnostic",
+            reason="Diagnostic movement",
+            created_at=datetime(2026, 10, 7, 18, 10, tzinfo=timezone.utc),
+        ))
+        order = SquareOrder(
+            square_connection_id=connection.id,
+            square_order_id="DIAGNOSTIC-ORDER",
+            square_location_id="DIAGNOSTIC-LOCATION",
+            restaurant_location_id=location.id,
+            order_state="COMPLETED",
+            currency="CAD",
+            gross_amount=Decimal("15"),
+            net_amount=Decimal("15"),
+            item_quantity=Decimal("1"),
+            line_count=1,
+            ordered_at=datetime(2026, 10, 7, 18, 0, tzinfo=timezone.utc),
+            closed_at=datetime(2026, 10, 7, 18, 5, tzinfo=timezone.utc),
+            raw_payload_json={"id": "DIAGNOSTIC-ORDER"},
+        )
+        db.session.add(order)
+        db.session.flush()
+        db.session.add(SquareOrderLine(order=order, line_uid="diagnostic-line", line_index=0, square_item_variation_id="DIAGNOSTIC-VARIATION", name="Diagnostic Burger", quantity=Decimal("1"), gross_amount=Decimal("15"), net_amount=Decimal("15"), raw_payload_json={"uid": "diagnostic-line"}))
+        db.session.commit()
+        organization_id = organization.id
+        location_id = location.id
+        inventory_item_id = inventory_item.id
+        opening_id = opening.id
+        closing_id = closing.id
+
+    login(client)
+    response = client.get(
+        "/api/platform/setup/showcase/usage-diagnostic",
+        query_string={"organizationId": organization_id, "locationId": location_id, "startAt": start_at.isoformat().replace("+00:00", "Z"), "endAt": end_at.isoformat().replace("+00:00", "Z")},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    body = response.get_json()
+    assert body["recipe"][0]["ingredients"][0]["inventoryItemId"] == inventory_item_id
+    assert body["stockCounts"]["opening"]["id"] == opening_id
+    assert body["stockCounts"]["closing"]["id"] == closing_id
+    assert body["stockCounts"]["comparison"][0]["recipeInventoryItemId"] == inventory_item_id
+    assert body["stockCounts"]["comparison"][0]["match"] is True
+    assert str(inventory_item_id) in body["movements"]
+    assert body["movements"][str(inventory_item_id)][0]["reason"] == "Diagnostic movement"
+    assert body["usageEndpoint"]["coverage"]["totalSoldUnits"] == 1.0
 
 
 def test_square_credential_diagnostic_is_setup_admin_only_safe_and_non_mutating(app, client, monkeypatch):

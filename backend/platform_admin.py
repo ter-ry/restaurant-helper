@@ -602,7 +602,7 @@ def showcase_usage_diagnostic():
         })
 
     ingredient_ids = {
-        ingredient.inventory_item_id
+        ingredient["inventoryItemId"]
         for row in recipe_rows
         for ingredient in row["ingredients"]
         if ingredient["inventoryItemId"] is not None
