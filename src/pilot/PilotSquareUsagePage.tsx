@@ -7,7 +7,6 @@ import { PageLayout } from "../components/PageLayout";
 import { usePilotSession } from "./PilotSessionProvider";
 import {
   deleteSquareCatalogMapping,
-  fetchSquareCatalogMappings,
   fetchSquareUsage,
   updateSquareCatalogMapping,
   type SquareCatalogMappingSummary,
@@ -158,12 +157,11 @@ export function PilotSquareUsagePage() {
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
+  const [appliedRange, setAppliedRange] = useState(initialRange);
   const [, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [mappingLoading, setMappingLoading] = useState(true);
   const [usageLoading, setUsageLoading] = useState(true);
-  const [mappingError, setMappingError] = useState<string | null>(null);
-  const [usageError, setUsageError] = useState<string | null>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [menuItems, setMenuItems] = useState<SquareUsageMenuItemSummary[]>([]);
   const [mappings, setMappings] = useState<SquareCatalogMappingCandidate[]>([]);
   const [unmappedVariations, setUnmappedVariations] = useState<SquareCatalogMappingCandidate[]>([]);
@@ -188,7 +186,6 @@ export function PilotSquareUsagePage() {
       ++loadGeneration.current;
       setLoading(false);
       setRefreshing(false);
-      setMappingLoading(false);
       setUsageLoading(false);
       setMappings([]);
       setUnmappedVariations([]);
@@ -197,68 +194,67 @@ export function PilotSquareUsagePage() {
     }
     setRefreshing(true);
     setLoading(true);
-    setMappingLoading(true);
     setUsageLoading(true);
-    setMappingError(null);
-    setUsageError(null);
+    setDataError(null);
+    setUsage(null);
     const generation = ++loadGeneration.current;
     const isCurrent = () => generation === loadGeneration.current;
-    const mappingRequest = fetchSquareCatalogMappings({ organizationId: organization.id, locationId: selectedLocationId ?? undefined });
     const usageRequest = fetchSquareUsage({
       organizationId: organization.id,
       locationId: selectedLocationId ?? undefined,
-      startAt: new Date(startAt).toISOString(),
-      endAt: new Date(endAt).toISOString(),
+      startAt: new Date(appliedRange.startAt).toISOString(),
+      endAt: new Date(appliedRange.endAt).toISOString(),
     });
-    const applyMapping = (mappingResponse: Awaited<typeof mappingRequest>) => {
+    const applyResponse = (response: Awaited<typeof usageRequest>) => {
       if (!isCurrent()) return;
-      setMenuItems(mappingResponse.menuItems);
-      setMappings(mappingResponse.mappings);
-      setUnmappedVariations(mappingResponse.unmappedVariations);
+      setMenuItems(response.menuItems);
+      setMappings(response.mappings);
+      setUnmappedVariations(response.unmappedVariations);
       setDrafts(
         Object.fromEntries(
-          mappingResponse.mappings.map((mapping) => [
+          response.mappings.map((mapping) => [
             mapping.squareCatalogObjectId,
             getMappingDetail(mapping)?.flowtallyEntityId ? Number(getMappingDetail(mapping)?.flowtallyEntityId) : "",
           ]),
         ),
       );
+      setUsage(response.usage);
     };
-    const applyUsage = (usageResponse: Awaited<typeof usageRequest>) => {
-      if (isCurrent()) setUsage(usageResponse.usage);
-    };
-    void mappingRequest
-      .then(applyMapping)
-      .catch((error: unknown) => {
-        if (isCurrent()) setMappingError(error instanceof Error ? error.message : "Could not load Square mappings.");
-      })
-      .finally(() => {
-        if (isCurrent()) setMappingLoading(false);
-      });
     void usageRequest
-      .then(applyUsage)
+      .then(applyResponse)
       .catch((error: unknown) => {
         if (isCurrent()) {
+          setMenuItems([]);
+          setMappings([]);
+          setUnmappedVariations([]);
+          setDrafts({});
           setUsage(null);
-          setUsageError(error instanceof Error ? error.message : "Could not load usage variance.");
+          setDataError(error instanceof Error ? error.message : "Could not load usage and mapping data.");
         }
       })
       .finally(() => {
-        if (isCurrent()) setUsageLoading(false);
+        if (isCurrent()) {
+          setUsageLoading(false);
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
-    await Promise.allSettled([mappingRequest, usageRequest]);
-    if (isCurrent()) {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [endAt, organization, selectedLocationId, startAt]);
+  }, [appliedRange.endAt, appliedRange.startAt, organization, selectedLocationId]);
 
   useEffect(() => {
     void loadData();
-    // These are the actual request inputs; request helper identities can change
-    // during render without requiring another fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization?.id, selectedLocationId, startAt, endAt]);
+  }, [organization?.id, selectedLocationId, appliedRange.startAt, appliedRange.endAt]);
+
+  const applyRange = () => {
+    if (!startAt || !endAt) return;
+    if (startAt === appliedRange.startAt && endAt === appliedRange.endAt) {
+      void loadData();
+      return;
+    }
+    setUsage(null);
+    setAppliedRange({ startAt, endAt });
+  };
 
   const topUsageRows = useMemo(() => [...(usage?.ingredientUsage ?? [])].sort((a, b) => Math.abs(b.discrepancy ?? 0) - Math.abs(a.discrepancy ?? 0)).slice(0, 20), [usage?.ingredientUsage]);
   const activeMappings = useMemo(() => mappings.filter((mapping) => {
@@ -317,9 +313,9 @@ export function PilotSquareUsagePage() {
               <p className="text-xs font-bold uppercase tracking-wide text-muted">Usage window</p>
               <h1 className="mt-2 text-3xl font-bold text-ink">What should I investigate?</h1>
             </div>
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void loadData()} disabled={refreshing}>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={applyRange} disabled={refreshing}>
               <RefreshCw className="h-4 w-4" />
-              {refreshing ? "Refreshing…" : "Refresh"}
+              {refreshing ? "Applying…" : "Apply"}
             </button>
           </div>
 
@@ -368,25 +364,16 @@ export function PilotSquareUsagePage() {
             </div>
           </div>
 
-          {mappingLoading || usageLoading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">
-            {mappingLoading && usageLoading ? "Loading mappings and usage variance…" : mappingLoading ? "Loading Square mappings…" : "Loading usage variance…"}
+          {usageLoading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">
+            Loading usage and mapping data…
           </div> : null}
-          {mappingError ? (
+          {dataError ? (
             <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle className="h-4 w-4" />
-                Mapping data unavailable
+                Usage and mapping data unavailable
               </div>
-              <p className="mt-2">{mappingError}</p>
-            </div>
-          ) : null}
-          {usageError ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-              <div className="flex items-center gap-2 font-semibold">
-                <AlertTriangle className="h-4 w-4" />
-                Variance report unavailable
-              </div>
-              <p className="mt-2">{usageError}</p>
+              <p className="mt-2">{dataError}</p>
             </div>
           ) : null}
 

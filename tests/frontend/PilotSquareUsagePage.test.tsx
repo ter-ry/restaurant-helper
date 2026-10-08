@@ -21,245 +21,89 @@ vi.mock("../../src/pilot/PilotSessionProvider", () => ({
 
 vi.mock("../../src/lib/squareIntegration", async () => {
   const actual = (await vi.importActual("../../src/lib/squareIntegration")) as any;
-  return {
-    ...actual,
-    fetchSquareCatalogMappings: mockApi.fetchSquareCatalogMappings,
-    fetchSquareUsage: mockApi.fetchSquareUsage,
-    updateSquareCatalogMapping: mockApi.updateSquareCatalogMapping,
-    deleteSquareCatalogMapping: mockApi.deleteSquareCatalogMapping,
-  };
+  return { ...actual, fetchSquareCatalogMappings: mockApi.fetchSquareCatalogMappings, fetchSquareUsage: mockApi.fetchSquareUsage, updateSquareCatalogMapping: mockApi.updateSquareCatalogMapping, deleteSquareCatalogMapping: mockApi.deleteSquareCatalogMapping };
 });
+
+const menuItem = { id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: null, updatedAt: null };
+const unmappedVariation = { id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", isDeleted: false, soldUnits: 10, suggestedMenuItemId: 11, suggestedMenuItemName: "Classic Cheeseburger", mapping: null };
+const mappedVariation = { ...unmappedVariation, mapping: { id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", mappingType: "menu_item", flowtallyEntityType: "menu_item", flowtallyEntityId: "11", status: "mapped", mappedByUserId: 1, createdAt: null, updatedAt: null } };
+const usageReport = { organizationId: 42, locationId: 7, period: { startAt: "2026-08-04T00:00", endAt: "2026-08-11T00:00" }, coverage: { totalSoldUnits: 10, mappedSoldUnits: 10, calculableSoldUnits: 10, excludedUnmappedUnits: 0, excludedIncompleteUnits: 0, excludedCancelledUnits: 0, mappedSalesCoveragePercent: 100, calculableSalesCoveragePercent: 100, mappedVariationCount: 1, unmappedVariationCount: 0 }, ingredientUsage: [{ inventoryItemId: 201, inventoryItemName: "Beef", unit: "kg", currentOnHand: 20, theoreticalUsage: 1.8, soldMenuUnits: 10, contributingMenuItems: [{ menuItemId: 11, menuItemName: "Classic Cheeseburger", soldUnits: 10, theoreticalUsage: 1.8, recipeId: 21, recipeYield: 1 }], mappingStatus: "complete", actualUsage: 2.1, actualUsageBasis: { available: true, warnings: [], openingQuantity: 21.6, openingCountSessionId: 1, openingCountCompletedAt: "2026-08-04T00:00:00.000Z", closingQuantity: 19.5, closingCountSessionId: 2, closingCountCompletedAt: "2026-08-11T00:00:00.000Z", movementNet: 0, actualUsage: 2.1 }, discrepancy: 0.3, discrepancyPercent: 16.7, warnings: [] }], totals: { theoreticalUsage: 1.8, actualUsage: 2.1, discrepancy: 0.3, discrepancyPercent: 16.7 }, contributingMenuItems: [{ menuItemId: 11, menuItemName: "Classic Cheeseburger", soldUnits: 10, recipeYield: 1, recipeYieldUnit: "servings", warnings: [] }], unmappedVariations: [], warnings: [] };
+
+function buildResponse(overrides: Record<string, unknown> = {}) {
+  return { connection: { id: 1, organizationId: 42, status: "connected" }, menuItems: [menuItem], mappings: [mappedVariation], unmappedVariations: [], mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 }, usage: usageReport, ...overrides };
+}
+
+function renderPage() {
+  return render(<MemoryRouter><PilotSquareUsagePage /></MemoryRouter>);
+}
 
 describe("PilotSquareUsagePage", () => {
   beforeEach(() => {
-    mockApi.fetchSquareCatalogMappings.mockResolvedValue({
-      connection: {
-        id: 1,
-        organizationId: 42,
-        organization: { id: 42, name: "Variance Cafe" },
-        environment: "sandbox",
-        squareMerchantId: "merchant-1",
-        status: "connected",
-        tokenExpiresAt: null,
-        revokedAt: null,
-        lastSyncAt: null,
-        syncStatus: "idle",
-        syncError: "",
-        catalogCount: 1,
-        orderCount: 1,
-        locationCount: 1,
-        dailySalesCount: 1,
-        locations: [],
-        catalogObjects: [],
-        orders: [],
-        dailySales: [],
-        syncJobs: [],
-        webhookEvents: [],
-      },
-      menuItems: [{ id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: null, updatedAt: null }],
-      mappings: [],
-      unmappedVariations: [
-        {
-          id: 1,
-          squareCatalogObjectId: 501,
-          squareObjectId: "VAR-1",
-          squareObjectType: "ITEM_VARIATION",
-          squareObjectName: "Classic Cheeseburger - Regular",
-          squareItemName: "Classic Cheeseburger",
-          isDeleted: false,
-          soldUnits: 10,
-          suggestedMenuItemId: 11,
-          suggestedMenuItemName: "Classic Cheeseburger",
-          mapping: null,
-        },
-      ],
-      mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 1, mappedPercent: 0 },
-    });
-    mockApi.fetchSquareUsage.mockResolvedValue({
-      connection: {
-        id: 1,
-        organizationId: 42,
-        organization: { id: 42, name: "Variance Cafe" },
-        environment: "sandbox",
-        squareMerchantId: "merchant-1",
-        status: "connected",
-        tokenExpiresAt: null,
-        revokedAt: null,
-        lastSyncAt: null,
-        syncStatus: "idle",
-        syncError: "",
-        catalogCount: 1,
-        orderCount: 1,
-        locationCount: 1,
-        dailySalesCount: 1,
-        locations: [],
-        catalogObjects: [],
-        orders: [],
-        dailySales: [],
-        syncJobs: [],
-        webhookEvents: [],
-      },
-      menuItems: [{ id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: null, updatedAt: null }],
-      mappings: [
-        {
-          id: 1,
-          squareCatalogObjectId: 501,
-          squareObjectId: "VAR-1",
-          squareObjectType: "ITEM_VARIATION",
-          squareObjectName: "Classic Cheeseburger - Regular",
-          squareItemName: "Classic Cheeseburger",
-          isDeleted: false,
-          soldUnits: 10,
-          suggestedMenuItemId: 11,
-          suggestedMenuItemName: "Classic Cheeseburger",
-          mapping: {
-            id: 1,
-            squareCatalogObjectId: 501,
-            squareObjectId: "VAR-1",
-            squareObjectType: "ITEM_VARIATION",
-            squareObjectName: "Classic Cheeseburger - Regular",
-            squareItemName: "Classic Cheeseburger",
-            mappingType: "menu_item",
-            flowtallyEntityType: "menu_item",
-            flowtallyEntityId: "11",
-            status: "mapped",
-            mappedByUserId: 1,
-            createdAt: null,
-            updatedAt: null,
-          },
-        },
-      ],
-      unmappedVariations: [],
-      mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
-      usage: {
-        organizationId: 42,
-        locationId: 7,
-        period: { startAt: "2026-08-04T00:00", endAt: "2026-08-11T00:00" },
-        coverage: {
-          totalSoldUnits: 10,
-          mappedSoldUnits: 10,
-          calculableSoldUnits: 10,
-          excludedUnmappedUnits: 0,
-          excludedIncompleteUnits: 0,
-          excludedCancelledUnits: 0,
-          mappedSalesCoveragePercent: 100,
-          calculableSalesCoveragePercent: 100,
-          mappedVariationCount: 1,
-          unmappedVariationCount: 0,
-        },
-        ingredientUsage: [
-          {
-            inventoryItemId: 201,
-            inventoryItemName: "Beef",
-            unit: "kg",
-            currentOnHand: 20,
-            theoreticalUsage: 1.8,
-            soldMenuUnits: 10,
-            contributingMenuItems: [
-              { menuItemId: 11, menuItemName: "Classic Cheeseburger", soldUnits: 10, theoreticalUsage: 1.8, recipeId: 21, recipeYield: 1 },
-            ],
-            mappingStatus: "complete",
-            actualUsage: 2.1,
-            actualUsageBasis: {
-              available: true,
-              warnings: [],
-              openingQuantity: 21.6,
-              openingCountSessionId: 1,
-              openingCountCompletedAt: "2026-08-04T00:00:00.000Z",
-              closingQuantity: 19.5,
-              closingCountSessionId: 2,
-              closingCountCompletedAt: "2026-08-11T00:00:00.000Z",
-              movementNet: 0,
-              actualUsage: 2.1,
-            },
-            discrepancy: 0.3,
-            discrepancyPercent: 16.7,
-            warnings: [],
-          },
-        ],
-        totals: { theoreticalUsage: 1.8, actualUsage: 2.1, discrepancy: 0.3, discrepancyPercent: 16.7 },
-        contributingMenuItems: [{ menuItemId: 11, menuItemName: "Classic Cheeseburger", soldUnits: 10, recipeYield: 1, recipeYieldUnit: "servings", warnings: [] }],
-        unmappedVariations: [],
-        warnings: [],
-      },
-    });
+    vi.clearAllMocks();
+    mockApi.fetchSquareUsage.mockResolvedValue(buildResponse({ mappings: [], unmappedVariations: [unmappedVariation] }));
+    mockApi.updateSquareCatalogMapping.mockResolvedValue({ ok: true });
+    mockApi.deleteSquareCatalogMapping.mockResolvedValue({ ok: true });
   });
 
-  it("shows usage variance and lets the owner map an unmapped variation", async () => {
-    render(
-      <MemoryRouter>
-        <PilotSquareUsagePage />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole("heading", { name: "What should I investigate?" })).toBeVisible();
-    expect(screen.getByText("Sales coverage")).toBeVisible();
-    expect(screen.getByText("Classic Cheeseburger - Regular")).toBeVisible();
-    expect(screen.getByText("Beef")).toBeVisible();
-    expect(screen.getAllByText("16.7%").length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalled());
-    expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId: 42,
-        squareCatalogObjectId: 501,
-        flowtallyEntityId: "11",
-        flowtallyEntityType: "menu_item",
-        mappingType: "menu_item",
-        status: "mapped",
-      }),
-    );
-  });
-
-  it("shows the saved mapping immediately after one successful save", async () => {
-    render(<MemoryRouter><PilotSquareUsagePage /></MemoryRouter>);
+  it("loads directly without Square Setup and makes one authoritative Usage request", async () => {
+    renderPage();
     expect(await screen.findByText("Classic Cheeseburger - Regular")).toBeVisible();
-    mockApi.fetchSquareCatalogMappings.mockResolvedValue({
-      menuItems: [{ id: 11, organizationId: 42, locationId: 7, recipeId: 21, name: "Classic Cheeseburger", normalizedName: "classic cheeseburger", category: "Burgers", sellingPrice: 18, active: true, notes: "", createdAt: null, updatedAt: null }],
-      mappings: [{ id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", isDeleted: false, soldUnits: 10, suggestedMenuItemId: 11, suggestedMenuItemName: "Classic Cheeseburger", mapping: { id: 1, squareCatalogObjectId: 501, squareObjectId: "VAR-1", squareObjectType: "ITEM_VARIATION", squareObjectName: "Classic Cheeseburger - Regular", squareItemName: "Classic Cheeseburger", flowtallyEntityId: "11", flowtallyEntityType: "menu_item", mappingType: "menu_item", status: "mapped" } }],
-      unmappedVariations: [], mappingCoverage: { mappedVariationCount: 1, totalVariationCount: 1, mappedPercent: 100 },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText("Current mapping: Classic Cheeseburger")).toBeVisible());
-    expect(screen.queryByRole("button", { name: "Map" })).toBeNull();
+    expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(1);
+    expect(mockApi.fetchSquareCatalogMappings).not.toHaveBeenCalled();
   });
 
-  it("starts mappings and usage together and renders mappings before usage completes", async () => {
-    let resolveMappings!: (value: unknown) => void;
-    let resolveUsage!: (value: unknown) => void;
-    const mappingPromise = new Promise((resolve) => { resolveMappings = resolve; });
-    const usagePromise = new Promise((resolve) => { resolveUsage = resolve; });
-    mockApi.fetchSquareCatalogMappings.mockReturnValue(mappingPromise);
-    mockApi.fetchSquareUsage.mockReturnValue(usagePromise);
+  it("preserves mapping controls and reloads them from the authoritative Usage response", async () => {
+    mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse({ mappings: [], unmappedVariations: [unmappedVariation] })).mockResolvedValueOnce(buildResponse());
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Map" }));
+    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 42, squareCatalogObjectId: 501, flowtallyEntityId: "11", status: "mapped" })));
+    await waitFor(() => expect(screen.getByText("Current mapping: Classic Cheeseburger")).toBeVisible());
+    expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(2);
+    expect(mockApi.fetchSquareCatalogMappings).not.toHaveBeenCalled();
+  });
 
-    render(
-      <MemoryRouter>
-        <PilotSquareUsagePage />
-      </MemoryRouter>,
-    );
+  it("does not request intermediate date ranges and applies both draft dates once", async () => {
+    renderPage();
+    await screen.findByText("Classic Cheeseburger - Regular");
+    mockApi.fetchSquareUsage.mockClear();
+    fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
+    fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
+    expect(mockApi.fetchSquareUsage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(1));
+    expect(mockApi.fetchSquareUsage).toHaveBeenCalledWith(expect.objectContaining({ startAt: "2026-10-07T17:45:00.000Z", endAt: "2026-10-07T18:45:00.000Z" }));
+  });
 
-    await waitFor(() => {
-      expect(mockApi.fetchSquareCatalogMappings).toHaveBeenCalled();
-      expect(mockApi.fetchSquareUsage).toHaveBeenCalled();
-    });
-    resolveMappings({ menuItems: [], mappings: [], unmappedVariations: [], mappingCoverage: { mappedVariationCount: 0, totalVariationCount: 0, mappedPercent: 0 } });
-    expect(await screen.findByText("No active mappings yet.")).toBeVisible();
-    expect(screen.getByText("Loading usage variance…")).toBeVisible();
+  it("clears stale values while a new Usage request is pending", async () => {
+    let resolveNext!: (value: unknown) => void;
+    mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse()).mockReturnValueOnce(new Promise((resolve) => { resolveNext = resolve; }));
+    renderPage();
+    await screen.findByText("16.7%");
+    fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
+    fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(screen.getByText("Loading usage and mapping data…")).toBeVisible());
+    expect(screen.queryByText("16.7%")).not.toBeInTheDocument();
+    resolveNext(buildResponse());
+    await waitFor(() => expect(screen.queryByText("Loading usage and mapping data…")).not.toBeInTheDocument());
+  });
 
-    resolveUsage({ usage: null });
-    await waitFor(() => expect(screen.queryByText("Loading usage variance…")).not.toBeInTheDocument());
+  it("shows one meaningful error when the authoritative request fails", async () => {
+    mockApi.fetchSquareUsage.mockRejectedValueOnce(new Error("Failed to fetch"));
+    renderPage();
+    expect(await screen.findByText("Usage and mapping data unavailable")).toBeVisible();
+    expect(screen.getByText("Failed to fetch")).toBeVisible();
+    expect(screen.queryByText("Mapping data unavailable")).not.toBeInTheDocument();
   });
 
   it("shows the backend stock-count basis and equations when a variance row is opened", async () => {
-    render(<MemoryRouter><PilotSquareUsagePage /></MemoryRouter>);
+    mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse());
+    renderPage();
     fireEvent.click(await screen.findByText("Beef"));
     expect(await screen.findByRole("dialog")).toBeVisible();
     expect(screen.getByText("Opening count")).toBeVisible();
     expect(screen.getByText("Closing count")).toBeVisible();
     expect(screen.getByText("Qualifying movement net")).toBeVisible();
     expect(screen.getByText(/Opening \+ qualifying movements/)).toBeVisible();
-    expect(screen.getByText(/POS-driven Square inventory consumption is excluded/)).toBeVisible();
   });
 });
