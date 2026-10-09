@@ -30,6 +30,7 @@ const CloseReportsPage = lazyNamed(() => import("./pages/CloseReportsPage"), "Cl
 const SchedulePage = lazyNamed(() => import("./pages/SchedulePage"), "SchedulePage");
 const PilotLoginPage = lazyNamed(() => import("./pilot/PilotLoginPage"), "PilotLoginPage");
 const PilotDashboardPage = lazyNamed(() => import("./pilot/PilotDashboardPage"), "PilotDashboardPage");
+const PilotReportsPage = lazyNamed(() => import("./pilot/PilotReportsPage"), "PilotReportsPage");
 const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"), "PilotPurchasesPage");
 const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
 const PilotMenuCostingPage = lazyNamed(() => import("./pilot/PilotMenuCostingPage"), "PilotMenuCostingPage");
@@ -210,6 +211,7 @@ const pilotAppRoutes = pilotAppEnabled
             children: [
               { index: true, element: <Navigate to="dashboard" replace /> },
               { path: "dashboard", element: <PilotDashboardPage /> },
+              { path: "reports", element: <PilotReportsPage /> },
               { path: "purchases", element: <PilotPurchasesPage /> },
               { path: "inventory", element: <PilotInventoryPage /> },
               {

@@ -1000,7 +1000,47 @@ def dashboard():
     permission_error = _require_role(membership, "operational.read")
     if permission_error is not None:
         return permission_error
-    return jsonify(_dashboard_snapshot(location.id, location=location)), 200
+    snapshot = _dashboard_snapshot(location.id, location=location)
+    from .reporting import build_report
+    daily = build_report(location=location, view="daily")
+    weekly = build_report(location=location, view="weekly")
+    snapshot["insights"] = {
+        "today": {
+            "totalCollected": daily["sales"]["totalCollected"],
+            "orderCount": daily["sales"]["orderCount"],
+            "topMenuItem": daily["sales"]["menuItems"][0] if daily["sales"]["menuItems"] else None,
+        },
+        "week": {
+            "totalCollected": weekly["sales"]["totalCollected"],
+            "salesChange": weekly["changes"].get("sales"),
+            "purchaseSpendChange": weekly["changes"].get("purchaseSpend"),
+        },
+        "estimatedFoodCost": daily["costing"],
+        "exceptions": weekly["exceptions"][:5],
+    }
+    return jsonify(snapshot), 200
+
+
+@bp.get("/api/pilot/reports")
+@login_required
+def reports():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    _, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
+    view = request.args.get("view", "daily")
+    if view not in {"daily", "weekly"}:
+        return json_error("Report view must be daily or weekly.", 400)
+    selected_date = request.args.get("date") or request.args.get("startDate")
+    try:
+        report_date = date.fromisoformat(selected_date) if selected_date else None
+    except ValueError:
+        return json_error("Report date must use YYYY-MM-DD format.", 400)
+    from .reporting import build_report
+    return jsonify(build_report(location=location, view=view, start=report_date)), 200
 
 
 @bp.get("/api/pilot/attention")

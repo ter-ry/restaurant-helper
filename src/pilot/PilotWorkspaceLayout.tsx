@@ -10,6 +10,7 @@ import { demoReadOnly } from "./pilotConfig";
 
 const navItems = [
   { to: "/app/dashboard", label: "Dashboard", group: "Overview", icon: LayoutDashboard },
+  { to: "/app/reports", label: "Reports", group: "Overview", icon: BarChart3, moduleKey: "REPORTING" },
   { to: "/app/purchases", label: "Purchases", group: "Operations", icon: ReceiptText },
   { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
   { to: "/app/stock-counts", label: "Stock Counts", group: "Operations", icon: ClipboardList },
