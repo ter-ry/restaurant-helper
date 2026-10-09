@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
+from .access import organization_has_enabled_module
 from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, weighted_average_inventory_cost
 from .extensions import db
 from .models import (
@@ -37,6 +38,7 @@ from .models import (
     SquareCatalogMapping,
     SquareCatalogObject,
     SquareConnection,
+    SquareDailySalesSummary,
     SquareOrder,
     StockCountSession,
     StockCountSessionLine,
@@ -996,11 +998,59 @@ def dashboard():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
+    snapshot = _dashboard_snapshot(location.id, location=location)
+    if organization_has_enabled_module(organization.id, "REPORTING"):
+        business_date = datetime.now(timezone.utc).date()
+        summaries = (
+            SquareDailySalesSummary.query.filter_by(restaurant_location_id=location.id)
+            .order_by(SquareDailySalesSummary.sale_date.desc())
+            .limit(8)
+            .all()
+        )
+        today_summaries = [summary for summary in summaries if summary.sale_date == business_date]
+        total_collected = sum((Decimal(str(summary.net_amount or 0)) for summary in today_summaries), Decimal("0"))
+        order_count = sum(int(summary.order_count or 0) for summary in today_summaries)
+        snapshot["insights"] = {
+            "today": {
+                "totalCollected": float(total_collected),
+                "orderCount": order_count,
+                "topMenuItem": None,
+            },
+            "week": {
+                "totalCollected": float(sum((Decimal(str(summary.net_amount or 0)) for summary in summaries), Decimal("0"))),
+                "salesChange": None,
+                "purchaseSpendChange": None,
+            },
+            "estimatedFoodCost": {"estimatedFoodCostPercent": None, "costCoveragePercent": 0, "costReadySalesAmount": 0, "totalMappedMenuSalesAmount": 0},
+            "exceptions": [],
+        }
+    return jsonify(snapshot), 200
+
+
+@bp.get("/api/pilot/reports")
+@login_required
+def reports():
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
     _, membership, _, location = context
     permission_error = _require_role(membership, "operational.read")
     if permission_error is not None:
         return permission_error
-    return jsonify(_dashboard_snapshot(location.id, location=location)), 200
+    view = request.args.get("view", "daily")
+    if view not in {"daily", "weekly"}:
+        return json_error("Report view must be daily or weekly.", 400)
+    selected_date = request.args.get("date") or request.args.get("startDate")
+    try:
+        report_date = date.fromisoformat(selected_date) if selected_date else None
+    except ValueError:
+        return json_error("Report date must use YYYY-MM-DD format.", 400)
+    from .reporting import build_report
+    return jsonify(build_report(location=location, view=view, start=report_date)), 200
 
 
 @bp.get("/api/pilot/attention")
@@ -3070,3 +3120,4 @@ def list_audit_events():
         .all()
     )
     return jsonify({"events": [serialize_audit_event(event) for event in events]}), 200
+

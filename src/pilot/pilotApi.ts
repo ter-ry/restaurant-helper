@@ -558,6 +558,34 @@ export interface PilotDashboardResponse {
     square: { syncErrorCount: number; unmappedVariationCount: number; severity: string };
     dailyClose: { count: number; severity: string };
   };
+  insights?: PilotDashboardInsights;
+}
+
+export interface PilotDashboardInsights {
+  today: { totalCollected: number; orderCount: number; topMenuItem: Record<string, unknown> | null };
+  week: { totalCollected: number; salesChange: Record<string, unknown> | null; purchaseSpendChange: Record<string, unknown> | null };
+  estimatedFoodCost: { estimatedFoodCostPercent: number | null; costCoveragePercent: number; costReadySalesAmount: number; totalMappedMenuSalesAmount: number };
+  exceptions: Array<Record<string, unknown>>;
+}
+
+export interface PilotReportResponse {
+  scope: Record<string, unknown>;
+  period: Record<string, unknown>;
+  sales: {
+    grossItemSales: number;
+    totalCollected: number;
+    orderCount: number;
+    byMenuItem: Array<Record<string, any>>;
+    unmappedLines: Array<Record<string, any>>;
+  };
+  purchasing: Record<string, unknown>;
+  inventory: Record<string, unknown>;
+  costing: { estimatedFoodCostPercent: number | null; costCoveragePercent: number; costReadySalesAmount: number; totalMappedMenuSalesAmount: number };
+  variance: Record<string, unknown>;
+  usageVariance: { valid: boolean; rows: Array<Record<string, any>> };
+  changes: { sales?: Record<string, any> | null; orders?: Record<string, any> | null; purchaseSpend?: Record<string, any> | null; menuMovers: Array<Record<string, any>> };
+  exceptions: Array<Record<string, unknown>>;
+  generatedAt: string;
 }
 
 export interface PilotPurchasesResponse {
@@ -744,6 +772,12 @@ async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise
 
 export async function fetchPilotDashboard() {
   return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
+}
+
+export async function fetchPilotReport(view: "daily" | "weekly", date?: string) {
+  const params = new URLSearchParams({ view });
+  if (date) params.set("date", date);
+  return requestJson<PilotReportResponse>(`/api/pilot/reports?${params.toString()}`);
 }
 
 export type PilotAttentionResponse = {

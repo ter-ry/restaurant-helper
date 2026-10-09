@@ -201,6 +201,22 @@ export function PilotDashboardPage() {
         </div>
       ) : null}
 
+      {data?.insights ? (
+        <Card className="p-6">
+          <SectionHeader
+            title="Sales and exceptions"
+            description="A concise view of current performance and actions worth reviewing."
+            action={<button className="text-sm font-semibold text-brand-700" type="button" onClick={() => navigate("/app/reports")}>Open reports</button>}
+          />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted">Today collected</p><p className="mt-2 text-2xl font-bold text-ink">{formatMoney(data.insights.today.totalCollected)}</p><p className="mt-1 text-sm text-muted">{formatNumber(data.insights.today.orderCount)} order(s)</p></div>
+            <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted">Top menu item</p><p className="mt-2 font-bold text-ink">{String(data.insights.today.topMenuItem?.menuItemName ?? "No mapped sales")}</p></div>
+            <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted">Estimated food cost</p><p className="mt-2 text-2xl font-bold text-ink">{data.insights.estimatedFoodCost.estimatedFoodCostPercent == null ? "—" : `${data.insights.estimatedFoodCost.estimatedFoodCostPercent.toFixed(1)}%`}</p><p className="mt-1 text-sm text-muted">{data.insights.estimatedFoodCost.costCoveragePercent.toFixed(0)}% sales coverage</p></div>
+            <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted">Open exceptions</p><p className="mt-2 text-2xl font-bold text-ink">{formatNumber(data.insights.exceptions.length)}</p><p className="mt-1 text-sm text-muted">Review from Reports</p></div>
+          </div>
+        </Card>
+      ) : null}
+
       {attentionItems.length ? (
         <Card className="border-amber-200 bg-amber-50/50 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">

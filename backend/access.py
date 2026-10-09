@@ -59,6 +59,7 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.update_menu_costing_menu_item": "MENU_COSTING",
     "pilot_api.delete_menu_costing_menu_item": "MENU_COSTING",
     "pilot_api.daily_close": "DAILY_CLOSE",
+    "pilot_api.reports": "REPORTING",
     "pilot_api.create_daily_close_session": "DAILY_CLOSE",
     "pilot_api.get_daily_close_session": "DAILY_CLOSE",
     "pilot_api.update_daily_close_session": "DAILY_CLOSE",
