@@ -88,6 +88,12 @@ async function loadCurrentSession() {
   };
 }
 
+function isAuthenticationFailure(error: unknown) {
+  if (!(error instanceof PilotApiError)) return false;
+  if (error.status === 401) return true;
+  return error.status === 403 && /authentication required|session expired|login required/i.test(error.message);
+}
+
 export function PilotSessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>(pilotAppEnabled ? "loading" : "disabled");
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +123,8 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const hadAuthenticatedSession = Boolean(user);
+    const statusBeforeRefresh = status;
     setStatus("loading");
     setError(null);
 
@@ -132,21 +140,26 @@ export function PilotSessionProvider({ children }: { children: ReactNode }) {
       setCsrfToken(current.csrfToken);
       setStatus(current.organization ? (organizationIsOperational(current.organization) ? "signedIn" : "needsActivation") : "needsSelection");
     } catch (err) {
-      const apiError = err instanceof PilotApiError ? err : null;
-      if (apiError?.status === 401 || apiError?.status === 403) {
+      if (isAuthenticationFailure(err)) {
         setStatus("signedOut");
+        setUser(null);
+        setOrganization(null);
+        setEnabledModuleKeys([]);
+        setOrganizations([]);
+        setLocations([]);
+        setCurrentLocation(null);
+        setMembershipRole(null);
+        setCsrfToken(null);
       } else {
-        setStatus("signedOut");
-        setError(err instanceof Error ? err.message : "Could not load the pilot session.");
+        // A timeout, network failure, or server error does not prove that the
+        // browser session expired. Keep the authenticated workspace mounted so
+        // Safari/mobile transient failures do not become false logout screens.
+        const restoredStatus = hadAuthenticatedSession
+          ? statusBeforeRefresh === "loading" ? "signedIn" : statusBeforeRefresh
+          : "signedOut";
+        setStatus(restoredStatus);
+        setError("Could not refresh the session. Check your connection and try again.");
       }
-      setUser(null);
-      setOrganization(null);
-      setEnabledModuleKeys([]);
-      setOrganizations([]);
-      setLocations([]);
-      setCurrentLocation(null);
-      setMembershipRole(null);
-      setCsrfToken(null);
     }
   };
 
