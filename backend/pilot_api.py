@@ -1008,7 +1008,7 @@ def dashboard():
         "today": {
             "totalCollected": daily["sales"]["totalCollected"],
             "orderCount": daily["sales"]["orderCount"],
-            "topMenuItem": daily["sales"]["menuItems"][0] if daily["sales"]["menuItems"] else None,
+            "topMenuItem": daily["sales"]["byMenuItem"][0] if daily["sales"]["byMenuItem"] else None,
         },
         "week": {
             "totalCollected": weekly["sales"]["totalCollected"],
