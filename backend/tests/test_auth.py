@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from flask import request
 
+from backend.app import create_app
 from backend.extensions import db
 from backend.models import User
 from backend.seed import (
@@ -16,9 +17,14 @@ from backend import tenant_context, utils
 
 
 def login(client, email: str, password: str):
-    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    return login_at(client, email, password, base_url="http://localhost")
+
+
+def login_at(client, email: str, password: str, *, base_url: str):
+    csrf = client.get("/api/auth/csrf", base_url=base_url).get_json()["csrfToken"]
     return client.post(
         "/api/auth/login",
+        base_url=base_url,
         json={"email": email, "password": password},
         headers={"X-CSRFToken": csrf},
     )
@@ -46,6 +52,30 @@ def test_owner_login_and_me_returns_session(client):
     assert me_body["organizations"][0]["organization"]["name"] == "Flowtally Pilot Restaurant"
     assert me_body["organizations"][0]["membershipRole"] == "owner"
     assert me_body["organizations"][0]["selected"] is True
+
+
+def test_same_user_can_keep_two_independent_sessions(app):
+    first_device = app.test_client()
+    second_app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "SQLALCHEMY_DATABASE_URI": app.config["SQLALCHEMY_DATABASE_URI"],
+            "SESSION_COOKIE_SECURE": False,
+            "ALLOWED_ORIGINS": ["http://127.0.0.1:5173"],
+            "FLOWTALLY_FRONTEND_ORIGIN": "http://127.0.0.1:5173",
+            "FLOWTALLY_RATE_LIMIT_STORAGE_URI": "memory://",
+            "WTF_CSRF_ENABLED": True,
+        }
+    )
+    second_device = second_app.test_client()
+    first_login = login_at(first_device, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD, base_url="http://device-one.local")
+    second_login = login_at(second_device, LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD, base_url="http://device-two.local")
+    assert first_login.status_code == 200, first_login.get_json()
+    assert second_login.status_code == 200, second_login.get_json()
+
+    assert first_device.get("/api/auth/me", base_url="http://device-one.local").status_code == 200
+    assert second_device.get("/api/auth/me", base_url="http://device-two.local").status_code == 200
 
 
 def test_login_rejects_unknown_or_wrong_password(client):

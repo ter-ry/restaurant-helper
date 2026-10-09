@@ -305,6 +305,8 @@ def test_production_uses_commercial_cookie_and_split_origin_csrf(monkeypatch: py
     config = choose_config().build()
 
     assert config["SESSION_COOKIE_NAME"] == "flowtally_session"
+    assert config["SESSION_COOKIE_SECURE"] is True
+    assert config["SESSION_COOKIE_SAMESITE"] == "Lax"
     assert config["FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF"] is True
 
 
