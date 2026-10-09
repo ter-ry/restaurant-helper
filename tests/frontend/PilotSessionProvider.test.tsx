@@ -84,6 +84,7 @@ function Probe() {
 }
 
 function renderProvider() {
+  api.fetchPilotOrganizations.mockResolvedValue({ organizations: [] });
   api.fetchCurrentOrganization.mockResolvedValue({
     organization,
     restaurantLocations: [location],
