@@ -98,12 +98,11 @@ describe("PilotSessionProvider session refresh failures", () => {
   afterEach(() => vi.clearAllMocks());
 
   it("keeps the authenticated workspace during a transient network failure", async () => {
-    api.fetchPilotSession
-      .mockResolvedValueOnce(session)
-      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    api.fetchPilotSession.mockResolvedValue(session);
     renderProvider();
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("signedIn"));
+    api.fetchPilotSession.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => expect(screen.getByTestId("error").textContent).toContain("Could not refresh the session"));
@@ -112,12 +111,11 @@ describe("PilotSessionProvider session refresh failures", () => {
   });
 
   it("keeps the authenticated workspace during a temporary server error", async () => {
-    api.fetchPilotSession
-      .mockResolvedValueOnce(session)
-      .mockRejectedValueOnce(new api.PilotApiError("Service unavailable", 503));
+    api.fetchPilotSession.mockResolvedValue(session);
     renderProvider();
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("signedIn"));
+    api.fetchPilotSession.mockRejectedValueOnce(new api.PilotApiError("Service unavailable", 503));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => expect(screen.getByTestId("error").textContent).toContain("Could not refresh the session"));
@@ -126,12 +124,11 @@ describe("PilotSessionProvider session refresh failures", () => {
   });
 
   it("clears the session only for a genuine unauthorized response", async () => {
-    api.fetchPilotSession
-      .mockResolvedValueOnce(session)
-      .mockRejectedValueOnce(new api.PilotApiError("Authentication required", 401));
+    api.fetchPilotSession.mockResolvedValue(session);
     renderProvider();
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("signedIn"));
+    api.fetchPilotSession.mockRejectedValueOnce(new api.PilotApiError("Authentication required", 401));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("signedOut"));
