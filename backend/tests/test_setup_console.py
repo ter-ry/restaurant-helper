@@ -867,6 +867,7 @@ def test_reporting_requires_entitlement_and_dependencies(app, client):
         missing_dependencies_id = missing_dependencies.id
 
     with client.session_transaction() as session:
+        session.pop("pilot_current_membership_id", None)
         session["pilot_current_organization_id"] = without_reporting_id
         session["pilot_current_location_id"] = without_reporting_location_id
     entitlement_response = client.get("/api/pilot/reports")
@@ -874,6 +875,7 @@ def test_reporting_requires_entitlement_and_dependencies(app, client):
     assert entitlement_response.get_json()["errors"]["module"] == "Reporting"
 
     with client.session_transaction() as session:
+        session.pop("pilot_current_membership_id", None)
         session["pilot_current_organization_id"] = missing_dependencies_id
         session["pilot_current_location_id"] = missing_dependencies_location_id
     dependency_response = client.get("/api/pilot/reports")
