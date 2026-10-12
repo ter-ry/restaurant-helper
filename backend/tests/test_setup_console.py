@@ -268,7 +268,12 @@ def test_platform_setup_console_exposes_optional_modules_without_org_rows(app, c
     assert menu_costing["backendReady"] is True
     reporting = next(entry for entry in detail_body["modules"] if entry["key"] == "REPORTING")
     assert reporting["status"] == "DISABLED"
-    assert reporting["backendReady"] is False
+    assert reporting["backendReady"] is True
+    assert reporting["dependencies"] == ["PURCHASES", "INVENTORY"]
+    scheduling = next(entry for entry in detail_body["modules"] if entry["key"] == "SCHEDULING")
+    assert scheduling["backendReady"] is False
+    quickbooks = next(entry for entry in detail_body["modules"] if entry["key"] == "QUICKBOOKS_EXPORT")
+    assert quickbooks["backendReady"] is False
     square = next(entry for entry in detail_body["modules"] if entry["key"] == "SQUARE_INTEGRATION")
     assert square["status"] == "DISABLED"
     assert square["backendReady"] is True
@@ -838,3 +843,39 @@ def test_showcase_seed_action_rejects_ineligible_tenant_and_support_role(app, cl
         json={"name": "Should Not Change"},
     )
     assert response.status_code == 403
+
+
+def test_reporting_requires_entitlement_and_dependencies(app, client):
+    login(client)
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        without_reporting = make_operational_organization(
+            owner,
+            name="Reporting Entitlement Required",
+            location_name="Reporting Kitchen",
+            enabled_modules=("PURCHASES", "INVENTORY"),
+        )
+        missing_dependencies = make_operational_organization(
+            owner,
+            name="Reporting Dependencies Required",
+            location_name="Dependencies Kitchen",
+            enabled_modules=("REPORTING",),
+        )
+        without_reporting_location_id = without_reporting.locations[0].id
+        missing_dependencies_location_id = missing_dependencies.locations[0].id
+        without_reporting_id = without_reporting.id
+        missing_dependencies_id = missing_dependencies.id
+
+    with client.session_transaction() as session:
+        session["pilot_current_organization_id"] = without_reporting_id
+        session["pilot_current_location_id"] = without_reporting_location_id
+    entitlement_response = client.get("/api/pilot/reports")
+    assert entitlement_response.status_code == 403
+    assert entitlement_response.get_json()["errors"]["module"] == "Reporting"
+
+    with client.session_transaction() as session:
+        session["pilot_current_organization_id"] = missing_dependencies_id
+        session["pilot_current_location_id"] = missing_dependencies_location_id
+    dependency_response = client.get("/api/pilot/reports")
+    assert dependency_response.status_code == 403
+    assert dependency_response.get_json()["errors"]["dependencies"] == "PURCHASES, INVENTORY"
