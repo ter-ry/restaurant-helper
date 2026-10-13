@@ -1,6 +1,8 @@
 from datetime import date
 
 from backend.reporting import _date_range, _period_delta
+from backend.reporting import _line_gross
+from types import SimpleNamespace
 
 
 class Location:
@@ -19,3 +21,10 @@ def test_daily_range_is_exact_and_weekly_has_equal_prior_window():
     assert daily == (date(2026, 10, 7), date(2026, 10, 7), None, None)
     weekly = _date_range("weekly", date(2026, 10, 1), date(2026, 10, 7), Location())
     assert weekly == (date(2026, 10, 1), date(2026, 10, 7), date(2026, 9, 24), date(2026, 9, 30))
+
+
+def test_legacy_unit_price_line_is_scaled_only_when_order_total_proves_it():
+    line = SimpleNamespace(gross_amount=18, quantity=2)
+    order = SimpleNamespace(gross_amount=36, discount_amount=0, tax_amount=0, tip_amount=0, lines=[line])
+    assert _line_gross(order, line) == 36
+
