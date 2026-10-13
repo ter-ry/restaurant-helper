@@ -575,6 +575,7 @@ export interface PilotReportResponse {
     grossItemSales: number;
     totalCollected: number;
     orderCount: number;
+    unitsSold: number;
     byMenuItem: Array<Record<string, any>>;
     unmappedLines: Array<Record<string, any>>;
   };
@@ -774,9 +775,10 @@ export async function fetchPilotDashboard() {
   return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
 }
 
-export async function fetchPilotReport(view: "daily" | "weekly", date?: string) {
+export async function fetchPilotReport(view: "daily" | "weekly", startDate?: string, endDate?: string) {
   const params = new URLSearchParams({ view });
-  if (date) params.set("date", date);
+  if (startDate) params.set(view === "daily" ? "date" : "startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
   return requestJson<PilotReportResponse>(`/api/pilot/reports?${params.toString()}`);
 }
 
@@ -1219,3 +1221,4 @@ export async function completePilotReorderPlan(planId: number) {
     method: "POST",
   });
 }
+
