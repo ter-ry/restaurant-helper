@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, isRouteErrorResponse, Link, Navigate, RouterProvider, useLocation, useParams, useRouteError } from "react-router-dom";
+import { createBrowserRouter, isRouteErrorResponse, Link, Navigate, RouterProvider, useLocation, useParams, useRouteError, useSearchParams } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import "./styles.css";
 import { PilotWorkspaceProvider } from "./lib/pilotWorkspace";
@@ -39,6 +39,22 @@ const PilotDailyClosePage = lazyNamed(() => import("./pilot/PilotDailyClosePage"
 const PilotSquareUsagePage = lazyNamed(() => import("./pilot/PilotSquareUsagePage"), "PilotSquareUsagePage");
 const PilotStockCountsPage = lazyNamed(() => import("./pilot/PilotStockCountsPage"), "PilotStockCountsPage");
 const PilotReorderPlanPage = lazyNamed(() => import("./pilot/PilotReorderPlanPage"), "PilotReorderPlanPage");
+
+function InventoryRoute() {
+  const [params] = useSearchParams();
+  const view = params.get("view");
+  if (view === "counts") return <PilotStockCountsPage />;
+  if (view === "reorder") return <PilotReorderPlanPage />;
+  if (view === "usage") return <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration"><PilotSquareUsagePage /></PilotModuleGate>;
+  return <PilotInventoryPage />;
+}
+
+function DashboardRoute() {
+  const [params] = useSearchParams();
+  const view = params.get("view");
+  if (view === "daily" || view === "weekly") return <PilotReportsPage initialView={view} />;
+  return <PilotDashboardPage />;
+}
 const GoogleAuthCompletePage = lazyNamed(() => import("./pages/GoogleAuthCompletePage"), "GoogleAuthCompletePage");
 const InvitationAcceptPage = lazyNamed(() => import("./pages/InvitationAcceptPage"), "InvitationAcceptPage");
 const TeamManagementPage = lazyNamed(() => import("./pages/TeamManagementPage"), "TeamManagementPage");
@@ -210,10 +226,11 @@ const pilotAppRoutes = pilotAppEnabled
             element: <PilotWorkspaceLayout />,
             children: [
               { index: true, element: <Navigate to="dashboard" replace /> },
-              { path: "dashboard", element: <PilotDashboardPage /> },
+              { path: "dashboard", element: <DashboardRoute /> },
+              { path: "reports", element: <Navigate to="dashboard?view=daily" replace /> },
               { path: "reports", element: <PilotReportsPage /> },
               { path: "purchases", element: <PilotPurchasesPage /> },
-              { path: "inventory", element: <PilotInventoryPage /> },
+              { path: "inventory", element: <InventoryRoute /> },
               {
                 path: "menu-costing",
                 element: (
@@ -246,8 +263,8 @@ const pilotAppRoutes = pilotAppEnabled
                   </PilotModuleGate>
                 ),
               },
-              { path: "stock-counts", element: <PilotStockCountsPage /> },
-              { path: "reorder-plan", element: <PilotReorderPlanPage /> },
+              { path: "stock-counts", element: <Navigate to="../inventory?view=counts" replace /> },
+              { path: "reorder-plan", element: <Navigate to="../inventory?view=reorder" replace /> },
             ],
           },
         ],
@@ -304,4 +321,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </PilotWorkspaceProvider>
   </React.StrictMode>,
 );
+
 
