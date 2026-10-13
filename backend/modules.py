@@ -58,7 +58,7 @@ MODULE_REGISTRY: dict[str, dict[str, Any]] = {
         "key": "REPORTING",
         "displayName": "Reporting",
         "description": "Operational reporting and summaries.",
-        "backendReady": False,
+        "backendReady": True,
         "dependencies": ["PURCHASES", "INVENTORY"],
         "dashboardWidgets": ["operational_summary"],
         "requiredSetupTasks": ["reporting_review"],
