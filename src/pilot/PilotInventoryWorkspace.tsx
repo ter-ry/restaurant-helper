@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, MoreHorizontal, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -159,7 +159,7 @@ function formatLatestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchas
 
 export function PilotInventoryPage() {
   const navigate = useNavigate();
-  const { organization, currentLocation } = usePilotSession();
+  const { organization, currentLocation, enabledModuleKeys } = usePilotSession();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -1232,6 +1232,12 @@ export function PilotInventoryPage() {
       {error ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
         <>
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-slate-50 p-2 text-sm">
+            <NavLink to="/app/inventory" end className={({ isActive }) => `rounded-lg px-3 py-2 font-semibold ${isActive ? "bg-white text-ink shadow-sm" : "text-muted"}`}>Stock</NavLink>
+            {enabledModuleKeys.includes("STOCK_COUNTS") ? <NavLink to="/app/inventory?view=counts" className="rounded-lg px-3 py-2 font-semibold text-muted">Counts</NavLink> : null}
+            {enabledModuleKeys.includes("REORDER_PLANS") ? <NavLink to="/app/inventory?view=reorder" className="rounded-lg px-3 py-2 font-semibold text-muted">Reorder{reorderCount > 0 ? ` (${reorderCount})` : ""}</NavLink> : null}
+            {enabledModuleKeys.includes("SQUARE_INTEGRATION") ? <NavLink to="/app/inventory?view=usage" className="rounded-lg px-3 py-2 font-semibold text-muted">Usage &amp; Variance</NavLink> : null}
+          </div>
           <div className="inventory-toolbar pilot-inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-3">
@@ -1257,7 +1263,7 @@ export function PilotInventoryPage() {
                   }}
                 >{demoReadOnly ? "Read-only demo" : "Create item"}</Button>
                 <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>Refresh</Button>
-                <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
+                <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/inventory?view=reorder")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
               </div>
               <div className="pilot-mobile-actions relative sm:hidden">
                 <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-ink" type="button" aria-label="Open inventory actions" aria-expanded={inventoryActionMenuOpen} onClick={() => setInventoryActionMenuOpen((open) => !open)}>
@@ -1267,7 +1273,7 @@ export function PilotInventoryPage() {
                   <div className="absolute right-0 top-12 z-20 w-52 rounded-xl border border-line bg-white p-2 shadow-xl">
                     <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={demoReadOnly} onClick={() => { setInventoryActionMenuOpen(false); setInventoryTab("items"); startNewItem(); }}><Plus className="h-4 w-4" />{demoReadOnly ? "Read-only demo" : "Create item"}</button>
                     <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={loading} onClick={() => { setInventoryActionMenuOpen(false); void load(); }}><RefreshCcw className="h-4 w-4" />Refresh</button>
-                    <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/reorder-plan"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"})</button>
+                    <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/inventory?view=reorder"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"})</button>
                   </div>
                 ) : null}
               </div>
@@ -1323,3 +1329,4 @@ export function PilotInventoryPage() {
     </div>
   );
 }
+
