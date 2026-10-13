@@ -57,7 +57,7 @@ export function PilotDashboardPage() {
         label: "Reorder now",
         value: dashboardLoading ? "—" : formatNumber(data?.summary.inventoryRecommendationCount ?? data?.operationalAttention?.reorder.count),
         helper: dashboardLoading ? "Loading reorder status" : `${formatNumber(data?.summary.inventoryRecommendationCount ?? data?.operationalAttention?.reorder.count)} item(s) need attention`,
-        to: "/app/reorder-plan",
+        to: "/app/inventory?view=reorder",
       },
       {
         label: "Invoices to review",
@@ -86,7 +86,7 @@ export function PilotDashboardPage() {
       title: "Reorder pressure",
       detail: `${data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0} item(s) need ordering now.`,
       count: data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0,
-      to: "/app/reorder-plan",
+      to: "/app/inventory?view=reorder",
       tone: "warning" as const,
       action: "Open Reorder Plan",
     },
@@ -140,10 +140,10 @@ export function PilotDashboardPage() {
         title: `Count #${session.id}`,
         detail: `${formatNumber(session.countedLineCount)}/${formatNumber(session.itemCount)} counted · ${formatNumber(session.varianceTotal)} variance`,
         badge: session.status,
-        onClick: () => navigate(`/app/stock-counts?sessionId=${session.id}`),
+        onClick: () => navigate(`/app/inventory?view=counts?sessionId=${session.id}`),
       })),
       empty: "No draft stock counts waiting to continue.",
-      fallback: () => navigate("/app/stock-counts"),
+      fallback: () => navigate("/app/inventory?view=counts"),
       fallbackLabel: "Open stock counts",
     },
     {
@@ -166,16 +166,21 @@ export function PilotDashboardPage() {
         title: plan.name,
         detail: `${formatNumber(plan.lineCount)} lines · ${formatNumber(plan.supplierCount)} suppliers`,
         badge: plan.status,
-        onClick: () => navigate(`/app/reorder-plan?planId=${plan.id}`),
+        onClick: () => navigate(`/app/inventory?view=reorder?planId=${plan.id}`),
       })),
       empty: "No draft reorder plans waiting to continue.",
-      fallback: () => navigate("/app/reorder-plan"),
+      fallback: () => navigate("/app/inventory?view=reorder"),
       fallbackLabel: "Open reorder plan",
     },
   ];
 
   return (
     <div className="workspace-page">
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-slate-50 p-2 text-sm">
+        <Link to="/app/dashboard" className="rounded-lg bg-white px-3 py-2 font-semibold text-ink shadow-sm">Overview</Link>
+        <Link to="/app/dashboard?view=daily" className="rounded-lg px-3 py-2 font-semibold text-muted">Daily</Link>
+        <Link to="/app/dashboard?view=weekly" className="rounded-lg px-3 py-2 font-semibold text-muted">Weekly</Link>
+      </div>
       <WorkspacePageHeader
         eyebrow="Dashboard"
         title="Today"
@@ -243,7 +248,7 @@ export function PilotDashboardPage() {
             { label: "Invoice", icon: <ClipboardList className="h-4 w-4" />, status: data?.workflow.purchase ?? "Needs review", to: "/app/purchases" },
             { label: "Review", icon: <RefreshCcw className="h-4 w-4" />, status: data?.workflow.review ?? "Needs review", to: "/app/purchases" },
           { label: "Inventory", icon: <ShoppingCart className="h-4 w-4" />, status: data?.workflow.inventory ?? "Not ready", to: "/app/inventory" },
-          { label: "Reorder", icon: <PackageSearch className="h-4 w-4" />, status: data?.workflow.reorder ?? "Alert", to: "/app/reorder-plan" },
+          { label: "Reorder", icon: <PackageSearch className="h-4 w-4" />, status: data?.workflow.reorder ?? "Alert", to: "/app/inventory?view=reorder" },
           { label: "Close", icon: <CalendarDays className="h-4 w-4" />, status: data?.workflow.close ?? "Open", to: "/app/daily-close" },
           { label: "Export", icon: <ArrowUpRight className="h-4 w-4" />, status: data?.workflow.export ?? "Not ready", to: "/app/purchases" },
           ].map((step, index, list) => (
@@ -386,3 +391,4 @@ export function PilotDashboardPage() {
     </div>
   );
 }
+
