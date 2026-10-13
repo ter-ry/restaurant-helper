@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, RefreshCcw } from "lucide-react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -13,31 +14,40 @@ function Change({ value }: { value: Record<string, any> | null | undefined }) {
   return <span className={positive ? "text-emerald-700" : "text-rose-700"}>{positive ? <ArrowUpRight className="mr-1 inline h-4 w-4" /> : <ArrowDownRight className="mr-1 inline h-4 w-4" />}{value.percent == null ? "New" : `${Math.abs(Number(value.percent)).toFixed(1)}%`}</span>;
 }
 
-export function PilotReportsPage() {
-  const [view, setView] = useState<"daily" | "weekly">("daily");
+export function PilotReportsPage({ initialView = "daily" }: { initialView?: "daily" | "weekly" }) {
+  const [view, setView] = useState<"daily" | "weekly">(initialView);
   const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [data, setData] = useState<PilotReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
-    try { setData(await fetchPilotReport(view, date || undefined)); } catch (err) { setError(err instanceof Error ? err.message : "Could not load the report."); } finally { setLoading(false); }
-  }, [date, view]);
+    try {
+      const response = await fetchPilotReport(view, date || undefined, view === "weekly" ? (endDate || undefined) : undefined);
+      setData(response);
+      if (view === "weekly") {
+        if (!date && typeof response.period.startDate === "string") setDate(response.period.startDate);
+        if (!endDate && typeof response.period.endDate === "string") setEndDate(response.period.endDate);
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not load the report."); } finally { setLoading(false); }
+  }, [date, endDate, view]);
   useEffect(() => { void load(); }, [load]);
 
   return <div className="space-y-6">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-slate-50 p-2 text-sm"><Link to="/app/dashboard" className="rounded-lg px-3 py-2 font-semibold text-muted">Overview</Link><button type="button" className={`rounded-lg px-3 py-2 font-semibold ${view === "daily" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => setView("daily")}>Daily</button><button type="button" className={`rounded-lg px-3 py-2 font-semibold ${view === "weekly" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => setView("weekly")}>Weekly</button></div>
     <Card className="surface-panel p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Reporting</p><h1 className="mt-2 text-3xl font-bold text-ink">{view === "daily" ? "Daily report" : "Weekly report"}</h1><p className="mt-2 text-sm text-muted">Read-only sales, purchasing, inventory and exception insight for the active restaurant location.</p></div>
-        <div className="flex flex-wrap items-center gap-2"><div className="flex rounded-xl border border-line bg-slate-50 p-1"><button type="button" className={`rounded-lg px-3 py-2 text-sm font-semibold ${view === "daily" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => setView("daily")}>Daily</button><button type="button" className={`rounded-lg px-3 py-2 text-sm font-semibold ${view === "weekly" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => setView("weekly")}>Weekly</button></div><input aria-label="Report date" className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} onBlur={() => void load()} /><Button type="button" variant="secondary" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</Button></div>
+        <div><p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Reporting</p><h1 className="mt-2 text-3xl font-bold text-ink">{view === "daily" ? "Daily report" : "Weekly report"}</h1><p className="mt-2 text-sm text-muted">Read-only sales, purchasing, inventory and exception insight for the active restaurant location.</p>{data?.period ? <p className="mt-2 text-xs font-semibold text-muted">Selected period: {String(data.period.startDate)}{view === "weekly" ? ` – ${String(data.period.endDate)}` : ""}{view === "weekly" && data.period.priorStartDate ? ` · Compared with ${String(data.period.priorStartDate)} – ${String(data.period.priorEndDate)}` : ""}</p> : null}</div>
+        <div className="flex flex-wrap items-center gap-2">{view === "daily" ? <input aria-label="Report date" className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} onBlur={() => void load()} /> : <><input aria-label="Report start date" className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} /><span className="text-muted">to</span><input aria-label="Report end date" className="input" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></>}<Button type="button" variant="secondary" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</Button></div>
       </div>
       {error ? <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div> : null}
       {loading && !data ? <p className="mt-6 text-sm text-muted" aria-busy="true">Loading report...</p> : null}
     </Card>
     {data ? <>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[["Gross item sales", formatMoney(data.sales.grossItemSales)], ["Total collected", formatMoney(data.sales.totalCollected)], ["Orders", formatNumber(data.sales.orderCount)], ["Estimated food cost", data.costing.estimatedFoodCostPercent == null ? "Unavailable" : `${data.costing.estimatedFoodCostPercent.toFixed(1)}%`]].map(([label, value]) => <Card key={label} className="p-5"><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-2 text-2xl font-bold text-ink">{value}</p>{label === "Estimated food cost" ? <p className="mt-1 text-xs text-muted">Current-cost estimate · {data.costing.costCoveragePercent.toFixed(0)}% sales coverage</p> : null}</Card>)}
+        {[["Gross item sales", formatMoney(data.sales.grossItemSales)], ["Total collected", formatMoney(data.sales.totalCollected)], ["Orders", formatNumber(data.sales.orderCount)], ["Units sold", formatNumber(data.sales.unitsSold)], ["Estimated food cost", data.costing.estimatedFoodCostPercent == null ? "Unavailable" : `${data.costing.estimatedFoodCostPercent.toFixed(1)}%`]].map(([label, value]) => <Card key={label} className="p-5"><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-2 text-2xl font-bold text-ink">{value}</p>{label === "Estimated food cost" ? <p className="mt-1 text-xs text-muted">Current-cost estimate · {data.costing.costCoveragePercent.toFixed(0)}% sales coverage</p> : null}</Card>)}
       </div>
       {view === "weekly" && data.changes ? <Card className="p-6"><SectionHeader title="Period-over-period changes" description="Compared with the immediately preceding equal-length business period." /><div className="mt-4 grid gap-4 sm:grid-cols-3"><div><p className="text-sm text-muted">Collected sales</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.sales?.current)}</p><Change value={data.changes.sales} /></div><div><p className="text-sm text-muted">Orders</p><p className="mt-1 text-xl font-bold text-ink">{formatNumber(data.changes.orders?.current)}</p><Change value={data.changes.orders} /></div><div><p className="text-sm text-muted">Purchase spend</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.purchaseSpend?.current)}</p><Change value={data.changes.purchaseSpend} /></div></div></Card> : null}
       <Card className="p-6"><SectionHeader title="Menu-item performance" description="Mapped Square sales with current recipe-cost estimates." /><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr><th className="px-3 py-3">Item</th><th className="px-3 py-3 text-right">Units</th><th className="px-3 py-3 text-right">Gross item sales</th><th className="px-3 py-3 text-right">Net item sales</th><th className="px-3 py-3 text-right">Food cost</th><th className="px-3 py-3 text-right">Change</th></tr></thead><tbody>{data.sales.byMenuItem.map((row) => <tr key={row.menuItemId} className="border-b border-line"><td className="px-3 py-3"><p className="font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{row.category}{row.costAvailable ? "" : " · cost unavailable"}</p></td><td className="px-3 py-3 text-right">{formatNumber(row.quantity)}</td><td className="px-3 py-3 text-right">{formatMoney(row.grossAmount)}</td><td className="px-3 py-3 text-right">{formatMoney(row.netAmount)}</td><td className="px-3 py-3 text-right">{row.costAvailable && row.estimatedFoodCostPercent != null ? `${Number(row.estimatedFoodCostPercent).toFixed(1)}%` : "—"}</td><td className="px-3 py-3 text-right"><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></td></tr>)}</tbody></table></div>{data.sales.unmappedLines.length ? <p className="mt-4 text-sm text-amber-800">{data.sales.unmappedLines.length} Square line(s) are not mapped to Flowtally menu items.</p> : null}</Card>
@@ -46,3 +56,4 @@ export function PilotReportsPage() {
     </> : null}
   </div>;
 }
+
