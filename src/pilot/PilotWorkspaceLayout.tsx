@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { AlertTriangle, BarChart3, Building2, ChevronLeft, ChevronRight, ClipboardList, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Moon, Package, ReceiptText, RefreshCw, ShoppingCart, SquareStack, Sun, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
+import { AlertTriangle, Building2, ChevronLeft, ChevronRight, CircleDollarSign, ExternalLink, LayoutDashboard, MapPin, Menu, Moon, Package, ReceiptText, RefreshCw, SquareStack, Sun, UtensilsCrossed, LogOut, Settings, UserCircle, X } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -13,11 +13,8 @@ const navItems = [
   { to: "/app/reports", label: "Reports", group: "Overview", icon: BarChart3, moduleKey: "REPORTING" },
   { to: "/app/purchases", label: "Purchases", group: "Operations", icon: ReceiptText },
   { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
-  { to: "/app/stock-counts", label: "Stock Counts", group: "Operations", icon: ClipboardList },
-  { to: "/app/reorder-plan", label: "Reorder Plan", group: "Operations", icon: ShoppingCart },
   { to: "/app/menu-costing", label: "Menu Costing", group: "Menu & Cost", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
   { to: "/app/square", label: "Square", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/square-usage", label: "Usage / Variance", group: "Sales & Close", icon: BarChart3, moduleKey: "SQUARE_INTEGRATION" },
   { to: "/app/daily-close", label: "Daily Close", group: "Sales & Close", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
 ];
 
@@ -664,4 +661,5 @@ export function PilotWorkspaceLayout() {
     </div>
   );
 }
+
 
