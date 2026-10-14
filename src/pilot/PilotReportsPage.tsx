@@ -32,7 +32,7 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
   const { currentLocation } = usePilotSession();
   const timezone = currentLocation?.timezone ?? "America/Toronto";
   const today = useMemo(() => locationDateKey(new Date().toISOString(), timezone), [timezone]);
-  const [view, setView] = useState<ReportView>(initialView);
+  const view = initialView;
   const [dailyDate, setDailyDate] = useState("");
   const [weeklyStart, setWeeklyStart] = useState("");
   const [weeklyEnd, setWeeklyEnd] = useState("");
@@ -40,7 +40,6 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { setView(initialView); }, [initialView]);
   useEffect(() => {
     if (!today) return;
     setDailyDate((current) => current || today);
@@ -91,7 +90,6 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
           <Button type="button" variant="secondary" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</Button>
         </div>
       </div>
-      <div className="mt-4 flex gap-2" role="tablist" aria-label="Report period">{(["daily", "weekly"] as ReportView[]).map((next) => <button key={next} type="button" role="tab" aria-selected={view === next} className={"rounded-xl border px-3 py-2 text-sm font-semibold " + (view === next ? "border-ink bg-ink text-white" : "border-line bg-white text-muted")} onClick={() => setView(next)}>{next === "daily" ? "Daily" : "Weekly"}</button>)}</div>
       {view === "weekly" && data ? <p className="mt-4 text-sm text-muted">Selected period: <strong className="text-ink">{displayDate(period.startDate)} – {displayDate(period.endDate)}</strong> · Compared with: <strong className="text-ink">{displayDate(period.priorStartDate)} – {displayDate(period.priorEndDate)}</strong></p> : null}
       {error ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div> : null}
       {loading && !data ? <p className="mt-4 text-sm text-muted" aria-busy="true">Loading report...</p> : null}
