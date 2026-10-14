@@ -84,11 +84,11 @@ def test_showcase_eight_completed_orders_use_current_square_money_fields():
     assert totals["units"] == Decimal("10")
     assert totals["gross"] == Decimal("180")
     assert totals["discount"] == Decimal("2.70")
-    assert totals["net"] == Decimal("177.30")
+    assert totals["net_item_sales"] == Decimal("177.30")
     assert totals["tip"] == Decimal("4.50")
     assert totals["tax"] == Decimal("0")
     assert totals["refund"] == Decimal("0")
-    assert totals["net"] + totals["tip"] == Decimal("181.80")
+    assert totals["net"] == Decimal("181.80")
 
 
 def test_sales_period_excludes_open_cancelled_and_voided_orders():
