@@ -1,5 +1,4 @@
 import { useSearchParams } from "react-router-dom";
-import { LayoutDashboard } from "lucide-react";
 import { PilotDashboardPage } from "./PilotDashboardPage";
 import { PilotReportsPage } from "./PilotReportsPage";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
@@ -16,13 +15,6 @@ export function PilotDashboardWorkspacePage() {
 
   return (
     <div className="workspace-page">
-      <div className="mb-4 flex items-center gap-3">
-        <LayoutDashboard className="h-6 w-6 text-brand-700" />
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted">Overview</p>
-          <h1 className="text-2xl font-bold text-ink">Dashboard</h1>
-        </div>
-      </div>
       <WorkspaceTabs
         value={view}
         onChange={setView}
