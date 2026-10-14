@@ -1,5 +1,4 @@
 import { useSearchParams } from "react-router-dom";
-import { Package } from "lucide-react";
 import { PilotModuleGate } from "./PilotModuleGate";
 import { PilotInventoryPage } from "./PilotInventoryPage";
 import { PilotStockCountsPage } from "./PilotStockCountsPage";
@@ -19,13 +18,6 @@ export function PilotInventoryHubPage() {
 
   return (
     <div className="workspace-page">
-      <div className="mb-4 flex items-center gap-3">
-        <Package className="h-6 w-6 text-brand-700" />
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted">Operations</p>
-          <h1 className="text-2xl font-bold text-ink">Inventory</h1>
-        </div>
-      </div>
       <WorkspaceTabs
         value={view}
         onChange={setView}
