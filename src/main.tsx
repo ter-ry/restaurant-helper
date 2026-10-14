@@ -240,16 +240,9 @@ const pilotAppRoutes = pilotAppEnabled
                   </PilotModuleGate>
                 ),
               },
-              {
-                path: "square-usage",
-                element: (
-                  <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
-                    <PilotSquareUsagePage />
-                  </PilotModuleGate>
-                ),
-              },
-              { path: "stock-counts", element: <PilotStockCountsPage /> },
-              { path: "reorder-plan", element: <PilotReorderPlanPage /> },
+              { path: "square-usage", element: <Navigate to="/app/inventory?view=usage" replace /> },
+              { path: "stock-counts", element: <Navigate to="/app/inventory?view=counts" replace /> },
+              { path: "reorder-plan", element: <Navigate to="/app/inventory?view=reorder" replace /> },
             ],
           },
         ],
