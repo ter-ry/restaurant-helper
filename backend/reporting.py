@@ -117,7 +117,7 @@ def _sales_totals(orders: list[SquareOrder], summaries: list[SquareDailySalesSum
             "net_item_sales": sum((_dec(row.gross_amount) - _dec(row.discount_amount) for row in scoped_summaries), Decimal("0")),
             "net": sum((_dec(row.net_amount) for row in scoped_summaries), Decimal("0")),
             "orders": sum(int(row.order_count or 0) for row in scoped_summaries),
-            "units": Decimal("0"),
+            "units": None,
             "cancelled": sum(int(row.cancelled_order_count or 0) for row in scoped_summaries),
             "source": "square_daily_sales_summaries",
         }
@@ -298,7 +298,7 @@ def build_report(*, location: RestaurantLocation, view: str, start: date | None 
     response = {
         "scope": {"organizationId": organization_id, "locationId": location.id, "locationName": location.name, "timezone": location.timezone},
         "period": {"view": view, "startDate": start_date.isoformat(), "endDate": end_date.isoformat(), "priorStartDate": prior_start.isoformat() if prior_start else None, "priorEndDate": prior_end.isoformat() if prior_end else None},
-        "sales": {"currency": "CAD", "grossItemSales": _money(totals["gross"]), "netItemSales": _money(totals["net_item_sales"]), "discounts": _money(totals["discount"]), "tax": _money(totals["tax"]), "tips": _money(totals["tip"]), "refunds": _money(totals["refund"]), "totalCollected": _money(totals["net"]), "orderCount": totals["orders"], "cancelledOrderCount": totals["cancelled"], "source": totals["source"], "byMenuItem": menu_sales, "unmappedLines": unmapped},
+        "sales": {"currency": "CAD", "grossItemSales": _money(totals["gross"]), "netItemSales": _money(totals["net_item_sales"]), "discounts": _money(totals["discount"]), "tax": _money(totals["tax"]), "tips": _money(totals["tip"]), "refunds": _money(totals["refund"]), "totalCollected": _money(totals["net"]), "orderCount": totals["orders"], "unitsSold": float(totals["units"]) if totals["units"] is not None else None, "cancelledOrderCount": totals["cancelled"], "source": totals["source"], "byMenuItem": menu_sales, "unmappedLines": unmapped},
         "purchasing": purchasing,
         "inventory": {"summary": _inventory_summary(location.id), "statusCounts": {"inStock": statuses.count("In stock"), "lowStock": statuses.count("Low stock"), "reorderNow": statuses.count("Reorder now"), "outOfStock": statuses.count("Out of stock")}, "reorderNow": reorder, "recentMovements": [serialize_inventory_movement(movement) for movement in InventoryMovement.query.filter_by(organization_id=organization_id, location_id=location.id).order_by(InventoryMovement.created_at.desc()).limit(20).all()]},
         "costing": {"costReadySalesAmount": _money(cost_ready_sales), "totalMappedMenuSalesAmount": _money(total_menu_sales), "estimatedFoodCostPercent": _money((sum((_dec(row["currentCostPerSale"]) * _dec(row["quantity"]) for row in menu_sales if row["costAvailable"]), Decimal("0")) / cost_ready_sales) * 100) if cost_ready_sales else None, "costCoveragePercent": _money((cost_ready_sales / total_menu_sales) * 100) if total_menu_sales else 0},
