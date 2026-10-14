@@ -775,9 +775,16 @@ export async function fetchPilotDashboard() {
   return requestJson<PilotDashboardResponse>("/api/pilot/dashboard");
 }
 
-export async function fetchPilotReport(view: "daily" | "weekly", date?: string) {
+export async function fetchPilotReport(
+  view: "daily" | "weekly",
+  selection?: string | { startDate?: string; endDate?: string },
+) {
   const params = new URLSearchParams({ view });
-  if (date) params.set("date", date);
+  if (typeof selection === "string" && selection) params.set("date", selection);
+  if (typeof selection === "object" && selection) {
+    if (selection.startDate) params.set("startDate", selection.startDate);
+    if (selection.endDate) params.set("endDate", selection.endDate);
+  }
   return requestJson<PilotReportResponse>(`/api/pilot/reports?${params.toString()}`);
 }
 

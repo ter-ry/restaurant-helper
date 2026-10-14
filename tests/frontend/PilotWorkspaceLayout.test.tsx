@@ -65,6 +65,15 @@ describe("PilotWorkspaceLayout", () => {
     expect(screen.getByText("Dashboard outlet")).toBeVisible();
   });
 
+  it("keeps secondary workflows inside their parent workspaces", () => {
+    renderLayout();
+    expect(screen.queryByRole("link", { name: "Reports" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Stock Counts" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Reorder Plan" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Usage / Variance" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Inventory" })).toHaveAttribute("href", "/app/inventory");
+  });
+
   it("organizes workspace navigation into the operational groups", () => {
     renderLayout();
 

@@ -11,6 +11,7 @@ import { PilotAppGate } from "./pilot/PilotAppGate";
 import { PilotModuleGate } from "./pilot/PilotModuleGate";
 import { PilotWorkspaceLayout } from "./pilot/PilotWorkspaceLayout";
 import { pilotAppEnabled } from "./pilot/pilotConfig";
+import { LegacyPilotRedirect } from "./pilot/LegacyPilotRedirect";
 
 const lazyNamed = (factory: () => Promise<any>, exportName: string) =>
   lazy(async () => {
@@ -30,6 +31,8 @@ const CloseReportsPage = lazyNamed(() => import("./pages/CloseReportsPage"), "Cl
 const SchedulePage = lazyNamed(() => import("./pages/SchedulePage"), "SchedulePage");
 const PilotLoginPage = lazyNamed(() => import("./pilot/PilotLoginPage"), "PilotLoginPage");
 const PilotDashboardPage = lazyNamed(() => import("./pilot/PilotDashboardPage"), "PilotDashboardPage");
+const PilotDashboardWorkspacePage = lazyNamed(() => import("./pilot/PilotDashboardWorkspacePage"), "PilotDashboardWorkspacePage");
+const PilotInventoryHubPage = lazyNamed(() => import("./pilot/PilotInventoryHubPage"), "PilotInventoryHubPage");
 const PilotReportsPage = lazyNamed(() => import("./pilot/PilotReportsPage"), "PilotReportsPage");
 const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"), "PilotPurchasesPage");
 const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
@@ -210,10 +213,10 @@ const pilotAppRoutes = pilotAppEnabled
             element: <PilotWorkspaceLayout />,
             children: [
               { index: true, element: <Navigate to="dashboard" replace /> },
-              { path: "dashboard", element: <PilotDashboardPage /> },
-              { path: "reports", element: <PilotReportsPage /> },
+              { path: "dashboard", element: <PilotDashboardWorkspacePage /> },
+              { path: "reports", element: <LegacyPilotRedirect view="daily" dashboard /> },
               { path: "purchases", element: <PilotPurchasesPage /> },
-              { path: "inventory", element: <PilotInventoryPage /> },
+              { path: "inventory", element: <PilotInventoryHubPage /> },
               {
                 path: "menu-costing",
                 element: (
@@ -238,16 +241,9 @@ const pilotAppRoutes = pilotAppEnabled
                   </PilotModuleGate>
                 ),
               },
-              {
-                path: "square-usage",
-                element: (
-                  <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
-                    <PilotSquareUsagePage />
-                  </PilotModuleGate>
-                ),
-              },
-              { path: "stock-counts", element: <PilotStockCountsPage /> },
-              { path: "reorder-plan", element: <PilotReorderPlanPage /> },
+              { path: "square-usage", element: <LegacyPilotRedirect view="usage" /> },
+              { path: "stock-counts", element: <LegacyPilotRedirect view="counts" /> },
+              { path: "reorder-plan", element: <LegacyPilotRedirect view="reorder" /> },
             ],
           },
         ],
