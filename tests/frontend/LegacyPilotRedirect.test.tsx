@@ -1,4 +1,5 @@
 import React from "react";
+import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { LegacyPilotRedirect } from "../../src/pilot/LegacyPilotRedirect";
@@ -22,7 +23,7 @@ describe("legacy pilot redirects", () => {
 });
 
 function renderWithRoute(path: string, initialEntry: string, view: string) {
-  return require("@testing-library/react").render(
+  return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path={path} element={<LegacyPilotRedirect view={view} dashboard />} />
