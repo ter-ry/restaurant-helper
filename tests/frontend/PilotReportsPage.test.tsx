@@ -30,6 +30,6 @@ describe("PilotReportsPage", () => {
     expect(screen.getByText("Total collected")).toBeInTheDocument();
     expect(screen.getByText("$181.80")).toBeInTheDocument();
     expect(screen.getByText("Units sold")).toBeInTheDocument();
-    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getAllByText("10")).toHaveLength(2);
   });
 });
