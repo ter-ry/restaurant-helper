@@ -106,3 +106,20 @@ def test_sales_period_excludes_open_cancelled_and_voided_orders():
     assert totals["orders"] == 1
     assert totals["units"] == Decimal("1")
     assert totals["gross"] == Decimal("18")
+
+
+def test_summary_only_sales_leave_units_unknown():
+    summary = SimpleNamespace(
+        sale_date=date(2026, 10, 4),
+        gross_amount=Decimal("180"),
+        discount_amount=Decimal("2.70"),
+        tax_amount=Decimal("0"),
+        tip_amount=Decimal("4.50"),
+        refund_amount=Decimal("0"),
+        net_amount=Decimal("181.80"),
+        order_count=8,
+        cancelled_order_count=0,
+    )
+    totals = _sales_totals([], [summary], date(2026, 10, 4), date(2026, 10, 4))
+    assert totals["orders"] == 8
+    assert totals["units"] is None
