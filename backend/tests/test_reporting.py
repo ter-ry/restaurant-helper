@@ -1,6 +1,9 @@
 from datetime import date
 
-from backend.reporting import _date_range, _period_delta
+from decimal import Decimal
+from types import SimpleNamespace
+
+from backend.reporting import _date_range, _line_gross, _period_delta
 
 
 class Location:
@@ -19,3 +22,15 @@ def test_daily_range_is_exact_and_weekly_has_equal_prior_window():
     assert daily == (date(2026, 10, 7), date(2026, 10, 7), None, None)
     weekly = _date_range("weekly", date(2026, 10, 1), date(2026, 10, 7), Location())
     assert weekly == (date(2026, 10, 1), date(2026, 10, 7), date(2026, 9, 24), date(2026, 9, 30))
+
+
+def test_line_gross_uses_authoritative_gross_or_quantity_adjusted_fallback():
+    order = SimpleNamespace()
+    authoritative = SimpleNamespace(
+        gross_amount=Decimal("18"), quantity=Decimal("2"),
+        raw_payload_json={"gross_sales_money": {"amount": 3600, "currency": "CAD"}},
+    )
+    fallback = SimpleNamespace(gross_amount=Decimal("18"), quantity=Decimal("2"), raw_payload_json={})
+    assert _line_gross(order, authoritative) == Decimal("36")
+    assert _line_gross(order, fallback) == Decimal("36")
+
