@@ -58,13 +58,17 @@ def _dec(value: Any) -> Decimal:
 
 
 def _line_gross(order: SquareOrder, line) -> Decimal:
-    """Return item merchandise gross, never the order's collected total."""
+    """Return quantity-adjusted item merchandise gross without double multiplication."""
     raw = (line.raw_payload_json or {}) if hasattr(line, "raw_payload_json") else {}
-    money = raw.get("gross_sales_money") or raw.get("grossSalesMoney")
-    if isinstance(money, dict) and money.get("amount") is not None:
-        return _dec(money.get("amount")) / Decimal("100")
-    quantity = _dec(line.quantity)
-    return _dec(line.gross_amount) * (quantity if quantity else Decimal("1"))
+    gross_money = raw.get("gross_sales_money") or raw.get("grossSalesMoney")
+    if isinstance(gross_money, dict) and gross_money.get("amount") is not None:
+        return _dec(gross_money.get("amount")) / Decimal("100")
+    base_money = raw.get("base_price_money") or raw.get("basePriceMoney")
+    if isinstance(base_money, dict) and base_money.get("amount") is not None:
+        return (_dec(base_money.get("amount")) / Decimal("100")) * _dec(line.quantity)
+    # Persisted gross_amount is already quantity-adjusted, including legacy
+    # rows imported from base_price_money.
+    return _dec(line.gross_amount)
 
 def _money(value: Decimal) -> float:
     return float(Decimal(str(value)).quantize(MONEY))
@@ -96,6 +100,7 @@ def _orders_for_period(orders: list[SquareOrder], location: RestaurantLocation, 
         order
         for order in orders
         if not order.is_deleted
+        and str(order.order_state or "").upper() == "COMPLETED"
         and start <= _order_business_date(order, location) <= end
     ]
 
@@ -162,9 +167,12 @@ def _menu_sales(orders: list[SquareOrder], connection: SquareConnection | None, 
             menu = menu_by_id[int(mapping.flowtally_entity_id)]
             row = buckets.setdefault(menu.id, {"menuItemId": menu.id, "name": menu.name, "category": menu.category, "quantity": Decimal("0"), "grossAmount": Decimal("0"), "discountAmount": Decimal("0"), "netAmount": Decimal("0"), "orderCount": 0})
             row["quantity"] += _dec(line.quantity)
-            row["grossAmount"] += _dec(line.gross_amount)
+            line_gross = _line_gross(order, line)
+            row["grossAmount"] += line_gross
             row["discountAmount"] += _dec(line.discount_amount)
-            row["netAmount"] += _dec(line.net_amount)
+            # Menu-item net sales exclude tax and tips; total_money is the
+            # collected line amount, not a net merchandise-sales field.
+            row["netAmount"] += line_gross - _dec(line.discount_amount)
             row["orderCount"] += 1
     output = []
     for row in buckets.values():
