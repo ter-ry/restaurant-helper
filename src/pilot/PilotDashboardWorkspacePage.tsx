@@ -1,6 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 import { PilotDashboardPage } from "./PilotDashboardPage";
 import { PilotReportsPage } from "./PilotReportsPage";
+import { PilotModuleGate } from "./PilotModuleGate";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 
 export function PilotDashboardWorkspacePage() {
@@ -26,7 +27,7 @@ export function PilotDashboardWorkspacePage() {
         ]}
       />
       <div className="mt-5">
-        {view === "daily" || view === "weekly" ? <PilotReportsPage initialView={view} /> : <PilotDashboardPage />}
+        {view === "daily" || view === "weekly" ? <PilotModuleGate moduleKey="REPORTING" moduleName="Reporting"><PilotReportsPage initialView={view} /></PilotModuleGate> : <PilotDashboardPage />}
       </div>
     </div>
   );
