@@ -10,14 +10,10 @@ import { demoReadOnly } from "./pilotConfig";
 
 const navItems = [
   { to: "/app/dashboard", label: "Dashboard", group: "Overview", icon: LayoutDashboard },
-  { to: "/app/reports", label: "Reports", group: "Overview", icon: BarChart3, moduleKey: "REPORTING" },
   { to: "/app/purchases", label: "Purchases", group: "Operations", icon: ReceiptText },
   { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
-  { to: "/app/stock-counts", label: "Stock Counts", group: "Operations", icon: ClipboardList },
-  { to: "/app/reorder-plan", label: "Reorder Plan", group: "Operations", icon: ShoppingCart },
   { to: "/app/menu-costing", label: "Menu Costing", group: "Menu & Cost", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
   { to: "/app/square", label: "Square", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
-  { to: "/app/square-usage", label: "Usage / Variance", group: "Sales & Close", icon: BarChart3, moduleKey: "SQUARE_INTEGRATION" },
   { to: "/app/daily-close", label: "Daily Close", group: "Sales & Close", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
 ];
 
@@ -477,7 +473,7 @@ export function PilotWorkspaceLayout() {
                 </p>
                 <div className="space-y-1">
                   {group.items.map((item) => (
-                    <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/reorder-plan" ? operationalAttention.reorder : undefined} />
+                    <NavItem key={item.to} to={item.to} label={item.label} icon={<item.icon className="h-5 w-5" />} collapsed={desktopSidebarCollapsed} badge={item.to === "/app/inventory" ? operationalAttention.reorder : undefined} />
                   ))}
                 </div>
               </section>
