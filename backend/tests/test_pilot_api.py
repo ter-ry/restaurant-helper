@@ -2341,3 +2341,23 @@ def test_inventory_items_are_isolated_by_membership(app, client):
 
     detail = client.get(f"/api/pilot/inventory/items/{isolated_inventory.get_json()['items'][0]['id']}")
     assert detail.status_code == 200
+
+
+def test_reports_api_exposes_units_sold_separately_from_order_count(monkeypatch, client):
+    login(client)
+    from backend import reporting
+
+    monkeypatch.setattr(
+        reporting,
+        "build_report",
+        lambda **kwargs: {
+            "sales": {"orderCount": 8, "unitsSold": 10},
+            "scope": {},
+            "period": {},
+        },
+    )
+    response = client.get("/api/pilot/reports?view=daily")
+    assert response.status_code == 200
+    sales = response.get_json()["sales"]
+    assert sales["orderCount"] == 8
+    assert sales["unitsSold"] == 10
