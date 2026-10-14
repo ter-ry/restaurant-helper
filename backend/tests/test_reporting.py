@@ -69,6 +69,7 @@ def _showcase_order(order_number, quantity, *, discount="0", tip="0", state="COM
         tax_amount=Decimal("0"),
         tip_amount=Decimal(tip),
         refund_amount=Decimal("0"),
+        cancelled_at=None,
     )
 
 
