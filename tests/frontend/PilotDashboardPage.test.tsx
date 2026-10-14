@@ -171,6 +171,6 @@ describe("PilotDashboardPage", () => {
     expect(screen.getByText("Daily close")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Open reorder plan" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/reorder-plan"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/inventory?view=reorder"));
   });
 });
