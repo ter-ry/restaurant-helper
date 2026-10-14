@@ -1703,7 +1703,8 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
     order.restaurant_location_id = _infer_restaurant_location_id(connection, square_location_id)
     order.order_state = str(entry.get("state") or "").upper()
     order.currency = currency
-    order.gross_amount = _money_to_decimal(entry.get("total_money") or entry.get("totalMoney"))
+    order_gross_money = entry.get("gross_sales_money") or entry.get("grossSalesMoney")
+    order.gross_amount = _money_to_decimal(order_gross_money) if order_gross_money is not None else Decimal("0")
     order.discount_amount = _money_to_decimal(entry.get("discount_money") or entry.get("discountMoney"))
     order.tax_amount = _money_to_decimal(entry.get("tax_money") or entry.get("taxMoney"))
     order.tip_amount = _money_to_decimal(entry.get("tip_money") or entry.get("tipMoney"))
@@ -1740,7 +1741,13 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
         line.square_item_variation_id = str((line_entry.get("catalog_object_id") or line_entry.get("catalogObjectId") or line_entry.get("variation_id") or "")).strip()
         line.name = str(line_entry.get("name") or line_entry.get("display_name") or "")
         line.quantity = Decimal(str(line_entry.get("quantity") or 0))
-        line.gross_amount = _money_to_decimal(line_entry.get("base_price_money") or line_entry.get("basePriceMoney"))
+        gross_money = line_entry.get("gross_sales_money") or line_entry.get("grossSalesMoney")
+        if gross_money is None:
+            base_money = line_entry.get("base_price_money") or line_entry.get("basePriceMoney")
+            base_amount = _money_to_decimal(base_money)
+            line.gross_amount = base_amount * Decimal(str(line.quantity or 0)) if base_money is not None else Decimal("0")
+        else:
+            line.gross_amount = _money_to_decimal(gross_money)
         line.discount_amount = _money_to_decimal(line_entry.get("discount_money") or line_entry.get("discountMoney"))
         line.tax_amount = _money_to_decimal(line_entry.get("tax_money") or line_entry.get("taxMoney"))
         line.tip_amount = _money_to_decimal(line_entry.get("tip_money") or line_entry.get("tipMoney"))
@@ -1753,6 +1760,8 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
             db.session.delete(line)
     order.item_quantity = quantity_total
     order.line_count = line_count
+    if order_gross_money is None:
+        order.gross_amount = sum((Decimal(str(line.gross_amount or 0)) for line in order.lines), Decimal("0"))
     return order
 
 
