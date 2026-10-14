@@ -82,7 +82,7 @@ def test_showcase_eight_completed_orders_use_current_square_money_fields():
         for index, (quantity, discount, tip) in enumerate(zip(quantities, discounts, tips))
     ]
     totals = _sales_totals(orders, [], date(2026, 10, 4), date(2026, 10, 4))
-    assert totals["orders"] == 8
+    # Eight completed orders are represented even though there are ten units.\n    assert totals["orders"] == 8
     assert totals["units"] == Decimal("10")
     assert totals["gross"] == Decimal("180")
     assert totals["discount"] == Decimal("2.70")
