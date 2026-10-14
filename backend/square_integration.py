@@ -1705,9 +1705,24 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
     order.currency = currency
     order_gross_money = entry.get("gross_sales_money") or entry.get("grossSalesMoney")
     order.gross_amount = _money_to_decimal(order_gross_money) if order_gross_money is not None else Decimal("0")
-    order.discount_amount = _money_to_decimal(\n        entry.get("total_discount_money")\n        or entry.get("totalDiscountMoney")\n        or entry.get("discount_money")\n        or entry.get("discountMoney")\n    )
-    order.tax_amount = _money_to_decimal(\n        entry.get("total_tax_money")\n        or entry.get("totalTaxMoney")\n        or entry.get("tax_money")\n        or entry.get("taxMoney")\n    )
-    order.tip_amount = _money_to_decimal(\n        entry.get("total_tip_money")\n        or entry.get("totalTipMoney")\n        or entry.get("tip_money")\n        or entry.get("tipMoney")\n    )
+    order.discount_amount = _money_to_decimal(
+        entry.get("total_discount_money")
+        or entry.get("totalDiscountMoney")
+        or entry.get("discount_money")
+        or entry.get("discountMoney")
+    )
+    order.tax_amount = _money_to_decimal(
+        entry.get("total_tax_money")
+        or entry.get("totalTaxMoney")
+        or entry.get("tax_money")
+        or entry.get("taxMoney")
+    )
+    order.tip_amount = _money_to_decimal(
+        entry.get("total_tip_money")
+        or entry.get("totalTipMoney")
+        or entry.get("tip_money")
+        or entry.get("tipMoney")
+    )
     order.refund_amount = _money_to_decimal(entry.get("refunded_money") or entry.get("refundedMoney"))
     order.net_amount = _money_to_decimal(entry.get("net_amount") or entry.get("netAmount") or entry.get("total_money") or entry.get("totalMoney"))
     order.ordered_at = _parse_iso_datetime(entry.get("created_at") or entry.get("createdAt"))
@@ -1748,8 +1763,18 @@ def _upsert_order(connection: SquareConnection, entry: dict[str, Any]) -> Square
             line.gross_amount = base_amount * Decimal(str(line.quantity or 0)) if base_money is not None else Decimal("0")
         else:
             line.gross_amount = _money_to_decimal(gross_money)
-        line.discount_amount = _money_to_decimal(\n            line_entry.get("total_discount_money")\n            or line_entry.get("totalDiscountMoney")\n            or line_entry.get("discount_money")\n            or line_entry.get("discountMoney")\n        )
-        line.tax_amount = _money_to_decimal(\n            line_entry.get("total_tax_money")\n            or line_entry.get("totalTaxMoney")\n            or line_entry.get("tax_money")\n            or line_entry.get("taxMoney")\n        )
+        line.discount_amount = _money_to_decimal(
+            line_entry.get("total_discount_money")
+            or line_entry.get("totalDiscountMoney")
+            or line_entry.get("discount_money")
+            or line_entry.get("discountMoney")
+        )
+        line.tax_amount = _money_to_decimal(
+            line_entry.get("total_tax_money")
+            or line_entry.get("totalTaxMoney")
+            or line_entry.get("tax_money")
+            or line_entry.get("taxMoney")
+        )
         line.tip_amount = _money_to_decimal(line_entry.get("tip_money") or line_entry.get("tipMoney"))
         line.net_amount = _money_to_decimal(line_entry.get("total_money") or line_entry.get("totalMoney"))
         line.raw_payload_json = dict(line_entry)
