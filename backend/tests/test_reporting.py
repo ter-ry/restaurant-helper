@@ -42,6 +42,7 @@ def test_line_gross_uses_authoritative_gross_or_safe_fallbacks_without_double_mu
 
 
 def _showcase_order(order_number, quantity, *, discount="0", tip="0", state="COMPLETED", raw_line=None):
+    # Raw line payload mirrors Square's current total_*_money field names.
     line_raw = raw_line or {
         "base_price_money": {"amount": 1800, "currency": "CAD"},
         "gross_sales_money": {"amount": int(1800 * quantity), "currency": "CAD"},
