@@ -1559,3 +1559,55 @@ def test_square_catalog_mapping_rejects_non_variation_catalog_objects(app, clien
         },
     )
     assert response.status_code == 400
+
+
+def test_upsert_order_prefers_current_square_total_money_fields(app):
+    from backend.square_integration import _upsert_order
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Current money fields {uuid4().hex[:6]}", location_name="Main Kitchen")
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="production",
+            square_merchant_id="merchant-current-fields",
+            status="connected",
+        )
+        db.session.add(connection)
+        db.session.flush()
+
+        order = _upsert_order(
+            connection,
+            {
+                "id": "ORDER-CURRENT-MONEY-FIELDS",
+                "location_id": "LOC-1",
+                "state": "COMPLETED",
+                "total_money": {"amount": 18180, "currency": "CAD"},
+                "total_discount_money": {"amount": 270, "currency": "CAD"},
+                "total_tax_money": {"amount": 0, "currency": "CAD"},
+                "total_tip_money": {"amount": 450, "currency": "CAD"},
+                "line_items": [
+                    {
+                        "uid": "line-1",
+                        "catalog_object_id": "VAR-BURGER",
+                        "name": "Harbour Burger",
+                        "quantity": "10",
+                        "base_price_money": {"amount": 1800, "currency": "CAD"},
+                        "gross_sales_money": {"amount": 18000, "currency": "CAD"},
+                        "total_discount_money": {"amount": 270, "currency": "CAD"},
+                        "total_tax_money": {"amount": 0, "currency": "CAD"},
+                        "total_money": {"amount": 17730, "currency": "CAD"},
+                    }
+                ],
+            },
+        )
+
+        assert order is not None
+        assert order.discount_amount == Decimal("2.70")
+        assert order.tax_amount == Decimal("0")
+        assert order.tip_amount == Decimal("4.50")
+        assert order.net_amount == Decimal("181.80")
+        assert order.lines[0].gross_amount == Decimal("180")
+        assert order.lines[0].discount_amount == Decimal("2.70")
+        assert order.lines[0].tax_amount == Decimal("0")
+        assert order.lines[0].net_amount == Decimal("177.30")

@@ -17,6 +17,7 @@ from .models import (
     InventoryItem,
     InventoryMovement,
     MenuItem,
+    Organization,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     RestaurantLocation,
@@ -54,6 +55,21 @@ def _dec(value: Any) -> Decimal:
         return Decimal("0")
 
 
+
+
+def _line_gross(order: SquareOrder, line) -> Decimal:
+    """Return quantity-adjusted item merchandise gross without double multiplication."""
+    raw = (line.raw_payload_json or {}) if hasattr(line, "raw_payload_json") else {}
+    gross_money = raw.get("gross_sales_money") or raw.get("grossSalesMoney")
+    if isinstance(gross_money, dict) and gross_money.get("amount") is not None:
+        return _dec(gross_money.get("amount")) / Decimal("100")
+    base_money = raw.get("base_price_money") or raw.get("basePriceMoney")
+    if isinstance(base_money, dict) and base_money.get("amount") is not None:
+        return (_dec(base_money.get("amount")) / Decimal("100")) * _dec(line.quantity)
+    # Persisted gross_amount is already quantity-adjusted, including legacy
+    # rows imported from base_price_money.
+    return _dec(line.gross_amount)
+
 def _money(value: Decimal) -> float:
     return float(Decimal(str(value)).quantize(MONEY))
 
@@ -84,32 +100,42 @@ def _orders_for_period(orders: list[SquareOrder], location: RestaurantLocation, 
         order
         for order in orders
         if not order.is_deleted
+        and str(order.order_state or "").upper() == "COMPLETED"
         and start <= _order_business_date(order, location) <= end
     ]
 
 
 def _sales_totals(orders: list[SquareOrder], summaries: list[SquareDailySalesSummary], start: date, end: date) -> dict[str, Any]:
     scoped_summaries = [summary for summary in summaries if start <= summary.sale_date <= end]
-    if scoped_summaries:
+    if scoped_summaries and not orders:
         return {
             "gross": sum((_dec(row.gross_amount) for row in scoped_summaries), Decimal("0")),
             "discount": sum((_dec(row.discount_amount) for row in scoped_summaries), Decimal("0")),
             "tax": sum((_dec(row.tax_amount) for row in scoped_summaries), Decimal("0")),
             "tip": sum((_dec(row.tip_amount) for row in scoped_summaries), Decimal("0")),
             "refund": sum((_dec(row.refund_amount) for row in scoped_summaries), Decimal("0")),
+            "net_item_sales": sum((_dec(row.gross_amount) - _dec(row.discount_amount) for row in scoped_summaries), Decimal("0")),
             "net": sum((_dec(row.net_amount) for row in scoped_summaries), Decimal("0")),
             "orders": sum(int(row.order_count or 0) for row in scoped_summaries),
+            "units": None,
             "cancelled": sum(int(row.cancelled_order_count or 0) for row in scoped_summaries),
             "source": "square_daily_sales_summaries",
         }
+    gross = sum((_line_gross(order, line) for order in orders for line in order.lines), Decimal("0"))
+    discount = sum((_dec(row.discount_amount) for row in orders), Decimal("0"))
+    tax = sum((_dec(row.tax_amount) for row in orders), Decimal("0"))
+    tip = sum((_dec(row.tip_amount) for row in orders), Decimal("0"))
+    refund = sum((_dec(row.refund_amount) for row in orders), Decimal("0"))
     return {
-        "gross": sum((_dec(row.gross_amount) for row in orders), Decimal("0")),
-        "discount": sum((_dec(row.discount_amount) for row in orders), Decimal("0")),
-        "tax": sum((_dec(row.tax_amount) for row in orders), Decimal("0")),
-        "tip": sum((_dec(row.tip_amount) for row in orders), Decimal("0")),
-        "refund": sum((_dec(row.refund_amount) for row in orders), Decimal("0")),
-        "net": sum((_dec(row.net_amount) for row in orders), Decimal("0")),
+        "gross": gross,
+        "discount": discount,
+        "tax": tax,
+        "tip": tip,
+        "refund": refund,
+        "net_item_sales": gross - discount,
+        "net": gross - discount + tax - refund + tip,
         "orders": len(orders),
+        "units": sum((_dec(line.quantity) for order in orders for line in order.lines), Decimal("0")),
         "cancelled": sum(1 for row in orders if row.cancelled_at is not None),
         "source": "square_orders",
     }
@@ -137,15 +163,18 @@ def _menu_sales(orders: list[SquareOrder], connection: SquareConnection | None, 
                 key = line.square_item_variation_id or line.name
                 row = unmapped.setdefault(key, {"variationId": key, "name": line.name, "quantity": Decimal("0"), "grossAmount": Decimal("0"), "orderCount": 0})
                 row["quantity"] += _dec(line.quantity)
-                row["grossAmount"] += _dec(line.gross_amount)
+                row["grossAmount"] += _line_gross(order, line)
                 row["orderCount"] += 1
                 continue
             menu = menu_by_id[int(mapping.flowtally_entity_id)]
             row = buckets.setdefault(menu.id, {"menuItemId": menu.id, "name": menu.name, "category": menu.category, "quantity": Decimal("0"), "grossAmount": Decimal("0"), "discountAmount": Decimal("0"), "netAmount": Decimal("0"), "orderCount": 0})
             row["quantity"] += _dec(line.quantity)
-            row["grossAmount"] += _dec(line.gross_amount)
+            line_gross = _line_gross(order, line)
+            row["grossAmount"] += line_gross
             row["discountAmount"] += _dec(line.discount_amount)
-            row["netAmount"] += _dec(line.net_amount)
+            # Menu-item net sales exclude tax and tips; total_money is the
+            # collected line amount, not a net merchandise-sales field.
+            row["netAmount"] += line_gross - _dec(line.discount_amount)
             row["orderCount"] += 1
     output = []
     for row in buckets.values():
@@ -202,36 +231,27 @@ def _stock_variance(sessions: list[StockCountSession], start: date, end: date) -
 
 
 def _usage_variance(location: RestaurantLocation, items: list[InventoryItem], orders: list[SquareOrder], connection: SquareConnection | None, start: date, end: date) -> dict[str, Any]:
-    sessions = StockCountSession.query.filter_by(organization_id=location.organization_id, location_id=location.id, status="Completed").all()
-    opening = max((session for session in sessions if session.completed_at and session.completed_at.date() <= start), key=lambda session: session.completed_at, default=None)
-    closing = min((session for session in sessions if session.completed_at and session.completed_at.date() >= end), key=lambda session: session.completed_at, default=None)
-    if connection is None or opening is None or closing is None or opening.id == closing.id:
-        return {"valid": False, "message": "No completed count evidence", "rows": []}
-    opening_by_item = {line.inventory_item_id: _dec(line.counted_quantity) for line in opening.lines if line.counted_quantity is not None}
-    closing_by_item = {line.inventory_item_id: _dec(line.counted_quantity) for line in closing.lines if line.counted_quantity is not None}
-    rows = []
-    for item in items:
-        if item.id not in opening_by_item or item.id not in closing_by_item:
-            continue
-        movements = InventoryMovement.query.filter_by(organization_id=location.organization_id, location_id=location.id, inventory_item_id=item.id).all()
-        qualifying = sum((_dec(m.quantity_delta) for m in movements if m.created_at and start <= m.created_at.date() <= end and m.source_type not in {"square_sale", "square_order", "sale"}), Decimal("0"))
-        physical = opening_by_item[item.id] + qualifying - closing_by_item[item.id]
-        theoretical = Decimal("0")
-        menu_by_variation: dict[str, MenuItem] = {}
-        for catalog in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).all():
-            mapping = SquareCatalogMapping.query.filter_by(square_catalog_object_id=catalog.id, mapping_type="menu_item", status="mapped", flowtally_entity_type="menu_item").first()
-            if mapping and int(mapping.flowtally_entity_id or 0) in {item.id for item in MenuItem.query.filter_by(organization_id=location.organization_id, location_id=location.id).all()}:
-                menu_by_variation[catalog.square_object_id] = MenuItem.query.filter_by(id=int(mapping.flowtally_entity_id), organization_id=location.organization_id, location_id=location.id).first()
-        for order in orders:
-            for line in order.lines:
-                menu = menu_by_variation.get(line.square_item_variation_id)
-                if menu and menu.recipe:
-                    theoretical += _dec(line.quantity) * sum((_dec(ingredient.quantity_required) / _dec(menu.recipe.yield_quantity) for ingredient in menu.recipe.ingredients if ingredient.inventory_item_id == item.id), Decimal("0"))
-        variance = physical - theoretical
-        rows.append({"inventoryItemId": item.id, "itemName": item.name, "unit": item.stock_unit, "theoretical": float(theoretical), "physical": float(physical), "variance": float(variance), "variancePercent": float((variance / theoretical * 100).quantize(Decimal("0.1"))) if theoretical else None})
-    return {"valid": True, "message": None, "rows": rows}
-
-
+    if connection is None:
+        return {"valid": False, "message": "No Square connection is available", "rows": []}
+    from .square_integration import _build_square_usage_report
+    zone = ZoneInfo(location.timezone or "UTC")
+    start_at = datetime.combine(start, datetime.min.time(), tzinfo=zone).astimezone(timezone.utc)
+    end_at = datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(timezone.utc)
+    organization = Organization.query.get(location.organization_id)
+    if organization is None:
+        return {"valid": False, "message": "No organization is available", "rows": []}
+    trusted = _build_square_usage_report(organization, connection, location=location, start_at=start_at, end_at=end_at)
+    rows = [{
+        "inventoryItemId": row.get("inventoryItemId"),
+        "itemName": row.get("inventoryItemName") or row.get("itemName"),
+        "unit": row.get("unit"),
+        "theoretical": row.get("theoreticalUsage"),
+        "physical": row.get("actualUsage"),
+        "variance": row.get("discrepancy"),
+        "variancePercent": row.get("discrepancyPercent"),
+    } for row in (trusted.get("ingredientUsage") or [])]
+    available = bool(rows) and all(row["physical"] is not None for row in rows)
+    return {"valid": available, "message": None if available else "No completed count evidence for this period", "rows": rows}
 def build_report(*, location: RestaurantLocation, view: str, start: date | None = None, end: date | None = None) -> dict[str, Any]:
     from .pilot_api import _inventory_summary, _price_changes_for_location, _reorder_suggestion_for_item, _status_for_item
 
@@ -278,7 +298,7 @@ def build_report(*, location: RestaurantLocation, view: str, start: date | None 
     response = {
         "scope": {"organizationId": organization_id, "locationId": location.id, "locationName": location.name, "timezone": location.timezone},
         "period": {"view": view, "startDate": start_date.isoformat(), "endDate": end_date.isoformat(), "priorStartDate": prior_start.isoformat() if prior_start else None, "priorEndDate": prior_end.isoformat() if prior_end else None},
-        "sales": {"currency": "CAD", "grossItemSales": _money(totals["gross"]), "discounts": _money(totals["discount"]), "tax": _money(totals["tax"]), "tips": _money(totals["tip"]), "refunds": _money(totals["refund"]), "totalCollected": _money(totals["net"]), "orderCount": totals["orders"], "cancelledOrderCount": totals["cancelled"], "source": totals["source"], "byMenuItem": menu_sales, "unmappedLines": unmapped},
+        "sales": {"currency": "CAD", "grossItemSales": _money(totals["gross"]), "netItemSales": _money(totals["net_item_sales"]), "discounts": _money(totals["discount"]), "tax": _money(totals["tax"]), "tips": _money(totals["tip"]), "refunds": _money(totals["refund"]), "totalCollected": _money(totals["net"]), "orderCount": totals["orders"], "unitsSold": float(totals["units"]) if totals["units"] is not None else None, "cancelledOrderCount": totals["cancelled"], "source": totals["source"], "byMenuItem": menu_sales, "unmappedLines": unmapped},
         "purchasing": purchasing,
         "inventory": {"summary": _inventory_summary(location.id), "statusCounts": {"inStock": statuses.count("In stock"), "lowStock": statuses.count("Low stock"), "reorderNow": statuses.count("Reorder now"), "outOfStock": statuses.count("Out of stock")}, "reorderNow": reorder, "recentMovements": [serialize_inventory_movement(movement) for movement in InventoryMovement.query.filter_by(organization_id=organization_id, location_id=location.id).order_by(InventoryMovement.created_at.desc()).limit(20).all()]},
         "costing": {"costReadySalesAmount": _money(cost_ready_sales), "totalMappedMenuSalesAmount": _money(total_menu_sales), "estimatedFoodCostPercent": _money((sum((_dec(row["currentCostPerSale"]) * _dec(row["quantity"]) for row in menu_sales if row["costAvailable"]), Decimal("0")) / cost_ready_sales) * 100) if cost_ready_sales else None, "costCoveragePercent": _money((cost_ready_sales / total_menu_sales) * 100) if total_menu_sales else 0},

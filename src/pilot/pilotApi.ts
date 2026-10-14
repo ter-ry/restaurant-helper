@@ -575,6 +575,7 @@ export interface PilotReportResponse {
     grossItemSales: number;
     totalCollected: number;
     orderCount: number;
+    unitsSold: number | null;
     byMenuItem: Array<Record<string, any>>;
     unmappedLines: Array<Record<string, any>>;
   };

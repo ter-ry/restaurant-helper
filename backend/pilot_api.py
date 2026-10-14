@@ -1045,12 +1045,16 @@ def reports():
     if view not in {"daily", "weekly"}:
         return json_error("Report view must be daily or weekly.", 400)
     selected_date = request.args.get("date") or request.args.get("startDate")
+    end_value = request.args.get("endDate")
     try:
         report_date = date.fromisoformat(selected_date) if selected_date else None
+        end_date = date.fromisoformat(end_value) if end_value else None
     except ValueError:
-        return json_error("Report date must use YYYY-MM-DD format.", 400)
+        return json_error("Report dates must use YYYY-MM-DD format.", 400)
+    if view == "weekly" and report_date and end_date and report_date > end_date:
+        return json_error("Weekly report startDate must be on or before endDate.", 400)
     from .reporting import build_report
-    return jsonify(build_report(location=location, view=view, start=report_date)), 200
+    return jsonify(build_report(location=location, view=view, start=report_date, end=end_date)), 200
 
 
 @bp.get("/api/pilot/attention")
