@@ -184,6 +184,13 @@ function normalizeRouterBasename(baseUrl: string | undefined) {
   return withoutTrailingSlash === "" || withoutTrailingSlash === "/." ? undefined : withoutTrailingSlash;
 }
 
+function LegacyPilotRedirect({ view, dashboard = false }: { view: string; dashboard?: boolean }) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  params.set("view", view);
+  return <Navigate to={(dashboard ? "/app/dashboard" : "/app/inventory") + "?" + params.toString()} replace />;
+}
+
 const routerBasename = normalizeRouterBasename(import.meta.env.BASE_URL);
 
 const demoChildren = [
@@ -213,7 +220,7 @@ const pilotAppRoutes = pilotAppEnabled
             children: [
               { index: true, element: <Navigate to="dashboard" replace /> },
               { path: "dashboard", element: <PilotDashboardWorkspacePage /> },
-              { path: "reports", element: <Navigate to="/app/dashboard?view=daily" replace /> },
+              { path: "reports", element: <LegacyPilotRedirect view="daily" dashboard /> },
               { path: "purchases", element: <PilotPurchasesPage /> },
               { path: "inventory", element: <PilotInventoryHubPage /> },
               {
@@ -240,9 +247,9 @@ const pilotAppRoutes = pilotAppEnabled
                   </PilotModuleGate>
                 ),
               },
-              { path: "square-usage", element: <Navigate to="/app/inventory?view=usage" replace /> },
-              { path: "stock-counts", element: <Navigate to="/app/inventory?view=counts" replace /> },
-              { path: "reorder-plan", element: <Navigate to="/app/inventory?view=reorder" replace /> },
+              { path: "square-usage", element: <LegacyPilotRedirect view="usage" /> },
+              { path: "stock-counts", element: <LegacyPilotRedirect view="counts" /> },
+              { path: "reorder-plan", element: <LegacyPilotRedirect view="reorder" /> },
             ],
           },
         ],
