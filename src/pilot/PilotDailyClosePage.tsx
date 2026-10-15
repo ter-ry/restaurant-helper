@@ -219,7 +219,7 @@ export function PilotDailyClosePage() {
   };
 
   return (
-    <div className="workspace-page">
+    <div className="workspace-page pilot-daily-close-page">
       <WorkspacePageHeader
         title="Daily Close"
         actions={

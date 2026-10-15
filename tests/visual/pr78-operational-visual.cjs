@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const baseUrl = process.env.FLOWTALLY_VISUAL_BASE_URL || "http://127.0.0.1:43124";
-const artifactDir = path.resolve(__dirname, "../../review-artifacts/pr78");
+const artifactDir = path.resolve(__dirname, "../../review-artifacts/pr132");
 const organization = { id: 101, name: "Harbour Kitchen", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE" };
 const location = { id: 201, organizationId: 101, name: "Queen Street", timezone: "America/Toronto", city: "Toronto", region: "ON" };
 const supplier = { id: 301, organizationId: 101, name: "Lakeview Produce", normalizedName: "lakeview produce", categoryFocus: "Produce", contactName: "Maya Chen", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true };
@@ -13,6 +13,18 @@ const invoiceLine = { id: 1, invoiceId: 10, supplierName: supplier.name, invoice
 const purchases = { invoices: [{ id: 10, organizationId: 101, locationId: 201, supplierId: 301, supplier, invoiceNumber: "LK-2048", invoiceDate: "2026-09-16", subtotal: 100.8, tax: 13.1, totalAmount: 113.9, notes: "", status: "Draft", sourceFileName: "invoice-2048.pdf", sourceFileType: "application/pdf", sourceFileKey: "", extractedText: "", extractionStatus: "Needs review", receivedAt: null, receivedByUserId: null, createdByUserId: 1, updatedByUserId: 1, postedAt: null, lineItems: [invoiceLine], createdAt: null, updatedAt: null }], suppliers: [supplier], purchaseLines: [invoiceLine], priceChanges: [{ inventoryItemName: "Ground beef", previousUnitPrice: 7.5, currentUnitPrice: 8.4, priceChangePercent: 12 }], summary: { invoiceCount: 1, draftCount: 1, needsReviewCount: 1, totalSpend: 113.9 }, exportReadiness: { readyForCsv: 0, needsReview: 1, needsMapping: 0, quickBooksFutureOnly: true } };
 const snapshot = { healthStatus: "Needs review", inventoryValue: 12450, sales: { grossSales: 4280, orderCount: 86 }, usage: { period: { startAt: "2026-09-17T00:00:00Z", endAt: "2026-09-18T00:00:00Z" }, coverage: { mappedVariationCount: 8, totalVariationCount: 10 }, totals: { theoreticalUsage: 245, actualUsage: 238, discrepancy: -7, discrepancyPercent: -2.8 }, contributingMenuItems: [], unmappedVariations: [{ name: "Seasonal Soup" }], ingredientUsage: [] }, variance: { quantity: -7, percent: -2.8, value: -64 }, square: { squareStatus: "Connected", squareSynced: true, locationMapped: true }, readyToFinalize: false };
 const dailyClose = { session: { id: 51, organizationId: 101, locationId: 201, businessDate: "2026-09-17", status: "OPEN", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: ["Ground beef count is below PAR", "One Square variation remains unmapped"], notes: "Review before finalizing", completedAt: null, completedByUserId: null, createdByUserId: 1, createdAt: null, updatedAt: null, currentSnapshot: snapshot }, snapshot, usage: snapshot.usage, exceptions: ["Ground beef count is below PAR", "One Square variation remains unmapped"], history: [{ id: 50, organizationId: 101, locationId: 201, businessDate: "2026-09-16", status: "COMPLETED", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: [], notes: "Closed", completedAt: "2026-09-16T23:30:00Z", completedByUserId: 1, createdByUserId: 1, createdAt: null, updatedAt: null, currentSnapshot: snapshot }], location, businessDate: "2026-09-17", square: snapshot.square };
+const menuRecipe = { id: 601, organizationId: 101, locationId: 201, name: "Harbour Burger", normalizedName: "harbour burger", description: "House burger with fries", yieldQuantity: 1, yieldUnit: "serving", active: true, notes: "", ingredientCount: 2, ingredients: [{ id: 611, organizationId: 101, recipeId: 601, inventoryItemId: 401, quantityRequired: 0.18, unit: "kg", notes: "", sortOrder: 1, inventoryItem, inventoryItemCostPerStockUnit: 8.4, lineCost: 1.51, warnings: [], createdAt: null, updatedAt: null }, { id: 612, organizationId: 101, recipeId: 601, inventoryItemId: 402, quantityRequired: 0.12, unit: "kg", notes: "", sortOrder: 2, inventoryItem: { ...inventoryItem, id: 402, name: "Fries", latestPurchasePrice: 3.2, averageUnitCost: 3.2 }, inventoryItemCostPerStockUnit: 3.2, lineCost: 0.38, warnings: [], createdAt: null, updatedAt: null }], totalCost: 1.89, costPerYield: 1.89, costAvailable: true, warnings: [], createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null };
+const menuCosting = { organizationId: 101, locationId: 201, recipes: [menuRecipe], menuItems: [
+  { id: 701, organizationId: 101, locationId: 201, recipeId: 601, name: "Harbour Burger", normalizedName: "harbour burger", category: "Mains", sellingPrice: 18, active: true, notes: "", recipe: null, recipeCostPerYield: 1.89, grossProfit: 16.11, foodCostPercent: 10.5, grossMarginPercent: 89.5, costAvailable: true, warnings: [], createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null },
+  { id: 702, organizationId: 101, locationId: 201, recipeId: null, name: "Seasonal Soup", normalizedName: "seasonal soup", category: "Starters", sellingPrice: 9, active: true, notes: "Recipe needed", recipe: null, recipeCostPerYield: null, grossProfit: null, foodCostPercent: null, grossMarginPercent: null, costAvailable: false, warnings: ["Recipe is not assigned"], createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null },
+  { id: 703, organizationId: 101, locationId: 201, recipeId: 601, name: "Double Harbour Burger", normalizedName: "double harbour burger", category: "Mains", sellingPrice: 24, active: true, notes: "", recipe: null, recipeCostPerYield: 3.78, grossProfit: 20.22, foodCostPercent: 15.8, grossMarginPercent: 84.2, costAvailable: true, warnings: [], createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null },
+] };
+const dashboard = { summary: { inventoryValue: 12450, inventoryItemCount: 42, weeklyInvoiceSpend: 1840, weeklyInvoiceCount: 11, monthlyInvoiceSpend: 6240, monthlyInvoiceCount: 37, invoiceReviewQueueCount: 2, recentPriceChangeCount: 3, inventoryItemsToReorderCount: 4 }, recentInvoices: purchases.invoices, recentMovements: [], recentPriceChanges: [{ id: 1, itemName: "Ground beef", previousUnitPrice: 7.5, currentUnitPrice: 8.4, changePercent: 12 }], pendingDraftInvoices: purchases.invoices, pendingDraftCountSessions: [], pendingDraftDailyCloseSessions: [dailyClose.session], pendingDraftReorderPlans: [], supplierSpend: [], reorderSuggestions: inventory.reorderPlan.suggestions, workflow: { inventory: "Ready", reorder: "Review", close: "Open", purchase: "Needs review" }, operationalAttention: { reorder: { count: 1, severity: "warning" }, square: { syncErrorCount: 0, unmappedVariationCount: 1, severity: "warning" }, dailyClose: { count: 1, severity: "warning" } }, insights: { today: { totalCollected: 4280, orderCount: 86, topMenuItem: { name: "Harbour Burger", units: 42 } }, week: { totalCollected: 18750, salesChange: { percent: 8.4 }, purchaseSpendChange: { percent: -2.1 } }, estimatedFoodCost: { estimatedFoodCostPercent: 27.4, costCoveragePercent: 80, costReadySalesAmount: 14800, totalMappedMenuSalesAmount: 18500 }, exceptions: [] } };
+const usageReport = { usage: { organizationId: 101, locationId: 201, period: { startAt: "2026-09-10T00:00:00Z", endAt: "2026-09-17T23:59:59Z" }, coverage: { totalSoldUnits: 164, mappedSoldUnits: 146, calculableSoldUnits: 132, excludedUnmappedUnits: 18, excludedIncompleteUnits: 14, excludedCancelledUnits: 0, mappedSalesCoveragePercent: 89, calculableSalesCoveragePercent: 80, mappedVariationCount: 8, unmappedVariationCount: 1 }, ingredientUsage: [
+  { inventoryItemId: 401, inventoryItemName: "Ground beef", unit: "kg", currentOnHand: 7.5, theoreticalUsage: 52.4, soldMenuUnits: 42, contributingMenuItems: [], mappingStatus: "mapped", actualUsage: 55.1, actualUsageBasis: { available: true, warnings: [], openingQuantity: 62, openingCountSessionId: 1, openingCountCompletedAt: "2026-09-10T22:00:00Z", closingQuantity: 7.5, closingCountSessionId: 2, closingCountCompletedAt: "2026-09-17T22:00:00Z", movementNet: 0.6, actualUsage: 55.1 }, discrepancy: 2.7, discrepancyPercent: 5.2, warnings: [] },
+  { inventoryItemId: 402, inventoryItemName: "Fries", unit: "kg", currentOnHand: 14, theoreticalUsage: 31.2, soldMenuUnits: 42, contributingMenuItems: [], mappingStatus: "mapped", actualUsage: 30.8, actualUsageBasis: { available: true, warnings: [], openingQuantity: 45, openingCountSessionId: 1, openingCountCompletedAt: "2026-09-10T22:00:00Z", closingQuantity: 14, closingCountSessionId: 2, closingCountCompletedAt: "2026-09-17T22:00:00Z", movementNet: 0.8, actualUsage: 30.8 }, discrepancy: -0.4, discrepancyPercent: -1.3, warnings: [] },
+  { inventoryItemId: 403, inventoryItemName: "Romaine lettuce", unit: "kg", currentOnHand: 14, theoreticalUsage: 12.8, soldMenuUnits: 42, contributingMenuItems: [], mappingStatus: "mapped", actualUsage: 12.8, actualUsageBasis: { available: true, warnings: [], openingQuantity: 20, openingCountSessionId: 1, openingCountCompletedAt: "2026-09-10T22:00:00Z", closingQuantity: 14, closingCountSessionId: 2, closingCountCompletedAt: "2026-09-17T22:00:00Z", movementNet: 6.8, actualUsage: 12.8 }, discrepancy: 0, discrepancyPercent: 0, warnings: [] },
+], totals: { theoreticalUsage: 96.4, actualUsage: 98.7, discrepancy: 2.3, discrepancyPercent: 2.4 }, contributingMenuItems: [], unmappedVariations: [], warnings: [] }, menuItems: [], mappings: [], unmappedVariations: [], connection: null };
 const auth = { user: { id: 1, email: "demo@example.test", isActive: true }, membershipRole: "owner", currentOrganizationId: 101, currentLocationId: 201, enabledModuleKeys: ["INVENTORY", "PURCHASES", "REORDER_PLANS", "REPORTING", "STOCK_COUNTS", "MENU_COSTING", "DAILY_CLOSE", "SQUARE_INTEGRATION"], organizations: [], csrfToken: "fixture-csrf" };
 const squareStatus = { connection: { id: 1, organizationId: 101, organization, environment: "demo", squareMerchantId: "demo-merchant", status: "connected", tokenExpiresAt: null, revokedAt: null, lastSyncAt: "2026-09-17T23:00:00Z", syncStatus: "success", syncError: "", catalogCount: 1, orderCount: 21, locationCount: 1, dailySalesCount: 21, locations: [{ id: 1, squareLocationId: "LOC-1", name: "Harbour Kitchen POS", status: "ACTIVE", rawPayload: {}, mappings: [{ id: 1, squareLocationId: 1, restaurantLocationId: 201, restaurantLocation: location, mappedByUserId: 1, mappedAt: null }] }], catalogObjects: [], orders: [], dailySales: [{ saleDate: "2026-09-17", squareLocationId: "LOC-1", grossSales: 4280, refundAmount: 0, netSales: 4280, orderCount: 86, itemCount: 164 }], syncJobs: [], webhookEvents: [] } };
 const squareMappings = { mappings: [{ id: 1, organizationId: 101, squareCatalogObjectId: 1, squareObjectId: "ITEM-1", squareObjectType: "ITEM", squareItemName: "Harbour Burger", mappingType: "menu_item", flowtallyEntityType: "menu_item", flowtallyEntityId: "1", status: "mapped", isDeleted: false, createdAt: null, updatedAt: null }], unmappedVariations: [], mappingCoverage: { mappedVariationCount: 8, totalVariationCount: 10, mappedPercent: 80 }, squareLocations: [{ id: 1, name: "Harbour Kitchen" }], menuItems: [] };
@@ -23,13 +35,15 @@ function response(pathname) {
   if (pathname === "/api/organizations/current") return { organization, restaurantLocations: [location], currentLocation: location, enabledModuleKeys: auth.enabledModuleKeys, membershipRole: "owner" };
   if (pathname === "/api/organizations") return { organizations: [], currentOrganizationId: 101, currentMembershipId: 1 };
   if (pathname === "/api/pilot/attention") return { reorder: { count: 1 } };
+  if (pathname === "/api/pilot/dashboard") return dashboard;
   if (pathname === "/api/pilot/inventory") return inventory;
   if (pathname === "/api/pilot/suppliers") return { suppliers: [supplier] };
   if (pathname === "/api/pilot/purchases") return purchases;
   if (pathname === "/api/pilot/daily-close") return dailyClose;
   if (pathname === "/api/integrations/square/status") return squareStatus;
   if (pathname === "/api/integrations/square/catalog/mappings") return squareMappings;
-  if (pathname === "/api/pilot/menu-costing") return { organizationId: 101, locationId: 201, recipes: [], menuItems: [] };
+  if (pathname === "/api/pilot/menu-costing") return menuCosting;
+  if (pathname === "/api/integrations/square/usage") return usageReport;
   if (pathname.startsWith("/api/pilot/inventory/items/")) return { item: inventoryItem, purchaseHistory: [invoiceLine], movementHistory: [], supplierMappings: [] };
   return {};
 }
@@ -62,12 +76,19 @@ async function capture(browser, route, name, viewport, theme, fixture = "connect
   fs.mkdirSync(artifactDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
-    await capture(browser, "/app/purchases", "purchases-dark-desktop", { width: 1440, height: 900 }, "dark");
-    await capture(browser, "/app/purchases", "purchases-light-desktop", { width: 1440, height: 900 }, "light");
-    await capture(browser, "/app/daily-close", "daily-close-dark-desktop", { width: 1440, height: 900 }, "dark");
-    await capture(browser, "/app/daily-close", "daily-close-light-desktop", { width: 1440, height: 900 }, "light");
-    await capture(browser, "/app/square", "square-dark-desktop", { width: 1440, height: 900 }, "dark");
-    await capture(browser, "/app/square", "square-disconnected-dark-desktop", { width: 1440, height: 900 }, "dark", "disconnected");
-    await capture(browser, "/app/square", "square-loading-dark-desktop", { width: 1440, height: 900 }, "dark", "loading");
+    const viewport = { width: 1440, height: 900 };
+    const pages = [
+      ["dashboard", "/app/dashboard"],
+      ["purchases", "/app/purchases"],
+      ["inventory-stock", "/app/inventory"],
+      ["usage-variance", "/app/inventory?view=usage"],
+      ["menu-costing", "/app/menu-costing"],
+      ["daily-close", "/app/daily-close"],
+    ];
+    for (const theme of ["dark", "light"]) {
+      for (const [name, route] of pages) {
+        await capture(browser, route, `${name}-${theme}-desktop`, viewport, theme);
+      }
+    }
   } finally { await browser.close(); }
 })();

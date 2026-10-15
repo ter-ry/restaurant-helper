@@ -1065,7 +1065,7 @@ export function PilotPurchasesPage() {
         </div>
       </Modal> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+      <div className="pilot-purchases-layout grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card className="w-full p-4" data-testid="purchase-review-card">
           <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">

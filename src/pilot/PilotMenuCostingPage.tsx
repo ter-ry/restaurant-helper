@@ -406,6 +406,7 @@ export function PilotMenuCostingPage() {
             </button>
           </>
         }
+        className="pilot-menu-costing-header"
         metrics={[
           { label: "Menu items", value: hasLoaded ? formatNumber(menuItems.length) : "—", helper: "Sellable items" },
           { label: "Average food cost", value: hasLoaded && averageFoodCost != null ? `${formatNumber(averageFoodCost)}%` : "—", helper: "Across cost-ready items" },
@@ -428,7 +429,7 @@ export function PilotMenuCostingPage() {
         <Card className="border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{message}</Card>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="pilot-menu-costing-toolbar flex items-center gap-3">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
           <Search className="h-4 w-4 text-muted" />
           <input
@@ -440,14 +441,14 @@ export function PilotMenuCostingPage() {
         </label>
       </div>
 
-      <WorkspaceTabs
+      <div className="pilot-menu-costing-tabs"><WorkspaceTabs
         tabs={[
           { id: "menu-items", label: "Menu items", badge: hasLoaded ? formatNumber(menuItems.length) : "—" },
           { id: "recipes", label: "Recipes", badge: hasLoaded ? formatNumber(recipes.length) : "—" },
         ]}
         value={menuTab}
         onChange={(value) => setMenuTab(value as "recipes" | "menu-items")}
-      />
+      /></div>
 
       {menuTab === "recipes" ? (
       <div className="grid gap-5">
