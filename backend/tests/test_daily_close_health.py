@@ -117,7 +117,7 @@ def test_manual_cash_reconciliation_is_namespaced_and_recomputed():
 
     snapshot = {"healthStatus": "Ready", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
     merged = _merge_manual_reconciliation(snapshot, Session())
-    assert merged["manualReconciliation"] == {"countedCash": 97.5, "baseHealthStatus": "Ready"}
+    assert merged["manualReconciliation"] == {"countedCash": 97.5}
     assert merged["cashReconciliation"]["overShort"] == -2.5
     assert merged["attentionItems"][0]["type"] == "cash_variance"
 
@@ -234,11 +234,34 @@ def test_manual_cash_variance_updates_health_and_restores_underlying_state():
     snapshot = {"healthStatus": "Ready", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
     short = _merge_manual_reconciliation(snapshot, None, {"reconciliation": {"countedCash": 88}})
     assert short["healthStatus"] == "Ready with warnings"
-    balanced = _merge_manual_reconciliation(short, None, {"reconciliation": {"countedCash": 100}})
+    class Session:
+        summary_snapshot_json = {"manualReconciliation": {"countedCash": 88}}
+    fresh = {"healthStatus": "Ready", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
+    balanced = _merge_manual_reconciliation(fresh, Session(), {"reconciliation": {"countedCash": 100}})
     assert balanced["healthStatus"] == "Ready"
     unrelated = {"healthStatus": "Ready with warnings", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": [{"type": "usage_variance"}]}
     cleared = _merge_manual_reconciliation(unrelated, None, {"reconciliation": {"countedCash": 100}})
     assert cleared["healthStatus"] == "Ready with warnings"
+
+
+def test_stored_manual_cash_does_not_restore_stale_base_health_over_fresh_warning():
+    from backend.daily_close import _merge_manual_reconciliation
+
+    class Session:
+        summary_snapshot_json = {"manualReconciliation": {"countedCash": 88}}
+
+    snapshot = {
+        "healthStatus": "Ready with warnings",
+        "cashReconciliation": {"status": "available", "expectedCash": 100.0},
+        "manualReconciliation": {},
+        "attentionItems": [{"type": "square_mapping", "title": "Square mapping needs review"}],
+    }
+    balanced = _merge_manual_reconciliation(snapshot, Session(), {"reconciliation": {"countedCash": 100}})
+    assert balanced["cashReconciliation"]["overShort"] == 0
+    assert all(item["type"] != "cash_variance" for item in balanced["attentionItems"])
+    assert balanced["attentionItems"] == [{"type": "square_mapping", "title": "Square mapping needs review"}]
+    assert balanced["healthStatus"] == "Ready with warnings"
+    assert "baseHealthStatus" not in balanced["manualReconciliation"]
 
 
 def test_cash_reconciliation_uses_exact_business_day_payments_and_paginates(monkeypatch):

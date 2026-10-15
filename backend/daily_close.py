@@ -542,6 +542,7 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
 
 
 def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: DailyCloseSession | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_health = snapshot.get("healthStatus")
     manual = dict(snapshot.get("manualReconciliation") or {})
     if session_record is not None:
         stored = (session_record.summary_snapshot_json or {}).get("manualReconciliation") or {}
@@ -554,11 +555,7 @@ def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: Daily
             try: counted = float(raw)
             except (TypeError, ValueError): counted = None
             if counted is not None and counted >= 0: manual["countedCash"] = counted
-    base_health = manual.get("baseHealthStatus")
-    if base_health is None:
-        base_health = snapshot.get("healthStatus")
-    if base_health in {"Ready", "Ready with warnings", "Reconciled", "Incomplete"}:
-        manual["baseHealthStatus"] = base_health
+    manual.pop("baseHealthStatus", None)
     snapshot["manualReconciliation"] = manual
     cash = dict(snapshot.get("cashReconciliation") or {})
     if manual.get("countedCash") is not None and cash.get("expectedCash") is not None:
