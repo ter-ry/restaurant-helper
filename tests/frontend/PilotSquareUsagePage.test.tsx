@@ -62,7 +62,7 @@ describe("PilotSquareUsagePage", () => {
 
   it("does not request intermediate date ranges and applies both draft dates once", async () => {
     renderPage();
-    await screen.findByText("Classic Cheeseburger - Regular");
+    await screen.findByText("Theoretical usage");
     mockApi.fetchSquareUsage.mockClear();
     fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
     fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
