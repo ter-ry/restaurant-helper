@@ -41,6 +41,7 @@ export function PilotDashboardPage() {
   ];
 
   return <div className="workspace-page">
+    <div className="flex items-center justify-between"><h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Dashboard</h1></div>
     {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
     {loading && !data ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading dashboard data...</div> : null}
 
