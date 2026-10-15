@@ -385,7 +385,8 @@ export function PilotDailyClosePage() {
                   <p className="font-semibold text-ink">No current exceptions.</p>
                 </div>
               )}
-\n              <div className="rounded-3xl border border-line bg-white p-4">
+
+              <div className="rounded-3xl border border-line bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-bold text-ink">Notes</p>
                   {completed ? <span className="text-xs font-semibold uppercase tracking-wide text-muted">Read only</span> : null}
