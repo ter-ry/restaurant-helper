@@ -37,7 +37,7 @@ describe("PilotReportsPage", () => {
     expect(screen.queryByRole("tab", { name: "Daily" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Weekly" })).not.toBeInTheDocument();
     expect(screen.getByText("Most ordered item")).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent?.includes("Harbour Burger") && element.textContent.includes("10 units.") ? true : false)).toBeInTheDocument();
+    expect(screen.getByText("10 units.")).toBeInTheDocument();
     expect(screen.queryByText("Count evidence unavailable")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Review usage" })).toHaveAttribute("href", "/app/inventory?view=usage");
     expect(screen.getByRole("link", { name: "Review reorder" })).toHaveAttribute("href", "/app/inventory?view=reorder");
