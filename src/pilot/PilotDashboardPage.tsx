@@ -41,7 +41,7 @@ export function PilotDashboardPage() {
 
     {data?.insights ? <Card className="border-brand-100 bg-brand-50/30 p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-wide text-muted">How are we doing?</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{formatMoney(data.insights.today.totalCollected)}</p><p className="mt-2 text-sm text-muted">{formatNumber(data.insights.today.orderCount)} orders · {String(data.insights.today.topMenuItem?.quantity ?? 0)} units sold</p></div>
+        <div><p className="text-xs font-bold uppercase tracking-wide text-muted">How are we doing?</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{formatMoney(data.insights.today.totalCollected)}</p><p className="mt-2 text-sm text-muted">{formatNumber(data.insights.today.orderCount)} orders</p></div>
         <div className="flex flex-wrap gap-5 text-sm"><div><p className="text-xs uppercase tracking-wide text-muted">Estimated food cost</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.estimatedFoodCostPercent == null ? "—" : `${data.insights.estimatedFoodCost.estimatedFoodCostPercent.toFixed(1)}%`}</p></div><div><p className="text-xs uppercase tracking-wide text-muted">Coverage</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.costCoveragePercent.toFixed(0)}%</p></div></div>
         <Link className="text-sm font-semibold text-brand-700" to="/app/dashboard?view=daily">Open daily report <ArrowUpRight className="inline h-4 w-4" /></Link>
       </div>
