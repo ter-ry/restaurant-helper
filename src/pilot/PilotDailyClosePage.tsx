@@ -180,6 +180,13 @@ export function PilotDailyClosePage() {
   const squareConnected = squareStatus === "Connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
+  const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
+  const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
+  const wasteLabel = recordedWasteCost > 0
+    ? `${formatMoney(recordedWasteCost)} recorded`
+    : recordedWasteQuantity !== 0 || recordedWasteCost !== 0
+      ? "Recorded"
+      : "No recorded entries";
 
   const openHistorySession = (sessionDate: string) => {
     setSelectedBusinessDate(sessionDate);
@@ -189,7 +196,6 @@ export function PilotDailyClosePage() {
   return (
     <div className="workspace-page">
       <WorkspacePageHeader
-        eyebrow="Daily close"
         title="Daily Close"
         actions={
           <div className="flex flex-wrap gap-2">
@@ -421,7 +427,7 @@ export function PilotDailyClosePage() {
               <div className="rounded-3xl border border-line bg-slate-50 p-4">
                 <SectionHeader title="Additional context" description="Optional operational context for this close." />
                 <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                  <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Waste</p><p className="mt-1 font-semibold text-ink">{Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0) !== 0 || Number(snapshot?.reconciliation?.recordedWasteCost ?? 0) !== 0 ? formatNumber(Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0)) + " · " + formatMoney(Number(snapshot?.reconciliation?.recordedWasteCost ?? 0)) : "No recorded entries"}</p></div>
+                  <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Waste</p><p className="mt-1 font-semibold text-ink">{wasteLabel}</p></div>
                   {Number(snapshot?.reconciliation?.otherAdjustmentQuantity ?? 0) !== 0 ? <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Adjustments</p><p className="mt-1 font-semibold text-ink">{formatSignedNumber(Number(snapshot?.reconciliation?.otherAdjustmentQuantity))}</p></div> : null}
                   <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-1 font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Not available for this date" : "Available"}</p></div>
                 </div>
