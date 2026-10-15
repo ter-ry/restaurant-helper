@@ -1,29 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, RefreshCw, Save, Search, Trash2, Workflow } from "lucide-react";
+import { AlertTriangle, BarChart3, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
 import { usePilotSession } from "./PilotSessionProvider";
+import { fetchSquareUsage, type SquareUsageIngredientRow, type SquareUsageReport } from "../lib/squareIntegration";
 import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
-import {
-  deleteSquareCatalogMapping,
-  fetchSquareUsage,
-  updateSquareCatalogMapping,
-  type SquareCatalogMappingSummary,
-  type SquareCatalogMappingCandidate,
-  type SquareUsageIngredientRow,
-  type SquareUsageMenuItemSummary,
-  type SquareUsageReport,
-} from "../lib/squareIntegration";
-
-type MappingDraft = Record<number, number | "">;
-
-function getMappingDetail(candidate: SquareCatalogMappingCandidate): SquareCatalogMappingSummary | null {
-  if (candidate.mapping) return candidate.mapping;
-  const legacy = candidate as SquareCatalogMappingCandidate & Partial<SquareCatalogMappingSummary>;
-  return legacy.flowtallyEntityId !== undefined ? legacy as SquareCatalogMappingSummary : null;
-}
 
 function formatQuantity(value: number | null | undefined) {
   return new Intl.NumberFormat("en-CA", { maximumFractionDigits: 4 }).format(Number(value ?? 0));
@@ -37,112 +20,26 @@ function formatBoundary(quantity: number | null, completedAt: string | null, ses
 
 function defaultRange(timezone: string) {
   const now = new Date();
-  const endAt = locationNowDatetimeLocal(timezone, now);
-  const startAt = locationNowDatetimeLocal(timezone, new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   return {
-    startAt,
-    endAt,
+    startAt: locationNowDatetimeLocal(timezone, new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)),
+    endAt: locationNowDatetimeLocal(timezone, now),
   };
 }
 
-function squareSectionLinkClasses(active: boolean) {
-  return [
-    "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border px-4 py-2 text-sm font-semibold transition",
-    active ? "border-ink bg-ink text-white shadow-soft" : "border-line bg-white text-ink hover:bg-slate-50",
-  ].join(" ");
-}
-
-function MappingCard({
-  title,
-  subtitle,
-  mapping,
-  menuItems,
-  draftValue,
-  onDraftChange,
-  onSave,
-  onRemove,
-  suggestion,
-}: {
-  title: string;
-  subtitle: string;
-  mapping: SquareCatalogMappingSummary | null;
-  menuItems: SquareUsageMenuItemSummary[];
-  draftValue: number | "";
-  onDraftChange: (value: number | "") => void;
-  onSave: () => void;
-  onRemove: () => void;
-  suggestion: number | null;
-}) {
-  const mappedLabel = mapping?.flowtallyEntityId
-    ? menuItems.find((item) => item.id === Number(mapping.flowtallyEntityId))?.name ?? mapping.flowtallyEntityId
-    : "Not mapped";
-  return (
-    <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-ink">{title}</p>
-          <p className="mt-1 text-xs text-muted">{subtitle}</p>
-        </div>
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">{mapping?.status ?? "unmapped"}</span>
-      </div>
-      <p className="mt-3 text-xs text-muted">Current mapping: {mappedLabel}</p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="block">
-          <span className="text-xs font-bold uppercase tracking-wide text-muted">Flowtally menu item</span>
-          <select
-            className="input mt-1"
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value ? Number(event.target.value) : "")}
-          >
-            <option value="">Choose a menu item</option>
-            {menuItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} · {item.category}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-col gap-2 sm:justify-end">
-          <button
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-            type="button"
-            onClick={onSave}
-            disabled={!draftValue}
-          >
-            <Save className="h-4 w-4" />
-            {mapping ? "Update" : "Map"}
-          </button>
-          {mapping ? (
-            <button
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-100"
-              type="button"
-              onClick={onRemove}
-            >
-              <Trash2 className="h-4 w-4" />
-              Remove
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {suggestion ? <p className="mt-3 text-xs text-brand-700">Suggested match: {menuItems.find((item) => item.id === suggestion)?.name ?? "menu item"}</p> : null}
-    </div>
-  );
+function varianceTone(row: SquareUsageIngredientRow) {
+  if (row.discrepancy == null) return "text-muted";
+  return row.discrepancy === 0 ? "text-emerald-700" : "text-amber-700";
 }
 
 function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: () => void }) {
-  const discrepancyTone = row.discrepancy == null ? "text-muted" : row.discrepancy > 0 ? "text-amber-700" : "text-emerald-700";
   return (
-    <tr className="border-t border-line cursor-pointer hover:bg-brand-50/40" onClick={onSelect} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(); } }}>
-      <td className="px-3 py-3 align-top">
-        <div className="font-semibold text-ink">{row.inventoryItemName}</div>
-        <div className="text-xs text-muted">{row.unit}</div>
-        {row.warnings.length ? <div className="mt-2 text-xs text-amber-700">{row.warnings.join(" · ")}</div> : null}
-      </td>
-      <td className="px-3 py-3 align-top text-right font-semibold text-ink">{formatQuantity(row.soldMenuUnits)}</td>
-      <td className="px-3 py-3 align-top text-right font-semibold text-ink">{formatQuantity(row.theoreticalUsage)}</td>
-      <td className="px-3 py-3 align-top text-right font-semibold text-ink">{row.actualUsage == null ? "—" : formatQuantity(row.actualUsage)}</td>
-      <td className={`px-3 py-3 align-top text-right font-semibold ${discrepancyTone}`}>{row.discrepancy == null ? "—" : formatQuantity(row.discrepancy)}</td>
-      <td className="px-3 py-3 align-top text-right font-semibold text-ink">{row.discrepancyPercent == null ? "—" : `${formatQuantity(row.discrepancyPercent)}%`}</td>
+    <tr className="cursor-pointer border-t border-line hover:bg-brand-50/40" onClick={onSelect} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(); } }}>
+      <td className="px-3 py-3 align-top"><div className="font-semibold text-ink">{row.inventoryItemName}</div><div className="text-xs text-muted">{row.unit}</div></td>
+      <td className="px-3 py-3 text-right font-semibold text-ink">{formatQuantity(row.soldMenuUnits)}</td>
+      <td className="px-3 py-3 text-right font-semibold text-ink">{formatQuantity(row.theoreticalUsage)}</td>
+      <td className="px-3 py-3 text-right font-semibold text-ink">{row.actualUsage == null ? "—" : formatQuantity(row.actualUsage)}</td>
+      <td className={`px-3 py-3 text-right font-semibold ${varianceTone(row)}`}>{row.discrepancy == null ? "—" : formatQuantity(row.discrepancy)}</td>
+      <td className="px-3 py-3 text-right font-semibold text-ink">{row.discrepancyPercent == null ? "—" : `${formatQuantity(row.discrepancyPercent)}%`}</td>
     </tr>
   );
 }
@@ -150,385 +47,104 @@ function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: 
 export function PilotSquareUsagePage() {
   const { organization, currentLocation, locations } = usePilotSession();
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
-  const selectedLocationTimezone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? currentLocation?.timezone ?? "America/Toronto";
-  const initialRange = useMemo(() => defaultRange(selectedLocationTimezone), [selectedLocationTimezone]);
+  const requestGeneration = useRef(0);
+  const timezone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? currentLocation?.timezone ?? "America/Toronto";
+  const initialRange = useMemo(() => defaultRange(timezone), [timezone]);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
   const [appliedRange, setAppliedRange] = useState(initialRange);
-  const [, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [usageLoading, setUsageLoading] = useState(true);
-  const [dataError, setDataError] = useState<string | null>(null);
-  const [menuItems, setMenuItems] = useState<SquareUsageMenuItemSummary[]>([]);
-  const [mappings, setMappings] = useState<SquareCatalogMappingCandidate[]>([]);
-  const [unmappedVariations, setUnmappedVariations] = useState<SquareCatalogMappingCandidate[]>([]);
   const [usage, setUsage] = useState<SquareUsageReport | null>(null);
-  const [drafts, setDrafts] = useState<MappingDraft>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedVarianceId, setSelectedVarianceId] = useState<number | null>(null);
-  const loadGeneration = useRef(0);
+  const organizationId = organization?.id;
+  const locationOptions = locations.length ? locations : currentLocation ? [currentLocation] : [];
 
-  useEffect(() => {
-    if (selectedLocationId == null && currentLocation?.id != null) {
-      setSelectedLocationId(currentLocation.id);
-    }
-  }, [currentLocation?.id, selectedLocationId]);
-
-  const locationOptions = useMemo(
-    () => (locations.length > 0 ? locations : currentLocation ? [currentLocation] : []),
-    [currentLocation, locations],
-  );
-
-  const loadData = useCallback(async () => {
-    if (!organization) {
-      ++loadGeneration.current;
-      setLoading(false);
-      setRefreshing(false);
-      setUsageLoading(false);
-      setMappings([]);
-      setUnmappedVariations([]);
-      setUsage(null);
-      return;
-    }
+  const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    if (!organizationId) { setUsage(null); setLoading(false); return; }
     setRefreshing(true);
     setLoading(true);
-    setUsageLoading(true);
-    setDataError(null);
     setUsage(null);
-    const generation = ++loadGeneration.current;
-    const isCurrent = () => generation === loadGeneration.current;
-    const usageRequest = fetchSquareUsage({
-      organizationId: organization.id,
-      locationId: selectedLocationId ?? undefined,
-      startAt: locationDatetimeLocalToUtcIso(appliedRange.startAt, selectedLocationTimezone),
-      endAt: locationDatetimeLocalToUtcIso(appliedRange.endAt, selectedLocationTimezone),
-    });
-    const applyResponse = (response: Awaited<typeof usageRequest>) => {
-      if (!isCurrent()) return;
-      setMenuItems(response.menuItems);
-      setMappings(response.mappings);
-      setUnmappedVariations(response.unmappedVariations);
-      setDrafts(
-        Object.fromEntries(
-          response.mappings.map((mapping) => [
-            mapping.squareCatalogObjectId,
-            getMappingDetail(mapping)?.flowtallyEntityId ? Number(getMappingDetail(mapping)?.flowtallyEntityId) : "",
-          ]),
-        ),
-      );
-      setUsage(response.usage);
-    };
-    void usageRequest
-      .then(applyResponse)
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          setMenuItems([]);
-          setMappings([]);
-          setUnmappedVariations([]);
-          setDrafts({});
-          setUsage(null);
-          setDataError(error instanceof Error ? error.message : "Could not load usage and mapping data.");
-        }
-      })
-      .finally(() => {
-        if (isCurrent()) {
-          setUsageLoading(false);
-          setLoading(false);
-          setRefreshing(false);
-        }
+    setError(null);
+    try {
+      const response = await fetchSquareUsage({
+        organizationId,
+        locationId: selectedLocationId ?? undefined,
+        startAt: locationDatetimeLocalToUtcIso(appliedRange.startAt, timezone),
+        endAt: locationDatetimeLocalToUtcIso(appliedRange.endAt, timezone),
       });
-  }, [appliedRange.endAt, appliedRange.startAt, organization, selectedLocationId, selectedLocationTimezone]);
+      if (generation !== requestGeneration.current) return;
+      setUsage(response.usage);
+    } catch (err) {
+      if (generation !== requestGeneration.current) return;
+      setUsage(null);
+      setError(err instanceof Error ? err.message : "Could not load usage data.");
+    } finally {
+      if (generation === requestGeneration.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, [appliedRange.endAt, appliedRange.startAt, organizationId, selectedLocationId, timezone]);
 
   useEffect(() => {
-    void loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization?.id, selectedLocationId, appliedRange.startAt, appliedRange.endAt]);
+    if (selectedLocationId == null && currentLocation?.id != null) setSelectedLocationId(currentLocation.id);
+  }, [currentLocation?.id, selectedLocationId]);
+
+  useEffect(() => { void load(); }, [load]);
 
   const applyRange = () => {
-    if (!startAt || !endAt) return;
-    if (startAt === appliedRange.startAt && endAt === appliedRange.endAt) {
-      void loadData();
-      return;
-    }
-    setUsage(null);
-    setAppliedRange({ startAt, endAt });
+    if (startAt && endAt) setAppliedRange({ startAt, endAt });
   };
 
-  const topUsageRows = useMemo(() => [...(usage?.ingredientUsage ?? [])].sort((a, b) => Math.abs(b.discrepancy ?? 0) - Math.abs(a.discrepancy ?? 0)).slice(0, 20), [usage?.ingredientUsage]);
-  const activeMappings = useMemo(() => mappings.filter((mapping) => {
-    const detail = getMappingDetail(mapping);
-    return detail !== null && detail.status !== "unmapped";
-  }), [mappings]);
-
-  async function saveMapping(squareCatalogObjectId: number) {
-    if (!organization) return;
-    const suggestedMenuItemId = unmappedVariations.find((variation) => variation.squareCatalogObjectId === squareCatalogObjectId)?.suggestedMenuItemId ?? null;
-    const menuItemId = drafts[squareCatalogObjectId] ?? suggestedMenuItemId;
-    if (!menuItemId) return;
-    await updateSquareCatalogMapping({
-      organizationId: organization.id,
-      squareCatalogObjectId,
-      mappingType: "menu_item",
-      flowtallyEntityType: "menu_item",
-      flowtallyEntityId: String(menuItemId),
-      status: "mapped",
-    });
-    await loadData();
-  }
-
-  async function removeMapping(mappingId: number) {
-    if (!organization) return;
-    await deleteSquareCatalogMapping({ organizationId: organization.id, mappingId });
-    await loadData();
-  }
+  const rows = usage?.ingredientUsage ?? [];
+  const attentionRows = useMemo(() => rows.filter((row) => row.discrepancy != null && row.discrepancy !== 0).sort((a, b) => Math.abs(Number(b.discrepancyPercent ?? 0)) - Math.abs(Number(a.discrepancyPercent ?? 0))).slice(0, 4), [rows]);
+  const matchedRows = rows.filter((row) => row.actualUsage != null && row.discrepancy === 0);
+  const physicalRows = rows.filter((row) => row.actualUsage != null);
+  const selectedRow = rows.find((row) => row.inventoryItemId === selectedVarianceId) ?? null;
 
   if (!organization) {
-    return (
-      <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
-        <Card className="p-6">
-          <h1 className="text-2xl font-bold text-ink">Choose an organization first</h1>
-          <p className="mt-3 text-sm leading-6 text-muted">The usage workspace needs an active organization and location.</p>
-        </Card>
-      </PageLayout>
-    );
+    return <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded><Card className="p-6"><h1 className="text-2xl font-bold text-ink">Choose an organization first</h1><p className="mt-3 text-sm leading-6 text-muted">The usage workspace needs an active organization and location.</p></Card></PageLayout>;
   }
 
-  return (
-    <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
-      <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
-        <Link className={squareSectionLinkClasses(false)} to="/app/square">
-          Setup & Sync
-        </Link>
-        <Link aria-current="page" className={squareSectionLinkClasses(true)} to="/app/square-usage">
-          Usage & Variance
-        </Link>
-      </div>
-
-      <div className="space-y-6">
-        <Card className="p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Usage window</p>
-              <h1 className="mt-2 text-3xl font-bold text-ink">What should I investigate?</h1>
-            </div>
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={applyRange} disabled={refreshing}>
-              <RefreshCw className="h-4 w-4" />
-              {refreshing ? "Applying…" : "Apply"}
-            </button>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="text-sm font-semibold text-ink">Location</span>
-              <select className="input mt-1" value={selectedLocationId ?? ""} onChange={(event) => setSelectedLocationId(event.target.value ? Number(event.target.value) : null)}>
-                <option value="">All locations</option>
-                {locationOptions.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-sm font-semibold text-ink">Start at</span>
-              <input className="input mt-1" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} />
-            </label>
-            <label className="block">
-              <span className="text-sm font-semibold text-ink">End at</span>
-              <input className="input mt-1" type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} />
-            </label>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Sales coverage</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage ? `${usage.coverage.mappedSalesCoveragePercent}%` : "—"}</p>
-              <p className="mt-1 text-xs text-muted">Mapped variation coverage</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Sold menu units</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage ? formatQuantity(usage.coverage.totalSoldUnits) : "—"}</p>
-              <p className="mt-1 text-xs text-muted">Across mapped Square variations</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Ingredient rows tracked</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage ? formatQuantity(usage.ingredientUsage.length) : "—"}</p>
-              <p className="mt-1 text-xs text-muted">Each row keeps its own stock unit</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">Physical count coverage</p>
-              <p className="mt-2 text-2xl font-bold text-ink">{usage ? `${usage.ingredientUsage.filter((row) => row.actualUsage != null).length}/${usage.ingredientUsage.length}` : "—"}</p>
-              <p className="mt-1 text-xs text-muted">Requires opening and closing physical counts</p>
-            </div>
-          </div>
-
-          {usageLoading ? <div className="mb-4 rounded-xl border border-line bg-slate-50 px-3 py-2 text-sm text-muted" aria-busy="true">
-            Loading usage and mapping data…
-          </div> : null}
-          {dataError ? (
-            <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-              <div className="flex items-center gap-2 font-semibold">
-                <AlertTriangle className="h-4 w-4" />
-                Usage and mapping data unavailable
-              </div>
-              <p className="mt-2">{dataError}</p>
-            </div>
-          ) : null}
-
-          <div className="mt-6 flex items-center gap-2 text-sm font-semibold text-ink">
-            <BarChart3 className="h-4 w-4 text-brand-700" />
-            Theoretical usage by inventory item
-          </div>
-          <div className="mt-3 max-h-[34rem] overflow-auto rounded-2xl border border-line bg-white">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="px-3 py-3">Inventory item</th>
-                  <th className="px-3 py-3 text-right">Sold menu units</th>
-                  <th className="px-3 py-3 text-right">Theoretical usage</th>
-                  <th className="px-3 py-3 text-right">Count-derived usage</th>
-                  <th className="px-3 py-3 text-right">Variance</th>
-                  <th className="px-3 py-3 text-right">Variance %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topUsageRows.length > 0 ? (
-                  topUsageRows.map((row) => <UsageRow key={row.inventoryItemId} row={row} onSelect={() => setSelectedVarianceId(row.inventoryItemId)} />)
-                ) : !usageLoading ? (
-                  <tr>
-                    <td className="px-3 py-8 text-center text-sm text-muted" colSpan={6}>
-                      No usage rows are available yet.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-
-
-          {selectedVarianceId != null ? (() => {
-            const selected = topUsageRows.find((row) => row.inventoryItemId === selectedVarianceId);
-            if (!selected) return null;
-            const basis = selected.actualUsageBasis;
-            const boundaryMissing = basis.available && (basis.openingQuantity == null || basis.closingQuantity == null || basis.openingCountCompletedAt == null || basis.closingCountCompletedAt == null);
-            return <Modal title={`Variance detail · ${selected.inventoryItemName}`} onClose={() => setSelectedVarianceId(null)} size="large">
-              <p className="text-sm leading-6 text-muted">Count-derived usage is based on physical stock counts and qualifying Flowtally inventory movements. POS-driven Square inventory consumption is excluded.</p>
-              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted">Opening count</dt><dd className="font-semibold text-ink">{formatBoundary(basis.openingQuantity, basis.openingCountCompletedAt, basis.openingCountSessionId)}</dd></div><div><dt className="text-muted">Closing count</dt><dd className="font-semibold text-ink">{formatBoundary(basis.closingQuantity, basis.closingCountCompletedAt, basis.closingCountSessionId)}</dd></div><div><dt className="text-muted">Qualifying movement net</dt><dd className="font-semibold text-ink">{basis.movementNet == null ? "Unavailable" : formatQuantity(basis.movementNet)}</dd></div><div><dt className="text-muted">Count-derived usage</dt><dd className="font-semibold text-ink">{selected.actualUsage == null ? "Unavailable" : formatQuantity(selected.actualUsage)}</dd></div><div><dt className="text-muted">POS theoretical usage</dt><dd className="font-semibold text-ink">{formatQuantity(selected.theoreticalUsage)}</dd></div><div><dt className="text-muted">Variance</dt><dd className="font-semibold text-ink">{selected.discrepancy == null ? "Unavailable" : formatQuantity(selected.discrepancy)}{selected.discrepancyPercent == null ? "" : ` (${formatQuantity(selected.discrepancyPercent)}%)`}</dd></div></dl>
-              <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted"><p className="font-semibold text-ink">Calculation</p><p className="mt-1">Opening + qualifying movements − closing = count-derived usage</p><p className="mt-1">{basis.openingQuantity == null || basis.movementNet == null || basis.closingQuantity == null ? "Boundary counts or movements are unavailable." : `${formatQuantity(basis.openingQuantity)} + ${formatQuantity(basis.movementNet)} − ${formatQuantity(basis.closingQuantity)} = ${formatQuantity(selected.actualUsage)}`}</p><p className="mt-1">Count-derived usage − theoretical usage = variance</p><div className="mt-3 border-t border-line pt-3"><p className="font-semibold text-ink">How to read the sign</p><p className="mt-1">Positive means more physical stock disappeared than recipe/POS usage predicted.</p><p className="mt-1">Negative means less physical stock disappeared than recipe/POS usage predicted.</p><p className="mt-1">Zero means physical usage matches theoretical recipe usage.</p></div></div>
-              {boundaryMissing || !basis.available ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Physical usage is unavailable until both boundary stock counts exist for this period.</div> : null}
-              {selected.warnings.length ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{selected.warnings.join(" · ")}</div> : null}
-              <div className="mt-5 flex flex-wrap gap-2"><Link className={squareSectionLinkClasses(false)} to="/app/inventory">Review inventory</Link><Link className={squareSectionLinkClasses(false)} to="/app/purchases">Review purchases</Link><Link className={squareSectionLinkClasses(false)} to="/app/menu-costing">Review Menu Costing</Link><Link className={squareSectionLinkClasses(false)} to="/app/stock-counts">Review stock counts</Link></div>
-            </Modal>;
-          })() : null}
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="p-6">
-            <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <Search className="h-4 w-4 text-brand-700" />
-              Unmapped Square variations
-
-    </div>
-            <p className="mt-2 text-sm leading-6 text-muted">Map the exact Square variation to the Flowtally menu item it actually sells.</p>
-            <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
-              {unmappedVariations.length > 0 ? (
-                unmappedVariations.map((variation) => (
-                  <MappingCard
-                    key={variation.squareCatalogObjectId}
-                    title={variation.squareObjectName}
-                    subtitle={`${formatQuantity(variation.soldUnits)} sold`}
-                    mapping={variation.mapping}
-                    menuItems={menuItems}
-                    draftValue={drafts[variation.squareCatalogObjectId] ?? variation.suggestedMenuItemId ?? ""}
-                    onDraftChange={(value) => setDrafts((current) => ({ ...current, [variation.squareCatalogObjectId]: value }))}
-                    onSave={() => void saveMapping(variation.squareCatalogObjectId)}
-                    onRemove={() => (variation.mapping ? void removeMapping(variation.mapping.id) : undefined)}
-                    suggestion={variation.suggestedMenuItemId}
-                  />
-                ))
-              ) : (
-                <p className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No unmapped Square variations found for the selected scope.</p>
-              )}
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <Workflow className="h-4 w-4 text-brand-700" />
-              Existing mappings
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted">Review or remove the current Square variation to menu item links.</p>
-            <div className="mt-4 space-y-3 max-h-[34rem] overflow-y-auto pr-1">
-              {activeMappings.length > 0 ? (
-                activeMappings.map((mapping) => (
-                  <MappingCard
-                    key={mapping.id}
-                    title={mapping.squareObjectName}
-                    subtitle={mapping.mapping?.mappingType === "menu_item" ? "Menu item mapping" : "Existing mapping"}
-                    menuItems={menuItems}
-                    mapping={getMappingDetail(mapping)}
-                    draftValue={drafts[mapping.squareCatalogObjectId] ?? (getMappingDetail(mapping)?.flowtallyEntityId ? Number(getMappingDetail(mapping)!.flowtallyEntityId) : "")}
-                    onDraftChange={(value) => setDrafts((current) => ({ ...current, [mapping.squareCatalogObjectId]: value }))}
-                    onSave={() => void saveMapping(mapping.squareCatalogObjectId)}
-                    onRemove={() => (getMappingDetail(mapping) ? void removeMapping(getMappingDetail(mapping)!.id) : undefined)}
-                    suggestion={null}
-                  />
-                ))
-              ) : (
-                <p className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No active mappings yet.</p>
-              )}
-            </div>
-          </Card>
+  return <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
+    <div className="space-y-6">
+      <Card className="p-6">
+        <div className="flex justify-end">
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void load()} disabled={refreshing}><RefreshCw className="h-4 w-4" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </div>
-      </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <label className="block"><span className="text-sm font-semibold text-ink">Location</span><select className="input mt-1" value={selectedLocationId ?? ""} onChange={(event) => setSelectedLocationId(event.target.value ? Number(event.target.value) : null)}><option value="">All locations</option>{locationOptions.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+          <label className="block"><span className="text-sm font-semibold text-ink">Start at</span><input className="input mt-1" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
+          <label className="block"><span className="text-sm font-semibold text-ink">End at</span><input className="input mt-1" type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></label>
+        </div>
+        <div className="mt-4 flex justify-end"><button className="inline-flex min-h-10 items-center rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" onClick={applyRange}>Apply</button></div>
+      </Card>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card className="p-6">
-          <h2 className="text-lg font-bold text-ink">Coverage and traceability</h2>
-          <div className="mt-4 space-y-3">
-            {(usage?.contributingMenuItems ?? []).length > 0 ? (
-              usage?.contributingMenuItems.map((item) => (
-                <div key={item.menuItemId} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-ink">{item.menuItemName}</p>
-                      <p className="mt-1 text-xs text-muted">
-                        {formatQuantity(item.soldUnits)} sold · yield {formatQuantity(item.recipeYield)} {item.recipeYieldUnit}
-                      </p>
-                    </div>
-                    {item.warnings.length > 0 ? (
-                      <span className="text-xs font-semibold uppercase tracking-wide text-amber-700">Needs review</span>
-                    ) : (
-                      <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Ready</span>
-                    )}
-                  </div>
-                  {item.warnings.length > 0 ? <p className="mt-2 text-sm text-amber-800">{item.warnings.join(" · ")}</p> : null}
-                </div>
-              ))
-            ) : (
-              <p className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No contributing menu items yet.</p>
-            )}
-          </div>
-        </Card>
+      {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert"><div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Usage data unavailable</div><p className="mt-2">{error}</p></div> : null}
+      {loading ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading usage data…</div> : null}
 
-        <Card className="p-6">
-          <h2 className="text-lg font-bold text-ink">Incomplete data and exclusions</h2>
-          <div className="mt-4 space-y-3">
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-ink">Unmapped variations</p>
-              <p className="mt-1 text-sm text-muted">{usage?.coverage.unmappedVariationCount ?? unmappedVariations.length} variation(s) were excluded until they are mapped to a menu item.</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-ink">Recipe and unit warnings</p>
-              <p className="mt-1 text-sm text-muted">{usage?.coverage.excludedIncompleteUnits ?? 0} sold unit(s) were excluded because a recipe, ingredient, or unit could not be safely calculated.</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-ink">Cancelled or voided sales</p>
-              <p className="mt-1 text-sm text-muted">{usage?.coverage.excludedCancelledUnits ?? 0} sold unit(s) were excluded because the persisted Square order state was cancelled or voided.</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </PageLayout>
-  );
+      {usage ? <Card className="p-6">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Theoretical coverage</p><p className="mt-2 text-2xl font-bold text-ink">{usage.coverage.calculableSalesCoveragePercent}%</p><p className="mt-1 text-xs text-muted">{usage.coverage.totalSoldUnits > 0 ? `${usage.coverage.calculableSoldUnits} of ${usage.coverage.totalSoldUnits} sold units calculable` : "No sold units in range"}</p></div>
+          <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Menu units sold</p><p className="mt-2 text-2xl font-bold text-ink">{formatQuantity(usage.coverage.totalSoldUnits)}</p><p className="mt-1 text-xs text-muted">Units driving theoretical usage</p></div>
+          <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-2 text-2xl font-bold text-ink">{physicalRows.length ? `${physicalRows.length}/${rows.length}` : "Not available"}</p><p className="mt-1 text-xs text-muted">{physicalRows.length ? "Count-derived usage available" : "Requires completed counts that bracket the period"}</p></div>
+        </div>
+
+        {usage.coverage.unmappedVariationCount > 0 ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><span>{usage.coverage.unmappedVariationCount} Square variation(s) need mapping.</span><Link className="font-semibold text-amber-900 underline" to="/app/square">Review mappings →</Link></div> : null}
+
+        {(usage.coverage.excludedIncompleteUnits > 0 || usage.coverage.calculableSalesCoveragePercent < usage.coverage.mappedSalesCoveragePercent) ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><span>{usage.coverage.excludedIncompleteUnits > 0 ? `${usage.coverage.excludedIncompleteUnits} sold unit(s) need complete recipe/cost evidence.` : "Some mapped sales are not calculable yet."}</span><Link className="font-semibold text-amber-900 underline" to="/app/menu-costing">Review Menu Costing →</Link></div> : null}
+
+        {attentionRows.length ? <section className="mt-6"><h2 className="text-xl font-bold text-ink">Needs attention</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{attentionRows.map((row) => <button key={row.inventoryItemId} className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left" type="button" onClick={() => setSelectedVarianceId(row.inventoryItemId)}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-ink">{row.inventoryItemName}</span><span className="font-semibold text-amber-900">{row.discrepancyPercent == null ? "Review" : `${Math.abs(Number(row.discrepancyPercent)).toFixed(1)}% ${Number(row.discrepancy ?? 0) > 0 ? "above theoretical" : "below theoretical"}`}</span></div><p className="mt-2 text-sm text-muted">Expected: {formatQuantity(row.theoreticalUsage)} {row.unit} · Physical: {row.actualUsage == null ? "Unavailable" : formatQuantity(row.actualUsage) + " " + row.unit} · Variance: {row.discrepancy == null ? "Unavailable" : (Number(row.discrepancy) > 0 ? "+" : "") + formatQuantity(row.discrepancy) + " " + row.unit}</p></button>)}</div></section> : null}
+
+        {matchedRows.length ? <div className="mt-6 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted"><span className="font-semibold text-ink">Matched expected usage</span> · {matchedRows.length} item(s)</div> : null}
+
+        <section className="mt-6"><div className="flex items-center gap-2 text-lg font-bold text-ink"><BarChart3 className="h-4 w-4 text-brand-700" />Theoretical usage</div><div className="mt-3 max-h-[34rem] overflow-auto rounded-2xl border border-line bg-white"><table className="min-w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted"><tr><th className="px-3 py-3">Inventory item</th><th className="px-3 py-3 text-right">Sold menu units</th><th className="px-3 py-3 text-right">Theoretical usage</th><th className="px-3 py-3 text-right">Physical usage</th><th className="px-3 py-3 text-right">Variance</th><th className="px-3 py-3 text-right">Variance %</th></tr></thead><tbody>{rows.length ? rows.map((row) => <UsageRow key={row.inventoryItemId} row={row} onSelect={() => setSelectedVarianceId(row.inventoryItemId)} />) : <tr><td className="px-3 py-8 text-center text-muted" colSpan={6}>No theoretical usage rows are available yet.</td></tr>}</tbody></table></div></section>
+      </Card> : null}
+
+      {selectedRow ? <Modal title={`Variance detail · ${selectedRow.inventoryItemName}`} onClose={() => setSelectedVarianceId(null)} size="large"><p className="text-sm leading-6 text-muted">Count-derived usage reuses completed physical counts and qualifying Flowtally movements. POS-driven Square depletion is excluded.</p><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted">Opening count</dt><dd className="font-semibold text-ink">{formatBoundary(selectedRow.actualUsageBasis.openingQuantity, selectedRow.actualUsageBasis.openingCountCompletedAt, selectedRow.actualUsageBasis.openingCountSessionId)}</dd></div><div><dt className="text-muted">Closing count</dt><dd className="font-semibold text-ink">{formatBoundary(selectedRow.actualUsageBasis.closingQuantity, selectedRow.actualUsageBasis.closingCountCompletedAt, selectedRow.actualUsageBasis.closingCountSessionId)}</dd></div><div><dt className="text-muted">Qualifying movement net</dt><dd className="font-semibold text-ink">{selectedRow.actualUsageBasis.movementNet == null ? "Unavailable" : formatQuantity(selectedRow.actualUsageBasis.movementNet)}</dd></div><div><dt className="text-muted">Count-derived usage</dt><dd className="font-semibold text-ink">{selectedRow.actualUsage == null ? "Unavailable" : formatQuantity(selectedRow.actualUsage)}</dd></div><div><dt className="text-muted">POS theoretical usage</dt><dd className="font-semibold text-ink">{formatQuantity(selectedRow.theoreticalUsage)}</dd></div><div><dt className="text-muted">Variance</dt><dd className="font-semibold text-ink">{selectedRow.discrepancy == null ? "Unavailable" : formatQuantity(selectedRow.discrepancy)}{selectedRow.discrepancyPercent == null ? "" : ` (${formatQuantity(selectedRow.discrepancyPercent)}%)`}</dd></div></dl><div className="mt-4 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted"><p className="font-semibold text-ink">Calculation</p><p className="mt-1">Opening + qualifying movements − closing = count-derived usage</p><p className="mt-1">Count-derived usage − theoretical usage = variance</p><div className="mt-3 border-t border-line pt-3"><p className="font-semibold text-ink">Sign meaning</p><p className="mt-1">Positive: more physical stock disappeared than theoretical usage predicted.</p><p className="mt-1">Negative: less physical stock disappeared than theoretical usage predicted.</p><p className="mt-1">Zero: physical usage matches theoretical usage.</p></div></div><div className="mt-5 flex flex-wrap gap-2"><Link className="text-sm font-semibold text-brand-700" to="/app/inventory">Review inventory</Link><Link className="text-sm font-semibold text-brand-700" to="/app/purchases">Review purchases</Link><Link className="text-sm font-semibold text-brand-700" to="/app/menu-costing">Review Menu Costing</Link><Link className="text-sm font-semibold text-brand-700" to="/app/inventory?view=counts">Review stock counts</Link></div></Modal> : null}
+    </div>
+  </PageLayout>;
 }

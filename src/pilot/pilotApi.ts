@@ -736,6 +736,11 @@ export interface PilotDailyCloseSnapshot {
     percent: number | null;
     value: number;
   };
+  reconciliation?: {
+    recordedWasteQuantity?: number;
+    recordedWasteCost?: number;
+    otherAdjustmentQuantity?: number;
+  };
   square: Record<string, unknown>;
   readyToFinalize: boolean;
 }

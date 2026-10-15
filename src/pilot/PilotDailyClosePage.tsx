@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -27,6 +27,17 @@ function formatSignedNumber(value: number | null | undefined) {
 
 function currentBusinessDate(timeZone: string | null | undefined) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+
+function exceptionAction(exception: string) {
+  const text = exception.toLowerCase();
+  if (text.includes("variation") && text.includes("unmapped")) return { href: "/app/square", label: "Review mappings" };
+  if (text.includes("refund") || text.includes("cancel")) return { href: "/app/square", label: "Review sales" };
+  if (text.includes("sync") || text.includes("location") || text.includes("square")) return { href: "/app/square", label: "Review Square" };
+  if (text.includes("recipe") || text.includes("mapping")) return { href: "/app/menu-costing", label: "Review Menu Costing" };
+  if (text.includes("usage variance") || text.includes("variance")) return { href: "/app/inventory?view=usage", label: "Review usage" };
+  return null;
 }
 
 export function PilotDailyClosePage() {
@@ -169,6 +180,13 @@ export function PilotDailyClosePage() {
   const squareConnected = squareStatus === "Connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
+  const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
+  const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
+  const wasteLabel = recordedWasteCost > 0
+    ? `${formatMoney(recordedWasteCost)} recorded`
+    : recordedWasteQuantity !== 0 || recordedWasteCost !== 0
+      ? "Recorded"
+      : "No recorded entries";
 
   const openHistorySession = (sessionDate: string) => {
     setSelectedBusinessDate(sessionDate);
@@ -178,7 +196,6 @@ export function PilotDailyClosePage() {
   return (
     <div className="workspace-page">
       <WorkspacePageHeader
-        eyebrow="Daily close"
         title="Daily Close"
         actions={
           <div className="flex flex-wrap gap-2">
@@ -199,19 +216,6 @@ export function PilotDailyClosePage() {
         metrics={[]}
       />
 
-      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Daily close progress">
-        {[
-          ["Sales", currentSession ? (squareSynced ? "Complete" : "Needs review") : "—"],
-          ["Purchases", "Not evaluated"],
-          ["Usage", usage ? "Complete" : currentSession ? "Not evaluated" : "—"],
-          ["Waste / adjustments", snapshot && (snapshot as any).recordedWasteQuantity != null ? "Complete" : currentSession ? "Not evaluated" : "—"],
-          ["Counts / variance", snapshot?.variance?.quantity != null ? "Complete" : currentSession ? "Not evaluated" : "—"],
-          ["Review", data?.exceptions ? (data.exceptions.length ? "Needs review" : "Complete") : "Not evaluated"],
-        ].map(([label, state]) => {
-          const tone = state === "Complete" ? "border-emerald-200 bg-emerald-50" : state === "Needs review" ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50";
-          return <div key={String(label)} data-state={String(state).toLowerCase().replace(/\s+/g, "-")} className={`daily-close-progress-card rounded-xl border p-3 ${tone}`}><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-sm font-semibold text-ink">{state}</p></div>;
-        })}
-      </div>
       <Card className="p-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
@@ -275,27 +279,18 @@ export function PilotDailyClosePage() {
               ) : null}
               <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving !== null} onClick={() => void finalizeClose()}>
                 <Lock className="h-4 w-4" />
-                Finalize daily close
+                Complete close
               </button>
             </>
           ) : !currentSession ? (
             <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null} onClick={() => void openClose()}>
               <RefreshCw className="h-4 w-4" />
-              Start daily close
+              Start close
             </button>
           ) : null}
           {completed ? <Badge tone="success"><Lock className="mr-1 h-3.5 w-3.5" /> Completed snapshot</Badge> : null}
         </div>
       </Card>
-
-      <div className="flex flex-wrap gap-2">
-        <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
-          Setup & Sync
-        </Link>
-        <Link aria-current="page" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-ink bg-ink px-4 py-2 text-sm font-semibold text-white shadow-soft" to="/app/square-usage">
-          Usage & Variance
-        </Link>
-      </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
       {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">{message}</div> : null}
@@ -372,6 +367,31 @@ export function PilotDailyClosePage() {
                 </div>
               </div>
 
+
+              {data?.exceptions?.length ? (
+                <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm font-bold text-amber-900">Needs attention</p>
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
+                    {data.exceptions.map((exception) => {
+                      const action = exceptionAction(exception);
+                      return (
+                        <li key={exception} className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span>{exception}</span>
+                          </div>
+                          {action ? <Link className="shrink-0 font-semibold text-amber-900 underline" to={action.href}>{action.label} →</Link> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : (
+                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-3 text-sm text-muted">
+                  <p className="font-semibold text-ink">No current exceptions.</p>
+                </div>
+              )}
+
               <div className="rounded-3xl border border-line bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-bold text-ink">Notes</p>
@@ -403,28 +423,15 @@ export function PilotDailyClosePage() {
                 </div>
               </div>
 
-              {data?.exceptions?.length ? (
-                <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-sm font-bold text-amber-900">Exceptions to review</p>
-                  <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
-                    {data.exceptions.map((exception) => (
-                      <li key={exception} className="flex items-start gap-2">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>{exception}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="daily-close-no-blockers rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
-                  <div className="flex items-center gap-2 font-bold">
-                    <CheckCircle2 className="h-4 w-4" />
-                    No blockers
-                  </div>
-                  <p className="mt-2">The snapshot is ready to finalize when you are.</p>
-                </div>
-              )}
 
+              <div className="rounded-3xl border border-line bg-slate-50 p-4">
+                <SectionHeader title="Additional context" description="Optional operational context for this close." />
+                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                  <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Waste</p><p className="mt-1 font-semibold text-ink">{wasteLabel}</p></div>
+                  {Number(snapshot?.reconciliation?.otherAdjustmentQuantity ?? 0) !== 0 ? <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Adjustments</p><p className="mt-1 font-semibold text-ink">{formatSignedNumber(Number(snapshot?.reconciliation?.otherAdjustmentQuantity))}</p></div> : null}
+                  <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-1 font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Not available for this date" : "Available"}</p></div>
+                </div>
+              </div>
               <div className="rounded-3xl border border-line bg-slate-50 p-4">
                 <SectionHeader title="Ingredient usage" description="Weighted-average cost flow for the current close." />
                 {ingredientUsage.length ? (

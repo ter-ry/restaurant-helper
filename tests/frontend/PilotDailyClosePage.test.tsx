@@ -130,9 +130,14 @@ describe("PilotDailyClosePage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Daily Close" })).toBeVisible();
+    expect(screen.queryByText("Daily close", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Daily close progress")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not evaluated")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Setup & Sync" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Usage & Variance" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-30");
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Start daily close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start close" }));
     await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
   });
 
@@ -553,7 +558,7 @@ describe("PilotDailyClosePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save notes" }));
     await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(12, { notes: "Updated note" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Finalize daily close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete close" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(12));
     expect(await screen.findByText("Completed daily close")).toBeVisible();
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
@@ -682,5 +687,18 @@ describe("PilotDailyClosePage", () => {
     expect(await screen.findByText("Completed daily close")).toBeVisible();
     expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-29");
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
+  });
+
+  it("places actionable exceptions before notes and links known issues", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      session: { id: 4, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", notes: "", currentSnapshot: { healthStatus: "Ready with warnings", sales: {}, usage: { totals: {}, ingredientUsage: [] }, reconciliation: {}, square: {} } },
+      snapshot: { healthStatus: "Ready with warnings", sales: {}, usage: { totals: {}, ingredientUsage: [] }, reconciliation: {}, square: {} },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: ["Square variation unmapped."],
+      history: [], location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" }, businessDate: "2026-08-30", square: {},
+    });
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+    expect(await screen.findByText("Needs attention")).toBeVisible();    expect(screen.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
+    expect(screen.getByText("Notes")).toBeVisible();
   });
 });
