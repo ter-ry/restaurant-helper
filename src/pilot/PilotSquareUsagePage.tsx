@@ -142,8 +142,8 @@ export function PilotSquareUsagePage() {
   }
 
   return <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
-    <div className="space-y-6">
-      <Card className="p-6">
+    <div className="pilot-usage-layout space-y-4">
+      <Card className="pilot-usage-controls p-4">
         <div className="flex justify-end">
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void load()} disabled={refreshing}><RefreshCw className="h-4 w-4" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </div>
@@ -158,8 +158,8 @@ export function PilotSquareUsagePage() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert"><div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Usage data unavailable</div><p className="mt-2">{error}</p></div> : null}
       {loading ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading usage data…</div> : null}
 
-      {usage ? <Card className="p-6">
-        <div className="grid gap-3 sm:grid-cols-3">
+      {usage ? <Card className="pilot-usage-results p-4">
+        <div className="pilot-usage-kpis grid gap-2 sm:grid-cols-3">
           <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Theoretical coverage</p><p className="mt-2 text-2xl font-bold text-ink">{usage.coverage.calculableSalesCoveragePercent}%</p><p className="mt-1 text-xs text-muted">{usage.coverage.totalSoldUnits > 0 ? `${usage.coverage.calculableSoldUnits} of ${usage.coverage.totalSoldUnits} sold units calculable` : "No sold units in range"}</p></div>
           <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Menu units sold</p><p className="mt-2 text-2xl font-bold text-ink">{formatQuantity(usage.coverage.totalSoldUnits)}</p><p className="mt-1 text-xs text-muted">Units driving theoretical usage</p></div>
           <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-2 text-2xl font-bold text-ink">{physicalRows.length ? `${physicalRows.length}/${rows.length}` : "Not available"}</p><p className="mt-1 text-xs text-muted">{physicalRows.length ? "Count-derived usage available" : "Requires completed counts that bracket the period"}</p></div>

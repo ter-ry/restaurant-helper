@@ -1622,3 +1622,100 @@ textarea.input {
   border-color: var(--pilot-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent);
 }
+
+/* Final neutral operating surfaces: structural density belongs to the page
+   family, while component classes keep the rules explicit and maintainable. */
+.pilot-theme {
+  --pilot-button-hover-bg: #333333;
+  --pilot-button-hover-text: #ffffff;
+}
+.pilot-theme-dark {
+  --pilot-button-hover-bg: #f5f5f5;
+  --pilot-button-hover-text: #0a0a0a;
+}
+.pilot-theme button.bg-ink:hover,
+.pilot-theme a.bg-ink:hover {
+  background: var(--pilot-button-hover-bg) !important;
+  color: var(--pilot-button-hover-text) !important;
+}
+.pilot-theme .pilot-shell {
+  background: var(--pilot-bg) !important;
+}
+.pilot-theme .pilot-page-header,
+.pilot-theme .workspace-card,
+.pilot-theme .surface-panel,
+.pilot-theme .pilot-dashboard-today,
+.pilot-theme .pilot-dashboard-attention,
+.pilot-theme .pilot-dashboard-drafts,
+.pilot-theme .pilot-dashboard-operations,
+.pilot-theme .pilot-usage-controls,
+.pilot-theme .pilot-usage-results,
+.pilot-theme .pilot-menu-costing-header {
+  border-radius: 0.625rem !important;
+  box-shadow: none !important;
+}
+.pilot-theme .pilot-dashboard-attention,
+.pilot-theme .pilot-dashboard-drafts,
+.pilot-theme .pilot-dashboard-operations,
+.pilot-theme .pilot-usage-results {
+  background: var(--pilot-surface) !important;
+}
+.pilot-theme .pilot-dashboard-today {
+  background: var(--pilot-surface-muted) !important;
+}
+.pilot-theme .pilot-menu-costing-header {
+  padding: 0.75rem !important;
+}
+.pilot-theme .pilot-menu-costing-header .pilot-metric-card {
+  padding: 0.65rem 0.75rem !important;
+}
+.pilot-theme .pilot-menu-costing-toolbar,
+.pilot-theme .pilot-menu-costing-tabs {
+  margin-top: 0.5rem;
+}
+.pilot-theme .pilot-menu-costing-toolbar label {
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+}
+.pilot-theme .pilot-usage-controls > div:first-child {
+  align-items: center;
+}
+.pilot-theme .pilot-usage-controls .input {
+  min-height: 2.5rem;
+}
+.pilot-theme .pilot-usage-results .pilot-usage-kpis > div {
+  border-radius: 0.5rem !important;
+  padding: 0.7rem !important;
+}
+.pilot-theme .pilot-purchases-layout > .workspace-card {
+  min-width: 0;
+}
+.pilot-theme .pilot-purchases-layout > .workspace-card > div.max-h-\[26rem\] {
+  max-height: min(52vh, 28rem);
+}
+.pilot-theme .pilot-inventory-toolbar {
+  margin-bottom: 0.5rem !important;
+  box-shadow: none !important;
+}
+.pilot-theme .pilot-inventory-table-surface {
+  padding: 0.75rem !important;
+  box-shadow: none !important;
+}
+.pilot-theme .pilot-inventory-table-surface > div.mt-3 {
+  margin-top: 0.5rem !important;
+}
+.pilot-theme .pilot-daily-close-page .pilot-page-header,
+.pilot-theme .pilot-daily-close-page > .workspace-card {
+  box-shadow: none !important;
+}
+@media (max-width: 767px) {
+  .pilot-theme .pilot-purchases-layout > .workspace-card > div.max-h-\[26rem\] {
+    max-height: 18rem;
+  }
+  .pilot-theme .pilot-menu-costing-header .pilot-metric-card {
+    padding: 0.55rem !important;
+  }
+  .pilot-theme .pilot-usage-controls .grid {
+    gap: 0.5rem;
+  }
+}
