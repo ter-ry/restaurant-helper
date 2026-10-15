@@ -199,19 +199,6 @@ export function PilotDailyClosePage() {
         metrics={[]}
       />
 
-      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Daily close progress">
-        {[
-          ["Sales", currentSession ? (squareSynced ? "Complete" : "Needs review") : "—"],
-          ["Purchases", "Not evaluated"],
-          ["Usage", usage ? "Complete" : currentSession ? "Not evaluated" : "—"],
-          ["Waste / adjustments", snapshot && (snapshot as any).recordedWasteQuantity != null ? "Complete" : currentSession ? "Not evaluated" : "—"],
-          ["Counts / variance", snapshot?.variance?.quantity != null ? "Complete" : currentSession ? "Not evaluated" : "—"],
-          ["Review", data?.exceptions ? (data.exceptions.length ? "Needs review" : "Complete") : "Not evaluated"],
-        ].map(([label, state]) => {
-          const tone = state === "Complete" ? "border-emerald-200 bg-emerald-50" : state === "Needs review" ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50";
-          return <div key={String(label)} data-state={String(state).toLowerCase().replace(/\s+/g, "-")} className={`daily-close-progress-card rounded-xl border p-3 ${tone}`}><p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-sm font-semibold text-ink">{state}</p></div>;
-        })}
-      </div>
       <Card className="p-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
@@ -275,27 +262,18 @@ export function PilotDailyClosePage() {
               ) : null}
               <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving !== null} onClick={() => void finalizeClose()}>
                 <Lock className="h-4 w-4" />
-                Finalize daily close
+                Complete close
               </button>
             </>
           ) : !currentSession ? (
             <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null} onClick={() => void openClose()}>
               <RefreshCw className="h-4 w-4" />
-              Start daily close
+              Start close
             </button>
           ) : null}
           {completed ? <Badge tone="success"><Lock className="mr-1 h-3.5 w-3.5" /> Completed snapshot</Badge> : null}
         </div>
       </Card>
-
-      <div className="flex flex-wrap gap-2">
-        <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
-          Setup & Sync
-        </Link>
-        <Link aria-current="page" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-ink bg-ink px-4 py-2 text-sm font-semibold text-white shadow-soft" to="/app/square-usage">
-          Usage & Variance
-        </Link>
-      </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
       {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">{message}</div> : null}
@@ -416,12 +394,8 @@ export function PilotDailyClosePage() {
                   </ul>
                 </div>
               ) : (
-                <div className="daily-close-no-blockers rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
-                  <div className="flex items-center gap-2 font-bold">
-                    <CheckCircle2 className="h-4 w-4" />
-                    No blockers
-                  </div>
-                  <p className="mt-2">The snapshot is ready to finalize when you are.</p>
+                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
+                  <p className="font-semibold text-ink">No current exceptions.</p>
                 </div>
               )}
 
