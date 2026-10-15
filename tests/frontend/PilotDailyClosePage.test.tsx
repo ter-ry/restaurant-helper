@@ -687,4 +687,18 @@ describe("PilotDailyClosePage", () => {
     expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-29");
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
   });
+
+  it("places actionable exceptions before notes and links known issues", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      session: { id: 4, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", notes: "", currentSnapshot: { healthStatus: "Ready with warnings", sales: {}, usage: { totals: {}, ingredientUsage: [] }, reconciliation: {}, square: {} } },
+      snapshot: { healthStatus: "Ready with warnings", sales: {}, usage: { totals: {}, ingredientUsage: [] }, reconciliation: {}, square: {} },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: ["Square variation unmapped."],
+      history: [], location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" }, businessDate: "2026-08-30", square: {},
+    });
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+    expect(await screen.findByText("Needs attention")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
+    expect(screen.getByText("Notes")).toBeVisible();
+  });
 });
