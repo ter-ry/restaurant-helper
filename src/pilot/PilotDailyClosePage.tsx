@@ -13,6 +13,7 @@ import {
   syncPilotDailyCloseSales,
   updatePilotDailyClose,
   type PilotDailyCloseResponse,
+  type CashReconciliation,
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
@@ -31,6 +32,12 @@ function currentBusinessDate(timeZone: string | null | undefined) {
 
 
 function exceptionAction(exception: string) {
+  const exact: Record<string, { href: string; label: string }> = {
+    reorder_now: { href: "/app/inventory?view=reorder", label: "Review reorder" },
+    unmapped_square_sales: { href: "/app/square", label: "Review mappings" },
+    usage_variance: { href: "/app/inventory?view=usage", label: "Review usage" },
+  };
+  if (exact[exception]) return exact[exception];
   const text = exception.toLowerCase();
   if (text.includes("variation") && text.includes("unmapped")) return { href: "/app/square", label: "Review mappings" };
   if (text.includes("refund") || text.includes("cancel")) return { href: "/app/square", label: "Review sales" };
@@ -55,18 +62,21 @@ export function PilotDailyClosePage() {
   const [saving, setSaving] = useState<"open" | "notes" | "finalize" | "sync-sales" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [countedCash, setCountedCash] = useState("");
 
   const currentSession = data?.session ?? null;
   const snapshot = currentSession?.currentSnapshot ?? data?.snapshot ?? null;
   const sales = (snapshot?.sales ?? {}) as Record<string, any>;
   const usage = snapshot?.usage ?? null;
-  const ingredientUsage = (usage?.ingredientUsage ?? []) as Array<Record<string, any>>;
+  const attentionItems = (snapshot?.attentionItems ?? []) as Array<{ type: string; title: string; severity: string; href?: string; detail?: string; label?: string }>;
+  const displayAttentionItems = attentionItems.length ? attentionItems : (data?.exceptions ?? []).map((exception) => { const action = exceptionAction(exception); return { type: "legacy", title: exception, severity: "warning", href: action?.href, label: action?.label, detail: "" }; });
   const history = data?.history ?? [];
   const locationOptions = locations;
 
   const load = async (locationId = selectedLocationId, businessDate = selectedBusinessDate) => {
     if (!locationId) {
       setData(null);
+      setCountedCash("");
       setLoading(false);
       return;
     }
@@ -78,6 +88,8 @@ export function PilotDailyClosePage() {
       setData(response);
       setNotes(response.session?.notes ?? "");
       setSelectedBusinessDate(response.businessDate);
+      const savedCash = response.snapshot?.cashReconciliation?.countedCash ?? response.snapshot?.manualReconciliation?.countedCash;
+      setCountedCash(savedCash == null ? "" : String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load daily close.");
     } finally {
@@ -109,6 +121,8 @@ export function PilotDailyClosePage() {
       setData(response);
       setNotes(response.session?.notes ?? "");
       setSelectedBusinessDate(response.businessDate);
+      const savedCash = response.snapshot?.cashReconciliation?.countedCash ?? response.snapshot?.manualReconciliation?.countedCash;
+      setCountedCash(savedCash == null ? "" : String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start daily close.");
     } finally {
@@ -125,7 +139,7 @@ export function PilotDailyClosePage() {
     setError(null);
     setMessage(null);
     try {
-      const response = await updatePilotDailyClose(currentSession.id, { notes });
+      const response = await updatePilotDailyClose(currentSession.id, { notes, reconciliation: { countedCash: countedCash.trim() === "" ? null : Number(countedCash) } });
       setData(response);
       setNotes(response.session?.notes ?? notes);
     } catch (err) {
@@ -143,7 +157,9 @@ export function PilotDailyClosePage() {
     setError(null);
     setMessage(null);
     try {
-      const response = await finalizePilotDailyClose(currentSession.id);
+      const saved = await updatePilotDailyClose(currentSession.id, { notes, reconciliation: { countedCash: countedCash.trim() === "" ? null : Number(countedCash) } });
+      setData(saved);
+      const response = await finalizePilotDailyClose(saved.session?.id ?? currentSession.id);
       setData(response);
       setNotes(response.session?.notes ?? notes);
     } catch (err) {
@@ -177,9 +193,18 @@ export function PilotDailyClosePage() {
   const squareStatus = String(snapshot?.square?.squareStatus ?? "Not connected");
   const squareSynced = Boolean(snapshot?.square?.squareSynced);
   const locationMapped = Boolean(snapshot?.square?.locationMapped);
-  const squareConnected = squareStatus === "Connected";
+  const squareConnected = squareStatus.toLowerCase() === "connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
+  const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
+  const expectedCash = Number.isFinite(Number(cashReconciliation.expectedCash)) ? Number(cashReconciliation.expectedCash) : null;
+  const isCashTakingsMode = cashReconciliation.mode === "payments";
+  const cashTakings = Number.isFinite(Number(cashReconciliation.expectedCashTakings)) ? Number(cashReconciliation.expectedCashTakings) : null;
+  const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
+  const squareClosedCash = Number.isFinite(Number(cashReconciliation.closedCash)) ? Number(cashReconciliation.closedCash) : null;
+  const cashDifference = expectedCash != null && (squareClosedCash != null || countedCashValue != null) && Number.isFinite(squareClosedCash ?? countedCashValue)
+    ? (squareClosedCash ?? countedCashValue)! - expectedCash
+    : (cashReconciliation.overShort != null ? Number(cashReconciliation.overShort) : null);
   const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
   const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
   const wasteLabel = recordedWasteCost > 0
@@ -313,6 +338,7 @@ export function PilotDailyClosePage() {
                 <Badge tone={statusTone(snapshot?.healthStatus ?? currentSession.status)}>{snapshot?.healthStatus ?? currentSession.status}</Badge>
                 <Badge tone={squareSynced ? "success" : "orange"}>{squareStatus}</Badge>
                 <Badge tone={locationMapped ? "success" : "orange"}>{locationMapped ? "Mapped" : "Unmapped"}</Badge>
+                {Number(cashReconciliation.openShiftCount ?? 0) > 0 ? <Badge tone="orange">{cashReconciliation.openShiftCount} cash drawer open</Badge> : null}
                 {completed ? (
                   <Badge tone="neutral">
                     <Lock className="mr-1 h-3.5 w-3.5" />
@@ -321,7 +347,7 @@ export function PilotDailyClosePage() {
                 ) : null}
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div>
                 <div className="rounded-3xl border border-line bg-slate-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Sales snapshot</p>
                   <dl className="mt-3 space-y-2 text-sm">
@@ -344,52 +370,95 @@ export function PilotDailyClosePage() {
                   </dl>
                 </div>
 
-                <div className="rounded-3xl border border-line bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Close snapshot</p>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Inventory value</dt>
-                      <dd className="font-semibold text-ink">{formatMoney(Number(snapshot?.inventoryValue ?? 0))}</dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Ingredient rows tracked</dt>
-                      <dd className="font-semibold text-ink">{usage ? formatNumber(usage.ingredientUsage?.length ?? 0) : "—"}</dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Actual usage</dt>
-                      <dd className="font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Unavailable" : formatNumber(Number(usage.totals.actualUsage))}</dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Variance</dt>
-                      <dd className="font-semibold text-ink">{snapshot?.variance?.quantity == null ? "Unavailable" : `${formatSignedNumber(snapshot.variance.quantity)} · ${snapshot.variance.percent == null ? "—" : `${formatNumber(snapshot.variance.percent)}%`}`}</dd>
-                    </div>
-                  </dl>
-                </div>
               </div>
 
 
-              {data?.exceptions?.length ? (
+              <div className="rounded-3xl border border-line bg-slate-50 p-4">
+                <SectionHeader title={isCashTakingsMode ? "Cash takings" : "Cash reconciliation"} description={isCashTakingsMode ? "Square cash takings for this business date." : "Close the cash drawer against the sales data available for this business date."} />
+                {isCashTakingsMode ? (
+                  <>
+                    <p className="mt-4 text-lg font-semibold text-ink">Square cash takings: {cashTakings == null ? "Unavailable" : formatMoney(cashTakings)}</p>
+                    <p className="mt-2 text-sm text-muted">Full drawer reconciliation requires Square Cash Drawer access.</p>
+                    {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
+                  </>
+                ) : (
+                <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Expected cash</p>
+                    <p className="mt-1 text-lg font-semibold text-ink">{expectedCash == null ? "Unavailable" : formatMoney(expectedCash)}</p>
+                  </div>
+                  <label className="block">
+                    <span className="text-xs font-bold uppercase tracking-wide text-muted">Counted cash</span>
+                    <input
+                      className="input mt-1"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={squareClosedCash == null ? countedCash : String(squareClosedCash)}
+                      disabled={completed || expectedCash == null || squareClosedCash != null}
+                      onChange={(event) => setCountedCash(event.target.value)}
+                      placeholder={expectedCash == null ? "Unavailable" : "0.00"}
+                    />
+                  </label>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Over / short</p>
+                    <p className={`mt-1 text-lg font-semibold ${cashDifference == null ? "text-muted" : cashDifference === 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                      {cashDifference == null ? "—" : cashDifference === 0 ? "Balanced" : cashDifference > 0 ? `${formatMoney(cashDifference)} over` : `${formatMoney(Math.abs(cashDifference))} short`}
+                    </p>
+                  </div>
+                </div>
+                {expectedCash == null ? (
+                  <div className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted">
+                    <p>{cashReconciliation.reason ?? "Square has not provided tender-level cash for this close."} No cash count is required from this screen.</p>
+                    {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
+                  </div>
+                ) : null}
+                {squareClosedCash != null ? <p className="mt-3 text-sm text-muted">Square counted close: {formatMoney(squareClosedCash)}. Manual counting is not required.</p> : null}
+                {cashDifference != null && cashDifference !== 0 ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                    {cashReconciliation.possibleMatches?.length ? (
+                      <>
+                        <p className="font-semibold">Possible matches</p>
+                        <ul className="mt-2 space-y-2">
+                          {cashReconciliation.possibleMatches.map((match, index) => (
+                            <li key={`${match.shiftId ?? "shift"}-${match.createdAt ?? index}-${match.type}`} className="flex items-start justify-between gap-3">
+                              <span>{match.description ?? match.type.replaceAll("_", " ")}{match.createdAt ? ` · ${formatDateTime(match.createdAt)}` : ""}</span>
+                              <span className="shrink-0 font-semibold">{formatMoney(match.amount)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-semibold">Likely causes</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5">
+                          <li>Check for a missed cash sale or incorrect tender type.</li>
+                          <li>Review paid-out, float, refund, and change entries.</li>
+                          <li>Confirm the counted amount and add a note before completing the close.</li>
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+                </>
+                )}
+              </div>
+              {displayAttentionItems.length ? (
                 <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
                   <p className="text-sm font-bold text-amber-900">Needs attention</p>
                   <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
-                    {data.exceptions.map((exception) => {
-                      const action = exceptionAction(exception);
-                      return (
-                        <li key={exception} className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                            <span>{exception}</span>
-                          </div>
-                          {action ? <Link className="shrink-0 font-semibold text-amber-900 underline" to={action.href}>{action.label} →</Link> : null}
-                        </li>
-                      );
-                    })}
+                    {displayAttentionItems.map((item) => (
+                      <li key={`${item.type}-${item.title}`} className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span><strong>{item.title}</strong>{item.detail ? ` — ${item.detail}` : ""}</span></div>
+                        {item.href ? <Link className="shrink-0 font-semibold text-amber-900 underline" to={item.href}>{item.label ?? (item.type === "usage_variance" ? "Review usage" : item.type === "unmapped_square_sales" ? "Review mappings" : "Review sales")} →</Link> : null}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               ) : (
-                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-3 text-sm text-muted">
-                  <p className="font-semibold text-ink">No current exceptions.</p>
-                </div>
+                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-3 text-sm text-muted"><p className="font-semibold text-ink">No current exceptions.</p></div>
               )}
 
               <div className="rounded-3xl border border-line bg-white p-4">
@@ -432,42 +501,6 @@ export function PilotDailyClosePage() {
                   <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-1 font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Not available for this date" : "Available"}</p></div>
                 </div>
               </div>
-              <div className="rounded-3xl border border-line bg-slate-50 p-4">
-                <SectionHeader title="Ingredient usage" description="Weighted-average cost flow for the current close." />
-                {ingredientUsage.length ? (
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-line text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                          <th className="py-2 pr-4">Item</th>
-                          <th className="py-2 pr-4">Theoretical</th>
-                          <th className="py-2 pr-4">Actual</th>
-                          <th className="py-2 pr-4">Variance</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line bg-white">
-                        {ingredientUsage.slice(0, 8).map((row) => (
-                          <tr key={String(row.inventoryItemId ?? row.inventoryItemName)} className="align-top">
-                            <td className="py-3 pr-4 font-medium text-ink">
-                              <div>{String(row.inventoryItemName ?? "Item")}</div>
-                              {Array.isArray(row.warnings) && row.warnings.length ? (
-                                <div className="mt-1 text-xs text-amber-700">{row.warnings[0]}</div>
-                              ) : null}
-                            </td>
-                            <td className="py-3 pr-4 text-muted">{formatNumber(Number(row.theoreticalUsage ?? 0))}</td>
-                            <td className="py-3 pr-4 text-muted">{row.actualUsage == null ? "—" : formatNumber(Number(row.actualUsage))}</td>
-                            <td className="py-3 pr-4 text-muted">
-                              {row.discrepancy == null ? "—" : formatSignedNumber(Number(row.discrepancy))}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="mt-4 rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-muted">No ingredient usage rows are available yet.</p>
-                )}
-              </div>
             </div>
           ) : (
             <div className="mt-5 rounded-3xl border border-dashed border-line bg-slate-50 p-6 text-sm leading-6 text-muted">
@@ -486,18 +519,16 @@ export function PilotDailyClosePage() {
 
         <div className="space-y-4">
           <Card className="workspace-card">
-            <SectionHeader title="Square context" description="Connection, mapping, and sync state that feed the close." />
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Connection</p>
-                <p className="mt-2 font-semibold text-ink">{squareStatus}</p>
-                <p className="mt-1 text-muted">{squareSynced ? "Square has synced into the close snapshot." : "Square is not yet connected for this location."}</p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Square</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                  <Badge tone={squareConnected ? "success" : "neutral"}>{squareStatus}</Badge>
+                  <Badge tone={locationMapped ? "success" : "warning"}>{locationMapped ? "Location mapped" : "Location unmapped"}</Badge>
+                  {squareSynced ? <Badge tone="neutral">Synced</Badge> : null}
+                </div>
               </div>
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Location mapping</p>
-                <p className="mt-2 font-semibold text-ink">{locationMapped ? "Mapped" : "Unmapped"}</p>
-                <p className="mt-1 text-muted">Daily close uses the mapped Square location when one is available.</p>
-              </div>
+              <Link className="font-semibold text-ink underline" to="/app/square">Open Square →</Link>
             </div>
           </Card>
 

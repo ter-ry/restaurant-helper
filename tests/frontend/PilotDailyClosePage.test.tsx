@@ -159,6 +159,48 @@ describe("PilotDailyClosePage", () => {
     expect(screen.getByText("Sep 1")).toBeVisible();
   });
 
+  it("shows structured Square cash event matches when available", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: { id: 22, organizationId: 42, locationId: 7, businessDate: "2026-09-01", status: "DRAFT", notes: "", currentSnapshot: null },
+      snapshot: {
+        healthStatus: "Ready with warnings",
+        inventoryValue: 0,
+        sales: {},
+        usage: { totals: {}, ingredientUsage: [] },
+        variance: { quantity: null, percent: null, value: 0 },
+        cashReconciliation: {
+          status: "available",
+          mode: "drawer_shift",
+          expectedCash: 100,
+          closedCash: 95,
+          overShort: -5,
+          openingFloat: 50,
+          cashPayments: 50,
+          cashRefunds: 0,
+          paidIn: 0,
+          paidOut: 0,
+          possibleMatches: [{ type: "PAID_OUT", amount: 5, description: "Paid Out", occurredAt: "2026-09-01T20:00:00Z", shiftId: "shift-1" }],
+        },
+        attentionItems: [{ type: "cash_variance", title: "Cash drawer short", severity: "warning", detail: "$5.00 short" }],
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-09-01",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Possible matches")).toBeVisible();
+    expect(screen.getByText(/Paid Out/)).toBeVisible();
+    expect(screen.getByText("$5.00")).toBeVisible();
+    expect(screen.queryByText("Likely causes")).not.toBeInTheDocument();
+  });
+
   it("syncs Square sales for the selected business date and refreshes the draft", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: {
@@ -556,7 +598,7 @@ describe("PilotDailyClosePage", () => {
     expect(notes).toHaveValue("Initial note");
     fireEvent.change(notes, { target: { value: "Updated note" } });
     fireEvent.click(screen.getByRole("button", { name: "Save notes" }));
-    await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(12, { notes: "Updated note" }));
+    await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(12, { notes: "Updated note", reconciliation: { countedCash: null } }));
 
     fireEvent.click(screen.getByRole("button", { name: "Complete close" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(12));
@@ -701,4 +743,32 @@ describe("PilotDailyClosePage", () => {
     expect(await screen.findByText("Needs attention")).toBeVisible();    expect(screen.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
     expect(screen.getByText("Notes")).toBeVisible();
   });
+  it("keeps cash reconciliation focused and calculates an over/short amount", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: { id: 18, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", notes: "", currentSnapshot: null },
+      snapshot: {
+        healthStatus: "Ready",
+        sales: { netSales: 240, orders: 8, refunds: 0, cancelledOrders: 0 },
+        cashReconciliation: { status: "available", mode: "payments", expectedCash: null, expectedCashTakings: 120, reconnectRequired: true },
+        usage: { totals: {}, ingredientUsage: [] },
+        reconciliation: {},
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Cash takings")).toBeVisible();
+    expect(screen.getByText("Square cash takings: $120.00")).toBeVisible();
+    expect(screen.getByText("Full drawer reconciliation requires Square Cash Drawer access.")).toBeVisible();
+    expect(screen.queryByLabelText("Counted cash")).not.toBeInTheDocument();
+  });
+
 });

@@ -471,7 +471,7 @@ describe("SetupConsolePage", () => {
         statusCode: 401,
         errorTypes: ["SERVICE_NOT_AUTHORIZED"],
         requestId: "safe-request-id",
-        scopes: ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"],
+        scopes: ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRAWER_READ", "PAYMENTS_READ"],
       },
     });
 

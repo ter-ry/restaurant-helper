@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any
+from urllib.parse import urlencode
 
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
@@ -11,7 +12,14 @@ from flask_login import current_user, login_required
 from .access import organization_has_enabled_module, organization_is_operational
 from .extensions import db
 from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
-from .square_integration import _build_square_usage_report, _current_square_location_ids, sync_square_orders_for_range
+from .square_integration import (
+    _build_square_usage_report,
+    _connection_token,
+    _current_square_location_ids,
+    _square_request,
+    SquareRequestError,
+    sync_square_orders_for_range,
+)
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
 bp = Blueprint("daily_close", __name__)
@@ -139,6 +147,168 @@ def _sales_summary_for_day(connection: SquareConnection | None, location: Restau
     }
 
 
+
+def _money_amount(value: Any) -> Decimal:
+    if not isinstance(value, dict):
+        return Decimal("0")
+    try:
+        return Decimal(str(value.get("amount") or 0)) / Decimal("100")
+    except (TypeError, ValueError):
+        return Decimal("0")
+
+
+def _cash_reconciliation(connection: SquareConnection | None, location: RestaurantLocation, business_date: date) -> dict[str, Any]:
+    """Read bounded, business-day Square cash evidence without inventing totals."""
+    unavailable = {"status": "unavailable", "mode": None, "expectedCash": None, "reconciledExpectedCash": None, "openingFloat": None,
+        "cashPayments": None, "cashRefunds": None, "paidIn": None, "paidOut": None, "closedCash": None,
+        "reason": "Cash drawer or payment read access is temporarily unavailable.", "reconnectRequired": False}
+    if connection is None or connection.status != "connected" or str(connection.environment or "").lower() != "production":
+        return unavailable
+    location_ids = _square_location_ids_for_location(connection, location)
+    if not location_ids:
+        return {**unavailable, "reason": "Map the Square location before reconciling cash."}
+    start_at, end_at = _business_date_bounds(location, business_date)
+    query_start = start_at - timedelta(days=1)
+    query_end = end_at + timedelta(days=1)
+    start_iso = query_start.isoformat().replace("+00:00", "Z")
+    end_iso = query_end.isoformat().replace("+00:00", "Z")
+    try:
+        token = _connection_token(connection)
+    except Exception:
+        return unavailable
+    for square_location_id in location_ids:
+        query_base = {"location_id": square_location_id, "begin_time": start_iso, "end_time": end_iso, "limit": "100"}
+        shifts: list[dict[str, Any]] = []
+        drawer_permission_failed = False
+        drawer_temporary_failed = False
+        drawer_incomplete = False
+        cursor = None
+        seen_cursors: set[str] = set()
+        try:
+            for _ in range(10):
+                query = dict(query_base)
+                if cursor: query["cursor"] = cursor
+                drawer = _square_request("GET", "/v2/cash-drawers/shifts?" + urlencode(query), token=token, stage="daily_close_cash_drawer")
+                page = drawer if isinstance(drawer, dict) else {}
+                shifts.extend(item for item in (page.get("cash_drawer_shifts") or []) if isinstance(item, dict))
+                next_cursor = page.get("cursor")
+                if not next_cursor or next_cursor in seen_cursors: break
+                seen_cursors.add(next_cursor); cursor = next_cursor
+        except SquareRequestError as exc:
+            if exc.status_code == 403:
+                drawer_permission_failed = True
+            else:
+                drawer_temporary_failed = True
+            shifts = []
+        except Exception:
+            drawer_temporary_failed = True
+            shifts = []
+        def parsed(value: Any) -> datetime | None:
+            if not value: return None
+            try: return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError: return None
+        shifts = [s for s in shifts if (opened := parsed(s.get("opened_at"))) and opened <= end_at and (parsed(s.get("ended_at") or s.get("closed_at")) or _now()) >= start_at]
+        relevant_shift_count = len(shifts)
+        detailed_shifts: list[dict[str, Any]] = []
+        for summary in shifts:
+            shift_id = summary.get("id")
+            if not shift_id:
+                continue
+            try:
+                detail_page = _square_request("GET", f"/v2/cash-drawers/shifts/{shift_id}?" + urlencode({"location_id": square_location_id}), token=token, stage="daily_close_cash_drawer_detail")
+                detail = (detail_page or {}).get("cash_drawer_shift") if isinstance(detail_page, dict) else None
+                if isinstance(detail, dict):
+                    detailed_shifts.append(detail)
+                else:
+                    drawer_incomplete = True
+            except SquareRequestError as exc:
+                if exc.status_code == 403:
+                    drawer_permission_failed = True
+                else:
+                    drawer_temporary_failed = True
+                drawer_incomplete = True
+                continue
+            except Exception:
+                drawer_temporary_failed = True
+                drawer_incomplete = True
+                continue
+        if len(detailed_shifts) != relevant_shift_count:
+            drawer_incomplete = True
+        shifts = detailed_shifts
+        if shifts and not drawer_incomplete:
+            opening = sum((_money_amount(s.get("opened_cash_money")) for s in shifts), Decimal("0"))
+            payments = sum((_money_amount(s.get("cash_payment_money")) for s in shifts), Decimal("0"))
+            refunds = sum((_money_amount(s.get("cash_refunds_money")) for s in shifts), Decimal("0"))
+            paid_in = sum((_money_amount(s.get("cash_paid_in_money")) for s in shifts), Decimal("0"))
+            paid_out = sum((_money_amount(s.get("cash_paid_out_money")) for s in shifts), Decimal("0"))
+            expected_values = [s.get("expected_cash_money") for s in shifts]
+            expected_parts = [(_money_amount(s.get("expected_cash_money")) if s.get("expected_cash_money") is not None else _money_amount(s.get("opened_cash_money")) + _money_amount(s.get("cash_payment_money")) - _money_amount(s.get("cash_refunds_money")) + _money_amount(s.get("cash_paid_in_money")) - _money_amount(s.get("cash_paid_out_money"))) for s in shifts]
+            reconciled = [(s, expected) for s, expected in zip(shifts, expected_parts) if s.get("closed_cash_money") is not None]
+            reconciled_expected = sum((expected for _, expected in reconciled), Decimal("0")) if reconciled else None
+            closed = sum((_money_amount(s.get("closed_cash_money")) for s, _ in reconciled), Decimal("0")) if reconciled else None
+            expected = reconciled_expected
+            basis = "square_expected_cash" if all(value is not None for value in expected_values) else "mixed" if any(value is not None for value in expected_values) else "calculated_drawer_cash"
+            possible_matches: list[dict[str, Any]] = []
+            for shift, shift_expected in reconciled:
+                shift_id = shift.get("id")
+                if not shift_id or closed is None or expected is None: continue
+                try:
+                    event_cursor = None; event_seen: set[str] = set()
+                    for _ in range(10):
+                        event_query = {"limit": "100"}
+                        if event_cursor: event_query["cursor"] = event_cursor
+                        event_query["location_id"] = square_location_id
+                        event_page = _square_request("GET", f"/v2/cash-drawers/shifts/{shift_id}/events?" + urlencode(event_query), token=token, stage="daily_close_cash_events")
+                        for event in (event_page or {}).get("cash_drawer_shift_events", []):
+                            event_type = str(event.get("event_type") or "").upper()
+                            if event_type not in {"CASH_TENDER_PAYMENT", "CASH_TENDER_CANCELLED_PAYMENT", "CASH_TENDER_REFUND", "PAID_IN", "PAID_OUT"}: continue
+                            money = event.get("event_money") or event.get("cash_payment_money") or event.get("cash_paid_in_money") or event.get("cash_paid_out_money") or event.get("amount_money")
+                            amount = _money_amount(money)
+                            if amount == 0: continue
+                            possible_matches.append({"type": event_type, "amount": float(amount), "createdAt": event.get("created_at"), "description": event.get("description") or event_type.replace("_", " ").title(), "differenceFromVariance": float(abs(amount - abs(_money_amount(shift.get("closed_cash_money")) - shift_expected))), "shiftId": shift_id})
+                        next_cursor = (event_page or {}).get("cursor")
+                        if not next_cursor or next_cursor in event_seen: break
+                        event_seen.add(next_cursor); event_cursor = next_cursor
+                except Exception: continue
+            possible_matches.sort(key=lambda item: (round(item["differenceFromVariance"], 2), str(item.get("createdAt") or ""), str(item.get("shiftId") or ""), str(item.get("type") or "")))
+            reconciled_count = len(reconciled)
+            open_count = sum(1 for s in shifts if str(s.get("state") or "").upper() == "OPEN")
+            return {"status": "available", "mode": "drawer_shift", "basis": basis, "expectedCash": float(expected) if expected is not None else None, "reconciledExpectedCash": float(reconciled_expected) if reconciled_expected is not None else None, "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "overShort": float(closed - expected) if closed is not None and expected is not None else None, "possibleMatches": possible_matches[:5], "shiftCount": len(shifts), "reconciledShiftCount": reconciled_count, "unreconciledShiftCount": len(shifts) - reconciled_count, "openShiftCount": open_count, "closedShiftCount": reconciled_count, "shifts": [{"id": s.get("id"), "state": s.get("state"), "openedAt": s.get("opened_at"), "closedAt": s.get("closed_at"), "expectedCash": float(_money_amount(s.get("expected_cash_money"))) if s.get("expected_cash_money") is not None else None, "closedCash": float(_money_amount(s.get("closed_cash_money"))) if s.get("closed_cash_money") is not None else None} for s in shifts], "reconnectRequired": False}
+        payments: list[dict[str, Any]] = []
+        cursor = None; seen_cursors = set(); payments_ok = False
+        payment_query_base = {"location_id": square_location_id, "begin_time": start_at.isoformat().replace("+00:00", "Z"), "end_time": end_at.isoformat().replace("+00:00", "Z"), "limit": "100"}
+        try:
+            for _ in range(10):
+                query = dict(payment_query_base)
+                if cursor: query["cursor"] = cursor
+                response = _square_request("GET", "/v2/payments?" + urlencode(query), token=token, stage="daily_close_cash_payments")
+                payments_ok = True; page = response if isinstance(response, dict) else {}
+                payments.extend(item for item in (page.get("payments") or []) if isinstance(item, dict))
+                next_cursor = page.get("cursor")
+                if not next_cursor or next_cursor in seen_cursors: break
+                seen_cursors.add(next_cursor); cursor = next_cursor
+        except SquareRequestError as exc:
+            if exc.status_code == 403:
+                return {**unavailable, "reason": "Square access does not include payments read permission.", "reconnectRequired": True}
+            payments_ok = False
+        except Exception:
+            payments_ok = False
+        if payments_ok:
+            cash = [p for p in payments if str(p.get("status") or "").upper() == "COMPLETED" and str(p.get("source_type") or "").upper() == "CASH"]
+            cash_payments = sum((_money_amount(p.get("total_money")) for p in cash), Decimal("0"))
+            refunds = sum((_money_amount(p.get("refunded_money")) for p in cash), Decimal("0"))
+            if drawer_permission_failed:
+                drawer_reason = "Reconnect Square to enable full cash drawer reconciliation."
+                reconnect_required = True
+            elif drawer_temporary_failed or drawer_incomplete:
+                drawer_reason = "Cash drawer data is temporarily unavailable."
+                reconnect_required = False
+            else:
+                drawer_reason = None
+                reconnect_required = False
+            return {"status": "available", "mode": "payments", "basis": "cash_payments", "expectedCash": None, "expectedCashTakings": float(max(Decimal("0"), cash_payments - refunds)), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": float(refunds), "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(cash), "reason": drawer_reason, "reconnectRequired": reconnect_required}
+    return unavailable
+
 def _inventory_value(location_id: int) -> float:
     total = sum(
         (Decimal(str(item.current_on_hand or 0)) * Decimal(str(item.average_unit_cost or 0)) for item in InventoryItem.query.filter_by(location_id=location_id, active=True).all()),
@@ -173,7 +343,27 @@ def _daily_close_usage(organization, location: RestaurantLocation, business_date
     return _build_square_usage_report(organization, connection, location=location, start_at=start_at, end_at=end_at)
 
 
-def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[str, Any], usage: dict[str, Any]) -> list[str]:
+def _physical_usage_matches_period(usage: dict[str, Any], start_at: datetime, end_at: datetime) -> bool:
+    rows = [row for row in usage.get("ingredientUsage", []) if row.get("actualUsage") is not None]
+    if not rows:
+        return False
+    def parse(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    for row in rows:
+        basis = row.get("actualUsageBasis") or {}
+        opening = parse(basis.get("openingCountCompletedAt"))
+        closing = parse(basis.get("closingCountCompletedAt"))
+        if opening is None or closing is None or opening != start_at or closing != end_at or closing <= opening:
+            return False
+    return True
+
+
+def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[str, Any], usage: dict[str, Any], period_matches: bool = True) -> list[str]:
     exceptions: list[str] = []
     if connection is None or not connection.last_sync_at:
         exceptions.append("Square not synced.")
@@ -197,7 +387,7 @@ def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[s
     if mapping_warnings:
         exceptions.append("Recipe or inventory mapping gaps exist.")
     ingredient_rows = usage.get("ingredientUsage", [])
-    if any(
+    if period_matches and any(
         row.get("actualUsage") is not None
         and
         row.get("discrepancyPercent") is not None
@@ -210,10 +400,46 @@ def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[s
     return list(dict.fromkeys(exceptions))
 
 
+
+def _attention_items(summary: dict[str, Any], usage: dict[str, Any], location: RestaurantLocation, period_matches: bool = True) -> list[dict[str, Any]]:
+    period = usage.get("period") or {}
+    start_at = str(period.get("startAt") or "")
+    end_at = str(period.get("endAt") or "")
+    usage_href = f"/app/inventory?view=usage&locationId={location.id}&startAt={urlencode({'x': start_at})[2:]}&endAt={urlencode({'x': end_at})[2:]}"
+    items: list[dict[str, Any]] = []
+    if usage.get("coverage", {}).get("unmappedVariationCount", 0) > 0:
+        items.append({"type": "unmapped_square_sales", "title": "Unmapped Square sales", "severity": "warning", "href": "/app/square", "detail": "Map sold Square variations before relying on recipe usage."})
+    for row in usage.get("ingredientUsage", []) if period_matches else []:
+        discrepancy = row.get("discrepancy")
+        percent = row.get("discrepancyPercent")
+        if discrepancy is None or percent is None or abs(float(percent)) < float(VARIANCE_ALERT_PERCENT):
+            continue
+        direction = "over" if float(discrepancy) > 0 else "under"
+        items.append({"type": "usage_variance", "title": f"{row.get('inventoryItemName') or 'Item'} usage {direction}", "severity": "warning", "href": usage_href, "detail": f"{abs(float(discrepancy)):g} {row.get('unit') or ''} {direction} expected."})
+    if summary.get("refunds") or summary.get("cancelledOrders"):
+        items.append({"type": "sales_exceptions", "title": "Refunds or cancellations", "severity": "info", "href": "/app/square", "detail": "Review finalized Square sales before completing the close."})
+    return items
+
 def _daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
     connection = _connection_for_organization(organization.id)
     summary = _sales_summary_for_day(connection, location, business_date)
     usage = _daily_close_usage(organization, location, business_date, connection)
+    period_start, period_end = _business_date_bounds(location, business_date)
+    period_matches = _physical_usage_matches_period(usage, period_start, period_end)
+    if not period_matches:
+        usage = {
+            **usage,
+            "ingredientUsage": [
+                {**row, "actualUsage": None, "discrepancy": None, "discrepancyPercent": None}
+                for row in usage.get("ingredientUsage", [])
+            ],
+            "totals": {
+                **(usage.get("totals") or {}),
+                "actualUsage": None,
+                "discrepancy": None,
+                "discrepancyPercent": None,
+            },
+        }
     usage_units = {str(row.get("unit") or "").strip() for row in usage.get("ingredientUsage", []) if row.get("unit") }
     if len(usage_units) > 1:
         # Totals across kg, L, each, etc. are not a meaningful Daily Close
@@ -229,12 +455,19 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
                 "discrepancyPercent": None,
             },
         }
-    exceptions = _daily_close_exceptions(connection, summary, usage)
+    exceptions = _daily_close_exceptions(connection, summary, usage, period_matches)
+    attention_items = _attention_items(summary, usage, location, period_matches)
     actual_usage = usage.get("totals", {}).get("actualUsage")
     theoretical_usage = usage.get("totals", {}).get("theoreticalUsage") or 0
     discrepancy = usage.get("totals", {}).get("discrepancy")
     discrepancy_percent = usage.get("totals", {}).get("discrepancyPercent")
     start_at, end_at = _business_date_bounds(location, business_date)
+    cash_reconciliation = _cash_reconciliation(connection, location, business_date)
+    if cash_reconciliation.get("overShort") is not None and abs(float(cash_reconciliation["overShort"])) >= 0.01:
+        amount = float(cash_reconciliation["overShort"])
+        direction = "over" if amount > 0 else "short"
+        exceptions.append(f"Cash drawer {direction}.")
+        attention_items.append({"type": "cash_variance", "title": f"Cash drawer {direction}", "severity": "warning", "detail": f"${abs(amount):.2f} {direction}"})
     waste_events = InventoryWasteEvent.query.filter(
         InventoryWasteEvent.organization_id == organization.id,
         InventoryWasteEvent.location_id == location.id,
@@ -300,9 +533,54 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
             "unexplainedVarianceQuantity": discrepancy,
         },
         "square": summary,
+        "cashReconciliation": cash_reconciliation,
+        "attentionItems": attention_items,
+        "manualReconciliation": {},
         "readyToFinalize": True,
     }
     return snapshot, usage, exceptions, connection
+
+
+def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: DailyCloseSession | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_health = snapshot.get("healthStatus")
+    manual = dict(snapshot.get("manualReconciliation") or {})
+    if session_record is not None:
+        stored = (session_record.summary_snapshot_json or {}).get("manualReconciliation") or {}
+        if isinstance(stored, dict): manual.update(stored)
+    reconciliation = payload.get("reconciliation") if isinstance(payload, dict) else None
+    if isinstance(reconciliation, dict) and "countedCash" in reconciliation:
+        raw = reconciliation.get("countedCash")
+        if raw in {None, ""}: manual.pop("countedCash", None)
+        else:
+            try: counted = float(raw)
+            except (TypeError, ValueError): counted = None
+            if counted is not None and counted >= 0: manual["countedCash"] = counted
+    manual.pop("baseHealthStatus", None)
+    snapshot["manualReconciliation"] = manual
+    cash = dict(snapshot.get("cashReconciliation") or {})
+    if manual.get("countedCash") is not None and cash.get("expectedCash") is not None:
+        cash["countedCash"] = manual["countedCash"]
+        if cash.get("closedCash") is None:
+            cash["overShort"] = round(manual["countedCash"] - float(cash["expectedCash"]), 2)
+    else:
+        cash.pop("countedCash", None)
+        if cash.get("closedCash") is None:
+            cash.pop("overShort", None)
+    snapshot["cashReconciliation"] = cash
+    attention = [item for item in (snapshot.get("attentionItems") or []) if item.get("type") != "cash_variance"]
+    if cash.get("closedCash") is None and cash.get("overShort") is not None and abs(float(cash["overShort"])) >= 0.01:
+        amount = float(cash["overShort"])
+        direction = "over" if amount > 0 else "short"
+        attention.append({"type": "cash_variance", "title": f"Cash drawer {direction}", "severity": "warning", "detail": f"${abs(amount):.2f} {direction}"})
+    snapshot["attentionItems"] = attention
+    if cash.get("closedCash") is None and cash.get("overShort") is not None and abs(float(cash["overShort"])) >= 0.01:
+        if snapshot.get("healthStatus") in {"Ready", "Reconciled"}:
+            snapshot["healthStatus"] = "Ready with warnings"
+    elif base_health is not None:
+        snapshot["healthStatus"] = base_health
+    elif not attention and snapshot.get("healthStatus") == "Ready with warnings":
+        snapshot["healthStatus"] = "Ready"
+    return snapshot
 
 
 def _stored_session_snapshot(session_record: DailyCloseSession, snapshot: dict[str, Any], usage: dict[str, Any], exceptions: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
@@ -348,6 +626,7 @@ def daily_close():
     session_record = DailyCloseSession.query.filter_by(organization_id=organization.id, location_id=location.id, business_date=business_date).first()
     snapshot, usage, exceptions, connection = _daily_close_snapshot(organization, location, business_date)
     if session_record is not None:
+        snapshot = _merge_manual_reconciliation(snapshot, session_record)
         snapshot, usage, exceptions = _stored_session_snapshot(session_record, snapshot, usage, exceptions)
     history = [
         _serialize_session_with_snapshot(record, snapshot if record.status != "COMPLETED" else dict(record.summary_snapshot_json or {}))
@@ -404,6 +683,7 @@ def open_daily_close():
         db.session.add(session_record)
         db.session.flush()
     snapshot, usage, exceptions, _ = _daily_close_snapshot(organization, location, business_date)
+    snapshot = _merge_manual_reconciliation(snapshot, session_record)
     if session_record.status != "COMPLETED":
         session_record.summary_snapshot_json = snapshot
         session_record.usage_snapshot_json = usage
@@ -467,6 +747,7 @@ def sync_daily_close_sales(session_id: int):
     except RuntimeError as exc:
         return json_error(str(exc), 400)
     snapshot, usage, exceptions, _ = _daily_close_snapshot(organization, location, session_record.business_date)
+    snapshot = _merge_manual_reconciliation(snapshot, session_record)
     session_record.summary_snapshot_json = snapshot
     session_record.usage_snapshot_json = usage
     session_record.exceptions_snapshot_json = exceptions
@@ -507,6 +788,7 @@ def update_daily_close(session_id: int):
     if location is None:
         return json_error("Restaurant location not found.", 404)
     snapshot, usage, exceptions, _ = _daily_close_snapshot(organization, location, session_record.business_date)
+    snapshot = _merge_manual_reconciliation(snapshot, session_record, payload)
     session_record.summary_snapshot_json = snapshot
     session_record.usage_snapshot_json = usage
     session_record.exceptions_snapshot_json = exceptions

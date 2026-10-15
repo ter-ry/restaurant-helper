@@ -736,6 +736,9 @@ export interface PilotDailyCloseSnapshot {
     percent: number | null;
     value: number;
   };
+  cashReconciliation?: CashReconciliation;
+  manualReconciliation?: { countedCash?: number };
+  attentionItems?: Array<{ type: string; title: string; severity: string; href?: string; detail?: string }>;
   reconciliation?: {
     recordedWasteQuantity?: number;
     recordedWasteCost?: number;
@@ -743,6 +746,40 @@ export interface PilotDailyCloseSnapshot {
   };
   square: Record<string, unknown>;
   readyToFinalize: boolean;
+}
+
+export interface CashReconciliation {
+  status: "available" | "unavailable" | string;
+  mode: "drawer_shift" | "payments" | null | string;
+  basis?: "square_expected_cash" | "calculated_drawer_cash" | "cash_payments" | string;
+  expectedCash: number | null;
+  expectedCashTakings?: number | null;
+  reconciledExpectedCash?: number | null;
+  countedCash?: number | null;
+  overShort?: number | null;
+  openingFloat: number | null;
+  cashPayments: number | null;
+  cashRefunds: number | null;
+  paidIn: number | null;
+  paidOut: number | null;
+  closedCash: number | null;
+  shiftCount?: number;
+  openShiftCount?: number;
+  closedShiftCount?: number;
+  reconciledShiftCount?: number;
+  unreconciledShiftCount?: number;
+  paymentCount?: number;
+  reason?: string;
+  reconnectRequired?: boolean;
+  possibleMatches?: Array<{
+    type: string;
+    amount: number;
+    createdAt?: string | null;
+    description?: string;
+    differenceFromVariance?: number;
+    shiftId?: string;
+  }>;
+  shifts?: Array<{ id?: string; state?: string; openedAt?: string; closedAt?: string; expectedCash?: number | null; closedCash?: number | null }>;
 }
 
 export interface PilotDailyCloseResponse {
@@ -823,7 +860,7 @@ export async function openPilotDailyClose(payload: { locationId: number; busines
   });
 }
 
-export async function updatePilotDailyClose(sessionId: number, payload: { notes: string }) {
+export async function updatePilotDailyClose(sessionId: number, payload: { notes: string; reconciliation?: { countedCash: number | null } }) {
   return requestCsrfJson<PilotDailyCloseResponse>(`/api/pilot/daily-close/${sessionId}`, {
     method: "PATCH",
     headers: {

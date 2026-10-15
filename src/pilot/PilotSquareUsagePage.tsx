@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, RefreshCw } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Card } from "../components/Card";
 import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
@@ -26,6 +26,13 @@ function defaultRange(timezone: string) {
   };
 }
 
+function parseUrlBoundary(value: string | null, timezone: string) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return locationNowDatetimeLocal(timezone, parsed);
+}
+
 function varianceTone(row: SquareUsageIngredientRow) {
   if (row.discrepancy == null) return "text-muted";
   return row.discrepancy === 0 ? "text-emerald-700" : "text-amber-700";
@@ -46,10 +53,22 @@ function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: 
 
 export function PilotSquareUsagePage() {
   const { organization, currentLocation, locations } = usePilotSession();
-  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
+  const routeLocation = useLocation();
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(() => {
+    const raw = new URLSearchParams(window.location.search).get("locationId");
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : currentLocation?.id ?? null;
+  });
   const requestGeneration = useRef(0);
   const timezone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? currentLocation?.timezone ?? "America/Toronto";
-  const initialRange = useMemo(() => defaultRange(timezone), [timezone]);
+  const initialRange = useMemo(() => {
+    const defaults = defaultRange(timezone);
+    const params = new URLSearchParams(routeLocation.search);
+    const startFromUrl = parseUrlBoundary(params.get("startAt"), timezone);
+    const endFromUrl = parseUrlBoundary(params.get("endAt"), timezone);
+    if (startFromUrl && endFromUrl && endFromUrl > startFromUrl) return { startAt: startFromUrl, endAt: endFromUrl };
+    return { startAt: defaults.startAt, endAt: defaults.endAt };
+  }, [routeLocation.search, timezone]);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
   const [appliedRange, setAppliedRange] = useState(initialRange);
@@ -93,10 +112,23 @@ export function PilotSquareUsagePage() {
     if (selectedLocationId == null && currentLocation?.id != null) setSelectedLocationId(currentLocation.id);
   }, [currentLocation?.id, selectedLocationId]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(routeLocation.search);
+    const hasRange = params.has("startAt") || params.has("endAt");
+    if (!hasRange) return;
+    const next = initialRange;
+    if (next.endAt > next.startAt) {
+      setStartAt(next.startAt);
+      setEndAt(next.endAt);
+      setAppliedRange(next);
+    }
+  }, [initialRange, routeLocation.search]);
+
   useEffect(() => { void load(); }, [load]);
 
   const applyRange = () => {
-    if (startAt && endAt) setAppliedRange({ startAt, endAt });
+    if (startAt && endAt && endAt > startAt) setAppliedRange({ startAt, endAt });
+    else setError("End time must be after start time.");
   };
 
   const rows = usage?.ingredientUsage ?? [];

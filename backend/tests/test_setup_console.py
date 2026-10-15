@@ -577,7 +577,7 @@ def test_square_credential_diagnostic_is_setup_admin_only_safe_and_non_mutating(
         "applicationFingerprint": "safe-fingerprint",
         "applicationSuffix": "PMJA",
         "redirectUri": "https://api.flowtally.ca/api/integrations/square/callback",
-        "scopes": ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"],
+        "scopes": ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRAWER_READ", "PAYMENTS_READ"],
         "statusCode": 401,
         "errorTypes": ["SERVICE_NOT_AUTHORIZED"],
         "requestId": "safe-request-id",
