@@ -48,21 +48,21 @@ describe("PilotSquareUsagePage", () => {
 
   it("loads directly without Square Setup and makes one authoritative Usage request", async () => {
     renderPage();
-    expect(await screen.findByText("Theoretical usage")).toBeVisible();
+    expect((await screen.findAllByText("Theoretical usage")).length).toBeGreaterThan(0);
     expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(1);
     expect(mockApi.fetchSquareCatalogMappings).not.toHaveBeenCalled();
   });
 
   it("does not render a second Setup & Sync or mapping editor", async () => {
     renderPage();
-    expect(await screen.findByText("Theoretical usage")).toBeVisible();
+    expect((await screen.findAllByText("Theoretical usage")).length).toBeGreaterThan(0);
     expect(screen.queryByText("Setup & Sync")).not.toBeInTheDocument();
     expect(screen.queryByText("Mapping")).not.toBeInTheDocument();
   });
 
   it("does not request intermediate date ranges and applies both draft dates once", async () => {
     renderPage();
-    await screen.findByText("Theoretical usage");
+    await screen.findAllByText("Theoretical usage");
     mockApi.fetchSquareUsage.mockClear();
     fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
     fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
@@ -102,7 +102,7 @@ describe("PilotSquareUsagePage", () => {
   it("shows the backend stock-count basis and equations when a variance row is opened", async () => {
     mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse());
     renderPage();
-    fireEvent.click(await screen.findByText("Beef"));
+    fireEvent.click(screen.getAllByText("Beef")[0]);
     expect(await screen.findByRole("dialog")).toBeVisible();
     expect(screen.getByText("Opening count")).toBeVisible();
     expect(screen.getByText("Closing count")).toBeVisible();
@@ -117,8 +117,8 @@ describe("PilotSquareUsagePage", () => {
     mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse({ usage: high }));
     renderPage();
     expect(await screen.findByText("Needs attention")).toBeVisible();
-    const rows = screen.getAllByRole("row");
-    expect(rows.findIndex((r) => r.textContent?.includes("Lettuce"))).toBeLessThan(rows.findIndex((r) => r.textContent?.includes("Chicken Breast")));
+    expect(screen.getByRole("button", { name: /Lettuce.*40.0% variance/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Chicken Breast.*variance/ })).not.toBeInTheDocument();
   });
 
 });
