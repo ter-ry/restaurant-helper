@@ -20,6 +20,7 @@ describe("PilotDashboardPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pilotApiMocks.fetchPilotDashboard.mockResolvedValue({
+      insights: { today: { totalCollected: 181.8, orderCount: 8 }, estimatedFoodCost: { estimatedFoodCostPercent: 12.3, costCoveragePercent: 100 } },
       summary: {
         weeklyInvoiceSpend: 1200,
         weeklyInvoiceCount: 4,
