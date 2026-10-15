@@ -130,9 +130,13 @@ describe("PilotDailyClosePage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Daily Close" })).toBeVisible();
+    expect(screen.queryByText("Daily close progress")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not evaluated")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Setup & Sync" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Usage & Variance" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-30");
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Start daily close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start close" }));
     await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
   });
 
@@ -553,7 +557,7 @@ describe("PilotDailyClosePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save notes" }));
     await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(12, { notes: "Updated note" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Finalize daily close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete close" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(12));
     expect(await screen.findByText("Completed daily close")).toBeVisible();
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
