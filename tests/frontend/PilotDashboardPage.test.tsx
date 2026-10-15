@@ -152,6 +152,7 @@ describe("PilotDashboardPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeVisible();
     const todayHeading = screen.getByRole("heading", { name: "Today" });
+    expect(todayHeading).toHaveClass("text-2xl");
     expect(todayHeading.closest(".rounded-2xl")?.querySelector('[aria-label="Refresh dashboard"]')).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Operations" })).toBeVisible();
     expect(screen.getByText("Reorder pressure")).toBeVisible();
