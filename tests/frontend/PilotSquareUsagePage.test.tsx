@@ -102,7 +102,8 @@ describe("PilotSquareUsagePage", () => {
   it("shows the backend stock-count basis and equations when a variance row is opened", async () => {
     mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse());
     renderPage();
-    fireEvent.click(screen.getByRole("row", { name: /Beef kg/ }));
+    const beefRows = await screen.findAllByText("Beef");
+    fireEvent.click(beefRows[beefRows.length - 1]);
     expect(await screen.findByRole("dialog")).toBeVisible();
     expect(screen.getByText("Opening count")).toBeVisible();
     expect(screen.getByText("Closing count")).toBeVisible();
