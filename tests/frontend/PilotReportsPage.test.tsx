@@ -27,7 +27,11 @@ describe("PilotReportsPage", () => {
   it("shows sales, menu performance and current-cost coverage", async () => {
     render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Harbour Burger")).toBeInTheDocument());
+    expect(screen.getByText("How was the day?")).toBeInTheDocument();
+    expect(screen.getByText("Sales breakdown")).toBeInTheDocument();
+    expect(screen.getByText("View menu-item breakdown")).toBeInTheDocument();
     expect(screen.getByText("Total collected")).toBeInTheDocument();
+    expect(screen.getByText("Physical variance not available for this full business day. Flowtally will calculate it when valid opening and closing counts bracket the period.")).toBeInTheDocument();
     expect(screen.getByText("$181.80")).toBeInTheDocument();
     expect(screen.getByText("Units sold")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Daily" })).not.toBeInTheDocument();
