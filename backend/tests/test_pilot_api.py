@@ -943,6 +943,8 @@ def test_daily_close_session_lifecycle_respects_module_enablement(app, client):
     assert initial_body["session"] is None
     assert initial_body["location"]["id"] == location_id
     assert "Square not synced." in initial_body["exceptions"]
+    assert "Actual usage unavailable — stock-count basis is incomplete." not in initial_body["exceptions"]
+    assert initial_body["snapshot"]["healthStatus"] == "Ready with warnings"
 
     opened = client.post(
         "/api/pilot/daily-close",
