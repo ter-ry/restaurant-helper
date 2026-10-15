@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, CalendarDays, ClipboardList, PackageSearch, RefreshCcw, ShoppingCart } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
@@ -9,7 +9,6 @@ import { fetchPilotDashboard, type PilotDashboardResponse } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 export function PilotDashboardPage() {
-  const navigate = useNavigate();
   const [data, setData] = useState<PilotDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +27,13 @@ export function PilotDashboardPage() {
     { key: "square", title: "Square sync needs attention", detail: "The connected Square integration has an active sync issue.", count: data?.operationalAttention?.square.syncErrorCount ?? 0, to: "/app/square", action: "Review Square", tone: "danger" as const },
     { key: "mapping", title: "Square variations need mapping", detail: "Mapped variations are required before sales can drive recipe usage.", count: data?.operationalAttention?.square.unmappedVariationCount ?? 0, to: "/app/square", action: "Review mappings", tone: "warning" as const },
   ].filter((item) => item.count > 0), [data?.operationalAttention, data?.summary, summary.inventoryItemsToReorderCount]);
+
+  const resumeItems = useMemo(() => [
+    ...(data?.pendingDraftInvoices ?? []).slice(0, 1).map((invoice) => ({ key: "purchase-" + invoice.id, label: "Purchase draft", detail: invoice.invoiceNumber ? "Invoice " + invoice.invoiceNumber : "Invoice awaiting review", to: "/app/purchases" })),
+    ...(data?.pendingDraftCountSessions ?? []).slice(0, 1).map((session) => ({ key: "count-" + session.id, label: "Stock count draft", detail: (session.countedLineCount ?? 0) + "/" + (session.itemCount ?? 0) + " items counted", to: "/app/stock-counts" })),
+    ...(data?.pendingDraftDailyCloseSessions ?? []).slice(0, 1).map((session) => ({ key: "close-" + session.id, label: "Daily Close draft", detail: session.businessDate ? formatDate(session.businessDate) : "Close still in progress", to: "/app/daily-close" })),
+    ...(data?.pendingDraftReorderPlans ?? []).slice(0, 1).map((plan) => ({ key: "reorder-" + plan.id, label: "Reorder plan draft", detail: plan.name || "Plan awaiting review", to: "/app/inventory?view=reorder" })),
+  ].slice(0, 4), [data?.pendingDraftCountSessions, data?.pendingDraftDailyCloseSessions, data?.pendingDraftInvoices, data?.pendingDraftReorderPlans]);
 
   const topMetrics = [
     { label: "Inventory value", value: loading ? "—" : formatMoney(data?.summary.inventoryValue), helper: `${formatNumber(data?.summary.inventoryItemCount)} items tracked` },
@@ -49,9 +55,14 @@ export function PilotDashboardPage() {
     </Card> : null}
 
     <Card className="p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-800">Needs attention</p><h2 className="mt-1 text-xl font-bold text-ink">What should you do next?</h2></div>{attentionItems.length ? <Badge tone="warning">{formatNumber(attentionItems.length)} actions</Badge> : null}</div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-800">Needs attention</p><h2 className="mt-1 text-xl font-bold text-ink">What should you do next?</h2></div>{attentionItems.length ? <Badge tone="warning">{formatNumber(attentionItems.length)} areas need attention</Badge> : null}</div>
       {attentionItems.length ? <div className="mt-4 grid gap-2 md:grid-cols-2">{attentionItems.slice(0, 6).map((item) => <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 px-4 py-3 transition hover:shadow-soft"><div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p></div><Badge tone={item.tone}>{formatNumber(item.count)}</Badge></Link>)}</div> : <p className="mt-4 text-sm text-muted">No operational alerts right now.</p>}
     </Card>
+
+    {resumeItems.length ? <Card className="p-5">
+      <SectionHeader title="Continue where you left off" description="Pick up unfinished work without searching for the draft." />
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{resumeItems.map((item) => <Link key={item.key} to={item.to} className="rounded-xl border border-line bg-slate-50 p-3 transition hover:shadow-soft"><p className="text-sm font-semibold text-ink">{item.label}</p><p className="mt-1 text-xs text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">Resume</p></Link>)}</div>
+    </Card> : null}
 
     <Card className="p-5">
       <SectionHeader title="Operating snapshot" description="The numbers that help plan the next shift." />
