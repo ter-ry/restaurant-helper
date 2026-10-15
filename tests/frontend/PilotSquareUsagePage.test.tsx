@@ -135,10 +135,10 @@ describe("PilotSquareUsagePage", () => {
     fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     resolveSecond(buildResponse({ usage: { ...usageReport, ingredientUsage: [{ ...usageReport.ingredientUsage[0], inventoryItemName: "Lettuce", discrepancyPercent: 9 }] } }));
-    await waitFor(() => expect(screen.getByText("Lettuce")).toBeVisible());
+    await waitFor(() => expect(screen.getAllByText("Lettuce")[0]).toBeVisible());
     resolveFirst(buildResponse({ usage: { ...usageReport, ingredientUsage: [{ ...usageReport.ingredientUsage[0], inventoryItemName: "Beef", discrepancyPercent: 80 }] } }));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.getByText("Lettuce")).toBeVisible();
+    expect(screen.getAllByText("Lettuce")[0]).toBeVisible();
     expect(screen.queryByText("80.0% above theoretical")).not.toBeInTheDocument();
   });
 });
