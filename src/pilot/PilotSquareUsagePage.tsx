@@ -62,6 +62,7 @@ export function PilotSquareUsagePage() {
   const locationOptions = locations.length ? locations : currentLocation ? [currentLocation] : [];
 
   const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     if (!organizationId) { setUsage(null); setLoading(false); return; }
     setRefreshing(true);
     setLoading(true);
@@ -74,13 +75,17 @@ export function PilotSquareUsagePage() {
         startAt: locationDatetimeLocalToUtcIso(appliedRange.startAt, timezone),
         endAt: locationDatetimeLocalToUtcIso(appliedRange.endAt, timezone),
       });
+      if (generation !== requestGeneration.current) return;
       setUsage(response.usage);
     } catch (err) {
+      if (generation !== requestGeneration.current) return;
       setUsage(null);
       setError(err instanceof Error ? err.message : "Could not load usage data.");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (generation === requestGeneration.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [appliedRange.endAt, appliedRange.startAt, organizationId, selectedLocationId, timezone]);
 
