@@ -55,6 +55,7 @@ export function PilotDailyClosePage() {
   const [saving, setSaving] = useState<"open" | "notes" | "finalize" | "sync-sales" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [countedCash, setCountedCash] = useState("");
 
   const currentSession = data?.session ?? null;
   const snapshot = currentSession?.currentSnapshot ?? data?.snapshot ?? null;
@@ -180,6 +181,11 @@ export function PilotDailyClosePage() {
   const squareConnected = squareStatus === "Connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
+  const expectedCash = Number.isFinite(Number(sales.cashSales)) ? Number(sales.cashSales) : null;
+  const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
+  const cashDifference = expectedCash != null && countedCashValue != null && Number.isFinite(countedCashValue)
+    ? countedCashValue - expectedCash
+    : null;
   const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
   const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
   const wasteLabel = recordedWasteCost > 0
@@ -368,6 +374,48 @@ export function PilotDailyClosePage() {
               </div>
 
 
+              <div className="rounded-3xl border border-line bg-slate-50 p-4">
+                <SectionHeader title="Cash reconciliation" description="Close the cash drawer against the sales data available for this business date." />
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Expected cash</p>
+                    <p className="mt-1 text-lg font-semibold text-ink">{expectedCash == null ? "Unavailable" : formatMoney(expectedCash)}</p>
+                  </div>
+                  <label className="block">
+                    <span className="text-xs font-bold uppercase tracking-wide text-muted">Counted cash</span>
+                    <input
+                      className="input mt-1"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={countedCash}
+                      disabled={completed || expectedCash == null}
+                      onChange={(event) => setCountedCash(event.target.value)}
+                      placeholder={expectedCash == null ? "Unavailable" : "0.00"}
+                    />
+                  </label>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">Over / short</p>
+                    <p className={`mt-1 text-lg font-semibold ${cashDifference == null ? "text-muted" : cashDifference === 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                      {cashDifference == null ? "—" : cashDifference === 0 ? "Balanced" : cashDifference > 0 ? `${formatMoney(cashDifference)} over` : `${formatMoney(Math.abs(cashDifference))} short`}
+                    </p>
+                  </div>
+                </div>
+                {expectedCash == null ? (
+                  <p className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted">Square has not provided tender-level cash for this close. No cash count is required from this screen.</p>
+                ) : null}
+                {cashDifference != null && cashDifference !== 0 ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                    <p className="font-semibold">Likely causes</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      <li>Check for a missed cash sale or incorrect tender type.</li>
+                      <li>Review paid-out, float, refund, and change entries.</li>
+                      <li>Confirm the counted amount and add a note before completing the close.</li>
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
               {data?.exceptions?.length ? (
                 <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
                   <p className="text-sm font-bold text-amber-900">Needs attention</p>
@@ -433,7 +481,7 @@ export function PilotDailyClosePage() {
                 </div>
               </div>
               <div className="rounded-3xl border border-line bg-slate-50 p-4">
-                <SectionHeader title="Ingredient usage" description="Weighted-average cost flow for the current close." />
+                <SectionHeader title="Ingredient usage" description="Secondary detail for exception review; physical counts are not required to close." />
                 {ingredientUsage.length ? (
                   <div className="mt-4 overflow-x-auto">
                     <table className="min-w-full divide-y divide-line text-sm">
