@@ -112,8 +112,7 @@ export function PilotSquareUsagePage() {
   return <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
     <div className="space-y-6">
       <Card className="p-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Usage window</p><h1 className="mt-2 text-3xl font-bold text-ink">Usage &amp; Variance</h1></div>
+        <div className="flex justify-end">
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void load()} disabled={refreshing}><RefreshCw className="h-4 w-4" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
