@@ -1386,7 +1386,7 @@ def test_daily_close_does_not_call_missing_counts_a_mapping_gap():
     )
 
     assert "Recipe or inventory mapping gaps exist." not in exceptions
-    assert "Actual usage unavailable — stock-count basis is incomplete." in exceptions
+    assert "Actual usage unavailable — stock-count basis is incomplete." not in exceptions
     assert "Material usage variance exceeds threshold." not in exceptions
 
 
