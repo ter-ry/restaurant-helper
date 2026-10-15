@@ -698,4 +698,7 @@ describe("PilotDailyClosePage", () => {
       history: [], location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" }, businessDate: "2026-08-30", square: {},
     });
     render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
-    expect(await screen.findByText("Needs attention")).toBeVisible();
+    expect(await screen.findByText("Needs attention")).toBeVisible();    expect(screen.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
+    expect(screen.getByText("Notes")).toBeVisible();
+  });
+});
