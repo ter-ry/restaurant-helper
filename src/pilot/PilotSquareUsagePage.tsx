@@ -57,17 +57,18 @@ export function PilotSquareUsagePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedVarianceId, setSelectedVarianceId] = useState<number | null>(null);
+  const organizationId = organization?.id;
   const locationOptions = locations.length ? locations : currentLocation ? [currentLocation] : [];
 
   const load = useCallback(async () => {
-    if (!organization) { setUsage(null); setLoading(false); return; }
+    if (!organizationId) { setUsage(null); setLoading(false); return; }
     setRefreshing(true);
     setLoading(true);
     setUsage(null);
     setError(null);
     try {
       const response = await fetchSquareUsage({
-        organizationId: organization.id,
+        organizationId,
         locationId: selectedLocationId ?? undefined,
         startAt: locationDatetimeLocalToUtcIso(appliedRange.startAt, timezone),
         endAt: locationDatetimeLocalToUtcIso(appliedRange.endAt, timezone),
@@ -80,7 +81,7 @@ export function PilotSquareUsagePage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [appliedRange.endAt, appliedRange.startAt, organization, selectedLocationId, timezone]);
+  }, [appliedRange.endAt, appliedRange.startAt, organizationId, selectedLocationId, timezone]);
 
   useEffect(() => { void load(); }, [load]);
 
