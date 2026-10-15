@@ -753,6 +753,7 @@ export interface CashReconciliation {
   mode: "drawer_shift" | "payments" | null | string;
   basis?: "square_expected_cash" | "calculated_drawer_cash" | "cash_payments" | string;
   expectedCash: number | null;
+  reconciledExpectedCash?: number | null;
   countedCash?: number | null;
   overShort?: number | null;
   openingFloat: number | null;
@@ -764,13 +765,15 @@ export interface CashReconciliation {
   shiftCount?: number;
   openShiftCount?: number;
   closedShiftCount?: number;
+  reconciledShiftCount?: number;
+  unreconciledShiftCount?: number;
   paymentCount?: number;
   reason?: string;
   reconnectRequired?: boolean;
   possibleMatches?: Array<{
     type: string;
     amount: number;
-    occurredAt?: string | null;
+    createdAt?: string | null;
     description?: string;
     differenceFromVariance?: number;
     shiftId?: string;

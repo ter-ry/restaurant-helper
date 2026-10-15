@@ -345,7 +345,7 @@ export function PilotDailyClosePage() {
                 ) : null}
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div>
                 <div className="rounded-3xl border border-line bg-slate-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Sales snapshot</p>
                   <dl className="mt-3 space-y-2 text-sm">
@@ -368,27 +368,6 @@ export function PilotDailyClosePage() {
                   </dl>
                 </div>
 
-                <div className="rounded-3xl border border-line bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Close snapshot</p>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Inventory value</dt>
-                      <dd className="font-semibold text-ink">{formatMoney(Number(snapshot?.inventoryValue ?? 0))}</dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Ingredient rows tracked</dt>
-                      <dd className="font-semibold text-ink">{usage ? formatNumber(usage.ingredientUsage?.length ?? 0) : "—"}</dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Actual usage</dt>
-                      <dd className="font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Unavailable" : formatNumber(Number(usage.totals.actualUsage))}</dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-muted">Variance</dt>
-                      <dd className="font-semibold text-ink">{snapshot?.variance?.quantity == null ? "Unavailable" : `${formatSignedNumber(snapshot.variance.quantity)} · ${snapshot.variance.percent == null ? "—" : `${formatNumber(snapshot.variance.percent)}%`}`}</dd>
-                    </div>
-                  </dl>
-                </div>
               </div>
 
 
@@ -434,8 +413,8 @@ export function PilotDailyClosePage() {
                         <p className="font-semibold">Possible matches</p>
                         <ul className="mt-2 space-y-2">
                           {cashReconciliation.possibleMatches.map((match, index) => (
-                            <li key={`${match.shiftId ?? "shift"}-${match.occurredAt ?? index}-${match.type}`} className="flex items-start justify-between gap-3">
-                              <span>{match.description ?? match.type.replaceAll("_", " ")}{match.occurredAt ? ` · ${formatDateTime(match.occurredAt)}` : ""}</span>
+                            <li key={`${match.shiftId ?? "shift"}-${match.createdAt ?? index}-${match.type}`} className="flex items-start justify-between gap-3">
+                              <span>{match.description ?? match.type.replaceAll("_", " ")}{match.createdAt ? ` · ${formatDateTime(match.createdAt)}` : ""}</span>
                               <span className="shrink-0 font-semibold">{formatMoney(match.amount)}</span>
                             </li>
                           ))}
@@ -510,13 +489,6 @@ export function PilotDailyClosePage() {
                   <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-1 font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Not available for this date" : "Available"}</p></div>
                 </div>
               </div>
-              {displayAttentionItems.some((item) => item.type === "usage_variance") ? (
-                <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-                  <p className="font-semibold">Usage variance needs review</p>
-                  <p className="mt-1">Physical usage is compared only when completed counts bracket the same Square period.</p>
-                  <Link className="mt-3 inline-flex font-semibold underline" to={displayAttentionItems.find((item) => item.type === "usage_variance")?.href ?? "/app/inventory?view=usage"}>Review usage →</Link>
-                </div>
-              ) : null}
             </div>
           ) : (
             <div className="mt-5 rounded-3xl border border-dashed border-line bg-slate-50 p-6 text-sm leading-6 text-muted">
@@ -535,18 +507,16 @@ export function PilotDailyClosePage() {
 
         <div className="space-y-4">
           <Card className="workspace-card">
-            <SectionHeader title="Square context" description="Connection, mapping, and sync state that feed the close." />
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Connection</p>
-                <p className="mt-2 font-semibold text-ink">{squareStatus}</p>
-                <p className="mt-1 text-muted">{squareSynced ? "Square has synced into the close snapshot." : "Square is not yet connected for this location."}</p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Square</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                  <Badge tone={squareConnected ? "success" : "neutral"}>{squareStatus}</Badge>
+                  <Badge tone={locationMapped ? "success" : "warning"}>{locationMapped ? "Location mapped" : "Location unmapped"}</Badge>
+                  {squareSynced ? <Badge tone="neutral">Synced</Badge> : null}
+                </div>
               </div>
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Location mapping</p>
-                <p className="mt-2 font-semibold text-ink">{locationMapped ? "Mapped" : "Unmapped"}</p>
-                <p className="mt-1 text-muted">Daily close uses the mapped Square location when one is available.</p>
-              </div>
+              <Link className="font-semibold text-ink underline" to="/app/square">Open Square →</Link>
             </div>
           </Card>
 

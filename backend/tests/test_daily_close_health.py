@@ -123,6 +123,22 @@ def test_manual_cash_reconciliation_is_namespaced_and_recomputed():
     updated = _merge_manual_reconciliation(snapshot, Session(), {"reconciliation": {"countedCash": 100}})
     assert updated["cashReconciliation"]["overShort"] == 0
 
+    square_snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0, "closedCash": 105.0, "overShort": 5.0}, "manualReconciliation": {}}
+    square_merged = _merge_manual_reconciliation(square_snapshot, Session())
+    assert square_merged["cashReconciliation"]["overShort"] == 5.0
+
+
+def test_intraday_usage_period_does_not_create_daily_close_variance_attention():
+    from backend.daily_close import _daily_close_exceptions, _attention_items
+    summary = {"locationMapped": True, "refunds": 0, "cancelledOrders": 0}
+    usage = {
+        "period": {"startAt": "2026-10-04T16:00:00Z", "endAt": "2026-10-04T20:00:00Z"},
+        "coverage": {},
+        "ingredientUsage": [{"inventoryItemName": "Chicken", "actualUsage": 1, "discrepancy": 1, "discrepancyPercent": 100, "unit": "kg"}],
+    }
+    assert "Material usage variance exceeds threshold." not in _daily_close_exceptions(None, summary, usage, period_matches=False)
+    assert _attention_items(summary, usage, type("Location", (), {"id": 1})(), period_matches=False) == []
+
 
 def test_cash_reconciliation_uses_exact_business_day_payments_and_paginates(monkeypatch):
     from types import SimpleNamespace
@@ -162,24 +178,36 @@ def test_cash_reconciliation_mixes_shift_expected_cash_and_matches_events(monkey
     connection = SimpleNamespace(status="connected", environment="production")
     location = SimpleNamespace(timezone="America/Toronto", id=1)
     event_pages = iter([
-        {"events": [{"event_type": "PAID_OUT", "event_money": {"amount": 500, "currency": "CAD"}}], "cursor": "events-2"},
-        {"events": [{"event_type": "CASH_TENDER_PAYMENT", "event_money": {"amount": 2500, "currency": "CAD"}}]},
+        {"cash_drawer_shift_events": [{"event_type": "PAID_OUT", "event_money": {"amount": 500, "currency": "CAD"}, "created_at": "2026-10-04T21:00:00Z"}], "cursor": "events-2"},
+        {"cash_drawer_shift_events": [{"event_type": "CASH_TENDER_PAYMENT", "event_money": {"amount": 2500, "currency": "CAD"}, "created_at": "2026-10-04T20:00:00Z"}]},
     ])
+    calls = []
     monkeypatch.setattr(daily_close, "_square_location_ids_for_location", lambda *_args: ["SQ-1"])
     monkeypatch.setattr(daily_close, "_connection_token", lambda *_args: "token")
 
     def request(_method, path, **_kwargs):
+        calls.append(path)
         if "/events?" in path:
             return next(event_pages)
-        return {"cash_drawer_shifts": [
-            {"id": "shift-1", "state": "CLOSED", "opened_at": "2026-10-04T12:00:00Z", "closed_at": "2026-10-04T22:00:00Z", "opened_cash_money": {"amount": 10000, "currency": "CAD"}, "cash_payment_money": {"amount": 2000, "currency": "CAD"}, "cash_refunds_money": {"amount": 100, "currency": "CAD"}, "cash_paid_in_money": {"amount": 300, "currency": "CAD"}, "cash_paid_out_money": {"amount": 50, "currency": "CAD"}, "expected_cash_money": {"amount": 12150, "currency": "CAD"}, "closed_cash_money": {"amount": 12100, "currency": "CAD"}},
-            {"id": "shift-2", "state": "OPEN", "opened_at": "2026-10-04T23:00:00Z", "opened_cash_money": {"amount": 5000, "currency": "CAD"}, "cash_payment_money": {"amount": 1000, "currency": "CAD"}, "cash_refunds_money": {"amount": 0, "currency": "CAD"}, "cash_paid_in_money": {"amount": 0, "currency": "CAD"}, "cash_paid_out_money": {"amount": 0, "currency": "CAD"}},
-        ]}
+        if "/v2/cash-drawers/shifts?" in path:
+            return {"cash_drawer_shifts": [
+                {"id": "shift-1", "state": "CLOSED", "opened_at": "2026-10-04T12:00:00Z", "closed_at": "2026-10-04T22:00:00Z"},
+                {"id": "shift-2", "state": "OPEN", "opened_at": "2026-10-04T23:00:00Z"},
+            ]}
+        if "shift-1?" in path:
+            return {"cash_drawer_shift": {"id": "shift-1", "state": "CLOSED", "opened_at": "2026-10-04T12:00:00Z", "closed_at": "2026-10-04T22:00:00Z", "opened_cash_money": {"amount": 10000, "currency": "CAD"}, "cash_payment_money": {"amount": 2000, "currency": "CAD"}, "cash_refunds_money": {"amount": 100, "currency": "CAD"}, "cash_paid_in_money": {"amount": 300, "currency": "CAD"}, "cash_paid_out_money": {"amount": 50, "currency": "CAD"}, "expected_cash_money": {"amount": 12150, "currency": "CAD"}, "closed_cash_money": {"amount": 12100, "currency": "CAD"}}}
+        return {"cash_drawer_shift": {"id": "shift-2", "state": "OPEN", "opened_at": "2026-10-04T23:00:00Z", "opened_cash_money": {"amount": 5000, "currency": "CAD"}, "cash_payment_money": {"amount": 1000, "currency": "CAD"}, "cash_refunds_money": {"amount": 0, "currency": "CAD"}, "cash_paid_in_money": {"amount": 0, "currency": "CAD"}, "cash_paid_out_money": {"amount": 0, "currency": "CAD"}}}
 
     monkeypatch.setattr(daily_close, "_square_request", request)
     result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
     assert result["basis"] == "mixed"
-    assert result["expectedCash"] == 181.5
+    assert result["expectedCash"] == 121.5
     assert result["closedCash"] == 121
-    assert result["overShort"] == -60.5
-    assert [match["type"] for match in result["possibleMatches"]] == ["CASH_TENDER_PAYMENT", "PAID_OUT"]
+    assert result["overShort"] == -0.5
+    assert result["reconciledShiftCount"] == 1
+    assert result["openShiftCount"] == 1
+    assert result["unreconciledShiftCount"] == 1
+    assert [match["type"] for match in result["possibleMatches"]] == ["PAID_OUT", "CASH_TENDER_PAYMENT"]
+    assert all("location_id=SQ-1" in path for path in calls if "/events?" in path)
+    assert all("location_id=SQ-1" in path for path in calls if "/shifts/shift-" in path and "/events?" not in path)
+    assert result["possibleMatches"][0]["createdAt"]
