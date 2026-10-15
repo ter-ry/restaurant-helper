@@ -150,8 +150,7 @@ describe("PilotDashboardPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Today" })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeVisible();
     const todayHeading = screen.getByRole("heading", { name: "Today" });
     expect(todayHeading.closest(".rounded-2xl")?.querySelector('[aria-label="Refresh dashboard"]')).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Operations" })).toBeVisible();
