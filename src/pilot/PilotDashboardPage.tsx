@@ -49,7 +49,7 @@ export function PilotDashboardPage() {
 
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-800">Needs attention</p><h2 className="mt-1 text-xl font-bold text-ink">What should you do next?</h2></div>{attentionItems.length ? <Badge tone="warning">{formatNumber(attentionItems.length)} actions</Badge> : null}</div>
-      {attentionItems.length ? <div className="mt-4 grid gap-2 md:grid-cols-2">{attentionItems.slice(0, 4).map((item) => <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 px-4 py-3 transition hover:shadow-soft"><div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p></div><Badge tone={item.tone}>{formatNumber(item.count)}</Badge></Link>)}</div> : <p className="mt-4 text-sm text-muted">No operational alerts right now.</p>}
+      {attentionItems.length ? <div className="mt-4 grid gap-2 md:grid-cols-2">{attentionItems.slice(0, 5).map((item) => <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 px-4 py-3 transition hover:shadow-soft"><div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p></div><Badge tone={item.tone}>{formatNumber(item.count)}</Badge></Link>)}</div> : <p className="mt-4 text-sm text-muted">No operational alerts right now.</p>}
     </Card>
 
     <Card className="p-5">
