@@ -1474,7 +1474,7 @@ test("active customer Google sign-in returns into the app dashboard", async ({ p
 
   await page.goto("/auth/google/complete", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/app\/dashboard/);
-  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
 });
 
 test("successful logout stays on the login page after session initialization", async ({ page }) => {
