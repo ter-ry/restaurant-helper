@@ -26,7 +26,7 @@ describe("PilotReportsPage", () => {
 
   it("shows sales, menu performance and current-cost coverage", async () => {
     render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByText("Harbour Burger")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("Harbour Burger").length).toBeGreaterThan(0));
     expect(screen.getByText("How was the day?")).toBeInTheDocument();
     expect(screen.getByText("Sales breakdown")).toBeInTheDocument();
     expect(screen.getByText("View menu-item breakdown")).toBeInTheDocument();
