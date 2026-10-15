@@ -179,7 +179,9 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
     for square_location_id in location_ids:
         query_base = {"location_id": square_location_id, "begin_time": start_iso, "end_time": end_iso, "limit": "100"}
         shifts: list[dict[str, Any]] = []
-        drawer_failed = False
+        drawer_permission_failed = False
+        drawer_temporary_failed = False
+        drawer_incomplete = False
         cursor = None
         seen_cursors: set[str] = set()
         try:
@@ -192,17 +194,21 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
                 next_cursor = page.get("cursor")
                 if not next_cursor or next_cursor in seen_cursors: break
                 seen_cursors.add(next_cursor); cursor = next_cursor
-        except SquareRequestError:
-            drawer_failed = True
+        except SquareRequestError as exc:
+            if exc.status_code == 403:
+                drawer_permission_failed = True
+            else:
+                drawer_temporary_failed = True
             shifts = []
         except Exception:
-            drawer_failed = True
+            drawer_temporary_failed = True
             shifts = []
         def parsed(value: Any) -> datetime | None:
             if not value: return None
             try: return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
             except ValueError: return None
         shifts = [s for s in shifts if (opened := parsed(s.get("opened_at"))) and opened <= end_at and (parsed(s.get("ended_at") or s.get("closed_at")) or _now()) >= start_at]
+        relevant_shift_count = len(shifts)
         detailed_shifts: list[dict[str, Any]] = []
         for summary in shifts:
             shift_id = summary.get("id")
@@ -213,11 +219,23 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
                 detail = (detail_page or {}).get("cash_drawer_shift") if isinstance(detail_page, dict) else None
                 if isinstance(detail, dict):
                     detailed_shifts.append(detail)
-            except Exception:
-                drawer_failed = True
+                else:
+                    drawer_incomplete = True
+            except SquareRequestError as exc:
+                if exc.status_code == 403:
+                    drawer_permission_failed = True
+                else:
+                    drawer_temporary_failed = True
+                drawer_incomplete = True
                 continue
+            except Exception:
+                drawer_temporary_failed = True
+                drawer_incomplete = True
+                continue
+        if len(detailed_shifts) != relevant_shift_count:
+            drawer_incomplete = True
         shifts = detailed_shifts
-        if shifts:
+        if shifts and not drawer_incomplete:
             opening = sum((_money_amount(s.get("opened_cash_money")) for s in shifts), Decimal("0"))
             payments = sum((_money_amount(s.get("cash_payment_money")) for s in shifts), Decimal("0"))
             refunds = sum((_money_amount(s.get("cash_refunds_money")) for s in shifts), Decimal("0"))
@@ -279,8 +297,16 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
             cash = [p for p in payments if str(p.get("status") or "").upper() == "COMPLETED" and str(p.get("source_type") or "").upper() == "CASH"]
             cash_payments = sum((_money_amount(p.get("total_money")) for p in cash), Decimal("0"))
             refunds = sum((_money_amount(p.get("refunded_money")) for p in cash), Decimal("0"))
-            drawer_reason = "Reconnect Square to enable full cash drawer reconciliation." if drawer_failed else None
-            return {"status": "available", "mode": "payments", "basis": "cash_payments", "expectedCash": None, "expectedCashTakings": float(max(Decimal("0"), cash_payments - refunds)), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": float(refunds), "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(cash), "reason": drawer_reason, "reconnectRequired": bool(drawer_reason)}
+            if drawer_permission_failed:
+                drawer_reason = "Reconnect Square to enable full cash drawer reconciliation."
+                reconnect_required = True
+            elif drawer_temporary_failed or drawer_incomplete:
+                drawer_reason = "Cash drawer data is temporarily unavailable."
+                reconnect_required = False
+            else:
+                drawer_reason = None
+                reconnect_required = False
+            return {"status": "available", "mode": "payments", "basis": "cash_payments", "expectedCash": None, "expectedCashTakings": float(max(Decimal("0"), cash_payments - refunds)), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": float(refunds), "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(cash), "reason": drawer_reason, "reconnectRequired": reconnect_required}
     return unavailable
 
 def _inventory_value(location_id: int) -> float:
@@ -528,6 +554,11 @@ def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: Daily
             try: counted = float(raw)
             except (TypeError, ValueError): counted = None
             if counted is not None and counted >= 0: manual["countedCash"] = counted
+    base_health = manual.get("baseHealthStatus")
+    if base_health is None:
+        base_health = snapshot.get("healthStatus")
+    if base_health in {"Ready", "Ready with warnings", "Reconciled", "Incomplete"}:
+        manual["baseHealthStatus"] = base_health
     snapshot["manualReconciliation"] = manual
     cash = dict(snapshot.get("cashReconciliation") or {})
     if manual.get("countedCash") is not None and cash.get("expectedCash") is not None:
@@ -545,6 +576,13 @@ def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: Daily
         direction = "over" if amount > 0 else "short"
         attention.append({"type": "cash_variance", "title": f"Cash drawer {direction}", "severity": "warning", "detail": f"${abs(amount):.2f} {direction}"})
     snapshot["attentionItems"] = attention
+    if cash.get("closedCash") is None and cash.get("overShort") is not None and abs(float(cash["overShort"])) >= 0.01:
+        if snapshot.get("healthStatus") in {"Ready", "Reconciled"}:
+            snapshot["healthStatus"] = "Ready with warnings"
+    elif base_health is not None:
+        snapshot["healthStatus"] = base_health
+    elif not attention and snapshot.get("healthStatus") == "Ready with warnings":
+        snapshot["healthStatus"] = "Ready"
     return snapshot
 
 

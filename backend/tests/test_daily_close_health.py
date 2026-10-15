@@ -115,9 +115,9 @@ def test_manual_cash_reconciliation_is_namespaced_and_recomputed():
     class Session:
         summary_snapshot_json = {"manualReconciliation": {"countedCash": 97.5}}
 
-    snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
+    snapshot = {"healthStatus": "Ready", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
     merged = _merge_manual_reconciliation(snapshot, Session())
-    assert merged["manualReconciliation"] == {"countedCash": 97.5}
+    assert merged["manualReconciliation"] == {"countedCash": 97.5, "baseHealthStatus": "Ready"}
     assert merged["cashReconciliation"]["overShort"] == -2.5
     assert merged["attentionItems"][0]["type"] == "cash_variance"
 
@@ -199,7 +199,46 @@ def test_cash_drawer_temporary_failure_still_uses_payments(monkeypatch):
     result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
     assert result["mode"] == "payments"
     assert result["expectedCashTakings"] == 10
-    assert result["reconnectRequired"] is True
+    assert result["reconnectRequired"] is False
+    assert result["reason"] == "Cash drawer data is temporarily unavailable."
+
+
+def test_partial_drawer_details_fall_back_without_false_balanced_result(monkeypatch):
+    from types import SimpleNamespace
+    from datetime import date
+    from backend import daily_close
+    connection = SimpleNamespace(status="connected", environment="production")
+    location = SimpleNamespace(timezone="America/Toronto", id=1)
+    monkeypatch.setattr(daily_close, "_square_location_ids_for_location", lambda *_args: ["SQ-1"])
+    monkeypatch.setattr(daily_close, "_connection_token", lambda *_args: "token")
+    def request(_method, path, **_kwargs):
+        if path.startswith("/v2/cash-drawers/shifts?"):
+            return {"cash_drawer_shifts": [{"id": "front", "opened_at": "2026-10-04T12:00:00Z"}, {"id": "bar", "opened_at": "2026-10-04T12:30:00Z"}]}
+        if "/front?" in path:
+            return {"cash_drawer_shift": {"id": "front", "opened_cash_money": {"amount": 10000}, "cash_payment_money": {"amount": 0}, "cash_refunds_money": {"amount": 0}, "closed_cash_money": {"amount": 10000}}}
+        if "/bar?" in path:
+            raise RuntimeError("temporary detail failure")
+        if "/v2/payments?" in path:
+            return {"payments": [{"status": "COMPLETED", "source_type": "CASH", "total_money": {"amount": 2500}, "refunded_money": {"amount": 0}}]}
+        raise AssertionError(path)
+    monkeypatch.setattr(daily_close, "_square_request", request)
+    result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
+    assert result["mode"] == "payments"
+    assert result["reconnectRequired"] is False
+    assert result["reason"] == "Cash drawer data is temporarily unavailable."
+    assert result["expectedCash"] is None
+
+
+def test_manual_cash_variance_updates_health_and_restores_underlying_state():
+    from backend.daily_close import _merge_manual_reconciliation
+    snapshot = {"healthStatus": "Ready", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
+    short = _merge_manual_reconciliation(snapshot, None, {"reconciliation": {"countedCash": 88}})
+    assert short["healthStatus"] == "Ready with warnings"
+    balanced = _merge_manual_reconciliation(short, None, {"reconciliation": {"countedCash": 100}})
+    assert balanced["healthStatus"] == "Ready"
+    unrelated = {"healthStatus": "Ready with warnings", "cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": [{"type": "usage_variance"}]}
+    cleared = _merge_manual_reconciliation(unrelated, None, {"reconciliation": {"countedCash": 100}})
+    assert cleared["healthStatus"] == "Ready with warnings"
 
 
 def test_cash_reconciliation_uses_exact_business_day_payments_and_paginates(monkeypatch):
