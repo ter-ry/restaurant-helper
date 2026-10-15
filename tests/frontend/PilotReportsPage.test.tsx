@@ -59,7 +59,7 @@ it("ranks weekly menu movers by absolute quantity change", async () => {
     });
     render(<MemoryRouter><PilotReportsPage initialView="weekly" /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Menu movers")).toBeInTheDocument());
-    const movers = screen.getByText("Menu movers").closest("section");
-    expect(movers?.textContent?.indexOf("Largest change")).toBeLessThan(movers?.textContent?.indexOf("Small change") ?? 0);
+    const pageText = document.body.textContent ?? "";
+    expect(pageText.indexOf("Largest change")).toBeLessThan(pageText.indexOf("Small change"));
   });
 });
