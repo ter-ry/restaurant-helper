@@ -81,12 +81,12 @@ describe("PilotSquareUsagePage", () => {
     let resolveNext!: (value: unknown) => void;
     mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse()).mockReturnValueOnce(new Promise((resolve) => { resolveNext = resolve; }));
     renderPage();
-    await screen.findByText("16.7%");
+    await screen.findByText("16.7% above theoretical");
     fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
     fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(screen.getByText("Loading usage data…")).toBeVisible());
-    expect(screen.queryByText("16.7%")).not.toBeInTheDocument();
+    expect(screen.queryByText("16.7% above theoretical")).not.toBeInTheDocument();
     resolveNext(buildResponse());
     await waitFor(() => expect(screen.queryByText("Loading usage data…")).not.toBeInTheDocument());
   });
@@ -118,8 +118,27 @@ describe("PilotSquareUsagePage", () => {
     mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse({ usage: high }));
     renderPage();
     expect(await screen.findByText("Needs attention")).toBeVisible();
-    expect(screen.getByRole("button", { name: /Lettuce.*40.0% variance/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Lettuce.*40.0% above theoretical/ })).toBeVisible();
     expect(screen.queryByRole("button", { name: /Chicken Breast.*variance/ })).not.toBeInTheDocument();
   });
 
+
+  it("ignores an older Usage response when a newer request finishes first", async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    mockApi.fetchSquareUsage.mockReset();
+    mockApi.fetchSquareUsage
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve; }));
+    renderPage();
+    fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
+    fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    resolveSecond(buildResponse({ usage: { ...usageReport, ingredientUsage: [{ ...usageReport.ingredientUsage[0], inventoryItemName: "Lettuce", discrepancyPercent: 9 }] } }));
+    await waitFor(() => expect(screen.getByText("Lettuce")).toBeVisible());
+    resolveFirst(buildResponse({ usage: { ...usageReport, ingredientUsage: [{ ...usageReport.ingredientUsage[0], inventoryItemName: "Beef", discrepancyPercent: 80 }] } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText("Lettuce")).toBeVisible();
+    expect(screen.queryByText("80.0% above theoretical")).not.toBeInTheDocument();
+  });
 });
