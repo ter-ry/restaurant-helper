@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -350,7 +350,31 @@ export function PilotDailyClosePage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-line bg-white p-4">
+
+              {data?.exceptions?.length ? (
+                <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm font-bold text-amber-900">Needs attention</p>
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
+                    {data.exceptions.map((exception) => {
+                      const action = exceptionAction(exception);
+                      return (
+                        <li key={exception} className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span>{exception}</span>
+                          </div>
+                          {action ? <Link className="shrink-0 font-semibold text-amber-900 underline" to={action.href}>{action.label} →</Link> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : (
+                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-3 text-sm text-muted">
+                  <p className="font-semibold text-ink">No current exceptions.</p>
+                </div>
+              )}
+\n              <div className="rounded-3xl border border-line bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-bold text-ink">Notes</p>
                   {completed ? <span className="text-xs font-semibold uppercase tracking-wide text-muted">Read only</span> : null}
@@ -381,24 +405,15 @@ export function PilotDailyClosePage() {
                 </div>
               </div>
 
-              {data?.exceptions?.length ? (
-                <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-sm font-bold text-amber-900">Exceptions to review</p>
-                  <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
-                    {data.exceptions.map((exception) => (
-                      <li key={exception} className="flex items-start gap-2">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>{exception}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-4 text-sm leading-6 text-muted">
-                  <p className="font-semibold text-ink">No current exceptions.</p>
-                </div>
-              )}
 
+              <div className="rounded-3xl border border-line bg-slate-50 p-4">
+                <SectionHeader title="Additional context" description="Optional operational context for this close." />
+                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                  <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Waste</p><p className="mt-1 font-semibold text-ink">{Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0) !== 0 || Number(snapshot?.reconciliation?.recordedWasteCost ?? 0) !== 0 ? formatNumber(Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0)) + " · " + formatMoney(Number(snapshot?.reconciliation?.recordedWasteCost ?? 0)) : "No recorded entries"}</p></div>
+                  {Number(snapshot?.reconciliation?.otherAdjustmentQuantity ?? 0) !== 0 ? <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Adjustments</p><p className="mt-1 font-semibold text-ink">{formatSignedNumber(Number(snapshot?.reconciliation?.otherAdjustmentQuantity))}</p></div> : null}
+                  <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-1 font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Not available for this date" : "Available"}</p></div>
+                </div>
+              </div>
               <div className="rounded-3xl border border-line bg-slate-50 p-4">
                 <SectionHeader title="Ingredient usage" description="Weighted-average cost flow for the current close." />
                 {ingredientUsage.length ? (
