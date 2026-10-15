@@ -208,16 +208,41 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
             refunds = sum((_money_amount(s.get("cash_refunds_money")) for s in shifts), Decimal("0"))
             paid_in = sum((_money_amount(s.get("cash_paid_in_money")) for s in shifts), Decimal("0"))
             paid_out = sum((_money_amount(s.get("cash_paid_out_money")) for s in shifts), Decimal("0"))
-            expected_values = [s.get("expected_cash_money") for s in shifts if s.get("expected_cash_money")]
-            expected = sum((_money_amount(v) for v in expected_values), Decimal("0")) if expected_values else opening + payments - refunds + paid_in - paid_out
+            expected_values = [s.get("expected_cash_money") for s in shifts]
+            expected_parts = [(_money_amount(s.get("expected_cash_money")) if s.get("expected_cash_money") else _money_amount(s.get("opened_cash_money")) + _money_amount(s.get("cash_payment_money")) - _money_amount(s.get("cash_refunds_money")) + _money_amount(s.get("cash_paid_in_money")) - _money_amount(s.get("cash_paid_out_money"))) for s in shifts]
+            expected = sum(expected_parts, Decimal("0"))
+            basis = "square_expected_cash" if all(expected_values) else "mixed" if any(expected_values) else "calculated_drawer_cash"
             closed_values = [_money_amount(s.get("closed_cash_money")) for s in shifts if s.get("closed_cash_money")]
             closed = sum(closed_values, Decimal("0")) if closed_values else None
-            return {"status": "available", "mode": "drawer_shift", "basis": "square_expected_cash" if expected_values else "calculated_drawer_cash", "expectedCash": float(expected), "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "shiftCount": len(shifts), "openShiftCount": sum(1 for s in shifts if str(s.get("state") or "").upper() == "OPEN"), "closedShiftCount": sum(1 for s in shifts if str(s.get("state") or "").upper() == "CLOSED"), "shifts": [{"id": s.get("id"), "state": s.get("state"), "openedAt": s.get("opened_at"), "closedAt": s.get("closed_at"), "expectedCash": _money_amount(s.get("expected_cash_money")) and float(_money_amount(s.get("expected_cash_money"))) or None, "closedCash": float(_money_amount(s.get("closed_cash_money"))) if s.get("closed_cash_money") else None} for s in shifts], "reconnectRequired": False}
+            possible_matches: list[dict[str, Any]] = []
+            for shift in shifts:
+                shift_id = shift.get("id")
+                if not shift_id or closed is None or expected is None: continue
+                try:
+                    event_cursor = None; event_seen: set[str] = set()
+                    for _ in range(10):
+                        event_query = {"limit": "100"}
+                        if event_cursor: event_query["cursor"] = event_cursor
+                        event_page = _square_request("GET", f"/v2/cash-drawers/shifts/{shift_id}/events?" + urlencode(event_query), token=token, stage="daily_close_cash_events")
+                        for event in (event_page or {}).get("events", []):
+                            event_type = str(event.get("event_type") or "").upper()
+                            if event_type not in {"CASH_TENDER_PAYMENT", "CASH_TENDER_CANCELLED_PAYMENT", "CASH_TENDER_REFUND", "PAID_IN", "PAID_OUT"}: continue
+                            money = event.get("event_money") or event.get("cash_payment_money") or event.get("cash_paid_in_money") or event.get("cash_paid_out_money") or event.get("amount_money")
+                            amount = _money_amount(money)
+                            if amount == 0: continue
+                            possible_matches.append({"type": event_type, "amount": float(amount), "occurredAt": event.get("occurred_at"), "description": event_type.replace("_", " ").title(), "differenceFromVariance": float(abs(amount - abs(closed - expected))), "shiftId": shift_id})
+                        next_cursor = (event_page or {}).get("cursor")
+                        if not next_cursor or next_cursor in event_seen: break
+                        event_seen.add(next_cursor); event_cursor = next_cursor
+                except Exception: continue
+            possible_matches.sort(key=lambda item: (round(item["differenceFromVariance"], 2), str(item.get("occurredAt") or "")))
+            return {"status": "available", "mode": "drawer_shift", "basis": basis, "expectedCash": float(expected), "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "overShort": float(closed - expected) if closed is not None else None, "possibleMatches": possible_matches[:5], "shiftCount": len(shifts), "openShiftCount": sum(1 for s in shifts if str(s.get("state") or "").upper() == "OPEN"), "closedShiftCount": sum(1 for s in shifts if str(s.get("state") or "").upper() == "CLOSED"), "shifts": [{"id": s.get("id"), "state": s.get("state"), "openedAt": s.get("opened_at"), "closedAt": s.get("closed_at"), "expectedCash": float(_money_amount(s.get("expected_cash_money"))) if s.get("expected_cash_money") else None, "closedCash": float(_money_amount(s.get("closed_cash_money"))) if s.get("closed_cash_money") else None} for s in shifts], "reconnectRequired": False}
         payments: list[dict[str, Any]] = []
         cursor = None; seen_cursors = set(); payments_ok = False
+        payment_query_base = {"location_id": square_location_id, "begin_time": start_at.isoformat().replace("+00:00", "Z"), "end_time": end_at.isoformat().replace("+00:00", "Z"), "limit": "100"}
         try:
             for _ in range(10):
-                query = dict(query_base)
+                query = dict(payment_query_base)
                 if cursor: query["cursor"] = cursor
                 response = _square_request("GET", "/v2/payments?" + urlencode(query), token=token, stage="daily_close_cash_payments")
                 payments_ok = True; page = response if isinstance(response, dict) else {}
@@ -356,6 +381,11 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     discrepancy_percent = usage.get("totals", {}).get("discrepancyPercent")
     start_at, end_at = _business_date_bounds(location, business_date)
     cash_reconciliation = _cash_reconciliation(connection, location, business_date)
+    if cash_reconciliation.get("overShort") is not None and abs(float(cash_reconciliation["overShort"])) >= 0.01:
+        amount = float(cash_reconciliation["overShort"])
+        direction = "over" if amount > 0 else "short"
+        exceptions.append(f"Cash drawer {direction}.")
+        attention_items.append({"type": "cash_variance", "title": f"Cash drawer {direction}", "severity": "warning", "detail": f"${abs(amount):.2f} {direction}"})
     waste_events = InventoryWasteEvent.query.filter(
         InventoryWasteEvent.organization_id == organization.id,
         InventoryWasteEvent.location_id == location.id,

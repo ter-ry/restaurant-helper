@@ -159,6 +159,48 @@ describe("PilotDailyClosePage", () => {
     expect(screen.getByText("Sep 1")).toBeVisible();
   });
 
+  it("shows structured Square cash event matches when available", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: { id: 22, organizationId: 42, locationId: 7, businessDate: "2026-09-01", status: "DRAFT", notes: "", currentSnapshot: null },
+      snapshot: {
+        healthStatus: "Ready with warnings",
+        inventoryValue: 0,
+        sales: {},
+        usage: { totals: {}, ingredientUsage: [] },
+        variance: { quantity: null, percent: null, value: 0 },
+        cashReconciliation: {
+          status: "available",
+          mode: "drawer_shift",
+          expectedCash: 100,
+          closedCash: 95,
+          overShort: -5,
+          openingFloat: 50,
+          cashPayments: 50,
+          cashRefunds: 0,
+          paidIn: 0,
+          paidOut: 0,
+          possibleMatches: [{ type: "PAID_OUT", amount: 5, description: "Paid Out", occurredAt: "2026-09-01T20:00:00Z", shiftId: "shift-1" }],
+        },
+        attentionItems: [{ type: "cash_variance", title: "Cash drawer short", severity: "warning", detail: "$5.00 short" }],
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-09-01",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Possible matches")).toBeVisible();
+    expect(screen.getByText(/Paid Out/)).toBeVisible();
+    expect(screen.getByText("$5.00")).toBeVisible();
+    expect(screen.queryByText("Likely causes")).not.toBeInTheDocument();
+  });
+
   it("syncs Square sales for the selected business date and refreshes the draft", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: {

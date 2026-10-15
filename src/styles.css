@@ -332,7 +332,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .bg-ink {
-  background: #1b2731 !important;
+  background: var(--pilot-surface-raised) !important;
 }
 
 .pilot-theme-dark .bg-brand-50 {
@@ -456,7 +456,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .input {
-  background: #0d151c;
+  background: var(--pilot-surface-raised);
   border-color: var(--pilot-line);
   color: var(--pilot-text);
 }
@@ -467,8 +467,8 @@ textarea.input {
 
 .pilot-theme-dark .pilot-badge-neutral,
 .pilot-theme-dark .pilot-badge-info {
-  background: #1b2a34 !important;
-  color: #c2d1da !important;
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-text) !important;
 }
 
 .pilot-theme-dark .pilot-badge-success {
@@ -506,7 +506,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .pilot-tabs {
-  background: #14212c !important;
+  background: var(--pilot-surface-muted) !important;
 }
 
 .pilot-theme-dark .pilot-tab-badge {
@@ -515,13 +515,13 @@ textarea.input {
 }
 
 .pilot-theme-dark .pilot-tabs [role="tab"][aria-selected="true"] {
-  background: #0d1821 !important;
+  background: var(--pilot-surface-raised) !important;
   color: #f8fafc !important;
 }
 
 .pilot-theme-dark .hover\:bg-slate-100:hover,
 .pilot-theme-dark .hover\:bg-slate-50:hover {
-  background: #1b2a34 !important;
+  background: var(--pilot-surface-raised) !important;
 }
 
 .pilot-theme-dark .hover\:bg-brand-50:hover {
@@ -529,7 +529,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .disabled\:bg-slate-100:disabled {
-  background: #18232d !important;
+  background: var(--pilot-surface-muted) !important;
 }
 
 @media (max-width: 639px) {
@@ -550,7 +550,7 @@ textarea.input {
 
 .pilot-theme-dark .workspace-table-wrap th,
 .pilot-theme-dark .pilot-inventory-reference thead {
-  background: #17232d !important;
+  background: var(--pilot-surface-muted) !important;
   color: var(--pilot-muted) !important;
 }
 
@@ -1074,7 +1074,7 @@ textarea.input {
   --action-primary-bg: #e6f4f1;
   --action-primary-fg: #071015;
   --action-primary-hover: #99f6e4;
-  --action-secondary-bg: #14212c;
+  --action-secondary-bg: var(--pilot-surface-muted);
   --action-secondary-fg: #f1f5f7;
 }
 
@@ -1225,7 +1225,7 @@ textarea.input {
 .pilot-theme .input { background: var(--pilot-surface-raised); color: var(--pilot-text); border-color: var(--pilot-line); }
 .pilot-theme .input::placeholder { color: var(--pilot-muted); }
 .pilot-theme .input:focus { border-color: var(--pilot-accent); box-shadow: 0 0 0 3px var(--pilot-focus); outline: 0; }
-.pilot-theme-dark .input { background: #0a1721 !important; }
+.pilot-theme-dark .input { background: var(--pilot-surface-raised) !important; }
 
 .pilot-modal-backdrop { background: rgba(2, 8, 15, 0.72) !important; backdrop-filter: blur(5px); }
 .pilot-modal { background: var(--pilot-surface) !important; border: 1px solid var(--pilot-line); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.36); }
@@ -1325,7 +1325,7 @@ textarea.input {
 
 .pilot-theme-dark .pilot-table-row:hover,
 .pilot-theme-dark .pilot-inventory-table-surface table tbody tr:hover {
-  background: color-mix(in srgb, #203243 72%, var(--pilot-surface)) !important;
+  background: color-mix(in srgb, var(--pilot-surface-raised) 72%, var(--pilot-surface)) !important;
 }
 
 .pilot-theme .pilot-badge {

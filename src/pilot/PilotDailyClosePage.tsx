@@ -336,6 +336,7 @@ export function PilotDailyClosePage() {
                 <Badge tone={statusTone(snapshot?.healthStatus ?? currentSession.status)}>{snapshot?.healthStatus ?? currentSession.status}</Badge>
                 <Badge tone={squareSynced ? "success" : "orange"}>{squareStatus}</Badge>
                 <Badge tone={locationMapped ? "success" : "orange"}>{locationMapped ? "Mapped" : "Unmapped"}</Badge>
+                {Number(cashReconciliation.openShiftCount ?? 0) > 0 ? <Badge tone="orange">{cashReconciliation.openShiftCount} cash drawer open</Badge> : null}
                 {completed ? (
                   <Badge tone="neutral">
                     <Lock className="mr-1 h-3.5 w-3.5" />
@@ -428,12 +429,28 @@ export function PilotDailyClosePage() {
                 {squareClosedCash != null ? <p className="mt-3 text-sm text-muted">Square counted close: {formatMoney(squareClosedCash)}. Manual counting is not required.</p> : null}
                 {cashDifference != null && cashDifference !== 0 ? (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-                    <p className="font-semibold">Likely causes</p>
-                    <ul className="mt-2 list-disc space-y-1 pl-5">
-                      <li>Check for a missed cash sale or incorrect tender type.</li>
-                      <li>Review paid-out, float, refund, and change entries.</li>
-                      <li>Confirm the counted amount and add a note before completing the close.</li>
-                    </ul>
+                    {cashReconciliation.possibleMatches?.length ? (
+                      <>
+                        <p className="font-semibold">Possible matches</p>
+                        <ul className="mt-2 space-y-2">
+                          {cashReconciliation.possibleMatches.map((match, index) => (
+                            <li key={`${match.shiftId ?? "shift"}-${match.occurredAt ?? index}-${match.type}`} className="flex items-start justify-between gap-3">
+                              <span>{match.description ?? match.type.replaceAll("_", " ")}{match.occurredAt ? ` · ${formatDateTime(match.occurredAt)}` : ""}</span>
+                              <span className="shrink-0 font-semibold">{formatMoney(match.amount)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-semibold">Likely causes</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5">
+                          <li>Check for a missed cash sale or incorrect tender type.</li>
+                          <li>Review paid-out, float, refund, and change entries.</li>
+                          <li>Confirm the counted amount and add a note before completing the close.</li>
+                        </ul>
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div>

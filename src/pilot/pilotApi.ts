@@ -767,6 +767,14 @@ export interface CashReconciliation {
   paymentCount?: number;
   reason?: string;
   reconnectRequired?: boolean;
+  possibleMatches?: Array<{
+    type: string;
+    amount: number;
+    occurredAt?: string | null;
+    description?: string;
+    differenceFromVariance?: number;
+    shiftId?: string;
+  }>;
   shifts?: Array<{ id?: string; state?: string; openedAt?: string; closedAt?: string; expectedCash?: number | null; closedCash?: number | null }>;
 }
 
