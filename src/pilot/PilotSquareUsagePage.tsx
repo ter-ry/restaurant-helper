@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
@@ -46,7 +46,7 @@ function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: 
 
 export function PilotSquareUsagePage() {
   const { organization, currentLocation, locations } = usePilotSession();
-  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);\n  const requestGeneration = useRef(0);
   const timezone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? currentLocation?.timezone ?? "America/Toronto";
   const initialRange = useMemo(() => defaultRange(timezone), [timezone]);
   const [startAt, setStartAt] = useState(initialRange.startAt);
@@ -83,7 +83,7 @@ export function PilotSquareUsagePage() {
     }
   }, [appliedRange.endAt, appliedRange.startAt, organizationId, selectedLocationId, timezone]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {\n    if (selectedLocationId == null && currentLocation?.id != null) setSelectedLocationId(currentLocation.id);\n  }, [currentLocation?.id, selectedLocationId]);\n\n  useEffect(() => { void load(); }, [load]);
 
   const applyRange = () => {
     if (startAt && endAt) setAppliedRange({ startAt, endAt });
@@ -119,14 +119,14 @@ export function PilotSquareUsagePage() {
 
       {usage ? <Card className="p-6">
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Sales coverage</p><p className="mt-2 text-2xl font-bold text-ink">{usage.coverage.mappedSalesCoveragePercent}%</p><p className="mt-1 text-xs text-muted">Mapped Square sales</p></div>
+          <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Theoretical coverage</p><p className="mt-2 text-2xl font-bold text-ink">{usage.coverage.calculableSalesCoveragePercent}%</p><p className="mt-1 text-xs text-muted">{usage.coverage.totalSoldUnits > 0 ? `${usage.coverage.calculableSoldUnits} of ${usage.coverage.totalSoldUnits} sold units calculable` : "No sold units in range"}</p></div>
           <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Menu units sold</p><p className="mt-2 text-2xl font-bold text-ink">{formatQuantity(usage.coverage.totalSoldUnits)}</p><p className="mt-1 text-xs text-muted">Units driving theoretical usage</p></div>
           <div className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-2 text-2xl font-bold text-ink">{physicalRows.length ? `${physicalRows.length}/${rows.length}` : "Not available"}</p><p className="mt-1 text-xs text-muted">{physicalRows.length ? "Count-derived usage available" : "Requires completed counts that bracket the period"}</p></div>
         </div>
 
-        {usage.coverage.unmappedVariationCount > 0 ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><span>{usage.coverage.unmappedVariationCount} Square variation(s) need mapping.</span><Link className="font-semibold text-amber-900 underline" to="/app/square">Review mappings →</Link></div> : null}
+        {usage.coverage.unmappedVariationCount > 0 ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><span>{usage.coverage.unmappedVariationCount} Square variation(s) need mapping.</span><Link className="font-semibold text-amber-900 underline" to="/app/square">Review mappings →</Link></div> : null}\n\n        {(usage.coverage.excludedIncompleteUnits > 0 || usage.coverage.calculableSalesCoveragePercent < usage.coverage.mappedSalesCoveragePercent) ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><span>{usage.coverage.excludedIncompleteUnits > 0 ? `${usage.coverage.excludedIncompleteUnits} sold unit(s) need complete recipe/cost evidence.` : "Some mapped sales are not calculable yet."}</span><Link className="font-semibold text-amber-900 underline" to="/app/menu-costing">Review Menu Costing →</Link></div> : null}
 
-        {attentionRows.length ? <section className="mt-6"><h2 className="text-xl font-bold text-ink">Needs attention</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{attentionRows.map((row) => <button key={row.inventoryItemId} className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left" type="button" onClick={() => setSelectedVarianceId(row.inventoryItemId)}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-ink">{row.inventoryItemName}</span><span className="font-semibold text-amber-900">{row.discrepancyPercent == null ? "Review" : `${Math.abs(Number(row.discrepancyPercent)).toFixed(1)}% variance`}</span></div><p className="mt-2 text-sm text-muted">Expected: {formatQuantity(row.theoreticalUsage)} {row.unit} · Physical usage: {row.actualUsage == null ? "Unavailable" : formatQuantity(row.actualUsage) + " " + row.unit}</p></button>)}</div></section> : null}
+        {attentionRows.length ? <section className="mt-6"><h2 className="text-xl font-bold text-ink">Needs attention</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{attentionRows.map((row) => <button key={row.inventoryItemId} className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left" type="button" onClick={() => setSelectedVarianceId(row.inventoryItemId)}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-ink">{row.inventoryItemName}</span><span className="font-semibold text-amber-900">{row.discrepancyPercent == null ? "Review" : `${Math.abs(Number(row.discrepancyPercent)).toFixed(1)}% ${Number(row.discrepancy ?? 0) > 0 ? "above theoretical" : "below theoretical"}`}</span><p className="mt-2 text-sm text-muted">Expected: {formatQuantity(row.theoreticalUsage)} {row.unit} · Physical: {row.actualUsage == null ? "Unavailable" : formatQuantity(row.actualUsage) + " " + row.unit} · Variance: {row.discrepancy == null ? "Unavailable" : (Number(row.discrepancy) > 0 ? "+" : "") + formatQuantity(row.discrepancy) + " " + row.unit}</p></button>)}</div></section> : null}
 
         {matchedRows.length ? <div className="mt-6 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted"><span className="font-semibold text-ink">Matched expected usage</span> · {matchedRows.length} item(s)</div> : null}
 
