@@ -161,7 +161,7 @@ describe("PilotDashboardPage", () => {
 
     await screen.findByRole("heading", { name: "Today" });
     expect(screen.getByText("Reorder pressure")).toBeVisible();
-    expect(screen.getByText("Open Reorder Plan")).toBeVisible();
+    expect(screen.getByText("Review reorder")).toBeVisible();
     expect(screen.getByText("Square sync needs attention")).toBeVisible();
     expect(screen.getByText("Square variations need mapping")).toBeVisible();
     expect(screen.getByText("Daily Close is outstanding")).toBeVisible();
