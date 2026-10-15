@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from backend.extensions import db
 from backend.models import RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, User
-from backend.seed import LOCAL_OWNER_EMAIL
+from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.tests.conftest import make_operational_organization
 
 
@@ -13,7 +13,7 @@ def _login(client):
     csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
     response = client.post(
         "/api/auth/login",
-        json={"email": LOCAL_OWNER_EMAIL, "password": "local-owner-password"},
+        json={"email": LOCAL_OWNER_EMAIL, "password": LOCAL_OWNER_PASSWORD},
         headers={"X-CSRFToken": csrf},
     )
     assert response.status_code == 200
