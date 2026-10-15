@@ -1897,7 +1897,7 @@ test("Square Sandbox connection and synchronization are visible to the owner", a
   await expect(page.getByText("Connected and ready to sync locations, catalog objects, and orders.")).toBeVisible();
 });
 
-test("Square usage variance maps and clears variation links", async ({ page }) => {
+test("Square usage keeps mapping review on Square and shows compact variance", async ({ page }) => {
   const state: MockState = {
     session: makeActiveOwnerSession({
       enabledModuleKeys: ["SQUARE_INTEGRATION"],
@@ -1958,12 +1958,9 @@ test("Square usage variance maps and clears variation links", async ({ page }) =
   await installMockApi(page, state);
 
   await page.goto("/app/square-usage", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "What should I investigate?" })).toBeVisible();
-  await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
-  await page.getByRole("button", { name: "Map" }).click();
-  await expect(page.getByText("No unmapped Square variations found for the selected scope.")).toBeVisible();
-  await page.getByRole("button", { name: "Remove" }).first().click();
-  await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Usage & Variance" }).first()).toBeVisible();
+  await expect(page.getByText("1 Square variation(s) need mapping.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
 });
 
 test("Square sync feeds the daily close and keeps the completed snapshot read-only", async ({ page }) => {
@@ -2323,7 +2320,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1").filter({ hasText: "Daily Close" })).toBeVisible();
   await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
-  await page.getByRole("button", { name: "Start daily close" }).click();
+  await page.getByRole("button", { name: "Start close" }).click();
   await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();
   await page.getByRole("button", { name: "Sync sales" }).click();
   await expect(page.getByText("Synced Square sales for")).toBeVisible();
@@ -2332,18 +2329,18 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Exceptions to review", { exact: true })).toBeVisible();
   await page.getByPlaceholder("Add context for unusual sales, waste, or count discrepancies.").fill("Square sales synced before finalize.");
   await page.getByRole("button", { name: "Save notes" }).click();
-  await page.getByRole("button", { name: "Finalize daily close" }).click();
+  await page.getByRole("button", { name: "Complete close" }).click();
   await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
   await expect(page.getByText("Read only").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Sync sales" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save notes" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Finalize daily close" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Complete close" })).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Open / }).first().click();
   await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Add context for unusual sales, waste, or count discrepancies." })).toHaveValue("Square sales synced before finalize.");
   await expect(page.getByText("Read only").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Finalize daily close" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Complete close" })).toHaveCount(0);
 });
 
 test("owner audit history shows filtered organization activity", async ({ page }) => {
