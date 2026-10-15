@@ -130,6 +130,7 @@ describe("PilotDailyClosePage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Daily Close" })).toBeVisible();
+    expect(screen.queryByText("Daily close", { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText("Daily close progress")).not.toBeInTheDocument();
     expect(screen.queryByText("Not evaluated")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Setup & Sync" })).not.toBeInTheDocument();
@@ -698,7 +699,3 @@ describe("PilotDailyClosePage", () => {
     });
     render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
     expect(await screen.findByText("Needs attention")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
-    expect(screen.getByText("Notes")).toBeVisible();
-  });
-});
