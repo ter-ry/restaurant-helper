@@ -17,8 +17,8 @@ vi.mock("../../src/pilot/PilotSessionProvider", () => ({
 const report = {
   scope: { organizationId: 1, locationId: 1, locationName: "Harbour Kitchen", timezone: "America/Toronto" },
   period: { view: "daily", startDate: "2026-10-07", endDate: "2026-10-07", priorStartDate: null, priorEndDate: null },
-  sales: { currency: "CAD", grossItemSales: 180, discounts: 2.7, tax: 0, tips: 4.5, refunds: 0, totalCollected: 181.8, orderCount: 8, unitsSold: 10, cancelledOrderCount: 0, source: "square_daily_sales_summaries", byMenuItem: [{ menuItemId: 1, name: "Harbour Burger", category: "Burgers", quantity: 10, grossAmount: 180, netAmount: 177.3, costAvailable: true, estimatedFoodCostPercent: 12.3, quantityDelta: 10, quantityDeltaPercent: null }], unmappedLines: [] },
-  purchasing: {}, inventory: {}, costing: { estimatedFoodCostPercent: 12.3, costCoveragePercent: 100, costReadySalesAmount: 177.3, totalMappedMenuSalesAmount: 177.3 }, variance: {}, usageVariance: { valid: false, message: "No completed count evidence", rows: [] }, changes: null, exceptions: [], generatedAt: "2026-10-07T14:00:00Z",
+  sales: { currency: "CAD", grossItemSales: 180, discounts: 2.7, tax: 0, tips: 4.5, refunds: 0, totalCollected: 181.8, orderCount: 8, unitsSold: 10, cancelledOrderCount: 0, source: "square_daily_sales_summaries", byMenuItem: [{ menuItemId: 1, name: "Harbour Burger", category: "Burgers", quantity: 10, grossAmount: 180, netAmount: 177.3, costAvailable: true, estimatedFoodCostPercent: 12.3, quantityDelta: 10, quantityDeltaPercent: null }, { menuItemId: 2, name: "Truffle Special", category: "Mains", quantity: 2, grossAmount: 400, netAmount: 400, costAvailable: true, estimatedFoodCostPercent: 8, quantityDelta: 2, quantityDeltaPercent: null }], unmappedLines: [] },
+  purchasing: {}, inventory: {}, costing: { estimatedFoodCostPercent: 12.3, costCoveragePercent: 100, costReadySalesAmount: 177.3, totalMappedMenuSalesAmount: 177.3 }, variance: {}, usageVariance: { valid: false, message: "No completed count evidence", rows: [] }, changes: null, exceptions: [{ type: "missing_count_evidence", title: "Count evidence unavailable", detail: "No completed count brackets this period." }, { type: "usage_variance", title: "Usage needs review", detail: "Review physical usage." }, { type: "reorder", title: "Reorder pressure", detail: "Review stock." }], generatedAt: "2026-10-07T14:00:00Z",
 };
 
 describe("PilotReportsPage", () => {
@@ -36,6 +36,10 @@ describe("PilotReportsPage", () => {
     expect(screen.getByText("Units sold")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Daily" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Weekly" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("10")).toHaveLength(2);
+    expect(screen.getByText("Most ordered item")).toBeInTheDocument();
+    expect(screen.getByText("Harbour Burger — 10 units.")).toBeInTheDocument();
+    expect(screen.queryByText("Count evidence unavailable")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review usage" })).toHaveAttribute("href", "/app/inventory?view=usage");
+    expect(screen.getByRole("link", { name: "Review reorder" })).toHaveAttribute("href", "/app/inventory?view=reorder");
   });
 });
