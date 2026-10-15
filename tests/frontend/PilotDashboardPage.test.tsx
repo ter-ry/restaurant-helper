@@ -159,6 +159,12 @@ describe("PilotDashboardPage", () => {
     expect(screen.queryByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).not.toBeInTheDocument();
     expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeVisible();
+    expect(screen.getByText("3 areas need attention")).toBeVisible();
+    expect(screen.getByText("Continue where you left off")).toBeVisible();
+    expect(screen.getByText("Purchase draft")).toBeVisible();
+    expect(screen.getByText("Stock count draft")).toBeVisible();
+    expect(screen.getByText("Daily Close draft")).toBeVisible();
+    expect(screen.getByText("Reorder plan draft")).toBeVisible();
 
     expect(screen.getByRole("link", { name: /Review reorder/ })).toHaveAttribute("href", "/app/inventory?view=reorder");
   });
