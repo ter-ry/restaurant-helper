@@ -29,10 +29,10 @@ export function PilotDashboardPage() {
   ].filter((item) => item.count > 0), [data?.operationalAttention, data?.summary, summary.inventoryItemsToReorderCount]);
 
   const resumeItems = useMemo(() => [
-    ...(data?.pendingDraftInvoices ?? []).slice(0, 1).map((invoice) => ({ key: "purchase-" + invoice.id, label: "Purchase draft", detail: invoice.invoiceNumber ? "Invoice " + invoice.invoiceNumber : "Invoice awaiting review", to: "/app/purchases" })),
-    ...(data?.pendingDraftCountSessions ?? []).slice(0, 1).map((session) => ({ key: "count-" + session.id, label: "Stock count draft", detail: (session.countedLineCount ?? 0) + "/" + (session.itemCount ?? 0) + " items counted", to: "/app/stock-counts" })),
-    ...(data?.pendingDraftDailyCloseSessions ?? []).slice(0, 1).map((session) => ({ key: "close-" + session.id, label: "Daily Close draft", detail: session.businessDate ? formatDate(session.businessDate) : "Close still in progress", to: "/app/daily-close" })),
-    ...(data?.pendingDraftReorderPlans ?? []).slice(0, 1).map((plan) => ({ key: "reorder-" + plan.id, label: "Reorder plan draft", detail: plan.name || "Plan awaiting review", to: "/app/inventory?view=reorder" })),
+    ...(data?.pendingDraftInvoices ?? []).slice(0, 1).map((invoice) => ({ key: "purchase-" + invoice.id, label: "Purchase draft", detail: invoice.invoiceNumber ? "Invoice " + invoice.invoiceNumber : "Invoice awaiting review", to: "/app/purchases?invoiceId=" + invoice.id })),
+    ...(data?.pendingDraftCountSessions ?? []).slice(0, 1).map((session) => ({ key: "count-" + session.id, label: "Stock count draft", detail: (session.countedLineCount ?? 0) + "/" + (session.itemCount ?? 0) + " items counted", to: "/app/inventory?view=counts&sessionId=" + session.id })),
+    ...(data?.pendingDraftDailyCloseSessions ?? []).slice(0, 1).map((session) => ({ key: "close-" + session.id, label: "Daily Close draft", detail: session.businessDate ? formatDate(session.businessDate) : "Close still in progress", to: "/app/daily-close?locationId=" + (session.locationId ?? "") + (session.businessDate ? "&businessDate=" + encodeURIComponent(session.businessDate) : "") })),
+    ...(data?.pendingDraftReorderPlans ?? []).slice(0, 1).map((plan) => ({ key: "reorder-" + plan.id, label: "Reorder plan draft", detail: plan.name || "Plan awaiting review", to: "/app/inventory?view=reorder&planId=" + plan.id })),
   ].slice(0, 4), [data?.pendingDraftCountSessions, data?.pendingDraftDailyCloseSessions, data?.pendingDraftInvoices, data?.pendingDraftReorderPlans]);
 
   const topMetrics = [
