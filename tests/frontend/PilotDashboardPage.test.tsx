@@ -150,7 +150,8 @@ describe("PilotDashboardPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByRole("heading", { name: "Dashboard" });
+    const dashboardHeading = await screen.findByRole("heading", { name: "Dashboard" });
+    expect(dashboardHeading.previousElementSibling).toBeNull();
     expect(screen.getByRole("heading", { name: "Today" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Operations" })).toBeVisible();
     expect(screen.getByText("Reorder pressure")).toBeVisible();
