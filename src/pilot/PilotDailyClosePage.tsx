@@ -183,7 +183,7 @@ export function PilotDailyClosePage() {
   const squareStatus = String(snapshot?.square?.squareStatus ?? "Not connected");
   const squareSynced = Boolean(snapshot?.square?.squareSynced);
   const locationMapped = Boolean(snapshot?.square?.locationMapped);
-  const squareConnected = squareStatus === "Connected";
+  const squareConnected = squareStatus.toLowerCase() === "connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
   const cashReconciliation = snapshot?.cashReconciliation ?? {};
