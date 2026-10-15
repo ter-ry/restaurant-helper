@@ -1,22 +1,12 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotDashboardPage } from "../../src/pilot/PilotDashboardPage";
 
-const navigate = vi.fn();
-
 const pilotApiMocks = vi.hoisted(() => ({
   fetchPilotDashboard: vi.fn(),
 }));
-
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = (await importOriginal()) as any;
-  return {
-    ...actual,
-    useNavigate: () => navigate,
-  };
-});
 
 vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
   const actual = (await importOriginal()) as any;
@@ -170,7 +160,6 @@ describe("PilotDashboardPage", () => {
     expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("link", { name: /Review reorder/ }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/inventory?view=reorder"));
+    expect(screen.getByRole("link", { name: /Review reorder/ })).toHaveAttribute("href", "/app/inventory?view=reorder");
   });
 });
