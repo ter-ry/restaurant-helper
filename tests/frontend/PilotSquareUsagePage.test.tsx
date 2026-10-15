@@ -48,19 +48,16 @@ describe("PilotSquareUsagePage", () => {
 
   it("loads directly without Square Setup and makes one authoritative Usage request", async () => {
     renderPage();
-    expect(await screen.findByText("Classic Cheeseburger - Regular")).toBeVisible();
+    expect(await screen.findByText("Theoretical usage")).toBeVisible();
     expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(1);
     expect(mockApi.fetchSquareCatalogMappings).not.toHaveBeenCalled();
   });
 
-  it("preserves mapping controls and reloads them from the authoritative Usage response", async () => {
-    mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse({ mappings: [], unmappedVariations: [unmappedVariation] })).mockResolvedValueOnce(buildResponse());
+  it("does not render a second Setup & Sync or mapping editor", async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Map" }));
-    await waitFor(() => expect(mockApi.updateSquareCatalogMapping).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 42, squareCatalogObjectId: 501, flowtallyEntityId: "11", status: "mapped" })));
-    await waitFor(() => expect(screen.getByText("Current mapping: Classic Cheeseburger")).toBeVisible());
-    expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(2);
-    expect(mockApi.fetchSquareCatalogMappings).not.toHaveBeenCalled();
+    expect(await screen.findByText("Theoretical usage")).toBeVisible();
+    expect(screen.queryByText("Setup & Sync")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mapping")).not.toBeInTheDocument();
   });
 
   it("does not request intermediate date ranges and applies both draft dates once", async () => {
@@ -88,18 +85,18 @@ describe("PilotSquareUsagePage", () => {
     fireEvent.change(screen.getByLabelText("Start at"), { target: { value: "2026-10-07T13:45" } });
     fireEvent.change(screen.getByLabelText("End at"), { target: { value: "2026-10-07T14:45" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    await waitFor(() => expect(screen.getByText("Loading usage and mapping data…")).toBeVisible());
+    await waitFor(() => expect(screen.getByText("Loading usage data…")).toBeVisible());
     expect(screen.queryByText("16.7%")).not.toBeInTheDocument();
     resolveNext(buildResponse());
-    await waitFor(() => expect(screen.queryByText("Loading usage and mapping data…")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Loading usage data…")).not.toBeInTheDocument());
   });
 
   it("shows one meaningful error when the authoritative request fails", async () => {
     mockApi.fetchSquareUsage.mockRejectedValueOnce(new Error("Failed to fetch"));
     renderPage();
-    expect(await screen.findByText("Usage and mapping data unavailable")).toBeVisible();
+    expect(await screen.findByText("Usage data unavailable")).toBeVisible();
     expect(screen.getByText("Failed to fetch")).toBeVisible();
-    expect(screen.queryByText("Mapping data unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText("What should I investigate?")).not.toBeInTheDocument();
   });
 
   it("shows the backend stock-count basis and equations when a variance row is opened", async () => {
@@ -112,4 +109,16 @@ describe("PilotSquareUsagePage", () => {
     expect(screen.getByText("Qualifying movement net")).toBeVisible();
     expect(screen.getByText(/Opening \+ qualifying movements/)).toBeVisible();
   });
+  it("ranks attention rows by absolute discrepancy percentage and keeps missing counts neutral", async () => {
+    const high = { ...usageReport, ingredientUsage: [
+      { ...usageReport.ingredientUsage[0], inventoryItemId: 202, inventoryItemName: "Lettuce", discrepancy: 0.2, discrepancyPercent: 40 },
+      { ...usageReport.ingredientUsage[0], inventoryItemId: 203, inventoryItemName: "Chicken Breast", discrepancy: 0, discrepancyPercent: 0, actualUsage: 1.8 },
+    ]};
+    mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse({ usage: high }));
+    renderPage();
+    expect(await screen.findByText("Needs attention")).toBeVisible();
+    const rows = screen.getAllByRole("row");
+    expect(rows.findIndex((r) => r.textContent?.includes("Lettuce"))).toBeLessThan(rows.findIndex((r) => r.textContent?.includes("Chicken Breast")));
+  });
+
 });
