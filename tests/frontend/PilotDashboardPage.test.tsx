@@ -165,6 +165,10 @@ describe("PilotDashboardPage", () => {
     expect(screen.getByText("Stock count draft")).toBeVisible();
     expect(screen.getByText("Daily Close draft")).toBeVisible();
     expect(screen.getByText("Reorder plan draft")).toBeVisible();
+    expect(screen.getByText("Purchase draft").closest("a")).toHaveAttribute("href", "/app/purchases?invoiceId=2");
+    expect(screen.getByText("Stock count draft").closest("a")).toHaveAttribute("href", "/app/inventory?view=counts&sessionId=7");
+    expect(screen.getByText("Daily Close draft").closest("a")).toHaveAttribute("href", "/app/daily-close?locationId=4&businessDate=2026-08-28");
+    expect(screen.getByText("Reorder plan draft").closest("a")).toHaveAttribute("href", "/app/inventory?view=reorder&planId=5");
 
     expect(screen.getByRole("link", { name: /Review reorder/ })).toHaveAttribute("href", "/app/inventory?view=reorder");
   });
