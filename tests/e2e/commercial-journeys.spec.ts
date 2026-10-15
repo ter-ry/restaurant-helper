@@ -2326,7 +2326,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Synced Square sales for")).toBeVisible();
   await expect(page.getByText("Ingredient rows tracked").first()).toBeVisible();
   await expect(page.getByText("Actual usage").first()).toBeVisible();
-  await expect(page.getByText("Exceptions to review", { exact: true })).toBeVisible();
+  await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
   await page.getByPlaceholder("Add context for unusual sales, waste, or count discrepancies.").fill("Square sales synced before finalize.");
   await page.getByRole("button", { name: "Save notes" }).click();
   await page.getByRole("button", { name: "Complete close" }).click();
