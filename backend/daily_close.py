@@ -17,6 +17,7 @@ from .square_integration import (
     _connection_token,
     _current_square_location_ids,
     _square_request,
+    SquareRequestError,
     sync_square_orders_for_range,
 )
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
@@ -157,51 +158,84 @@ def _money_amount(value: Any) -> Decimal:
 
 
 def _cash_reconciliation(connection: SquareConnection | None, location: RestaurantLocation, business_date: date) -> dict[str, Any]:
-    """Read Square cash evidence without inventing a float or cash total."""
-    unavailable = {
-        "status": "unavailable", "mode": None, "expectedCash": None,
-        "openingFloat": None, "cashPayments": None, "cashRefunds": None,
-        "paidIn": None, "paidOut": None, "closedCash": None,
-        "reason": "Cash drawer or payment read access is unavailable. Reconnect Square with the required read scopes.",
-        "reconnectRequired": True,
-    }
+    """Read bounded, business-day Square cash evidence without inventing totals."""
+    unavailable = {"status": "unavailable", "mode": None, "expectedCash": None, "openingFloat": None,
+        "cashPayments": None, "cashRefunds": None, "paidIn": None, "paidOut": None, "closedCash": None,
+        "reason": "Cash drawer or payment read access is temporarily unavailable.", "reconnectRequired": False}
     if connection is None or connection.status != "connected" or str(connection.environment or "").lower() != "production":
         return unavailable
     location_ids = _square_location_ids_for_location(connection, location)
     if not location_ids:
         return {**unavailable, "reason": "Map the Square location before reconciling cash."}
     start_at, end_at = _business_date_bounds(location, business_date)
-    start_iso = start_at.isoformat().replace("+00:00", "Z")
-    end_iso = end_at.isoformat().replace("+00:00", "Z")
+    query_start = start_at - timedelta(days=1)
+    query_end = end_at + timedelta(days=1)
+    start_iso = query_start.isoformat().replace("+00:00", "Z")
+    end_iso = query_end.isoformat().replace("+00:00", "Z")
     try:
         token = _connection_token(connection)
     except Exception:
         return unavailable
     for square_location_id in location_ids:
-        query = urlencode({"location_id": square_location_id, "begin_time": start_iso, "end_time": end_iso})
+        query_base = {"location_id": square_location_id, "begin_time": start_iso, "end_time": end_iso, "limit": "100"}
+        shifts: list[dict[str, Any]] = []
+        cursor = None
+        seen_cursors: set[str] = set()
         try:
-            drawer = _square_request("GET", f"/v2/cash-drawer/shifts?{query}", token=token, stage="daily_close_cash_drawer")
+            for _ in range(10):
+                query = dict(query_base)
+                if cursor: query["cursor"] = cursor
+                drawer = _square_request("GET", "/v2/cash-drawers/shifts?" + urlencode(query), token=token, stage="daily_close_cash_drawer")
+                page = drawer if isinstance(drawer, dict) else {}
+                shifts.extend(item for item in (page.get("cash_drawer_shifts") or []) if isinstance(item, dict))
+                next_cursor = page.get("cursor")
+                if not next_cursor or next_cursor in seen_cursors: break
+                seen_cursors.add(next_cursor); cursor = next_cursor
+        except SquareRequestError as exc:
+            if exc.status_code == 403:
+                return {**unavailable, "reason": "Square access does not include cash drawer read permission.", "reconnectRequired": True}
+            shifts = []
         except Exception:
-            drawer = None
-        shifts = (drawer or {}).get("cash_drawer_shifts") if isinstance(drawer, dict) else None
-        if isinstance(shifts, list) and shifts:
-            opening = sum((_money_amount(shift.get("opening_cash_money")) for shift in shifts), Decimal("0"))
-            payments = sum((_money_amount(shift.get("cash_payment_money")) for shift in shifts), Decimal("0"))
-            refunds = sum((_money_amount(shift.get("cash_refund_money")) for shift in shifts), Decimal("0"))
-            paid_in = sum((_money_amount(shift.get("cash_paid_in_money")) for shift in shifts), Decimal("0"))
-            paid_out = sum((_money_amount(shift.get("cash_paid_out_money")) for shift in shifts), Decimal("0"))
-            closed_values = [_money_amount(shift.get("closed_cash_money")) for shift in shifts if shift.get("closed_cash_money")]
+            shifts = []
+        def parsed(value: Any) -> datetime | None:
+            if not value: return None
+            try: return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError: return None
+        shifts = [s for s in shifts if (opened := parsed(s.get("opened_at"))) and opened <= end_at and (parsed(s.get("ended_at") or s.get("closed_at")) or _now()) >= start_at]
+        if shifts:
+            opening = sum((_money_amount(s.get("opened_cash_money")) for s in shifts), Decimal("0"))
+            payments = sum((_money_amount(s.get("cash_payment_money")) for s in shifts), Decimal("0"))
+            refunds = sum((_money_amount(s.get("cash_refunds_money")) for s in shifts), Decimal("0"))
+            paid_in = sum((_money_amount(s.get("cash_paid_in_money")) for s in shifts), Decimal("0"))
+            paid_out = sum((_money_amount(s.get("cash_paid_out_money")) for s in shifts), Decimal("0"))
+            expected_values = [s.get("expected_cash_money") for s in shifts if s.get("expected_cash_money")]
+            expected = sum((_money_amount(v) for v in expected_values), Decimal("0")) if expected_values else opening + payments - refunds + paid_in - paid_out
+            closed_values = [_money_amount(s.get("closed_cash_money")) for s in shifts if s.get("closed_cash_money")]
             closed = sum(closed_values, Decimal("0")) if closed_values else None
-            expected = opening + payments - refunds + paid_in - paid_out
-            return {"status": "available", "mode": "drawer_shift", "expectedCash": float(expected), "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "shiftCount": len(shifts), "reconnectRequired": False}
+            return {"status": "available", "mode": "drawer_shift", "basis": "square_expected_cash" if expected_values else "calculated_drawer_cash", "expectedCash": float(expected), "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "shiftCount": len(shifts), "openShiftCount": sum(1 for s in shifts if str(s.get("state") or "").upper() == "OPEN"), "closedShiftCount": sum(1 for s in shifts if str(s.get("state") or "").upper() == "CLOSED"), "shifts": [{"id": s.get("id"), "state": s.get("state"), "openedAt": s.get("opened_at"), "closedAt": s.get("closed_at"), "expectedCash": _money_amount(s.get("expected_cash_money")) and float(_money_amount(s.get("expected_cash_money"))) or None, "closedCash": float(_money_amount(s.get("closed_cash_money"))) if s.get("closed_cash_money") else None} for s in shifts], "reconnectRequired": False}
+        payments: list[dict[str, Any]] = []
+        cursor = None; seen_cursors = set(); payments_ok = False
         try:
-            payments_response = _square_request("GET", f"/v2/payments?{urlencode({"location_id": square_location_id, "begin_time": start_iso, "end_time": end_iso, "limit": "100"})}", token=token, stage="daily_close_cash_payments")
+            for _ in range(10):
+                query = dict(query_base)
+                if cursor: query["cursor"] = cursor
+                response = _square_request("GET", "/v2/payments?" + urlencode(query), token=token, stage="daily_close_cash_payments")
+                payments_ok = True; page = response if isinstance(response, dict) else {}
+                payments.extend(item for item in (page.get("payments") or []) if isinstance(item, dict))
+                next_cursor = page.get("cursor")
+                if not next_cursor or next_cursor in seen_cursors: break
+                seen_cursors.add(next_cursor); cursor = next_cursor
+        except SquareRequestError as exc:
+            if exc.status_code == 403:
+                return {**unavailable, "reason": "Square access does not include payments read permission.", "reconnectRequired": True}
+            payments_ok = False
         except Exception:
-            continue
-        payments = (payments_response or {}).get("payments") if isinstance(payments_response, dict) else None
-        if isinstance(payments, list):
-            cash_payments = sum((_money_amount(payment.get("total_money")) for payment in payments if str(payment.get("status") or "").upper() == "COMPLETED" and str(payment.get("source_type") or "").upper() == "CASH"), Decimal("0"))
-            return {"status": "available", "mode": "payments", "expectedCash": float(cash_payments), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": None, "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(payments), "reconnectRequired": False}
+            payments_ok = False
+        if payments_ok:
+            cash = [p for p in payments if str(p.get("status") or "").upper() == "COMPLETED" and str(p.get("source_type") or "").upper() == "CASH"]
+            cash_payments = sum((_money_amount(p.get("total_money")) for p in cash), Decimal("0"))
+            refunds = sum((_money_amount(p.get("refunded_money")) for p in cash), Decimal("0"))
+            return {"status": "available", "mode": "payments", "basis": "cash_payments", "expectedCash": float(max(Decimal("0"), cash_payments - refunds)), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": float(refunds), "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(cash), "reconnectRequired": False}
     return unavailable
 
 def _inventory_value(location_id: int) -> float:

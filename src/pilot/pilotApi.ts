@@ -736,9 +736,7 @@ export interface PilotDailyCloseSnapshot {
     percent: number | null;
     value: number;
   };
-  cashReconciliation?: {
-    status?: string; mode?: string | null; expectedCash?: number | null; countedCash?: number | null; overShort?: number | null; openingFloat?: number | null; cashPayments?: number | null; cashRefunds?: number | null; paidIn?: number | null; paidOut?: number | null; closedCash?: number | null; reason?: string; reconnectRequired?: boolean;
-  };
+  cashReconciliation?: CashReconciliation;
   manualReconciliation?: { countedCash?: number };
   attentionItems?: Array<{ type: string; title: string; severity: string; href?: string; detail?: string }>;
   reconciliation?: {
@@ -748,6 +746,28 @@ export interface PilotDailyCloseSnapshot {
   };
   square: Record<string, unknown>;
   readyToFinalize: boolean;
+}
+
+export interface CashReconciliation {
+  status: "available" | "unavailable" | string;
+  mode: "drawer_shift" | "payments" | null | string;
+  basis?: "square_expected_cash" | "calculated_drawer_cash" | "cash_payments" | string;
+  expectedCash: number | null;
+  countedCash?: number | null;
+  overShort?: number | null;
+  openingFloat: number | null;
+  cashPayments: number | null;
+  cashRefunds: number | null;
+  paidIn: number | null;
+  paidOut: number | null;
+  closedCash: number | null;
+  shiftCount?: number;
+  openShiftCount?: number;
+  closedShiftCount?: number;
+  paymentCount?: number;
+  reason?: string;
+  reconnectRequired?: boolean;
+  shifts?: Array<{ id?: string; state?: string; openedAt?: string; closedAt?: string; expectedCash?: number | null; closedCash?: number | null }>;
 }
 
 export interface PilotDailyCloseResponse {

@@ -13,6 +13,7 @@ import {
   syncPilotDailyCloseSales,
   updatePilotDailyClose,
   type PilotDailyCloseResponse,
+  type CashReconciliation,
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
@@ -31,6 +32,12 @@ function currentBusinessDate(timeZone: string | null | undefined) {
 
 
 function exceptionAction(exception: string) {
+  const exact: Record<string, { href: string; label: string }> = {
+    reorder_now: { href: "/app/inventory?view=reorder", label: "Review reorder" },
+    unmapped_square_sales: { href: "/app/square", label: "Review mappings" },
+    usage_variance: { href: "/app/inventory?view=usage", label: "Review usage" },
+  };
+  if (exact[exception]) return exact[exception];
   const text = exception.toLowerCase();
   if (text.includes("variation") && text.includes("unmapped")) return { href: "/app/square", label: "Review mappings" };
   if (text.includes("refund") || text.includes("cancel")) return { href: "/app/square", label: "Review sales" };
@@ -69,6 +76,7 @@ export function PilotDailyClosePage() {
   const load = async (locationId = selectedLocationId, businessDate = selectedBusinessDate) => {
     if (!locationId) {
       setData(null);
+      setCountedCash("");
       setLoading(false);
       return;
     }
@@ -81,7 +89,7 @@ export function PilotDailyClosePage() {
       setNotes(response.session?.notes ?? "");
       setSelectedBusinessDate(response.businessDate);
       const savedCash = response.snapshot?.cashReconciliation?.countedCash ?? response.snapshot?.manualReconciliation?.countedCash;
-      if (savedCash != null) setCountedCash(String(savedCash));
+      setCountedCash(savedCash == null ? "" : String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load daily close.");
     } finally {
@@ -114,7 +122,7 @@ export function PilotDailyClosePage() {
       setNotes(response.session?.notes ?? "");
       setSelectedBusinessDate(response.businessDate);
       const savedCash = response.snapshot?.cashReconciliation?.countedCash ?? response.snapshot?.manualReconciliation?.countedCash;
-      if (savedCash != null) setCountedCash(String(savedCash));
+      setCountedCash(savedCash == null ? "" : String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start daily close.");
     } finally {
@@ -149,7 +157,9 @@ export function PilotDailyClosePage() {
     setError(null);
     setMessage(null);
     try {
-      const response = await finalizePilotDailyClose(currentSession.id);
+      const saved = await updatePilotDailyClose(currentSession.id, { notes, reconciliation: { countedCash: countedCash.trim() === "" ? null : Number(countedCash) } });
+      setData(saved);
+      const response = await finalizePilotDailyClose(saved.session?.id ?? currentSession.id);
       setData(response);
       setNotes(response.session?.notes ?? notes);
     } catch (err) {
@@ -186,11 +196,12 @@ export function PilotDailyClosePage() {
   const squareConnected = squareStatus.toLowerCase() === "connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
-  const cashReconciliation = snapshot?.cashReconciliation ?? {};
+  const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
   const expectedCash = Number.isFinite(Number(cashReconciliation.expectedCash)) ? Number(cashReconciliation.expectedCash) : null;
   const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
-  const cashDifference = expectedCash != null && countedCashValue != null && Number.isFinite(countedCashValue)
-    ? countedCashValue - expectedCash
+  const squareClosedCash = Number.isFinite(Number(cashReconciliation.closedCash)) ? Number(cashReconciliation.closedCash) : null;
+  const cashDifference = expectedCash != null && (squareClosedCash != null || countedCashValue != null) && Number.isFinite(squareClosedCash ?? countedCashValue)
+    ? (squareClosedCash ?? countedCashValue)! - expectedCash
     : (cashReconciliation.overShort != null ? Number(cashReconciliation.overShort) : null);
   const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
   const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
@@ -395,8 +406,8 @@ export function PilotDailyClosePage() {
                       inputMode="decimal"
                       min="0"
                       step="0.01"
-                      value={countedCash}
-                      disabled={completed || expectedCash == null}
+                      value={squareClosedCash == null ? countedCash : String(squareClosedCash)}
+                      disabled={completed || expectedCash == null || squareClosedCash != null}
                       onChange={(event) => setCountedCash(event.target.value)}
                       placeholder={expectedCash == null ? "Unavailable" : "0.00"}
                     />
@@ -414,6 +425,7 @@ export function PilotDailyClosePage() {
                     {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
                   </div>
                 ) : null}
+                {squareClosedCash != null ? <p className="mt-3 text-sm text-muted">Square counted close: {formatMoney(squareClosedCash)}. Manual counting is not required.</p> : null}
                 {cashDifference != null && cashDifference !== 0 ? (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                     <p className="font-semibold">Likely causes</p>
