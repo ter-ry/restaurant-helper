@@ -108,3 +108,17 @@ def test_connected_square_without_physical_counts_is_ready(app, client, monkeypa
     body = response.get_json()
     assert body["exceptions"] == []
     assert body["snapshot"]["healthStatus"] == "Ready"
+from backend.daily_close import _merge_manual_reconciliation
+
+
+def test_manual_cash_reconciliation_is_namespaced_and_recomputed():
+    class Session:
+        summary_snapshot_json = {"manualReconciliation": {"countedCash": 97.5}}
+
+    snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}}
+    merged = _merge_manual_reconciliation(snapshot, Session())
+    assert merged["manualReconciliation"] == {"countedCash": 97.5}
+    assert merged["cashReconciliation"]["overShort"] == -2.5
+
+    updated = _merge_manual_reconciliation(snapshot, Session(), {"reconciliation": {"countedCash": 100}})
+    assert updated["cashReconciliation"]["overShort"] == 0

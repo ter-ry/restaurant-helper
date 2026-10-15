@@ -61,7 +61,8 @@ export function PilotDailyClosePage() {
   const snapshot = currentSession?.currentSnapshot ?? data?.snapshot ?? null;
   const sales = (snapshot?.sales ?? {}) as Record<string, any>;
   const usage = snapshot?.usage ?? null;
-  const ingredientUsage = (usage?.ingredientUsage ?? []) as Array<Record<string, any>>;
+  const attentionItems = (snapshot?.attentionItems ?? []) as Array<{ type: string; title: string; severity: string; href?: string; detail?: string; label?: string }>;
+  const displayAttentionItems = attentionItems.length ? attentionItems : (data?.exceptions ?? []).map((exception) => { const action = exceptionAction(exception); return { type: "legacy", title: exception, severity: "warning", href: action?.href, label: action?.label, detail: "" }; });
   const history = data?.history ?? [];
   const locationOptions = locations;
 
@@ -79,6 +80,8 @@ export function PilotDailyClosePage() {
       setData(response);
       setNotes(response.session?.notes ?? "");
       setSelectedBusinessDate(response.businessDate);
+      const savedCash = response.snapshot?.cashReconciliation?.countedCash ?? response.snapshot?.manualReconciliation?.countedCash;
+      if (savedCash != null) setCountedCash(String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load daily close.");
     } finally {
@@ -110,6 +113,8 @@ export function PilotDailyClosePage() {
       setData(response);
       setNotes(response.session?.notes ?? "");
       setSelectedBusinessDate(response.businessDate);
+      const savedCash = response.snapshot?.cashReconciliation?.countedCash ?? response.snapshot?.manualReconciliation?.countedCash;
+      if (savedCash != null) setCountedCash(String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start daily close.");
     } finally {
@@ -126,7 +131,7 @@ export function PilotDailyClosePage() {
     setError(null);
     setMessage(null);
     try {
-      const response = await updatePilotDailyClose(currentSession.id, { notes });
+      const response = await updatePilotDailyClose(currentSession.id, { notes, reconciliation: { countedCash: countedCash.trim() === "" ? null : Number(countedCash) } });
       setData(response);
       setNotes(response.session?.notes ?? notes);
     } catch (err) {
@@ -181,11 +186,12 @@ export function PilotDailyClosePage() {
   const squareConnected = squareStatus === "Connected";
   const completed = currentSession?.status === "COMPLETED";
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
-  const expectedCash = Number.isFinite(Number(sales.cashSales)) ? Number(sales.cashSales) : null;
+  const cashReconciliation = snapshot?.cashReconciliation ?? {};
+  const expectedCash = Number.isFinite(Number(cashReconciliation.expectedCash)) ? Number(cashReconciliation.expectedCash) : null;
   const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
   const cashDifference = expectedCash != null && countedCashValue != null && Number.isFinite(countedCashValue)
     ? countedCashValue - expectedCash
-    : null;
+    : (cashReconciliation.overShort != null ? Number(cashReconciliation.overShort) : null);
   const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
   const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
   const wasteLabel = recordedWasteCost > 0
@@ -403,7 +409,10 @@ export function PilotDailyClosePage() {
                   </div>
                 </div>
                 {expectedCash == null ? (
-                  <p className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted">Square has not provided tender-level cash for this close. No cash count is required from this screen.</p>
+                  <div className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted">
+                    <p>{cashReconciliation.reason ?? "Square has not provided tender-level cash for this close."} No cash count is required from this screen.</p>
+                    {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
+                  </div>
                 ) : null}
                 {cashDifference != null && cashDifference !== 0 ? (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
@@ -416,28 +425,20 @@ export function PilotDailyClosePage() {
                   </div>
                 ) : null}
               </div>
-              {data?.exceptions?.length ? (
+              {displayAttentionItems.length ? (
                 <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
                   <p className="text-sm font-bold text-amber-900">Needs attention</p>
                   <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-950">
-                    {data.exceptions.map((exception) => {
-                      const action = exceptionAction(exception);
-                      return (
-                        <li key={exception} className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                            <span>{exception}</span>
-                          </div>
-                          {action ? <Link className="shrink-0 font-semibold text-amber-900 underline" to={action.href}>{action.label} →</Link> : null}
-                        </li>
-                      );
-                    })}
+                    {displayAttentionItems.map((item) => (
+                      <li key={`${item.type}-${item.title}`} className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span><strong>{item.title}</strong>{item.detail ? ` — ${item.detail}` : ""}</span></div>
+                        {item.href ? <Link className="shrink-0 font-semibold text-amber-900 underline" to={item.href}>{item.label ?? (item.type === "usage_variance" ? "Review usage" : item.type === "unmapped_square_sales" ? "Review mappings" : "Review sales")} →</Link> : null}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               ) : (
-                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-3 text-sm text-muted">
-                  <p className="font-semibold text-ink">No current exceptions.</p>
-                </div>
+                <div className="daily-close-no-blockers rounded-3xl border border-line bg-slate-50 p-3 text-sm text-muted"><p className="font-semibold text-ink">No current exceptions.</p></div>
               )}
 
               <div className="rounded-3xl border border-line bg-white p-4">
@@ -480,42 +481,13 @@ export function PilotDailyClosePage() {
                   <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Physical comparison</p><p className="mt-1 font-semibold text-ink">{usage?.totals?.actualUsage == null ? "Not available for this date" : "Available"}</p></div>
                 </div>
               </div>
-              <div className="rounded-3xl border border-line bg-slate-50 p-4">
-                <SectionHeader title="Ingredient usage" description="Secondary detail for exception review; physical counts are not required to close." />
-                {ingredientUsage.length ? (
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-line text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                          <th className="py-2 pr-4">Item</th>
-                          <th className="py-2 pr-4">Theoretical</th>
-                          <th className="py-2 pr-4">Actual</th>
-                          <th className="py-2 pr-4">Variance</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line bg-white">
-                        {ingredientUsage.slice(0, 8).map((row) => (
-                          <tr key={String(row.inventoryItemId ?? row.inventoryItemName)} className="align-top">
-                            <td className="py-3 pr-4 font-medium text-ink">
-                              <div>{String(row.inventoryItemName ?? "Item")}</div>
-                              {Array.isArray(row.warnings) && row.warnings.length ? (
-                                <div className="mt-1 text-xs text-amber-700">{row.warnings[0]}</div>
-                              ) : null}
-                            </td>
-                            <td className="py-3 pr-4 text-muted">{formatNumber(Number(row.theoreticalUsage ?? 0))}</td>
-                            <td className="py-3 pr-4 text-muted">{row.actualUsage == null ? "—" : formatNumber(Number(row.actualUsage))}</td>
-                            <td className="py-3 pr-4 text-muted">
-                              {row.discrepancy == null ? "—" : formatSignedNumber(Number(row.discrepancy))}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="mt-4 rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-muted">No ingredient usage rows are available yet.</p>
-                )}
-              </div>
+              {displayAttentionItems.some((item) => item.type === "usage_variance") ? (
+                <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                  <p className="font-semibold">Usage variance needs review</p>
+                  <p className="mt-1">Physical usage is compared only when completed counts bracket the same Square period.</p>
+                  <Link className="mt-3 inline-flex font-semibold underline" to={displayAttentionItems.find((item) => item.type === "usage_variance")?.href ?? "/app/inventory?view=usage"}>Review usage →</Link>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="mt-5 rounded-3xl border border-dashed border-line bg-slate-50 p-6 text-sm leading-6 text-muted">

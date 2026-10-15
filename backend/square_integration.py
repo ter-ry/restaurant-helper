@@ -55,7 +55,7 @@ bp = Blueprint("square_integration", __name__)
 SQUARE_API_VERSION = "2026-07-15"
 SQUARE_OAUTH_STATE_KEY = "square_oauth_context"
 SQUARE_OAUTH_STATE_TTL_SECONDS = 600
-SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"]
+SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRAWER_READ", "PAYMENTS_READ"]
 QTY = Decimal("0.0001")
 logger = logging.getLogger(__name__)
 

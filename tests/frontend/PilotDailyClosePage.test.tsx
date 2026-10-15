@@ -556,7 +556,7 @@ describe("PilotDailyClosePage", () => {
     expect(notes).toHaveValue("Initial note");
     fireEvent.change(notes, { target: { value: "Updated note" } });
     fireEvent.click(screen.getByRole("button", { name: "Save notes" }));
-    await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(12, { notes: "Updated note" }));
+    await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(12, { notes: "Updated note", reconciliation: { countedCash: null } }));
 
     fireEvent.click(screen.getByRole("button", { name: "Complete close" }));
     await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(12));
@@ -706,7 +706,8 @@ describe("PilotDailyClosePage", () => {
       session: { id: 18, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", notes: "", currentSnapshot: null },
       snapshot: {
         healthStatus: "Ready",
-        sales: { cashSales: 120, netSales: 240, orders: 8, refunds: 0, cancelledOrders: 0 },
+        sales: { netSales: 240, orders: 8, refunds: 0, cancelledOrders: 0 },
+        cashReconciliation: { status: "available", mode: "payments", expectedCash: 120 },
         usage: { totals: {}, ingredientUsage: [] },
         reconciliation: {},
         square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },

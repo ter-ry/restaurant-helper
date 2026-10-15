@@ -1380,3 +1380,43 @@ textarea.input {
 .pilot-theme .pilot-inventory-toolbar:hover {
   border-color: var(--pilot-line-strong) !important;
 }
+
+
+/* Operational surfaces use the same neutral tokens in both themes. */
+.pilot-theme .workspace-page {
+  background: var(--pilot-bg);
+  color: var(--pilot-text);
+}
+.pilot-theme .input,
+.pilot-theme select,
+.pilot-theme textarea {
+  background: var(--pilot-surface);
+  color: var(--pilot-text);
+  border-color: var(--pilot-line);
+}
+.pilot-theme .workspace-table-wrap,
+.pilot-theme .workspace-table-wrap table {
+  background: var(--pilot-surface);
+  border-color: var(--pilot-line);
+}
+.pilot-theme .workspace-table-wrap th {
+  background: var(--pilot-surface-muted);
+  color: var(--pilot-muted);
+  border-color: var(--pilot-line);
+}
+.pilot-theme .workspace-table-wrap tbody tr:hover {
+  background: color-mix(in srgb, var(--pilot-surface-muted) 72%, var(--pilot-bg));
+}
+.pilot-theme .workspace-card {
+  border-color: color-mix(in srgb, var(--pilot-line) 78%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+.pilot-theme-dark .workspace-card {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+.pilot-theme .input:focus,
+.pilot-theme select:focus,
+.pilot-theme textarea:focus {
+  border-color: var(--pilot-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent);
+}

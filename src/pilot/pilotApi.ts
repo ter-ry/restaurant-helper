@@ -736,6 +736,11 @@ export interface PilotDailyCloseSnapshot {
     percent: number | null;
     value: number;
   };
+  cashReconciliation?: {
+    status?: string; mode?: string | null; expectedCash?: number | null; countedCash?: number | null; overShort?: number | null; openingFloat?: number | null; cashPayments?: number | null; cashRefunds?: number | null; paidIn?: number | null; paidOut?: number | null; closedCash?: number | null; reason?: string; reconnectRequired?: boolean;
+  };
+  manualReconciliation?: { countedCash?: number };
+  attentionItems?: Array<{ type: string; title: string; severity: string; href?: string; detail?: string }>;
   reconciliation?: {
     recordedWasteQuantity?: number;
     recordedWasteCost?: number;
@@ -823,7 +828,7 @@ export async function openPilotDailyClose(payload: { locationId: number; busines
   });
 }
 
-export async function updatePilotDailyClose(sessionId: number, payload: { notes: string }) {
+export async function updatePilotDailyClose(sessionId: number, payload: { notes: string; reconciliation?: { countedCash: number | null } }) {
   return requestCsrfJson<PilotDailyCloseResponse>(`/api/pilot/daily-close/${sessionId}`, {
     method: "PATCH",
     headers: {

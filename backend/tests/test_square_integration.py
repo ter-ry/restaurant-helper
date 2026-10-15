@@ -30,7 +30,7 @@ from backend.tests.conftest import make_operational_organization
 def test_square_oauth_requests_minimum_read_scopes():
     from backend.square_integration import SQUARE_SCOPES
 
-    assert SQUARE_SCOPES == ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"]
+    assert SQUARE_SCOPES == ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRAWER_READ", "PAYMENTS_READ"]
 
 
 class FakeResponse:
@@ -402,7 +402,7 @@ def test_square_oauth_requests_read_only_scopes(app):
     with app.app_context():
         configure_square(app)
         authorize_url = _square_authorize_url(state="state", organization_id=1)
-        assert SQUARE_SCOPES == ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ"]
+        assert SQUARE_SCOPES == ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRAWER_READ", "PAYMENTS_READ"]
         assert "ITEMS_WRITE" not in authorize_url
         assert "ORDERS_WRITE" not in authorize_url
 

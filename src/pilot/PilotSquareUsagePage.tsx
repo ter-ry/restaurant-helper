@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, RefreshCw } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Card } from "../components/Card";
 import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
@@ -46,10 +46,20 @@ function UsageRow({ row, onSelect }: { row: SquareUsageIngredientRow; onSelect: 
 
 export function PilotSquareUsagePage() {
   const { organization, currentLocation, locations } = usePilotSession();
-  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(currentLocation?.id ?? null);
+  const routeLocation = useLocation();
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(() => {
+    const raw = new URLSearchParams(window.location.search).get("locationId");
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : currentLocation?.id ?? null;
+  });
   const requestGeneration = useRef(0);
   const timezone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? currentLocation?.timezone ?? "America/Toronto";
-  const initialRange = useMemo(() => defaultRange(timezone), [timezone]);
+  const initialRange = useMemo(() => {
+    const defaults = defaultRange(timezone);
+    const params = new URLSearchParams(routeLocation.search);
+    const parseBoundary = (value: string | null) => value ? locationNowDatetimeLocal(timezone, new Date(value)) : null;
+    return { startAt: parseBoundary(params.get("startAt")) ?? defaults.startAt, endAt: parseBoundary(params.get("endAt")) ?? defaults.endAt };
+  }, [routeLocation.search, timezone]);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
   const [appliedRange, setAppliedRange] = useState(initialRange);
