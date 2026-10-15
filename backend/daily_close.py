@@ -197,8 +197,6 @@ def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[s
     if mapping_warnings:
         exceptions.append("Recipe or inventory mapping gaps exist.")
     ingredient_rows = usage.get("ingredientUsage", [])
-    if ingredient_rows and any(row.get("actualUsage") is None for row in ingredient_rows):
-        exceptions.append("Actual usage unavailable — stock-count basis is incomplete.")
     if any(
         row.get("actualUsage") is not None
         and
@@ -270,10 +268,10 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     health_status = "Incomplete"
     if connection is None or connection.status != "connected":
         health_status = "Ready with warnings" if theoretical_usage or summary["orders"] else "Incomplete"
-    elif actual_usage is None:
-        health_status = "Ready with warnings"
     elif exceptions:
         health_status = "Ready with warnings"
+    elif actual_usage is None:
+        health_status = "Ready"
     else:
         health_status = "Reconciled"
     snapshot = {
