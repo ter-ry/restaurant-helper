@@ -29,16 +29,29 @@ function Change({ value }: { value: Record<string, any> | null | undefined }) {
   return <span className="text-brand-700">{positive ? <ArrowUpRight className="mr-1 inline h-4 w-4" /> : <ArrowDownRight className="mr-1 inline h-4 w-4" />}{value.percent == null ? "New" : Math.abs(Number(value.percent)).toFixed(1) + "%"}</span>;
 }
 
+const EXCEPTION_LINKS: Record<string, [string, string]> = {
+  reorder_now: ["/app/inventory?view=reorder", "Review reorder"],
+  unmapped_square_sales: ["/app/square", "Review mappings"],
+  usage_variance: ["/app/inventory?view=usage", "Review usage"],
+  stock_count: ["/app/inventory?view=counts", "Review count"],
+  stock_counts: ["/app/inventory?view=counts", "Review count"],
+  count: ["/app/inventory?view=counts", "Review count"],
+  variance: ["/app/inventory?view=counts", "Review count"],
+  purchase: ["/app/purchases", "Review invoices"],
+  invoice: ["/app/purchases", "Review invoices"],
+  purchase_review: ["/app/purchases", "Review invoices"],
+  menu: ["/app/menu-costing", "Open Menu Costing"],
+  recipe: ["/app/menu-costing", "Open Menu Costing"],
+  menu_costing: ["/app/menu-costing", "Open Menu Costing"],
+  square: ["/app/square", "Review Square"],
+  mapping: ["/app/square", "Review Square"],
+  square_mapping: ["/app/square", "Review Square"],
+  close: ["/app/daily-close", "Complete close"],
+  daily_close: ["/app/daily-close", "Complete close"],
+};
+
 function exceptionLink(type: unknown) {
-  const value = String(type ?? "").toLowerCase().replace(/-/g, "_");
-  if (value === "usage_variance" || value === "usage") return ["/app/inventory?view=usage", "Review usage"];
-  if (value === "missing_count_evidence" || value === "stock_count" || value === "stock_counts" || value === "count" || value === "variance") return ["/app/inventory?view=counts", "Review count"];
-  if (value === "reorder" || value === "inventory_reorder" || value === "inventory") return ["/app/inventory?view=reorder", "Review reorder"];
-  if (value === "purchase" || value === "invoice" || value === "purchase_review") return ["/app/purchases", "Review invoices"];
-  if (value === "menu" || value === "recipe" || value === "menu_costing") return ["/app/menu-costing", "Open Menu Costing"];
-  if (value === "square" || value === "mapping" || value === "square_mapping") return ["/app/square", "Review Square"];
-  if (value === "close" || value === "daily_close") return ["/app/daily-close", "Complete close"];
-  return [null, null];
+  return EXCEPTION_LINKS[String(type ?? "").toLowerCase().replace(/-/g, "_")] ?? [null, null];
 }
 
 export function PilotReportsPage({ initialView = "daily" }: { initialView?: ReportView }) {
@@ -88,6 +101,10 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
   ];
   const mostOrdered = [...(sales?.byMenuItem ?? [])].sort((left, right) => Number(right.quantity ?? 0) - Number(left.quantity ?? 0))[0];
   const actionableExceptions = (data?.exceptions ?? []).filter((entry) => String(entry.type ?? "").toLowerCase() !== "missing_count_evidence");
+  const menuMovers = [...(data?.changes?.menuMovers ?? [])].sort((left, right) =>
+    Math.abs(Number(right.quantityDelta ?? 0)) - Math.abs(Number(left.quantityDelta ?? 0))
+    || String(left.name).localeCompare(String(right.name)),
+  );
   const breakdown = [
     ["Gross item sales", formatMoney(sales?.grossItemSales)],
     ["Discounts", formatMoney((sales as any)?.discounts)],
@@ -122,7 +139,7 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
     <Card className="p-5"><SectionHeader title="Sales breakdown" description="The financial detail behind total collected." /><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">{breakdown.map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-muted">{label}</p><p className="mt-1 font-semibold text-ink">{value}</p></div>)}</div></Card>
     {view === "daily" && mostOrdered ? <Card className="p-5"><SectionHeader title="What stood out" /><p className="mt-3 text-sm text-muted"><strong className="text-ink">Most ordered item</strong>: {mostOrdered.name} — {formatNumber(mostOrdered.quantity)} units.</p></Card> : null}
     {view === "weekly" && data.changes ? <Card className="p-5"><SectionHeader title="What changed" description="Period-over-period movement using the selected business dates." /><div className="mt-4 grid gap-3 sm:grid-cols-3"><div><p className="text-sm text-muted">Collected sales</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.sales?.current)}</p><Change value={data.changes.sales} /></div><div><p className="text-sm text-muted">Orders</p><p className="mt-1 text-xl font-bold text-ink">{formatNumber(data.changes.orders?.current)}</p><Change value={data.changes.orders} /></div><div><p className="text-sm text-muted">Purchase spend</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.purchaseSpend?.current)}</p><Change value={data.changes.purchaseSpend} /></div></div></Card> : null}
-    {view === "weekly" && data.changes?.menuMovers?.length ? <Card className="p-5"><SectionHeader title="Menu movers" description="The most meaningful current-versus-prior changes." /><div className="mt-4 grid gap-3 sm:grid-cols-2">{data.changes.menuMovers.slice(0, 4).map((row) => <div key={row.menuItemId} className="flex items-center justify-between rounded-xl border border-line bg-slate-50 p-3"><div><p className="text-sm font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{formatNumber(row.currentQuantity)} units vs {formatNumber(row.priorQuantity)} prior</p></div><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></div>)}</div></Card> : null}
+    {view === "weekly" && data.changes?.menuMovers?.length ? <Card className="p-5"><SectionHeader title="Menu movers" description="Period-over-period quantity changes, ranked by magnitude." /><div className="mt-4 grid gap-3 sm:grid-cols-2">{menuMovers.slice(0, 4).map((row) => <div key={row.menuItemId} className="flex items-center justify-between rounded-xl border border-line bg-slate-50 p-3"><div><p className="text-sm font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{formatNumber(row.currentQuantity)} units vs {formatNumber(row.priorQuantity)} prior</p></div><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></div>)}</div></Card> : null}
     {actionableExceptions.length ? <Card className="p-5"><SectionHeader title="Needs attention" /><div className="mt-3 space-y-2">{actionableExceptions.map((entry, index) => { const [to, label] = exceptionLink(entry.type); return <div key={String(entry.type) + index} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 p-3"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" /><div><p className="text-sm font-semibold text-ink">{entry.title as string}</p><p className="text-xs text-muted">{entry.detail as string}</p></div></div>{to ? <Link className="shrink-0 text-xs font-semibold text-brand-700" to={to}>{label}</Link> : null}</div>; })}</div></Card> : null}
     <Card className="p-5"><SectionHeader title="Usage variance" />{data.usageVariance.valid ? <div className="mt-3 space-y-2">{data.usageVariance.rows.slice(0, 4).map((row) => <div key={row.inventoryItemId} className="flex items-center justify-between border-b border-line py-2 text-sm"><span className="font-semibold text-ink">{row.itemName} <span className="text-xs text-muted">({row.unit})</span></span><Badge tone={Math.abs(row.variance) > 0 ? "warning" : "success"}>{row.variance >= 0 ? "+" : ""}{row.variance} · {row.variancePercent == null ? "—" : Number(row.variancePercent).toFixed(1) + "%"}</Badge></div>)}{data.usageVariance.rows.length > 4 ? <p className="mt-2 text-xs text-muted">Showing the first four rows.</p> : null}</div> : <p className="mt-2 text-sm text-muted">Physical variance not available for this full business day. Flowtally will calculate it when valid opening and closing counts bracket the period.</p>}</Card>
     <details className="rounded-2xl border border-line bg-white p-5"><summary className="cursor-pointer font-semibold text-ink">View menu-item breakdown</summary><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr><th className="px-3 py-3">Item</th><th className="px-3 py-3 text-right">Units</th><th className="px-3 py-3 text-right">Gross item sales</th><th className="px-3 py-3 text-right">Net item sales</th><th className="px-3 py-3 text-right">Food cost</th><th className="px-3 py-3 text-right">Change</th></tr></thead><tbody>{data.sales.byMenuItem.map((row) => <tr key={row.menuItemId} className="border-b border-line"><td className="px-3 py-3"><p className="font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{row.category}{row.costAvailable ? "" : " · cost unavailable"}</p></td><td className="px-3 py-3 text-right">{formatNumber(row.quantity)}</td><td className="px-3 py-3 text-right">{formatMoney(row.grossAmount)}</td><td className="px-3 py-3 text-right">{formatMoney(row.netAmount)}</td><td className="px-3 py-3 text-right">{row.costAvailable && row.estimatedFoodCostPercent != null ? Number(row.estimatedFoodCostPercent).toFixed(1) + "%" : "—"}</td><td className="px-3 py-3 text-right"><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></td></tr>)}</tbody></table></div>{data.sales.unmappedLines.length ? <p className="mt-4 text-sm text-amber-800">{data.sales.unmappedLines.length} Square line(s) are not mapped to Flowtally menu items.</p> : null}</details>
