@@ -149,7 +149,9 @@ describe("PilotDashboardPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByRole("heading", { name: "Today" });
+    await screen.findByRole("heading", { name: "Dashboard" });
+    expect(screen.getByRole("heading", { name: "Today" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Operations" })).toBeVisible();
     expect(screen.getByText("Reorder pressure")).toBeVisible();
     expect(screen.getByText("Review reorder")).toBeVisible();
     expect(screen.getByText("Square sync needs attention")).toBeVisible();
@@ -160,7 +162,9 @@ describe("PilotDashboardPage", () => {
     expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeVisible();
     expect(screen.getByText(/areas need attention/)).toBeVisible();
-    expect(screen.getByText("Continue where you left off")).toBeVisible();
+    expect(screen.getByText("Drafts in progress")).toBeVisible();
+    expect(screen.queryByText("How are we doing?")).not.toBeInTheDocument();
+    expect(screen.queryByText("What should you do next?")).not.toBeInTheDocument();
     expect(screen.getByText("Purchase draft")).toBeVisible();
     expect(screen.getByText("Stock count draft")).toBeVisible();
     expect(screen.getByText("Daily Close draft")).toBeVisible();
