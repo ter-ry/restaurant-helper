@@ -63,6 +63,7 @@ export function PilotSquareUsagePage() {
     if (!organization) { setUsage(null); setLoading(false); return; }
     setRefreshing(true);
     setLoading(true);
+    setUsage(null);
     setError(null);
     try {
       const response = await fetchSquareUsage({
