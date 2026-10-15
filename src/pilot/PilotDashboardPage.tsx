@@ -42,30 +42,32 @@ export function PilotDashboardPage() {
   ];
 
   return <div className="workspace-page">
-    <WorkspacePageHeader eyebrow="Dashboard" title="Today" actions={<button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button>} metrics={topMetrics} />
+    <WorkspacePageHeader eyebrow="Dashboard" title="Dashboard" actions={<button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button>} />
     {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
     {loading && !data ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading dashboard data...</div> : null}
 
     {data?.insights ? <Card className="border-brand-100 bg-brand-50/30 p-5 sm:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-wide text-muted">How are we doing?</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{formatMoney(data.insights.today.totalCollected)}</p><p className="mt-2 text-sm text-muted">{formatNumber(data.insights.today.orderCount)} orders</p></div>
-        <div className="flex flex-wrap gap-5 text-sm"><div><p className="text-xs uppercase tracking-wide text-muted">Estimated food cost</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.estimatedFoodCostPercent == null ? "—" : `${data.insights.estimatedFoodCost.estimatedFoodCostPercent.toFixed(1)}%`}</p></div><div><p className="text-xs uppercase tracking-wide text-muted">Coverage</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.costCoveragePercent.toFixed(0)}%</p></div></div>
+      <SectionHeader title="Today" />
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-5">
+        <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Total collected</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{formatMoney(data.insights.today.totalCollected)}</p></div>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-3"><div><p className="text-xs uppercase tracking-wide text-muted">Orders</p><p className="mt-1 font-bold text-ink">{formatNumber(data.insights.today.orderCount)}</p></div><div><p className="text-xs uppercase tracking-wide text-muted">Estimated food cost</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.estimatedFoodCostPercent == null ? "—" : `${data.insights.estimatedFoodCost.estimatedFoodCostPercent.toFixed(1)}%`}</p></div><div><p className="text-xs uppercase tracking-wide text-muted">Cost coverage</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.costCoveragePercent.toFixed(0)}%</p></div></div>
         <Link className="text-sm font-semibold text-brand-700" to="/app/dashboard?view=daily">Open daily report <ArrowUpRight className="inline h-4 w-4" /></Link>
       </div>
     </Card> : null}
 
     <Card className="p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-800">Needs attention</p><h2 className="mt-1 text-xl font-bold text-ink">What should you do next?</h2></div>{attentionItems.length ? <Badge tone="warning">{formatNumber(attentionItems.length)} areas need attention</Badge> : null}</div>
-      {attentionItems.length ? <div className="mt-4 grid gap-2 md:grid-cols-2">{attentionItems.slice(0, 6).map((item) => <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 px-4 py-3 transition hover:shadow-soft"><div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p></div><Badge tone={item.tone}>{formatNumber(item.count)}</Badge></Link>)}</div> : <p className="mt-4 text-sm text-muted">No operational alerts right now.</p>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><SectionHeader title="Needs attention" />{attentionItems.length ? <Badge tone="warning">{formatNumber(attentionItems.length)} areas need attention</Badge> : null}</div>
+      {attentionItems.length ? <div className="mt-4 grid gap-2 md:grid-cols-2">{attentionItems.slice(0, 6).map((item) => <Link key={item.key} to={item.to} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 px-4 py-3 transition hover:shadow-soft"><div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">{item.action}</p></div><Badge tone={item.tone}>{formatNumber(item.count)}</Badge></Link>)}</div> : <p className="mt-4 text-sm text-muted">No current operational alerts.</p>}
     </Card>
 
     {resumeItems.length ? <Card className="p-5">
-      <SectionHeader title="Continue where you left off" description="Pick up unfinished work without searching for the draft." />
+      <SectionHeader title="Drafts in progress" />
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{resumeItems.map((item) => <Link key={item.key} to={item.to} className="rounded-xl border border-line bg-slate-50 p-3 transition hover:shadow-soft"><p className="text-sm font-semibold text-ink">{item.label}</p><p className="mt-1 text-xs text-muted">{item.detail}</p><p className="mt-2 text-xs font-semibold text-brand-700">Resume</p></Link>)}</div>
     </Card> : null}
 
     <Card className="p-5">
-      <SectionHeader title="Operating snapshot" description="The numbers that help plan the next shift." />
+      <SectionHeader title="Operations" />
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{topMetrics.map((metric) => <div key={metric.label} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</p><p className="mt-1 text-lg font-bold text-ink">{metric.value}</p><p className="mt-1 text-xs leading-5 text-muted">{metric.helper}</p></div>)}</div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{[
         ["Inventory", data?.workflow.inventory ?? "Not ready", "/app/inventory", ShoppingCart],
         ["Reorder", data?.workflow.reorder ?? "Alert", "/app/inventory?view=reorder", PackageSearch],
