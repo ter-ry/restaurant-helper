@@ -1641,6 +1641,28 @@ textarea.input {
 .pilot-theme .pilot-shell {
   background: var(--pilot-bg) !important;
 }
+.pilot-shell.pilot-theme,
+.pilot-theme.pilot-shell > div {
+  background: var(--pilot-bg) !important;
+}
+.pilot-theme .pilot-sidebar,
+.pilot-theme .pilot-topbar,
+.pilot-theme .pilot-mobile-nav {
+  background: var(--pilot-surface) !important;
+  border-color: var(--pilot-line) !important;
+  box-shadow: none !important;
+}
+.pilot-theme .pilot-nav-item,
+.pilot-theme .pilot-nav-item:hover,
+.pilot-theme .pilot-nav-item[aria-current="page"] {
+  color: var(--pilot-text) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.pilot-theme .pilot-nav-item:hover,
+.pilot-theme .pilot-nav-item[aria-current="page"] {
+  background: var(--pilot-surface-muted) !important;
+}
 .pilot-theme .pilot-page-header,
 .pilot-theme .workspace-card,
 .pilot-theme .surface-panel,
