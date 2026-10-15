@@ -68,12 +68,13 @@ def test_connected_square_without_physical_counts_is_ready(app, client, monkeypa
         )
         db.session.commit()
         location_id = location.id
+        organization_id = organization.id
 
     csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
     selected = client.post(
         "/api/organizations/select",
         headers={"X-CSRFToken": csrf},
-        json={"organizationId": organization.id},
+        json={"organizationId": organization_id},
     )
     assert selected.status_code == 200
 
