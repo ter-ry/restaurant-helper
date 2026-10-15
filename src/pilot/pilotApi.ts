@@ -753,6 +753,7 @@ export interface CashReconciliation {
   mode: "drawer_shift" | "payments" | null | string;
   basis?: "square_expected_cash" | "calculated_drawer_cash" | "cash_payments" | string;
   expectedCash: number | null;
+  expectedCashTakings?: number | null;
   reconciledExpectedCash?: number | null;
   countedCash?: number | null;
   overShort?: number | null;

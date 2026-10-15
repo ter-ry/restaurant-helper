@@ -179,6 +179,7 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
     for square_location_id in location_ids:
         query_base = {"location_id": square_location_id, "begin_time": start_iso, "end_time": end_iso, "limit": "100"}
         shifts: list[dict[str, Any]] = []
+        drawer_failed = False
         cursor = None
         seen_cursors: set[str] = set()
         try:
@@ -191,11 +192,11 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
                 next_cursor = page.get("cursor")
                 if not next_cursor or next_cursor in seen_cursors: break
                 seen_cursors.add(next_cursor); cursor = next_cursor
-        except SquareRequestError as exc:
-            if exc.status_code == 403:
-                return {**unavailable, "reason": "Square access does not include cash drawer read permission.", "reconnectRequired": True}
+        except SquareRequestError:
+            drawer_failed = True
             shifts = []
         except Exception:
+            drawer_failed = True
             shifts = []
         def parsed(value: Any) -> datetime | None:
             if not value: return None
@@ -213,6 +214,7 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
                 if isinstance(detail, dict):
                     detailed_shifts.append(detail)
             except Exception:
+                drawer_failed = True
                 continue
         shifts = detailed_shifts
         if shifts:
@@ -277,7 +279,8 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
             cash = [p for p in payments if str(p.get("status") or "").upper() == "COMPLETED" and str(p.get("source_type") or "").upper() == "CASH"]
             cash_payments = sum((_money_amount(p.get("total_money")) for p in cash), Decimal("0"))
             refunds = sum((_money_amount(p.get("refunded_money")) for p in cash), Decimal("0"))
-            return {"status": "available", "mode": "payments", "basis": "cash_payments", "expectedCash": float(max(Decimal("0"), cash_payments - refunds)), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": float(refunds), "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(cash), "reconnectRequired": False}
+            drawer_reason = "Reconnect Square to enable full cash drawer reconciliation." if drawer_failed else None
+            return {"status": "available", "mode": "payments", "basis": "cash_payments", "expectedCash": None, "expectedCashTakings": float(max(Decimal("0"), cash_payments - refunds)), "openingFloat": None, "cashPayments": float(cash_payments), "cashRefunds": float(refunds), "paidIn": None, "paidOut": None, "closedCash": None, "paymentCount": len(cash), "reason": drawer_reason, "reconnectRequired": bool(drawer_reason)}
     return unavailable
 
 def _inventory_value(location_id: int) -> float:
@@ -314,10 +317,24 @@ def _daily_close_usage(organization, location: RestaurantLocation, business_date
     return _build_square_usage_report(organization, connection, location=location, start_at=start_at, end_at=end_at)
 
 
-def _usage_matches_period(usage: dict[str, Any], start_at: datetime, end_at: datetime) -> bool:
-    period = usage.get("period") or {}
-    normalize = lambda value: str(value or "").replace("+00:00", "Z")
-    return normalize(period.get("startAt")) == normalize(start_at.isoformat().replace("+00:00", "Z")) and normalize(period.get("endAt")) == normalize(end_at.isoformat().replace("+00:00", "Z"))
+def _physical_usage_matches_period(usage: dict[str, Any], start_at: datetime, end_at: datetime) -> bool:
+    rows = [row for row in usage.get("ingredientUsage", []) if row.get("actualUsage") is not None]
+    if not rows:
+        return False
+    def parse(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    for row in rows:
+        basis = row.get("actualUsageBasis") or {}
+        opening = parse(basis.get("openingCountCompletedAt"))
+        closing = parse(basis.get("closingCountCompletedAt"))
+        if opening is None or closing is None or opening != start_at or closing != end_at or closing <= opening:
+            return False
+    return True
 
 
 def _daily_close_exceptions(connection: SquareConnection | None, summary: dict[str, Any], usage: dict[str, Any], period_matches: bool = True) -> list[str]:
@@ -382,7 +399,7 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     summary = _sales_summary_for_day(connection, location, business_date)
     usage = _daily_close_usage(organization, location, business_date, connection)
     period_start, period_end = _business_date_bounds(location, business_date)
-    period_matches = _usage_matches_period(usage, period_start, period_end)
+    period_matches = _physical_usage_matches_period(usage, period_start, period_end)
     if not period_matches:
         usage = {
             **usage,
@@ -522,6 +539,12 @@ def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: Daily
         if cash.get("closedCash") is None:
             cash.pop("overShort", None)
     snapshot["cashReconciliation"] = cash
+    attention = [item for item in (snapshot.get("attentionItems") or []) if item.get("type") != "cash_variance"]
+    if cash.get("closedCash") is None and cash.get("overShort") is not None and abs(float(cash["overShort"])) >= 0.01:
+        amount = float(cash["overShort"])
+        direction = "over" if amount > 0 else "short"
+        attention.append({"type": "cash_variance", "title": f"Cash drawer {direction}", "severity": "warning", "detail": f"${abs(amount):.2f} {direction}"})
+    snapshot["attentionItems"] = attention
     return snapshot
 
 

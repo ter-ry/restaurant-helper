@@ -749,7 +749,7 @@ describe("PilotDailyClosePage", () => {
       snapshot: {
         healthStatus: "Ready",
         sales: { netSales: 240, orders: 8, refunds: 0, cancelledOrders: 0 },
-        cashReconciliation: { status: "available", mode: "payments", expectedCash: 120 },
+        cashReconciliation: { status: "available", mode: "payments", expectedCash: null, expectedCashTakings: 120, reconnectRequired: true },
         usage: { totals: {}, ingredientUsage: [] },
         reconciliation: {},
         square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
@@ -765,13 +765,10 @@ describe("PilotDailyClosePage", () => {
 
     render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
 
-    expect(await screen.findByText("Cash reconciliation")).toBeVisible();
-    expect(screen.getByText("$120.00")).toBeVisible();
-    const countedCash = screen.getByLabelText("Counted cash");
-    expect(countedCash).toBeEnabled();
-    fireEvent.change(countedCash, { target: { value: "100" } });
-    expect(await screen.findByText("$20.00 short")).toBeVisible();
-    expect(screen.getByText("Likely causes")).toBeVisible();
+    expect(await screen.findByText("Cash takings")).toBeVisible();
+    expect(screen.getByText("Square cash takings: $120.00")).toBeVisible();
+    expect(screen.getByText("Full drawer reconciliation requires Square Cash Drawer access.")).toBeVisible();
+    expect(screen.queryByLabelText("Counted cash")).not.toBeInTheDocument();
   });
 
 });

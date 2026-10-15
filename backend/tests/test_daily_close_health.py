@@ -115,29 +115,91 @@ def test_manual_cash_reconciliation_is_namespaced_and_recomputed():
     class Session:
         summary_snapshot_json = {"manualReconciliation": {"countedCash": 97.5}}
 
-    snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}}
+    snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0}, "manualReconciliation": {}, "attentionItems": []}
     merged = _merge_manual_reconciliation(snapshot, Session())
     assert merged["manualReconciliation"] == {"countedCash": 97.5}
     assert merged["cashReconciliation"]["overShort"] == -2.5
+    assert merged["attentionItems"][0]["type"] == "cash_variance"
 
     updated = _merge_manual_reconciliation(snapshot, Session(), {"reconciliation": {"countedCash": 100}})
     assert updated["cashReconciliation"]["overShort"] == 0
+    assert updated["attentionItems"] == []
 
-    square_snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0, "closedCash": 105.0, "overShort": 5.0}, "manualReconciliation": {}}
+    square_snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0, "closedCash": 105.0, "overShort": 5.0}, "manualReconciliation": {}, "attentionItems": []}
     square_merged = _merge_manual_reconciliation(square_snapshot, Session())
     assert square_merged["cashReconciliation"]["overShort"] == 5.0
 
 
 def test_intraday_usage_period_does_not_create_daily_close_variance_attention():
-    from backend.daily_close import _daily_close_exceptions, _attention_items
+    from datetime import date
+    from backend.daily_close import _attention_items, _business_date_bounds, _daily_close_exceptions, _physical_usage_matches_period
     summary = {"locationMapped": True, "refunds": 0, "cancelledOrders": 0}
+    start_at, end_at = _business_date_bounds(type("Location", (), {"timezone": "America/Toronto"})(), date(2026, 10, 4))
     usage = {
-        "period": {"startAt": "2026-10-04T16:00:00Z", "endAt": "2026-10-04T20:00:00Z"},
+        "period": {"startAt": start_at.isoformat().replace("+00:00", "Z"), "endAt": end_at.isoformat().replace("+00:00", "Z")},
         "coverage": {},
-        "ingredientUsage": [{"inventoryItemName": "Chicken", "actualUsage": 1, "discrepancy": 1, "discrepancyPercent": 100, "unit": "kg"}],
+        "ingredientUsage": [{"inventoryItemName": "Chicken", "actualUsage": 1, "discrepancy": 1, "discrepancyPercent": 100, "unit": "kg", "actualUsageBasis": {"openingCountCompletedAt": "2026-10-04T13:45:00Z", "closingCountCompletedAt": "2026-10-04T14:45:00Z"}}],
     }
-    assert "Material usage variance exceeds threshold." not in _daily_close_exceptions(None, summary, usage, period_matches=False)
-    assert _attention_items(summary, usage, type("Location", (), {"id": 1})(), period_matches=False) == []
+    period_matches = _physical_usage_matches_period(usage, start_at, end_at)
+    assert period_matches is False
+    assert "Material usage variance exceeds threshold." not in _daily_close_exceptions(None, summary, usage, period_matches=period_matches)
+    assert _attention_items(summary, usage, type("Location", (), {"id": 1})(), period_matches=period_matches) == []
+
+
+def test_cash_drawer_permission_failure_falls_back_to_cash_takings(monkeypatch):
+    from types import SimpleNamespace
+    from datetime import date
+    from backend import daily_close
+    from backend.square_integration import SquareRequestError
+    connection = SimpleNamespace(status="connected", environment="production")
+    location = SimpleNamespace(timezone="America/Toronto", id=1)
+    monkeypatch.setattr(daily_close, "_square_location_ids_for_location", lambda *_args: ["SQ-1"])
+    monkeypatch.setattr(daily_close, "_connection_token", lambda *_args: "token")
+    def request(_method, path, **_kwargs):
+        if "cash-drawers" in path:
+            raise SquareRequestError("denied", status_code=403)
+        return {"payments": [{"status": "COMPLETED", "source_type": "CASH", "total_money": {"amount": 2500}, "refunded_money": {"amount": 0}}]}
+    monkeypatch.setattr(daily_close, "_square_request", request)
+    result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
+    assert result["mode"] == "payments"
+    assert result["expectedCash"] is None
+    assert result["expectedCashTakings"] == 25
+    assert result["reconnectRequired"] is True
+
+
+def test_cash_drawer_and_payments_permission_failures_are_unavailable(monkeypatch):
+    from types import SimpleNamespace
+    from datetime import date
+    from backend import daily_close
+    from backend.square_integration import SquareRequestError
+    connection = SimpleNamespace(status="connected", environment="production")
+    location = SimpleNamespace(timezone="America/Toronto", id=1)
+    monkeypatch.setattr(daily_close, "_square_location_ids_for_location", lambda *_args: ["SQ-1"])
+    monkeypatch.setattr(daily_close, "_connection_token", lambda *_args: "token")
+    monkeypatch.setattr(daily_close, "_square_request", lambda *_args, **_kwargs: (_ for _ in ()).throw(SquareRequestError("denied", status_code=403)))
+    result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
+    assert result["status"] == "unavailable"
+    assert result["reconnectRequired"] is True
+
+
+def test_cash_drawer_temporary_failure_still_uses_payments(monkeypatch):
+    from types import SimpleNamespace
+    from datetime import date
+    from backend import daily_close
+    from backend.square_integration import SquareRequestError
+    connection = SimpleNamespace(status="connected", environment="production")
+    location = SimpleNamespace(timezone="America/Toronto", id=1)
+    monkeypatch.setattr(daily_close, "_square_location_ids_for_location", lambda *_args: ["SQ-1"])
+    monkeypatch.setattr(daily_close, "_connection_token", lambda *_args: "token")
+    def request(_method, path, **_kwargs):
+        if "cash-drawers" in path:
+            raise SquareRequestError("temporary", status_code=503)
+        return {"payments": [{"status": "COMPLETED", "source_type": "CASH", "total_money": {"amount": 1000}, "refunded_money": {"amount": 0}}]}
+    monkeypatch.setattr(daily_close, "_square_request", request)
+    result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
+    assert result["mode"] == "payments"
+    assert result["expectedCashTakings"] == 10
+    assert result["reconnectRequired"] is True
 
 
 def test_cash_reconciliation_uses_exact_business_day_payments_and_paginates(monkeypatch):

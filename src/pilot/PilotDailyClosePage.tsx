@@ -198,6 +198,8 @@ export function PilotDailyClosePage() {
   const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
   const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
   const expectedCash = Number.isFinite(Number(cashReconciliation.expectedCash)) ? Number(cashReconciliation.expectedCash) : null;
+  const isCashTakingsMode = cashReconciliation.mode === "payments";
+  const cashTakings = Number.isFinite(Number(cashReconciliation.expectedCashTakings)) ? Number(cashReconciliation.expectedCashTakings) : null;
   const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
   const squareClosedCash = Number.isFinite(Number(cashReconciliation.closedCash)) ? Number(cashReconciliation.closedCash) : null;
   const cashDifference = expectedCash != null && (squareClosedCash != null || countedCashValue != null) && Number.isFinite(squareClosedCash ?? countedCashValue)
@@ -372,7 +374,15 @@ export function PilotDailyClosePage() {
 
 
               <div className="rounded-3xl border border-line bg-slate-50 p-4">
-                <SectionHeader title="Cash reconciliation" description="Close the cash drawer against the sales data available for this business date." />
+                <SectionHeader title={isCashTakingsMode ? "Cash takings" : "Cash reconciliation"} description={isCashTakingsMode ? "Square cash takings for this business date." : "Close the cash drawer against the sales data available for this business date."} />
+                {isCashTakingsMode ? (
+                  <>
+                    <p className="mt-4 text-lg font-semibold text-ink">Square cash takings: {cashTakings == null ? "Unavailable" : formatMoney(cashTakings)}</p>
+                    <p className="mt-2 text-sm text-muted">Full drawer reconciliation requires Square Cash Drawer access.</p>
+                    {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
+                  </>
+                ) : (
+                <>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-muted">Expected cash</p>
@@ -432,6 +442,8 @@ export function PilotDailyClosePage() {
                     )}
                   </div>
                 ) : null}
+                </>
+                )}
               </div>
               {displayAttentionItems.length ? (
                 <div className="daily-close-exceptions rounded-3xl border border-amber-200 bg-amber-50 p-4">
