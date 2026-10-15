@@ -29,6 +29,17 @@ function currentBusinessDate(timeZone: string | null | undefined) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
+
+function exceptionAction(exception: string) {
+  const text = exception.toLowerCase();
+  if (text.includes("variation") && text.includes("unmapped")) return { href: "/app/square", label: "Review mappings" };
+  if (text.includes("refund") || text.includes("cancel")) return { href: "/app/square", label: "Review sales" };
+  if (text.includes("sync") || text.includes("location") || text.includes("square")) return { href: "/app/square", label: "Review Square" };
+  if (text.includes("recipe") || text.includes("mapping")) return { href: "/app/menu-costing", label: "Review Menu Costing" };
+  if (text.includes("usage variance") || text.includes("variance")) return { href: "/app/inventory?view=usage", label: "Review usage" };
+  return null;
+}
+
 export function PilotDailyClosePage() {
   const { currentLocation, locations } = usePilotSession();
   const location = useLocation();
