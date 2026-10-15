@@ -1427,7 +1427,7 @@ def test_daily_close_does_not_cancel_opposite_item_variances_or_alarm_missing_co
     )
 
     assert "Material usage variance exceeds threshold." in exceptions
-    assert "Actual usage unavailable — stock-count basis is incomplete." in exceptions
+    assert "Actual usage unavailable — stock-count basis is incomplete." not in exceptions
 
 
 def test_daily_close_mixed_units_with_complete_counts_has_no_false_incomplete_exception():
