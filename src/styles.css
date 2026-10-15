@@ -47,7 +47,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(13, 148, 136, 0.42);
+  outline: 3px solid var(--pilot-focus, rgba(13, 148, 136, 0.42));
   outline-offset: 3px;
 }
 
@@ -254,13 +254,17 @@ textarea.input {
 
 /* Operational theme tokens. The public marketing/demo surfaces keep their existing palette. */
 .pilot-theme {
-  --pilot-bg: #f8fafc;
+  --pilot-bg: #fafafa;
   --pilot-surface: #ffffff;
-  --pilot-surface-muted: #f1f5f9;
-  --pilot-line: #e2e8f0;
-  --pilot-text: #0f172a;
-  --pilot-muted: #64748b;
-  --pilot-accent: #1e3a5f;
+  --pilot-surface-muted: #f4f4f5;
+  --pilot-line: #d4d4d8;
+  --pilot-text: #18181b;
+  --pilot-muted: #52525b;
+  --pilot-accent: #18181b;
+  --pilot-focus: #0f766e;
+  --pilot-danger: #b91c1c;
+  --pilot-warning: #a16207;
+  --pilot-success: #047857;
   background: var(--pilot-bg);
   color: var(--pilot-text);
 }
@@ -282,13 +286,17 @@ textarea.input {
 }
 
 .pilot-theme-dark {
-  --pilot-bg: #0a0f14;
-  --pilot-surface: #111820;
-  --pilot-surface-muted: #18232d;
-  --pilot-line: #293743;
-  --pilot-text: #e7eef3;
-  --pilot-muted: #91a2af;
-  --pilot-accent: #dbe7f3;
+  --pilot-bg: #09090b;
+  --pilot-surface: #111113;
+  --pilot-surface-muted: #1a1a1f;
+  --pilot-line: #303038;
+  --pilot-text: #f4f4f5;
+  --pilot-muted: #a1a1aa;
+  --pilot-accent: #f4f4f5;
+  --pilot-focus: #5eead4;
+  --pilot-danger: #f87171;
+  --pilot-warning: #facc15;
+  --pilot-success: #34d399;
 }
 
 .pilot-theme-dark .bg-slate-50,
