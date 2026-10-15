@@ -42,7 +42,7 @@ export function PilotDashboardPage() {
   ];
 
   return <div className="workspace-page">
-    <WorkspacePageHeader eyebrow="Dashboard" title="Dashboard" actions={<button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button>} />
+    <WorkspacePageHeader title="Dashboard" actions={<button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button>} />
     {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
     {loading && !data ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading dashboard data...</div> : null}
 
