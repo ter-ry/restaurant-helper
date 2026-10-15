@@ -1,22 +1,12 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotDashboardPage } from "../../src/pilot/PilotDashboardPage";
 
-const navigate = vi.fn();
-
 const pilotApiMocks = vi.hoisted(() => ({
   fetchPilotDashboard: vi.fn(),
 }));
-
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = (await importOriginal()) as any;
-  return {
-    ...actual,
-    useNavigate: () => navigate,
-  };
-});
 
 vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
   const actual = (await importOriginal()) as any;
@@ -161,16 +151,25 @@ describe("PilotDashboardPage", () => {
 
     await screen.findByRole("heading", { name: "Today" });
     expect(screen.getByText("Reorder pressure")).toBeVisible();
-    expect(screen.getByText("Open Reorder Plan")).toBeVisible();
+    expect(screen.getByText("Review reorder")).toBeVisible();
     expect(screen.getByText("Square sync needs attention")).toBeVisible();
     expect(screen.getByText("Square variations need mapping")).toBeVisible();
     expect(screen.getByText("Daily Close is outstanding")).toBeVisible();
-    expect(screen.getByText("2 item(s) need attention")).toBeVisible();
+    expect(screen.getByText("2 item(s) need ordering now.")).toBeVisible();
     expect(screen.queryByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).not.toBeInTheDocument();
     expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
-    expect(screen.getByText("Daily close")).toBeVisible();
+    expect(screen.getByText("Close")).toBeVisible();
+    expect(screen.getByText(/areas need attention/)).toBeVisible();
+    expect(screen.getByText("Continue where you left off")).toBeVisible();
+    expect(screen.getByText("Purchase draft")).toBeVisible();
+    expect(screen.getByText("Stock count draft")).toBeVisible();
+    expect(screen.getByText("Daily Close draft")).toBeVisible();
+    expect(screen.getByText("Reorder plan draft")).toBeVisible();
+    expect(screen.getByText("Purchase draft").closest("a")).toHaveAttribute("href", "/app/purchases?invoiceId=2");
+    expect(screen.getByText("Stock count draft").closest("a")).toHaveAttribute("href", "/app/inventory?view=counts&sessionId=7");
+    expect(screen.getByText("Daily Close draft").closest("a")).toHaveAttribute("href", "/app/daily-close?locationId=4&businessDate=2026-08-28");
+    expect(screen.getByText("Reorder plan draft").closest("a")).toHaveAttribute("href", "/app/inventory?view=reorder&planId=5");
 
-    fireEvent.click(screen.getByRole("button", { name: "Open reorder plan" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/inventory?view=reorder"));
+    expect(screen.getByRole("link", { name: /Review reorder/ })).toHaveAttribute("href", "/app/inventory?view=reorder");
   });
 });
