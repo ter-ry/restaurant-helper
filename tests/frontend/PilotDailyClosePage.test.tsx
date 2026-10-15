@@ -701,4 +701,34 @@ describe("PilotDailyClosePage", () => {
     expect(await screen.findByText("Needs attention")).toBeVisible();    expect(screen.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
     expect(screen.getByText("Notes")).toBeVisible();
   });
+  it("keeps cash reconciliation focused and calculates an over/short amount", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: { id: 18, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", notes: "", currentSnapshot: null },
+      snapshot: {
+        healthStatus: "Ready",
+        sales: { cashSales: 120, netSales: 240, orders: 8, refunds: 0, cancelledOrders: 0 },
+        usage: { totals: {}, ingredientUsage: [] },
+        reconciliation: {},
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Cash reconciliation")).toBeVisible();
+    expect(screen.getByText("$120.00")).toBeVisible();
+    const countedCash = screen.getByLabelText("Counted cash");
+    expect(countedCash).toBeEnabled();
+    fireEvent.change(countedCash, { target: { value: "100" } });
+    expect(await screen.findByText("$20.00 short")).toBeVisible();
+    expect(screen.getByText("Likely causes")).toBeVisible();
+  });
+
 });
