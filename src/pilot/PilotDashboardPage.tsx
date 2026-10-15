@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
-import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { fetchPilotDashboard, type PilotDashboardResponse } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
@@ -42,12 +41,11 @@ export function PilotDashboardPage() {
   ];
 
   return <div className="workspace-page">
-    <WorkspacePageHeader title="Dashboard" actions={<button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button>} />
     {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
     {loading && !data ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading dashboard data...</div> : null}
 
     {data?.insights ? <Card className="border-brand-100 bg-brand-50/30 p-5 sm:p-6">
-      <SectionHeader title="Today" />
+      <SectionHeader title="Today" action={<button aria-label="Refresh dashboard" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button>} />
       <div className="mt-4 flex flex-wrap items-end justify-between gap-5">
         <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Total collected</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{formatMoney(data.insights.today.totalCollected)}</p></div>
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-3"><div><p className="text-xs uppercase tracking-wide text-muted">Orders</p><p className="mt-1 font-bold text-ink">{formatNumber(data.insights.today.orderCount)}</p></div><div><p className="text-xs uppercase tracking-wide text-muted">Estimated food cost</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.estimatedFoodCostPercent == null ? "—" : `${data.insights.estimatedFoodCost.estimatedFoodCostPercent.toFixed(1)}%`}</p></div><div><p className="text-xs uppercase tracking-wide text-muted">Cost coverage</p><p className="mt-1 font-bold text-ink">{data.insights.estimatedFoodCost.costCoveragePercent.toFixed(0)}%</p></div></div>
