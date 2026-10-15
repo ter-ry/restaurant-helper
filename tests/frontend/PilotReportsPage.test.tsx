@@ -27,17 +27,22 @@ describe("PilotReportsPage", () => {
   it("shows sales, menu performance and current-cost coverage", async () => {
     render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getAllByText("Harbour Burger").length).toBeGreaterThan(0));
-    expect(screen.getByText("How was the day?")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Daily report" })).toBeInTheDocument();
+    expect(screen.queryByText("How was the day?")).not.toBeInTheDocument();
+    expect(screen.queryByText("See what happened and what needs attention.")).not.toBeInTheDocument();
     expect(screen.getByText("Sales breakdown")).toBeInTheDocument();
-    expect(screen.getByText("View menu-item breakdown")).toBeInTheDocument();
+    expect(screen.queryByText("The financial detail behind total collected.")).not.toBeInTheDocument();
+    expect(screen.getByText("Menu-item breakdown")).toBeInTheDocument();
     expect(screen.getByText("Total collected")).toBeInTheDocument();
     expect(screen.getByText("Physical variance not available for this full business day. Flowtally will calculate it when valid opening and closing counts bracket the period.")).toBeInTheDocument();
     expect(screen.getByText("$181.80")).toBeInTheDocument();
     expect(screen.getByText("Units sold")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Daily" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Weekly" })).not.toBeInTheDocument();
-    expect(screen.getByText("Most ordered item")).toBeInTheDocument();
-    expect(screen.getByText(/Harbour Burger.*10 units\./)).toBeInTheDocument();
+    expect(screen.getByText("Menu performance")).toBeInTheDocument();
+    expect(screen.getByText("Most ordered")).toBeInTheDocument();
+    expect(screen.getByText("10 units")).toBeInTheDocument();
+
     expect(screen.queryByText("Count evidence unavailable")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Review usage" })).toHaveAttribute("href", "/app/inventory?view=usage");
     expect(screen.getByRole("link", { name: "Review reorder" })).toHaveAttribute("href", "/app/inventory?view=reorder");
@@ -61,5 +66,28 @@ it("ranks weekly menu movers by absolute quantity change", async () => {
     await waitFor(() => expect(screen.getByText("Menu movers")).toBeInTheDocument());
     const pageText = document.body.textContent ?? "";
     expect(pageText.indexOf("Largest change")).toBeLessThan(pageText.indexOf("Small change"));
+    expect(screen.getByRole("heading", { name: "Weekly report" })).toBeInTheDocument();
+    expect(screen.getByText("Period comparison")).toBeInTheDocument();
+    expect(screen.queryByText("Period-over-period movement using the selected business dates.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Period-over-period quantity changes, ranked by magnitude.")).not.toBeInTheDocument();
+    expect(screen.queryByText("What changed this week?")).not.toBeInTheDocument();
+    expect(screen.queryByText("What changed")).not.toBeInTheDocument();
   });
+  it("lets a lone report card use the full row", async () => {
+    mockFetch.mockResolvedValueOnce({ ...report, exceptions: [] });
+    render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("Menu performance")).toBeInTheDocument());
+    expect(screen.getByText("Menu performance").closest("div.grid")).not.toHaveClass("lg:grid-cols-2");
+
+    mockFetch.mockResolvedValueOnce({
+      ...report,
+      period: { ...report.period, view: "weekly" },
+      changes: { sales: { current: 10, delta: 0, percent: 0 }, orders: { current: 1, delta: 0, percent: 0 }, purchaseSpend: { current: 5, delta: 0, percent: 0 }, menuMovers: [] },
+      exceptions: [],
+    });
+    render(<MemoryRouter><PilotReportsPage initialView="weekly" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("Period comparison")).toBeInTheDocument());
+    expect(screen.getByText("Period comparison").closest("div.grid")).not.toHaveClass("lg:grid-cols-2");
+  });
+
 });
