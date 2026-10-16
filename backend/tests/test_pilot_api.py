@@ -19,6 +19,7 @@ from backend.seed import (
 )
 from backend.tests.conftest import make_operational_organization
 from backend.tests.test_square_integration import connect_square
+from backend.utils import purchase_review_summary
 
 
 def login(client):
@@ -84,6 +85,44 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     supplier_body = suppliers.get_json()
     assert len(supplier_body["suppliers"]) >= 6
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
+
+
+def test_purchase_invoice_exposes_review_summary_and_read_only_inventory_preview(client):
+    login(client)
+    purchases = client.get("/api/pilot/purchases")
+    assert purchases.status_code == 200
+    invoice = purchases.get_json()["invoices"][0]
+    assert invoice["reviewSummary"]["state"] in {"READY", "REVIEW", "BLOCKING"}
+    preview = client.get(f"/api/pilot/purchases/invoices/{invoice['id']}/preview")
+    assert preview.status_code == 200
+    body = preview.get_json()
+    assert body["invoiceId"] == invoice["id"]
+    assert body["mutatesInventory"] is False
+
+
+def test_purchase_review_summary_reconciles_subtotal_and_total_separately():
+    class Line:
+        id = 1
+        description = "Milk"
+        inventory_item_id = 1
+        quantity = Decimal("2")
+        conversion_factor = Decimal("1")
+        needs_review = False
+        confidence = Decimal("0.99")
+        price_change_percent = None
+        line_total = Decimal("10.00")
+
+    class Invoice:
+        lines = [Line()]
+        subtotal = Decimal("11.00")
+        tax = Decimal("1.00")
+        total_amount = Decimal("12.00")
+        status = "Ready"
+
+    summary = purchase_review_summary(Invoice())
+    assert {item["code"] for item in summary["items"]} == {"line_subtotal_mismatch"}
+    assert summary["reconciliation"]["subtotalDifference"] == -1.0
+    assert summary["reconciliation"]["totalDifference"] == 0.0
 
 
 def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, client):
@@ -835,6 +874,10 @@ def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costi
     )
     assert second_invoice.status_code == 201
     second_invoice_body = second_invoice.get_json()
+    second_preview = client.get(f"/api/pilot/purchases/invoices/{second_invoice_body['id']}/preview")
+    assert second_preview.status_code == 200
+    second_preview_line = second_preview.get_json()["lines"][0]
+    assert second_preview_line["quantityDelta"] == pytest.approx(1.0)
     second_receive = client.post(f"/api/pilot/purchases/invoices/{second_invoice_body['id']}/receive", headers=csrf_headers(client))
     assert second_receive.status_code == 200
 
@@ -844,6 +887,8 @@ def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costi
         assert float(item_after_second.current_on_hand) == 101
         assert float(item_after_second.latest_purchase_price) == pytest.approx(8.0)
         assert float(item_after_second.average_unit_cost) == pytest.approx((100 * 7 + 8) / 101, rel=1e-6)
+        assert float(item_after_second.current_on_hand) == pytest.approx(second_preview_line["afterOnHand"])
+        assert float(item_after_second.average_unit_cost) == pytest.approx(second_preview_line["averageUnitCostAfter"], rel=1e-6)
 
     inventory_value_after_second_receipt = client.get("/api/pilot/inventory").get_json()["summary"]["inventoryValue"]
     assert inventory_value_after_second_receipt - inventory_value_before_second_receipt == pytest.approx(8.0)

@@ -4,6 +4,10 @@ declare const process: {
   env: Record<string, string | undefined>;
 };
 
+declare const Buffer: {
+  from(input: string): any;
+};
+
 type OrganizationSummary = {
   id: number;
   name: string;
@@ -817,10 +821,58 @@ async function installMockApi(page: Page, state: MockState) {
       });
     }
 
+    if (purchaseFlow && path === "/api/pilot/purchases/ocr" && method === "POST") {
+      return jsonResponse(route, {
+        provider: "mock-ocr",
+        fileName: "invoice.pdf",
+        contentType: "application/pdf",
+        rawText: "Exception Foods EX-105\nLettuce 2 head 6.40\nMystery greens 1 case 9.00",
+        fields: {
+          supplier: { value: "Exception Foods", confidence: 0.99, needsReview: false, evidence: "Exception Foods" },
+          invoiceDate: { value: "2026-10-16", confidence: 0.98, needsReview: false },
+          invoiceNumber: { value: "EX-105", confidence: 0.99, needsReview: false },
+          subtotal: { value: 15.4, confidence: 0.99, needsReview: false },
+          tax: { value: 0, confidence: 0.99, needsReview: false },
+          total: { value: 15.4, confidence: 0.99, needsReview: false },
+        },
+        lineItems: [
+          { itemName: "Lettuce", originalDescription: "Lettuce", quantity: 2, unit: "head", unitPrice: 3.2, lineTotal: 6.4, confidence: 0.98, needsReview: false, rawSourceLine: "Lettuce 2 head 6.40" },
+          { itemName: "Mystery greens", originalDescription: "Mystery greens", quantity: 1, unit: "case", unitPrice: 9, lineTotal: 9, confidence: 0.42, needsReview: true, rawSourceLine: "Mystery greens 1 case 9.00" },
+        ],
+        warnings: ["Mystery greens needs an inventory mapping."],
+        overallConfidence: 0.81,
+        needsReview: true,
+      });
+    }
+
     if (purchaseFlow && path === "/api/pilot/purchases/invoices" && method === "POST") {
       const invoice = buildMockPurchaseInvoice(purchaseFlow, body, purchaseFlow.nextInvoiceId++);
       purchaseFlow.invoices = [invoice, ...purchaseFlow.invoices.filter((entry) => entry.id !== invoice.id)];
       return jsonResponse(route, invoice);
+    }
+
+    if (purchaseFlow && path.startsWith("/api/pilot/purchases/invoices/") && path.endsWith("/preview") && method === "GET") {
+      const invoiceId = Number(path.split("/").at(-2));
+      const invoice = purchaseFlow.invoices.find((entry) => entry.id === invoiceId) ?? purchaseFlow.invoices[0];
+      return jsonResponse(route, {
+        invoiceId: invoice?.id ?? invoiceId,
+        reviewSummary: { state: "READY", blockers: [], warnings: [], readyToReceive: true, mappedLineCount: invoice?.lineItems?.length ?? 0, lineCount: invoice?.lineItems?.length ?? 0 },
+        mutatesInventory: false,
+        lines: (invoice?.lineItems ?? []).map((line: any) => ({
+          lineId: line.id,
+          description: line.description,
+          inventoryItemId: line.inventoryItemId,
+          inventoryItemName: line.description,
+          unit: line.inventoryUnit ?? "each",
+          quantityDelta: Number(line.quantity ?? 0) * Number(line.conversionFactor ?? 1),
+          currentOnHand: 0,
+          afterOnHand: Number(line.quantity ?? 0) * Number(line.conversionFactor ?? 1),
+          averageUnitCostBefore: null,
+          averageUnitCostAfter: Number(line.unitPrice ?? 0),
+          receiptUnitCost: Number(line.unitPrice ?? 0),
+          priceChangePercent: null,
+        })),
+      });
     }
 
     if (purchaseFlow && path.startsWith("/api/pilot/purchases/invoices/") && method === "PATCH") {
@@ -2485,19 +2537,67 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(inventoryItems.nth(0)).toHaveValue("30");
   await expect(inventoryItems.nth(1)).toHaveValue("31");
 
-  await page.getByRole("button", { name: "Review" }).click();
+  await editorCard.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await page.getByRole("button", { name: "Save ready" }).click();
   await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
-  await page.getByRole("button", { name: "Review" }).click();
+  await editorCard.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
 
   await page.getByRole("button", { name: "Receive into inventory" }).click();
+  await page.getByRole("button", { name: "Confirm receive" }).click();
   await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible();
   await expect(editorCard).toHaveCount(0);
   await page.getByRole("button", { name: "New purchase" }).click();
   await expect(page.getByRole("heading", { name: "New purchase" })).toBeVisible();
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
+});
+
+test("purchase review exception blocks an unmapped line until it is resolved", async ({ page }) => {
+  const organization = makeOrganization({ id: 6, name: "Exception Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 10, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+    csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+  };
+  const purchaseFlow = makeEmptyPurchaseFlowState();
+  purchaseFlow.suppliers.push({ id: 21, name: "Exception Foods", categoryFocus: "Produce", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true });
+  purchaseFlow.inventoryItems.push({ id: 41, name: "Lettuce", stockUnit: "head" });
+  enableEmptyPurchaseWorkflow(state, purchaseFlow);
+  await installMockApi(page, state);
+  await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "New purchase" }).click();
+  await page.getByLabel("Supplier").selectOption("Exception Foods");
+  await page.getByLabel("Invoice number").fill("EX-104");
+  await page.getByLabel("Description").fill("Unmapped greens");
+  await page.getByLabel("Quantity").fill("2");
+  await page.getByLabel("Unit price").fill("3.20");
+  await page.getByRole("button", { name: "Review" }).click();
+  await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
+  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeDisabled();
+});
+
+test("OCR upload opens the structured review workspace with source evidence", async ({ page }) => {
+  const organization = makeOrganization({ id: 7, name: "OCR Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 11, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+    csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+  };
+  const purchaseFlow = makeEmptyPurchaseFlowState();
+  purchaseFlow.suppliers.push({ id: 22, name: "Exception Foods", categoryFocus: "Produce", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true });
+  purchaseFlow.inventoryItems.push({ id: 42, name: "Lettuce", stockUnit: "head" });
+  enableEmptyPurchaseWorkflow(state, purchaseFlow);
+  await installMockApi(page, state);
+  await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "New purchase" }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload invoice" }).click();
+  await (await chooser).setFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("mock invoice") });
+  await expect(page.getByText("Original document")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Review EX-105/ })).toBeVisible();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await expect(page.getByText("Map Mystery greens to inventory.")).toBeVisible();
+  await expect(page.getByText("Review Mystery greens before receiving.")).toBeVisible();
+  await expect(page.getByText("Needs mapping")).toBeVisible();
 });
 

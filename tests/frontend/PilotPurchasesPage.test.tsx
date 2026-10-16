@@ -466,6 +466,7 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
 
     expect(await screen.findByText("Invoice FD-1002 received into inventory.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
