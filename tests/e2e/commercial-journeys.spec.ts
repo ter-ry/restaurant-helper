@@ -2525,3 +2525,26 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });
 
+test("purchase review exception blocks an unmapped line until it is resolved", async ({ page }) => {
+  const organization = makeOrganization({ id: 6, name: "Exception Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 10, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+    csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+  };
+  const purchaseFlow = makeEmptyPurchaseFlowState();
+  purchaseFlow.suppliers.push({ id: 21, name: "Exception Foods", categoryFocus: "Produce", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true });
+  purchaseFlow.inventoryItems.push({ id: 41, name: "Lettuce", stockUnit: "head" });
+  enableEmptyPurchaseWorkflow(state, purchaseFlow);
+  await installMockApi(page, state);
+  await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "New purchase" }).click();
+  await page.getByLabel("Supplier").selectOption("Exception Foods");
+  await page.getByLabel("Invoice number").fill("EX-104");
+  await page.getByLabel("Description").fill("Unmapped greens");
+  await page.getByLabel("Quantity").fill("2");
+  await page.getByLabel("Unit price").fill("3.20");
+  await page.getByRole("button", { name: "Review" }).click();
+  await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
+  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeDisabled();
+});
+
