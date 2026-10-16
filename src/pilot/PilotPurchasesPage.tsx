@@ -295,6 +295,7 @@ export function PilotPurchasesPage() {
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [showSupplierForm, setShowSupplierForm] = useState(false);
@@ -467,6 +468,7 @@ export function PilotPurchasesPage() {
     setSaving(true);
     setReceiveMessage(null);
     setError(null);
+    setDuplicateInvoiceId(null);
 
     try {
       if (status === "Ready" && unresolvedLineCount > 0) {
@@ -479,6 +481,7 @@ export function PilotPurchasesPage() {
       setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
       await load(saved.id);
     } catch (err) {
+      if (err instanceof PilotApiError && err.errors?.duplicateInvoiceId) setDuplicateInvoiceId(Number(err.errors.duplicateInvoiceId));
       setError(purchaseErrorMessage(err));
     } finally {
       setSaving(false);
@@ -493,6 +496,7 @@ export function PilotPurchasesPage() {
     setSaving(true);
     setReceiveMessage(null);
     setError(null);
+    setDuplicateInvoiceId(null);
     try {
       const payload = purchasePayload("Ready");
       const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
@@ -506,6 +510,7 @@ export function PilotPurchasesPage() {
       navigate(location.pathname, { replace: true });
       await load(null);
     } catch (err) {
+      if (err instanceof PilotApiError && err.errors?.duplicateInvoiceId) setDuplicateInvoiceId(Number(err.errors.duplicateInvoiceId));
       setError(purchaseErrorMessage(err));
     } finally {
       setSaving(false);
@@ -820,7 +825,7 @@ export function PilotPurchasesPage() {
           <Card className={`workspace-card w-full ${ocrLoading ? "pointer-events-none opacity-60" : ""}`} data-testid="purchase-editor-card" aria-busy={ocrLoading}>
             {ocrLoading ? <div role="status" className="mb-4 flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-900"><span className="h-4 w-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" />Reading invoice… Extracting supplier, totals, and line items.</div> : null}
             {!draft.id && !ocrPreviewUrl ? <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-ink">How would you like to add this purchase?</p><p className="mt-1 text-xs text-muted">Upload an invoice for OCR or enter the purchase details manually.</p></div><div className="flex flex-wrap gap-2"><input ref={ocrInputRef} className="sr-only" aria-label="Invoice file" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadInvoice(file); }} /><Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>{ocrLoading ? "Processing invoice…" : "Upload invoice"}</Button><Button variant="ghost" type="button" onClick={() => editorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Enter manually</Button></div></div> : null}
-            {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+            {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>{error}</p>{duplicateInvoiceId ? <Button variant="ghost" type="button" className="mt-2" onClick={() => void openInvoice(duplicateInvoiceId)}>Open existing purchase</Button> : null}</div> : null}
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
