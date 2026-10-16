@@ -86,6 +86,19 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert any(entry["name"] == "Harbour Dry Goods" for entry in supplier_body["suppliers"])
 
 
+def test_purchase_invoice_exposes_review_summary_and_read_only_inventory_preview(client):
+    login(client)
+    purchases = client.get("/api/pilot/purchases")
+    assert purchases.status_code == 200
+    invoice = purchases.get_json()["invoices"][0]
+    assert invoice["reviewSummary"]["state"] in {"READY", "REVIEW", "BLOCKING"}
+    preview = client.get(f"/api/pilot/purchases/invoices/{invoice['id']}/preview")
+    assert preview.status_code == 200
+    body = preview.get_json()
+    assert body["invoiceId"] == invoice["id"]
+    assert body["mutatesInventory"] is False
+
+
 def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, client):
     login(client)
     with app.app_context():

@@ -1367,6 +1367,18 @@ def create_purchase_invoice():
     if permission_error is not None:
         return permission_error
     payload = _validate_invoice_payload(_json_body())
+    supplier_name = str(payload.get("supplierName") or payload.get("supplier") or "").strip()
+    invoice_number = str(payload.get("invoiceNumber") or "").strip()
+    existing_supplier = Supplier.query.filter_by(organization_id=organization.id, normalized_name=_normalize_name(supplier_name)).first()
+    if existing_supplier and invoice_number:
+        duplicate = PurchaseInvoice.query.filter_by(
+            organization_id=organization.id,
+            location_id=location.id,
+            supplier_id=existing_supplier.id,
+            invoice_number=invoice_number,
+        ).first()
+        if duplicate is not None:
+            return json_error("A purchase with this supplier and invoice number already exists.", 409, errors={"duplicateInvoiceId": str(duplicate.id), "duplicateStatus": duplicate.status})
     invoice, supplier = _invoice_from_payload(organization.id, location.id, payload)
     invoice.created_by_user_id = current_user.id
     invoice.updated_by_user_id = current_user.id
@@ -1398,6 +1410,44 @@ def create_purchase_invoice():
     )
     response_payload = serialize_purchase_invoice(invoice)
     return _commit_json(response_payload, 201)
+
+
+@bp.get("/api/pilot/purchases/invoices/<int:invoice_id>/preview")
+@login_required
+def purchase_invoice_preview(invoice_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
+    invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
+    if invoice is None:
+        return json_error("Purchase invoice not found.", 404)
+    rows = []
+    for line in invoice.lines:
+        item = InventoryItem.query.filter_by(id=line.inventory_item_id, organization_id=organization.id, location_id=location.id).first() if line.inventory_item_id else None
+        quantity_delta = (Decimal(line.quantity) * Decimal(line.conversion_factor)).quantize(QTY)
+        before = Decimal(item.current_on_hand) if item else None
+        receipt_cost = _receipt_stock_unit_cost(line) if item else None
+        after = (before + quantity_delta).quantize(QTY) if before is not None else None
+        average_after = weighted_average_inventory_cost(before, item.average_unit_cost, quantity_delta, receipt_cost) if item and receipt_cost is not None else None
+        rows.append({
+            "lineId": line.id,
+            "description": line.description,
+            "inventoryItemId": line.inventory_item_id,
+            "inventoryItemName": item.name if item else None,
+            "unit": item.stock_unit if item else line.inventory_unit,
+            "quantityDelta": decimal_to_float(quantity_delta),
+            "currentOnHand": decimal_to_float(before),
+            "afterOnHand": decimal_to_float(after),
+            "averageUnitCostBefore": decimal_to_float(item.average_unit_cost) if item else None,
+            "averageUnitCostAfter": decimal_to_float(average_after),
+            "receiptUnitCost": decimal_to_float(receipt_cost),
+            "priceChangePercent": decimal_to_float(line.price_change_percent),
+        })
+    return jsonify({"invoiceId": invoice.id, "reviewSummary": serialize_purchase_invoice(invoice)["reviewSummary"], "lines": rows, "mutatesInventory": False}), 200
 
 
 @bp.patch("/api/pilot/purchases/invoices/<int:invoice_id>")

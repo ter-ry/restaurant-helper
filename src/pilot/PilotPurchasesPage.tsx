@@ -14,6 +14,7 @@ import {
   fetchPilotInventory,
   fetchPilotPurchases,
   fetchPilotPurchaseInvoice,
+  fetchPilotPurchasePreview,
   receivePilotPurchaseInvoice,
   uploadPilotInvoiceOcr,
   updatePilotPurchaseInvoice,
@@ -304,6 +305,7 @@ export function PilotPurchasesPage() {
   const [lastOcrFile, setLastOcrFile] = useState<File | null>(null);
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [ocrPreviewType, setOcrPreviewType] = useState<"image" | "pdf" | null>(null);
+  const [purchasePreview, setPurchasePreview] = useState<Awaited<ReturnType<typeof fetchPilotPurchasePreview>> | null>(null);
   const [ocrPreviewName, setOcrPreviewName] = useState("");
   const [newInventoryItem, setNewInventoryItem] = useState<{ name: string; stockUnit: string; category: string }>({ name: "", stockUnit: "each", category: "Other" });
   const [inventoryItemTargetIndex, setInventoryItemTargetIndex] = useState<number | null>(null);
@@ -381,6 +383,9 @@ export function PilotPurchasesPage() {
     if (selectedInvoice) {
       setDraft(invoiceToDraft(selectedInvoice));
       setCorrectionNote("");
+      if (selectedInvoice.id) {
+        void fetchPilotPurchasePreview(selectedInvoice.id).then(setPurchasePreview).catch(() => setPurchasePreview(null));
+      }
     }
   }, [selectedInvoice]);
 
@@ -396,6 +401,15 @@ export function PilotPurchasesPage() {
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
+  const localReviewSummary = useMemo(() => {
+    const blockers = draft.lineItems.flatMap((line) => [
+      !line.inventoryItemId ? `Map ${line.description || "this item"} to inventory.` : null,
+      line.quantity <= 0 ? `Enter a quantity for ${line.description || "this item"}.` : null,
+      line.conversionFactor <= 0 ? `Enter a valid conversion for ${line.description || "this item"}.` : null,
+    ].filter(Boolean) as string[]);
+    const warnings = draft.lineItems.filter((line) => line.needsReview || line.confidence < 0.8).map((line) => `Review ${line.description || "this item"} before receiving.`);
+    return { state: blockers.length ? "BLOCKING" : warnings.length ? "REVIEW" : readyToReceive ? "READY" : "REVIEW", blockers, warnings };
+  }, [draft.lineItems, readyToReceive]);
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
     const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
@@ -998,6 +1012,12 @@ export function PilotPurchasesPage() {
 
               {showReview ? (
                 <section className="order-3 space-y-4" data-testid="purchase-review-panel">
+                  <div className="rounded-2xl border border-line bg-white p-4" data-testid="purchase-review-summary">
+                    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink">Review summary</p><p className="mt-1 text-xs text-muted">Every line must reconcile before inventory is changed.</p></div><Badge tone={localReviewSummary.state === "READY" ? "success" : localReviewSummary.state === "BLOCKING" ? "danger" : "warning"}>{localReviewSummary.state}</Badge></div>
+                    {localReviewSummary.blockers.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-danger">{localReviewSummary.blockers.map((message) => <li key={message}>{message}</li>)}</ul> : null}
+                    {localReviewSummary.warnings.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">{localReviewSummary.warnings.map((message) => <li key={message}>{message}</li>)}</ul> : null}
+                    {purchasePreview?.lines?.length ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-line text-muted"><th className="px-2 py-2">Inventory impact</th><th className="px-2 py-2">Before</th><th className="px-2 py-2">Receiving</th><th className="px-2 py-2">After</th><th className="px-2 py-2">Cost after</th></tr></thead><tbody>{purchasePreview.lines.map((line) => <tr key={line.lineId} className="border-b border-line"><td className="px-2 py-2 font-semibold text-ink">{line.inventoryItemName || line.description}</td><td className="px-2 py-2">{line.currentOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">+{line.quantityDelta} {line.unit}</td><td className="px-2 py-2">{line.afterOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">{line.averageUnitCostAfter == null ? "—" : formatMoney(line.averageUnitCostAfter)}</td></tr>)}</tbody></table><p className="mt-2 text-xs text-muted">Preview only. Inventory changes occur only after you receive.</p></div> : null}
+                  </div>
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
                     <p className="text-sm font-semibold text-ink">Review and send</p>
                     <p className="mt-1 text-sm text-muted">

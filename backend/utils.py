@@ -222,7 +222,7 @@ def serialize_supplier_item_mapping(mapping: SupplierItemMapping) -> dict[str, A
 
 
 def serialize_purchase_invoice_line(line: PurchaseInvoiceLine) -> dict[str, Any]:
-    return {
+    payload = {
         "id": line.id,
         "invoiceId": line.invoice_id,
         "supplierName": line.invoice.supplier.name if line.invoice and line.invoice.supplier else "",
@@ -246,6 +246,38 @@ def serialize_purchase_invoice_line(line: PurchaseInvoiceLine) -> dict[str, Any]
         "note": line.note,
         "createdAt": isoformat(line.created_at),
         "updatedAt": isoformat(line.updated_at),
+    }
+    payload["normalizedQuantity"] = decimal_to_float(line.quantity * line.conversion_factor) or 0
+    payload["normalizedUnitCost"] = decimal_to_float((line.unit_price / line.conversion_factor) if line.conversion_factor else line.unit_price) or 0
+    payload["reviewState"] = "blocked" if not line.inventory_item_id or line.quantity <= 0 or line.conversion_factor <= 0 else "review" if line.needs_review or (line.confidence and line.confidence < Decimal("0.8")) else "ready"
+    return payload
+
+
+def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    for line in invoice.lines:
+        if not line.inventory_item_id:
+            blockers.append(f"Map {line.description} to an inventory item.")
+        if line.quantity <= 0:
+            blockers.append(f"Enter a quantity for {line.description}.")
+        if line.conversion_factor <= 0:
+            blockers.append(f"Enter a valid unit conversion for {line.description}.")
+        if line.needs_review or (line.confidence and line.confidence < Decimal("0.8")):
+            warnings.append(f"Review {line.description} before receiving.")
+        if line.price_change_percent is not None and abs(line.price_change_percent) >= Decimal("5"):
+            warnings.append(f"Price changed {line.price_change_percent}% for {line.description}.")
+    calculated_total = sum((line.line_total for line in invoice.lines), Decimal("0")) + (invoice.tax or Decimal("0"))
+    if abs(calculated_total - (invoice.total_amount or Decimal("0"))) > Decimal("0.02"):
+        blockers.append("Invoice total does not reconcile with the line items and tax.")
+    state = "BLOCKING" if blockers else "REVIEW" if warnings or invoice.status == "Draft" else "READY"
+    return {
+        "state": state,
+        "blockers": blockers,
+        "warnings": warnings,
+        "readyToReceive": state == "READY" and invoice.status not in {"Completed", "Corrected"},
+        "mappedLineCount": sum(1 for line in invoice.lines if line.inventory_item_id),
+        "lineCount": len(invoice.lines),
     }
 
 
@@ -274,6 +306,7 @@ def serialize_purchase_invoice(invoice: PurchaseInvoice) -> dict[str, Any]:
         "updatedByUserId": invoice.updated_by_user_id,
         "postedAt": isoformat(invoice.posted_at),
         "lineItems": [serialize_purchase_invoice_line(line) for line in invoice.lines],
+        "reviewSummary": purchase_review_summary(invoice),
         "createdAt": isoformat(invoice.created_at),
         "updatedAt": isoformat(invoice.updated_at),
     }

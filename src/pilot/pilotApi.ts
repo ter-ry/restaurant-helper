@@ -366,6 +366,18 @@ export interface PilotInvoiceLine {
   note: string;
   createdAt: string | null;
   updatedAt: string | null;
+  normalizedQuantity?: number;
+  normalizedUnitCost?: number;
+  reviewState?: "ready" | "review" | "blocked";
+}
+
+export interface PilotPurchaseReviewSummary {
+  state: "READY" | "REVIEW" | "BLOCKING" | string;
+  blockers: string[];
+  warnings: string[];
+  readyToReceive: boolean;
+  mappedLineCount: number;
+  lineCount: number;
 }
 
 export interface PilotPurchaseInvoice {
@@ -394,6 +406,27 @@ export interface PilotPurchaseInvoice {
   lineItems: PilotInvoiceLine[];
   createdAt: string | null;
   updatedAt: string | null;
+  reviewSummary?: PilotPurchaseReviewSummary;
+}
+
+export interface PilotPurchasePreview {
+  invoiceId: number;
+  reviewSummary: PilotPurchaseReviewSummary;
+  mutatesInventory: boolean;
+  lines: Array<{
+    lineId: number;
+    description: string;
+    inventoryItemId: number | null;
+    inventoryItemName: string | null;
+    unit: string;
+    quantityDelta: number;
+    currentOnHand: number | null;
+    afterOnHand: number | null;
+    averageUnitCostBefore: number | null;
+    averageUnitCostAfter: number | null;
+    receiptUnitCost: number | null;
+    priceChangePercent: number | null;
+  }>;
 }
 
 export interface PilotInventoryMovement {
@@ -992,6 +1025,10 @@ export async function uploadPilotInvoiceOcr(file: File) {
 
 export async function fetchPilotPurchaseInvoice(invoiceId: number) {
   return requestJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}`);
+}
+
+export async function fetchPilotPurchasePreview(invoiceId: number) {
+  return requestJson<PilotPurchasePreview>(`/api/pilot/purchases/invoices/${invoiceId}/preview`);
 }
 
 export async function createPilotPurchaseInvoice(payload: Record<string, unknown>) {
