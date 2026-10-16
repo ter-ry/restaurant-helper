@@ -849,7 +849,7 @@ export function PilotPurchasesPage() {
             {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>{error}</p>{duplicateInvoiceId ? <Button variant="ghost" type="button" className="mt-2" onClick={() => void openInvoice(duplicateInvoiceId)}>Open existing purchase</Button> : null}</div> : null}
             <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
               <SectionHeader
-                title={draft.id ? `Review ${draft.invoiceNumber}` : "New purchase"}
+                title={draft.id ? `Review ${draft.invoiceNumber}` : draft.extractionStatus === "ocr" ? (draft.invoiceNumber ? `Review ${draft.invoiceNumber}` : "Review invoice") : "New purchase"}
                 description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Enter supplier details and invoice lines together, then receive when the mapping is ready."}
               />
               <div className="flex flex-col items-start gap-2 sm:items-end">
