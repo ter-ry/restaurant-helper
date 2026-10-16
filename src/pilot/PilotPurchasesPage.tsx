@@ -292,6 +292,7 @@ export function PilotPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -546,6 +547,14 @@ export function PilotPurchasesPage() {
     }
   };
 
+  const requestReceive = () => {
+    if (!authoritativeReadyToReceive) {
+      setError("Map every invoice item before receiving this purchase.");
+      return;
+    }
+    setReceiveConfirmOpen(true);
+  };
+
   const receiveInvoice = async () => {
     if (!draft.id) {
       return;
@@ -566,6 +575,7 @@ export function PilotPurchasesPage() {
       setShowReview(false);
       setEditorOpen(false);
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
+      setReceiveConfirmOpen(false);
       navigate(location.pathname, { replace: true });
       await load(null);
     } catch (err) {
@@ -777,11 +787,10 @@ export function PilotPurchasesPage() {
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { label: "This month spend", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
-              { label: "Uploads needing review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
-              { label: "Price changes flagged", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
-              { label: "Mapped items", value: hasLoaded ? formatNumber(data?.summary?.mappedItems ?? 0) : "—" },
-              { label: "Export ready", value: hasLoaded ? formatNumber(data?.summary?.exportReady ?? 0) : "—" },
+              { label: "Needs review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
+              { label: "Material price changes", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
+              { label: "Received this month", value: hasLoaded ? formatNumber(data?.summary?.receivedThisMonth ?? 0) : "—" },
+              { label: "Spend this month", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
             ].map((metric) => (
               <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
                 <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
@@ -853,7 +862,7 @@ export function PilotPurchasesPage() {
                     <Button variant="secondary" disabled={saving || ocrLoading} type="button" onClick={() => void saveDraft("Draft")}>
                       {saving ? "Saving..." : "Save draft"}
                     </Button>
-                    <Button disabled={saving || ocrLoading || !authoritativeReadyToReceive} type="button" onClick={() => void saveAndReceive()}>
+                    <Button disabled={saving || ocrLoading || !authoritativeReadyToReceive} type="button" onClick={requestReceive}>
                       {saving ? "Receiving..." : "Save & receive"}
                     </Button>
                     <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
@@ -994,6 +1003,7 @@ export function PilotPurchasesPage() {
                                 {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} {line.inventoryUnit || "inventory units"}
                               </Badge>
                               <Badge tone="neutral">{line.confidence >= 0.9 ? "High confidence" : line.confidence >= 0.7 ? "Medium confidence" : "Low confidence"}</Badge>
+                              {line.inventoryItemId && mappingHints.has(`${normalizeLookup(draft.supplierName)}|${normalizeLookup(line.description)}`) ? <Badge tone="neutral">Matched from previous invoices</Badge> : null}
                             </div>
                             <div className="flex items-center justify-between gap-3 text-sm md:justify-end">
                               <label className="inline-flex items-center gap-2 text-muted">
@@ -1015,7 +1025,9 @@ export function PilotPurchasesPage() {
                           </div>
                           {line.inventoryItemId ? (
                             <p className="mt-3 text-xs leading-5 text-muted">
-                              Inventory unit {line.inventoryUnit || "each"} will receive {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} units from this item.
+                              {line.purchaseUnit !== line.inventoryUnit
+                                ? `${formatNumber(line.quantity)} ${line.purchaseUnit} × ${formatNumber(line.conversionFactor)} ${line.inventoryUnit || "each"}/${line.purchaseUnit} → ${formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} ${line.inventoryUnit || "each"}`
+                                : `Adds ${formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} ${line.inventoryUnit || "each"} to inventory.`}
                             </p>
                           ) : null}
                         </div>
@@ -1052,7 +1064,7 @@ export function PilotPurchasesPage() {
                         disabled={saving || !draft.id || finalizedStatus || !authoritativeReadyToReceive}
                         icon={<CheckCircle2 className="h-4 w-4" />}
                         type="button"
-                        onClick={() => void receiveInvoice()}
+                        onClick={requestReceive}
                       >
                         Receive into inventory
                       </Button>
@@ -1148,6 +1160,15 @@ export function PilotPurchasesPage() {
           </Card>
         </div>
 
+      {receiveConfirmOpen ? (
+        <Modal title="Confirm receipt" size="small" onClose={() => { if (!saving) setReceiveConfirmOpen(false); }}>
+          <p className="text-sm text-muted">This will update inventory for {draft.lineItems.length} mapped invoice {draft.lineItems.length === 1 ? "line" : "lines"} and record the receipt. Confirm only after reviewing the quantities and costs.</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="secondary" type="button" disabled={saving} onClick={() => setReceiveConfirmOpen(false)}>Cancel</Button>
+            <Button type="button" disabled={saving} onClick={() => void (draft.id ? receiveInvoice() : saveAndReceive())}>{saving ? "Receiving…" : "Confirm receive"}</Button>
+          </div>
+        </Modal>
+      ) : null}
       <PurchaseInvoiceDetailsModal invoice={detailInvoice} onClose={closeDetailInvoice} />
     </div>
   );

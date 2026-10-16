@@ -1122,6 +1122,8 @@ def purchases():
     purchase_lines = [line for invoice in invoices for line in invoice.lines]
     price_changes = [change for change in _price_changes_for_location(location.id, invoices=invoices) if change["status"] in {"Increased", "Decreased"}]
     ready_for_csv = sum(1 for invoice in invoices if invoice.status == "Completed")
+    first_of_month = _now().date().replace(day=1)
+    received_this_month = sum(1 for invoice in invoices if invoice.status == "Completed" and invoice.invoice_date >= first_of_month)
     needs_review = sum(1 for invoice in invoices if invoice.status == "Draft")
     needs_mapping = sum(1 for invoice in invoices if invoice.status == "Ready" and any(not line.inventory_item_id for line in invoice.lines))
     return (
@@ -1132,7 +1134,8 @@ def purchases():
                 "purchaseLines": [serialize_purchase_invoice_line(line) for line in purchase_lines],
                 "priceChanges": price_changes,
                 "summary": {
-                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if invoice.invoice_date >= (_now().date().replace(day=1))), 2),
+                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if invoice.invoice_date >= first_of_month), 2),
+                    "receivedThisMonth": received_this_month,
                     "uploadsNeedingReview": needs_review,
                     "priceChangesFlagged": len(price_changes),
                     "mappedItems": sum(1 for line in purchase_lines if line.inventory_item_id),
