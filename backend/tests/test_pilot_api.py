@@ -874,6 +874,10 @@ def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costi
     )
     assert second_invoice.status_code == 201
     second_invoice_body = second_invoice.get_json()
+    second_preview = client.get(f"/api/pilot/purchases/invoices/{second_invoice_body['id']}/preview")
+    assert second_preview.status_code == 200
+    second_preview_line = second_preview.get_json()["lines"][0]
+    assert second_preview_line["quantityDelta"] == pytest.approx(1.0)
     second_receive = client.post(f"/api/pilot/purchases/invoices/{second_invoice_body['id']}/receive", headers=csrf_headers(client))
     assert second_receive.status_code == 200
 
@@ -883,6 +887,8 @@ def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costi
         assert float(item_after_second.current_on_hand) == 101
         assert float(item_after_second.latest_purchase_price) == pytest.approx(8.0)
         assert float(item_after_second.average_unit_cost) == pytest.approx((100 * 7 + 8) / 101, rel=1e-6)
+        assert float(item_after_second.current_on_hand) == pytest.approx(second_preview_line["afterOnHand"])
+        assert float(item_after_second.average_unit_cost) == pytest.approx(second_preview_line["averageUnitCostAfter"], rel=1e-6)
 
     inventory_value_after_second_receipt = client.get("/api/pilot/inventory").get_json()["summary"]["inventoryValue"]
     assert inventory_value_after_second_receipt - inventory_value_before_second_receipt == pytest.approx(8.0)
