@@ -298,6 +298,8 @@ export function PilotPurchasesPage() {
   const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [purchaseFilter, setPurchaseFilter] = useState<"all" | "review" | "received" | "corrected">("all");
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierSaving, setSupplierSaving] = useState(false);
@@ -396,6 +398,12 @@ export function PilotPurchasesPage() {
   };
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
+  const filteredInvoices = useMemo(() => (data?.invoices ?? []).filter((invoice) => {
+    const query = purchaseSearch.trim().toLowerCase();
+    const matchesQuery = !query || `${invoice.supplier?.name ?? ""} ${invoice.invoiceNumber}`.toLowerCase().includes(query);
+    const matchesFilter = purchaseFilter === "all" || (purchaseFilter === "review" && invoice.status !== "Completed" && invoice.status !== "Corrected") || (purchaseFilter === "received" && invoice.status === "Completed") || (purchaseFilter === "corrected" && invoice.status === "Corrected");
+    return matchesQuery && matchesFilter;
+  }), [data?.invoices, purchaseFilter, purchaseSearch]);
   const initialLoading = loading && !hasLoaded;
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const purchaseStatusLabel = finalizedStatus ? "Read-only purchase" : draft.id ? "Editable draft" : "New purchase";
@@ -409,8 +417,10 @@ export function PilotPurchasesPage() {
       line.conversionFactor <= 0 ? `Enter a valid conversion for ${line.description || "this item"}.` : null,
     ].filter(Boolean) as string[]);
     const warnings = draft.lineItems.filter((line) => line.needsReview || line.confidence < 0.8).map((line) => `Review ${line.description || "this item"} before receiving.`);
-    return { state: blockers.length ? "BLOCKING" : warnings.length ? "REVIEW" : readyToReceive ? "READY" : "REVIEW", blockers, warnings };
-  }, [draft.lineItems, readyToReceive]);
+    return { state: blockers.length ? "BLOCKING" : warnings.length ? "REVIEW" : "READY", blockers, warnings };
+  }, [draft.lineItems]);
+  const reviewSummary = draft.id && selectedInvoice?.reviewSummary ? selectedInvoice.reviewSummary : localReviewSummary;
+  const authoritativeReadyToReceive = draft.id && selectedInvoice?.reviewSummary ? selectedInvoice.reviewSummary.readyToReceive : readyToReceive;
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
     const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
@@ -489,7 +499,7 @@ export function PilotPurchasesPage() {
   };
 
   const saveAndReceive = async () => {
-    if (!readyToReceive) {
+    if (!authoritativeReadyToReceive) {
       setError("Map every invoice item before receiving this purchase.");
       return;
     }
@@ -540,7 +550,7 @@ export function PilotPurchasesPage() {
     if (!draft.id) {
       return;
     }
-    if (!readyToReceive) {
+    if (!authoritativeReadyToReceive) {
       setError("Map every invoice item before receiving this purchase.");
       return;
     }
@@ -832,18 +842,18 @@ export function PilotPurchasesPage() {
                 description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Enter supplier details and invoice lines together, then receive when the mapping is ready."}
               />
               <div className="flex flex-col items-start gap-2 sm:items-end">
-                <Badge tone={finalizedStatus ? "neutral" : readyToReceive ? "success" : "warning"}>{purchaseStatusLabel}</Badge>
+                <Badge tone={finalizedStatus ? "neutral" : authoritativeReadyToReceive ? "success" : "warning"}>{purchaseStatusLabel}</Badge>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge tone="neutral">{mappedLineCount} mapped</Badge>
                   <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{unresolvedLineCount} need confirmation</Badge>
-                  <Badge tone={readyToReceive ? "success" : "neutral"}>{readyToReceive ? "Ready to receive" : "Not ready to receive"}</Badge>
+                  <Badge tone={authoritativeReadyToReceive ? "success" : "neutral"}>{authoritativeReadyToReceive ? "Ready to receive" : "Not ready to receive"}</Badge>
                 </div>
                 {!finalizedStatus ? (
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button variant="secondary" disabled={saving || ocrLoading} type="button" onClick={() => void saveDraft("Draft")}>
                       {saving ? "Saving..." : "Save draft"}
                     </Button>
-                    <Button disabled={saving || ocrLoading || !readyToReceive} type="button" onClick={() => void saveAndReceive()}>
+                    <Button disabled={saving || ocrLoading || !authoritativeReadyToReceive} type="button" onClick={() => void saveAndReceive()}>
                       {saving ? "Receiving..." : "Save & receive"}
                     </Button>
                     <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
@@ -875,7 +885,7 @@ export function PilotPurchasesPage() {
               </div>
             ) : null}
 
-            {!finalizedStatus && draft.id && !readyToReceive ? (
+            {!finalizedStatus && draft.id && !authoritativeReadyToReceive ? (
               <div className="mt-4 flex justify-end">
                 <Button variant="secondary" type="button" onClick={() => setShowReview(true)}>
                   Review before saving
@@ -1018,9 +1028,10 @@ export function PilotPurchasesPage() {
               {showReview ? (
                 <section className="order-3 space-y-4" data-testid="purchase-review-panel">
                   <div className="rounded-2xl border border-line bg-white p-4" data-testid="purchase-review-summary">
-                    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink">Review summary</p><p className="mt-1 text-xs text-muted">Every line must reconcile before inventory is changed.</p></div><Badge tone={localReviewSummary.state === "READY" ? "success" : localReviewSummary.state === "BLOCKING" ? "danger" : "warning"}>{localReviewSummary.state}</Badge></div>
-                    {localReviewSummary.blockers.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-danger">{localReviewSummary.blockers.map((message) => <li key={message}>{message}</li>)}</ul> : null}
-                    {localReviewSummary.warnings.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">{localReviewSummary.warnings.map((message) => <li key={message}>{message}</li>)}</ul> : null}
+                    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink">Review summary</p><p className="mt-1 text-xs text-muted">Every line must reconcile before inventory is changed.</p></div><Badge tone={reviewSummary.state === "READY" ? "success" : reviewSummary.state === "BLOCKING" ? "danger" : "warning"}>{reviewSummary.state}</Badge></div>
+                    {reviewSummary.blockers.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-danger">{reviewSummary.blockers.map((message) => <li key={message}>{message}</li>)}</ul> : null}
+                    {reviewSummary.warnings.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">{reviewSummary.warnings.map((message) => <li key={message}>{message}</li>)}</ul> : null}
+                    {"reconciliation" in reviewSummary && reviewSummary.reconciliation ? (() => { const reconciliation = reviewSummary.reconciliation as NonNullable<PilotPurchaseInvoice["reviewSummary"]>["reconciliation"]; return <p className="mt-3 text-sm font-semibold text-ink">{reconciliation?.status === "matched" ? "Totals match" : `Totals differ by ${formatMoney(Math.abs(reconciliation?.totalDifference ?? 0))}`}</p>; })() : null}
                     {purchasePreview?.lines?.length ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-line text-muted"><th className="px-2 py-2">Inventory impact</th><th className="px-2 py-2">Before</th><th className="px-2 py-2">Receiving</th><th className="px-2 py-2">After</th><th className="px-2 py-2">Cost after</th></tr></thead><tbody>{purchasePreview.lines.map((line) => <tr key={line.lineId} className="border-b border-line"><td className="px-2 py-2 font-semibold text-ink">{line.inventoryItemName || line.description}</td><td className="px-2 py-2">{line.currentOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">+{line.quantityDelta} {line.unit}</td><td className="px-2 py-2">{line.afterOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">{line.averageUnitCostAfter == null ? "—" : formatMoney(line.averageUnitCostAfter)}</td></tr>)}</tbody></table><p className="mt-2 text-xs text-muted">Preview only. Inventory changes occur only after you receive.</p></div> : null}
                   </div>
                   <div className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -1038,7 +1049,7 @@ export function PilotPurchasesPage() {
                         Save ready
                       </Button>
                       <Button
-                        disabled={saving || !draft.id || finalizedStatus || !readyToReceive}
+                        disabled={saving || !draft.id || finalizedStatus || !authoritativeReadyToReceive}
                         icon={<CheckCircle2 className="h-4 w-4" />}
                         type="button"
                         onClick={() => void receiveInvoice()}
@@ -1091,13 +1102,18 @@ export function PilotPurchasesPage() {
       </Modal> : null}
 
       <div className="pilot-purchases-layout grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="xl:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <input className="input max-w-xl" aria-label="Search purchases" placeholder="Search supplier or invoice number" value={purchaseSearch} onChange={(event) => setPurchaseSearch(event.target.value)} />
+          <select className="input w-full sm:w-44" aria-label="Purchase filter" value={purchaseFilter} onChange={(event) => setPurchaseFilter(event.target.value as typeof purchaseFilter)}><option value="all">All purchases</option><option value="review">Needs review</option><option value="received">Received</option><option value="corrected">Corrected</option></select>
+        </div>
         <Card className="w-full p-4" data-testid="purchase-review-card">
           <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
-            {(data?.invoices ?? []).filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
+            {filteredInvoices.filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
               <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className="purchase-review-item w-full rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-3 text-left transition hover:shadow-soft">
-                <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></div>
-                <div className="mt-2 flex items-center justify-between text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} items</span></div>
+                <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={invoice.reviewSummary?.state === "BLOCKING" ? "danger" : invoice.reviewSummary?.state === "READY" ? "success" : "warning"}>{invoice.reviewSummary?.state === "READY" ? "Ready to receive" : invoice.reviewSummary?.state === "BLOCKING" ? "Needs attention" : "Review"}</Badge></div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
+                {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
               </button>
             ))}
             {initialLoading ? <p className="text-sm text-muted">Loading review items…</p> : null}
@@ -1107,7 +1123,7 @@ export function PilotPurchasesPage() {
         <Card className="w-full p-4" data-testid="purchase-history-card">
           <SectionHeader title="Purchase history" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
-              {invoiceRows.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
+              {filteredInvoices.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
                 <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>

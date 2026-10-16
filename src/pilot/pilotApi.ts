@@ -378,6 +378,17 @@ export interface PilotPurchaseReviewSummary {
   readyToReceive: boolean;
   mappedLineCount: number;
   lineCount: number;
+  autoResolvedCount?: number;
+  items?: Array<{ code: string; severity: "review" | "blocking"; lineId?: number; message: string }>;
+  reconciliation?: {
+    lineSubtotal: number;
+    invoiceSubtotal: number;
+    subtotalDifference: number;
+    subtotalPlusTax: number;
+    invoiceTotal: number;
+    totalDifference: number;
+    status: "matched" | "mismatch" | string;
+  };
 }
 
 export interface PilotPurchaseInvoice {

@@ -254,30 +254,47 @@ def serialize_purchase_invoice_line(line: PurchaseInvoiceLine) -> dict[str, Any]
 
 
 def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
-    blockers: list[str] = []
-    warnings: list[str] = []
+    items: list[dict[str, Any]] = []
     for line in invoice.lines:
         if not line.inventory_item_id:
-            blockers.append(f"Map {line.description} to an inventory item.")
+            items.append({"code": "unmapped_line", "severity": "blocking", "lineId": line.id, "message": f"Map {line.description} to an inventory item."})
         if line.quantity <= 0:
-            blockers.append(f"Enter a quantity for {line.description}.")
+            items.append({"code": "invalid_quantity", "severity": "blocking", "lineId": line.id, "message": f"Enter a quantity for {line.description}."})
         if line.conversion_factor <= 0:
-            blockers.append(f"Enter a valid unit conversion for {line.description}.")
+            items.append({"code": "invalid_conversion", "severity": "blocking", "lineId": line.id, "message": f"Enter a valid unit conversion for {line.description}."})
         if line.needs_review or (line.confidence and line.confidence < Decimal("0.8")):
-            warnings.append(f"Review {line.description} before receiving.")
+            items.append({"code": "low_confidence", "severity": "review", "lineId": line.id, "message": f"Review {line.description} before receiving."})
         if line.price_change_percent is not None and abs(line.price_change_percent) >= Decimal("5"):
-            warnings.append(f"Price changed {line.price_change_percent}% for {line.description}.")
-    calculated_total = sum((line.line_total for line in invoice.lines), Decimal("0")) + (invoice.tax or Decimal("0"))
-    if abs(calculated_total - (invoice.total_amount or Decimal("0"))) > Decimal("0.02"):
-        blockers.append("Invoice total does not reconcile with the line items and tax.")
+            items.append({"code": "material_price_change", "severity": "review", "lineId": line.id, "message": f"Price changed {line.price_change_percent}% for {line.description}."})
+    line_subtotal = sum((line.line_total for line in invoice.lines), Decimal("0"))
+    subtotal_difference = line_subtotal - (invoice.subtotal or Decimal("0"))
+    subtotal_plus_tax = (invoice.subtotal or Decimal("0")) + (invoice.tax or Decimal("0"))
+    total_difference = subtotal_plus_tax - (invoice.total_amount or Decimal("0"))
+    if abs(subtotal_difference) > Decimal("0.01"):
+        items.append({"code": "line_subtotal_mismatch", "severity": "blocking", "message": f"Line items differ from invoice subtotal by ${abs(subtotal_difference):.2f}."})
+    if abs(total_difference) > Decimal("0.01"):
+        items.append({"code": "invoice_total_mismatch", "severity": "blocking", "message": f"Subtotal plus tax differs from invoice total by ${abs(total_difference):.2f}."})
+    blockers = [item for item in items if item["severity"] == "blocking"]
+    warnings = [item for item in items if item["severity"] == "review"]
     state = "BLOCKING" if blockers else "REVIEW" if warnings or invoice.status == "Draft" else "READY"
     return {
         "state": state,
-        "blockers": blockers,
-        "warnings": warnings,
+        "items": items,
+        "blockers": [item["message"] for item in blockers],
+        "warnings": [item["message"] for item in warnings],
         "readyToReceive": state == "READY" and invoice.status not in {"Completed", "Corrected"},
         "mappedLineCount": sum(1 for line in invoice.lines if line.inventory_item_id),
         "lineCount": len(invoice.lines),
+        "autoResolvedCount": sum(1 for line in invoice.lines if line.inventory_item_id and not line.needs_review),
+        "reconciliation": {
+            "lineSubtotal": decimal_to_float(line_subtotal),
+            "invoiceSubtotal": decimal_to_float(invoice.subtotal),
+            "subtotalDifference": decimal_to_float(subtotal_difference),
+            "subtotalPlusTax": decimal_to_float(subtotal_plus_tax),
+            "invoiceTotal": decimal_to_float(invoice.total_amount),
+            "totalDifference": decimal_to_float(total_difference),
+            "status": "matched" if not blockers or all(item["code"] not in {"line_subtotal_mismatch", "invoice_total_mismatch"} for item in items) else "mismatch",
+        },
     }
 
 

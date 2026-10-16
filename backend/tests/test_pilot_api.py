@@ -19,6 +19,7 @@ from backend.seed import (
 )
 from backend.tests.conftest import make_operational_organization
 from backend.tests.test_square_integration import connect_square
+from backend.utils import purchase_review_summary
 
 
 def login(client):
@@ -97,6 +98,31 @@ def test_purchase_invoice_exposes_review_summary_and_read_only_inventory_preview
     body = preview.get_json()
     assert body["invoiceId"] == invoice["id"]
     assert body["mutatesInventory"] is False
+
+
+def test_purchase_review_summary_reconciles_subtotal_and_total_separately():
+    class Line:
+        id = 1
+        description = "Milk"
+        inventory_item_id = 1
+        quantity = Decimal("2")
+        conversion_factor = Decimal("1")
+        needs_review = False
+        confidence = Decimal("0.99")
+        price_change_percent = None
+        line_total = Decimal("10.00")
+
+    class Invoice:
+        lines = [Line()]
+        subtotal = Decimal("11.00")
+        tax = Decimal("1.00")
+        total_amount = Decimal("12.00")
+        status = "Ready"
+
+    summary = purchase_review_summary(Invoice())
+    assert {item["code"] for item in summary["items"]} == {"line_subtotal_mismatch"}
+    assert summary["reconciliation"]["subtotalDifference"] == -1.0
+    assert summary["reconciliation"]["totalDifference"] == 0.0
 
 
 def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, client):
