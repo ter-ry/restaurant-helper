@@ -2595,7 +2595,7 @@ test("OCR upload opens the structured review workspace with source evidence", as
   await (await chooser).setFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("mock invoice") });
   await expect(page.getByText("Original document")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Review EX-105/ })).toBeVisible();
-  await page.getByRole("button", { name: "Review before saving" }).click();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   await expect(page.getByText("Mystery greens")).toBeVisible();
   await expect(page.getByText("Needs mapping")).toBeVisible();
 });
