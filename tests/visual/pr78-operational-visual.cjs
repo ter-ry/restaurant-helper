@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const baseUrl = process.env.FLOWTALLY_VISUAL_BASE_URL || "http://127.0.0.1:43124";
-const artifactDir = path.resolve(__dirname, "../../review-artifacts/pr132");
+const artifactDir = path.resolve(__dirname, "../../review-artifacts/true-monochrome");
 const organization = { id: 101, name: "Harbour Kitchen", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE" };
 const location = { id: 201, organizationId: 101, name: "Queen Street", timezone: "America/Toronto", city: "Toronto", region: "ON" };
 const supplier = { id: 301, organizationId: 101, name: "Lakeview Produce", normalizedName: "lakeview produce", categoryFocus: "Produce", contactName: "Maya Chen", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true };
