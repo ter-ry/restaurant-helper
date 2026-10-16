@@ -823,6 +823,30 @@ async function installMockApi(page: Page, state: MockState) {
       return jsonResponse(route, invoice);
     }
 
+    if (purchaseFlow && path.startsWith("/api/pilot/purchases/invoices/") && path.endsWith("/preview") && method === "GET") {
+      const invoiceId = Number(path.split("/").at(-2));
+      const invoice = purchaseFlow.invoices.find((entry) => entry.id === invoiceId) ?? purchaseFlow.invoices[0];
+      return jsonResponse(route, {
+        invoiceId: invoice?.id ?? invoiceId,
+        reviewSummary: { state: "READY", blockers: [], warnings: [], readyToReceive: true, mappedLineCount: invoice?.lineItems?.length ?? 0, lineCount: invoice?.lineItems?.length ?? 0 },
+        mutatesInventory: false,
+        lines: (invoice?.lineItems ?? []).map((line: any) => ({
+          lineId: line.id,
+          description: line.description,
+          inventoryItemId: line.inventoryItemId,
+          inventoryItemName: line.description,
+          unit: line.inventoryUnit ?? "each",
+          quantityDelta: Number(line.quantity ?? 0) * Number(line.conversionFactor ?? 1),
+          currentOnHand: 0,
+          afterOnHand: Number(line.quantity ?? 0) * Number(line.conversionFactor ?? 1),
+          averageUnitCostBefore: null,
+          averageUnitCostAfter: Number(line.unitPrice ?? 0),
+          receiptUnitCost: Number(line.unitPrice ?? 0),
+          priceChangePercent: null,
+        })),
+      });
+    }
+
     if (purchaseFlow && path.startsWith("/api/pilot/purchases/invoices/") && method === "PATCH") {
       const invoiceId = Number(path.split("/").at(-1));
       const index = purchaseFlow.invoices.findIndex((entry) => entry.id === invoiceId);
