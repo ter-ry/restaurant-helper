@@ -336,7 +336,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .bg-brand-50 {
-  background: rgba(20, 184, 166, 0.13) !important;
+  background: var(--pilot-surface-muted) !important;
 }
 
 /* Operational feedback surfaces stay dark while retaining semantic colour. */
@@ -353,19 +353,19 @@ textarea.input {
 .pilot-theme-dark .daily-close-progress-card[data-state="complete"],
 .pilot-theme-dark .daily-close-no-blockers {
   background: var(--pilot-surface-muted) !important;
-  border-color: rgba(45, 212, 191, 0.38) !important;
+  border-color: var(--pilot-line-strong) !important;
 }
 
 .pilot-theme-dark .bg-rose-50,
 .pilot-theme-dark .bg-red-50 {
   background: var(--pilot-surface-muted) !important;
-  border-color: rgba(248, 113, 113, 0.38) !important;
+  border-color: var(--pilot-line-strong) !important;
 }
 
 .pilot-theme-dark .pilot-reorder-badge {
-  background: #fbbf24 !important;
-  color: #111827 !important;
-  box-shadow: 0 0 0 2px var(--pilot-bg), inset 0 0 0 1px rgba(17, 24, 39, 0.18);
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-warning) !important;
+  box-shadow: inset 0 0 0 1px var(--pilot-line-strong);
 }
 
 .pilot-theme-dark .pilot-usage-shell {
@@ -420,15 +420,15 @@ textarea.input {
 }
 
 .pilot-theme .pilot-reorder-badge {
-  background: #e2e8f0 !important;
-  color: #0f172a !important;
-  box-shadow: none;
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-warning) !important;
+  box-shadow: inset 0 0 0 1px var(--pilot-line);
 }
 
 .pilot-theme-dark .pilot-reorder-badge {
-  background: #334155 !important;
-  color: #ffffff !important;
-  box-shadow: inset 0 0 0 1px #64748b;
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-warning) !important;
+  box-shadow: inset 0 0 0 1px var(--pilot-line-strong);
 }
 
 .pilot-theme-dark .text-amber-900,
@@ -510,8 +510,8 @@ textarea.input {
 }
 
 .pilot-theme-dark .pilot-tab-badge {
-  background: rgba(20, 184, 166, 0.14) !important;
-  color: #6ee7d8 !important;
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-muted) !important;
 }
 
 .pilot-theme-dark .pilot-tabs [role="tab"][aria-selected="true"] {
@@ -525,7 +525,7 @@ textarea.input {
 }
 
 .pilot-theme-dark .hover\:bg-brand-50:hover {
-  background: rgba(20, 184, 166, 0.13) !important;
+  background: var(--pilot-surface-muted) !important;
 }
 
 .pilot-theme-dark .disabled\:bg-slate-100:disabled {
@@ -1335,46 +1335,42 @@ textarea.input {
 /* Platform operational design system: shared semantic surfaces used by the
    authenticated workspace. Marketing styles remain scoped to .landing-dark. */
 .pilot-theme {
-  --pilot-bg: #f3f7fb;
+  --pilot-bg: #ffffff;
   --pilot-surface: #ffffff;
-  --pilot-surface-muted: #edf3f8;
-  --pilot-surface-raised: #f8fbfd;
-  --pilot-line: #d6e1ea;
-  --pilot-line-strong: #c2d1dc;
-  --pilot-text: #10202d;
-  --pilot-muted: #607180;
-  --pilot-accent: #0f766e;
-  --pilot-accent-soft: rgba(13, 148, 136, 0.12);
+  --pilot-surface-muted: #f5f5f5;
+  --pilot-surface-raised: #fafafa;
+  --pilot-line: #e5e5e5;
+  --pilot-line-strong: #d9d9d9;
+  --pilot-text: #111111;
+  --pilot-muted: #666666;
+  --pilot-accent: #111111;
+  --pilot-accent-soft: rgba(0, 0, 0, 0.06);
   --pilot-danger: #b42318;
-  --pilot-shadow: 0 18px 48px rgba(25, 52, 71, 0.08);
-  --pilot-focus: rgba(13, 148, 136, 0.42);
+  --pilot-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
+  --pilot-focus: #555555;
   background: var(--pilot-bg);
   color: var(--pilot-text);
 }
 
 .pilot-theme-dark {
-  --pilot-bg: #071019;
-  --pilot-surface: #0d1822;
-  --pilot-surface-muted: #122331;
-  --pilot-surface-raised: #162a39;
-  --pilot-line: #223847;
-  --pilot-line-strong: #365263;
-  --pilot-text: #eaf2f7;
-  --pilot-muted: #91a9b7;
-  --pilot-accent: #53dbc6;
-  --pilot-accent-soft: rgba(83, 219, 198, 0.14);
+  --pilot-bg: #000000;
+  --pilot-surface: #050505;
+  --pilot-surface-muted: #0d0d0d;
+  --pilot-surface-raised: #111111;
+  --pilot-line: #222222;
+  --pilot-line-strong: #2a2a2a;
+  --pilot-text: #f5f5f5;
+  --pilot-muted: #a3a3a3;
+  --pilot-accent: #f5f5f5;
+  --pilot-accent-soft: rgba(255, 255, 255, 0.08);
   --pilot-danger: #ff9b9b;
   --pilot-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
-  --pilot-focus: rgba(83, 219, 198, 0.52);
+  --pilot-focus: #d4d4d4;
 }
 
 .pilot-shell {
   min-height: 100dvh;
-  background:
-    radial-gradient(circle at 78% -10%, rgba(37, 99, 235, 0.18), transparent 38rem),
-    radial-gradient(circle at 8% 8%, rgba(13, 148, 136, 0.12), transparent 30rem),
-    radial-gradient(circle at 72% 82%, rgba(30, 64, 175, 0.08), transparent 34rem),
-    var(--pilot-bg);
+  background: var(--pilot-bg);
 }
 
 .pilot-shell > div { background: transparent; }
@@ -1388,8 +1384,7 @@ textarea.input {
 
 .pilot-theme .pilot-nav-item { color: var(--pilot-muted); }
 .pilot-theme .pilot-nav-item:hover { color: var(--pilot-text); background: var(--pilot-surface-muted); }
-.pilot-theme .pilot-nav-item[aria-current="page"] { color: var(--pilot-accent); background: var(--pilot-accent-soft); box-shadow: inset 3px 0 0 var(--pilot-accent); }
-.pilot-theme-dark .pilot-nav-item[aria-current="page"] { color: #baf8ed; }
+.pilot-theme .pilot-nav-item[aria-current="page"] { color: var(--pilot-text); background: var(--pilot-surface-muted); box-shadow: inset 3px 0 0 var(--pilot-line-strong); }
 
 .pilot-page-header,
 .pilot-theme .surface-panel,
@@ -1404,12 +1399,11 @@ textarea.input {
 .pilot-theme-dark .pilot-metric-card { background: var(--pilot-surface-raised) !important; }
 
 .pilot-theme .pilot-button { border-radius: 0.6rem; box-shadow: none; transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
-.pilot-theme .pilot-button-primary { background: var(--pilot-accent) !important; color: #ffffff !important; box-shadow: 0 8px 20px rgba(13, 148, 136, 0.22); }
-.pilot-theme .pilot-button-primary:hover { background: #0b625d !important; }
-.pilot-theme-dark .pilot-button-primary { color: #061312 !important; }
-.pilot-theme .pilot-button-primary:active { transform: translateY(1px); box-shadow: 0 4px 12px rgba(13, 148, 136, 0.18); }
+.pilot-theme .pilot-button-primary { background: var(--pilot-accent) !important; color: var(--pilot-bg) !important; box-shadow: none; }
+.pilot-theme .pilot-button-primary:hover { background: var(--pilot-muted) !important; }
+.pilot-theme .pilot-button-primary:active { transform: translateY(1px); box-shadow: none; }
 .pilot-theme .pilot-button-secondary { background: var(--pilot-surface) !important; color: var(--pilot-text) !important; border-color: var(--pilot-line-strong) !important; }
-.pilot-theme .pilot-button-secondary:hover { background: var(--pilot-surface-muted) !important; border-color: var(--pilot-accent) !important; }
+.pilot-theme .pilot-button-secondary:hover { background: var(--pilot-surface-muted) !important; border-color: var(--pilot-line-strong) !important; }
 .pilot-theme .pilot-button-ghost:hover { background: var(--pilot-surface-muted) !important; }
 .pilot-theme .pilot-button:disabled { opacity: 0.54; box-shadow: none; transform: none; }
 
@@ -1417,7 +1411,7 @@ textarea.input {
 .pilot-theme .pilot-table-header { background: var(--pilot-surface-muted) !important; color: var(--pilot-muted) !important; }
 .pilot-theme .pilot-table-header th { border-color: var(--pilot-line) !important; }
 .pilot-theme .pilot-table-row { background: var(--pilot-surface) !important; }
-.pilot-theme .pilot-table-row:hover { background: color-mix(in srgb, var(--pilot-accent-soft) 42%, var(--pilot-surface)) !important; }
+.pilot-theme .pilot-table-row:hover { background: color-mix(in srgb, var(--pilot-surface-muted) 72%, var(--pilot-surface)) !important; }
 .pilot-theme .pilot-table td { color: var(--pilot-text); border-color: var(--pilot-line) !important; }
 .pilot-theme .pilot-table th { border-color: var(--pilot-line) !important; }
 .pilot-theme .pilot-table th[aria-sort] { white-space: nowrap; }
@@ -1426,10 +1420,10 @@ textarea.input {
 
 .pilot-theme .input { background: var(--pilot-surface-raised); color: var(--pilot-text); border-color: var(--pilot-line); }
 .pilot-theme .input::placeholder { color: var(--pilot-muted); }
-.pilot-theme .input:focus { border-color: var(--pilot-accent); box-shadow: 0 0 0 3px var(--pilot-focus); outline: 0; }
+.pilot-theme .input:focus { border-color: var(--pilot-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent); outline: 0; }
 .pilot-theme-dark .input { background: var(--pilot-surface-raised) !important; }
 
-.pilot-modal-backdrop { background: rgba(2, 8, 15, 0.72) !important; backdrop-filter: blur(5px); }
+.pilot-modal-backdrop { background: rgba(0, 0, 0, 0.72) !important; backdrop-filter: blur(5px); }
 .pilot-modal { background: var(--pilot-surface) !important; border: 1px solid var(--pilot-line); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.36); }
 .pilot-modal-header { background: var(--pilot-surface) !important; border-color: var(--pilot-line) !important; }
 
@@ -1444,12 +1438,7 @@ textarea.input {
 }
 
 @media (max-width: 639px) {
-  .pilot-shell {
-    background:
-      radial-gradient(circle at 50% -8%, rgba(37, 99, 235, 0.16), transparent 22rem),
-      radial-gradient(circle at 0% 38%, rgba(13, 148, 136, 0.1), transparent 18rem),
-      var(--pilot-bg);
-  }
+  .pilot-shell { background: var(--pilot-bg); }
   .pilot-main { padding-inline: 0.75rem; }
   .pilot-page-header { border-radius: 0.75rem; }
   .pilot-inventory-toolbar { padding: 0.65rem !important; }
@@ -1471,7 +1460,7 @@ textarea.input {
 .pilot-inventory-table-surface .rounded-xl.border { border-color: color-mix(in srgb, var(--pilot-line) 78%, transparent) !important; }
 .pilot-inventory-table-surface table thead { box-shadow: inset 0 -1px 0 var(--pilot-line); }
 .pilot-inventory-table-surface table tbody tr { transition: background-color 150ms ease; }
-.pilot-inventory-table-surface table tbody tr:hover { background: color-mix(in srgb, var(--pilot-accent-soft) 36%, var(--pilot-surface)) !important; }
+.pilot-inventory-table-surface table tbody tr:hover { background: color-mix(in srgb, var(--pilot-surface-muted) 72%, var(--pilot-surface)) !important; }
 .pilot-movement-card { border-color: color-mix(in srgb, var(--pilot-line) 74%, transparent) !important; background: color-mix(in srgb, var(--pilot-surface-muted) 74%, transparent) !important; }
 .pilot-theme-dark .pilot-inventory-table-surface .bg-white,
 .pilot-theme-dark .pilot-inventory-toolbar.bg-white { background: color-mix(in srgb, var(--pilot-surface) 96%, transparent) !important; }
@@ -1481,17 +1470,17 @@ textarea.input {
 /* Interaction polish: status colour carries meaning; focus and hover only
    communicate position and keyboard location. */
 .pilot-theme {
-  --pilot-focus: rgba(59, 130, 246, 0.34);
-  --pilot-attention-bg: rgba(129, 140, 248, 0.15);
-  --pilot-attention-fg: #4f46a5;
-  --pilot-attention-line: rgba(99, 102, 241, 0.24);
+  --pilot-focus: #555555;
+  --pilot-attention-bg: var(--pilot-surface-muted);
+  --pilot-attention-fg: var(--pilot-warning);
+  --pilot-attention-line: var(--pilot-line-strong);
 }
 
 .pilot-theme-dark {
-  --pilot-focus: rgba(96, 165, 250, 0.42);
-  --pilot-attention-bg: rgba(129, 140, 248, 0.18);
-  --pilot-attention-fg: #c7d2fe;
-  --pilot-attention-line: rgba(129, 140, 248, 0.28);
+  --pilot-focus: #d4d4d4;
+  --pilot-attention-bg: var(--pilot-surface-muted);
+  --pilot-attention-fg: var(--pilot-warning);
+  --pilot-attention-line: var(--pilot-line-strong);
 }
 
 .pilot-theme :is(a, button, input, select, textarea):focus {
@@ -1545,8 +1534,8 @@ textarea.input {
 }
 
 .pilot-theme .pilot-badge-success {
-  background: rgba(13, 148, 136, 0.13) !important;
-  color: var(--pilot-accent) !important;
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-success) !important;
 }
 
 .pilot-theme .pilot-badge-warning,
@@ -1558,12 +1547,12 @@ textarea.input {
 
 .pilot-theme .pilot-badge-danger,
 .pilot-theme .pilot-badge-critical {
-  background: rgba(244, 114, 114, 0.14) !important;
+  background: var(--pilot-surface-muted) !important;
   color: var(--pilot-danger) !important;
-  border-color: rgba(244, 114, 114, 0.24);
+  border-color: var(--pilot-line-strong);
 }
 
-.pilot-theme-dark .pilot-badge-success { color: #8cebdd !important; }
+.pilot-theme-dark .pilot-badge-success { color: var(--pilot-success) !important; }
 .pilot-theme-dark .pilot-badge-danger,
 .pilot-theme-dark .pilot-badge-critical { color: #fda4af !important; }
 
