@@ -31,6 +31,27 @@ function purchaseQuantityStep(unit: string) {
   return WHOLE_PURCHASE_UNITS.has(unit.trim().toLowerCase()) ? "1" : "0.01";
 }
 
+function provisionalLineCost(line: PilotReorderPlanLine) {
+  if (line.estimatedUnitCost == null || !Number.isFinite(Number(line.orderQuantity))) {
+    return null;
+  }
+  return Math.round(Number(line.orderQuantity) * Number(line.estimatedUnitCost) * 100) / 100;
+}
+
+function planEstimateLabel(plan: PilotReorderPlan) {
+  return plan.estimateStatus === "partial" ? `${formatMoney(plan.includedCost)} known-cost subtotal` : `${formatMoney(plan.includedCost)} estimated total`;
+}
+
+function editableDraftSnapshot(plan: PilotReorderPlan | null) {
+  if (!plan) return null;
+  return JSON.stringify({
+    id: plan.id,
+    name: plan.name,
+    notes: plan.notes,
+    lines: plan.lines.map((line) => ({ id: line.id, orderQuantity: line.orderQuantity, excluded: line.excluded, notes: line.notes, supplierNameSnapshot: line.supplierName })),
+  });
+}
+
 export function PilotReorderPlanPage() {
   const location = useLocation();
   const [currentSuggestions, setCurrentSuggestions] = useState<PilotReorderSuggestion[]>([]);
@@ -41,6 +62,7 @@ export function PilotReorderPlanPage() {
   const [plans, setPlans] = useState<PilotReorderPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [draft, setDraft] = useState<PilotReorderPlan | null>(null);
+  const [savedDraft, setSavedDraft] = useState<PilotReorderPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -60,7 +82,17 @@ export function PilotReorderPlanPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
-  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean; preserveSelection?: boolean }) => {
+  const draftIsDirty = draft?.status === "Draft" && editableDraftSnapshot(draft) !== editableDraftSnapshot(savedDraft);
+  const adoptDraft = (next: PilotReorderPlan | null) => {
+    setDraft(next);
+    setSavedDraft(next);
+  };
+
+  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean; preserveSelection?: boolean; allowDirty?: boolean }) => {
+    if (draftIsDirty && !options?.allowDirty) {
+      setMessage("Save the draft before refreshing or opening another plan.");
+      return;
+    }
     setLoading(true);
     setError(null);
     if (!options?.preserveMessage) {
@@ -68,7 +100,7 @@ export function PilotReorderPlanPage() {
     }
     if (!options?.preserveSelection) {
       setSelectedPlanId(null);
-      setDraft(null);
+      adoptDraft(null);
     }
 
     try {
@@ -86,10 +118,10 @@ export function PilotReorderPlanPage() {
           : null;
       if (selected) {
         setSelectedPlanId(selected.id);
-        setDraft(selected);
+        adoptDraft(selected);
       } else {
         setSelectedPlanId(null);
-        setDraft(null);
+        adoptDraft(null);
       }
       setHasLoaded(true);
     } catch (err) {
@@ -125,7 +157,7 @@ export function PilotReorderPlanPage() {
   const livePlans = useMemo(() => plans.filter((plan) => plan.status !== "Completed"), [plans]);
   const historyPlans = useMemo(() => plans.filter((plan) => plan.status === "Completed"), [plans]);
   const visiblePlans = workflowTab === "history" ? historyPlans : livePlans;
-  const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0;
+  const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0 && preparedPlanCount === 0;
   const initialLoading = loading && !hasLoaded;
   const sortedSuggestions = useMemo(() => {
     const matchingSuggestions = currentSuggestions.filter((suggestion) => `${suggestion.inventoryItemName} ${suggestion.supplier} ${suggestion.category} ${suggestion.stockStatus}`.toLowerCase().includes(suggestionSearch.trim().toLowerCase()));
@@ -154,6 +186,10 @@ export function PilotReorderPlanPage() {
     if (saving || creating || loading) {
       return;
     }
+    if (draftIsDirty) {
+      setMessage("Save the draft before opening another plan.");
+      return;
+    }
     setSaving(true);
     setPendingAction(null);
     setMessage(null);
@@ -161,7 +197,7 @@ export function PilotReorderPlanPage() {
     try {
       const plan = await fetchPilotReorderPlanDetail(planId);
       setSelectedPlanId(plan.id);
-      setDraft(plan);
+      adoptDraft(plan);
       setMessage(plan.status === "Draft" ? "Draft reorder plan opened." : "Read-only reorder snapshot opened.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open the reorder plan.");
@@ -174,6 +210,10 @@ export function PilotReorderPlanPage() {
     if (creating || saving || loading) {
       return;
     }
+    if (draftIsDirty) {
+      setMessage("Save the draft before starting or reopening another plan.");
+      return;
+    }
     setCreating(true);
     setPendingAction(null);
     setMessage(null);
@@ -182,7 +222,7 @@ export function PilotReorderPlanPage() {
       const plan = await createPilotReorderPlan();
       await load(plan.id, { preserveMessage: true });
       setSelectedPlanId(plan.id);
-      setDraft(plan);
+      adoptDraft(plan);
       setMessage(plan.lineCount ? "Draft reorder plan opened." : "Draft reorder plan created.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a reorder plan.");
@@ -200,7 +240,7 @@ export function PilotReorderPlanPage() {
     try {
       const workingDraft = draft && draft.status === "Draft" ? draft : await createPilotReorderPlan();
       setSelectedPlanId(workingDraft.id);
-      setDraft(workingDraft);
+      adoptDraft(workingDraft);
       setPlans((current) => current.some((plan) => plan.id === workingDraft.id) ? current.map((plan) => plan.id === workingDraft.id ? workingDraft : plan) : [workingDraft, ...current]);
       const additions = items.filter((item) => !workingDraft.lines.some((line) => line.inventoryItemId === item.id));
       if (!additions.length) {
@@ -215,7 +255,7 @@ export function PilotReorderPlanPage() {
           ...additions.map((item) => ({ inventoryItemId: item.id, ...(item.suggestedPurchaseQuantity != null ? { orderQuantity: item.suggestedPurchaseQuantity } : item.suggestedQuantity != null ? { orderQuantity: item.suggestedQuantity } : {}) })),
         ],
       });
-      setDraft(saved);
+      adoptDraft(saved);
       setPlans((current) => current.map((plan) => plan.id === saved.id ? saved : plan));
       setMessage(`${items.length === 1 ? "Item" : "Items"} added to the working order plan.`);
     } catch (err) {
@@ -259,9 +299,9 @@ export function PilotReorderPlanPage() {
           supplierNameSnapshot: line.supplierName,
         })),
       });
-      await load(saved.id, { preserveMessage: true, preserveSelection: true });
+      await load(saved.id, { preserveMessage: true, preserveSelection: true, allowDirty: true });
       setSelectedPlanId(saved.id);
-      setDraft(saved);
+      adoptDraft(saved);
       setMessage(`Saved draft ${saved.name}. It remains editable until you prepare it.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reorder plan.");
@@ -291,9 +331,9 @@ export function PilotReorderPlanPage() {
         })),
       });
       const prepared = await preparePilotReorderPlan(saved.id);
-      await load(prepared.id, { preserveMessage: true });
+      await load(prepared.id, { preserveMessage: true, allowDirty: true });
       setSelectedPlanId(prepared.id);
-      setDraft(prepared);
+      adoptDraft(prepared);
       setMessage(`Prepared reorder plan ${prepared.name}. It is now review-only until completed.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not prepare the reorder plan.");
@@ -315,7 +355,7 @@ export function PilotReorderPlanPage() {
       const completed = await completePilotReorderPlan(draft.id);
       await load(null, { preserveMessage: true });
       setSelectedPlanId(null);
-      setDraft(null);
+      adoptDraft(null);
       setMessage(`Completed reorder plan ${completed.name}. It is now locked in history.`);
       setConfirmCompletion(false);
     } catch (err) {
@@ -330,7 +370,7 @@ export function PilotReorderPlanPage() {
     if (line.excluded) {
       return sum;
     }
-    return sum + Number(line.estimatedLineCost || 0);
+    return sum + Number(provisionalLineCost(line) || 0);
   }, 0) ?? 0;
   const draftExcludedCount = draft?.lines.filter((line) => line.excluded).length ?? 0;
   const unknownPriceCount = draft?.lines.filter((line) => !line.excluded && line.estimatedUnitCost === null).length ?? 0;
@@ -406,7 +446,7 @@ export function PilotReorderPlanPage() {
                     <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.estimateStatus === "partial" ? "warning" : "neutral"}>{planEstimateLabel(plan)}</Badge>
                     <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
                 </div>
@@ -442,7 +482,7 @@ export function PilotReorderPlanPage() {
                     <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.estimateStatus === "partial" ? "warning" : "neutral"}>{planEstimateLabel(plan)}</Badge>
                     <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
@@ -479,27 +519,6 @@ export function PilotReorderPlanPage() {
             </div>
           </Card>
 
-          <Card className="workspace-card">
-            <SectionHeader title="Completed plan history" />
-            <div className="max-h-96 space-y-3 overflow-y-auto pr-1">
-              {historyPlans.map((plan) => (
-                <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{plan.name}</p>
-                      <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
-                    </div>
-                    <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
-                    <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
-                  </div>
-                </div>
-              ))}
-              {!loading && hasLoaded && !historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
-            </div>
-          </Card>
         </div>
       ) : (
         <div className={`${draft ? "order-2" : "order-1"} grid gap-6 xl:grid-cols-[1.18fr_0.82fr]`}>
@@ -599,7 +618,7 @@ export function PilotReorderPlanPage() {
                     <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.estimateStatus === "partial" ? "warning" : "neutral"}>{planEstimateLabel(plan)}</Badge>
                     <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
@@ -782,9 +801,9 @@ export function PilotReorderPlanPage() {
 
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
                           <Badge tone="neutral">Suggested {formatNumber(line.suggestedQuantity)} {line.inventoryUnit}</Badge>
-                          <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.purchaseUnit} per {line.inventoryUnit}</Badge>
-                          <Badge tone={line.estimatedLineCost === null ? "warning" : "success"}>
-                            {line.estimatedLineCost === null ? "Estimate unavailable" : `${formatMoney(line.estimatedLineCost)} estimated`}
+                          <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.inventoryUnit} per {line.purchaseUnit}</Badge>
+                          <Badge tone={provisionalLineCost(line) === null ? "warning" : "success"}>
+                            {provisionalLineCost(line) === null ? "Estimate unavailable" : `${formatMoney(provisionalLineCost(line) ?? 0)} estimated`}
                           </Badge>
                         </div>
                       </div>
