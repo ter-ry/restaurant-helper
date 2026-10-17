@@ -1791,6 +1791,29 @@ def test_reorder_plan_mark_ordered(app, client):
         assert ReorderIntent.query.filter_by(inventory_item_id=item_id, status="Ordered").count() == 1
 
 
+def test_reorder_suggestions_expose_purchase_units_and_unknown_costs(client):
+    login(client)
+    response = client.get("/api/pilot/reorder-plan")
+    assert response.status_code == 200
+    suggestions = response.get_json()["suggestions"]
+    assert suggestions
+    suggestion = suggestions[0]
+    assert suggestion["purchaseUnit"]
+    assert suggestion["conversionFactor"] > 0
+    assert suggestion["suggestedPurchaseQuantity"] >= 0
+    assert suggestion["estimatedCost"] is None or suggestion["estimatedCost"] >= 0
+
+
+def test_reorder_plan_cannot_complete_before_preparation(client):
+    login(client)
+    created = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert created.status_code == 201
+    plan_id = created.get_json()["id"]
+    response = client.post(f"/api/pilot/reorder-plans/{plan_id}/complete", headers=csrf_headers(client))
+    assert response.status_code == 409
+    assert response.get_json()["error"] == "Prepare the reorder plan before completing it."
+
+
 def test_reorder_plan_draft_lifecycle_preserves_snapshots(app, client):
     login(client)
 

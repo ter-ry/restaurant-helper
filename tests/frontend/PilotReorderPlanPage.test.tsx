@@ -274,4 +274,20 @@ describe("PilotReorderPlanPage", () => {
     });
     expect(await screen.findByText("Item added to the working order plan.")).toBeVisible();
   });
+
+  it("completes a prepared snapshot without attempting another update", async () => {
+    const prepared = createPlan("Prepared", 4);
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [prepared], activeDraftPlanId: null });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(prepared);
+    mockApi.completePilotReorderPlan.mockResolvedValue({ ...prepared, status: "Completed" });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Read-only reorder snapshot opened.")).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Complete plan" }));
+    expect(screen.getByRole("dialog", { name: "Complete this reorder plan?" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm completion" }));
+    await waitFor(() => expect(mockApi.completePilotReorderPlan).toHaveBeenCalledWith(4));
+    expect(mockApi.updatePilotReorderPlan).not.toHaveBeenCalled();
+  });
 });

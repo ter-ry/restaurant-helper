@@ -221,9 +221,15 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
     suggested = max(0, round(target - current, 4))
     if suggested <= 0:
         return None
-    estimated_cost = None
-    if item.last_purchase_conversion_factor and item.last_purchase_conversion_factor > 0:
-        estimated_cost = round((Decimal(str(suggested)) / item.last_purchase_conversion_factor * item.latest_purchase_price).quantize(MONEY), 2)
+    conversion_factor = Decimal(item.last_purchase_conversion_factor or 1)
+    purchase_unit = item.last_purchase_unit or item.stock_unit or "each"
+    purchase_quantity = (Decimal(str(suggested)) / conversion_factor).quantize(Decimal("0.01")) if conversion_factor > 0 else None
+    latest_price = Decimal(item.latest_purchase_price or 0)
+    estimated_cost = (
+        round((purchase_quantity * latest_price).quantize(MONEY), 2)
+        if purchase_quantity is not None and latest_price > 0
+        else None
+    )
 
     return {
         "id": item.id,
@@ -237,7 +243,11 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
         "parLevel": decimal_to_float(item.par_level) or 0,
         "suggestedQuantity": suggested,
         "adjustedQuantity": suggested,
-        "latestPurchasePrice": decimal_to_float(item.latest_purchase_price) or 0,
+        "latestPurchasePrice": decimal_to_float(item.latest_purchase_price) if latest_price > 0 else None,
+        "purchaseUnit": purchase_unit,
+        "conversionFactor": decimal_to_float(conversion_factor) or 1,
+        "suggestedPurchaseQuantity": decimal_to_float(purchase_quantity),
+        "estimateStatus": "complete" if estimated_cost is not None else "unknown",
         "estimatedCost": estimated_cost,
         "stockStatus": status,
         "status": "Needs ordering",
@@ -1624,6 +1634,7 @@ def _group_reorder_by_supplier(suggestions: list[dict[str, Any]]):
             "lines": lines,
             "itemCount": len(lines),
             "estimatedOrderTotal": round(sum(float(line["estimatedCost"] or 0) for line in lines), 2),
+            "estimateStatus": "complete" if all(line.get("estimatedCost") is not None for line in lines) else "partial",
         }
         for supplier, lines in sorted(groups.items(), key=lambda entry: entry[0].lower())
     ]
@@ -2470,7 +2481,7 @@ def _create_reorder_plan_from_current(organization_id: int, location_id: int, *,
                 minimum_quantity_snapshot=item.min_quantity,
                 par_level_snapshot=item.par_level,
                 suggested_quantity_snapshot=Decimal(str(suggestion["suggestedQuantity"])),
-                order_quantity=Decimal(str(suggestion["adjustedQuantity"] or suggestion["suggestedQuantity"])),
+                order_quantity=Decimal(str(suggestion.get("suggestedPurchaseQuantity") or suggestion["suggestedQuantity"])),
                 excluded=False,
                 estimated_unit_cost_snapshot=Decimal(str(suggestion["latestPurchasePrice"])) if suggestion.get("latestPurchasePrice") is not None else None,
                 estimated_line_cost_snapshot=Decimal(str(suggestion["estimatedCost"])) if suggestion.get("estimatedCost") is not None else None,
@@ -2576,6 +2587,8 @@ def update_reorder_plan(plan_id: int):
         return json_error("Reorder plan not found.", 404)
     if plan.status == "Completed":
         return json_error("Completed reorder plans are read-only.", 409)
+    if plan.status == "Prepared":
+        return json_error("Prepared reorder plans are frozen for review.", 409)
     payload = _json_body()
     if "name" in payload:
         plan.name = str(payload.get("name") or "").strip() or plan.name
@@ -2594,9 +2607,12 @@ def update_reorder_plan(plan_id: int):
                 purchase_unit = item.last_purchase_unit or item.stock_unit or "each"
                 latest_cost = Decimal(item.latest_purchase_price or 0)
                 suggested_quantity = Decimal(str(suggestion["suggestedQuantity"])) if suggestion else Decimal("0")
-                order_quantity = _to_quantity(line_payload.get("orderQuantity", suggested_quantity), field=f"lines[{index}].orderQuantity", required=False) or suggested_quantity
+                default_order_quantity = (suggested_quantity / conversion_factor).quantize(Decimal("0.01")) if conversion_factor > 0 else suggested_quantity
+                order_quantity = _to_quantity(line_payload.get("orderQuantity", default_order_quantity), field=f"lines[{index}].orderQuantity", required=False) or default_order_quantity
+                if order_quantity < 0:
+                    raise RequestValidationError("Validation failed.", {f"lines[{index}].orderQuantity": "Order quantity cannot be negative."})
                 estimated_line_cost = None
-                if conversion_factor > 0 and latest_cost >= 0:
+                if conversion_factor > 0 and latest_cost > 0:
                     estimated_line_cost = (order_quantity / conversion_factor * latest_cost).quantize(MONEY)
                 line = ReorderPlanLine(
                     plan_id=plan.id,
@@ -2615,7 +2631,7 @@ def update_reorder_plan(plan_id: int):
                     suggested_quantity_snapshot=suggested_quantity,
                     order_quantity=order_quantity,
                     excluded=bool(line_payload.get("excluded", False)),
-                    estimated_unit_cost_snapshot=latest_cost,
+                    estimated_unit_cost_snapshot=latest_cost if latest_cost > 0 else None,
                     estimated_line_cost_snapshot=estimated_line_cost,
                     notes=str(line_payload.get("notes") or "").strip(),
                 )
@@ -2626,6 +2642,8 @@ def update_reorder_plan(plan_id: int):
                 continue
             if "orderQuantity" in line_payload:
                 line.order_quantity = _to_quantity(line_payload.get("orderQuantity"), field=f"lines[{index}].orderQuantity", required=False)
+                if line.order_quantity < 0:
+                    raise RequestValidationError("Validation failed.", {f"lines[{index}].orderQuantity": "Order quantity cannot be negative."})
             if "excluded" in line_payload:
                 line.excluded = bool(line_payload.get("excluded"))
             if "notes" in line_payload:
@@ -2696,6 +2714,8 @@ def complete_reorder_plan(plan_id: int):
         return json_error("This reorder plan has already been completed.", 409)
     if not any(not line.excluded for line in plan.lines):
         return json_error("Add at least one item to the order before completing this plan.", 400)
+    if plan.status != "Prepared":
+        return json_error("Prepare the reorder plan before completing it.", 409)
     plan.status = "Completed"
     plan.completed_at = _now()
     plan.completed_by_user_id = current_user.id

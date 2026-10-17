@@ -531,7 +531,11 @@ export interface PilotReorderSuggestion {
   parLevel: number;
   suggestedQuantity: number;
   adjustedQuantity: number;
-  latestPurchasePrice: number;
+  latestPurchasePrice: number | null;
+  purchaseUnit?: string;
+  conversionFactor?: number;
+  suggestedPurchaseQuantity?: number | null;
+  estimateStatus?: "complete" | "unknown" | "partial";
   estimatedCost: number | null;
   stockStatus: string;
   status: string;
@@ -659,6 +663,7 @@ export interface PilotInventoryResponse {
       lines: PilotReorderSuggestion[];
       itemCount: number;
       estimatedOrderTotal: number;
+      estimateStatus?: "complete" | "partial";
     }>;
   };
   summary: Record<string, number>;
