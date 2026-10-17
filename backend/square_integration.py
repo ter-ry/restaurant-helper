@@ -1996,8 +1996,18 @@ def _last_square_order_activity_at(connection: SquareConnection, square_location
             payload = order_event.raw_payload_json or {}
             data = payload.get("data") if isinstance(payload, dict) else {}
             obj = data.get("object") if isinstance(data, dict) else {}
-            event_location_id = obj.get("location_id") or obj.get("locationId") if isinstance(obj, dict) else None
-            if event_location_id and str(event_location_id) not in square_location_ids:
+            event_location_id = (obj.get("location_id") or obj.get("locationId")) if isinstance(obj, dict) else None
+            if not event_location_id:
+                order_id = (obj.get("id") if isinstance(obj, dict) else None) or (data.get("id") if isinstance(data, dict) else None)
+                if order_id:
+                    persisted_order = SquareOrder.query.filter_by(
+                        square_connection_id=connection.id,
+                        square_order_id=str(order_id),
+                    ).first()
+                    event_location_id = persisted_order.square_location_id if persisted_order is not None else None
+            # A partial webhook without a resolvable persisted order cannot
+            # prove freshness for any particular mapped location.
+            if not event_location_id or str(event_location_id) not in square_location_ids:
                 continue
         event_time = _utc_datetime(order_event.processed_at)
         if event_time is not None and (latest is None or event_time > latest):

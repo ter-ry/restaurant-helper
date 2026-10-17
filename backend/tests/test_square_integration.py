@@ -1756,6 +1756,7 @@ def test_order_webhook_is_sales_freshness_even_when_general_sync_is_old(app, mon
             event_type="order.updated",
             status="processed",
             processed_at=now,
+            raw_payload_json={"type": "order.updated", "data": {"object": {"id": "ORDER-FULL", "location_id": "LOC-WEBHOOK"}}},
         ))
         db.session.commit()
         calls: list[dict[str, object]] = []
@@ -1770,6 +1771,82 @@ def test_order_webhook_is_sales_freshness_even_when_general_sync_is_old(app, mon
         assert freshness["state"] == "current"
         assert freshness["refreshed"] is False
         assert calls == []
+
+
+def test_partial_order_webhook_freshness_resolves_persisted_location_per_mapping(app, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Partial locations {uuid4().hex[:6]}", location_name="Kitchen A")
+        location_a = RestaurantLocation.query.filter_by(organization_id=organization.id).one()
+        location_b = RestaurantLocation(organization_id=organization.id, name="Kitchen B", timezone="America/Toronto")
+        db.session.add(location_b)
+        db.session.flush()
+        now = datetime.now(timezone.utc)
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="production",
+            square_merchant_id="merchant-partial-locations",
+            status="connected",
+            access_token_ciphertext="token-marker",
+            last_sync_at=now - timedelta(minutes=10),
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location_a = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-A", name="POS A", status="active")
+        square_location_b = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-B", name="POS B", status="active")
+        db.session.add_all([square_location_a, square_location_b])
+        db.session.flush()
+        db.session.add_all([
+            SquareLocationMapping(square_location_id=square_location_a.id, restaurant_location_id=location_a.id),
+            SquareLocationMapping(square_location_id=square_location_b.id, restaurant_location_id=location_b.id),
+            SquareOrder(
+                square_connection_id=connection.id,
+                square_order_id="ORDER-A",
+                square_location_id="LOC-A",
+                restaurant_location_id=location_a.id,
+                order_state="COMPLETED",
+                currency="CAD",
+                gross_amount=Decimal("18.00"),
+                net_amount=Decimal("18.00"),
+                ordered_at=now,
+            ),
+            SquareWebhookEvent(
+                square_connection_id=connection.id,
+                event_id="partial-order-a",
+                event_type="order.updated",
+                status="processed",
+                processed_at=now,
+                raw_payload_json={"type": "order.updated", "data": {"object": {"id": "ORDER-A"}}},
+            ),
+        ])
+        db.session.commit()
+        calls: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            "backend.square_integration.sync_square_orders_for_range",
+            lambda *args, **kwargs: calls.append(kwargs) or {"job": {"status": "completed"}},
+        )
+
+        location_a_freshness = ensure_square_orders_fresh(
+            organization,
+            connection,
+            start_at=now - timedelta(hours=1),
+            end_at=now,
+            restaurant_location_id=location_a.id,
+        )
+        assert location_a_freshness["state"] == "current"
+        assert location_a_freshness["refreshed"] is False
+        assert calls == []
+
+        location_b_freshness = ensure_square_orders_fresh(
+            organization,
+            connection,
+            start_at=now - timedelta(hours=1),
+            end_at=now,
+            restaurant_location_id=location_b.id,
+        )
+        assert location_b_freshness["state"] == "current"
+        assert location_b_freshness["refreshed"] is True
+        assert calls and calls[0]["location_ids"] == ["LOC-B"]
 
 
 def test_running_order_reconciliation_is_reported_without_duplicate_provider_call(app, monkeypatch):
