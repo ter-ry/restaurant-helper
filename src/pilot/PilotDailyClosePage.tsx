@@ -10,7 +10,6 @@ import {
   fetchPilotDailyClose,
   finalizePilotDailyClose,
   openPilotDailyClose,
-  syncPilotDailyCloseSales,
   updatePilotDailyClose,
   type PilotDailyCloseResponse,
   type CashReconciliation,
@@ -59,7 +58,7 @@ export function PilotDailyClosePage() {
   const [data, setData] = useState<PilotDailyCloseResponse | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<"open" | "notes" | "finalize" | "sync-sales" | null>(null);
+  const [saving, setSaving] = useState<"open" | "notes" | "finalize" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [countedCash, setCountedCash] = useState("");
@@ -169,33 +168,13 @@ export function PilotDailyClosePage() {
     }
   };
 
-  const syncSales = async () => {
-    if (!currentSession || !canSyncSales) {
-      return;
-    }
-    setSaving("sync-sales");
-    setError(null);
-    setMessage(null);
-    try {
-      const response = await syncPilotDailyCloseSales(currentSession.id, { businessDate: selectedBusinessDate || currentSession.businessDate });
-      setData(response);
-      setNotes(response.session?.notes ?? notes);
-      setSelectedBusinessDate(response.businessDate);
-      setMessage(`Synced Square sales for ${formatDate(response.businessDate)}.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not sync Square sales.");
-    } finally {
-      setSaving(null);
-    }
-  };
-
   const selectedLocation = locationOptions.find((entry) => entry.id === selectedLocationId) ?? currentLocation ?? null;
   const squareStatus = String(snapshot?.square?.squareStatus ?? "Not connected");
   const squareSynced = Boolean(snapshot?.square?.squareSynced);
   const locationMapped = Boolean(snapshot?.square?.locationMapped);
   const squareConnected = squareStatus.toLowerCase() === "connected";
+  const squareFreshness = snapshot?.square?.freshness as { state?: string } | undefined;
   const completed = currentSession?.status === "COMPLETED";
-  const canSyncSales = Boolean(currentSession && !completed && squareConnected && locationMapped);
   const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
   const expectedCash = Number.isFinite(Number(cashReconciliation.expectedCash)) ? Number(cashReconciliation.expectedCash) : null;
   const isCashTakingsMode = cashReconciliation.mode === "payments";
@@ -296,12 +275,6 @@ export function PilotDailyClosePage() {
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {currentSession && !completed ? (
             <>
-              {canSyncSales ? (
-                <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving !== null} onClick={() => void syncSales()}>
-                  <RefreshCw className="h-4 w-4" />
-                  {saving === "sync-sales" ? "Syncing..." : "Sync sales"}
-                </button>
-              ) : null}
               <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving !== null} onClick={() => void finalizeClose()}>
                 <Lock className="h-4 w-4" />
                 Complete close
@@ -346,6 +319,11 @@ export function PilotDailyClosePage() {
                   </Badge>
                 ) : null}
               </div>
+              {squareFreshness?.state === "temporarily_unavailable" ? (
+                <p className="text-sm text-muted">Square is temporarily unavailable. This close is showing the last known sales information.</p>
+              ) : squareFreshness?.state === "stale" ? (
+                <p className="text-sm text-muted">Square sales are waiting for an update. Flowtally will reconcile them automatically when a secure connection is available.</p>
+              ) : null}
 
               <div>
                 <div className="rounded-3xl border border-line bg-slate-50 p-4">

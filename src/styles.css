@@ -1612,6 +1612,45 @@ textarea.input {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent);
 }
 
+/* Native controls are rendered by the browser, so their picker glyphs need
+   the same theme context as the field itself.  Keep this scoped to the
+   authenticated workspace: marketing keeps its own visual system. */
+.pilot-theme { color-scheme: light; }
+.pilot-theme-dark { color-scheme: dark; }
+.pilot-theme :is(input[type="date"], input[type="datetime-local"], input[type="time"], input[type="number"], input[type="search"], select) {
+  color-scheme: inherit;
+}
+.pilot-theme-dark :is(input[type="date"], input[type="datetime-local"], input[type="time"])::-webkit-calendar-picker-indicator {
+  filter: invert(1) grayscale(1);
+  opacity: 0.9;
+}
+.pilot-theme :is(input, select, textarea):-webkit-autofill,
+.pilot-theme :is(input, select, textarea):-webkit-autofill:hover,
+.pilot-theme :is(input, select, textarea):-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--pilot-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--pilot-surface) inset;
+  caret-color: var(--pilot-text);
+}
+
+/* Shared controls are deliberately neutral.  Product state may still use a
+   compact badge, but a hover or focus treatment must never introduce colour
+   that changes the meaning of an ordinary action. */
+.pilot-theme .pilot-button-primary:hover {
+  background: var(--pilot-button-hover-bg, var(--pilot-muted)) !important;
+  color: var(--pilot-button-hover-text, var(--pilot-bg)) !important;
+}
+.pilot-theme .pilot-button-ghost:hover {
+  background: var(--pilot-surface-muted) !important;
+  color: var(--pilot-text) !important;
+}
+.pilot-theme :is(button, a):hover[class*="hover:bg-brand"],
+.pilot-theme :is(button, a):hover[class*="hover:bg-slate"] {
+  background-color: var(--pilot-surface-muted) !important;
+}
+.pilot-theme :is(button, a):hover[class*="hover:border-brand"] {
+  border-color: var(--pilot-line-strong) !important;
+}
+
 /* Final neutral operating surfaces: structural density belongs to the page
    family, while component classes keep the rules explicit and maintainable. */
 .pilot-theme {

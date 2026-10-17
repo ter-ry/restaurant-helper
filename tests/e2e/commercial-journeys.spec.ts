@@ -2015,7 +2015,7 @@ test("Square usage keeps mapping review on Square and shows compact variance", a
   await expect(page.getByRole("link", { name: "Review mappings →" })).toHaveAttribute("href", "/app/square");
 });
 
-test("Square sync feeds the daily close and keeps the completed snapshot read-only", async ({ page }) => {
+test("Square reconciliation is automatic for daily close and keeps the completed snapshot read-only", async ({ page }) => {
   const organization = makeOrganization({
     id: 42,
     name: "Pilot Bistro",
@@ -2270,30 +2270,6 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
         createdByUserId: 1,
         createdAt: nowIso(),
         updatedAt: nowIso(),
-        currentSnapshot: baseSnapshot,
-      };
-      await jsonResponse(route, buildResponse());
-      return;
-    }
-
-    if (request.method() === "POST" && /\/api\/pilot\/daily-close\/\d+\/sync-sales$/.test(path)) {
-      activeSession = {
-        ...(activeSession ?? {
-          id: 9,
-          organizationId: organization.id,
-          locationId: location.id,
-          businessDate,
-          status: "DRAFT",
-          summarySnapshot: {},
-          usageSnapshot: {},
-          exceptionsSnapshot: [],
-          notes: "",
-          completedAt: null,
-          completedByUserId: null,
-          createdByUserId: 1,
-          createdAt: nowIso(),
-          updatedAt: nowIso(),
-        }),
         currentSnapshot: syncedSnapshot,
       };
       await jsonResponse(route, buildResponse());
@@ -2318,7 +2294,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
           createdByUserId: 1,
           createdAt: nowIso(),
           updatedAt: nowIso(),
-          currentSnapshot: baseSnapshot,
+          currentSnapshot: syncedSnapshot,
         }),
         notes: body?.notes ?? activeSession?.notes ?? "",
         updatedAt: nowIso(),
@@ -2364,8 +2340,9 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await expect(page.getByText("Ready").first()).toBeVisible();
   await expect(page.getByText("Main Dining Room").first()).toBeVisible();
   await expect(page.getByText("Classic Cheeseburger - Regular")).toBeVisible();
-  await page.getByRole("button", { name: "Sync now" }).click();
-  await expect(page.getByText("Sync now completed.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reconcile Square data" })).toHaveCount(0);
+  await page.getByText("Troubleshooting and recovery").click();
+  await expect(page.getByRole("button", { name: "Reconcile Square data" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recent sync activity" })).toBeVisible();
   await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
 
@@ -2374,12 +2351,10 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
   await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
   await page.getByRole("button", { name: "Start close" }).click();
   await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();
-  await page.getByRole("button", { name: "Sync sales" }).click();
-  await expect(page.getByText("Synced Square sales for")).toBeVisible();
   await expect(page.getByText("Sales snapshot").first()).toBeVisible();
   await expect(page.getByText("Close snapshot")).toHaveCount(0);
   await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
-  await page.getByPlaceholder("Add context for unusual sales, waste, or count discrepancies.").fill("Square sales synced before finalize.");
+  await page.getByPlaceholder("Add context for unusual sales, waste, or count discrepancies.").fill("Square sales refreshed automatically before finalize.");
   await page.getByRole("button", { name: "Save notes" }).click();
   await page.getByRole("button", { name: "Complete close" }).click();
   await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
@@ -2390,7 +2365,7 @@ test("Square sync feeds the daily close and keeps the completed snapshot read-on
 
   await page.getByRole("button", { name: /^Open / }).first().click();
   await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Add context for unusual sales, waste, or count discrepancies." })).toHaveValue("Square sales synced before finalize.");
+  await expect(page.getByRole("textbox", { name: "Add context for unusual sales, waste, or count discrepancies." })).toHaveValue("Square sales refreshed automatically before finalize.");
   await expect(page.getByText("Read only").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Complete close" })).toHaveCount(0);
 });

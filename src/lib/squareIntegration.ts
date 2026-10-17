@@ -309,6 +309,7 @@ export interface SquareConnectionSummary {
   tokenExpiresAt: string | null;
   revokedAt: string | null;
   lastSyncAt: string | null;
+  lastOrderActivityAt?: string | null;
   syncStatus: string;
   syncError: string;
   catalogCount: number;

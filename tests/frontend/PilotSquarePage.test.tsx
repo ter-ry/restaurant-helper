@@ -2,7 +2,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PilotSquarePage, squareConnectionDetail } from "../../src/pilot/PilotSquarePage";
+import { PilotSquarePage, squareConnectionDetail, squareHealthSummary } from "../../src/pilot/PilotSquarePage";
 import type { PilotMenuCostingResponse, PilotSquareConnectionSummary } from "../../src/pilot/pilotApi";
 
 const mockApi = vi.hoisted(() => ({
@@ -258,10 +258,10 @@ describe("PilotSquarePage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Connection and sync" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Connection and health" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Connect Square" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Sync locations" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reconcile Square data" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh locations" })).toBeDisabled();
     expect(screen.getByRole("link", { name: "Usage & Variance" })).toHaveAttribute("href", "/app/square-usage");
     expect(screen.getByText("Location mapping")).toBeVisible();
     expect(screen.getByText("Menu mapping")).toBeVisible();
@@ -279,7 +279,7 @@ describe("PilotSquarePage", () => {
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
 
     expect(await screen.findByText("Simulated Square connection for this public demo; no merchant account is connected.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reconcile Square data" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Connect again" })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Save mapping" })).toHaveLength(2);
@@ -296,6 +296,11 @@ describe("PilotSquarePage", () => {
   it("uses connected-merchant wording outside demo mode", async () => {
     expect(squareConnectionDetail(true, false)).toBe("Connected Square merchant; imported sales are available.");
     expect(squareConnectionDetail(true, true)).toContain("Simulated Square connection");
+    expect(squareHealthSummary(createDisconnectedConnection()).label).toBe("Disconnected");
+    expect(squareHealthSummary({ ...createConnectedConnection(), syncStatus: "error", syncError: "Timed out" }).label).toBe("Temporarily unavailable");
+    expect(squareHealthSummary({ ...createConnectedConnection(), lastSyncAt: new Date().toISOString(), lastOrderActivityAt: null }).label).toBe("Attention");
+    expect(squareHealthSummary({ ...createConnectedConnection(), lastSyncAt: new Date().toISOString(), lastOrderActivityAt: new Date().toISOString() }).label).toBe("Current");
+    expect(squareHealthSummary(createConnectedConnection(), { state: "refreshing" }).label).toBe("Refreshing");
   });
 
   it("supports connected status, sync, and menu/location mapping updates", async () => {
@@ -307,11 +312,13 @@ describe("PilotSquarePage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("button", { name: "Disconnect" })).toBeVisible();
+    await screen.findByText("Connected Square merchant; imported sales are available.");
+    fireEvent.click(screen.getByText("Troubleshooting and recovery"));
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeVisible();
     expect(screen.getByText("Connected Square merchant; imported sales are available.")).toBeVisible();
     expect(screen.queryByText("Simulated Square connection for this public demo; no merchant account is connected.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync now" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Sync locations" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reconcile Square data" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Refresh locations" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Save mapping" })[0]).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Save mapping" })[1]).toBeEnabled();
@@ -353,16 +360,16 @@ describe("PilotSquarePage", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync locations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh locations" }));
     await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("locations-sync completed.")).toBeVisible();
+    expect(await screen.findByText("Location refresh completed.")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reconcile Square data" }));
     await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mockApi.syncPilotSquareCatalog).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockApi.syncPilotSquareOrders).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(3));
-    expect(await screen.findByText("Sync now completed.")).toBeVisible();
+    expect(await screen.findByText("Square reconciliation completed.")).toBeVisible();
   });
 
   it("clears a stale connection error after a successful sync", async () => {
@@ -377,9 +384,10 @@ describe("PilotSquarePage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Square request failed (500)")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
-    expect(await screen.findByText("Sync now completed.")).toBeVisible();
+    expect(await screen.findByText("Last known information remains visible while Flowtally retries.")).toBeVisible();
+    fireEvent.click(screen.getByText("Troubleshooting and recovery"));
+    fireEvent.click(screen.getByRole("button", { name: "Reconcile Square data" }));
+    expect(await screen.findByText("Square reconciliation completed.")).toBeVisible();
     await waitFor(() => expect(screen.queryByText("Square request failed (500)")).not.toBeInTheDocument());
   });
 
