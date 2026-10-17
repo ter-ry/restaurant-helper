@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { Link, useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -260,7 +261,7 @@ export function PilotDailyClosePage() {
             ) : null}
             <label className="block">
               <span className="text-sm font-semibold text-ink">Business date</span>
-              <input
+              <ThemedDateTimeInput
                 className="input mt-1"
                 type="date"
                 value={selectedBusinessDate}

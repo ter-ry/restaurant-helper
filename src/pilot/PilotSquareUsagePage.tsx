@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, RefreshCw } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Card } from "../components/Card";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -149,8 +150,8 @@ export function PilotSquareUsagePage() {
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <label className="block"><span className="text-sm font-semibold text-ink">Location</span><select className="input mt-1" value={selectedLocationId ?? ""} onChange={(event) => setSelectedLocationId(event.target.value ? Number(event.target.value) : null)}><option value="">All locations</option>{locationOptions.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-          <label className="block"><span className="text-sm font-semibold text-ink">Start at</span><input className="input mt-1" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
-          <label className="block"><span className="text-sm font-semibold text-ink">End at</span><input className="input mt-1" type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></label>
+          <label className="block"><span className="text-sm font-semibold text-ink">Start at</span><ThemedDateTimeInput className="input mt-1" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
+          <label className="block"><span className="text-sm font-semibold text-ink">End at</span><ThemedDateTimeInput className="input mt-1" type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></label>
         </div>
         <div className="mt-4 flex justify-end"><button className="inline-flex min-h-10 items-center rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" onClick={applyRange}>Apply</button></div>
       </Card>

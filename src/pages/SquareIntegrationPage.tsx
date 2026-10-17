@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { SupportAccessBanner } from "../components/SupportAccessBanner";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { buildApiUrl } from "../lib/apiBase";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
 import {
@@ -402,11 +403,11 @@ export function SquareIntegrationPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-semibold text-ink">Start at</span>
-              <input className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" type="datetime-local" value={ordersStartAt} onChange={(event) => setOrdersStartAt(event.target.value)} />
+              <ThemedDateTimeInput className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" type="datetime-local" value={ordersStartAt} onChange={(event) => setOrdersStartAt(event.target.value)} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">End at</span>
-              <input className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" type="datetime-local" value={ordersEndAt} onChange={(event) => setOrdersEndAt(event.target.value)} />
+              <ThemedDateTimeInput className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm outline-none" type="datetime-local" value={ordersEndAt} onChange={(event) => setOrdersEndAt(event.target.value)} />
             </label>
           </div>
           <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
