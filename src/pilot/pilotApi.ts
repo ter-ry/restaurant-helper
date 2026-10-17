@@ -583,6 +583,7 @@ export interface PilotReorderPlan {
   supplierCount: number;
   estimatedCost: number;
   includedCost: number;
+  estimateStatus?: "complete" | "partial";
   excludedCount: number;
   lines: PilotReorderPlanLine[];
   createdAt: string | null;

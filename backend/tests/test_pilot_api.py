@@ -1804,6 +1804,172 @@ def test_reorder_suggestions_expose_purchase_units_and_unknown_costs(client):
     assert suggestion["estimatedCost"] is None or suggestion["estimatedCost"] >= 0
 
 
+def test_reorder_conversion_costs_use_purchase_units_and_survive_history(client):
+    login(client)
+    item_name = f"Conversion Test Item {uuid4().hex[:8]}"
+    created_item = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": item_name,
+            "category": "Dry goods",
+            "stockUnit": "kg",
+            "currentOnHand": 0,
+            "minQuantity": 2,
+            "parLevel": 10,
+            "preferredSupplierName": "Conversion Supplier",
+            "latestPurchasePrice": 20,
+            "lastPurchaseUnit": "pack",
+            "lastPurchaseConversionFactor": 5,
+            "averageDailyUsage": 1,
+            "active": True,
+        },
+    )
+    assert created_item.status_code == 201
+    item_id = created_item.get_json()["id"]
+
+    suggestions = client.get("/api/pilot/reorder-plan")
+    assert suggestions.status_code == 200
+    suggestion = next(row for row in suggestions.get_json()["suggestions"] if row["inventoryItemId"] == item_id)
+    assert suggestion["suggestedQuantity"] == 10
+    assert suggestion["suggestedPurchaseQuantity"] == 2
+    assert suggestion["estimatedCost"] == 40
+
+    created_plan = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert created_plan.status_code == 201
+    plan = created_plan.get_json()
+    line = next(row for row in plan["lines"] if row["inventoryItemId"] == item_id)
+    assert line["orderQuantity"] == 2
+    assert line["estimatedLineCost"] == 40
+
+    edited = client.patch(
+        f"/api/pilot/reorder-plans/{plan['id']}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": line["id"], "orderQuantity": 3}]},
+    )
+    assert edited.status_code == 200
+    edited_body = edited.get_json()
+    edited_line = next(row for row in edited_body["lines"] if row["id"] == line["id"])
+    assert edited_line["orderQuantity"] == 3
+    assert edited_line["estimatedLineCost"] == 60
+    known_only = client.patch(
+        f"/api/pilot/reorder-plans/{plan['id']}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": row["id"], "excluded": row["id"] != line["id"]} for row in edited_body["lines"]]},
+    )
+    assert known_only.status_code == 200
+    known_only_body = known_only.get_json()
+    assert known_only_body["estimateStatus"] == "complete"
+
+    unknown_item = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": f"Unknown Price Item {uuid4().hex[:8]}",
+            "category": "Dry goods",
+            "stockUnit": "kg",
+            "currentOnHand": 0,
+            "minQuantity": 1,
+            "parLevel": 2,
+            "lastPurchaseUnit": "kg",
+            "lastPurchaseConversionFactor": 1,
+            "latestPurchasePrice": 0,
+            "active": True,
+        },
+    )
+    assert unknown_item.status_code == 201
+    unknown_item_id = unknown_item.get_json()["id"]
+    with_unknown = client.patch(
+        f"/api/pilot/reorder-plans/{plan['id']}",
+        headers=csrf_headers(client),
+        json={"lines": [{"inventoryItemId": unknown_item_id, "orderQuantity": 1}]},
+    )
+    assert with_unknown.status_code == 200
+    with_unknown_body = with_unknown.get_json()
+    unknown_line = next(row for row in with_unknown_body["lines"] if row["inventoryItemId"] == unknown_item_id)
+    assert with_unknown_body["estimatedCost"] == known_only_body["estimatedCost"]
+    assert with_unknown_body["estimateStatus"] == "partial"
+
+    excluded_unknown = client.patch(
+        f"/api/pilot/reorder-plans/{plan['id']}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": unknown_line["id"], "excluded": True}]},
+    )
+    assert excluded_unknown.status_code == 200
+    excluded_unknown_body = excluded_unknown.get_json()
+    excluded_unknown_line = next(row for row in excluded_unknown_body["lines"] if row["id"] == unknown_line["id"])
+    assert excluded_unknown_line["excluded"] is True
+    assert excluded_unknown_line["estimatedLineCost"] is None
+    assert excluded_unknown_body["estimateStatus"] == "complete"
+    assert excluded_unknown_body["estimatedCost"] == known_only_body["estimatedCost"]
+
+    prepared = client.post(f"/api/pilot/reorder-plans/{plan['id']}/prepare", headers=csrf_headers(client))
+    assert prepared.status_code == 200
+    completed = client.post(f"/api/pilot/reorder-plans/{plan['id']}/complete", headers=csrf_headers(client))
+    assert completed.status_code == 200
+    completed_line = next(row for row in completed.get_json()["lines"] if row["id"] == line["id"])
+    assert completed_line["orderQuantity"] == 3
+    assert completed_line["estimatedLineCost"] == 60
+
+    reopened = client.get(f"/api/pilot/reorder-plans/{plan['id']}")
+    assert reopened.status_code == 200
+    reopened_line = next(row for row in reopened.get_json()["lines"] if row["id"] == line["id"])
+    assert reopened_line["estimatedLineCost"] == 60
+
+
+def test_reorder_quantity_defaults_preserve_zero_and_reject_negative(client):
+    login(client)
+    created_item = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": f"Zero Quantity Item {uuid4().hex[:8]}",
+            "category": "Dry goods",
+            "stockUnit": "kg",
+            "currentOnHand": 0,
+            "minQuantity": 1,
+            "parLevel": 2,
+            "latestPurchasePrice": 10,
+            "lastPurchaseUnit": "kg",
+            "lastPurchaseConversionFactor": 1,
+            "active": True,
+        },
+    )
+    assert created_item.status_code == 201
+    item_id = created_item.get_json()["id"]
+    plan_response = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert plan_response.status_code == 201
+    plan = plan_response.get_json()
+    line = next(row for row in plan["lines"] if row["inventoryItemId"] == item_id)
+
+    zero = client.patch(
+        f"/api/pilot/reorder-plans/{plan['id']}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": line["id"], "orderQuantity": 0}]},
+    )
+    assert zero.status_code == 200
+    zero_line = next(row for row in zero.get_json()["lines"] if row["id"] == line["id"])
+    assert zero_line["orderQuantity"] == 0
+    assert zero_line["estimatedLineCost"] == 0
+
+    negative = client.patch(
+        f"/api/pilot/reorder-plans/{plan['id']}",
+        headers=csrf_headers(client),
+        json={"lines": [{"id": line["id"], "orderQuantity": -1}]},
+    )
+    assert negative.status_code == 400
+
+
+def test_reorder_purchase_quantity_rounds_up_for_small_requirements():
+    from backend.pilot_api import _purchase_quantity_for_stock
+
+    assert _purchase_quantity_for_stock(Decimal("10"), Decimal("1"), "kg") == Decimal("10.00")
+    assert _purchase_quantity_for_stock(Decimal("10"), Decimal("5"), "pack") == Decimal("2")
+    assert _purchase_quantity_for_stock(Decimal("10.0001"), Decimal("12"), "bag") == Decimal("1")
+    assert _purchase_quantity_for_stock(Decimal("0.001"), Decimal("1"), "kg") == Decimal("0.01")
+    assert _purchase_quantity_for_stock(Decimal("0.001"), Decimal("1"), "pack") == Decimal("1")
+
+
 def test_reorder_plan_cannot_complete_before_preparation(client):
     login(client)
     created = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))

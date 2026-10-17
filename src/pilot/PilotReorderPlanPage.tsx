@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { sortRows, type SortDirection } from "../components/DataTable";
 import {
@@ -23,6 +24,12 @@ import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 type LineDraft = PilotReorderPlanLine;
+
+const WHOLE_PURCHASE_UNITS = new Set(["each", "unit", "pack", "case", "bag", "box", "dozen", "head", "bottle", "can", "carton", "crate", "sleeve", "jar"]);
+
+function purchaseQuantityStep(unit: string) {
+  return WHOLE_PURCHASE_UNITS.has(unit.trim().toLowerCase()) ? "1" : "0.01";
+}
 
 export function PilotReorderPlanPage() {
   const location = useLocation();
@@ -326,7 +333,7 @@ export function PilotReorderPlanPage() {
     return sum + Number(line.estimatedLineCost || 0);
   }, 0) ?? 0;
   const draftExcludedCount = draft?.lines.filter((line) => line.excluded).length ?? 0;
-  const unknownPriceCount = draft?.lines.filter((line) => line.estimatedUnitCost === null).length ?? 0;
+  const unknownPriceCount = draft?.lines.filter((line) => !line.excluded && line.estimatedUnitCost === null).length ?? 0;
   const availableItems = inventoryItems.filter((item) => !draft?.lines.some((line) => line.inventoryItemId === item.id) && `${item.name} ${item.category} ${item.preferredSupplierName} ${item.stockUnit}`.toLowerCase().includes(inventorySearch.toLowerCase()));
 
   return (
@@ -666,8 +673,8 @@ export function PilotReorderPlanPage() {
               <Badge tone="neutral">{draft.lineCount} lines</Badge>
               <Badge tone="neutral">{draft.supplierCount} suppliers</Badge>
               <Badge tone={draftExcludedCount > 0 ? "warning" : "neutral"}>{draftExcludedCount} excluded</Badge>
-              <Badge tone={unknownPriceCount > 0 ? "warning" : "success"}>{unknownPriceCount} unknown prices</Badge>
-              <Badge tone="orange">{formatMoney(draftIncludedCost)} estimated cost</Badge>
+              <Badge tone={unknownPriceCount > 0 ? "warning" : "success"}>{unknownPriceCount} unknown included prices</Badge>
+              <Badge tone="orange">{formatMoney(draftIncludedCost)} {draft.estimateStatus === "partial" ? "known-cost subtotal" : "estimated cost"}</Badge>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -736,7 +743,7 @@ export function PilotReorderPlanPage() {
                       <p className="font-semibold text-ink">{supplierName}</p>
                       <p className="text-sm text-muted">{lines.length} items</p>
                     </div>
-                    <Badge tone="neutral">{lines.some((line) => line.estimatedUnitCost === null) ? "Some prices unknown" : "Prices estimated"}</Badge>
+                    <Badge tone="neutral">{lines.some((line) => !line.excluded && line.estimatedUnitCost === null) ? "Some included prices unknown" : "Prices estimated"}</Badge>
                   </div>
 
                   <div className="mt-3 space-y-3">
@@ -758,7 +765,7 @@ export function PilotReorderPlanPage() {
                         <div className="mt-4 grid gap-3 md:grid-cols-4">
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty ({line.purchaseUnit})</span>
-                            <input className={`input mt-1 w-24 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} min="0" step="1" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
+                            <input className={`input mt-1 w-24 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} min="0" step={purchaseQuantityStep(line.purchaseUnit)} type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Exclude</span>
@@ -793,16 +800,13 @@ export function PilotReorderPlanPage() {
         )}
       </Card>
       {confirmCompletion ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmCompletion(false); }}>
-          <div className="w-full max-w-md rounded-2xl border border-line bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="complete-plan-title">
-            <h2 id="complete-plan-title" className="text-lg font-bold text-ink">Complete this reorder plan?</h2>
-            <p className="mt-2 text-sm leading-6 text-muted">This saves the current supplier and quantity snapshot as completed history. It does not receive inventory or place an order.</p>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="secondary" type="button" onClick={() => setConfirmCompletion(false)} disabled={saving}>Cancel</Button>
-              <Button variant="primary" type="button" onClick={() => void completeDraft()} disabled={saving}>{saving ? "Completing..." : "Confirm completion"}</Button>
-            </div>
+        <Modal title="Complete this reorder plan?" size="small" onClose={() => { if (!saving) setConfirmCompletion(false); }}>
+          <p className="text-sm leading-6 text-muted">This saves the current supplier and quantity snapshot as completed history. It does not receive inventory or place an order.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" type="button" onClick={() => setConfirmCompletion(false)} disabled={saving}>Cancel</Button>
+            <Button variant="primary" type="button" onClick={() => void completeDraft()} disabled={saving}>{saving ? "Completing..." : "Confirm completion"}</Button>
           </div>
-        </div>
+        </Modal>
       ) : null}
       </div>
     </div>
