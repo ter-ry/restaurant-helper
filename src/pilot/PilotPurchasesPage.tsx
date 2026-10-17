@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import {
@@ -892,7 +893,7 @@ export function PilotPurchasesPage() {
                   {showSupplierForm ? <div className="mt-2 flex gap-2"><input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} /><Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button></div> : null}
                 </div>
                 <label className="block"><span className="text-sm font-semibold text-ink">Invoice #</span><input aria-label="Invoice number" className="input mt-1" value={draft.invoiceNumber} placeholder="Optional" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} /></label>
-                <label className="block"><span className="text-sm font-semibold text-ink">Date</span><input className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} /></label>
+                <label className="block"><span className="text-sm font-semibold text-ink">Date</span><ThemedDateTimeInput className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} /></label>
                 <div className="text-xs text-muted"><span className="font-semibold text-ink">Status</span><div className="mt-2"><Badge tone={statusTone(draft.status)}>{draft.status}</Badge></div></div>
               </div>
             ) : null}

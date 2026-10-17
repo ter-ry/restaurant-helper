@@ -741,7 +741,7 @@ describe("PilotDailyClosePage", () => {
     );
 
     expect(await screen.findByText("Closed yesterday")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    fireEvent.click(screen.getByRole("button", { name: /^Open (Aug|Sep|Oct|Nov|Dec|Jan|Feb|Mar|Apr|May|Jun|Jul)/ }));
     await waitFor(() => expect(pilotApiMocks.fetchPilotDailyClose).toHaveBeenLastCalledWith(7, "2026-08-29"));
     expect(await screen.findByText("Completed daily close")).toBeVisible();
     expect(screen.getByLabelText("Business date")).toHaveValue("2026-08-29");

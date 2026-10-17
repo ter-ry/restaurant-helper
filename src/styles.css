@@ -1423,21 +1423,6 @@ textarea.input {
 .pilot-theme .input:focus { border-color: var(--pilot-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent); outline: 0; }
 .pilot-theme-dark .input { background: var(--pilot-surface-raised) !important; }
 
-/* Keep native date/time controls in the same monochrome contrast as their
-   inputs. Chrome on Windows already supplies a light picker glyph when the
-   control is in dark color-scheme; an additional invert filter makes it
-   disappear against the dark surface. */
-.pilot-theme :is(input[type="date"], input[type="datetime-local"], input[type="time"]) {
-  color-scheme: light;
-}
-.pilot-theme-dark :is(input[type="date"], input[type="datetime-local"], input[type="time"]) {
-  color-scheme: dark;
-}
-.pilot-theme :is(input[type="date"], input[type="datetime-local"], input[type="time"])::-webkit-calendar-picker-indicator {
-  opacity: 1;
-  filter: none;
-}
-
 .pilot-modal-backdrop { background: rgba(0, 0, 0, 0.72) !important; backdrop-filter: blur(5px); }
 .pilot-modal { background: var(--pilot-surface) !important; border: 1px solid var(--pilot-line); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.36); }
 .pilot-modal-header { background: var(--pilot-surface) !important; border-color: var(--pilot-line) !important; }
@@ -1627,17 +1612,13 @@ textarea.input {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent);
 }
 
-/* Native controls are rendered by the browser, so their picker glyphs need
-   the same theme context as the field itself.  Keep this scoped to the
-   authenticated workspace: marketing keeps its own visual system. */
+/* Keep native controls in the authenticated workspace aligned with the theme.
+   Date/time picker glyphs are supplied by ThemedDateTimeInput below so their
+   contrast does not depend on browser-specific native rendering. */
 .pilot-theme { color-scheme: light; }
 .pilot-theme-dark { color-scheme: dark; }
 .pilot-theme :is(input[type="date"], input[type="datetime-local"], input[type="time"], input[type="number"], input[type="search"], select) {
   color-scheme: inherit;
-}
-.pilot-theme-dark :is(input[type="date"], input[type="datetime-local"], input[type="time"])::-webkit-calendar-picker-indicator {
-  filter: invert(1) grayscale(1);
-  opacity: 0.9;
 }
 .pilot-theme :is(input, select, textarea):-webkit-autofill,
 .pilot-theme :is(input, select, textarea):-webkit-autofill:hover,
@@ -1645,6 +1626,42 @@ textarea.input {
   -webkit-text-fill-color: var(--pilot-text);
   -webkit-box-shadow: 0 0 0 1000px var(--pilot-surface) inset;
   caret-color: var(--pilot-text);
+}
+
+.themed-date-time-input { position: relative; display: block; }
+.themed-date-time-input-field {
+  width: 100%;
+  padding-right: 2.75rem !important;
+  color-scheme: inherit;
+}
+.themed-date-time-input-field::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+.themed-date-time-input-trigger {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  z-index: 1;
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--pilot-text);
+  cursor: pointer;
+}
+.themed-date-time-input-trigger:focus-visible {
+  outline: 2px solid var(--pilot-focus);
+  outline-offset: 2px;
+}
+.themed-date-time-input-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* Shared controls are deliberately neutral.  Product state may still use a

@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { Modal } from "../components/Modal";
 import { PageLayout } from "../components/PageLayout";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
 import {
   activateSetupOrganization,
@@ -1066,11 +1067,11 @@ export function SetupConsolePage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className="text-sm font-semibold text-ink">Starts at</span>
-                      <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantStartsAt} onChange={(event) => setSupportGrantStartsAt(event.target.value)} />
+                      <ThemedDateTimeInput className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantStartsAt} onChange={(event) => setSupportGrantStartsAt(event.target.value)} />
                     </label>
                     <label className="block">
                       <span className="text-sm font-semibold text-ink">Expires at</span>
-                      <input className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantExpiresAt} onChange={(event) => setSupportGrantExpiresAt(event.target.value)} />
+                      <ThemedDateTimeInput className="mt-1 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none" type="datetime-local" value={supportGrantExpiresAt} onChange={(event) => setSupportGrantExpiresAt(event.target.value)} />
                     </label>
                   </div>
                   <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void createGrant()} disabled={savingAction === "support-grant" || savingAction !== null || refreshing || !supportGrantEmail || !supportGrantReason}>

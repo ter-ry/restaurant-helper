@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Card } from "../components/Card";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { SectionHeader } from "../components/SectionHeader";
 import { usePilotSession } from "./PilotSessionProvider";
 import { demoReadOnly } from "./pilotConfig";
@@ -624,11 +625,11 @@ export function PilotSquarePage() {
             <div className="mt-4 grid gap-3">
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Start at</span>
-                <input className="input mt-1" type="datetime-local" value={rangeStartAt} onChange={(event) => setRangeStartAt(event.target.value)} />
+                <ThemedDateTimeInput className="input mt-1" type="datetime-local" value={rangeStartAt} onChange={(event) => setRangeStartAt(event.target.value)} />
               </label>
               <label className="block">
                 <span className="text-sm font-semibold text-ink">End at</span>
-                <input className="input mt-1" type="datetime-local" value={rangeEndAt} onChange={(event) => setRangeEndAt(event.target.value)} />
+                <ThemedDateTimeInput className="input mt-1" type="datetime-local" value={rangeEndAt} onChange={(event) => setRangeEndAt(event.target.value)} />
               </label>
               <p className="text-sm leading-6 text-muted">
                 Routine sales updates arrive automatically. This is a bounded recovery range, not a daily workflow.

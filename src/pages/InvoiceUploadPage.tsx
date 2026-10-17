@@ -8,6 +8,7 @@ import { InvoiceLineItemCard as InvoiceLineItemCardView } from "../components/In
 import { PilotInvoiceDetailsModal } from "../components/PilotInvoiceDetailsModal";
 import { PageLayout } from "../components/PageLayout";
 import { SectionHeader } from "../components/SectionHeader";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { buildInvoiceSaveConfirmation, createDraftFromInvoice, getDraftSummaryDisplay } from "../lib/invoiceHistory";
 import { captureInvoiceDocument, isSupportedInvoiceUpload } from "../lib/invoiceCapture";
 import { formatLineConfidence, getLineTotalReviewState, normalizeComparisonKey as normalizeLineItemKey, updateLineItemDescription } from "../lib/invoiceLineItemView";
@@ -1064,15 +1065,23 @@ function FieldEditor({
             value={typeof value === "number" ? String(value) : value}
             onChange={(event) => onChange(event.target.value)}
           />
-        ) : (
-          <input
-            className={`input w-full min-w-0 ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
-            placeholder={placeholder}
-            type={type}
-            value={typeof value === "number" ? String(value) : value}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        )}
+        ) : type === "date" ? (
+            <ThemedDateTimeInput
+              className={`input w-full min-w-0 ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
+              placeholder={placeholder}
+              type="date"
+              value={typeof value === "number" ? String(value) : value}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          ) : (
+            <input
+              className={`input w-full min-w-0 ${flagged ? "border-amber-300 bg-amber-50/30" : ""}`}
+              placeholder={placeholder}
+              type={type}
+              value={typeof value === "number" ? String(value) : value}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          )}
       </div>
     </label>
   );

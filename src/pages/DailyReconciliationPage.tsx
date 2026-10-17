@@ -6,6 +6,7 @@ import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { ReconciliationRecordModal } from "../components/ReconciliationRecordModal";
 import { SectionHeader } from "../components/SectionHeader";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { useDemoProfile } from "../lib/demoProfile";
 import { captureReconciliationDocument, type ReconciliationExtractResult, type ReconciliationSourceKey } from "../lib/reconciliationCapture";
 import {
@@ -468,7 +469,7 @@ export function DailyReconciliationPage() {
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <Field label="Business date">
-                  <input value={draft.date} onChange={(event) => setField("date", event.target.value)} className="input" type="date" inputMode="numeric" />
+                  <ThemedDateTimeInput value={draft.date} onChange={(event) => setField("date", event.target.value)} className="input" type="date" inputMode="numeric" />
                 </Field>
                 <Field label="POS expected sales">
                   <input

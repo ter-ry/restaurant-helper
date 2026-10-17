@@ -2345,16 +2345,18 @@ test("Square reconciliation is automatic for daily close and keeps the completed
   await expect(page.getByRole("button", { name: "Reconcile Square data" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recent sync activity" })).toBeVisible();
   await expect(page.getByText("Daily sales summaries").first()).toBeVisible();
+  await expect(page.locator(".themed-date-time-input-trigger")).toHaveCount(2);
+  await expect(page.locator(".themed-date-time-input-trigger").nth(0)).toBeVisible();
+  await expect(page.locator(".themed-date-time-input-trigger svg").nth(0)).toBeVisible();
+  await page.screenshot({ path: "test-results/square-recovery-date-time-dark.png", fullPage: true });
 
   await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1").filter({ hasText: "Daily Close" })).toBeVisible();
-  const pickerContrast = await page.getByLabel("Business date").evaluate((element) => {
-    const input = element as HTMLInputElement;
-    const picker = getComputedStyle(input, "::-webkit-calendar-picker-indicator");
-    return { colorScheme: getComputedStyle(input).colorScheme, filter: picker.filter };
-  });
-  expect(pickerContrast.colorScheme).toBe("dark");
-  expect(pickerContrast.filter).toBe("none");
+  await expect(page.locator(".themed-date-time-input-trigger")).toHaveCount(1);
+  await expect(page.locator(".themed-date-time-input-trigger")).toBeVisible();
+  await expect(page.locator(".themed-date-time-input-trigger svg")).toBeVisible();
+  expect(await page.locator("body").getAttribute("data-flowtally-theme")).toBe("dark");
+  await page.screenshot({ path: "test-results/daily-close-date-dark.png", fullPage: true });
   await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
   await page.getByRole("button", { name: "Start close" }).click();
   await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();
@@ -2370,11 +2372,22 @@ test("Square reconciliation is automatic for daily close and keeps the completed
   await expect(page.getByRole("button", { name: "Save notes" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Complete close" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: /^Open / }).first().click();
+  await page.locator('button[aria-label="Switch to light theme"]').click();
+  expect(await page.locator("body").getAttribute("data-flowtally-theme")).toBe("light");
+  await expect(page.locator(".themed-date-time-input-trigger")).toBeVisible();
+  await page.screenshot({ path: "test-results/daily-close-date-light.png", fullPage: true });
+
+  await page.getByRole("button", { name: /^Open (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/ }).first().click();
   await expect(page.getByRole("heading", { name: "Completed daily close" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Add context for unusual sales, waste, or count discrepancies." })).toHaveValue("Square sales refreshed automatically before finalize.");
   await expect(page.getByText("Read only").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Complete close" })).toHaveCount(0);
+
+  await page.goto("/app/square", { waitUntil: "domcontentloaded" });
+  await page.getByText("Troubleshooting and recovery").click();
+  await expect(page.locator(".themed-date-time-input-trigger")).toHaveCount(2);
+  await expect(page.locator(".themed-date-time-input-trigger").nth(0)).toBeVisible();
+  await page.screenshot({ path: "test-results/square-recovery-date-time-light.png", fullPage: true });
 });
 
 test("owner audit history shows filtered organization activity", async ({ page }) => {

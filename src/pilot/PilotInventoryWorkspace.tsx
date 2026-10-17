@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
 import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
@@ -1310,7 +1311,7 @@ export function PilotInventoryPage() {
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1" type="number" min="0" step="0.0001" value={wasteQuantity} onChange={(event) => setWasteQuantity(Number(event.target.value))} /></label>
             <label className="block"><span className="text-sm font-semibold text-ink">Waste reason</span><select aria-label="Waste reason" className="input mt-1" value={wasteReason} onChange={(event) => setWasteReason(event.target.value)}><option value="spoilage / expired">Spoilage / expired</option><option value="prep waste">Prep waste</option><option value="cooking / production mistake">Cooking / production mistake</option><option value="damaged / breakage">Damaged / breakage</option><option value="staff meal">Staff meal</option><option value="complimentary / comped">Complimentary / comped</option><option value="other">Other</option></select></label>
-            <label className="block"><span className="text-sm font-semibold text-ink">Date/time</span><input aria-label="Waste date/time" className="input mt-1" type="datetime-local" value={wasteOccurredAt} onChange={(event) => setWasteOccurredAt(event.target.value)} /></label>
+            <label className="block"><span className="text-sm font-semibold text-ink">Date/time</span><ThemedDateTimeInput aria-label="Waste date/time" className="input mt-1" type="datetime-local" value={wasteOccurredAt} onChange={(event) => setWasteOccurredAt(event.target.value)} /></label>
             <label className="block"><span className="text-sm font-semibold text-ink">Note</span><input className="input mt-1" value={wasteNote} onChange={(event) => setWasteNote(event.target.value)} placeholder="Optional context" /></label>
           </div>
           <p className="mt-4 text-xs text-muted">Current cost estimate: {(selectedItemDetail?.averageUnitCost ?? draft.averageUnitCost) > 0 ? formatMoney(wasteQuantity * (selectedItemDetail?.averageUnitCost ?? draft.averageUnitCost)) : "Not available until a purchase cost is recorded"}.</p>
