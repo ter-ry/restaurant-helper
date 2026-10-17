@@ -2348,6 +2348,13 @@ test("Square reconciliation is automatic for daily close and keeps the completed
 
   await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1").filter({ hasText: "Daily Close" })).toBeVisible();
+  const pickerContrast = await page.getByLabel("Business date").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    const picker = getComputedStyle(input, "::-webkit-calendar-picker-indicator");
+    return { colorScheme: getComputedStyle(input).colorScheme, filter: picker.filter };
+  });
+  expect(pickerContrast.colorScheme).toBe("dark");
+  expect(pickerContrast.filter).toBe("none");
   await page.getByLabel("Business date").fill(new Date().toLocaleDateString("en-CA"));
   await page.getByRole("button", { name: "Start close" }).click();
   await expect(page.getByRole("heading", { name: "Active daily close" })).toBeVisible();

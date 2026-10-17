@@ -1423,6 +1423,21 @@ textarea.input {
 .pilot-theme .input:focus { border-color: var(--pilot-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pilot-focus) 22%, transparent); outline: 0; }
 .pilot-theme-dark .input { background: var(--pilot-surface-raised) !important; }
 
+/* Keep native date/time controls in the same monochrome contrast as their
+   inputs. Chrome on Windows already supplies a light picker glyph when the
+   control is in dark color-scheme; an additional invert filter makes it
+   disappear against the dark surface. */
+.pilot-theme :is(input[type="date"], input[type="datetime-local"], input[type="time"]) {
+  color-scheme: light;
+}
+.pilot-theme-dark :is(input[type="date"], input[type="datetime-local"], input[type="time"]) {
+  color-scheme: dark;
+}
+.pilot-theme :is(input[type="date"], input[type="datetime-local"], input[type="time"])::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  filter: none;
+}
+
 .pilot-modal-backdrop { background: rgba(0, 0, 0, 0.72) !important; backdrop-filter: blur(5px); }
 .pilot-modal { background: var(--pilot-surface) !important; border: 1px solid var(--pilot-line); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.36); }
 .pilot-modal-header { background: var(--pilot-surface) !important; border-color: var(--pilot-line) !important; }
