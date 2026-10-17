@@ -159,6 +159,26 @@ describe("PilotDailyClosePage", () => {
     expect(screen.getByText("Sep 1")).toBeVisible();
   });
 
+  it("does not present an unloaded Square snapshot as disconnected", async () => {
+    let resolveLoad: ((value: any) => void) | undefined;
+    pilotApiMocks.fetchPilotDailyClose.mockReturnValue(new Promise((resolve) => { resolveLoad = resolve; }));
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(screen.getByRole("link", { name: "Checking Square…" })).toBeVisible();
+    expect(screen.getAllByText("Checking mapping…").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Connect Square" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Location unmapped")).not.toBeInTheDocument();
+
+    resolveLoad?.({
+      session: null,
+      snapshot: { healthStatus: "Open", sales: {}, usage: { totals: {}, ingredientUsage: [] }, square: { squareStatus: "Not connected", squareSynced: false, locationMapped: false } },
+      usage: { totals: {}, ingredientUsage: [] }, exceptions: [], history: [], location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" }, businessDate: "2026-08-30", square: { squareStatus: "Not connected", squareSynced: false, locationMapped: false },
+    });
+    expect(await screen.findByRole("link", { name: "Connect Square" })).toBeVisible();
+    expect(screen.getAllByText("Location unmapped").length).toBeGreaterThan(0);
+  });
+
   it("shows structured Square cash event matches when available", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: { id: 22, organizationId: 42, locationId: 7, businessDate: "2026-09-01", status: "DRAFT", notes: "", currentSnapshot: null },

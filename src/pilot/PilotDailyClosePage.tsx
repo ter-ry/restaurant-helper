@@ -169,10 +169,11 @@ export function PilotDailyClosePage() {
   };
 
   const selectedLocation = locationOptions.find((entry) => entry.id === selectedLocationId) ?? currentLocation ?? null;
-  const squareStatus = String(snapshot?.square?.squareStatus ?? "Not connected");
-  const squareSynced = Boolean(snapshot?.square?.squareSynced);
-  const locationMapped = Boolean(snapshot?.square?.locationMapped);
-  const squareConnected = squareStatus.toLowerCase() === "connected";
+  const squareSnapshotReady = !loading && Boolean(snapshot?.square);
+  const squareStatus = squareSnapshotReady ? String(snapshot?.square?.squareStatus ?? "Not connected") : "Checking Square…";
+  const squareSynced = squareSnapshotReady && Boolean(snapshot?.square?.squareSynced);
+  const locationMapped = squareSnapshotReady && Boolean(snapshot?.square?.locationMapped);
+  const squareConnected = squareSnapshotReady && squareStatus.toLowerCase() === "connected";
   const squareFreshness = snapshot?.square?.freshness as { state?: string } | undefined;
   const completed = currentSession?.status === "COMPLETED";
   const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
@@ -205,7 +206,7 @@ export function PilotDailyClosePage() {
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
               <ExternalLink className="h-4 w-4" />
-              {squareConnected ? "Open Square" : "Connect Square"}
+              {squareSnapshotReady ? (squareConnected ? "Open Square" : "Connect Square") : "Checking Square…"}
             </Link>
             <button
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -502,7 +503,7 @@ export function PilotDailyClosePage() {
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Square</p>
                 <div className="mt-2 flex flex-wrap gap-2 text-sm">
                   <Badge tone={squareConnected ? "success" : "neutral"}>{squareStatus}</Badge>
-                  <Badge tone={locationMapped ? "success" : "warning"}>{locationMapped ? "Location mapped" : "Location unmapped"}</Badge>
+                  <Badge tone={!squareSnapshotReady ? "neutral" : locationMapped ? "success" : "warning"}>{!squareSnapshotReady ? "Checking mapping…" : locationMapped ? "Location mapped" : "Location unmapped"}</Badge>
                   {squareSynced ? <Badge tone="neutral">Synced</Badge> : null}
                 </div>
               </div>
