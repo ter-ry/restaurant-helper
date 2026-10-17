@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from urllib.error import HTTPError
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -23,6 +23,7 @@ from backend.square_integration import (
     classify_square_credential_probe,
     credential_probe_payload,
     diagnose_square_credentials,
+    ensure_square_orders_fresh,
 )
 from backend.tests.conftest import make_operational_organization
 
@@ -1611,3 +1612,116 @@ def test_upsert_order_prefers_current_square_total_money_fields(app):
         assert order.lines[0].discount_amount == Decimal("2.70")
         assert order.lines[0].tax_amount == Decimal("0")
         assert order.lines[0].net_amount == Decimal("177.30")
+
+
+def test_operational_freshness_skips_current_data_and_reconciles_only_mapped_stale_location(app, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Freshness {uuid4().hex[:6]}", location_name="Main Kitchen")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).one()
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="production",
+            square_merchant_id="merchant-freshness",
+            status="connected",
+            access_token_ciphertext="test-token-marker",
+            last_sync_at=datetime.now(timezone.utc),
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-FRESH", name="Main POS", status="active")
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id))
+        db.session.commit()
+
+        calls: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            "backend.square_integration.sync_square_orders_for_range",
+            lambda *args, **kwargs: calls.append(kwargs) or {"job": {"status": "completed"}},
+        )
+        now = datetime.now(timezone.utc)
+        fresh = ensure_square_orders_fresh(organization, connection, start_at=now - timedelta(hours=1), end_at=now, restaurant_location_id=location.id)
+        assert fresh["state"] == "current"
+        assert fresh["refreshed"] is False
+        assert calls == []
+
+        connection.last_sync_at = now - timedelta(minutes=6)
+        stale = ensure_square_orders_fresh(organization, connection, start_at=now - timedelta(hours=1), end_at=now, restaurant_location_id=location.id)
+        assert stale["state"] == "current"
+        assert stale["refreshed"] is True
+        assert calls and calls[0]["location_ids"] == ["LOC-FRESH"]
+
+
+def test_operational_freshness_preserves_last_known_data_when_reconciliation_fails(app, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Freshness failure {uuid4().hex[:6]}", location_name="Main Kitchen")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).one()
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="production",
+            square_merchant_id="merchant-freshness-failure",
+            status="connected",
+            access_token_ciphertext="test-token-marker",
+            last_sync_at=datetime.now(timezone.utc) - timedelta(minutes=6),
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-FAIL", name="Main POS", status="active")
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id))
+        existing_order = SquareOrder(
+            square_connection_id=connection.id,
+            square_order_id="LAST-KNOWN-ORDER",
+            restaurant_location_id=location.id,
+            order_state="COMPLETED",
+            currency="CAD",
+            gross_amount=Decimal("18.00"),
+            net_amount=Decimal("18.00"),
+            ordered_at=datetime.now(timezone.utc),
+        )
+        db.session.add(existing_order)
+        db.session.commit()
+
+        monkeypatch.setattr(
+            "backend.square_integration.sync_square_orders_for_range",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider timeout")),
+        )
+        now = datetime.now(timezone.utc)
+        freshness = ensure_square_orders_fresh(
+            organization,
+            connection,
+            start_at=now - timedelta(hours=1),
+            end_at=now,
+            restaurant_location_id=location.id,
+        )
+
+        assert freshness == {"state": "temporarily_unavailable", "refreshed": False}
+        assert SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id="LAST-KNOWN-ORDER").count() == 1
+
+
+def test_partial_order_webhook_fetches_canonical_order_before_persisting(app, monkeypatch):
+    from backend.square_integration import _apply_webhook_event
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Webhook canonical {uuid4().hex[:6]}", location_name="Main Kitchen")
+        connection = SquareConnection(organization_id=organization.id, environment="production", square_merchant_id="merchant-webhook", status="connected", access_token_ciphertext="token-marker")
+        db.session.add(connection)
+        db.session.flush()
+        canonical = {
+            "id": "ORDER-PARTIAL",
+            "location_id": "LOC-1",
+            "state": "COMPLETED",
+            "total_money": {"amount": 1800, "currency": "CAD"},
+            "line_items": [{"uid": "line-1", "name": "Burger", "quantity": "1", "base_price_money": {"amount": 1800, "currency": "CAD"}}],
+        }
+        calls: list[str] = []
+        monkeypatch.setattr("backend.square_integration._connection_token", lambda _connection: "token")
+        monkeypatch.setattr("backend.square_integration._square_request", lambda method, path, **kwargs: calls.append(f"{method} {path}") or {"order": canonical})
+        _apply_webhook_event(connection, {"type": "order.updated", "data": {"id": "ORDER-PARTIAL"}})
+        assert calls == ["GET /v2/orders/ORDER-PARTIAL"]
+        persisted = SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id="ORDER-PARTIAL").one()
+        assert persisted.line_count == 1

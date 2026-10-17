@@ -69,6 +69,22 @@ export function squareConnectionDetail(connectionReady: boolean, isDemo: boolean
   return connectionReady ? "Connected Square merchant; imported sales are available." : "No Square merchant is connected.";
 }
 
+export function squareHealthSummary(connection: PilotSquareConnectionSummary | null) {
+  if (!connection || connection.status !== "connected") {
+    return { label: "Disconnected", detail: "Connect Square before Flowtally can import sales.", tone: "warning" as const };
+  }
+  if (connection.syncStatus === "error" || connection.syncError) {
+    return { label: "Temporarily unavailable", detail: "Last known information remains visible while Flowtally retries.", tone: "danger" as const };
+  }
+  if (!connection.lastSyncAt) {
+    return { label: "Attention", detail: "Waiting for the first Square update.", tone: "warning" as const };
+  }
+  if (Date.now() - new Date(connection.lastSyncAt).getTime() > 5 * 60 * 1000) {
+    return { label: "Stale", detail: "Flowtally will reconcile recent sales when an operational view needs them.", tone: "warning" as const };
+  }
+  return { label: "Current", detail: "Flowtally keeps sales current automatically.", tone: "neutral" as const };
+}
+
 export function PilotSquarePage() {
   const location = useLocation();
   const { organization, locations, currentLocation } = usePilotSession();
@@ -163,6 +179,7 @@ export function PilotSquarePage() {
   const mappedLocations = squareLocations.filter((location) => location.mappings.some((mapping) => mapping.restaurantLocationId)).length;
   const mappedMenus = mappingCoverage.mappedVariationCount;
   const connectionReady = connection?.status === "connected";
+  const squareHealth = squareHealthSummary(connection);
   const initialLoading = loading && !connection && !menuCosting;
 
   const runAction = async (label: string, action: () => Promise<{ connection: PilotSquareConnectionSummary }>) => {
@@ -256,7 +273,7 @@ export function PilotSquarePage() {
       return;
     }
 
-    return runAction("orders-sync", () =>
+    return runAction("Order reconciliation", () =>
       syncPilotSquareOrders({
         organizationId: currentOrganizationId,
         startAt: new Date(rangeStartAt).toISOString(),
@@ -286,7 +303,7 @@ export function PilotSquarePage() {
         endAt: new Date(rangeEndAt).toISOString(),
       });
       await load();
-      setMessage("Sync now completed.");
+      setMessage("Square reconciliation completed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sync Square.");
     } finally {
@@ -371,10 +388,10 @@ export function PilotSquarePage() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
           ["Connection", initialLoading ? "—" : connectionReady ? "Ready" : "Connect Square", connectionReady ? "success" : "warning"],
-          ["Locations", initialLoading ? "—" : squareLocations.length ? `${mappedLocations}/${squareLocations.length} mapped` : "Sync locations", mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"],
+          ["Locations", initialLoading ? "—" : squareLocations.length ? `${mappedLocations}/${squareLocations.length} mapped` : "Needs setup", mappedLocations === squareLocations.length && squareLocations.length > 0 ? "success" : "warning"],
           ["Menu import", initialLoading ? "—" : menuImport ? `${menuImport.summary.recipe_needed ?? 0} recipes needed` : "Review import", menuImport && (menuImport.summary.recipe_needed ?? 0) === 0 ? "success" : "warning"],
           ["Mapping health", initialLoading ? "—" : `${mappedMenus}/${mappingCoverage.totalVariationCount || 0} mapped`, mappedMenus === mappingCoverage.totalVariationCount && mappingCoverage.totalVariationCount > 0 ? "success" : "warning"],
-          ["Sales sync", initialLoading ? "—" : connection?.syncStatus === "error" ? "Needs attention" : dailySales.length ? "Up to date" : "Sync sales", connection?.syncStatus === "error" ? "danger" : "success"],
+          ["Data status", initialLoading ? "—" : dailySales.length ? squareHealth.label : "Waiting for sales", squareHealth.tone === "danger" ? "danger" : squareHealth.tone === "warning" ? "warning" : "success"],
         ].map(([label, value, tone]) => (
           <div key={label} className="square-status-card flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-line bg-white p-4 shadow-soft">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
@@ -384,7 +401,7 @@ export function PilotSquarePage() {
       </div>
 <div className="flex flex-wrap gap-2">
         <Link aria-current="page" className={squareSectionLinkClasses(true)} to="/app/square">
-          Setup & Sync
+          Integration
         </Link>
         <Link className={squareSectionLinkClasses(false)} to="/app/square-usage">
           Usage & Variance
@@ -394,21 +411,24 @@ export function PilotSquarePage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <div className="space-y-4">
           <Card className="workspace-card">
-            <SectionHeader title="Connection and sync" description="Connection state, sync controls, and the latest imported sales summary." />
+            <SectionHeader title="Connection and health" description="Connection, mapping coverage, and the latest Square activity." />
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={squareConnectionDetail(connectionReady, demoReadOnly)} tone={squareStatusTone} />
-              <MetricCard label="Sync" value={connection?.syncStatus ?? "idle"} detail={connection?.syncError ? connection.syncError : "Manual syncs are available when connected."} tone={connection?.syncStatus === "error" ? "danger" : "neutral"} />
-              <MetricCard label="Last sync" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "never"} detail="The newest location, catalog, or order sync time." tone="neutral" />
+              <MetricCard label="Data flow" value={squareHealth.label} detail={squareHealth.detail} tone={squareHealth.tone} />
+              <MetricCard label="Last update" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "Waiting"} detail="Latest webhook or bounded reconciliation." tone="neutral" />
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
+            <details className="mt-5 rounded-xl border border-line bg-slate-50 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-ink">Troubleshooting and recovery</summary>
+              <p className="mt-1 text-sm text-muted">Use a manual reconcile only when Square data needs recovery. Routine operations refresh automatically.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 type="button"
                 disabled={demoReadOnly || !connectionReady || saving !== null}
                 title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => void syncNow()}
               >
-                {saving === "sync-now" ? "Syncing..." : "Sync now"}
+                {saving === "sync-now" ? "Refreshing…" : "Reconcile Square data"}
               </Button>
               <Button
                 type="button"
@@ -419,10 +439,10 @@ export function PilotSquarePage() {
                   if (!currentOrganizationId) {
                     return;
                   }
-                  void runAction("locations-sync", () => syncPilotSquareLocations(currentOrganizationId));
+                  void runAction("Location refresh", () => syncPilotSquareLocations(currentOrganizationId));
                 }}
               >
-                {saving === "locations-sync" ? "Syncing locations..." : "Sync locations"}
+                {saving === "Location refresh" ? "Refreshing locations…" : "Refresh locations"}
               </Button>
               <Button
                 type="button"
@@ -433,10 +453,10 @@ export function PilotSquarePage() {
                   if (!currentOrganizationId) {
                     return;
                   }
-                  void runAction("catalog-sync", () => syncPilotSquareCatalog(currentOrganizationId));
+                  void runAction("Catalog refresh", () => syncPilotSquareCatalog(currentOrganizationId));
                 }}
               >
-                {saving === "catalog-sync" ? "Syncing catalog..." : "Sync catalog"}
+                {saving === "Catalog refresh" ? "Refreshing catalog…" : "Refresh catalog"}
               </Button>
               <Button
                 type="button"
@@ -445,7 +465,7 @@ export function PilotSquarePage() {
                 title={demoReadOnly ? "Read-only demo" : undefined}
                 onClick={() => void syncOrders()}
               >
-                {saving === "orders-sync" ? "Syncing orders..." : "Sync orders"}
+                {saving === "Order reconciliation" ? "Refreshing orders…" : "Reconcile orders"}
               </Button>
               {connectionReady ? (
                 <Button
@@ -464,6 +484,7 @@ export function PilotSquarePage() {
                 </Button>
               ) : null}
             </div>
+            </details>
 
           </Card>
 
@@ -582,7 +603,7 @@ export function PilotSquarePage() {
 
         <div className="space-y-6">
           <Card className="workspace-card order-first">
-            <SectionHeader title="Sync range" description="Orders sync uses a simple manual date range for this restaurant." />
+            <SectionHeader title="Recovery range" description="Only use this date range for troubleshooting a delayed or missed Square update." />
             <div className="mt-4 grid gap-3">
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Start at</span>
@@ -593,7 +614,7 @@ export function PilotSquarePage() {
                 <input className="input mt-1" type="datetime-local" value={rangeEndAt} onChange={(event) => setRangeEndAt(event.target.value)} />
               </label>
               <p className="text-sm leading-6 text-muted">
-                Orders sync is for review only. The workspace shows imported sales summaries and mapping coverage before any close is finalized.
+                Routine sales updates arrive automatically. This is a bounded recovery range, not a daily workflow.
               </p>
             </div>
           </Card>

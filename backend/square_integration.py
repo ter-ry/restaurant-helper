@@ -56,6 +56,7 @@ SQUARE_API_VERSION = "2026-07-15"
 SQUARE_OAUTH_STATE_KEY = "square_oauth_context"
 SQUARE_OAUTH_STATE_TTL_SECONDS = 600
 SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRAWER_READ", "PAYMENTS_READ"]
+SQUARE_ORDER_FRESHNESS_SECONDS = 300
 QTY = Decimal("0.0001")
 logger = logging.getLogger(__name__)
 
@@ -1938,6 +1939,47 @@ def sync_square_orders_for_range(
         raise RuntimeError(f"Square order sync failed: {exc}") from exc
 
 
+def _mapped_square_location_ids(connection: SquareConnection, restaurant_location_id: int | None) -> list[str]:
+    """Return only the Square locations mapped to the requested restaurant."""
+    query = (
+        SquareLocation.query.join(SquareLocationMapping, SquareLocationMapping.square_location_id == SquareLocation.id)
+        .filter(SquareLocation.square_connection_id == connection.id)
+    )
+    if restaurant_location_id is not None:
+        query = query.filter(SquareLocationMapping.restaurant_location_id == restaurant_location_id)
+    return [
+        str(row.square_location_id)
+        for row in query.all()
+        if str(row.square_location_id or "").strip() and str(row.status or "").lower() not in {"inactive", "deleted"}
+    ]
+
+
+def ensure_square_orders_fresh(
+    organization: Organization,
+    connection: SquareConnection | None,
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    restaurant_location_id: int | None,
+) -> dict[str, Any]:
+    """Keep trusted local sales current without making users run a sync job."""
+    if connection is None or connection.status != "connected":
+        return {"state": "disconnected", "refreshed": False}
+    last_sync = connection.last_sync_at
+    if last_sync is not None:
+        last_sync = last_sync.replace(tzinfo=timezone.utc) if last_sync.tzinfo is None else last_sync.astimezone(timezone.utc)
+    if last_sync is not None and last_sync >= _now() - timedelta(seconds=SQUARE_ORDER_FRESHNESS_SECONDS):
+        return {"state": "current", "refreshed": False, "lastUpdatedAt": last_sync.isoformat()}
+    if not connection.access_token_ciphertext:
+        return {"state": "stale", "refreshed": False, "reason": "No active Square token."}
+    location_ids = _mapped_square_location_ids(connection, restaurant_location_id)
+    if not location_ids:
+        return {"state": "attention", "refreshed": False, "reason": "No mapped Square location."}
+    try:
+        result = sync_square_orders_for_range(organization, connection, start_at=start_at, end_at=end_at, location_ids=location_ids)
+        return {"state": "current", "refreshed": True, "lastUpdatedAt": _now().isoformat(), "result": result}
+    except RuntimeError:
+        return {"state": "temporarily_unavailable", "refreshed": False}
 def _ensure_connection_and_access(organization_id: int) -> tuple[Organization | None, SquareConnection | None, tuple[dict[str, Any], int] | None]:
     organization = Organization.query.filter_by(id=organization_id).first()
     if organization is None:
@@ -2624,7 +2666,13 @@ def square_usage():
         return json_error("Start and end timestamps must be valid ISO datetimes.", 400)
     if end_at < start_at:
         return json_error("End time must be after start time.", 400)
-
+    freshness = ensure_square_orders_fresh(
+        organization,
+        connection,
+        start_at=start_at,
+        end_at=end_at,
+        restaurant_location_id=location.id if location else None,
+    )
     mapping_summary = _square_mapping_summary(organization, connection, location_id=location.id if location else None)
     usage_report = _build_square_usage_report(organization, connection, location=location, start_at=start_at, end_at=end_at)
     return (
@@ -2635,6 +2683,7 @@ def square_usage():
                 "mappings": mapping_summary["mappings"],
                 "unmappedVariations": mapping_summary["unmappedVariations"],
                 "mappingCoverage": mapping_summary["mappingCoverage"],
+                "freshness": freshness,
                 "usage": usage_report,
             }
         ),
@@ -2650,6 +2699,12 @@ def _apply_webhook_event(connection: SquareConnection, payload: dict[str, Any]) 
     if "order" in event_type.lower():
         order_payload = data.get("object") or data.get("order") or data
         if isinstance(order_payload, dict):
+            order_id = str(order_payload.get("id") or data.get("id") or "").strip()
+            if order_id and "line_items" not in order_payload and "lineItems" not in order_payload:
+                canonical = _square_request("GET", f"/v2/orders/{order_id}", token=_connection_token(connection))
+                order_payload = canonical.get("order") if isinstance(canonical, dict) else None
+            if not isinstance(order_payload, dict):
+                raise RuntimeError("Square order webhook did not include a readable order.")
             order = _upsert_order(connection, order_payload)
             if order is not None:
                 db.session.flush()

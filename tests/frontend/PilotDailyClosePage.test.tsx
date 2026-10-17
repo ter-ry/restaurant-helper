@@ -201,7 +201,7 @@ describe("PilotDailyClosePage", () => {
     expect(screen.queryByText("Likely causes")).not.toBeInTheDocument();
   });
 
-  it("syncs Square sales for the selected business date and refreshes the draft", async () => {
+  it("loads the daily close without exposing a routine Square sync action", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: {
         id: 12,
@@ -335,12 +335,9 @@ describe("PilotDailyClosePage", () => {
       </MemoryRouter>,
     );
 
-    const syncButton = await screen.findByRole("button", { name: "Sync sales" });
-    expect(syncButton).toBeEnabled();
-    fireEvent.click(syncButton);
-    await waitFor(() => expect(pilotApiMocks.syncPilotDailyCloseSales).toHaveBeenCalledWith(12, { businessDate: "2026-08-30" }));
-    expect(await screen.findByText((text) => text.startsWith("Synced Square sales for"))).toBeVisible();
-    expect(screen.getAllByText("$1,234.56").length).toBeGreaterThan(0);
+    await screen.findByText("Active daily close");
+    expect(screen.queryByRole("button", { name: "Sync sales" })).not.toBeInTheDocument();
+    expect(pilotApiMocks.syncPilotDailyCloseSales).not.toHaveBeenCalled();
   });
 
   it("shows Connect Square when the close is disconnected", async () => {

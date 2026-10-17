@@ -18,6 +18,7 @@ from .square_integration import (
     _current_square_location_ids,
     _square_request,
     SquareRequestError,
+    ensure_square_orders_fresh,
     sync_square_orders_for_range,
 )
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
@@ -422,7 +423,16 @@ def _attention_items(summary: dict[str, Any], usage: dict[str, Any], location: R
 
 def _daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
     connection = _connection_for_organization(organization.id)
+    start_at, end_at = _business_date_bounds(location, business_date)
+    freshness = ensure_square_orders_fresh(
+        organization,
+        connection,
+        start_at=start_at,
+        end_at=end_at,
+        restaurant_location_id=location.id,
+    )
     summary = _sales_summary_for_day(connection, location, business_date)
+    summary["freshness"] = freshness
     usage = _daily_close_usage(organization, location, business_date, connection)
     period_start, period_end = _business_date_bounds(location, business_date)
     period_matches = _physical_usage_matches_period(usage, period_start, period_end)
@@ -461,7 +471,6 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
     theoretical_usage = usage.get("totals", {}).get("theoreticalUsage") or 0
     discrepancy = usage.get("totals", {}).get("discrepancy")
     discrepancy_percent = usage.get("totals", {}).get("discrepancyPercent")
-    start_at, end_at = _business_date_bounds(location, business_date)
     cash_reconciliation = _cash_reconciliation(connection, location, business_date)
     if cash_reconciliation.get("overShort") is not None and abs(float(cash_reconciliation["overShort"])) >= 0.01:
         amount = float(cash_reconciliation["overShort"])

@@ -46,6 +46,7 @@ from .models import (
     SupplierItemMapping,
 )
 from .menu_costing import current_inventory_unit_cost, serialize_menu_item, serialize_recipe
+from .square_integration import ensure_square_orders_fresh
 from .ocr import ALLOWED_INVOICE_EXTENSIONS, validate_upload_content
 from .policy import require_permission
 from .utils import (
@@ -313,6 +314,33 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     location = location or RestaurantLocation.query.filter_by(id=location_id).first()
     if location is None:
         return {}
+    enabled_modules = {
+        module.module_key
+        for module in OrganizationModule.query.filter_by(organization_id=location.organization_id, status="ENABLED").all()
+    }
+    square_connection_for_freshness = (
+        SquareConnection.query.filter_by(organization_id=location.organization_id, status="connected").first()
+        if "SQUARE_INTEGRATION" in enabled_modules
+        else None
+    )
+    try:
+        business_timezone = ZoneInfo(location.timezone or "America/Toronto")
+    except ZoneInfoNotFoundError:
+        business_timezone = timezone.utc
+    local_now = _now().astimezone(business_timezone)
+    today_start = datetime(
+        local_now.year,
+        local_now.month,
+        local_now.day,
+        tzinfo=business_timezone,
+    ).astimezone(timezone.utc)
+    square_freshness = ensure_square_orders_fresh(
+        location.organization,
+        square_connection_for_freshness,
+        start_at=today_start,
+        end_at=today_start + timedelta(days=1),
+        restaurant_location_id=location.id,
+    )
     start = _start_of_week()
     invoices = (
         PurchaseInvoice.query.filter_by(location_id=location_id)
@@ -342,10 +370,6 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     recent_price_changes = _price_changes_for_location(location_id, invoices=invoices)
     inventory_summary = _inventory_summary(location_id, items=inventory_items)
     square_attention = {"syncErrorCount": 0, "unmappedVariationCount": 0}
-    enabled_modules = {
-        module.module_key
-        for module in OrganizationModule.query.filter_by(organization_id=location.organization_id, status="ENABLED").all()
-    }
     if "SQUARE_INTEGRATION" in enabled_modules:
         connection = SquareConnection.query.filter_by(organization_id=location.organization_id, status="connected").first()
         if connection is not None:
@@ -430,6 +454,7 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
             "square": {**square_attention, "severity": "urgent" if square_attention["syncErrorCount"] else "attention" if square_attention["unmappedVariationCount"] else "none"},
             "dailyClose": {"count": daily_close_attention, "severity": "attention" if daily_close_attention else "none"},
         },
+        "squareFreshness": square_freshness,
     }
 
 
