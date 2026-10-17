@@ -69,17 +69,33 @@ export function squareConnectionDetail(connectionReady: boolean, isDemo: boolean
   return connectionReady ? "Connected Square merchant; imported sales are available." : "No Square merchant is connected.";
 }
 
-export function squareHealthSummary(connection: PilotSquareConnectionSummary | null) {
+export type SquareSalesFreshness = {
+  state?: "disconnected" | "current" | "refreshing" | "stale" | "attention" | "temporarily_unavailable";
+  lastUpdatedAt?: string | null;
+  reason?: string;
+};
+
+export function squareHealthSummary(connection: PilotSquareConnectionSummary | null, freshness?: SquareSalesFreshness | null) {
   if (!connection || connection.status !== "connected") {
     return { label: "Disconnected", detail: "Connect Square before Flowtally can import sales.", tone: "warning" as const };
   }
   if (connection.syncStatus === "error" || connection.syncError) {
     return { label: "Temporarily unavailable", detail: "Last known information remains visible while Flowtally retries.", tone: "danger" as const };
   }
-  if (!connection.lastSyncAt) {
+  if (freshness?.state === "temporarily_unavailable") {
+    return { label: "Temporarily unavailable", detail: "Last known sales remain visible while Flowtally retries.", tone: "danger" as const };
+  }
+  if (freshness?.state === "refreshing") {
+    return { label: "Refreshing", detail: "Flowtally is reconciling recent Square sales automatically.", tone: "neutral" as const };
+  }
+  if (freshness?.state === "attention" || freshness?.state === "stale") {
+    return { label: "Stale", detail: freshness.reason || "Flowtally will reconcile recent sales when an operational view needs them.", tone: "warning" as const };
+  }
+  const lastOrderActivityAt = freshness?.lastUpdatedAt ?? connection.lastOrderActivityAt;
+  if (!lastOrderActivityAt) {
     return { label: "Attention", detail: "Waiting for the first Square update.", tone: "warning" as const };
   }
-  if (Date.now() - new Date(connection.lastSyncAt).getTime() > 5 * 60 * 1000) {
+  if (freshness?.state !== "current" && Date.now() - new Date(lastOrderActivityAt).getTime() > 5 * 60 * 1000) {
     return { label: "Stale", detail: "Flowtally will reconcile recent sales when an operational view needs them.", tone: "warning" as const };
   }
   return { label: "Current", detail: "Flowtally keeps sales current automatically.", tone: "neutral" as const };
@@ -414,8 +430,9 @@ export function PilotSquarePage() {
             <SectionHeader title="Connection and health" description="Connection, mapping coverage, and the latest Square activity." />
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Connection" value={connection?.status ?? "disconnected"} detail={squareConnectionDetail(connectionReady, demoReadOnly)} tone={squareStatusTone} />
-              <MetricCard label="Data flow" value={squareHealth.label} detail={squareHealth.detail} tone={squareHealth.tone} />
-              <MetricCard label="Last update" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "Waiting"} detail="Latest webhook or bounded reconciliation." tone="neutral" />
+              <MetricCard label="Sales status" value={squareHealth.label} detail={squareHealth.detail} tone={squareHealth.tone} />
+              <MetricCard label="Integration activity" value={connection?.lastSyncAt ? formatDateTime(connection.lastSyncAt) : "Waiting"} detail="Latest location, catalog, order, or webhook activity." tone="neutral" />
+              <MetricCard label="Last order update" value={connection?.lastOrderActivityAt ? formatDateTime(connection.lastOrderActivityAt) : "Waiting"} detail="Latest completed order sync or processed order webhook." tone="neutral" />
             </div>
 
             <details className="mt-5 rounded-xl border border-line bg-slate-50 p-3">

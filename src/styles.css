@@ -1643,11 +1643,11 @@ textarea.input {
   background: var(--pilot-surface-muted) !important;
   color: var(--pilot-text) !important;
 }
-.pilot-theme :is(button, a)[class*="hover:bg-brand"],
-.pilot-theme :is(button, a)[class*="hover:bg-slate"] {
+.pilot-theme :is(button, a):hover[class*="hover:bg-brand"],
+.pilot-theme :is(button, a):hover[class*="hover:bg-slate"] {
   background-color: var(--pilot-surface-muted) !important;
 }
-.pilot-theme :is(button, a)[class*="hover:border-brand"] {
+.pilot-theme :is(button, a):hover[class*="hover:border-brand"] {
   border-color: var(--pilot-line-strong) !important;
 }
 

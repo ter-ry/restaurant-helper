@@ -6,6 +6,7 @@ import secrets
 import re
 import os
 import logging
+import threading
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -59,6 +60,8 @@ SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "ITEMS_READ", "ORDERS_READ", "CASH_DRA
 SQUARE_ORDER_FRESHNESS_SECONDS = 300
 QTY = Decimal("0.0001")
 logger = logging.getLogger(__name__)
+_order_refresh_locks: dict[int, threading.Lock] = {}
+_order_refresh_locks_guard = threading.Lock()
 
 
 class SquareRequestError(RuntimeError):
@@ -1047,6 +1050,7 @@ def _serialize_connection(connection: SquareConnection) -> dict[str, Any]:
         "tokenExpiresAt": isoformat(connection.token_expires_at),
         "revokedAt": isoformat(connection.revoked_at),
         "lastSyncAt": isoformat(connection.last_sync_at),
+        "lastOrderActivityAt": isoformat(_last_square_order_activity_at(connection)),
         "syncStatus": connection.sync_status,
         "syncError": connection.sync_error,
         "catalogCount": SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).count(),
@@ -1954,6 +1958,59 @@ def _mapped_square_location_ids(connection: SquareConnection, restaurant_locatio
     ]
 
 
+def _utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _last_square_order_activity_at(connection: SquareConnection, square_location_ids: set[str] | None = None) -> datetime | None:
+    """Return the latest successful order-specific activity for this connection.
+
+    Connection ``last_sync_at`` also changes for catalog/location work and is
+    therefore deliberately excluded from sales freshness decisions.
+    """
+    latest: datetime | None = None
+    order_jobs = (
+        SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="orders", status="completed")
+        .filter(SquareSyncJob.completed_at.isnot(None))
+        .order_by(SquareSyncJob.completed_at.desc(), SquareSyncJob.id.desc())
+        .limit(50)
+        .all()
+    )
+    for order_job in order_jobs:
+        job_locations = {str(value) for value in (order_job.cursor_json or {}).get("locationIds", [])}
+        if square_location_ids is not None and job_locations and not job_locations.intersection(square_location_ids):
+            continue
+        latest = _utc_datetime(order_job.completed_at)
+        break
+    order_events = (
+        SquareWebhookEvent.query.filter_by(square_connection_id=connection.id, status="processed")
+        .filter(SquareWebhookEvent.processed_at.isnot(None), SquareWebhookEvent.event_type.ilike("%order%"))
+        .order_by(SquareWebhookEvent.processed_at.desc(), SquareWebhookEvent.id.desc())
+        .limit(50)
+        .all()
+    )
+    for order_event in order_events:
+        if square_location_ids is not None:
+            payload = order_event.raw_payload_json or {}
+            data = payload.get("data") if isinstance(payload, dict) else {}
+            obj = data.get("object") if isinstance(data, dict) else {}
+            event_location_id = obj.get("location_id") or obj.get("locationId") if isinstance(obj, dict) else None
+            if event_location_id and str(event_location_id) not in square_location_ids:
+                continue
+        event_time = _utc_datetime(order_event.processed_at)
+        if event_time is not None and (latest is None or event_time > latest):
+            latest = event_time
+        break
+    return latest
+
+
+def _order_refresh_lock(connection_id: int) -> threading.Lock:
+    with _order_refresh_locks_guard:
+        return _order_refresh_locks.setdefault(connection_id, threading.Lock())
+
+
 def ensure_square_orders_fresh(
     organization: Organization,
     connection: SquareConnection | None,
@@ -1965,21 +2022,42 @@ def ensure_square_orders_fresh(
     """Keep trusted local sales current without making users run a sync job."""
     if connection is None or connection.status != "connected":
         return {"state": "disconnected", "refreshed": False}
-    last_sync = connection.last_sync_at
-    if last_sync is not None:
-        last_sync = last_sync.replace(tzinfo=timezone.utc) if last_sync.tzinfo is None else last_sync.astimezone(timezone.utc)
-    if last_sync is not None and last_sync >= _now() - timedelta(seconds=SQUARE_ORDER_FRESHNESS_SECONDS):
-        return {"state": "current", "refreshed": False, "lastUpdatedAt": last_sync.isoformat()}
     if not connection.access_token_ciphertext:
         return {"state": "stale", "refreshed": False, "reason": "No active Square token."}
     location_ids = _mapped_square_location_ids(connection, restaurant_location_id)
     if not location_ids:
         return {"state": "attention", "refreshed": False, "reason": "No mapped Square location."}
+    now = _now()
+    mapped_square_location_ids = set(location_ids)
+    last_order_activity = _last_square_order_activity_at(connection, mapped_square_location_ids)
+    if last_order_activity is not None and last_order_activity >= now - timedelta(seconds=SQUARE_ORDER_FRESHNESS_SECONDS):
+        return {"state": "current", "refreshed": False, "lastUpdatedAt": last_order_activity.isoformat()}
+    lock = _order_refresh_lock(connection.id)
+    if not lock.acquire(blocking=False):
+        return {"state": "refreshing", "refreshed": False}
     try:
+        # Re-check after taking the lock so a request arriving just after a
+        # successful refresh does not issue a second provider call.
+        now = _now()
+        last_order_activity = _last_square_order_activity_at(connection, mapped_square_location_ids)
+        if last_order_activity is not None and last_order_activity >= now - timedelta(seconds=SQUARE_ORDER_FRESHNESS_SECONDS):
+            return {"state": "current", "refreshed": False, "lastUpdatedAt": last_order_activity.isoformat()}
+        running_job = (
+            SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="orders", status="running")
+            .filter(SquareSyncJob.requested_at.isnot(None), SquareSyncJob.requested_at >= now - timedelta(seconds=SQUARE_ORDER_FRESHNESS_SECONDS))
+            .order_by(SquareSyncJob.requested_at.desc(), SquareSyncJob.id.desc())
+            .first()
+        )
+        if running_job is not None:
+            return {"state": "refreshing", "refreshed": False}
         result = sync_square_orders_for_range(organization, connection, start_at=start_at, end_at=end_at, location_ids=location_ids)
         return {"state": "current", "refreshed": True, "lastUpdatedAt": _now().isoformat(), "result": result}
     except RuntimeError:
         return {"state": "temporarily_unavailable", "refreshed": False}
+    finally:
+        lock.release()
+
+
 def _ensure_connection_and_access(organization_id: int) -> tuple[Organization | None, SquareConnection | None, tuple[dict[str, Any], int] | None]:
     organization = Organization.query.filter_by(id=organization_id).first()
     if organization is None:

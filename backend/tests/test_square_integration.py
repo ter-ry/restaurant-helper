@@ -1633,6 +1633,20 @@ def test_operational_freshness_skips_current_data_and_reconciles_only_mapped_sta
         db.session.add(square_location)
         db.session.flush()
         db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id))
+        db.session.add(SquareSyncJob(
+            square_connection_id=connection.id,
+            job_type="catalog",
+            status="completed",
+            requested_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+        ))
+        db.session.add(SquareWebhookEvent(
+            square_connection_id=connection.id,
+            event_id="catalog-event-1",
+            event_type="catalog.version.updated",
+            status="processed",
+            processed_at=datetime.now(timezone.utc),
+        ))
         db.session.commit()
 
         calls: list[dict[str, object]] = []
@@ -1641,16 +1655,30 @@ def test_operational_freshness_skips_current_data_and_reconciles_only_mapped_sta
             lambda *args, **kwargs: calls.append(kwargs) or {"job": {"status": "completed"}},
         )
         now = datetime.now(timezone.utc)
-        fresh = ensure_square_orders_fresh(organization, connection, start_at=now - timedelta(hours=1), end_at=now, restaurant_location_id=location.id)
-        assert fresh["state"] == "current"
-        assert fresh["refreshed"] is False
-        assert calls == []
+        stale_after_catalog = ensure_square_orders_fresh(organization, connection, start_at=now - timedelta(hours=1), end_at=now, restaurant_location_id=location.id)
+        assert stale_after_catalog["state"] == "current"
+        assert stale_after_catalog["refreshed"] is True
+        assert calls and calls[0]["location_ids"] == ["LOC-FRESH"]
 
-        connection.last_sync_at = now - timedelta(minutes=6)
+        db.session.add(SquareSyncJob(
+            square_connection_id=connection.id,
+            job_type="orders",
+            status="completed",
+            requested_at=now,
+            completed_at=now,
+        ))
+        db.session.commit()
+        current = ensure_square_orders_fresh(organization, connection, start_at=now - timedelta(hours=1), end_at=now, restaurant_location_id=location.id)
+        assert current["state"] == "current"
+        assert current["refreshed"] is False
+        assert len(calls) == 1
+
+        SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="orders").update({"completed_at": now - timedelta(minutes=6)})
+        db.session.commit()
         stale = ensure_square_orders_fresh(organization, connection, start_at=now - timedelta(hours=1), end_at=now, restaurant_location_id=location.id)
         assert stale["state"] == "current"
         assert stale["refreshed"] is True
-        assert calls and calls[0]["location_ids"] == ["LOC-FRESH"]
+        assert len(calls) == 2
 
 
 def test_operational_freshness_preserves_last_known_data_when_reconciliation_fails(app, monkeypatch):
@@ -1700,6 +1728,86 @@ def test_operational_freshness_preserves_last_known_data_when_reconciliation_fai
 
         assert freshness == {"state": "temporarily_unavailable", "refreshed": False}
         assert SquareOrder.query.filter_by(square_connection_id=connection.id, square_order_id="LAST-KNOWN-ORDER").count() == 1
+
+
+def test_order_webhook_is_sales_freshness_even_when_general_sync_is_old(app, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Webhook freshness {uuid4().hex[:6]}", location_name="Main Kitchen")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).one()
+        now = datetime.now(timezone.utc)
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="production",
+            square_merchant_id="merchant-webhook-freshness",
+            status="connected",
+            access_token_ciphertext="token-marker",
+            last_sync_at=now - timedelta(minutes=10),
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-WEBHOOK", name="Main POS", status="active")
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id))
+        db.session.add(SquareWebhookEvent(
+            square_connection_id=connection.id,
+            event_id="order-event-1",
+            event_type="order.updated",
+            status="processed",
+            processed_at=now,
+        ))
+        db.session.commit()
+        calls: list[dict[str, object]] = []
+        monkeypatch.setattr("backend.square_integration.sync_square_orders_for_range", lambda *args, **kwargs: calls.append(kwargs))
+        freshness = ensure_square_orders_fresh(
+            organization,
+            connection,
+            start_at=now - timedelta(hours=1),
+            end_at=now,
+            restaurant_location_id=location.id,
+        )
+        assert freshness["state"] == "current"
+        assert freshness["refreshed"] is False
+        assert calls == []
+
+
+def test_running_order_reconciliation_is_reported_without_duplicate_provider_call(app, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Running freshness {uuid4().hex[:6]}", location_name="Main Kitchen")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).one()
+        now = datetime.now(timezone.utc)
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="production",
+            square_merchant_id="merchant-running-freshness",
+            status="connected",
+            access_token_ciphertext="token-marker",
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-RUNNING", name="Main POS", status="active")
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id))
+        db.session.add(SquareSyncJob(
+            square_connection_id=connection.id,
+            job_type="orders",
+            status="running",
+            requested_at=now,
+            started_at=now,
+        ))
+        db.session.commit()
+        monkeypatch.setattr("backend.square_integration.sync_square_orders_for_range", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider call should be suppressed")))
+        freshness = ensure_square_orders_fresh(
+            organization,
+            connection,
+            start_at=now - timedelta(hours=1),
+            end_at=now,
+            restaurant_location_id=location.id,
+        )
+        assert freshness == {"state": "refreshing", "refreshed": False}
 
 
 def test_partial_order_webhook_fetches_canonical_order_before_persisting(app, monkeypatch):

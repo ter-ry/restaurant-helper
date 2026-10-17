@@ -298,6 +298,9 @@ describe("PilotSquarePage", () => {
     expect(squareConnectionDetail(true, true)).toContain("Simulated Square connection");
     expect(squareHealthSummary(createDisconnectedConnection()).label).toBe("Disconnected");
     expect(squareHealthSummary({ ...createConnectedConnection(), syncStatus: "error", syncError: "Timed out" }).label).toBe("Temporarily unavailable");
+    expect(squareHealthSummary({ ...createConnectedConnection(), lastSyncAt: new Date().toISOString(), lastOrderActivityAt: null }).label).toBe("Attention");
+    expect(squareHealthSummary({ ...createConnectedConnection(), lastSyncAt: new Date().toISOString(), lastOrderActivityAt: new Date().toISOString() }).label).toBe("Current");
+    expect(squareHealthSummary(createConnectedConnection(), { state: "refreshing" }).label).toBe("Refreshing");
   });
 
   it("supports connected status, sync, and menu/location mapping updates", async () => {
