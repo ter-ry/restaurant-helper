@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Plus, RefreshCcw, Save, Search, Truck } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -21,7 +21,7 @@ import {
   type PilotReorderSuggestion,
 } from "./pilotApi";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
-import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { formatConversionFactor, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
 type LineDraft = PilotReorderPlanLine;
 
@@ -45,6 +45,49 @@ function planEstimateLabel(plan: PilotReorderPlan) {
 function shouldShowConversionLabel(line: PilotReorderPlanLine) {
   const factor = Number(line.conversionFactor);
   return Math.abs(factor - 1) > Number.EPSILON || line.inventoryUnit.trim().toLowerCase() !== line.purchaseUnit.trim().toLowerCase();
+}
+
+type RecommendationReviewRow = {
+  line: PilotReorderPlanLine;
+  suggestion: PilotReorderSuggestion | null;
+  safeToApply: boolean;
+  reason: string;
+  proposedQuantity: number | null;
+  proposedCost: number | null;
+  savedUnitPrice: number | null;
+  currentUnitPrice: number | null;
+};
+
+function recommendationReviewRow(line: PilotReorderPlanLine, suggestion: PilotReorderSuggestion | null): RecommendationReviewRow {
+  if (!suggestion) {
+    return { line, suggestion, safeToApply: false, reason: "No current recommendation — keep this saved line for manager review.", proposedQuantity: null, proposedCost: null, savedUnitPrice: line.estimatedUnitCost, currentUnitPrice: null };
+  }
+  const proposedQuantity = suggestion.suggestedPurchaseQuantity ?? null;
+  const sameUnit = (suggestion.purchaseUnit ?? line.purchaseUnit).trim().toLowerCase() === line.purchaseUnit.trim().toLowerCase();
+  const savedConversion = Number(line.conversionFactor);
+  const currentConversion = Number(suggestion.conversionFactor);
+  const sameConversion = Number.isFinite(savedConversion) && savedConversion > 0 && Number.isFinite(currentConversion) && currentConversion > 0 && Math.abs(currentConversion - savedConversion) < Number.EPSILON;
+  const savedUnitPrice = line.estimatedUnitCost == null ? null : Number(line.estimatedUnitCost);
+  const currentUnitPrice = suggestion.latestPurchasePrice == null ? null : Number(suggestion.latestPurchasePrice);
+  const samePrice = savedUnitPrice != null && Number.isFinite(savedUnitPrice) && savedUnitPrice > 0 && currentUnitPrice != null && Number.isFinite(currentUnitPrice) && currentUnitPrice > 0 && Math.abs(currentUnitPrice - savedUnitPrice) < Number.EPSILON;
+  const safeToApply = proposedQuantity != null && Number.isFinite(Number(proposedQuantity)) && Number(proposedQuantity) >= 0 && sameUnit && sameConversion && samePrice;
+  const reason = !safeToApply
+    ? proposedQuantity == null
+      ? "Current purchase quantity is unavailable."
+      : !Number.isFinite(Number(proposedQuantity)) || Number(proposedQuantity) < 0
+        ? "Current purchase quantity is invalid."
+        : currentUnitPrice == null || !Number.isFinite(currentUnitPrice) || currentUnitPrice <= 0
+          ? "Current purchase price is unavailable."
+          : savedUnitPrice == null || !Number.isFinite(savedUnitPrice) || savedUnitPrice <= 0
+            ? "Saved price snapshot is unknown — review the line manually."
+            : !samePrice
+              ? `Price changed: saved ${formatMoney(savedUnitPrice)}; current ${formatMoney(currentUnitPrice)}. Review manually.`
+              : !sameUnit || !sameConversion
+                ? "Purchase unit or conversion changed — review the line manually."
+                : "Current recommendation values are invalid."
+    : "Safe to apply to this draft line.";
+  const proposedCost = safeToApply && savedUnitPrice != null ? Math.round(Number(proposedQuantity) * savedUnitPrice * 100) / 100 : null;
+  return { line, suggestion, safeToApply, reason, proposedQuantity, proposedCost, savedUnitPrice, currentUnitPrice };
 }
 
 function editableDraftSnapshot(plan: PilotReorderPlan | null) {
@@ -81,6 +124,11 @@ export function PilotReorderPlanPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmCompletion, setConfirmCompletion] = useState(false);
+  const [recommendationReview, setRecommendationReview] = useState<RecommendationReviewRow[] | null>(null);
+  const [selectedRecommendationIds, setSelectedRecommendationIds] = useState<Set<number>>(new Set());
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const recommendationRequestRef = useRef(0);
+  const draftRef = useRef<PilotReorderPlan | null>(null);
   const requestedPlanId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("planId");
     const parsed = Number(value);
@@ -88,6 +136,9 @@ export function PilotReorderPlanPage() {
   }, [location.search]);
 
   const draftIsDirty = draft?.status === "Draft" && editableDraftSnapshot(draft) !== editableDraftSnapshot(savedDraft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const adoptDraft = (next: PilotReorderPlan | null) => {
     setDraft(next);
     setSavedDraft(next);
@@ -188,7 +239,7 @@ export function PilotReorderPlanPage() {
   const suggestionSortLabel = (key: NonNullable<typeof suggestionSort>["key"]) => suggestionSort?.key === key ? suggestionSort.direction === "asc" ? "ascending" : "descending" : "none";
 
   const openPlan = async (planId: number) => {
-    if (saving || creating || loading) {
+    if (saving || creating || loading || loadingRecommendations) {
       return;
     }
     if (draftIsDirty) {
@@ -369,6 +420,56 @@ export function PilotReorderPlanPage() {
       setSaving(false);
       setPendingAction(null);
     }
+  };
+
+  const reviewRecommendationChanges = async () => {
+    if (!draft || draft.status !== "Draft") return;
+    if (draftIsDirty) {
+      setMessage("Save the draft before reviewing current recommendations.");
+      return;
+    }
+    const requestId = ++recommendationRequestRef.current;
+    const planId = draft.id;
+    const savedDraftSnapshot = editableDraftSnapshot(draft);
+    setLoadingRecommendations(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetchPilotReorderPlan();
+      const latestDraft = draftRef.current;
+      if (requestId !== recommendationRequestRef.current || !latestDraft || latestDraft.id !== planId || latestDraft.status !== "Draft" || editableDraftSnapshot(latestDraft) !== savedDraftSnapshot) {
+        setMessage("The draft changed while recommendations were loading. Review again to compare safely.");
+        return;
+      }
+      setCurrentSuggestions(response.suggestions);
+      setCurrentGroups(response.groupedBySupplier);
+      setRecommendationsRefreshedAt(response.refreshedAt ?? null);
+      const suggestionByItem = new Map(response.suggestions.map((suggestion) => [suggestion.inventoryItemId, suggestion]));
+      const rows = latestDraft.lines.map((line) => recommendationReviewRow(line, suggestionByItem.get(line.inventoryItemId) ?? null));
+      const changedRows = rows.filter((row) => !row.suggestion || row.proposedQuantity !== row.line.orderQuantity || row.proposedCost !== provisionalLineCost(row.line) || !row.safeToApply);
+      setRecommendationReview(changedRows);
+      setSelectedRecommendationIds(new Set());
+      if (!changedRows.length) setMessage("The saved draft already matches current recommendations.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not review current recommendations.");
+    } finally {
+      if (requestId === recommendationRequestRef.current) setLoadingRecommendations(false);
+    }
+  };
+
+  const applyRecommendationChanges = () => {
+    if (!draft || draft.status !== "Draft" || !recommendationReview) return;
+    setDraft((current) => current ? {
+      ...current,
+      lines: current.lines.map((line) => {
+        const row = recommendationReview.find((candidate) => candidate.line.id === line.id);
+        if (!row || !selectedRecommendationIds.has(line.id) || !row.safeToApply || row.proposedQuantity == null) return line;
+        return { ...line, orderQuantity: row.proposedQuantity };
+      }),
+    } : current);
+    setRecommendationReview(null);
+    setSelectedRecommendationIds(new Set());
+    setMessage("Selected recommendation changes applied locally. Save draft to persist them.");
   };
 
   const draftIncludedCost = draft?.lines.reduce((sum, line) => {
@@ -707,10 +808,15 @@ export function PilotReorderPlanPage() {
                   Add current recommendations
                 </Button>
               ) : null}
-              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
+              {draft.status === "Draft" ? (
+                <Button variant="secondary" type="button" onClick={() => void reviewRecommendationChanges()} disabled={saving || loading || loadingRecommendations}>
+                  {loadingRecommendations ? "Reviewing recommendations…" : "Review recommendation changes"}
+                </Button>
+              ) : null}
+              <Button disabled={creating || saving || loading || loadingRecommendations || draft.status !== "Draft"} variant="secondary" icon={<Save className="h-4 w-4" />} type="button" onClick={() => void saveDraft()}>
                 {saving && pendingAction === "save" ? "Saving draft..." : "Save draft"}
               </Button>
-              <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
+              <Button disabled={creating || saving || loading || loadingRecommendations || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
                 {saving && pendingAction === "prepare" ? "Preparing..." : "Mark prepared"}
               </Button>
               <Button disabled={creating || saving || loading || draft.status !== "Prepared"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => setConfirmCompletion(true)}>
@@ -806,7 +912,7 @@ export function PilotReorderPlanPage() {
 
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
                           <Badge tone="neutral">Suggested {formatNumber(line.suggestedQuantity)} {line.inventoryUnit}</Badge>
-                          {shouldShowConversionLabel(line) ? <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.inventoryUnit} per {line.purchaseUnit}</Badge> : null}
+                          {shouldShowConversionLabel(line) ? <Badge tone="neutral">{formatConversionFactor(line.conversionFactor)} {line.inventoryUnit} per {line.purchaseUnit}</Badge> : null}
                           <Badge tone={provisionalLineCost(line) === null ? "warning" : "success"}>
                             {provisionalLineCost(line) === null ? "Estimate unavailable" : `${formatMoney(provisionalLineCost(line) ?? 0)} estimated`}
                           </Badge>
@@ -823,6 +929,35 @@ export function PilotReorderPlanPage() {
           <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Start a draft to build a reorder plan from the current stock picture.</div>
         )}
       </Card>
+      {recommendationReview ? (
+        <Modal title="Review recommendation changes" size="large" onClose={() => setRecommendationReview(null)}>
+          <p className="text-sm text-muted">Compare the saved draft with the latest stock recommendation. Nothing is saved until you apply selections and choose Save draft.</p>
+          <div className="mt-4 space-y-3">
+            {recommendationReview.map((row) => {
+              const suggestion = row.suggestion;
+              const checked = selectedRecommendationIds.has(row.line.id);
+              return (
+                <div key={row.line.id} className="rounded-2xl border border-line bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-ink">{row.line.inventoryItemName}</p>
+                      <p className="mt-1 text-sm text-muted">Saved draft: {formatNumber(row.line.orderQuantity)} {row.line.purchaseUnit} · {row.line.estimatedLineCost == null ? "Unknown" : formatMoney(row.line.estimatedLineCost)}</p>
+                      {suggestion ? <p className="mt-1 text-sm text-muted">Current recommendation: {row.proposedQuantity == null ? "Unavailable" : `${formatNumber(row.proposedQuantity)} ${suggestion.purchaseUnit ?? row.line.purchaseUnit}`} · {row.currentUnitPrice == null ? "Unknown price" : `${formatMoney(row.currentUnitPrice)} per ${suggestion.purchaseUnit ?? row.line.purchaseUnit}`} · {row.proposedCost == null ? "No automatic estimate" : `known at saved price: ${formatMoney(row.proposedCost)}`}</p> : <p className="mt-1 text-sm text-muted">Current recommendation: No longer recommended at the current stock level.</p>}
+                      {suggestion ? <p className="mt-1 text-xs text-muted">On hand {formatNumber(suggestion.currentQuantity)} {suggestion.unit} · PAR {formatNumber(suggestion.parLevel)} {suggestion.unit} · {suggestion.stockStatus}</p> : null}
+                    </div>
+                    {row.safeToApply ? <label className="flex items-center gap-2 text-sm font-semibold text-ink"><input type="checkbox" checked={checked} onChange={(event) => setSelectedRecommendationIds((current) => { const next = new Set(current); if (event.target.checked) next.add(row.line.id); else next.delete(row.line.id); return next; })} /> Apply</label> : <Badge tone="warning">Review manually</Badge>}
+                  </div>
+                  <p className="mt-2 text-xs text-muted">{row.reason}</p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" type="button" onClick={() => setRecommendationReview(null)}>Cancel</Button>
+            <Button variant="primary" type="button" onClick={applyRecommendationChanges} disabled={!selectedRecommendationIds.size}>Apply selected changes</Button>
+          </div>
+        </Modal>
+      ) : null}
       {confirmCompletion ? (
         <Modal title="Complete this reorder plan?" size="small" onClose={() => { if (!saving) setConfirmCompletion(false); }}>
           <p className="text-sm leading-6 text-muted">This saves the current supplier and quantity snapshot as completed history. It does not receive inventory or place an order.</p>
