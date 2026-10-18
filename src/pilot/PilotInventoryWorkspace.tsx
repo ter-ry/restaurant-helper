@@ -488,7 +488,7 @@ export function PilotInventoryPage() {
     }
   };
 
-  const reorderCount = data?.summary.inventoryReorderNowCount ?? 0;
+  const reorderCount = (data?.summary.inventoryReorderNowCount ?? 0) + (data?.summary.inventoryOutOfStockCount ?? 0);
   const initialLoading = loading && !hasLoaded;
 
   const closeItemWorkspace = () => {
@@ -1258,7 +1258,7 @@ export function PilotInventoryPage() {
                   }}
                 >{demoReadOnly ? "Read-only demo" : "Create item"}</Button>
                 <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>Refresh</Button>
-                <Button type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
+                <Button title="Includes out-of-stock and reorder-now items" type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
               </div>
               <div className="pilot-mobile-actions relative sm:hidden">
                 <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-ink" type="button" aria-label="Open inventory actions" aria-expanded={inventoryActionMenuOpen} onClick={() => setInventoryActionMenuOpen((open) => !open)}>
@@ -1268,7 +1268,7 @@ export function PilotInventoryPage() {
                   <div className="absolute right-0 top-12 z-20 w-52 rounded-xl border border-line bg-white p-2 shadow-xl">
                     <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={demoReadOnly} onClick={() => { setInventoryActionMenuOpen(false); setInventoryTab("items"); startNewItem(); }}><Plus className="h-4 w-4" />{demoReadOnly ? "Read-only demo" : "Create item"}</button>
                     <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={loading} onClick={() => { setInventoryActionMenuOpen(false); void load(); }}><RefreshCcw className="h-4 w-4" />Refresh</button>
-                    <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/reorder-plan"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"})</button>
+                    <button title="Includes out-of-stock and reorder-now items" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/reorder-plan"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"})</button>
                   </div>
                 ) : null}
               </div>

@@ -1629,7 +1629,6 @@ def inventory():
         if intent:
             suggestion["status"] = intent.status
             suggestion["adjustedQuantity"] = float(intent.adjusted_quantity)
-            suggestion["estimatedCost"] = decimal_to_float(intent.estimated_cost)
     reorder_suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
     return (
         jsonify(
@@ -2437,7 +2436,6 @@ def reorder_plan():
         if intent is not None:
             suggestion["status"] = intent.status
             suggestion["adjustedQuantity"] = float(intent.adjusted_quantity)
-            suggestion["estimatedCost"] = decimal_to_float(intent.estimated_cost)
         suggestions.append(suggestion)
     suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
     groups = _group_reorder_by_supplier(suggestions)
@@ -2457,7 +2455,6 @@ def _current_reorder_suggestions_for_location(organization_id: int, location_id:
         if intent is not None:
             suggestion["status"] = intent.status
             suggestion["adjustedQuantity"] = float(intent.adjusted_quantity)
-            suggestion["estimatedCost"] = decimal_to_float(intent.estimated_cost)
         suggestions.append(suggestion)
     suggestions.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["inventoryItemName"]))
     return suggestions

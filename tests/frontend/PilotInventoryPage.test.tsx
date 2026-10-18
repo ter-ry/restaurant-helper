@@ -304,6 +304,28 @@ describe("PilotInventoryPage", () => {
     expect(await screen.findByRole("columnheader", { name: "Item" })).toBeVisible();
   });
 
+  it("includes out-of-stock items in the reorder list action count", async () => {
+    inventoryMocks.fetchPilotInventory.mockResolvedValueOnce(createInventoryResponse({
+      summary: {
+        inventoryItemCount: 3,
+        inventoryOutOfStockCount: 2,
+        inventoryReorderNowCount: 1,
+        inventoryLowStockCount: 0,
+        inventoryValue: 275.04,
+      },
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+
+    const actions = await screen.findAllByRole("button", { name: "Reorder list (3)" });
+    expect(actions.length).toBeGreaterThanOrEqual(1);
+    expect(actions[0]).toHaveAttribute("title", "Includes out-of-stock and reorder-now items");
+  });
+
   it("shows a background-revalidated inventory value without remounting", async () => {
     clearPilotDataCache();
     setPilotCacheScope("user-1:org-42:location-7");
