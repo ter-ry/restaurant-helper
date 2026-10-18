@@ -310,6 +310,7 @@ describe("PilotReorderPlanPage", () => {
     expect(await screen.findByRole("button", { name: /Week 1 draft/ })).toBeVisible();
     expect(screen.getAllByText("$36.00 known-cost subtotal").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Complete plan" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Review recommendation changes" })).not.toBeInTheDocument();
   });
 
   it("recalculates provisional line estimates while editing without saving", async () => {
@@ -330,6 +331,56 @@ describe("PilotReorderPlanPage", () => {
 
     expect(screen.getByText("2 kg per case")).toBeVisible();
     expect(screen.queryByText("2 case per kg")).not.toBeInTheDocument();
+  });
+
+  it("shows precise small purchase conversions", async () => {
+    const plan = createPlan("Draft", 12);
+    plan.lines[0] = { ...plan.lines[0], purchaseUnit: "bag", conversionFactor: 0.25 };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 12 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+
+    expect(screen.getByText("0.25 kg per bag")).toBeVisible();
+  });
+
+  it("reviews and selectively applies current recommendation changes without saving", async () => {
+    const plan = createPlan("Draft", 13);
+    plan.lines[0] = { ...plan.lines[0], purchaseUnit: "bag", conversionFactor: 0.25, orderQuantity: 5, estimatedUnitCost: 48, estimatedLineCost: 240 };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 13 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({
+      suggestions: [createSuggestion({ inventoryItemId: 301, purchaseUnit: "bag", conversionFactor: 0.25, suggestedPurchaseQuantity: 20, latestPurchasePrice: 48, estimatedCost: 960, currentQuantity: 1, parLevel: 6 })],
+      groupedBySupplier: [],
+      inventoryItems: [],
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Review recommendation changes" }));
+    expect(await screen.findByRole("dialog", { name: "Review recommendation changes" })).toHaveTextContent("Saved draft: 5 bag");
+    expect(screen.getByRole("dialog", { name: "Review recommendation changes" })).toHaveTextContent("Current recommendation: 20 bag");
+    expect(screen.getByRole("dialog", { name: "Review recommendation changes" })).toHaveTextContent("$960.00");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply selected changes" }));
+
+    expect(await screen.findByDisplayValue("20")).toBeVisible();
+    expect(screen.getByText("Selected recommendation changes applied locally. Save draft to persist them.")).toBeVisible();
+    expect(mockApi.updatePilotReorderPlan).not.toHaveBeenCalled();
+  });
+
+  it("protects unsaved draft edits before opening recommendation review", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    fireEvent.change(screen.getByLabelText("Order qty (case)"), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review recommendation changes" }));
+
+    expect(screen.getByText("Save the draft before reviewing current recommendations.")).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Review recommendation changes" })).not.toBeInTheDocument();
   });
 
   it("omits redundant one-to-one conversion labels", async () => {

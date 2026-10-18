@@ -12,6 +12,12 @@ export const inventoryQuantityFormatter = new Intl.NumberFormat("en-CA", {
   maximumFractionDigits: 2,
 });
 
+// Purchase conversions are stored to four decimal places. Keep that precision
+// in the UI so small package factors are not presented as a different quantity.
+export const conversionFactorFormatter = new Intl.NumberFormat("en-CA", {
+  maximumFractionDigits: 4,
+});
+
 export const wholeNumberFormatter = new Intl.NumberFormat("en-CA", {
   maximumFractionDigits: 0,
 });
@@ -44,6 +50,13 @@ export function formatInventoryQuantity(value: number | null | undefined) {
     return "—";
   }
   return inventoryQuantityFormatter.format(value);
+}
+
+export function formatConversionFactor(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  return conversionFactorFormatter.format(value);
 }
 
 export function formatWholeNumber(value: number | null | undefined) {
