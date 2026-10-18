@@ -331,4 +331,17 @@ describe("PilotReorderPlanPage", () => {
     expect(screen.getByText("2 kg per case")).toBeVisible();
     expect(screen.queryByText("2 case per kg")).not.toBeInTheDocument();
   });
+
+  it("omits redundant one-to-one conversion labels", async () => {
+    const plan = createPlan("Draft", 11);
+    plan.lines[0] = { ...plan.lines[0], purchaseUnit: "kg", inventoryUnit: "kg", conversionFactor: 1 };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 11 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+
+    expect(screen.queryByText("1 kg per kg")).not.toBeInTheDocument();
+  });
 });

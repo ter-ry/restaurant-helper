@@ -1917,6 +1917,67 @@ def test_reorder_conversion_costs_use_purchase_units_and_survive_history(client)
     assert reopened_line["estimatedLineCost"] == 60
 
 
+def test_reorder_estimates_ignore_stale_intent_cost_for_live_and_new_plan(app, client):
+    login(client)
+    item_name = f"Stale Estimate Item {uuid4().hex[:8]}"
+    created_item = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={
+            "name": item_name,
+            "category": "Dry goods",
+            "stockUnit": "kg",
+            "currentOnHand": 1,
+            "minQuantity": 2,
+            "parLevel": 6,
+            "preferredSupplierName": "Stale Estimate Supplier",
+            "latestPurchasePrice": 48,
+            "lastPurchaseUnit": "bag",
+            "lastPurchaseConversionFactor": 0.25,
+            "active": True,
+        },
+    )
+    assert created_item.status_code == 201
+    item = created_item.get_json()
+
+    with app.app_context():
+        db.session.add(
+            ReorderIntent(
+                organization_id=item["organizationId"],
+                location_id=item["locationId"],
+                inventory_item_id=item["id"],
+                suggested_quantity=5,
+                adjusted_quantity=5,
+                estimated_cost=240,
+                status="Needs ordering",
+                notes="Legacy cached estimate",
+                actor_user_id=1,
+            )
+        )
+        db.session.commit()
+
+    reorder = client.get("/api/pilot/reorder-plan")
+    assert reorder.status_code == 200
+    suggestion = next(row for row in reorder.get_json()["suggestions"] if row["inventoryItemId"] == item["id"])
+    assert suggestion["status"] == "Needs ordering"
+    assert suggestion["adjustedQuantity"] == 5
+    assert suggestion["suggestedPurchaseQuantity"] == 20
+    assert suggestion["estimatedCost"] == 960
+    supplier_group = next(group for group in reorder.get_json()["groupedBySupplier"] if group["supplier"] == "Stale Estimate Supplier")
+    assert supplier_group["estimatedOrderTotal"] == 960
+    assert supplier_group["lines"][0]["estimatedCost"] == 960
+
+    created_plan = client.post("/api/pilot/reorder-plans", headers=csrf_headers(client))
+    assert created_plan.status_code == 201
+    plan = created_plan.get_json()
+    line = next(row for row in plan["lines"] if row["inventoryItemId"] == item["id"])
+    assert line["orderQuantity"] == 20
+    assert line["estimatedUnitCost"] == 48
+    assert line["estimatedLineCost"] == 960
+    assert plan["estimatedCost"] == sum(row["estimatedLineCost"] or 0 for row in plan["lines"])
+    assert plan["estimatedCost"] >= line["estimatedLineCost"]
+
+
 def test_reorder_quantity_defaults_preserve_zero_and_reject_negative(client):
     login(client)
     created_item = client.post(

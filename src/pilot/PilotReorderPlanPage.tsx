@@ -42,6 +42,11 @@ function planEstimateLabel(plan: PilotReorderPlan) {
   return plan.estimateStatus === "partial" ? `${formatMoney(plan.includedCost)} known-cost subtotal` : `${formatMoney(plan.includedCost)} estimated total`;
 }
 
+function shouldShowConversionLabel(line: PilotReorderPlanLine) {
+  const factor = Number(line.conversionFactor);
+  return Math.abs(factor - 1) > Number.EPSILON || line.inventoryUnit.trim().toLowerCase() !== line.purchaseUnit.trim().toLowerCase();
+}
+
 function editableDraftSnapshot(plan: PilotReorderPlan | null) {
   if (!plan) return null;
   return JSON.stringify({
@@ -564,7 +569,7 @@ export function PilotReorderPlanPage() {
             </div>
 
             <div className="mt-6">
-              <SectionHeader title="By supplier" />
+              <SectionHeader title="By supplier" description="All current recommendations" />
               <div className="max-h-[34rem] space-y-3 overflow-y-auto pr-1">
                 {currentGroups.map((group) => (
                   <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
@@ -801,7 +806,7 @@ export function PilotReorderPlanPage() {
 
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
                           <Badge tone="neutral">Suggested {formatNumber(line.suggestedQuantity)} {line.inventoryUnit}</Badge>
-                          <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.inventoryUnit} per {line.purchaseUnit}</Badge>
+                          {shouldShowConversionLabel(line) ? <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.inventoryUnit} per {line.purchaseUnit}</Badge> : null}
                           <Badge tone={provisionalLineCost(line) === null ? "warning" : "success"}>
                             {provisionalLineCost(line) === null ? "Estimate unavailable" : `${formatMoney(provisionalLineCost(line) ?? 0)} estimated`}
                           </Badge>
