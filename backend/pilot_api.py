@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_CEILING, Decimal, InvalidOperation
 import re
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -77,6 +77,13 @@ bp = Blueprint("pilot_api", __name__)
 
 MONEY = Decimal("0.01")
 QTY = Decimal("0.0001")
+PURCHASE_QUANTITY_STEP = Decimal("0.01")
+# These units represent discrete purchasable packages/counts in the existing
+# inventory data. Weight/volume units retain hundredth-unit precision.
+WHOLE_PURCHASE_UNITS = {
+    "each", "unit", "pack", "case", "bag", "box", "dozen", "head",
+    "bottle", "can", "carton", "crate", "sleeve", "jar",
+}
 
 
 def _commit_json(payload: Any, status_code: int = 200):
@@ -119,6 +126,22 @@ def _to_decimal(value: Any, *, field: str, required: bool = True, places: str = 
 
 def _to_quantity(value: Any, *, field: str, required: bool = True) -> Decimal:
     return _to_decimal(value, field=field, required=required, places="0.0001")
+
+
+def _purchase_quantity_for_stock(stock_quantity: Decimal, conversion_factor: Decimal, purchase_unit: str) -> Decimal | None:
+    """Convert stock units to a purchase quantity without rounding down.
+
+    A conversion factor is stock units per purchase unit, while the stored
+    purchase price is per purchase unit. Existing package/count units are
+    indivisible; continuous units remain editable to hundredths.
+    """
+    if conversion_factor <= 0:
+        return None
+    raw_quantity = stock_quantity / conversion_factor
+    if raw_quantity <= 0:
+        return Decimal("0")
+    step = Decimal("1") if purchase_unit.strip().lower() in WHOLE_PURCHASE_UNITS else PURCHASE_QUANTITY_STEP
+    return raw_quantity.quantize(step, rounding=ROUND_CEILING)
 
 
 def _to_int(value: Any, *, field: str, required: bool = True) -> int:
@@ -216,14 +239,21 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
     if status not in {"Out of stock", "Reorder now", "Low stock"}:
         return None
 
-    target = decimal_to_float(item.par_level) or decimal_to_float(item.min_quantity) or 0
-    current = decimal_to_float(item.current_on_hand) or 0
-    suggested = max(0, round(target - current, 4))
-    if suggested <= 0:
+    target_decimal = Decimal(item.par_level or item.min_quantity or 0)
+    current_decimal = Decimal(item.current_on_hand or 0)
+    required_stock = target_decimal - current_decimal
+    suggested_decimal = required_stock.quantize(QTY, rounding=ROUND_CEILING) if required_stock > 0 else Decimal("0")
+    if suggested_decimal <= 0:
         return None
-    estimated_cost = None
-    if item.last_purchase_conversion_factor and item.last_purchase_conversion_factor > 0:
-        estimated_cost = round((Decimal(str(suggested)) / item.last_purchase_conversion_factor * item.latest_purchase_price).quantize(MONEY), 2)
+    conversion_factor = Decimal(item.last_purchase_conversion_factor or 1)
+    purchase_unit = item.last_purchase_unit or item.stock_unit or "each"
+    purchase_quantity = _purchase_quantity_for_stock(suggested_decimal, conversion_factor, purchase_unit)
+    latest_price = Decimal(item.latest_purchase_price or 0)
+    estimated_cost = (
+        round((purchase_quantity * latest_price).quantize(MONEY), 2)
+        if purchase_quantity is not None and latest_price > 0
+        else None
+    )
 
     return {
         "id": item.id,
@@ -231,14 +261,18 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
         "inventoryItemName": item.name,
         "category": item.category,
         "supplier": item.preferred_supplier_name or (item.supplier.name if item.supplier else "Unknown supplier"),
-        "currentQuantity": current,
+        "currentQuantity": decimal_to_float(current_decimal) or 0,
         "unit": item.stock_unit,
         "minimumQuantity": decimal_to_float(item.min_quantity) or 0,
         "parLevel": decimal_to_float(item.par_level) or 0,
-        "suggestedQuantity": suggested,
-        "adjustedQuantity": suggested,
-        "latestPurchasePrice": decimal_to_float(item.latest_purchase_price) or 0,
-        "estimatedCost": estimated_cost,
+        "suggestedQuantity": decimal_to_float(suggested_decimal) or 0,
+        "adjustedQuantity": decimal_to_float(suggested_decimal) or 0,
+        "latestPurchasePrice": decimal_to_float(item.latest_purchase_price) if latest_price > 0 else None,
+        "purchaseUnit": purchase_unit,
+        "conversionFactor": decimal_to_float(conversion_factor) or 1,
+        "suggestedPurchaseQuantity": decimal_to_float(purchase_quantity),
+        "estimateStatus": "complete" if estimated_cost is not None else "unknown",
+        "estimatedCost": decimal_to_float(estimated_cost),
         "stockStatus": status,
         "status": "Needs ordering",
         "daysRemaining": status_data["daysRemaining"],
@@ -1624,6 +1658,7 @@ def _group_reorder_by_supplier(suggestions: list[dict[str, Any]]):
             "lines": lines,
             "itemCount": len(lines),
             "estimatedOrderTotal": round(sum(float(line["estimatedCost"] or 0) for line in lines), 2),
+            "estimateStatus": "complete" if all(line.get("estimatedCost") is not None for line in lines) else "partial",
         }
         for supplier, lines in sorted(groups.items(), key=lambda entry: entry[0].lower())
     ]
@@ -2470,7 +2505,11 @@ def _create_reorder_plan_from_current(organization_id: int, location_id: int, *,
                 minimum_quantity_snapshot=item.min_quantity,
                 par_level_snapshot=item.par_level,
                 suggested_quantity_snapshot=Decimal(str(suggestion["suggestedQuantity"])),
-                order_quantity=Decimal(str(suggestion["adjustedQuantity"] or suggestion["suggestedQuantity"])),
+                order_quantity=Decimal(str(
+                    suggestion["suggestedPurchaseQuantity"]
+                    if suggestion.get("suggestedPurchaseQuantity") is not None
+                    else suggestion["suggestedQuantity"]
+                )),
                 excluded=False,
                 estimated_unit_cost_snapshot=Decimal(str(suggestion["latestPurchasePrice"])) if suggestion.get("latestPurchasePrice") is not None else None,
                 estimated_line_cost_snapshot=Decimal(str(suggestion["estimatedCost"])) if suggestion.get("estimatedCost") is not None else None,
@@ -2489,11 +2528,13 @@ def _reorder_plan_queryset(organization_id: int, location_id: int):
 def _reorder_plan_line_estimated_cost(line: ReorderPlanLine) -> Decimal | None:
     if line.excluded or line.estimated_unit_cost_snapshot is None:
         return None
-    conversion_factor = Decimal(line.conversion_factor_snapshot or 1)
-    if conversion_factor <= 0:
-        return None
     quantity = Decimal(line.order_quantity or 0)
-    return (quantity / conversion_factor * Decimal(line.estimated_unit_cost_snapshot)).quantize(MONEY)
+    if quantity < 0:
+        return None
+    # order_quantity is already expressed in purchase units. The snapshot
+    # price is the price for one purchase unit; conversion is only used when
+    # deriving order_quantity from stock quantity.
+    return (quantity * Decimal(line.estimated_unit_cost_snapshot)).quantize(MONEY)
 
 
 @bp.get("/api/pilot/reorder-plans")
@@ -2576,6 +2617,8 @@ def update_reorder_plan(plan_id: int):
         return json_error("Reorder plan not found.", 404)
     if plan.status == "Completed":
         return json_error("Completed reorder plans are read-only.", 409)
+    if plan.status == "Prepared":
+        return json_error("Prepared reorder plans are frozen for review.", 409)
     payload = _json_body()
     if "name" in payload:
         plan.name = str(payload.get("name") or "").strip() or plan.name
@@ -2594,10 +2637,16 @@ def update_reorder_plan(plan_id: int):
                 purchase_unit = item.last_purchase_unit or item.stock_unit or "each"
                 latest_cost = Decimal(item.latest_purchase_price or 0)
                 suggested_quantity = Decimal(str(suggestion["suggestedQuantity"])) if suggestion else Decimal("0")
-                order_quantity = _to_quantity(line_payload.get("orderQuantity", suggested_quantity), field=f"lines[{index}].orderQuantity", required=False) or suggested_quantity
+                default_order_quantity = _purchase_quantity_for_stock(suggested_quantity, conversion_factor, purchase_unit)
+                if default_order_quantity is None:
+                    default_order_quantity = Decimal("0")
+                raw_order_quantity = line_payload["orderQuantity"] if "orderQuantity" in line_payload else default_order_quantity
+                order_quantity = _to_quantity(raw_order_quantity, field=f"lines[{index}].orderQuantity", required=False)
+                if order_quantity < 0:
+                    raise RequestValidationError("Validation failed.", {f"lines[{index}].orderQuantity": "Order quantity cannot be negative."})
                 estimated_line_cost = None
-                if conversion_factor > 0 and latest_cost >= 0:
-                    estimated_line_cost = (order_quantity / conversion_factor * latest_cost).quantize(MONEY)
+                if latest_cost > 0:
+                    estimated_line_cost = (order_quantity * latest_cost).quantize(MONEY)
                 line = ReorderPlanLine(
                     plan_id=plan.id,
                     inventory_item_id=item.id,
@@ -2615,7 +2664,7 @@ def update_reorder_plan(plan_id: int):
                     suggested_quantity_snapshot=suggested_quantity,
                     order_quantity=order_quantity,
                     excluded=bool(line_payload.get("excluded", False)),
-                    estimated_unit_cost_snapshot=latest_cost,
+                    estimated_unit_cost_snapshot=latest_cost if latest_cost > 0 else None,
                     estimated_line_cost_snapshot=estimated_line_cost,
                     notes=str(line_payload.get("notes") or "").strip(),
                 )
@@ -2626,6 +2675,8 @@ def update_reorder_plan(plan_id: int):
                 continue
             if "orderQuantity" in line_payload:
                 line.order_quantity = _to_quantity(line_payload.get("orderQuantity"), field=f"lines[{index}].orderQuantity", required=False)
+                if line.order_quantity < 0:
+                    raise RequestValidationError("Validation failed.", {f"lines[{index}].orderQuantity": "Order quantity cannot be negative."})
             if "excluded" in line_payload:
                 line.excluded = bool(line_payload.get("excluded"))
             if "notes" in line_payload:
@@ -2643,6 +2694,9 @@ def update_reorder_plan(plan_id: int):
         actor_user_id=current_user.id,
         metadata={"status": plan.status, "name": plan.name},
     )
+    # New lines need database ids in the response so the next edit can target
+    # them; serialize only after the pending inserts have been flushed.
+    db.session.flush()
     response_payload = serialize_reorder_plan(plan)
     return _commit_json(response_payload)
 
@@ -2696,6 +2750,8 @@ def complete_reorder_plan(plan_id: int):
         return json_error("This reorder plan has already been completed.", 409)
     if not any(not line.excluded for line in plan.lines):
         return json_error("Add at least one item to the order before completing this plan.", 400)
+    if plan.status != "Prepared":
+        return json_error("Prepare the reorder plan before completing it.", 409)
     plan.status = "Completed"
     plan.completed_at = _now()
     plan.completed_by_user_id = current_user.id

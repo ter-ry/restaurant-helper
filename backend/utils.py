@@ -481,6 +481,8 @@ def serialize_reorder_plan_line(line: ReorderPlanLine) -> dict[str, Any]:
 
 def serialize_reorder_plan(plan: ReorderPlan) -> dict[str, Any]:
     lines = [serialize_reorder_plan_line(line) for line in plan.lines]
+    included_lines = [line for line in lines if not line["excluded"]]
+    unknown_included_prices = any(line["estimatedLineCost"] is None for line in included_lines)
     return {
         "id": plan.id,
         "organizationId": plan.organization_id,
@@ -495,8 +497,9 @@ def serialize_reorder_plan(plan: ReorderPlan) -> dict[str, Any]:
         "completedAt": isoformat(plan.completed_at),
         "lineCount": len(lines),
         "supplierCount": len({line["supplierName"] or "Unassigned" for line in lines}),
-        "estimatedCost": round(sum((line["estimatedLineCost"] or 0) for line in lines if not line["excluded"]), 2),
-        "includedCost": round(sum((line["estimatedLineCost"] or 0) for line in lines if not line["excluded"]), 2),
+        "estimatedCost": round(sum((line["estimatedLineCost"] or 0) for line in included_lines), 2),
+        "includedCost": round(sum((line["estimatedLineCost"] or 0) for line in included_lines), 2),
+        "estimateStatus": "partial" if unknown_included_prices else "complete",
         "excludedCount": sum(1 for line in lines if line["excluded"]),
         "lines": lines,
         "createdAt": isoformat(plan.created_at),

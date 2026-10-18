@@ -42,8 +42,11 @@ function createSuggestion(overrides: Partial<PilotReorderSuggestion> = {}): Pilo
     parLevel: 10,
     suggestedQuantity: 8,
     adjustedQuantity: 8,
+    purchaseUnit: "case",
+    conversionFactor: 2,
+    suggestedPurchaseQuantity: 4,
     latestPurchasePrice: 9,
-    estimatedCost: 72,
+    estimatedCost: 36,
     stockStatus: "Reorder now",
     status: "Needs review",
     daysRemaining: 1.5,
@@ -66,8 +69,9 @@ function createPlan(status: "Draft" | "Prepared" | "Completed", id: number): Pil
     completedAt: status === "Completed" ? "2026-08-28T11:00:00.000Z" : null,
     lineCount: 1,
     supplierCount: 1,
-    estimatedCost: 72,
-    includedCost: 72,
+    estimatedCost: 36,
+    includedCost: 36,
+    estimateStatus: "complete",
     excludedCount: 0,
     lines: [
       {
@@ -86,10 +90,10 @@ function createPlan(status: "Draft" | "Prepared" | "Completed", id: number): Pil
         minimumQuantity: 4,
         parLevel: 10,
         suggestedQuantity: 8,
-        orderQuantity: 8,
+        orderQuantity: 4,
         excluded: false,
         estimatedUnitCost: 9,
-        estimatedLineCost: 72,
+        estimatedLineCost: 36,
         notes: "Order if under par",
         createdAt: "2026-08-28T09:00:00.000Z",
         updatedAt: "2026-08-28T10:00:00.000Z",
@@ -122,7 +126,7 @@ describe("PilotReorderPlanPage", () => {
           supplier: "Fresh Foods",
           lines: [createSuggestion()],
           itemCount: 1,
-          estimatedOrderTotal: 72,
+          estimatedOrderTotal: 36,
         },
       ],
     });
@@ -175,8 +179,8 @@ describe("PilotReorderPlanPage", () => {
     expect(screen.queryByText("Current reorder pressure")).not.toBeInTheDocument();
     expect(screen.queryByText("Supplier groups")).not.toBeInTheDocument();
     expect(screen.queryByText("Saved plans")).not.toBeInTheDocument();
-    expect(screen.getByText("Completed plan history")).toBeVisible();
-    expect(screen.getByText("Week 1 completed")).toBeVisible();
+    expect(screen.queryByText("Completed plan history")).not.toBeInTheDocument();
+    expect(screen.queryByText("Week 1 completed")).not.toBeInTheDocument();
   });
 
   it("separates live planning from completed history and keeps the draft actions clear", async () => {
@@ -186,7 +190,6 @@ describe("PilotReorderPlanPage", () => {
     expect(screen.getByRole("tab", { name: "Live planning" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByText("Needs reorder").length).toBeGreaterThan(0);
     expect(screen.getByText("By supplier")).toBeVisible();
-    expect(screen.getByText("Saved plans")).toBeVisible();
     expect(screen.getByText("Saved plans")).toBeVisible();
     expect(screen.getAllByText("Week 1 draft").length).toBeGreaterThan(0);
     expect(screen.queryByText("Week 1 completed")).not.toBeInTheDocument();
@@ -198,6 +201,8 @@ describe("PilotReorderPlanPage", () => {
     expect(screen.getByRole("button", { name: "Save draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Mark prepared" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Complete plan" })).toBeVisible();
+    expect(screen.getByText("$36.00 estimated")).toBeVisible();
+    expect(screen.getByLabelText("Order qty (case)")).toHaveAttribute("step", "1");
 
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
@@ -255,12 +260,12 @@ describe("PilotReorderPlanPage", () => {
         inventoryItemName: "Chicken Breast",
         supplierName: "Fresh Foods",
         estimatedUnitCost: 9,
-        estimatedLineCost: 72,
+        estimatedLineCost: 36,
       })),
       lineCount: 1,
       supplierCount: 1,
-      estimatedCost: 72,
-      includedCost: 72,
+      estimatedCost: 36,
+      includedCost: 36,
     }));
 
     renderPage();
@@ -270,8 +275,60 @@ describe("PilotReorderPlanPage", () => {
     await waitFor(() => expect(mockApi.createPilotReorderPlan).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockApi.updatePilotReorderPlan).toHaveBeenCalledTimes(1));
     expect(mockApi.updatePilotReorderPlan.mock.calls.at(-1)?.[1]).toMatchObject({
-      lines: [expect.objectContaining({ inventoryItemId: 301, orderQuantity: 8 })],
+      lines: [expect.objectContaining({ inventoryItemId: 301, orderQuantity: 4 })],
     });
     expect(await screen.findByText("Item added to the working order plan.")).toBeVisible();
+  });
+
+  it("completes a prepared snapshot without attempting another update", async () => {
+    const prepared = createPlan("Prepared", 4);
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [prepared], activeDraftPlanId: null });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(prepared);
+    mockApi.completePilotReorderPlan.mockResolvedValue({ ...prepared, status: "Completed" });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Read-only reorder snapshot opened.")).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Complete plan" }));
+    expect(screen.getByRole("dialog", { name: "Complete this reorder plan?" })).toBeVisible();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Complete this reorder plan?" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Complete plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm completion" }));
+    await waitFor(() => expect(mockApi.completePilotReorderPlan).toHaveBeenCalledWith(4));
+    expect(mockApi.updatePilotReorderPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps a prepared plan discoverable when suggestions are empty after reload", async () => {
+    const prepared = { ...createPlan("Prepared", 8), estimateStatus: "partial" as const };
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({ suggestions: [], groupedBySupplier: [], activeInventoryItemCount: 4 });
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [prepared], activeDraftPlanId: null });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(prepared);
+
+    renderPage("/app/reorder-plan?planId=8");
+
+    expect(await screen.findByRole("button", { name: /Week 1 draft/ })).toBeVisible();
+    expect(screen.getAllByText("$36.00 known-cost subtotal").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Complete plan" })).toBeVisible();
+  });
+
+  it("recalculates provisional line estimates while editing without saving", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+
+    expect(screen.getByText("$36.00 estimated")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Order qty (case)"), { target: { value: "6" } });
+    expect(screen.getByText("$54.00 estimated")).toBeVisible();
+    expect(mockApi.updatePilotReorderPlan).not.toHaveBeenCalled();
+  });
+
+  it("uses stock units per purchase unit for conversion labels", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+
+    expect(screen.getByText("2 kg per case")).toBeVisible();
+    expect(screen.queryByText("2 case per kg")).not.toBeInTheDocument();
   });
 });

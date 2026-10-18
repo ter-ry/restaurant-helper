@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { sortRows, type SortDirection } from "../components/DataTable";
 import {
@@ -24,6 +25,33 @@ import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspac
 
 type LineDraft = PilotReorderPlanLine;
 
+const WHOLE_PURCHASE_UNITS = new Set(["each", "unit", "pack", "case", "bag", "box", "dozen", "head", "bottle", "can", "carton", "crate", "sleeve", "jar"]);
+
+function purchaseQuantityStep(unit: string) {
+  return WHOLE_PURCHASE_UNITS.has(unit.trim().toLowerCase()) ? "1" : "0.01";
+}
+
+function provisionalLineCost(line: PilotReorderPlanLine) {
+  if (line.estimatedUnitCost == null || !Number.isFinite(Number(line.orderQuantity))) {
+    return null;
+  }
+  return Math.round(Number(line.orderQuantity) * Number(line.estimatedUnitCost) * 100) / 100;
+}
+
+function planEstimateLabel(plan: PilotReorderPlan) {
+  return plan.estimateStatus === "partial" ? `${formatMoney(plan.includedCost)} known-cost subtotal` : `${formatMoney(plan.includedCost)} estimated total`;
+}
+
+function editableDraftSnapshot(plan: PilotReorderPlan | null) {
+  if (!plan) return null;
+  return JSON.stringify({
+    id: plan.id,
+    name: plan.name,
+    notes: plan.notes,
+    lines: plan.lines.map((line) => ({ id: line.id, orderQuantity: line.orderQuantity, excluded: line.excluded, notes: line.notes, supplierNameSnapshot: line.supplierName })),
+  });
+}
+
 export function PilotReorderPlanPage() {
   const location = useLocation();
   const [currentSuggestions, setCurrentSuggestions] = useState<PilotReorderSuggestion[]>([]);
@@ -34,6 +62,7 @@ export function PilotReorderPlanPage() {
   const [plans, setPlans] = useState<PilotReorderPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [draft, setDraft] = useState<PilotReorderPlan | null>(null);
+  const [savedDraft, setSavedDraft] = useState<PilotReorderPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,16 +71,28 @@ export function PilotReorderPlanPage() {
   const [workflowTab, setWorkflowTab] = useState<"live" | "history">("live");
   const [search, setSearch] = useState("");
   const [inventorySearch, setInventorySearch] = useState("");
-  const [suggestionSort, setSuggestionSort] = useState<{ key: "item" | "supplier" | "current" | "suggested" | "estimate" | "status"; direction: SortDirection } | null>(null);
+  const [suggestionSearch, setSuggestionSearch] = useState("");
+  const [suggestionSort, setSuggestionSort] = useState<{ key: "item" | "supplier" | "current" | "suggested" | "purchase" | "estimate" | "status"; direction: SortDirection } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmCompletion, setConfirmCompletion] = useState(false);
   const requestedPlanId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("planId");
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
-  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean; preserveSelection?: boolean }) => {
+  const draftIsDirty = draft?.status === "Draft" && editableDraftSnapshot(draft) !== editableDraftSnapshot(savedDraft);
+  const adoptDraft = (next: PilotReorderPlan | null) => {
+    setDraft(next);
+    setSavedDraft(next);
+  };
+
+  const load = async (preferredPlanId: number | null = requestedPlanId, options?: { preserveMessage?: boolean; preserveSelection?: boolean; allowDirty?: boolean }) => {
+    if (draftIsDirty && !options?.allowDirty) {
+      setMessage("Save the draft before refreshing or opening another plan.");
+      return;
+    }
     setLoading(true);
     setError(null);
     if (!options?.preserveMessage) {
@@ -59,7 +100,7 @@ export function PilotReorderPlanPage() {
     }
     if (!options?.preserveSelection) {
       setSelectedPlanId(null);
-      setDraft(null);
+      adoptDraft(null);
     }
 
     try {
@@ -77,10 +118,10 @@ export function PilotReorderPlanPage() {
           : null;
       if (selected) {
         setSelectedPlanId(selected.id);
-        setDraft(selected);
+        adoptDraft(selected);
       } else {
         setSelectedPlanId(null);
-        setDraft(null);
+        adoptDraft(null);
       }
       setHasLoaded(true);
     } catch (err) {
@@ -96,7 +137,7 @@ export function PilotReorderPlanPage() {
   }, [requestedPlanId]);
 
   const currentUrgentCount = useMemo(() => currentSuggestions.filter((item) => item.stockStatus === "Out of stock" || item.stockStatus === "Reorder now").length, [currentSuggestions]);
-  const currentUnknownPriceCount = useMemo(() => currentSuggestions.filter((item) => item.latestPurchasePrice === 0 || item.estimatedCost === null).length, [currentSuggestions]);
+  const currentUnknownPriceCount = useMemo(() => currentSuggestions.filter((item) => item.latestPurchasePrice === null || item.estimatedCost === null).length, [currentSuggestions]);
 
   const draftLinesBySupplier = useMemo(() => {
     const lines = draft?.lines ?? [];
@@ -116,22 +157,24 @@ export function PilotReorderPlanPage() {
   const livePlans = useMemo(() => plans.filter((plan) => plan.status !== "Completed"), [plans]);
   const historyPlans = useMemo(() => plans.filter((plan) => plan.status === "Completed"), [plans]);
   const visiblePlans = workflowTab === "history" ? historyPlans : livePlans;
-  const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0;
+  const showCompactEmptyState = workflowTab === "live" && currentSuggestions.length === 0 && draftPlanCount === 0 && preparedPlanCount === 0;
   const initialLoading = loading && !hasLoaded;
   const sortedSuggestions = useMemo(() => {
-    if (!suggestionSort) return currentSuggestions;
+    const matchingSuggestions = currentSuggestions.filter((suggestion) => `${suggestion.inventoryItemName} ${suggestion.supplier} ${suggestion.category} ${suggestion.stockStatus}`.toLowerCase().includes(suggestionSearch.trim().toLowerCase()));
+    if (!suggestionSort) return matchingSuggestions;
     const value = (suggestion: PilotReorderSuggestion) => {
       switch (suggestionSort.key) {
         case "item": return suggestion.inventoryItemName;
         case "supplier": return suggestion.supplier || "Unassigned supplier";
         case "current": return suggestion.currentQuantity;
         case "suggested": return suggestion.suggestedQuantity;
+        case "purchase": return suggestion.suggestedPurchaseQuantity;
         case "estimate": return suggestion.estimatedCost;
         case "status": return suggestion.stockStatus;
       }
     };
-    return sortRows(currentSuggestions, value, suggestionSort.direction, suggestionSort.key === "status" ? ["Out of stock", "Reorder now", "Low stock", "In stock"] : undefined);
-  }, [currentSuggestions, suggestionSort]);
+    return sortRows(matchingSuggestions, value, suggestionSort.direction, suggestionSort.key === "status" ? ["Out of stock", "Reorder now", "Low stock", "In stock"] : undefined);
+  }, [currentSuggestions, suggestionSearch, suggestionSort]);
 
   const cycleSuggestionSort = (key: NonNullable<typeof suggestionSort>["key"]) => {
     setSuggestionSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null);
@@ -143,6 +186,10 @@ export function PilotReorderPlanPage() {
     if (saving || creating || loading) {
       return;
     }
+    if (draftIsDirty) {
+      setMessage("Save the draft before opening another plan.");
+      return;
+    }
     setSaving(true);
     setPendingAction(null);
     setMessage(null);
@@ -150,7 +197,7 @@ export function PilotReorderPlanPage() {
     try {
       const plan = await fetchPilotReorderPlanDetail(planId);
       setSelectedPlanId(plan.id);
-      setDraft(plan);
+      adoptDraft(plan);
       setMessage(plan.status === "Draft" ? "Draft reorder plan opened." : "Read-only reorder snapshot opened.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open the reorder plan.");
@@ -163,6 +210,10 @@ export function PilotReorderPlanPage() {
     if (creating || saving || loading) {
       return;
     }
+    if (draftIsDirty) {
+      setMessage("Save the draft before starting or reopening another plan.");
+      return;
+    }
     setCreating(true);
     setPendingAction(null);
     setMessage(null);
@@ -171,7 +222,7 @@ export function PilotReorderPlanPage() {
       const plan = await createPilotReorderPlan();
       await load(plan.id, { preserveMessage: true });
       setSelectedPlanId(plan.id);
-      setDraft(plan);
+      adoptDraft(plan);
       setMessage(plan.lineCount ? "Draft reorder plan opened." : "Draft reorder plan created.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a reorder plan.");
@@ -180,7 +231,7 @@ export function PilotReorderPlanPage() {
     }
   };
 
-  const addItemsToDraft = async (items: Array<{ id: number; suggestedQuantity?: number }>) => {
+  const addItemsToDraft = async (items: Array<{ id: number; suggestedQuantity?: number; suggestedPurchaseQuantity?: number | null }>) => {
     if ((creating || saving || loading) || !items.length) return;
     setCreating(!draft || draft.status !== "Draft");
     setPendingAction(null);
@@ -189,7 +240,7 @@ export function PilotReorderPlanPage() {
     try {
       const workingDraft = draft && draft.status === "Draft" ? draft : await createPilotReorderPlan();
       setSelectedPlanId(workingDraft.id);
-      setDraft(workingDraft);
+      adoptDraft(workingDraft);
       setPlans((current) => current.some((plan) => plan.id === workingDraft.id) ? current.map((plan) => plan.id === workingDraft.id ? workingDraft : plan) : [workingDraft, ...current]);
       const additions = items.filter((item) => !workingDraft.lines.some((line) => line.inventoryItemId === item.id));
       if (!additions.length) {
@@ -201,10 +252,10 @@ export function PilotReorderPlanPage() {
       const saved = await updatePilotReorderPlan(workingDraft.id, {
         lines: [
           ...workingDraft.lines.map((line) => ({ id: line.id, orderQuantity: line.orderQuantity, excluded: line.excluded, notes: line.notes })),
-          ...additions.map((item) => ({ inventoryItemId: item.id, orderQuantity: item.suggestedQuantity ?? 0 })),
+          ...additions.map((item) => ({ inventoryItemId: item.id, ...(item.suggestedPurchaseQuantity != null ? { orderQuantity: item.suggestedPurchaseQuantity } : item.suggestedQuantity != null ? { orderQuantity: item.suggestedQuantity } : {}) })),
         ],
       });
-      setDraft(saved);
+      adoptDraft(saved);
       setPlans((current) => current.map((plan) => plan.id === saved.id ? saved : plan));
       setMessage(`${items.length === 1 ? "Item" : "Items"} added to the working order plan.`);
     } catch (err) {
@@ -215,7 +266,7 @@ export function PilotReorderPlanPage() {
     }
   };
 
-  const addRecommendations = () => void addItemsToDraft(currentSuggestions.map((suggestion) => ({ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity })));
+  const addRecommendations = () => void addItemsToDraft(currentSuggestions.map((suggestion) => ({ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity, suggestedPurchaseQuantity: suggestion.suggestedPurchaseQuantity })));
 
   const updateLine = (lineId: number, updater: (line: LineDraft) => LineDraft) => {
     setDraft((current) =>
@@ -248,9 +299,9 @@ export function PilotReorderPlanPage() {
           supplierNameSnapshot: line.supplierName,
         })),
       });
-      await load(saved.id, { preserveMessage: true, preserveSelection: true });
+      await load(saved.id, { preserveMessage: true, preserveSelection: true, allowDirty: true });
       setSelectedPlanId(saved.id);
-      setDraft(saved);
+      adoptDraft(saved);
       setMessage(`Saved draft ${saved.name}. It remains editable until you prepare it.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reorder plan.");
@@ -280,9 +331,9 @@ export function PilotReorderPlanPage() {
         })),
       });
       const prepared = await preparePilotReorderPlan(saved.id);
-      await load(prepared.id, { preserveMessage: true });
+      await load(prepared.id, { preserveMessage: true, allowDirty: true });
       setSelectedPlanId(prepared.id);
-      setDraft(prepared);
+      adoptDraft(prepared);
       setMessage(`Prepared reorder plan ${prepared.name}. It is now review-only until completed.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not prepare the reorder plan.");
@@ -293,7 +344,7 @@ export function PilotReorderPlanPage() {
   };
 
   const completeDraft = async () => {
-    if (!draft) {
+    if (!draft || draft.status !== "Prepared") {
       return;
     }
     setSaving(true);
@@ -301,21 +352,12 @@ export function PilotReorderPlanPage() {
     setMessage(null);
     setError(null);
     try {
-      const saved = await updatePilotReorderPlan(draft.id, {
-        name: draft.name,
-        notes: draft.notes,
-        lines: draft.lines.map((line) => ({
-          id: line.id,
-          orderQuantity: line.orderQuantity,
-          excluded: line.excluded,
-          notes: line.notes,
-        })),
-      });
-      const completed = await completePilotReorderPlan(saved.id);
+      const completed = await completePilotReorderPlan(draft.id);
       await load(null, { preserveMessage: true });
       setSelectedPlanId(null);
-      setDraft(null);
+      adoptDraft(null);
       setMessage(`Completed reorder plan ${completed.name}. It is now locked in history.`);
+      setConfirmCompletion(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
     } finally {
@@ -328,10 +370,10 @@ export function PilotReorderPlanPage() {
     if (line.excluded) {
       return sum;
     }
-    return sum + Number(line.estimatedLineCost || 0);
+    return sum + Number(provisionalLineCost(line) || 0);
   }, 0) ?? 0;
   const draftExcludedCount = draft?.lines.filter((line) => line.excluded).length ?? 0;
-  const unknownPriceCount = draft?.lines.filter((line) => line.estimatedUnitCost === null).length ?? 0;
+  const unknownPriceCount = draft?.lines.filter((line) => !line.excluded && line.estimatedUnitCost === null).length ?? 0;
   const availableItems = inventoryItems.filter((item) => !draft?.lines.some((line) => line.inventoryItemId === item.id) && `${item.name} ${item.category} ${item.preferredSupplierName} ${item.stockUnit}`.toLowerCase().includes(inventorySearch.toLowerCase()));
 
   return (
@@ -393,8 +435,8 @@ export function PilotReorderPlanPage() {
         <div className="grid gap-4">
           <Card className="workspace-card">
             <SectionHeader title="Completed plan history" />
-            <div className="space-y-3">
-              {historyPlans.slice(0, 5).map((plan) => (
+            <div className="max-h-96 space-y-3 overflow-y-auto pr-1">
+              {historyPlans.map((plan) => (
                 <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -404,7 +446,7 @@ export function PilotReorderPlanPage() {
                     <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.estimateStatus === "partial" ? "warning" : "neutral"}>{planEstimateLabel(plan)}</Badge>
                     <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
                 </div>
@@ -440,7 +482,7 @@ export function PilotReorderPlanPage() {
                     <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.estimateStatus === "partial" ? "warning" : "neutral"}>{planEstimateLabel(plan)}</Badge>
                     <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
@@ -477,37 +519,22 @@ export function PilotReorderPlanPage() {
             </div>
           </Card>
 
-          <Card className="workspace-card">
-            <SectionHeader title="Completed plan history" />
-            <div className="space-y-3">
-              {historyPlans.slice(0, 3).map((plan) => (
-                <div key={plan.id} className="rounded-2xl border border-line bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-ink">{plan.name}</p>
-                      <p className="text-sm text-muted">{plan.lineCount} lines • {plan.supplierCount} suppliers</p>
-                    </div>
-                    <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
-                    <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
-                  </div>
-                </div>
-              ))}
-              {!loading && hasLoaded && !historyPlans.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No completed plans yet.</p> : null}
-            </div>
-          </Card>
         </div>
       ) : (
         <div className={`${draft ? "order-2" : "order-1"} grid gap-6 xl:grid-cols-[1.18fr_0.82fr]`}>
           <Card className="p-6">
-            <SectionHeader title="Needs reorder" />
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <SectionHeader title="Needs reorder" />
+              <label className="w-full max-w-xs">
+                <span className="sr-only">Search reorder recommendations</span>
+                <input aria-label="Search reorder recommendations" className="input w-full" placeholder="Search items or suppliers" value={suggestionSearch} onChange={(event) => setSuggestionSearch(event.target.value)} />
+              </label>
+            </div>
             <div className="workspace-table-wrap max-h-[26rem] overflow-y-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-muted">
                   <tr>
-                    {([["item", "Item"], ["supplier", "Supplier"], ["current", "On hand / PAR"], ["suggested", "Suggested"], ["estimate", "Estimate"], ["status", "Status"]] as const).map(([key, label]) => (
+                    {([["item", "Item"], ["supplier", "Supplier"], ["current", "On hand / PAR"], ["suggested", "Suggested"], ["purchase", "Order qty"], ["estimate", "Estimate"], ["status", "Status"]] as const).map(([key, label]) => (
                       <th key={key} className="px-3 py-2" aria-sort={suggestionSortLabel(key)}>
                         <button type="button" className="font-semibold hover:text-ink" onClick={() => cycleSuggestionSort(key)}>{label}</button>
                       </th>
@@ -524,20 +551,21 @@ export function PilotReorderPlanPage() {
                         <td className="px-3 py-3 text-muted">{suggestion.supplier || "Unassigned supplier"}</td>
                         <td className="px-3 py-3 text-ink">{formatNumber(suggestion.currentQuantity)} / {formatNumber(suggestion.parLevel)} {suggestion.unit}</td>
                         <td className="px-3 py-3 font-semibold text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</td>
+                        <td className="px-3 py-3 text-ink">{suggestion.suggestedPurchaseQuantity == null ? "—" : `${formatNumber(suggestion.suggestedPurchaseQuantity)} ${suggestion.purchaseUnit}`}</td>
                         <td className="px-3 py-3 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</td>
                         <td className="px-3 py-3"><Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge></td>
-                        <td className="px-3 py-3"><Button variant="secondary" type="button" disabled={creating || saving || loading} onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity }])}>{isInDraft ? "In draft" : "Add to draft"}</Button></td>
+                        <td className="px-3 py-3"><Button variant="secondary" type="button" disabled={creating || saving || loading} onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity, suggestedPurchaseQuantity: suggestion.suggestedPurchaseQuantity }])}>{isInDraft ? "In draft" : "Add to draft"}</Button></td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : null}
+              {!currentSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Reorder suggestions appear once items drop below PAR or minimum.</p> : !sortedSuggestions.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">No reorder recommendations match this search.</p> : null}
             </div>
 
             <div className="mt-6">
               <SectionHeader title="By supplier" />
-              <div className="space-y-3">
+              <div className="max-h-[34rem] space-y-3 overflow-y-auto pr-1">
                 {currentGroups.map((group) => (
                   <div key={group.supplier} className="rounded-2xl border border-line bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">
@@ -547,14 +575,15 @@ export function PilotReorderPlanPage() {
                       </div>
                       <Badge tone="orange">{formatMoney(group.estimatedOrderTotal)}</Badge>
                     </div>
-                    <div className="mt-3 space-y-2">
-                      {group.lines.slice(0, 4).map((line) => (
+                    <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
+                      {group.lines.map((line) => (
                         <div key={line.id} className="flex items-center justify-between rounded-xl border border-line bg-white px-3 py-2 text-sm">
                           <span className="truncate text-ink">{line.inventoryItemName}</span>
-                          <span className="text-muted">{formatNumber(line.adjustedQuantity)} {line.unit}</span>
+                          <span className="text-muted">{formatNumber(line.suggestedPurchaseQuantity ?? line.adjustedQuantity)} {line.purchaseUnit || line.unit}</span>
                         </div>
                       ))}
                     </div>
+                    {group.estimateStatus === "partial" ? <p className="mt-2 text-xs text-muted">Partial estimate — some prices are unknown.</p> : null}
                   </div>
                 ))}
                 {!currentGroups.length ? <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Supplier groups appear once items need ordering.</p> : null}
@@ -589,7 +618,7 @@ export function PilotReorderPlanPage() {
                     <Badge tone={statusTone(plan.status)}>{plan.status}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="neutral">{formatMoney(plan.includedCost)} est. included</Badge>
+                    <Badge tone={plan.estimateStatus === "partial" ? "warning" : "neutral"}>{planEstimateLabel(plan)}</Badge>
                     <Badge tone={plan.excludedCount > 0 ? "warning" : "neutral"}>{plan.excludedCount} excluded</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
@@ -663,8 +692,8 @@ export function PilotReorderPlanPage() {
               <Badge tone="neutral">{draft.lineCount} lines</Badge>
               <Badge tone="neutral">{draft.supplierCount} suppliers</Badge>
               <Badge tone={draftExcludedCount > 0 ? "warning" : "neutral"}>{draftExcludedCount} excluded</Badge>
-              <Badge tone={unknownPriceCount > 0 ? "warning" : "success"}>{unknownPriceCount} unknown prices</Badge>
-              <Badge tone="orange">{formatMoney(draftIncludedCost)} estimated cost</Badge>
+              <Badge tone={unknownPriceCount > 0 ? "warning" : "success"}>{unknownPriceCount} unknown included prices</Badge>
+              <Badge tone="orange">{formatMoney(draftIncludedCost)} {draft.estimateStatus === "partial" ? "known-cost subtotal" : "estimated cost"}</Badge>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -679,7 +708,7 @@ export function PilotReorderPlanPage() {
               <Button disabled={creating || saving || loading || draft.status !== "Draft"} variant="ghost" icon={<Truck className="h-4 w-4" />} type="button" onClick={() => void prepareDraft()}>
                 {saving && pendingAction === "prepare" ? "Preparing..." : "Mark prepared"}
               </Button>
-              <Button disabled={creating || saving || loading || draft.status === "Completed"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => void completeDraft()}>
+              <Button disabled={creating || saving || loading || draft.status !== "Prepared"} icon={<CheckCircle2 className="h-4 w-4" />} variant="primary" type="button" onClick={() => setConfirmCompletion(true)}>
                 {saving && pendingAction === "complete" ? "Completing..." : "Complete plan"}
               </Button>
             </div>
@@ -697,12 +726,12 @@ export function PilotReorderPlanPage() {
                   <Search className="h-4 w-4 text-muted" />
                   <input aria-label="Search inventory to add" className="w-full bg-transparent text-sm outline-none" placeholder="Search inventory to add" value={inventorySearch} onChange={(event) => setInventorySearch(event.target.value)} />
                 </div>
-                <div className="mt-3 space-y-2">
-                  {availableItems.slice(0, 8).map((item) => {
+              <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+                  {availableItems.map((item) => {
                     const suggestion = currentSuggestions.find((candidate) => candidate.inventoryItemId === item.id);
                     return <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white px-3 py-3">
                       <div><p className="font-semibold text-ink">{item.name}</p><p className="text-xs text-muted">{formatNumber(item.currentOnHand)} {item.stockUnit} on hand · PAR {formatNumber(item.parLevel)} · {item.preferredSupplierName || "No supplier"}</p></div>
-                      <Button variant="secondary" type="button" onClick={() => void addItemsToDraft([{ id: item.id, suggestedQuantity: suggestion?.suggestedQuantity }])} disabled={saving}>Add</Button>
+                      <Button variant="secondary" type="button" onClick={() => void addItemsToDraft([{ id: item.id, suggestedQuantity: suggestion?.suggestedQuantity, suggestedPurchaseQuantity: suggestion?.suggestedPurchaseQuantity }])} disabled={saving}>Add</Button>
                     </div>;
                   })}
                   {!availableItems.length ? (
@@ -733,7 +762,7 @@ export function PilotReorderPlanPage() {
                       <p className="font-semibold text-ink">{supplierName}</p>
                       <p className="text-sm text-muted">{lines.length} items</p>
                     </div>
-                    <Badge tone="neutral">{lines.some((line) => line.estimatedUnitCost === null) ? "Some prices unknown" : "Prices estimated"}</Badge>
+                    <Badge tone="neutral">{lines.some((line) => !line.excluded && line.estimatedUnitCost === null) ? "Some included prices unknown" : "Prices estimated"}</Badge>
                   </div>
 
                   <div className="mt-3 space-y-3">
@@ -754,8 +783,8 @@ export function PilotReorderPlanPage() {
 
                         <div className="mt-4 grid gap-3 md:grid-cols-4">
                           <label className="block">
-                            <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty</span>
-                            <input className={`input mt-1 w-24 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} min="0" step="1" type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
+                            <span className="text-xs font-bold uppercase tracking-wide text-muted">Order qty ({line.purchaseUnit})</span>
+                            <input className={`input mt-1 w-24 ${draft.status !== "Draft" ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : ""}`} min="0" step={purchaseQuantityStep(line.purchaseUnit)} type="number" value={line.orderQuantity} onChange={(event) => updateLine(line.id, (current) => ({ ...current, orderQuantity: Number(event.target.value) }))} disabled={draft.status !== "Draft"} />
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold uppercase tracking-wide text-muted">Exclude</span>
@@ -772,9 +801,9 @@ export function PilotReorderPlanPage() {
 
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
                           <Badge tone="neutral">Suggested {formatNumber(line.suggestedQuantity)} {line.inventoryUnit}</Badge>
-                          <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.purchaseUnit} per {line.inventoryUnit}</Badge>
-                          <Badge tone={line.estimatedLineCost === null ? "warning" : "success"}>
-                            {line.estimatedLineCost === null ? "Estimate unavailable" : `${formatMoney(line.estimatedLineCost)} estimated`}
+                          <Badge tone="neutral">{formatNumber(line.conversionFactor)} {line.inventoryUnit} per {line.purchaseUnit}</Badge>
+                          <Badge tone={provisionalLineCost(line) === null ? "warning" : "success"}>
+                            {provisionalLineCost(line) === null ? "Estimate unavailable" : `${formatMoney(provisionalLineCost(line) ?? 0)} estimated`}
                           </Badge>
                         </div>
                       </div>
@@ -789,6 +818,15 @@ export function PilotReorderPlanPage() {
           <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-sm text-muted">Start a draft to build a reorder plan from the current stock picture.</div>
         )}
       </Card>
+      {confirmCompletion ? (
+        <Modal title="Complete this reorder plan?" size="small" onClose={() => { if (!saving) setConfirmCompletion(false); }}>
+          <p className="text-sm leading-6 text-muted">This saves the current supplier and quantity snapshot as completed history. It does not receive inventory or place an order.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" type="button" onClick={() => setConfirmCompletion(false)} disabled={saving}>Cancel</Button>
+            <Button variant="primary" type="button" onClick={() => void completeDraft()} disabled={saving}>{saving ? "Completing..." : "Confirm completion"}</Button>
+          </div>
+        </Modal>
+      ) : null}
       </div>
     </div>
   );
