@@ -370,6 +370,64 @@ describe("PilotReorderPlanPage", () => {
     expect(await screen.findByDisplayValue("20")).toBeVisible();
     expect(screen.getByText("Selected recommendation changes applied locally. Save draft to persist them.")).toBeVisible();
     expect(mockApi.updatePilotReorderPlan).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(mockApi.updatePilotReorderPlan).toHaveBeenCalledTimes(1));
+    const payload = mockApi.updatePilotReorderPlan.mock.calls[0]?.[1] as { lines: Array<Record<string, unknown>> };
+    expect(payload.lines[0]).toMatchObject({ orderQuantity: 20 });
+    expect(payload.lines[0]).not.toHaveProperty("estimatedUnitCost");
+  });
+
+  it("requires manual review when the current recommendation price differs from the saved snapshot", async () => {
+    const plan = createPlan("Draft", 14);
+    plan.lines[0] = { ...plan.lines[0], purchaseUnit: "bag", conversionFactor: 0.25, orderQuantity: 5, estimatedUnitCost: 40, estimatedLineCost: 200 };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 14 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({ suggestions: [createSuggestion({ purchaseUnit: "bag", conversionFactor: 0.25, suggestedPurchaseQuantity: 20, latestPurchasePrice: 48, estimatedCost: 960 })], groupedBySupplier: [], inventoryItems: [] });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Review recommendation changes" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review recommendation changes" });
+    expect(dialog).toHaveTextContent("saved $40.00; current $48.00");
+    expect(screen.getByText("Review manually")).toBeVisible();
+    expect(screen.queryByRole("checkbox", { name: "Apply" })).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("5")).toBeVisible();
+    expect(mockApi.updatePilotReorderPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps unknown prices and changed conversions in manual review", async () => {
+    const plan = createPlan("Draft", 15);
+    plan.lines[0] = { ...plan.lines[0], purchaseUnit: "bag", conversionFactor: 0.25, orderQuantity: 5, estimatedUnitCost: null, estimatedLineCost: null };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 15 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({ suggestions: [createSuggestion({ purchaseUnit: "case", conversionFactor: 2, suggestedPurchaseQuantity: 3, latestPurchasePrice: null })], groupedBySupplier: [], inventoryItems: [] });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Review recommendation changes" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review recommendation changes" });
+    expect(dialog).toHaveTextContent("Current purchase price is unavailable.");
+    expect(dialog).toHaveTextContent("Review manually");
+    expect(screen.queryByRole("checkbox", { name: "Apply" })).not.toBeInTheDocument();
+  });
+
+  it("does not apply a stale comparison after the draft changes while fetching", async () => {
+    const plan = createPlan("Draft", 16);
+    const pending = new Promise<Awaited<ReturnType<typeof mockApi.fetchPilotReorderPlan>>>(() => undefined);
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({ suggestions: [createSuggestion()], groupedBySupplier: [], inventoryItems: [] });
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 16 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    mockApi.fetchPilotReorderPlan.mockReturnValue(pending);
+    fireEvent.click(screen.getByRole("button", { name: "Review recommendation changes" }));
+    fireEvent.change(screen.getByLabelText("Order qty (case)"), { target: { value: "7" } });
+    expect(screen.queryByRole("dialog", { name: "Review recommendation changes" })).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("7")).toBeVisible();
   });
 
   it("protects unsaved draft edits before opening recommendation review", async () => {
