@@ -1,11 +1,13 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { formatMenuCostingQuantity, PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
+import { formatMenuCostingQuantity, formatMenuCostingUnitCost, PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
 
 const mockApi = vi.hoisted(() => ({
   fetchPilotMenuCosting: vi.fn(),
   fetchPilotInventory: vi.fn(),
+  updatePilotMenuCostingRecipe: vi.fn(),
+  updatePilotMenuCostingRecipeIngredient: vi.fn(),
 }));
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
@@ -22,10 +24,10 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     fetchPilotMenuCosting: mockApi.fetchPilotMenuCosting,
     fetchPilotInventory: mockApi.fetchPilotInventory,
     createPilotMenuCostingRecipe: vi.fn(),
-    updatePilotMenuCostingRecipe: vi.fn(),
+    updatePilotMenuCostingRecipe: mockApi.updatePilotMenuCostingRecipe,
     deletePilotMenuCostingRecipe: vi.fn(),
     createPilotMenuCostingRecipeIngredient: vi.fn(),
-    updatePilotMenuCostingRecipeIngredient: vi.fn(),
+    updatePilotMenuCostingRecipeIngredient: mockApi.updatePilotMenuCostingRecipeIngredient,
     deletePilotMenuCostingRecipeIngredient: vi.fn(),
     createPilotMenuCostingMenuItem: vi.fn(),
     updatePilotMenuCostingMenuItem: vi.fn(),
@@ -38,7 +40,17 @@ describe("PilotMenuCostingPage", () => {
     expect([0.25, 0.125, 0.025, 0.001, 1, 4].map(formatMenuCostingQuantity)).toEqual(["0.25", "0.125", "0.025", "0.001", "1", "4"]);
   });
 
+  it("keeps unit-cost precision without changing normal money formatting", () => {
+    expect(formatMenuCostingUnitCost(12)).toBe("$12.00");
+    expect(formatMenuCostingUnitCost(0.25)).toBe("$0.25");
+    expect(formatMenuCostingUnitCost(0.0025)).toBe("$0.0025");
+    expect(formatMenuCostingUnitCost(0)).toBe("$0.00");
+    expect(formatMenuCostingUnitCost(null)).toBe("Cost unavailable");
+  });
+
   beforeEach(() => {
+    mockApi.updatePilotMenuCostingRecipe.mockReset();
+    mockApi.updatePilotMenuCostingRecipeIngredient.mockReset();
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
       organizationId: 42,
       locationId: 7,
@@ -282,5 +294,56 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByRole("heading", { name: "Discard recipe changes?" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
+  });
+
+  it("preserves an unsaved recipe edit when saving an ingredient reloads the recipe", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
+    fireEvent.change(screen.getAllByLabelText("Name")[0], { target: { value: "Changed locally" } });
+
+    const server = await mockApi.fetchPilotMenuCosting.mock.results[0].value;
+    const updated = structuredClone(server);
+    updated.recipes[0].ingredients[0].quantityRequired = 3;
+    mockApi.updatePilotMenuCostingRecipeIngredient.mockResolvedValue(updated.recipes[0]);
+    mockApi.fetchPilotMenuCosting.mockResolvedValue(updated);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Quantity required"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update ingredient" }));
+    await waitFor(() => expect(screen.getByDisplayValue("Changed locally")).toBeVisible());
+    expect(screen.getByText(/3 kg/)).toBeVisible();
+
+    const savedRecipe = { ...updated.recipes[0], name: "Changed locally" };
+    mockApi.updatePilotMenuCostingRecipe.mockResolvedValue(savedRecipe);
+    mockApi.fetchPilotMenuCosting.mockResolvedValue({ ...updated, recipes: [savedRecipe] });
+    fireEvent.click(screen.getByRole("button", { name: "Update recipe" }));
+    await waitFor(() => expect(screen.getByText("Recipe Changed locally saved.")).toBeVisible());
+    expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
+    expect(screen.getByText(/3 kg/)).toBeVisible();
+  });
+
+  it("preserves an unsaved ingredient edit when saving recipe details, and keeps failed saves editable", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Quantity required"), { target: { value: "3" } });
+    fireEvent.change(screen.getAllByLabelText("Name")[0], { target: { value: "Recipe renamed" } });
+    const server = await mockApi.fetchPilotMenuCosting.mock.results[0].value;
+    mockApi.updatePilotMenuCostingRecipe.mockResolvedValue({ ...server.recipes[0], name: "Recipe renamed" });
+    mockApi.fetchPilotMenuCosting.mockResolvedValue(server);
+    fireEvent.click(screen.getByRole("button", { name: "Update recipe" }));
+    await waitFor(() => expect(screen.getByText("Recipe Recipe renamed saved.")).toBeVisible());
+    expect(screen.getByDisplayValue("3")).toBeVisible();
+
+    mockApi.updatePilotMenuCostingRecipeIngredient.mockRejectedValue(new Error("Ingredient save failed"));
+    fireEvent.click(screen.getByRole("button", { name: "Update ingredient" }));
+    await waitFor(() => expect(screen.getByText("Ingredient save failed")).toBeVisible());
+    expect(screen.getByDisplayValue("3")).toBeVisible();
   });
 });

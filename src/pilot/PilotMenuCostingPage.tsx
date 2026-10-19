@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
 import {
   createPilotMenuCostingMenuItem,
@@ -71,6 +71,16 @@ export function formatMenuCostingQuantity(value: number | null | undefined) {
 
 function formatCost(value: number | null | undefined) {
   return value == null || !Number.isFinite(Number(value)) ? "Cost unavailable" : formatMoney(value);
+}
+
+export function formatMenuCostingUnitCost(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return "Cost unavailable";
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(Number(value));
 }
 
 const blankRecipeDraft = (): RecipeDraft => ({
@@ -162,6 +172,8 @@ export function PilotMenuCostingPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recipeSort, setRecipeSort] = useState<{ key: "name" | "yield" | "cost" | "ingredients" | "status"; direction: SortDirection } | null>(null);
+  const previousRecipeId = useRef<number | null>(null);
+  const previousIngredientId = useRef<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -213,20 +225,26 @@ export function PilotMenuCostingPage() {
   );
 
   useEffect(() => {
+    const recipeChanged = previousRecipeId.current !== (selectedRecipe?.id ?? null);
     if (selectedRecipe) {
-      setRecipeDraft(draftFromRecipe(selectedRecipe));
-      setSelectedIngredientId(null);
-      setIngredientDraft(blankIngredientDraft());
+      if (recipeChanged) {
+        setRecipeDraft(draftFromRecipe(selectedRecipe));
+        setSelectedIngredientId(null);
+        setIngredientDraft(blankIngredientDraft());
+      }
       setRecipeEditorMode("edit");
     }
+    previousRecipeId.current = selectedRecipe?.id ?? null;
   }, [selectedRecipe]);
 
   useEffect(() => {
+    const ingredientChanged = previousIngredientId.current !== (selectedIngredient?.id ?? null);
     if (selectedIngredient) {
-      setIngredientDraft(draftFromIngredient(selectedIngredient));
-    } else if (selectedRecipe) {
+      if (ingredientChanged) setIngredientDraft(draftFromIngredient(selectedIngredient));
+    } else if (selectedRecipe && ingredientChanged) {
       setIngredientDraft(blankIngredientDraft());
     }
+    previousIngredientId.current = selectedIngredient?.id ?? null;
   }, [selectedIngredient, selectedRecipe]);
 
   useEffect(() => {
@@ -367,6 +385,7 @@ export function PilotMenuCostingPage() {
         notes: recipeDraft.notes,
       };
       const saved = recipeDraft.id ? await updatePilotMenuCostingRecipe(recipeDraft.id, payload) : await createPilotMenuCostingRecipe(payload);
+      setRecipeDraft(draftFromRecipe(saved));
       setSelectedRecipeId(saved.id);
       setRecipeEditorMode("edit");
       setMessage(`Recipe ${saved.name} saved.`);
@@ -767,7 +786,7 @@ export function PilotMenuCostingPage() {
                               const basisLabel = ingredient.costBasis === "latest_purchase" ? "latest purchase" : ingredient.costBasis === "weighted_average" ? "average" : "cost unavailable";
                               return (
                                 <p className="mt-1 text-sm text-muted">
-                                  {formatMenuCostingQuantity(ingredient.quantityRequired)} {ingredient.unit} × {formatCost(unitCost)}/{costBasisUnit} {basisLabel} cost = {formatCost(ingredient.lineCost)} ingredient cost
+                                  {formatMenuCostingQuantity(ingredient.quantityRequired)} {ingredient.unit} × {formatMenuCostingUnitCost(unitCost)}/{costBasisUnit} {basisLabel} cost = {formatCost(ingredient.lineCost)} ingredient cost
                                 </p>
                               );
                             })()}
