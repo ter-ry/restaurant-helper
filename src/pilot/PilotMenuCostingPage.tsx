@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
 import {
   createPilotMenuCostingMenuItem,
@@ -56,6 +56,31 @@ interface MenuItemDraft {
   sellingPrice: number;
   active: boolean;
   notes: string;
+}
+
+type PendingDiscard = {
+  title: string;
+  message: string;
+  confirm: () => void;
+};
+
+export function formatMenuCostingQuantity(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return new Intl.NumberFormat("en-CA", { useGrouping: false, maximumFractionDigits: 4 }).format(Number(value));
+}
+
+function formatCost(value: number | null | undefined) {
+  return value == null || !Number.isFinite(Number(value)) ? "Cost unavailable" : formatMoney(value);
+}
+
+export function formatMenuCostingUnitCost(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return "Cost unavailable";
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(Number(value));
 }
 
 const blankRecipeDraft = (): RecipeDraft => ({
@@ -135,6 +160,9 @@ export function PilotMenuCostingPage() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
   const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(blankIngredientDraft());
   const [menuItemDraft, setMenuItemDraft] = useState<MenuItemDraft>(blankMenuItemDraft());
+  const [whatIfPrice, setWhatIfPrice] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ kind: "recipe" | "ingredient" | "menu-item"; id: number; label: string } | null>(null);
+  const [pendingDiscard, setPendingDiscard] = useState<PendingDiscard | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [savingRecipe, setSavingRecipe] = useState(false);
@@ -144,6 +172,8 @@ export function PilotMenuCostingPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recipeSort, setRecipeSort] = useState<{ key: "name" | "yield" | "cost" | "ingredients" | "status"; direction: SortDirection } | null>(null);
+  const previousRecipeId = useRef<number | null>(null);
+  const previousIngredientId = useRef<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -195,28 +225,36 @@ export function PilotMenuCostingPage() {
   );
 
   useEffect(() => {
+    const recipeChanged = previousRecipeId.current !== (selectedRecipe?.id ?? null);
     if (selectedRecipe) {
-      setRecipeDraft(draftFromRecipe(selectedRecipe));
-      setSelectedIngredientId(null);
-      setIngredientDraft(blankIngredientDraft());
+      if (recipeChanged) {
+        setRecipeDraft(draftFromRecipe(selectedRecipe));
+        setSelectedIngredientId(null);
+        setIngredientDraft(blankIngredientDraft());
+      }
       setRecipeEditorMode("edit");
     }
+    previousRecipeId.current = selectedRecipe?.id ?? null;
   }, [selectedRecipe]);
 
   useEffect(() => {
+    const ingredientChanged = previousIngredientId.current !== (selectedIngredient?.id ?? null);
     if (selectedIngredient) {
-      setIngredientDraft(draftFromIngredient(selectedIngredient));
-    } else if (selectedRecipe) {
+      if (ingredientChanged) setIngredientDraft(draftFromIngredient(selectedIngredient));
+    } else if (selectedRecipe && ingredientChanged) {
       setIngredientDraft(blankIngredientDraft());
     }
+    previousIngredientId.current = selectedIngredient?.id ?? null;
   }, [selectedIngredient, selectedRecipe]);
 
   useEffect(() => {
     if (selectedMenuItem) {
       setMenuItemDraft(draftFromMenuItem(selectedMenuItem));
       setMenuItemEditorMode("edit");
+      setWhatIfPrice("");
     } else {
       setMenuItemDraft(blankMenuItemDraft());
+      setWhatIfPrice("");
     }
   }, [selectedMenuItem]);
 
@@ -241,8 +279,99 @@ export function PilotMenuCostingPage() {
   );
   const showRecipeEditor = recipeEditorMode !== "hidden" || selectedRecipeId !== null;
   const showMenuItemEditor = menuItemEditorMode !== "hidden" || selectedMenuItemId !== null;
+  const recipeBaseline = selectedRecipe ? draftFromRecipe(selectedRecipe) : blankRecipeDraft();
+  const ingredientBaseline = selectedIngredient ? draftFromIngredient(selectedIngredient) : blankIngredientDraft();
+  const menuItemBaseline = selectedMenuItem ? draftFromMenuItem(selectedMenuItem) : blankMenuItemDraft();
+  const recipeDirty = JSON.stringify(recipeDraft) !== JSON.stringify(recipeBaseline);
+  const ingredientDirty = JSON.stringify(ingredientDraft) !== JSON.stringify(ingredientBaseline);
+  const menuItemDirty = JSON.stringify(menuItemDraft) !== JSON.stringify(menuItemBaseline);
+
+  const closeRecipeEditor = () => {
+    setSelectedRecipeId(null);
+    setSelectedIngredientId(null);
+    setRecipeEditorMode("hidden");
+  };
+
+  const closeMenuItemEditor = () => {
+    setSelectedMenuItemId(null);
+    setMenuItemEditorMode("hidden");
+  };
+
+  const requestRecipeClose = () => {
+    if (recipeDirty || ingredientDirty) {
+      setPendingDiscard({ title: "Discard recipe changes?", message: "Unsaved recipe or ingredient changes will be lost.", confirm: closeRecipeEditor });
+      return;
+    }
+    closeRecipeEditor();
+  };
+
+  const requestMenuItemClose = () => {
+    if (menuItemDirty) {
+      setPendingDiscard({ title: "Discard menu item changes?", message: "Unsaved menu item changes will be lost.", confirm: closeMenuItemEditor });
+      return;
+    }
+    closeMenuItemEditor();
+  };
+
+  const openRecipe = (recipe: PilotMenuCostingRecipe) => {
+    const open = () => { setSelectedRecipeId(recipe.id); setRecipeEditorMode("edit"); };
+    if (recipeDirty || ingredientDirty) {
+      setPendingDiscard({ title: "Discard recipe changes?", message: "Unsaved recipe or ingredient changes will be lost.", confirm: open });
+      return;
+    }
+    open();
+  };
+
+  const openMenuItem = (menuItem: PilotMenuCostingMenuItem) => {
+    const open = () => { setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); };
+    if (menuItemDirty) {
+      setPendingDiscard({ title: "Discard menu item changes?", message: "Unsaved menu item changes will be lost.", confirm: open });
+      return;
+    }
+    open();
+  };
+
+  const editIngredient = (ingredient: PilotMenuCostingRecipeIngredient) => {
+    const open = () => { setSelectedIngredientId(ingredient.id); setIngredientDraft(draftFromIngredient(ingredient)); };
+    if (ingredientDirty) {
+      setPendingDiscard({ title: "Discard ingredient changes?", message: "Unsaved ingredient changes will be lost.", confirm: open });
+      return;
+    }
+    open();
+  };
+
+  const startNewRecipe = () => {
+    const open = () => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); };
+    if (recipeDirty || ingredientDirty) {
+      setPendingDiscard({ title: "Discard recipe changes?", message: "Unsaved recipe or ingredient changes will be lost.", confirm: open });
+      return;
+    }
+    open();
+  };
+
+  const startNewMenuItem = () => {
+    const open = () => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); };
+    if (menuItemDirty) {
+      setPendingDiscard({ title: "Discard menu item changes?", message: "Unsaved menu item changes will be lost.", confirm: open });
+      return;
+    }
+    open();
+  };
+
+  const cancelIngredientEdit = () => {
+    const cancel = () => { setSelectedIngredientId(null); setIngredientDraft(blankIngredientDraft()); };
+    if (ingredientDirty) {
+      setPendingDiscard({ title: "Discard ingredient changes?", message: "Unsaved ingredient changes will be lost.", confirm: cancel });
+      return;
+    }
+    cancel();
+  };
 
   const saveRecipe = async () => {
+    if (!Number.isFinite(recipeDraft.yieldQuantity) || recipeDraft.yieldQuantity <= 0) {
+      setError("Yield quantity must be a finite value greater than zero.");
+      return;
+    }
     setSavingRecipe(true);
     setError(null);
     setMessage(null);
@@ -256,6 +385,7 @@ export function PilotMenuCostingPage() {
         notes: recipeDraft.notes,
       };
       const saved = recipeDraft.id ? await updatePilotMenuCostingRecipe(recipeDraft.id, payload) : await createPilotMenuCostingRecipe(payload);
+      setRecipeDraft(draftFromRecipe(saved));
       setSelectedRecipeId(saved.id);
       setRecipeEditorMode("edit");
       setMessage(`Recipe ${saved.name} saved.`);
@@ -274,6 +404,10 @@ export function PilotMenuCostingPage() {
     }
     if (ingredientDraft.inventoryItemId === "") {
       setError("Choose an inventory item for the ingredient.");
+      return;
+    }
+    if (!Number.isFinite(ingredientDraft.quantityRequired) || ingredientDraft.quantityRequired <= 0) {
+      setError("Ingredient quantity must be a finite value greater than zero.");
       return;
     }
 
@@ -303,6 +437,10 @@ export function PilotMenuCostingPage() {
   };
 
   const saveMenuItem = async () => {
+    if (!Number.isFinite(menuItemDraft.sellingPrice) || menuItemDraft.sellingPrice < 0) {
+      setError("Selling price must be a finite non-negative value.");
+      return;
+    }
     setSavingMenuItem(true);
     setError(null);
     setMessage(null);
@@ -329,9 +467,6 @@ export function PilotMenuCostingPage() {
   };
 
   const removeRecipe = async (recipe: PilotMenuCostingRecipe) => {
-    if (!window.confirm(`Delete ${recipe.name}?`)) {
-      return;
-    }
     setError(null);
     setMessage(null);
     try {
@@ -347,7 +482,7 @@ export function PilotMenuCostingPage() {
   };
 
   const removeIngredient = async (ingredient: PilotMenuCostingRecipeIngredient) => {
-    if (!selectedRecipe || !window.confirm("Delete this ingredient?")) {
+    if (!selectedRecipe) {
       return;
     }
     setError(null);
@@ -364,9 +499,6 @@ export function PilotMenuCostingPage() {
   };
 
   const removeMenuItem = async (menuItem: PilotMenuCostingMenuItem) => {
-    if (!window.confirm(`Delete ${menuItem.name}?`)) {
-      return;
-    }
     setError(null);
     setMessage(null);
     try {
@@ -378,6 +510,22 @@ export function PilotMenuCostingPage() {
       setMenuItemEditorMode("hidden");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the menu item.");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const pending = pendingDelete;
+    setPendingDelete(null);
+    if (pending.kind === "recipe") {
+      const recipe = recipes.find((candidate) => candidate.id === pending.id);
+      if (recipe) await removeRecipe(recipe);
+    } else if (pending.kind === "ingredient") {
+      const ingredient = selectedRecipe?.ingredients.find((candidate) => candidate.id === pending.id);
+      if (ingredient) await removeIngredient(ingredient);
+    } else {
+      const menuItem = menuItems.find((candidate) => candidate.id === pending.id);
+      if (menuItem) await removeMenuItem(menuItem);
     }
   };
 
@@ -456,7 +604,7 @@ export function PilotMenuCostingPage() {
               <SectionHeader
                 title="Recipes"
                 description="Create a recipe, then attach the ingredient lines that drive its live cost."
-                action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button">New recipe</Button>}
+                action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={startNewRecipe} type="button">New recipe</Button>}
               />
               {filteredRecipes.length ? (
             <div className="max-h-[28rem] overflow-auto rounded-xl border border-line">
@@ -471,9 +619,9 @@ export function PilotMenuCostingPage() {
                   {sortedRecipes.map((recipe) => {
                     const active = recipe.id === selectedRecipeId;
                     return <tr key={recipe.id} className={active ? "bg-brand-50" : "bg-white hover:bg-brand-25"}>
-                      <td className="px-3 py-2"><button type="button" className="text-left font-semibold text-ink" onClick={() => { setSelectedRecipeId(recipe.id); setRecipeEditorMode("edit"); }}>{recipe.name}<span className="mt-1 block text-xs font-normal text-muted">{recipe.description || "No description"}</span></button></td>
-                      <td className="px-3 py-2 text-muted">{formatNumber(recipe.yieldQuantity)} {recipe.yieldUnit}</td>
-                      <td className="px-3 py-2 text-muted">{formatMoney(recipe.costPerYield)}</td>
+                      <td className="px-3 py-2"><button type="button" className="text-left font-semibold text-ink" onClick={() => openRecipe(recipe)}>{recipe.name}<span className="mt-1 block text-xs font-normal text-muted">{recipe.description || "No description"}</span></button></td>
+                      <td className="px-3 py-2 text-muted">{formatMenuCostingQuantity(recipe.yieldQuantity)} {recipe.yieldUnit}</td>
+                      <td className="px-3 py-2 text-muted">{formatCost(recipe.costPerYield)}</td>
                       <td className="px-3 py-2 text-muted">{recipe.ingredientCount}</td>
                       <td className="px-3 py-2"><Badge tone={recipe.active ? "success" : "neutral"}>{recipe.active ? "Active" : "Inactive"}</Badge></td>
                     </tr>;
@@ -488,11 +636,11 @@ export function PilotMenuCostingPage() {
           ) : null}
         </Card>
 
-        {showRecipeEditor ? <Modal title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"} size="large" onClose={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeEditorMode("hidden"); }}>
+        {showRecipeEditor ? <Modal title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"} size="large" onClose={requestRecipeClose}>
           <SectionHeader
             title="Recipe details"
             description={recipeDraft.id ? "Recipes stay linked to the current location and inherit live inventory costs." : recipeEditorMode === "create" ? "Build the new recipe and save it deliberately." : "Select an existing recipe or start a new one."}
-            action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedRecipeId(null); setSelectedIngredientId(null); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); }} type="button" variant="secondary">New recipe</Button>}
+            action={<Button icon={<Plus className="h-4 w-4" />} onClick={startNewRecipe} type="button" variant="secondary">New recipe</Button>}
           />
           {showRecipeEditor ? (
             <>
@@ -507,7 +655,7 @@ export function PilotMenuCostingPage() {
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink">Yield quantity</span>
-              <input className="input mt-1" type="number" step="1" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: Number(event.target.value || 0) }))} />
+              <input className="input mt-1" type="number" min="0.0001" step="0.0001" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: Number(event.target.value || 0) }))} />
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink">Active</span>
@@ -539,7 +687,7 @@ export function PilotMenuCostingPage() {
                 onClick={() => {
                   const recipe = recipes.find((candidate) => candidate.id === recipeDraft.id);
                   if (recipe) {
-                    void removeRecipe(recipe);
+                    setPendingDelete({ kind: "recipe", id: recipe.id, label: recipe.name });
                   }
                 }}
               >
@@ -558,7 +706,7 @@ export function PilotMenuCostingPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-semibold text-ink">Ingredients</h3>
-                <p className="mt-1 text-sm text-muted">Each line uses average inventory cost as the recipe basis. Latest purchase price stays visible for comparison when supplier costs change.</p>
+                <p className="mt-1 text-sm text-muted">Each line uses the current inventory valuation. When weighted-average cost is unavailable, the latest purchase cost is shown as a labeled estimate.</p>
               </div>
               <Badge tone={selectedRecipe?.costAvailable ? "success" : "warning"}>{selectedRecipe?.costAvailable ? "Cost available" : "Cost needs review"}</Badge>
             </div>
@@ -583,7 +731,7 @@ export function PilotMenuCostingPage() {
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Quantity required</span>
-                    <input className="input mt-1" type="number" step="1" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
+                    <input className="input mt-1" type="number" min="0.0001" step="0.0001" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-ink">Unit</span>
@@ -603,7 +751,7 @@ export function PilotMenuCostingPage() {
                     {savingIngredient ? "Saving…" : selectedIngredientId ? "Update ingredient" : "Add ingredient"}
                   </Button>
                   {selectedIngredientId ? (
-                    <Button variant="secondary" type="button" onClick={() => { setSelectedIngredientId(null); setIngredientDraft(blankIngredientDraft()); }}>
+                      <Button variant="secondary" type="button" onClick={cancelIngredientEdit}>
                       Cancel edit
                     </Button>
                   ) : null}
@@ -611,10 +759,10 @@ export function PilotMenuCostingPage() {
 
                 <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
                   <div className="flex flex-wrap gap-4">
-                    <span>Cost basis: <strong>Average inventory cost</strong></span>
-                    <span>Recipe cost: <strong>{formatMoney(selectedRecipe.totalCost)}</strong></span>
-                    <span>Per yield: <strong>{formatMoney(selectedRecipe.costPerYield)}</strong></span>
-                    <span>Yield: <strong>{formatNumber(selectedRecipe.yieldQuantity)}</strong> {selectedRecipe.yieldUnit}</span>
+                    <span>Cost basis: <strong>{selectedRecipe.ingredients.some((ingredient) => ingredient.costBasis === "latest_purchase") ? "Current valuation / latest purchase estimate" : "Current inventory valuation"}</strong></span>
+                    <span>Recipe cost: <strong>{formatCost(selectedRecipe.totalCost)}</strong></span>
+                    <span>Per yield: <strong>{formatCost(selectedRecipe.costPerYield)}</strong></span>
+                    <span>Yield: <strong>{formatMenuCostingQuantity(selectedRecipe.yieldQuantity)}</strong> {selectedRecipe.yieldUnit}</span>
                   </div>
                   {selectedRecipe.warnings.length ? (
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900">
@@ -633,24 +781,21 @@ export function PilotMenuCostingPage() {
                           <div>
                             <p className="font-semibold text-ink">{ingredient.inventoryItem?.name ?? "Unknown item"}</p>
                             {(() => {
-                              const averageUnitCost = ingredient.inventoryItem?.averageUnitCost && ingredient.inventoryItem.averageUnitCost > 0
-                                ? ingredient.inventoryItem.averageUnitCost
-                                : ingredient.quantityRequired > 0
-                                  ? (ingredient.lineCost ?? 0) / ingredient.quantityRequired
-                                  : 0;
+                              const unitCost = ingredient.inventoryItemCostPerStockUnit;
                               const costBasisUnit = ingredient.inventoryItem?.stockUnit ?? ingredient.unit;
+                              const basisLabel = ingredient.costBasis === "latest_purchase" ? "latest purchase" : ingredient.costBasis === "weighted_average" ? "average" : "cost unavailable";
                               return (
                                 <p className="mt-1 text-sm text-muted">
-                                  {formatNumber(ingredient.quantityRequired)} {ingredient.unit} × {formatMoney(averageUnitCost)}/{costBasisUnit} average cost = {formatMoney(ingredient.lineCost)} ingredient cost
+                                  {formatMenuCostingQuantity(ingredient.quantityRequired)} {ingredient.unit} × {formatMenuCostingUnitCost(unitCost)}/{costBasisUnit} {basisLabel} cost = {formatCost(ingredient.lineCost)} ingredient cost
                                 </p>
                               );
                             })()}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button variant="secondary" type="button" onClick={() => { setSelectedIngredientId(ingredient.id); setIngredientDraft(draftFromIngredient(ingredient)); }}>
+                            <Button variant="secondary" type="button" onClick={() => editIngredient(ingredient)}>
                               Edit
                             </Button>
-                            <Button variant="secondary" type="button" onClick={() => void removeIngredient(ingredient)} icon={<Trash2 className="h-4 w-4" />}>
+                            <Button variant="secondary" type="button" onClick={() => setPendingDelete({ kind: "ingredient", id: ingredient.id, label: ingredient.inventoryItem?.name ?? "this ingredient" })} icon={<Trash2 className="h-4 w-4" />}>
                               Delete
                             </Button>
                           </div>
@@ -677,21 +822,21 @@ export function PilotMenuCostingPage() {
       </div>
       ) : (
       <Card className="p-5">
-        <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); }} type="button">New menu item</Button>} />
+        <SectionHeader title="Menu items" description="Link a menu item to a recipe so price and margin stay visible together." action={<Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={startNewMenuItem} type="button">New menu item</Button>} />
         <div className="grid gap-5">
           <div className="workspace-table-wrap max-h-[32rem] overflow-auto">
             {filteredMenuItems.length ? (
               <table className="min-w-[760px] text-left text-sm">
-                <thead><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Cost</th><th className="px-3 py-2">Food cost</th><th className="px-3 py-2">Gross profit</th><th className="px-3 py-2">Status</th></tr></thead>
+                <thead><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Cost</th><th className="px-3 py-2">Food cost</th><th className="px-3 py-2">Contribution</th><th className="px-3 py-2">Status</th></tr></thead>
                 <tbody>
                   {filteredMenuItems.map((menuItem) => (
-                    <tr key={menuItem.id} tabIndex={0} className={`cursor-pointer border-b border-line transition hover:bg-brand-50/60 ${menuItem.id === selectedMenuItemId ? "bg-brand-50" : "bg-white"}`} onClick={() => { setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); } }}>
+                    <tr key={menuItem.id} tabIndex={0} className={`cursor-pointer border-b border-line transition hover:bg-brand-50/60 ${menuItem.id === selectedMenuItemId ? "bg-brand-50" : "bg-white"}`} onClick={() => openMenuItem(menuItem)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMenuItem(menuItem); } }}>
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{menuItem.name}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-muted">{menuItem.category}</td>
                       <td className="whitespace-nowrap px-3 py-2">Price {formatMoney(menuItem.sellingPrice)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Cost {formatMoney(menuItem.recipeCostPerYield)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Food cost {formatNumber(menuItem.foodCostPercent)}%</td>
-                      <td className="whitespace-nowrap px-3 py-2">Gross profit {formatMoney(menuItem.grossProfit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Cost {formatCost(menuItem.recipeCostPerYield)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Food cost {menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Contribution {formatCost(menuItem.grossProfit)}</td>
                       <td className="whitespace-nowrap px-3 py-2"><Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Cost available" : "Needs review"}</Badge></td>
                     </tr>
                   ))}
@@ -703,7 +848,7 @@ export function PilotMenuCostingPage() {
               <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">No menu items yet.</div>
             ) : null}
           </div>
-          {showMenuItemEditor ? <Modal title={menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"} size="large" onClose={() => { setSelectedMenuItemId(null); setMenuItemEditorMode("hidden"); }}>
+          {showMenuItemEditor ? <Modal title={menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"} size="large" onClose={requestMenuItemClose}>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm font-medium text-ink">Name</span>
@@ -726,7 +871,7 @@ export function PilotMenuCostingPage() {
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-ink">Selling price</span>
-                <input className="input mt-1" type="number" step="1" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: Number(event.target.value || 0) }))} />
+                <input className="input mt-1" type="number" min="0" step="0.01" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: Number(event.target.value || 0) }))} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-ink">Active</span>
@@ -753,7 +898,7 @@ export function PilotMenuCostingPage() {
                   onClick={() => {
                     const item = menuItems.find((candidate) => candidate.id === menuItemDraft.id);
                     if (item) {
-                      void removeMenuItem(item);
+                      setPendingDelete({ kind: "menu-item", id: item.id, label: item.name });
                     }
                   }}
                   icon={<Trash2 className="h-4 w-4" />}
@@ -771,10 +916,14 @@ export function PilotMenuCostingPage() {
             {selectedMenuItem ? (
               <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
                 <div className="flex flex-wrap gap-4">
-                  <span>Recipe cost: <strong>{formatMoney(selectedMenuItem.recipeCostPerYield)}</strong></span>
-                  <span>Food cost: <strong>{formatNumber(selectedMenuItem.foodCostPercent)}%</strong></span>
-                  <span>Gross profit: <strong>{formatMoney(selectedMenuItem.grossProfit)}</strong></span>
-                  <span>Margin: <strong>{formatNumber(selectedMenuItem.grossMarginPercent)}%</strong></span>
+                  <span>Ingredient cost: <strong>{formatCost(selectedMenuItem.recipeCostPerYield)}</strong></span>
+                  <span>Food cost: <strong>{selectedMenuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(selectedMenuItem.foodCostPercent)}%`}</strong></span>
+                  <span>Contribution: <strong>{formatCost(selectedMenuItem.grossProfit)}</strong></span>
+                  <span>Ingredient margin: <strong>{selectedMenuItem.grossMarginPercent == null ? "Unavailable" : `${formatNumber(selectedMenuItem.grossMarginPercent)}%`}</strong></span>
+                </div>
+                <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-3">
+                  <label className="block"><span className="text-xs font-bold uppercase tracking-wide text-muted">Scenario selling price</span><input className="input mt-1 w-40" type="number" min="0" step="0.01" value={whatIfPrice} onChange={(event) => setWhatIfPrice(event.target.value)} placeholder="Optional" /></label>
+                  {whatIfPrice !== "" ? <div className="text-sm text-muted">{selectedMenuItem.recipeCostPerYield == null || !Number.isFinite(Number(whatIfPrice)) || Number(whatIfPrice) <= 0 ? "Scenario cost unavailable" : `Food cost ${formatNumber((selectedMenuItem.recipeCostPerYield / Number(whatIfPrice)) * 100)}% · Contribution ${formatMoney(Number(whatIfPrice) - selectedMenuItem.recipeCostPerYield)} · Scenario only`}</div> : null}
                 </div>
                 {selectedMenuItem.warnings.length ? (
                   <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900">
@@ -789,6 +938,8 @@ export function PilotMenuCostingPage() {
         </div>
       </Card>
       )}
+      {pendingDelete ? <Modal title="Confirm deletion" size="small" onClose={() => setPendingDelete(null)}><p className="text-sm leading-6 text-muted">Delete {pendingDelete.label}? This cannot be undone.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setPendingDelete(null)}>Cancel</Button><Button variant="primary" className="bg-rose-700 hover:bg-rose-800" type="button" onClick={() => void confirmDelete()}>Delete</Button></div></Modal> : null}
+      {pendingDiscard ? <Modal title={pendingDiscard.title} size="small" onClose={() => setPendingDiscard(null)}><p className="text-sm leading-6 text-muted">{pendingDiscard.message}</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setPendingDiscard(null)}>Keep editing</Button><Button variant="primary" type="button" onClick={() => { const confirm = pendingDiscard.confirm; setPendingDiscard(null); confirm(); }}>Discard changes</Button></div></Modal> : null}
     </div>
   );
 }

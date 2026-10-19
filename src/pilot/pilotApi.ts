@@ -681,6 +681,7 @@ export interface PilotMenuCostingRecipeIngredient {
   sortOrder: number;
   inventoryItem: PilotInventoryItem | null;
   inventoryItemCostPerStockUnit: number | null;
+  costBasis?: "weighted_average" | "latest_purchase" | null;
   lineCost: number | null;
   warnings: string[];
   createdAt: string | null;

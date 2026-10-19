@@ -129,3 +129,60 @@ def test_menu_costing_persists_and_tracks_live_costs(client):
     other_body = client.get("/api/pilot/menu-costing").get_json()
     assert other_body["recipes"] == []
     assert other_body["menuItems"] == []
+
+
+def test_empty_recipe_and_unit_mismatch_are_not_cost_ready(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Cost Integrity Cafe", location_name="Cost Kitchen", enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING"))
+    select_org(client, organization.id)
+
+    empty = client.post("/api/pilot/menu-costing/recipes", headers=csrf_headers(client), json={"name": "Empty", "yieldQuantity": 4, "yieldUnit": "servings"})
+    assert empty.status_code == 201
+    assert empty.get_json()["costAvailable"] is False
+    assert empty.get_json()["totalCost"] is None
+
+    item = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "Flour", "category": "Dry", "stockUnit": "kg", "currentOnHand": 4, "averageUnitCost": 12, "active": True}).get_json()
+    recipe = client.post("/api/pilot/menu-costing/recipes", headers=csrf_headers(client), json={"name": "Mismatched", "yieldQuantity": 1, "yieldUnit": "serving"}).get_json()
+    response = client.post(f"/api/pilot/menu-costing/recipes/{recipe['id']}/ingredients", headers=csrf_headers(client), json={"inventoryItemId": item["id"], "quantityRequired": 250, "unit": "g"})
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["costAvailable"] is False
+    assert body["totalCost"] is None
+    assert body["ingredients"][0]["lineCost"] is None
+    assert any("unit does not match" in warning for warning in body["warnings"])
+
+
+def test_fractional_recipe_costs_preserve_precision_until_currency_rounding(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Precision Cafe", location_name="Precision Kitchen", enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING"))
+    select_org(client, organization.id)
+    first = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "Milk", "category": "Dairy", "stockUnit": "kg", "currentOnHand": 4, "latestPurchasePrice": 12, "lastPurchaseConversionFactor": 1, "active": True}).get_json()
+    second = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "Sugar", "category": "Dry", "stockUnit": "kg", "currentOnHand": 4, "latestPurchasePrice": 8, "lastPurchaseConversionFactor": 1, "active": True}).get_json()
+    recipe = client.post("/api/pilot/menu-costing/recipes", headers=csrf_headers(client), json={"name": "Fractional", "yieldQuantity": 4, "yieldUnit": "servings"}).get_json()
+    for item, quantity in ((first, "0.25"), (second, "0.125")):
+        response = client.post(f"/api/pilot/menu-costing/recipes/{recipe['id']}/ingredients", headers=csrf_headers(client), json={"inventoryItemId": item["id"], "quantityRequired": quantity, "unit": "kg"})
+        assert response.status_code == 201
+    body = response.get_json()
+    assert body["totalCost"] == 4.0
+    assert body["costPerYield"] == 1.0
+    assert sorted(ingredient["lineCost"] for ingredient in body["ingredients"]) == [1.0, 3.0]
+
+
+def test_subcent_ingredient_lines_explain_currency_rounding(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Subcent Cafe", location_name="Subcent Kitchen", enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING"))
+    select_org(client, organization.id)
+    items = []
+    for name in ("Oil", "Vinegar"):
+        items.append(client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": name, "category": "Prep", "stockUnit": "L", "currentOnHand": 1, "latestPurchasePrice": 0.01, "lastPurchaseConversionFactor": 1, "active": True}).get_json())
+    recipe = client.post("/api/pilot/menu-costing/recipes", headers=csrf_headers(client), json={"name": "Subcent", "yieldQuantity": 1, "yieldUnit": "serving"}).get_json()
+    for item in items:
+        response = client.post(f"/api/pilot/menu-costing/recipes/{recipe['id']}/ingredients", headers=csrf_headers(client), json={"inventoryItemId": item["id"], "quantityRequired": 0.5, "unit": "L"})
+        assert response.status_code == 201
+    body = response.get_json()
+    assert [ingredient["lineCost"] for ingredient in body["ingredients"]] == [0.0, 0.0]
+    assert body["totalCost"] == 0.01
+    assert any("rounded to cents" in warning for warning in body["warnings"])
