@@ -377,6 +377,23 @@ describe("PilotReorderPlanPage", () => {
     expect(payload.lines[0]).not.toHaveProperty("estimatedUnitCost");
   });
 
+  it("derives saved review cost from quantity and saved unit price when a legacy line cost is stale", async () => {
+    const plan = createPlan("Draft", 17);
+    plan.lines[0] = { ...plan.lines[0], purchaseUnit: "bag", conversionFactor: 0.25, orderQuantity: 5, estimatedUnitCost: 48, estimatedLineCost: 960 };
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [plan], activeDraftPlanId: 17 });
+    mockApi.fetchPilotReorderPlanDetail.mockResolvedValue(plan);
+    mockApi.fetchPilotReorderPlan.mockResolvedValue({ suggestions: [createSuggestion({ purchaseUnit: "bag", conversionFactor: 0.25, suggestedPurchaseQuantity: 20, latestPurchasePrice: 48, estimatedCost: 960 })], groupedBySupplier: [], inventoryItems: [] });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Week 1 draft/ }));
+    await waitFor(() => expect(screen.getByText("Draft reorder plan opened.")).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Review recommendation changes" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review recommendation changes" });
+    expect(dialog).toHaveTextContent("Saved draft: 5 bag · $240.00");
+    expect(dialog).toHaveTextContent("Using the saved quantity and unit-price snapshot");
+    expect(dialog).toHaveTextContent("Current recommendation: 20 bag");
+  });
+
   it("requires manual review when the current recommendation price differs from the saved snapshot", async () => {
     const plan = createPlan("Draft", 14);
     plan.lines[0] = { ...plan.lines[0], purchaseUnit: "bag", conversionFactor: 0.25, orderQuantity: 5, estimatedUnitCost: 40, estimatedLineCost: 200 };

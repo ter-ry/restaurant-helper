@@ -939,7 +939,7 @@ def test_weighted_average_receipt_flow_preserves_latest_price_and_supports_costi
     )
     assert ingredient_response.status_code == 201
     ingredient_body = ingredient_response.get_json()
-    assert ingredient_body["ingredients"][0]["inventoryItemCostPerStockUnit"] == pytest.approx(7.01)
+    assert ingredient_body["ingredients"][0]["inventoryItemCostPerStockUnit"] == pytest.approx(7.00990099, rel=1e-7)
     assert ingredient_body["ingredients"][0]["lineCost"] == pytest.approx(1.4)
     assert ingredient_body["costPerYield"] == pytest.approx(1.4)
 

@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from .models import InventoryItem, MenuItem, Recipe, RecipeIngredient
-from .costing import stock_unit_cost_from_purchase
+from .costing import AVERAGE_COST_PRECISION, stock_unit_cost_from_purchase
 from .utils import decimal_to_float, serialize_inventory_item
 
 
@@ -18,12 +18,25 @@ def _decimal(value: Decimal | None, default: str = "0") -> Decimal:
 def current_inventory_unit_cost(item: InventoryItem) -> Decimal | None:
     average_cost = _decimal(item.average_unit_cost, "0")
     if average_cost > 0:
-        return average_cost.quantize(MONEY)
+        return average_cost.quantize(AVERAGE_COST_PRECISION)
 
     latest_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
     if latest_cost <= 0:
         return None
-    return latest_cost.quantize(MONEY)
+    return latest_cost.quantize(AVERAGE_COST_PRECISION)
+
+
+def _ingredient_cost(ingredient: RecipeIngredient) -> Decimal | None:
+    inventory_item = ingredient.inventory_item
+    quantity_required = _decimal(ingredient.quantity_required, "0")
+    if inventory_item is None or not inventory_item.active or quantity_required <= 0:
+        return None
+    if not ingredient.unit or not inventory_item.stock_unit or ingredient.unit.strip().lower() != inventory_item.stock_unit.strip().lower():
+        return None
+    cost_per_unit = current_inventory_unit_cost(inventory_item)
+    if cost_per_unit is None:
+        return None
+    return quantity_required * cost_per_unit
 
 
 def _ingredient_snapshot(ingredient: RecipeIngredient) -> dict[str, Any]:
@@ -40,12 +53,15 @@ def _ingredient_snapshot(ingredient: RecipeIngredient) -> dict[str, Any]:
             warnings.append("Ingredient quantity must be greater than zero.")
         if inventory_item.active is False:
             warnings.append("Ingredient uses an inactive inventory item.")
-        if ingredient.unit and inventory_item.stock_unit and ingredient.unit != inventory_item.stock_unit:
+        if not ingredient.unit or not inventory_item.stock_unit or ingredient.unit.strip().lower() != inventory_item.stock_unit.strip().lower():
             warnings.append("Ingredient unit does not match the inventory item stock unit.")
         if cost_per_unit is None:
             warnings.append("No current inventory cost is available for this ingredient.")
-        else:
+        elif quantity_required > 0 and inventory_item.active and ingredient.unit and inventory_item.stock_unit and ingredient.unit.strip().lower() == inventory_item.stock_unit.strip().lower():
             line_cost = (quantity_required * cost_per_unit).quantize(MONEY)
+
+    average_cost = _decimal(inventory_item.average_unit_cost, "0") if inventory_item else Decimal("0")
+    cost_basis = "weighted_average" if average_cost > 0 else "latest_purchase" if cost_per_unit is not None else None
 
     return {
         "id": ingredient.id,
@@ -58,6 +74,7 @@ def _ingredient_snapshot(ingredient: RecipeIngredient) -> dict[str, Any]:
         "sortOrder": ingredient.sort_order,
         "inventoryItem": serialize_inventory_item(inventory_item) if inventory_item else None,
         "inventoryItemCostPerStockUnit": decimal_to_float(cost_per_unit),
+        "costBasis": cost_basis,
         "lineCost": decimal_to_float(line_cost),
         "warnings": warnings,
         "createdAt": ingredient.created_at.isoformat() if ingredient.created_at else None,
@@ -68,8 +85,9 @@ def _ingredient_snapshot(ingredient: RecipeIngredient) -> dict[str, Any]:
 def serialize_recipe(recipe: Recipe) -> dict[str, Any]:
     ingredient_snapshots = [_ingredient_snapshot(ingredient) for ingredient in recipe.ingredients]
     warnings = [warning for ingredient in ingredient_snapshots for warning in ingredient["warnings"]]
-    costs = [Decimal(str(ingredient["lineCost"])) for ingredient in ingredient_snapshots if ingredient["lineCost"] is not None]
-    cost_available = len(costs) == len(ingredient_snapshots) and recipe.yield_quantity is not None and Decimal(str(recipe.yield_quantity)) > 0
+    raw_costs = [_ingredient_cost(ingredient) for ingredient in recipe.ingredients]
+    costs = [cost for cost in raw_costs if cost is not None]
+    cost_available = bool(raw_costs) and len(costs) == len(raw_costs) and recipe.yield_quantity is not None and Decimal(str(recipe.yield_quantity)) > 0
     total_cost = sum(costs, start=Decimal("0")).quantize(MONEY) if cost_available else None
     cost_per_yield = None
     if total_cost is not None and Decimal(str(recipe.yield_quantity)) > 0:
@@ -82,7 +100,7 @@ def serialize_recipe(recipe: Recipe) -> dict[str, Any]:
         "name": recipe.name,
         "normalizedName": recipe.normalized_name,
         "description": recipe.description,
-        "yieldQuantity": decimal_to_float(recipe.yield_quantity) or 0,
+        "yieldQuantity": decimal_to_float(recipe.yield_quantity),
         "yieldUnit": recipe.yield_unit,
         "active": bool(recipe.active),
         "notes": recipe.notes,

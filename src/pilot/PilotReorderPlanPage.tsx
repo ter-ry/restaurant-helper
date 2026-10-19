@@ -941,7 +941,8 @@ export function PilotReorderPlanPage() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-ink">{row.line.inventoryItemName}</p>
-                      <p className="mt-1 text-sm text-muted">Saved draft: {formatNumber(row.line.orderQuantity)} {row.line.purchaseUnit} · {row.line.estimatedLineCost == null ? "Unknown" : formatMoney(row.line.estimatedLineCost)}</p>
+                      <p className="mt-1 text-sm text-muted">Saved draft: {formatNumber(row.line.orderQuantity)} {row.line.purchaseUnit} · {provisionalLineCost(row.line) == null ? "Unknown" : formatMoney(provisionalLineCost(row.line))}</p>
+                      {row.line.estimatedLineCost != null && provisionalLineCost(row.line) != null && Math.abs(Number(row.line.estimatedLineCost) - Number(provisionalLineCost(row.line))) > 0.005 ? <p className="mt-1 text-xs text-muted">Using the saved quantity and unit-price snapshot for this estimate.</p> : null}
                       {suggestion ? <p className="mt-1 text-sm text-muted">Current recommendation: {row.proposedQuantity == null ? "Unavailable" : `${formatNumber(row.proposedQuantity)} ${suggestion.purchaseUnit ?? row.line.purchaseUnit}`} · {row.currentUnitPrice == null ? "Unknown price" : `${formatMoney(row.currentUnitPrice)} per ${suggestion.purchaseUnit ?? row.line.purchaseUnit}`} · {row.proposedCost == null ? "No automatic estimate" : `known at saved price: ${formatMoney(row.proposedCost)}`}</p> : <p className="mt-1 text-sm text-muted">Current recommendation: No longer recommended at the current stock level.</p>}
                       {suggestion ? <p className="mt-1 text-xs text-muted">On hand {formatNumber(suggestion.currentQuantity)} {suggestion.unit} · PAR {formatNumber(suggestion.parLevel)} {suggestion.unit} · {suggestion.stockStatus}</p> : null}
                     </div>

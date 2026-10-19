@@ -58,6 +58,10 @@ interface MenuItemDraft {
   notes: string;
 }
 
+function formatCost(value: number | null | undefined) {
+  return value == null || !Number.isFinite(Number(value)) ? "Cost unavailable" : formatMoney(value);
+}
+
 const blankRecipeDraft = (): RecipeDraft => ({
   id: null,
   name: "",
@@ -135,6 +139,8 @@ export function PilotMenuCostingPage() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
   const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(blankIngredientDraft());
   const [menuItemDraft, setMenuItemDraft] = useState<MenuItemDraft>(blankMenuItemDraft());
+  const [whatIfPrice, setWhatIfPrice] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ kind: "recipe" | "ingredient" | "menu-item"; id: number; label: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [savingRecipe, setSavingRecipe] = useState(false);
@@ -329,9 +335,6 @@ export function PilotMenuCostingPage() {
   };
 
   const removeRecipe = async (recipe: PilotMenuCostingRecipe) => {
-    if (!window.confirm(`Delete ${recipe.name}?`)) {
-      return;
-    }
     setError(null);
     setMessage(null);
     try {
@@ -347,7 +350,7 @@ export function PilotMenuCostingPage() {
   };
 
   const removeIngredient = async (ingredient: PilotMenuCostingRecipeIngredient) => {
-    if (!selectedRecipe || !window.confirm("Delete this ingredient?")) {
+    if (!selectedRecipe) {
       return;
     }
     setError(null);
@@ -364,9 +367,6 @@ export function PilotMenuCostingPage() {
   };
 
   const removeMenuItem = async (menuItem: PilotMenuCostingMenuItem) => {
-    if (!window.confirm(`Delete ${menuItem.name}?`)) {
-      return;
-    }
     setError(null);
     setMessage(null);
     try {
@@ -378,6 +378,22 @@ export function PilotMenuCostingPage() {
       setMenuItemEditorMode("hidden");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the menu item.");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const pending = pendingDelete;
+    setPendingDelete(null);
+    if (pending.kind === "recipe") {
+      const recipe = recipes.find((candidate) => candidate.id === pending.id);
+      if (recipe) await removeRecipe(recipe);
+    } else if (pending.kind === "ingredient") {
+      const ingredient = selectedRecipe?.ingredients.find((candidate) => candidate.id === pending.id);
+      if (ingredient) await removeIngredient(ingredient);
+    } else {
+      const menuItem = menuItems.find((candidate) => candidate.id === pending.id);
+      if (menuItem) await removeMenuItem(menuItem);
     }
   };
 
@@ -473,7 +489,7 @@ export function PilotMenuCostingPage() {
                     return <tr key={recipe.id} className={active ? "bg-brand-50" : "bg-white hover:bg-brand-25"}>
                       <td className="px-3 py-2"><button type="button" className="text-left font-semibold text-ink" onClick={() => { setSelectedRecipeId(recipe.id); setRecipeEditorMode("edit"); }}>{recipe.name}<span className="mt-1 block text-xs font-normal text-muted">{recipe.description || "No description"}</span></button></td>
                       <td className="px-3 py-2 text-muted">{formatNumber(recipe.yieldQuantity)} {recipe.yieldUnit}</td>
-                      <td className="px-3 py-2 text-muted">{formatMoney(recipe.costPerYield)}</td>
+                      <td className="px-3 py-2 text-muted">{formatCost(recipe.costPerYield)}</td>
                       <td className="px-3 py-2 text-muted">{recipe.ingredientCount}</td>
                       <td className="px-3 py-2"><Badge tone={recipe.active ? "success" : "neutral"}>{recipe.active ? "Active" : "Inactive"}</Badge></td>
                     </tr>;
@@ -539,7 +555,7 @@ export function PilotMenuCostingPage() {
                 onClick={() => {
                   const recipe = recipes.find((candidate) => candidate.id === recipeDraft.id);
                   if (recipe) {
-                    void removeRecipe(recipe);
+                    setPendingDelete({ kind: "recipe", id: recipe.id, label: recipe.name });
                   }
                 }}
               >
@@ -558,7 +574,7 @@ export function PilotMenuCostingPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-semibold text-ink">Ingredients</h3>
-                <p className="mt-1 text-sm text-muted">Each line uses average inventory cost as the recipe basis. Latest purchase price stays visible for comparison when supplier costs change.</p>
+                <p className="mt-1 text-sm text-muted">Each line uses the current inventory valuation. When weighted-average cost is unavailable, the latest purchase cost is shown as a labeled estimate.</p>
               </div>
               <Badge tone={selectedRecipe?.costAvailable ? "success" : "warning"}>{selectedRecipe?.costAvailable ? "Cost available" : "Cost needs review"}</Badge>
             </div>
@@ -611,9 +627,9 @@ export function PilotMenuCostingPage() {
 
                 <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
                   <div className="flex flex-wrap gap-4">
-                    <span>Cost basis: <strong>Average inventory cost</strong></span>
-                    <span>Recipe cost: <strong>{formatMoney(selectedRecipe.totalCost)}</strong></span>
-                    <span>Per yield: <strong>{formatMoney(selectedRecipe.costPerYield)}</strong></span>
+                    <span>Cost basis: <strong>{selectedRecipe.ingredients.some((ingredient) => ingredient.costBasis === "latest_purchase") ? "Current valuation / latest purchase estimate" : "Current inventory valuation"}</strong></span>
+                    <span>Recipe cost: <strong>{formatCost(selectedRecipe.totalCost)}</strong></span>
+                    <span>Per yield: <strong>{formatCost(selectedRecipe.costPerYield)}</strong></span>
                     <span>Yield: <strong>{formatNumber(selectedRecipe.yieldQuantity)}</strong> {selectedRecipe.yieldUnit}</span>
                   </div>
                   {selectedRecipe.warnings.length ? (
@@ -641,7 +657,7 @@ export function PilotMenuCostingPage() {
                               const costBasisUnit = ingredient.inventoryItem?.stockUnit ?? ingredient.unit;
                               return (
                                 <p className="mt-1 text-sm text-muted">
-                                  {formatNumber(ingredient.quantityRequired)} {ingredient.unit} × {formatMoney(averageUnitCost)}/{costBasisUnit} average cost = {formatMoney(ingredient.lineCost)} ingredient cost
+                                  {formatNumber(ingredient.quantityRequired)} {ingredient.unit} × {formatCost(averageUnitCost)}/{costBasisUnit} {ingredient.costBasis === "latest_purchase" ? "latest purchase" : "average"} cost = {formatCost(ingredient.lineCost)} ingredient cost
                                 </p>
                               );
                             })()}
@@ -650,7 +666,7 @@ export function PilotMenuCostingPage() {
                             <Button variant="secondary" type="button" onClick={() => { setSelectedIngredientId(ingredient.id); setIngredientDraft(draftFromIngredient(ingredient)); }}>
                               Edit
                             </Button>
-                            <Button variant="secondary" type="button" onClick={() => void removeIngredient(ingredient)} icon={<Trash2 className="h-4 w-4" />}>
+                            <Button variant="secondary" type="button" onClick={() => setPendingDelete({ kind: "ingredient", id: ingredient.id, label: ingredient.inventoryItem?.name ?? "this ingredient" })} icon={<Trash2 className="h-4 w-4" />}>
                               Delete
                             </Button>
                           </div>
@@ -682,16 +698,16 @@ export function PilotMenuCostingPage() {
           <div className="workspace-table-wrap max-h-[32rem] overflow-auto">
             {filteredMenuItems.length ? (
               <table className="min-w-[760px] text-left text-sm">
-                <thead><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Cost</th><th className="px-3 py-2">Food cost</th><th className="px-3 py-2">Gross profit</th><th className="px-3 py-2">Status</th></tr></thead>
+                <thead><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Cost</th><th className="px-3 py-2">Food cost</th><th className="px-3 py-2">Contribution</th><th className="px-3 py-2">Status</th></tr></thead>
                 <tbody>
                   {filteredMenuItems.map((menuItem) => (
                     <tr key={menuItem.id} tabIndex={0} className={`cursor-pointer border-b border-line transition hover:bg-brand-50/60 ${menuItem.id === selectedMenuItemId ? "bg-brand-50" : "bg-white"}`} onClick={() => { setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedMenuItemId(menuItem.id); setMenuItemEditorMode("edit"); } }}>
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{menuItem.name}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-muted">{menuItem.category}</td>
                       <td className="whitespace-nowrap px-3 py-2">Price {formatMoney(menuItem.sellingPrice)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Cost {formatMoney(menuItem.recipeCostPerYield)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Food cost {formatNumber(menuItem.foodCostPercent)}%</td>
-                      <td className="whitespace-nowrap px-3 py-2">Gross profit {formatMoney(menuItem.grossProfit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Cost {formatCost(menuItem.recipeCostPerYield)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Food cost {menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}</td>
+                      <td className="whitespace-nowrap px-3 py-2">Contribution {formatCost(menuItem.grossProfit)}</td>
                       <td className="whitespace-nowrap px-3 py-2"><Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Cost available" : "Needs review"}</Badge></td>
                     </tr>
                   ))}
@@ -753,7 +769,7 @@ export function PilotMenuCostingPage() {
                   onClick={() => {
                     const item = menuItems.find((candidate) => candidate.id === menuItemDraft.id);
                     if (item) {
-                      void removeMenuItem(item);
+                      setPendingDelete({ kind: "menu-item", id: item.id, label: item.name });
                     }
                   }}
                   icon={<Trash2 className="h-4 w-4" />}
@@ -771,10 +787,14 @@ export function PilotMenuCostingPage() {
             {selectedMenuItem ? (
               <div className="mt-4 rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
                 <div className="flex flex-wrap gap-4">
-                  <span>Recipe cost: <strong>{formatMoney(selectedMenuItem.recipeCostPerYield)}</strong></span>
-                  <span>Food cost: <strong>{formatNumber(selectedMenuItem.foodCostPercent)}%</strong></span>
-                  <span>Gross profit: <strong>{formatMoney(selectedMenuItem.grossProfit)}</strong></span>
-                  <span>Margin: <strong>{formatNumber(selectedMenuItem.grossMarginPercent)}%</strong></span>
+                  <span>Ingredient cost: <strong>{formatCost(selectedMenuItem.recipeCostPerYield)}</strong></span>
+                  <span>Food cost: <strong>{selectedMenuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(selectedMenuItem.foodCostPercent)}%`}</strong></span>
+                  <span>Contribution: <strong>{formatCost(selectedMenuItem.grossProfit)}</strong></span>
+                  <span>Ingredient margin: <strong>{selectedMenuItem.grossMarginPercent == null ? "Unavailable" : `${formatNumber(selectedMenuItem.grossMarginPercent)}%`}</strong></span>
+                </div>
+                <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-3">
+                  <label className="block"><span className="text-xs font-bold uppercase tracking-wide text-muted">Scenario selling price</span><input className="input mt-1 w-40" type="number" min="0" step="0.01" value={whatIfPrice} onChange={(event) => setWhatIfPrice(event.target.value)} placeholder="Optional" /></label>
+                  {whatIfPrice !== "" ? <div className="text-sm text-muted">{selectedMenuItem.recipeCostPerYield == null || !Number.isFinite(Number(whatIfPrice)) || Number(whatIfPrice) <= 0 ? "Scenario cost unavailable" : `Food cost ${formatNumber((selectedMenuItem.recipeCostPerYield / Number(whatIfPrice)) * 100)}% · Contribution ${formatMoney(Number(whatIfPrice) - selectedMenuItem.recipeCostPerYield)} · Scenario only`}</div> : null}
                 </div>
                 {selectedMenuItem.warnings.length ? (
                   <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900">
@@ -789,6 +809,7 @@ export function PilotMenuCostingPage() {
         </div>
       </Card>
       )}
+      {pendingDelete ? <Modal title="Confirm deletion" size="small" onClose={() => setPendingDelete(null)}><p className="text-sm leading-6 text-muted">Delete {pendingDelete.label}? This cannot be undone.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setPendingDelete(null)}>Cancel</Button><Button variant="primary" className="bg-rose-700 hover:bg-rose-800" type="button" onClick={() => void confirmDelete()}>Delete</Button></div></Modal> : null}
     </div>
   );
 }

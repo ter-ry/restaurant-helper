@@ -209,7 +209,7 @@ describe("PilotMenuCostingPage", () => {
       "Price",
       "Cost",
       "Food cost",
-      "Gross profit",
+      "Contribution",
       "Status",
     ]);
   });
@@ -231,8 +231,8 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Inventory item" }), { target: { value: "101" } });
     expect(screen.getByDisplayValue("kg")).toBeVisible();
     expect(screen.getByText(/Cost basis:/)).toBeVisible();
-    expect(screen.getByText(/Average inventory cost/)).toBeVisible();
-    expect(screen.getByText(/Latest purchase price stays visible for comparison/)).toBeVisible();
+    expect(screen.getByText(/Current inventory valuation/)).toBeVisible();
+    expect(screen.getByText(/latest purchase cost is shown as a labeled estimate/)).toBeVisible();
     expect(
       screen.getByText((content) => content.includes("2 kg") && content.includes("$3.50/kg") && content.includes("ingredient cost")),
     ).toBeVisible();
@@ -243,5 +243,21 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "New menu item" }));
     expect(screen.getByRole("heading", { name: "New menu item" })).toBeVisible();
     expect(screen.getAllByLabelText("Name").at(-1)).toHaveValue("");
+  });
+
+  it("shows a non-persistent selling-price scenario and uses an accessible delete confirmation", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
+    expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Scenario selling price"), { target: { value: "15" } });
+    expect(screen.getByText(/Food cost 23.3%/)).toBeVisible();
+    expect(screen.getByText(/Contribution \$11.50/)).toBeVisible();
+    expect(screen.getByText(/Scenario only/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Delete menu item" }));
+    expect(screen.getByRole("heading", { name: "Confirm deletion" })).toBeVisible();
+    expect(screen.getByText(/This cannot be undone/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("heading", { name: "Confirm deletion" })).not.toBeInTheDocument();
   });
 });
