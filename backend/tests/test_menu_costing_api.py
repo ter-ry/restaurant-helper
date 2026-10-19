@@ -168,3 +168,21 @@ def test_fractional_recipe_costs_preserve_precision_until_currency_rounding(clie
     assert body["totalCost"] == 4.0
     assert body["costPerYield"] == 1.0
     assert sorted(ingredient["lineCost"] for ingredient in body["ingredients"]) == [1.0, 3.0]
+
+
+def test_subcent_ingredient_lines_explain_currency_rounding(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Subcent Cafe", location_name="Subcent Kitchen", enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING"))
+    select_org(client, organization.id)
+    items = []
+    for name in ("Oil", "Vinegar"):
+        items.append(client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": name, "category": "Prep", "stockUnit": "L", "currentOnHand": 1, "latestPurchasePrice": 0.01, "lastPurchaseConversionFactor": 1, "active": True}).get_json())
+    recipe = client.post("/api/pilot/menu-costing/recipes", headers=csrf_headers(client), json={"name": "Subcent", "yieldQuantity": 1, "yieldUnit": "serving"}).get_json()
+    for item in items:
+        response = client.post(f"/api/pilot/menu-costing/recipes/{recipe['id']}/ingredients", headers=csrf_headers(client), json={"inventoryItemId": item["id"], "quantityRequired": 0.5, "unit": "L"})
+        assert response.status_code == 201
+    body = response.get_json()
+    assert [ingredient["lineCost"] for ingredient in body["ingredients"]] == [0.0, 0.0]
+    assert body["totalCost"] == 0.01
+    assert any("rounded to cents" in warning for warning in body["warnings"])

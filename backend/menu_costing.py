@@ -89,6 +89,10 @@ def serialize_recipe(recipe: Recipe) -> dict[str, Any]:
     costs = [cost for cost in raw_costs if cost is not None]
     cost_available = bool(raw_costs) and len(costs) == len(raw_costs) and recipe.yield_quantity is not None and Decimal(str(recipe.yield_quantity)) > 0
     total_cost = sum(costs, start=Decimal("0")).quantize(MONEY) if cost_available else None
+    if cost_available:
+        displayed_line_total = sum((Decimal(str(ingredient["lineCost"])) for ingredient in ingredient_snapshots), start=Decimal("0")).quantize(MONEY)
+        if displayed_line_total != total_cost:
+            warnings.append("Ingredient lines are rounded to cents for display; recipe totals retain higher precision before currency rounding.")
     cost_per_yield = None
     if total_cost is not None and Decimal(str(recipe.yield_quantity)) > 0:
         cost_per_yield = (total_cost / Decimal(str(recipe.yield_quantity))).quantize(MONEY)

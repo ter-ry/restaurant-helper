@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
+import { formatMenuCostingQuantity, PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
 
 const mockApi = vi.hoisted(() => ({
   fetchPilotMenuCosting: vi.fn(),
@@ -34,6 +34,10 @@ vi.mock("../../src/pilot/pilotApi", async () => {
 });
 
 describe("PilotMenuCostingPage", () => {
+  it("preserves supported recipe quantity precision without trailing zeros", () => {
+    expect([0.25, 0.125, 0.025, 0.001, 1, 4].map(formatMenuCostingQuantity)).toEqual(["0.25", "0.125", "0.025", "0.001", "1", "4"]);
+  });
+
   beforeEach(() => {
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
       organizationId: 42,
@@ -89,7 +93,7 @@ describe("PilotMenuCostingPage", () => {
                 createdAt: null,
                 updatedAt: null,
               },
-              inventoryItemCostPerStockUnit: 2,
+              inventoryItemCostPerStockUnit: 3.5,
               lineCost: 7,
               warnings: [],
               createdAt: null,
@@ -248,6 +252,8 @@ describe("PilotMenuCostingPage", () => {
   it("shows a non-persistent selling-price scenario and uses an accessible delete confirmation", async () => {
     render(<PilotMenuCostingPage />);
     await screen.findByText("Menu costing");
+    expect(screen.getAllByText(/Cost unavailable/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Cost $0.00")).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
     expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
     fireEvent.change(screen.getByLabelText("Scenario selling price"), { target: { value: "15" } });
@@ -259,5 +265,22 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByText(/This cannot be undone/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("heading", { name: "Confirm deletion" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close Edit menu item" }));
+    fireEvent.click(screen.getByText("Recipe Needed Item"));
+    expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
+    expect(screen.getByLabelText("Scenario selling price")).toHaveValue(null);
+  });
+
+  it("protects unsaved recipe edits when the editor is closed", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
+    fireEvent.change(screen.getAllByLabelText("Name")[0], { target: { value: "Changed locally" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close Edit recipe" }));
+    expect(screen.getByRole("heading", { name: "Discard recipe changes?" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
   });
 });
