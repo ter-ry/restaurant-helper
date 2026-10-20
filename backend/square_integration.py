@@ -46,6 +46,7 @@ from .models import (
     SquareWebhookEvent,
     StockCountSession,
 )
+from .pos import PosProvider, eligible_sale_quantity, ensure_inventory_source, recipe_ingredient_quantity
 from .access import organization_has_enabled_module
 from .square import decrypt_square_secret, encrypt_square_secret, square_enabled, square_environment, verify_square_webhook_signature
 from .tenant_context import apply_org_tenant_context, apply_request_tenant_context
@@ -1411,15 +1412,15 @@ def _current_square_location_ids(connection: SquareConnection) -> list[str]:
 
 def _square_line_sale_quantity(order: SquareOrder, line: SquareOrderLine) -> Decimal:
     """Return the completed, non-refunded quantity eligible for system depletion."""
-    if order.is_deleted or order.order_state != "COMPLETED":
-        return Decimal("0")
     raw_payload = line.raw_payload_json if isinstance(line.raw_payload_json, dict) else {}
     refunded = raw_payload.get("refunded_quantity") or raw_payload.get("refundedQuantity") or 0
-    try:
-        refunded_quantity = Decimal(str(refunded))
-    except (InvalidOperation, TypeError, ValueError):
-        refunded_quantity = Decimal("0")
-    return max(Decimal(str(line.quantity or 0)) - max(refunded_quantity, Decimal("0")), Decimal("0")).quantize(QTY)
+    return eligible_sale_quantity(
+        state=order.order_state,
+        is_deleted=order.is_deleted,
+        quantity=Decimal(str(line.quantity or 0)),
+        refunded_quantity=refunded,
+        quantum=QTY,
+    )
 
 
 def _square_line_consumption(
@@ -1491,7 +1492,12 @@ def _square_line_consumption(
         ingredients.append(
             {
                 "inventoryItem": inventory_item,
-                "quantity": (line_quantity * required / yield_quantity).quantize(QTY),
+                "quantity": recipe_ingredient_quantity(
+                    sale_quantity=line_quantity,
+                    ingredient_quantity=required,
+                    yield_quantity=yield_quantity,
+                    quantum=QTY,
+                ),
                 "menuItem": menu_item,
                 "recipe": recipe,
             }
@@ -1505,6 +1511,10 @@ def _apply_square_order_inventory_consumption(
     order: SquareOrder,
 ) -> list[str]:
     """Apply or reverse one order's mapped recipe usage without replaying history."""
+    # Keep the provider explicit at the shared inventory boundary.  This is a
+    # no-op for today's Square-only persistence, but prevents a future adapter
+    # from implicitly sharing Square's depletion source.
+    ensure_inventory_source(PosProvider.SQUARE, configured_provider=PosProvider.SQUARE)
     activation = _parse_iso_datetime(connection.inventory_depletion_activated_at or connection.created_at)
     order_event_at = _parse_iso_datetime(order.closed_at or order.ordered_at)
     existing_line_ids = {line.id for line in order.lines if line.id is not None}
