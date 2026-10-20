@@ -300,6 +300,7 @@ export function PilotPurchasesPage() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
+  const [receiveReconciliationInvoiceId, setReceiveReconciliationInvoiceId] = useState<number | null>(null);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
   const [correctionNote, setCorrectionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -533,6 +534,7 @@ export function PilotPurchasesPage() {
     setReceiveMessage(null);
     setError(null);
     setDuplicateInvoiceId(null);
+    setReceiveReconciliationInvoiceId(null);
     let savedInvoiceId: number | null = null;
     try {
       const payload = purchasePayload("Ready");
@@ -562,11 +564,17 @@ export function PilotPurchasesPage() {
           setEditorOpen(current.status !== "Completed" && current.status !== "Corrected");
           if (current.status === "Completed") {
             setReceiveConfirmOpen(false);
+            setReceiveReconciliationInvoiceId(null);
             setReceiveMessage(`Invoice ${current.invoiceNumber || "purchase"} was received successfully.`);
+            await load(null);
             return;
           }
+          setReceiveReconciliationInvoiceId(null);
+          setReceiveConfirmOpen(false);
           setError(`Invoice ${current.invoiceNumber || "purchase"} was saved but not received. Review it before retrying.`);
         } catch {
+          setReceiveReconciliationInvoiceId(savedInvoiceId);
+          setReceiveConfirmOpen(true);
           setError(`Invoice ${savedInvoiceId} was saved, but its receiving status could not be confirmed. Refresh before retrying.`);
         }
       } else {
@@ -597,6 +605,10 @@ export function PilotPurchasesPage() {
   };
 
   const requestReceive = () => {
+    if (receiveReconciliationInvoiceId !== null) {
+      setError("Refresh the purchase status before retrying receipt.");
+      return;
+    }
     if (!authoritativeReadyToReceive) {
       setError("Map every invoice item before receiving this purchase.");
       return;
@@ -608,7 +620,7 @@ export function PilotPurchasesPage() {
     if (!draft.id) {
       return;
     }
-    if (saving) return;
+    if (saving || receiveReconciliationInvoiceId !== null) return;
     if (!authoritativeReadyToReceive) {
       setError("Map every invoice item before receiving this purchase.");
       return;
@@ -616,6 +628,7 @@ export function PilotPurchasesPage() {
     setSaving(true);
     setReceiveMessage(null);
     setError(null);
+    setReceiveReconciliationInvoiceId(null);
 
     let savedInvoiceId: number | null = null;
     try {
@@ -645,16 +658,51 @@ export function PilotPurchasesPage() {
           setEditorOpen(current.status !== "Completed" && current.status !== "Corrected");
           if (current.status === "Completed") {
             setReceiveConfirmOpen(false);
+            setReceiveReconciliationInvoiceId(null);
             setReceiveMessage(`Invoice ${current.invoiceNumber || "purchase"} was received successfully.`);
+            await load(null);
             return;
           }
+          setReceiveReconciliationInvoiceId(null);
+          setReceiveConfirmOpen(false);
           setError(`Invoice ${current.invoiceNumber || "purchase"} was saved but not received. Review it before retrying.`);
         } catch {
+          setReceiveReconciliationInvoiceId(savedInvoiceId);
+          setReceiveConfirmOpen(true);
           setError(`Invoice ${savedInvoiceId} was saved, but its receiving status could not be confirmed. Refresh before retrying.`);
         }
       } else {
         setError(err instanceof Error ? err.message : "Could not receive the purchase.");
       }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reconcileReceiptStatus = async () => {
+    const invoiceId = receiveReconciliationInvoiceId;
+    if (!invoiceId || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const current = await fetchPilotPurchaseInvoice(invoiceId);
+      setSelectedId(current.id);
+      setDraft(invoiceToDraft(current));
+      if (current.status === "Completed") {
+        setReceiveConfirmOpen(false);
+        setReceiveReconciliationInvoiceId(null);
+        setReceiveMessage(`Invoice ${current.invoiceNumber || "purchase"} was received successfully.`);
+        await load(null);
+      } else {
+        setReceiveConfirmOpen(false);
+        setReceiveReconciliationInvoiceId(null);
+        setEditorOpen(true);
+        setError(`Invoice ${current.invoiceNumber || "purchase"} was saved but not received. Review it before retrying.`);
+      }
+    } catch {
+      setReceiveReconciliationInvoiceId(invoiceId);
+      setReceiveConfirmOpen(true);
+      setError(`Invoice ${invoiceId} was saved, but its receiving status could not be confirmed. Refresh before retrying.`);
     } finally {
       setSaving(false);
     }
@@ -1241,7 +1289,8 @@ export function PilotPurchasesPage() {
           <p className="text-sm text-muted">This will update inventory for {draft.lineItems.length} mapped invoice {draft.lineItems.length === 1 ? "line" : "lines"} and record the receipt. Confirm only after reviewing the quantities and costs.</p>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" type="button" disabled={saving} onClick={() => setReceiveConfirmOpen(false)}>Cancel</Button>
-            <Button type="button" disabled={saving} onClick={() => void (draft.id ? receiveInvoice() : saveAndReceive())}>{saving ? "Receiving…" : "Confirm receive"}</Button>
+            {receiveReconciliationInvoiceId !== null ? <Button variant="secondary" type="button" disabled={saving} onClick={() => void reconcileReceiptStatus()}>Refresh purchase status</Button> : null}
+            <Button type="button" disabled={saving || receiveReconciliationInvoiceId !== null} onClick={() => void (draft.id ? receiveInvoice() : saveAndReceive())}>{saving ? "Receiving…" : receiveReconciliationInvoiceId !== null ? "Reconcile status first" : "Confirm receive"}</Button>
           </div>
         </Modal>
       ) : null}

@@ -242,6 +242,36 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual(line["unit"], "kg")
         self.assertEqual(line["lineTotalDifference"], 0.0)
 
+    def test_distinct_package_sizes_are_not_collapsed(self):
+        parsed = parse_invoice_text(
+            """
+            Supplier Foods
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Milk 2L 1 4.00 4.00
+            Milk 4L 1 7.00 7.00
+            Subtotal 11.00
+            Total 11.00
+            """
+        )
+        self.assertEqual(len(parsed["lineItems"]), 2)
+        self.assertEqual({item["packaging"] for item in parsed["lineItems"]}, {"2 L", "4 L"})
+        self.assertNotEqual(parsed["lineItems"][0]["comparisonKey"], parsed["lineItems"][1]["comparisonKey"])
+
+    def test_repeated_identical_products_and_quantities_are_preserved(self):
+        parsed = parse_invoice_text(
+            """
+            Supplier Foods
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Eggs 1 dozen 5.00 5.00
+            Eggs 1 dozen 5.00 5.00
+            Eggs 2 dozen 5.00 10.00
+            Subtotal 20.00
+            Total 20.00
+            """
+        )
+        self.assertEqual(len(parsed["lineItems"]), 3)
+        self.assertEqual([item["quantity"] for item in parsed["lineItems"]], [1.0, 1.0, 2.0])
+
     def test_ambiguous_split_table_product_is_not_guessed_as_a_receivable_line(self):
         parsed = parse_invoice_text(
             """

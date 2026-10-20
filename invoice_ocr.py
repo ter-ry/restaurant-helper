@@ -460,14 +460,12 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
         if item:
             items.append(item)
 
-    deduped: list[dict[str, Any]] = []
-    seen_keys: set[str] = set()
-    for item in items:
-        key = item["comparisonKey"]
-        if key not in seen_keys:
-            deduped.append(item)
-            seen_keys.add(key)
-    return deduped
+    # Do not deduplicate solely by a normalized description.  Two legitimate
+    # rows can have the same base product name but different package sizes,
+    # quantities, prices, or invoice-line context.  Dropping one here loses
+    # payable/inventory information; downstream review can still identify an
+    # exact duplicate using the raw source line and amounts.
+    return items
 
 
 def is_numeric_table_fragment(line: str) -> bool:
@@ -568,6 +566,7 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
     if is_probable_non_item_line(line):
         return None
 
+    packaging = extract_package_size(line)
     text_part = strip_line_item_noise(line)
     if len(text_part) < 2 or not re.search(r"[A-Za-z]{2,}", text_part):
         return None
@@ -624,7 +623,8 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
     return {
         "originalDescription": text_part,
         "rawSourceLine": normalize_space(line),
-        "comparisonKey": normalize_item_comparison_key(text_part),
+        "comparisonKey": f"{normalize_item_comparison_key(text_part)}|{packaging.lower()}" if packaging else normalize_item_comparison_key(text_part),
+        "packaging": packaging,
         "itemName": text_part,
         "quantity": quantity or 1,
         "unit": unit or "each",
@@ -647,6 +647,29 @@ def strip_line_item_noise(line: str) -> str:
     text = re.sub(r"[|·•×]", " ", text)
     text = normalize_space(text)
     return text.strip(" -:;")
+
+
+def extract_package_size(line: str) -> str:
+    """Return a compact package-size descriptor while keeping item mapping clean.
+
+    Product descriptors such as ``Milk 2L`` and ``Milk 4L`` must remain
+    distinguishable even though the base ``itemName`` is normalized to Milk.
+    Quantity cells (``5 kg``) are intentionally not treated as packaging;
+    only compact descriptor forms are captured here.
+    """
+    match = re.search(
+        r"\b(\d+(?:\.\d+)?)\s*(kg|kilograms?|g|grams?|lb|pounds?|L|lit(?:re|er)s?|ml|millilit(?:re|er)s?|dozen|dz|case|cs|box|bx|pack)\b",
+        line,
+        flags=re.I,
+    )
+    if not match:
+        return ""
+    # A leading numeric quantity followed by a space is normally a purchase
+    # quantity (e.g. ``5 kg Chicken Breast``), not a package descriptor.
+    prefix = line[:match.start()]
+    if not prefix.strip() and match.group(0).find(" ") >= 0:
+        return ""
+    return f"{match.group(1)} {match.group(2)}"
 
 
 def parse_quantity(line: str) -> tuple[float, float]:

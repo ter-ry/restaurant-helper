@@ -1002,6 +1002,7 @@ export interface PilotInvoiceOcrField {
 export interface PilotInvoiceOcrLine {
   itemName: string;
   originalDescription?: string;
+  packaging?: string;
   quantity: number;
   unit: string;
   unitPrice: number;

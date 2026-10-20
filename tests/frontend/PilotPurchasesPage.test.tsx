@@ -512,4 +512,55 @@ describe("PilotPurchasesPage", () => {
     expect(within(editor).queryByText("FD-1002")).not.toBeInTheDocument();
     expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
   });
+
+  it("blocks another receive attempt when receipt status cannot be confirmed", async () => {
+    mockApi.fetchPilotPurchaseInvoice.mockRejectedValue(new Error("status unavailable"));
+    mockApi.receivePilotPurchaseInvoice.mockRejectedValueOnce(new Error("request timed out"));
+
+    renderPage("/app/purchases?invoiceId=2");
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+
+    expect(await screen.findByText(/status could not be confirmed/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reconcile status first" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh purchase status" })).toBeVisible();
+    expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalled();
+  });
+
+  it("refreshes purchase history when reconciliation confirms a completed receipt", async () => {
+    mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
+      const invoice = createPurchasesResponse().invoices.find((entry) => entry.id === invoiceId)!;
+      return { ...invoice, status: "Completed", receivedAt: "2026-08-20T10:30:00.000Z" };
+    });
+    mockApi.receivePilotPurchaseInvoice.mockRejectedValueOnce(new Error("request timed out"));
+
+    renderPage("/app/purchases?invoiceId=2");
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+
+    expect(await screen.findByText(/received successfully/i)).toBeVisible();
+    await waitFor(() => expect(mockApi.fetchPilotPurchases.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.queryByRole("button", { name: /Confirm receive|Reconcile status first/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps receiving blocked when a manual status refresh also fails", async () => {
+    mockApi.fetchPilotPurchaseInvoice.mockRejectedValue(new Error("status unavailable"));
+    mockApi.receivePilotPurchaseInvoice.mockRejectedValueOnce(new Error("request timed out"));
+
+    renderPage("/app/purchases?invoiceId=2");
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    await screen.findByRole("button", { name: "Refresh purchase status" });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh purchase status" }));
+
+    expect(await screen.findByText(/status could not be confirmed/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reconcile status first" })).toBeDisabled();
+    expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalled();
+  });
 });
