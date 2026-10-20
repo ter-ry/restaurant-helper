@@ -185,6 +185,108 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual(serialized["lineItems"][2]["itemName"], "Labor")
         self.assertEqual(serialized["lineItems"][2]["rawSourceLine"], "Labor 3hrs 5.00 15.00")
 
+    def test_parse_table_quantity_does_not_use_product_size_descriptor(self):
+        parsed = parse_invoice_text(
+            """
+            Oak Valley Meat Co
+            Invoice No: OV-DEMO-1019-01
+            Invoice Date: 2026-10-19
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast 1kg | 5.00 | kg | $9.80 | $49.00
+            Subtotal $49.00
+            Total $49.00
+            """
+        )
+        line = parsed["lineItems"][0]
+        self.assertIn("Chicken Breast", line["itemName"])
+        self.assertEqual(line["quantity"], 5.0)
+        self.assertEqual(line["unit"], "kg")
+        self.assertEqual(line["unitPrice"], 9.8)
+        self.assertEqual(line["lineTotal"], 49.0)
+        self.assertEqual(line["lineTotalDifference"], 0.0)
+
+    def test_parse_line_total_mismatch_is_marked_for_review(self):
+        parsed = parse_invoice_text(
+            """
+            Supplier Foods
+            Invoice No: SF-1001
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast | 5 | kg | $9.80 | $40.00
+            Total $40.00
+            """
+        )
+        line = parsed["lineItems"][0]
+        self.assertEqual(line["quantity"], 5.0)
+        self.assertEqual(line["calculatedLineTotal"], 49.0)
+        self.assertEqual(line["lineTotalDifference"], 9.0)
+        self.assertTrue(line["needsReview"])
+
+    def test_parse_table_row_split_across_ocr_lines_reconstructs_numeric_cells(self):
+        parsed = parse_invoice_text(
+            """
+            Split Supplier
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast 1kg
+            5.00
+            kg
+            9.80
+            49.00
+            Subtotal 49.00
+            Total 49.00
+            """
+        )
+        self.assertEqual(len(parsed["lineItems"]), 1)
+        line = parsed["lineItems"][0]
+        self.assertEqual(line["itemName"], "Chicken Breast")
+        self.assertEqual(line["quantity"], 5.0)
+        self.assertEqual(line["unit"], "kg")
+        self.assertEqual(line["lineTotalDifference"], 0.0)
+
+    def test_distinct_package_sizes_are_not_collapsed(self):
+        parsed = parse_invoice_text(
+            """
+            Supplier Foods
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Milk 2L 1 4.00 4.00
+            Milk 4L 1 7.00 7.00
+            Subtotal 11.00
+            Total 11.00
+            """
+        )
+        self.assertEqual(len(parsed["lineItems"]), 2)
+        self.assertEqual({item["packaging"] for item in parsed["lineItems"]}, {"2 L", "4 L"})
+        self.assertNotEqual(parsed["lineItems"][0]["comparisonKey"], parsed["lineItems"][1]["comparisonKey"])
+
+    def test_repeated_identical_products_and_quantities_are_preserved(self):
+        parsed = parse_invoice_text(
+            """
+            Supplier Foods
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Eggs 1 dozen 5.00 5.00
+            Eggs 1 dozen 5.00 5.00
+            Eggs 2 dozen 5.00 10.00
+            Subtotal 20.00
+            Total 20.00
+            """
+        )
+        self.assertEqual(len(parsed["lineItems"]), 3)
+        self.assertEqual([item["quantity"] for item in parsed["lineItems"]], [1.0, 1.0, 2.0])
+
+    def test_ambiguous_split_table_product_is_not_guessed_as_a_receivable_line(self):
+        parsed = parse_invoice_text(
+            """
+            Split Supplier
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast 1kg
+            Five kg
+            9.80
+            49.00
+            Subtotal 49.00
+            Total 49.00
+            """
+        )
+        self.assertEqual(parsed["lineItems"], [])
+
     def test_invoice_number_extraction_requires_a_real_identifier(self):
         self.assertEqual(find_invoice_number(["East Repair Inc. INVOICE"]).value, "")
         self.assertEqual(find_invoice_number(["OICE"]).value, "")

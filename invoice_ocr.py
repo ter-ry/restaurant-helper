@@ -429,7 +429,26 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
     table_mode = bool(table_lines)
     items: list[dict[str, Any]] = []
 
-    for line in candidate_lines:
+    index = 0
+    while index < len(candidate_lines):
+        line = candidate_lines[index]
+        # Some OCR engines emit a table row as a description followed by
+        # quantity/unit/price/amount cells on separate lines. Reconstruct only
+        # when the continuation is an unambiguous numeric/unit fragment;
+        # otherwise leave the row out so it remains a manual-review item.
+        if table_mode and len(extract_all_amounts(line)) < 2 and re.search(r"[A-Za-z]{2,}", line):
+            fragments = [line]
+            required_amounts = 4 if extract_all_amounts(line) else 3
+            lookahead = index + 1
+            while lookahead < len(candidate_lines) and len(fragments) <= 5 and is_numeric_table_fragment(candidate_lines[lookahead]):
+                fragments.append(candidate_lines[lookahead])
+                lookahead += 1
+                if len(extract_all_amounts(" ".join(fragments))) >= required_amounts:
+                    break
+            if len(fragments) > 1 and len(extract_all_amounts(" ".join(fragments))) >= required_amounts:
+                line = " | ".join(fragments)
+                index = lookahead - 1
+        index += 1
         if is_probable_non_item_line(line):
             continue
         amounts = extract_all_amounts(line)
@@ -441,14 +460,25 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
         if item:
             items.append(item)
 
-    deduped: list[dict[str, Any]] = []
-    seen_keys: set[str] = set()
-    for item in items:
-        key = item["comparisonKey"]
-        if key not in seen_keys:
-            deduped.append(item)
-            seen_keys.add(key)
-    return deduped
+    # Do not deduplicate solely by a normalized description.  Two legitimate
+    # rows can have the same base product name but different package sizes,
+    # quantities, prices, or invoice-line context.  Dropping one here loses
+    # payable/inventory information; downstream review can still identify an
+    # exact duplicate using the raw source line and amounts.
+    return items
+
+
+def is_numeric_table_fragment(line: str) -> bool:
+    normalized = normalize_space(line)
+    if not normalized or is_table_end_line(normalized):
+        return False
+    # Permit unit labels, currency, decimal separators and OCR table pipes;
+    # reject arbitrary words so two distinct products cannot be merged.
+    unit_pattern = r"(?:kilograms?|kg|grams?|g|pounds?|lb|lit(?:re|er)s?|L|millilit(?:re|er)s?|ml|dozen|dz|case|cs|box|bx|pack|each)"
+    remainder = re.sub(rf"\b{unit_pattern}\b", "", normalized, flags=re.I).strip()
+    if re.search(r"[A-Za-z]", remainder) or not re.search(r"\d", remainder):
+        return bool(re.fullmatch(unit_pattern, normalized, re.I))
+    return bool(re.fullmatch(r"[\d\s$€£,.:;|/\\-]+", remainder))
 
 
 def is_summary_line(line: str) -> bool:
@@ -536,6 +566,7 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
     if is_probable_non_item_line(line):
         return None
 
+    packaging = extract_package_size(line)
     text_part = strip_line_item_noise(line)
     if len(text_part) < 2 or not re.search(r"[A-Za-z]{2,}", text_part):
         return None
@@ -545,8 +576,26 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
 
     quantity, quantity_confidence = parse_quantity(line)
     unit = parse_unit(line)
+    if unit and unit != "each":
+        text_part = re.sub(rf"\s+{re.escape(unit)}$", "", text_part, flags=re.I).strip()
     line_total = round(amounts[-1], 2)
     unit_price = round(amounts[-2], 2) if len(amounts) >= 2 else round(line_total / quantity, 2) if quantity else line_total
+    # OCR table extraction often separates the quantity into a standalone
+    # numeric cell while the item descriptor contains another number (for
+    # example, ``Chicken Breast 1kg | 5.00 | kg | 9.80 | 49.00``).  Prefer
+    # the candidate that reconciles quantity × unit price with the printed
+    # line total, rather than treating the descriptor's package size as qty.
+    if table_mode and quantity_confidence == 0 and len(amounts) >= 3:
+        fallback_candidate = None
+        for candidate in reversed(amounts[:-2]):
+            if candidate > 0 and fallback_candidate is None:
+                fallback_candidate = candidate
+            if candidate > 0 and abs((candidate * unit_price) - line_total) <= max(0.02, line_total * 0.01):
+                quantity, quantity_confidence = candidate, 0.9
+                break
+        else:
+            if fallback_candidate is not None:
+                quantity, quantity_confidence = fallback_candidate, 0.62
     if quantity and len(amounts) >= 2 and quantity > 0:
         unit_price = round(amounts[-2], 2)
 
@@ -568,24 +617,29 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
     if len(amounts) == 1 and quantity_confidence == 0:
         confidence = min(confidence, 0.68)
 
-    needs_review = confidence < 0.82 or not unit_price or not line_total
+    line_total_difference = round((quantity * unit_price) - line_total, 2) if quantity and unit_price else 0.0
+    needs_review = confidence < 0.82 or not unit_price or not line_total or abs(line_total_difference) > 0.01
 
     return {
         "originalDescription": text_part,
         "rawSourceLine": normalize_space(line),
-        "comparisonKey": normalize_item_comparison_key(text_part),
+        "comparisonKey": f"{normalize_item_comparison_key(text_part)}|{packaging.lower()}" if packaging else normalize_item_comparison_key(text_part),
+        "packaging": packaging,
         "itemName": text_part,
         "quantity": quantity or 1,
         "unit": unit or "each",
         "unitPrice": unit_price,
         "lineTotal": line_total,
+        "calculatedLineTotal": round(quantity * unit_price, 2),
+        "lineTotalDifference": line_total_difference,
         "confidence": round(confidence, 2),
         "needsReview": needs_review,
     }
 
 
 def strip_line_item_noise(line: str) -> str:
-    text = re.sub(r"\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b", " ", line, flags=re.I)
+    text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:kg|kilograms?|g|grams?|lb|pounds?|L|lit(?:re|er)s?|ml|millilit(?:re|er)s?|dozen|dz|case|cs|box|bx)\b", " ", line, flags=re.I)
+    text = re.sub(r"\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b", " ", text, flags=re.I)
     text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:x|X|@)\b", " ", text)
     text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b", " ", text, flags=re.I)
     text = re.sub(r"\$?\s*[0-9][0-9,]*(?:\.\d{2})?", " ", text)
@@ -593,6 +647,29 @@ def strip_line_item_noise(line: str) -> str:
     text = re.sub(r"[|·•×]", " ", text)
     text = normalize_space(text)
     return text.strip(" -:;")
+
+
+def extract_package_size(line: str) -> str:
+    """Return a compact package-size descriptor while keeping item mapping clean.
+
+    Product descriptors such as ``Milk 2L`` and ``Milk 4L`` must remain
+    distinguishable even though the base ``itemName`` is normalized to Milk.
+    Quantity cells (``5 kg``) are intentionally not treated as packaging;
+    only compact descriptor forms are captured here.
+    """
+    match = re.search(
+        r"\b(\d+(?:\.\d+)?)\s*(kg|kilograms?|g|grams?|lb|pounds?|L|lit(?:re|er)s?|ml|millilit(?:re|er)s?|dozen|dz|case|cs|box|bx|pack)\b",
+        line,
+        flags=re.I,
+    )
+    if not match:
+        return ""
+    # A leading numeric quantity followed by a space is normally a purchase
+    # quantity (e.g. ``5 kg Chicken Breast``), not a package descriptor.
+    prefix = line[:match.start()]
+    if not prefix.strip() and match.group(0).find(" ") >= 0:
+        return ""
+    return f"{match.group(1)} {match.group(2)}"
 
 
 def parse_quantity(line: str) -> tuple[float, float]:

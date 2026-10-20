@@ -266,6 +266,15 @@ def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
             items.append({"code": "low_confidence", "severity": "review", "lineId": line.id, "message": f"Review {line.description} before receiving."})
         if line.price_change_percent is not None and abs(line.price_change_percent) >= Decimal("5"):
             items.append({"code": "material_price_change", "severity": "review", "lineId": line.id, "message": f"Price changed {line.price_change_percent}% for {line.description}."})
+        has_unit_price = hasattr(line, "unit_price")
+        unit_price = Decimal(getattr(line, "unit_price", 0) or 0)
+        calculated_line_total = (Decimal(line.quantity) * unit_price).quantize(Decimal("0.01"))
+        line_difference = calculated_line_total - Decimal(line.line_total)
+        # Free-text OCR notes are evidence only; they are not a validated
+        # adjustment. Receiving must stop until every arithmetic discrepancy
+        # is reconciled by the reviewed line amounts.
+        if has_unit_price and abs(line_difference) > Decimal("0.01"):
+            items.append({"code": "line_total_mismatch", "severity": "blocking", "lineId": line.id, "message": f"{line.description}: quantity × unit price is ${calculated_line_total:.2f}, but the line total is ${Decimal(line.line_total):.2f}. Review before receiving."})
     line_subtotal = sum((line.line_total for line in invoice.lines), Decimal("0"))
     subtotal_difference = line_subtotal - (invoice.subtotal or Decimal("0"))
     subtotal_plus_tax = (invoice.subtotal or Decimal("0")) + (invoice.tax or Decimal("0"))

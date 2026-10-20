@@ -326,6 +326,67 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByText("PDF preview is unavailable in this browser. Use the link above to open the document.")).toBeVisible();
   });
 
+  it("preserves OCR package sizes for inventory mapping without changing quantity", async () => {
+    mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
+      provider: "ocr.space",
+      fileName: "milk.pdf",
+      contentType: "application/pdf",
+      rawText: "Milk 2L\\nMilk 4L",
+      fields: { supplier: { value: "Fresh Dairy Toronto", confidence: 0.97, needsReview: false } },
+      lineItems: [
+        { itemName: "Milk", packaging: "2 L", quantity: 1, unit: "case", unitPrice: 4, lineTotal: 4, confidence: 0.97, needsReview: false },
+        { itemName: "Milk", packaging: "4 L", quantity: 2, unit: "case", unitPrice: 7, lineTotal: 14, confidence: 0.97, needsReview: false },
+      ],
+      warnings: [],
+      overallConfidence: 0.97,
+      needsReview: false,
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    const file = new File(["%PDF-1.4"], "milk.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getAllByLabelText("Description")).toHaveLength(2));
+    expect(screen.getAllByLabelText("Description")[0]).toHaveValue("Milk 2L");
+    expect(screen.getAllByLabelText("Description")[1]).toHaveValue("Milk 4L");
+    expect(screen.getAllByLabelText("Quantity")[0]).toHaveValue(1);
+    expect(screen.getAllByLabelText("Quantity")[1]).toHaveValue(2);
+  });
+
+  it("closes the receipt confirmation after a successful new OCR invoice receive", async () => {
+    mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
+      provider: "ocr.space",
+      fileName: "fresh-foods.pdf",
+      contentType: "application/pdf",
+      rawText: "Supplier: Fresh Dairy Toronto",
+      fields: {
+        supplier: { value: "Fresh Dairy Toronto", confidence: 0.97, needsReview: false },
+        invoiceDate: { value: "2026-08-20", confidence: 0.96, needsReview: false },
+        invoiceNumber: { value: "OCR-1002", confidence: 0.95, needsReview: false },
+        subtotal: { value: 48, confidence: 0.95, needsReview: false },
+        tax: { value: 6.24, confidence: 0.95, needsReview: false },
+        total: { value: 54.24, confidence: 0.95, needsReview: false },
+      },
+      lineItems: [{ itemName: "Milk 2L", quantity: 2, unit: "case", unitPrice: 24, lineTotal: 48, confidence: 0.97, needsReview: false }],
+      warnings: [],
+      overallConfidence: 0.96,
+      needsReview: false,
+    });
+    mockApi.receivePilotPurchaseInvoice.mockResolvedValueOnce(createInvoice({ id: 3, invoiceNumber: "OCR-1002", status: "Completed", supplierName: "Fresh Dairy Toronto" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    const file = new File(["%PDF-1.4"], "fresh-foods.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+    await screen.findByText("Invoice extracted. Review the draft before saving.");
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Confirm receipt" })).not.toBeInTheDocument());
+    expect(await screen.findByText("Invoice OCR-1002 received into inventory.")).toBeVisible();
+    expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledWith(expect.objectContaining({ invoiceNumber: "OCR-1002", status: "Ready" }));
+    expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalledWith(3);
+  });
+
   it("keeps an existing draft when invoice OCR fails", async () => {
     mockApi.uploadPilotInvoiceOcr.mockRejectedValueOnce(new PilotApiError("OCR service unavailable.", 503));
     renderPage();
@@ -477,5 +538,56 @@ describe("PilotPurchasesPage", () => {
     const editor = screen.getByTestId("purchase-editor-card");
     expect(within(editor).queryByText("FD-1002")).not.toBeInTheDocument();
     expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
+  });
+
+  it("blocks another receive attempt when receipt status cannot be confirmed", async () => {
+    mockApi.fetchPilotPurchaseInvoice.mockRejectedValue(new Error("status unavailable"));
+    mockApi.receivePilotPurchaseInvoice.mockRejectedValueOnce(new Error("request timed out"));
+
+    renderPage("/app/purchases?invoiceId=2");
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+
+    expect(await screen.findByText(/status could not be confirmed/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reconcile status first" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh purchase status" })).toBeVisible();
+    expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalled();
+  });
+
+  it("refreshes purchase history when reconciliation confirms a completed receipt", async () => {
+    mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
+      const invoice = createPurchasesResponse().invoices.find((entry) => entry.id === invoiceId)!;
+      return { ...invoice, status: "Completed", receivedAt: "2026-08-20T10:30:00.000Z" };
+    });
+    mockApi.receivePilotPurchaseInvoice.mockRejectedValueOnce(new Error("request timed out"));
+
+    renderPage("/app/purchases?invoiceId=2");
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+
+    expect(await screen.findByText(/received successfully/i)).toBeVisible();
+    await waitFor(() => expect(mockApi.fetchPilotPurchases.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.queryByRole("button", { name: /Confirm receive|Reconcile status first/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps receiving blocked when a manual status refresh also fails", async () => {
+    mockApi.fetchPilotPurchaseInvoice.mockRejectedValue(new Error("status unavailable"));
+    mockApi.receivePilotPurchaseInvoice.mockRejectedValueOnce(new Error("request timed out"));
+
+    renderPage("/app/purchases?invoiceId=2");
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    await screen.findByRole("button", { name: "Refresh purchase status" });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh purchase status" }));
+
+    expect(await screen.findByText(/status could not be confirmed/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reconcile status first" })).toBeDisabled();
+    expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalled();
   });
 });
