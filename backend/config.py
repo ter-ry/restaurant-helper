@@ -448,8 +448,8 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
     if clover_enabled:
         clover_environment = str(config.get("CLOVER_ENVIRONMENT") or "").strip().lower()
         clover_region = str(config.get("CLOVER_REGION") or "").strip().lower()
-        if clover_environment not in {"sandbox", "production"}:
-            raise ConfigurationError("CLOVER_ENVIRONMENT must be either sandbox or production.")
+        if clover_environment != "sandbox":
+            raise ConfigurationError("Clover sandbox OAuth requires CLOVER_ENVIRONMENT=sandbox.")
         if clover_region not in {"north_america", "europe", "latam", "apac"}:
             raise ConfigurationError("CLOVER_REGION must be one of north_america, europe, latam, or apac.")
         if not config.get("CLOVER_CLIENT_ID") or not config.get("CLOVER_CLIENT_SECRET") or not config.get("CLOVER_REDIRECT_URI"):

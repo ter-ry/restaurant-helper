@@ -1109,6 +1109,10 @@ async function installMockApi(page: Page, state: MockState) {
       return jsonResponse(route, { connection: state.squareConnection });
     }
 
+    if (path === "/api/integrations/clover/status" && method === "GET") {
+      return jsonResponse(route, { enabled: true, connection: { status: "disconnected", environment: "sandbox", region: "north_america" } });
+    }
+
     if (path === "/api/integrations/square/disconnect" && method === "POST") {
       state.squareConnection = { ...(state.squareConnection ?? {}), status: "disconnected", syncStatus: "idle" };
       return jsonResponse(route, { connection: state.squareConnection });

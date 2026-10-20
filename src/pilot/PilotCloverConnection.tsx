@@ -10,6 +10,7 @@ import { demoReadOnly } from "./pilotConfig";
 export function PilotCloverConnection() {
   const { organization } = usePilotSession();
   const [connection, setConnection] = useState<PilotCloverConnectionSummary | null>(null);
+  const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export function PilotCloverConnection() {
     setLoading(true);
     try {
       const result = await fetchPilotCloverStatus(organizationId);
+      setEnabled(result.enabled);
       setConnection(result.connection);
       setError(null);
     } catch (err) {
@@ -31,7 +33,7 @@ export function PilotCloverConnection() {
 
   useEffect(() => { void load(); }, [load]);
 
-  if (!organizationId) return null;
+  if (!organizationId || !enabled) return null;
   const connected = connection?.status === "connected";
   const expired = connection?.status === "reauthorization_required";
   return (

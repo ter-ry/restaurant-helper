@@ -105,11 +105,11 @@ def clover_callback():
     try:
         token_payload = clover_request("POST", "/oauth/v2/token", payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "client_secret": current_app.config["CLOVER_CLIENT_SECRET"], "code": code})
         access_token = str(token_payload.get("access_token") or "")
-        if not access_token:
-            raise CloverRequestError("Clover did not return an access token.")
+        if not access_token or not str(token_payload.get("refresh_token") or "").strip():
+            raise CloverRequestError("Clover did not return a complete token pair.")
         merchant = clover_request("GET", f"/v3/merchants/{merchant_id}", token=access_token)
-        returned_id = str(merchant.get("id") or merchant.get("merchant_id") or merchant_id)
-        if returned_id != merchant_id:
+        returned_id = str(merchant.get("id") or merchant.get("merchant_id") or "").strip()
+        if not returned_id or returned_id != merchant_id:
             raise CloverRequestError("Clover merchant identity could not be verified.")
     except CloverRequestError as exc:
         return jsonify({"error": str(exc), "code": exc.code}), 502
@@ -146,7 +146,9 @@ def clover_status():
     if denied is not None:
         return denied
     assert organization is not None
-    return jsonify({"connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+    if not clover_enabled():
+        return jsonify({"enabled": False, "connection": None}), 200
+    return jsonify({"enabled": True, "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
 
 
 @bp.post("/api/integrations/clover/disconnect")
@@ -197,6 +199,10 @@ def clover_refresh():
     try:
         token_payload = clover_request("POST", "/oauth/v2/refresh", payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "refresh_token": old_refresh})
     except CloverRequestError as exc:
+        # Timeouts, rate limits, and provider outages do not prove revocation;
+        # leave the current credentials and connected state intact.
+        if exc.status_code not in {401, 403}:
+            return jsonify({"connection": _serialize(connection), "error": "Clover refresh is temporarily unavailable.", "code": exc.code}), 503
         if not connection.recovery_token_ciphertext:
             connection.status = "reauthorization_required"
             connection.last_error = exc.code
@@ -204,17 +210,20 @@ def clover_refresh():
             return jsonify({"connection": _serialize(connection), "error": "Clover authorization must be renewed.", "code": "clover_reauthorization_required"}), 409
         try:
             token_payload = clover_request("POST", "/oauth/v2/recovery", payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "client_secret": current_app.config["CLOVER_CLIENT_SECRET"], "recovery_token": decrypt_integration_secret(connection.recovery_token_ciphertext)})
-        except CloverRequestError:
+        except CloverRequestError as recovery_exc:
+            if recovery_exc.status_code not in {401, 403}:
+                return jsonify({"connection": _serialize(connection), "error": "Clover recovery is temporarily unavailable.", "code": recovery_exc.code}), 503
             connection.status = "reauthorization_required"
             connection.last_error = "clover_reauthorization_required"
             db.session.commit()
             return jsonify({"connection": _serialize(connection), "error": "Clover authorization must be renewed.", "code": "clover_reauthorization_required"}), 409
-    access_token = str(token_payload.get("access_token") or "")
-    if not access_token:
-        return json_error("Clover refresh did not return an access token.", 502)
+    access_token = str(token_payload.get("access_token") or "").strip()
+    new_refresh = str(token_payload.get("refresh_token") or "").strip()
+    if not access_token or not new_refresh:
+        return json_error("Clover refresh did not return a complete token pair.", 502)
     connection.recovery_token_ciphertext = encrypt_integration_secret(old_refresh)
     connection.recovery_expires_at = _now() + timedelta(days=14)
-    connection.refresh_token_ciphertext = encrypt_integration_secret(str(token_payload.get("refresh_token") or old_refresh))
+    connection.refresh_token_ciphertext = encrypt_integration_secret(new_refresh)
     connection.access_token_ciphertext = encrypt_integration_secret(access_token)
     connection.access_expires_at = parse_clover_timestamp(token_payload.get("access_token_expiration"))
     connection.refresh_expires_at = parse_clover_timestamp(token_payload.get("refresh_token_expiration"))

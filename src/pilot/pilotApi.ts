@@ -869,7 +869,7 @@ export type PilotCloverConnectionSummary = {
 };
 
 export async function fetchPilotCloverStatus(organizationId: number) {
-  return requestJson<{ connection: PilotCloverConnectionSummary }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+  return requestJson<{ enabled: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
 }
 
 export async function beginPilotCloverConnection(organizationId: number) {

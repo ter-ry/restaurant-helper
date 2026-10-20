@@ -3,6 +3,29 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from backend.clover import clover_api_base, clover_authorize_url, parse_clover_timestamp
+from backend.extensions import db
+from backend.models import CloverConnection
+from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
+from cryptography.fernet import Fernet
+
+
+def _login(client):
+    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    response = client.post("/api/auth/login", json={"email": LOCAL_OWNER_EMAIL, "password": LOCAL_OWNER_PASSWORD}, headers={"X-CSRFToken": csrf})
+    assert response.status_code == 200
+    return {"X-CSRFToken": csrf}
+
+
+def _configure(app):
+    app.config.update(
+        CLOVER_ENABLED=True,
+        CLOVER_ENVIRONMENT="sandbox",
+        CLOVER_REGION="north_america",
+        CLOVER_CLIENT_ID="clover-client",
+        CLOVER_CLIENT_SECRET="clover-secret",
+        CLOVER_REDIRECT_URI="http://testserver/api/integrations/clover/callback",
+        INTEGRATION_ENCRYPTION_KEY=Fernet.generate_key().decode("utf-8"),
+    )
 
 
 def test_sandbox_hosts_and_authorize_parameters(app):
@@ -19,3 +42,105 @@ def test_clover_expiration_timestamps_are_safe(app):
         assert parse_clover_timestamp(0) == datetime(1970, 1, 1, tzinfo=timezone.utc)
         assert parse_clover_timestamp("not-a-timestamp") is None
         assert parse_clover_timestamp(None) is None
+
+
+def test_clover_start_binds_state_to_user_and_organization(app, client):
+    _configure(app)
+    _login(client)
+    response = client.get("/api/integrations/clover/start?organizationId=1")
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith("https://sandbox.dev.clover.com/oauth/v2/authorize?")
+    with client.session_transaction() as stored:
+        context = stored["clover_oauth_context"]
+        assert context["organization_id"] == 1
+        assert context["user_id"] == 1
+        assert context["state"]
+
+
+def test_clover_state_expires_and_cannot_be_replayed(app, client):
+    _configure(app)
+    _login(client)
+    client.get("/api/integrations/clover/start?organizationId=1")
+    with client.session_transaction() as stored:
+        context = dict(stored["clover_oauth_context"])
+        state = context["state"]
+        context["expires_at"] = "2000-01-01T00:00:00+00:00"
+        stored["clover_oauth_context"] = context
+    expired = client.get(f"/api/integrations/clover/callback?state={state}&code=code&merchant_id=m&client_id=clover-client")
+    assert expired.status_code == 400
+    client.get("/api/integrations/clover/start?organizationId=1")
+    with client.session_transaction() as stored:
+        state = stored["clover_oauth_context"]["state"]
+    with app.app_context():
+        from backend.clover_integration import CloverConnection
+        assert CloverConnection.query.count() == 0
+    with client.session_transaction() as stored:
+        stored.pop("clover_oauth_context", None)
+    replay = client.get(f"/api/integrations/clover/callback?state={state}&code=code&merchant_id=m&client_id=clover-client")
+    assert replay.status_code == 400
+
+
+def test_clover_status_rejects_non_member_org(app, client):
+    _configure(app)
+    _login(client)
+    response = client.get("/api/integrations/clover/status?organizationId=999999")
+    assert response.status_code == 404
+
+
+def test_clover_callback_verifies_authoritative_merchant_and_encrypts_tokens(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    client.get("/api/integrations/clover/start?organizationId=1")
+    with client.session_transaction() as stored:
+        state = stored["clover_oauth_context"]["state"]
+    calls = []
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path))
+        return {"access_token": "access", "refresh_token": "refresh", "access_token_expiration": 1999999999, "refresh_token_expiration": 2000000000} if path.endswith("/token") else {"id": "merchant-1", "name": "Sandbox Cafe"}
+    monkeypatch.setattr("backend.clover_integration.clover_request", fake_request)
+    response = client.get(f"/api/integrations/clover/callback?state={state}&code=auth-code&merchant_id=merchant-1&client_id=clover-client")
+    assert response.status_code == 302
+    with app.app_context():
+        connection = CloverConnection.query.one()
+        assert connection.status == "connected"
+        assert connection.access_token_ciphertext != "access"
+        assert connection.refresh_token_ciphertext != "refresh"
+        assert connection.merchant_id == "merchant-1"
+    assert calls == [("POST", "/oauth/v2/token"), ("GET", "/v3/merchants/merchant-1")]
+
+
+def test_clover_callback_fails_closed_when_merchant_identity_is_missing(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    client.get("/api/integrations/clover/start?organizationId=1")
+    with client.session_transaction() as stored:
+        state = stored["clover_oauth_context"]["state"]
+    monkeypatch.setattr("backend.clover_integration.clover_request", lambda method, path, **kwargs: {"access_token": "access", "refresh_token": "refresh"} if path.endswith("/token") else {"name": "No id"})
+    response = client.get(f"/api/integrations/clover/callback?state={state}&code=auth-code&merchant_id=merchant-1&client_id=clover-client")
+    assert response.status_code == 502
+    with app.app_context():
+        assert CloverConnection.query.count() == 0
+
+
+def test_clover_refresh_preserves_credentials_on_transient_failure_and_disconnects_safely(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    with app.app_context():
+        connection = CloverConnection(organization_id=1, environment="sandbox", region="north_america", merchant_id="merchant-1", status="connected")
+        from backend.square import encrypt_integration_secret
+        connection.access_token_ciphertext = encrypt_integration_secret("old-access")
+        connection.refresh_token_ciphertext = encrypt_integration_secret("old-refresh")
+        db.session.add(connection)
+        db.session.commit()
+        old_ciphertext = connection.refresh_token_ciphertext
+    from backend.clover import CloverRequestError
+    monkeypatch.setattr("backend.clover_integration.clover_request", lambda *args, **kwargs: (_ for _ in ()).throw(CloverRequestError("timeout", status_code=503, code="clover_unavailable")))
+    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    response = client.post("/api/integrations/clover/refresh", json={"organizationId": 1}, headers={"X-CSRFToken": csrf})
+    assert response.status_code == 503
+    with app.app_context():
+        assert CloverConnection.query.one().refresh_token_ciphertext == old_ciphertext
+    monkeypatch.setattr("backend.clover_integration.clover_request", lambda *args, **kwargs: {"access_token": "new-access", "refresh_token": "new-refresh"})
+    response = client.post("/api/integrations/clover/disconnect", json={"organizationId": 1}, headers={"X-CSRFToken": csrf})
+    assert response.status_code == 200
+    assert response.get_json()["remoteRevocation"] == "not_supported"

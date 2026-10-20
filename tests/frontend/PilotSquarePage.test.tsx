@@ -18,6 +18,9 @@ const mockApi = vi.hoisted(() => ({
   beginPilotSquareConnection: vi.fn(),
   previewPilotSquareMenuImport: vi.fn(),
   importPilotSquareMenu: vi.fn(),
+  fetchPilotCloverStatus: vi.fn(),
+  disconnectPilotClover: vi.fn(),
+  beginPilotCloverConnection: vi.fn(),
 }));
 
 const configMocks = vi.hoisted(() => ({ demoReadOnly: false }));
@@ -54,6 +57,9 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     beginPilotSquareConnection: mockApi.beginPilotSquareConnection,
     previewPilotSquareMenuImport: mockApi.previewPilotSquareMenuImport,
     importPilotSquareMenu: mockApi.importPilotSquareMenu,
+    fetchPilotCloverStatus: mockApi.fetchPilotCloverStatus,
+    disconnectPilotClover: mockApi.disconnectPilotClover,
+    beginPilotCloverConnection: mockApi.beginPilotCloverConnection,
   };
 });
 
@@ -238,6 +244,9 @@ describe("PilotSquarePage", () => {
     mockApi.beginPilotSquareConnection.mockReset();
     mockApi.previewPilotSquareMenuImport.mockReset();
     mockApi.importPilotSquareMenu.mockReset();
+    mockApi.fetchPilotCloverStatus.mockReset();
+    mockApi.disconnectPilotClover.mockReset();
+    mockApi.beginPilotCloverConnection.mockReset();
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createDisconnectedConnection() });
     mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue(createCatalogMappingResponse());
     mockApi.fetchPilotMenuCosting.mockResolvedValue(createMenuCosting());
@@ -249,6 +258,7 @@ describe("PilotSquarePage", () => {
     mockApi.disconnectPilotSquare.mockResolvedValue({ connection: createDisconnectedConnection() });
     mockApi.previewPilotSquareMenuImport.mockResolvedValue({ locationId: 7, summary: { new: 1, mapped: 0, recipe_needed: 1, inactive: 0, conflict: 0 }, entries: [{ squareCatalogObjectId: 55, squareObjectId: "VAR-1", name: "Regular", parentName: "Test Burger", category: "Food", sellingPrice: 12, state: "recipe_needed", menuItemId: 901, isDeleted: false }] });
     mockApi.importPilotSquareMenu.mockResolvedValue({ locationId: 7, summary: { new: 0, mapped: 0, recipe_needed: 1, inactive: 0, conflict: 0 }, entries: [{ squareCatalogObjectId: 55, squareObjectId: "VAR-1", name: "Regular", parentName: "Test Burger", category: "Food", sellingPrice: 12, state: "recipe_needed", menuItemId: 901, isDeleted: false }], result: { imported: 1 } });
+    mockApi.fetchPilotCloverStatus.mockResolvedValue({ enabled: true, connection: { status: "disconnected", environment: "sandbox", region: "north_america" } });
   });
 
   it("shows the disconnected controls and keeps sync actions disabled", async () => {
@@ -270,6 +280,8 @@ describe("PilotSquarePage", () => {
     expect(document.querySelectorAll(".square-status-card")).toHaveLength(5);
     expect(screen.queryByText("Private workspace for Square connection")).not.toBeInTheDocument();
     expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
+    expect(screen.getByText("Clover sandbox")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Connect Clover sandbox" })).toBeVisible();
   });
 
   it("keeps simulated wording and controls limited to read-only demo mode", async () => {
