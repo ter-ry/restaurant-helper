@@ -429,7 +429,26 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
     table_mode = bool(table_lines)
     items: list[dict[str, Any]] = []
 
-    for line in candidate_lines:
+    index = 0
+    while index < len(candidate_lines):
+        line = candidate_lines[index]
+        # Some OCR engines emit a table row as a description followed by
+        # quantity/unit/price/amount cells on separate lines. Reconstruct only
+        # when the continuation is an unambiguous numeric/unit fragment;
+        # otherwise leave the row out so it remains a manual-review item.
+        if table_mode and len(extract_all_amounts(line)) < 2 and re.search(r"[A-Za-z]{2,}", line):
+            fragments = [line]
+            required_amounts = 4 if extract_all_amounts(line) else 3
+            lookahead = index + 1
+            while lookahead < len(candidate_lines) and len(fragments) <= 5 and is_numeric_table_fragment(candidate_lines[lookahead]):
+                fragments.append(candidate_lines[lookahead])
+                lookahead += 1
+                if len(extract_all_amounts(" ".join(fragments))) >= required_amounts:
+                    break
+            if len(fragments) > 1 and len(extract_all_amounts(" ".join(fragments))) >= required_amounts:
+                line = " | ".join(fragments)
+                index = lookahead - 1
+        index += 1
         if is_probable_non_item_line(line):
             continue
         amounts = extract_all_amounts(line)
@@ -449,6 +468,19 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
             deduped.append(item)
             seen_keys.add(key)
     return deduped
+
+
+def is_numeric_table_fragment(line: str) -> bool:
+    normalized = normalize_space(line)
+    if not normalized or is_table_end_line(normalized):
+        return False
+    # Permit unit labels, currency, decimal separators and OCR table pipes;
+    # reject arbitrary words so two distinct products cannot be merged.
+    unit_pattern = r"(?:kilograms?|kg|grams?|g|pounds?|lb|lit(?:re|er)s?|L|millilit(?:re|er)s?|ml|dozen|dz|case|cs|box|bx|pack|each)"
+    remainder = re.sub(rf"\b{unit_pattern}\b", "", normalized, flags=re.I).strip()
+    if re.search(r"[A-Za-z]", remainder) or not re.search(r"\d", remainder):
+        return bool(re.fullmatch(unit_pattern, normalized, re.I))
+    return bool(re.fullmatch(r"[\d\s$€£,.:;|/\\-]+", remainder))
 
 
 def is_summary_line(line: str) -> bool:

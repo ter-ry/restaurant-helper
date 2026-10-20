@@ -75,6 +75,10 @@ function selectZeroValue(event: FocusEvent<HTMLInputElement>) {
   }
 }
 
+function roundCurrency(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function purchaseErrorMessage(error: unknown) {
   if (error instanceof PilotApiError && error.errors) {
     const details = Object.values(error.errors).join(" ");
@@ -419,15 +423,29 @@ export function PilotPurchasesPage() {
       !line.inventoryItemId ? `Map ${line.description || "this item"} to inventory.` : null,
       line.quantity <= 0 ? `Enter a quantity for ${line.description || "this item"}.` : null,
       line.conversionFactor <= 0 ? `Enter a valid conversion for ${line.description || "this item"}.` : null,
-      Math.abs((line.quantity || 0) * (line.unitPrice || 0) - (line.lineTotal || 0)) > 0.01
-        ? `${line.description || "This item"}: quantity × unit price is ${formatMoney((line.quantity || 0) * (line.unitPrice || 0))}, but the line total is ${formatMoney(line.lineTotal || 0)}. Review before receiving.`
+      Math.abs(roundCurrency((line.quantity || 0) * (line.unitPrice || 0)) - roundCurrency(line.lineTotal || 0)) > 0.01
+        ? `${line.description || "This item"}: quantity × unit price is ${formatMoney(roundCurrency((line.quantity || 0) * (line.unitPrice || 0)))}, but the line total is ${formatMoney(roundCurrency(line.lineTotal || 0))}. Review before receiving.`
         : null,
     ].filter(Boolean) as string[]);
     const warnings = draft.lineItems.filter((line) => line.needsReview || line.confidence < 0.8).map((line) => `Review ${line.description || "this item"} before receiving.`);
-    return { state: blockers.length ? "BLOCKING" : warnings.length ? "REVIEW" : "READY", blockers, warnings };
-  }, [draft.lineItems]);
-  const reviewSummary = draft.id && selectedInvoice?.reviewSummary ? selectedInvoice.reviewSummary : localReviewSummary;
-  const authoritativeReadyToReceive = draft.id && selectedInvoice?.reviewSummary ? selectedInvoice.reviewSummary.readyToReceive : readyToReceive;
+    const lineSubtotal = draft.lineItems.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0);
+    const subtotalDifference = lineSubtotal - Number(draft.subtotal || 0);
+    const totalDifference = Number(draft.subtotal || 0) + Number(draft.tax || 0) - Number(draft.totalAmount || 0);
+    if (Math.abs(subtotalDifference) > 0.01) blockers.push(`Line items differ from invoice subtotal by ${formatMoney(Math.abs(subtotalDifference))}.`);
+    if (Math.abs(totalDifference) > 0.01) blockers.push(`Subtotal plus tax differs from invoice total by ${formatMoney(Math.abs(totalDifference))}.`);
+    return {
+      state: blockers.length ? "BLOCKING" : warnings.length ? "REVIEW" : "READY",
+      blockers,
+      warnings,
+      reconciliation: { lineSubtotal, subtotalDifference, totalDifference, status: blockers.length ? "mismatch" : "matched" },
+      readyToReceive: blockers.length === 0 && readyToReceive,
+    };
+  }, [draft, readyToReceive]);
+  // Always derive eligibility from the values currently in the editor. The
+  // saved invoice summary may be stale after a quantity/mapping edit; the
+  // backend revalidates the persisted payload before creating movements.
+  const reviewSummary = localReviewSummary;
+  const authoritativeReadyToReceive = localReviewSummary.readyToReceive;
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
     const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal || line.quantity * line.unitPrice), 0);
@@ -515,9 +533,15 @@ export function PilotPurchasesPage() {
     setReceiveMessage(null);
     setError(null);
     setDuplicateInvoiceId(null);
+    let savedInvoiceId: number | null = null;
     try {
       const payload = purchasePayload("Ready");
       const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
+      savedInvoiceId = saved.id;
+      // Keep the server-saved draft available if the following receive call
+      // times out or fails. It must never be recreated blindly.
+      setSelectedId(saved.id);
+      setDraft(invoiceToDraft(saved));
       await receivePilotPurchaseInvoice(saved.id);
       setSelectedId(null);
       setDraft(buildBlankDraft());
@@ -530,7 +554,24 @@ export function PilotPurchasesPage() {
       await load(null);
     } catch (err) {
       if (err instanceof PilotApiError && err.errors?.duplicateInvoiceId) setDuplicateInvoiceId(Number(err.errors.duplicateInvoiceId));
-      setError(purchaseErrorMessage(err));
+      if (savedInvoiceId) {
+        try {
+          const current = await fetchPilotPurchaseInvoice(savedInvoiceId);
+          setSelectedId(current.id);
+          setDraft(invoiceToDraft(current));
+          setEditorOpen(current.status !== "Completed" && current.status !== "Corrected");
+          if (current.status === "Completed") {
+            setReceiveConfirmOpen(false);
+            setReceiveMessage(`Invoice ${current.invoiceNumber || "purchase"} was received successfully.`);
+            return;
+          }
+          setError(`Invoice ${current.invoiceNumber || "purchase"} was saved but not received. Review it before retrying.`);
+        } catch {
+          setError(`Invoice ${savedInvoiceId} was saved, but its receiving status could not be confirmed. Refresh before retrying.`);
+        }
+      } else {
+        setError(purchaseErrorMessage(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -576,8 +617,16 @@ export function PilotPurchasesPage() {
     setReceiveMessage(null);
     setError(null);
 
+    let savedInvoiceId: number | null = null;
     try {
-      const received = await receivePilotPurchaseInvoice(draft.id);
+      // Persist the exact values currently reviewed in the editor before
+      // receiving a saved draft. The receive endpoint then validates that
+      // same authoritative snapshot and creates movements exactly once.
+      const saved = await updatePilotPurchaseInvoice(draft.id, purchasePayload("Ready"));
+      savedInvoiceId = saved.id;
+      setSelectedId(saved.id);
+      setDraft(invoiceToDraft(saved));
+      const received = await receivePilotPurchaseInvoice(saved.id);
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
@@ -588,7 +637,24 @@ export function PilotPurchasesPage() {
       navigate(location.pathname, { replace: true });
       await load(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not receive the purchase.");
+      if (savedInvoiceId) {
+        try {
+          const current = await fetchPilotPurchaseInvoice(savedInvoiceId);
+          setSelectedId(current.id);
+          setDraft(invoiceToDraft(current));
+          setEditorOpen(current.status !== "Completed" && current.status !== "Corrected");
+          if (current.status === "Completed") {
+            setReceiveConfirmOpen(false);
+            setReceiveMessage(`Invoice ${current.invoiceNumber || "purchase"} was received successfully.`);
+            return;
+          }
+          setError(`Invoice ${current.invoiceNumber || "purchase"} was saved but not received. Review it before retrying.`);
+        } catch {
+          setError(`Invoice ${savedInvoiceId} was saved, but its receiving status could not be confirmed. Refresh before retrying.`);
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "Could not receive the purchase.");
+      }
     } finally {
       setSaving(false);
     }

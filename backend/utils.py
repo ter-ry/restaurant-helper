@@ -270,11 +270,10 @@ def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
         unit_price = Decimal(getattr(line, "unit_price", 0) or 0)
         calculated_line_total = (Decimal(line.quantity) * unit_price).quantize(Decimal("0.01"))
         line_difference = calculated_line_total - Decimal(line.line_total)
-        # A documented line discount/tax can legitimately make the printed
-        # line total differ from quantity × unit price.  Otherwise receiving
-        # must stop until the user resolves the arithmetic discrepancy.
-        documented_adjustment = any(token in (getattr(line, "note", "") or "").lower() for token in ("discount", "tax", "gst", "hst", "vat"))
-        if has_unit_price and abs(line_difference) > Decimal("0.01") and not documented_adjustment:
+        # Free-text OCR notes are evidence only; they are not a validated
+        # adjustment. Receiving must stop until every arithmetic discrepancy
+        # is reconciled by the reviewed line amounts.
+        if has_unit_price and abs(line_difference) > Decimal("0.01"):
             items.append({"code": "line_total_mismatch", "severity": "blocking", "lineId": line.id, "message": f"{line.description}: quantity × unit price is ${calculated_line_total:.2f}, but the line total is ${Decimal(line.line_total):.2f}. Review before receiving."})
     line_subtotal = sum((line.line_total for line in invoice.lines), Decimal("0"))
     subtotal_difference = line_subtotal - (invoice.subtotal or Decimal("0"))

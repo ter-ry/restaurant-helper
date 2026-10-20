@@ -153,6 +153,34 @@ def test_purchase_review_summary_blocks_unresolved_line_total_mismatch():
     assert summary["readyToReceive"] is False
 
 
+@pytest.mark.parametrize("note", ["discount applied", "tax adjustment", "GST line", "HST correction", "VAT included"])
+def test_purchase_review_summary_never_trusts_arithmetic_keywords_in_notes(note):
+    class Line:
+        id = 3
+        description = "Chicken Breast"
+        inventory_item_id = 1
+        quantity = Decimal("5")
+        conversion_factor = Decimal("1")
+        unit_price = Decimal("9.80")
+        line_total = Decimal("40.00")
+        needs_review = False
+        confidence = Decimal("0.95")
+        price_change_percent = None
+        note = ""
+
+    class Invoice:
+        lines = [Line()]
+        subtotal = Decimal("40.00")
+        tax = Decimal("0")
+        total_amount = Decimal("40.00")
+        status = "Ready"
+
+    Line.note = note
+    summary = purchase_review_summary(Invoice())
+    assert any(item["code"] == "line_total_mismatch" for item in summary["items"])
+    assert summary["readyToReceive"] is False
+
+
 def test_record_receipt_rejects_unresolved_line_total_mismatch_before_inventory_write():
     class Line:
         id = 2
@@ -639,6 +667,39 @@ def test_receiving_invoice_updates_inventory_and_is_idempotent(app, client):
         assert cream is not None
         assert float(cream.current_on_hand) == before + 1
         assert InventoryMovement.query.filter_by(source_record_id=str(invoice["id"])).count() >= 3
+
+
+def test_receiving_saved_draft_uses_latest_reviewed_values_and_one_movement(app, client):
+    login(client)
+    with app.app_context():
+        item = InventoryItem.query.filter_by(name="Chicken Breast").first()
+        assert item is not None
+        item_id = item.id
+        before = Decimal(item.current_on_hand)
+    supplier_name = f"Saved draft supplier {uuid4().hex[:8]}"
+    base_payload = {
+        "supplierName": supplier_name,
+        "invoiceNumber": f"EDIT-{uuid4().hex[:8].upper()}",
+        "invoiceDate": "2026-10-20",
+        "subtotal": 12,
+        "tax": 0,
+        "totalAmount": 12,
+        "status": "Draft",
+        "lineItems": [{"description": "Chicken Breast", "inventoryItemId": item_id, "purchaseUnit": "kg", "inventoryUnit": "kg", "conversionFactor": 1, "quantity": 1, "unitPrice": 12, "lineTotal": 12, "confidence": 1, "needsReview": False, "note": ""}],
+    }
+    created = client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=base_payload)
+    assert created.status_code == 201
+    invoice = created.get_json()
+    edited = {**base_payload, "status": "Ready", "subtotal": 24, "totalAmount": 24, "lineItems": [{**base_payload["lineItems"][0], "quantity": 2, "lineTotal": 24}]}
+    updated = client.patch(f"/api/pilot/purchases/invoices/{invoice['id']}", headers=csrf_headers(client), json=edited)
+    assert updated.status_code == 200
+    received = client.post(f"/api/pilot/purchases/invoices/{invoice['id']}/receive", headers=csrf_headers(client))
+    assert received.status_code == 200
+    assert received.get_json()["lineItems"][0]["quantity"] == 2
+    with app.app_context():
+        current = InventoryItem.query.filter_by(id=item_id).one()
+        assert Decimal(current.current_on_hand) == before + Decimal("2")
+        assert InventoryMovement.query.filter_by(source_record_id=str(invoice["id"]), source_type="invoice receipt").count() == 1
 
 
 def test_received_invoice_correction_reverses_inventory_and_blocks_repeat(app, client):

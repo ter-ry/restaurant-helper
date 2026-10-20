@@ -221,6 +221,42 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual(line["lineTotalDifference"], 9.0)
         self.assertTrue(line["needsReview"])
 
+    def test_parse_table_row_split_across_ocr_lines_reconstructs_numeric_cells(self):
+        parsed = parse_invoice_text(
+            """
+            Split Supplier
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast 1kg
+            5.00
+            kg
+            9.80
+            49.00
+            Subtotal 49.00
+            Total 49.00
+            """
+        )
+        self.assertEqual(len(parsed["lineItems"]), 1)
+        line = parsed["lineItems"][0]
+        self.assertEqual(line["itemName"], "Chicken Breast")
+        self.assertEqual(line["quantity"], 5.0)
+        self.assertEqual(line["unit"], "kg")
+        self.assertEqual(line["lineTotalDifference"], 0.0)
+
+    def test_ambiguous_split_table_product_is_not_guessed_as_a_receivable_line(self):
+        parsed = parse_invoice_text(
+            """
+            Split Supplier
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast 1kg
+            Five kg
+            9.80
+            49.00
+            Subtotal 49.00
+            Total 49.00
+            """
+        )
+        self.assertEqual(parsed["lineItems"], [])
+
     def test_invoice_number_extraction_requires_a_real_identifier(self):
         self.assertEqual(find_invoice_number(["East Repair Inc. INVOICE"]).value, "")
         self.assertEqual(find_invoice_number(["OICE"]).value, "")
