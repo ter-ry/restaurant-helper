@@ -832,6 +832,31 @@ class SquareConnection(TimestampMixin, db.Model):
     organization = db.relationship("Organization")
 
 
+class CloverConnection(TimestampMixin, db.Model):
+    __tablename__ = "clover_connections"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_clover_connection_organization"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    environment = db.Column(db.String(40), nullable=False, default="sandbox")
+    region = db.Column(db.String(40), nullable=False, default="north_america")
+    merchant_id = db.Column(db.String(255), nullable=False, default="")
+    merchant_name = db.Column(db.String(255), nullable=False, default="")
+    status = db.Column(db.String(40), nullable=False, default="disconnected")
+    access_token_ciphertext = db.Column(db.Text, nullable=False, default="")
+    refresh_token_ciphertext = db.Column(db.Text, nullable=False, default="")
+    recovery_token_ciphertext = db.Column(db.Text, nullable=False, default="")
+    access_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    refresh_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    recovery_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    disconnected_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_connection_check_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_error = db.Column(db.String(120), nullable=False, default="")
+
+    organization = db.relationship("Organization")
+
+
 class SquareLocation(TimestampMixin, db.Model):
     __tablename__ = "square_locations"
     __table_args__ = (

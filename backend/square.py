@@ -60,3 +60,13 @@ def decrypt_square_secret(value: str) -> str:
     except InvalidToken as exc:
         raise SquareSecurityError("Stored Square secret could not be decrypted.") from exc
 
+
+def encrypt_integration_secret(value: str) -> str:
+    """Encrypt a provider secret using the existing integration key."""
+    return encrypt_square_secret(value)
+
+
+def decrypt_integration_secret(value: str) -> str:
+    """Decrypt a provider secret using the existing integration key."""
+    return decrypt_square_secret(value)
+

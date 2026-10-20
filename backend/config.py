@@ -262,6 +262,12 @@ class BaseConfig:
             "SQUARE_REDIRECT_URI": os.environ.get("SQUARE_REDIRECT_URI", "").strip(),
             "SQUARE_WEBHOOK_SIGNATURE_KEY": os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY", "").strip(),
             "SQUARE_WEBHOOK_NOTIFICATION_URL": os.environ.get("SQUARE_WEBHOOK_NOTIFICATION_URL", "").strip(),
+            "CLOVER_ENABLED": _env_bool("CLOVER_ENABLED", False),
+            "CLOVER_ENVIRONMENT": os.environ.get("CLOVER_ENVIRONMENT", "sandbox").strip().lower() or "sandbox",
+            "CLOVER_REGION": os.environ.get("CLOVER_REGION", "north_america").strip().lower() or "north_america",
+            "CLOVER_CLIENT_ID": os.environ.get("CLOVER_CLIENT_ID", "").strip(),
+            "CLOVER_CLIENT_SECRET": os.environ.get("CLOVER_CLIENT_SECRET", "").strip(),
+            "CLOVER_REDIRECT_URI": os.environ.get("CLOVER_REDIRECT_URI", "").strip(),
             "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
             "FLOWTALLY_DEMO_DATABASE_NAME": os.environ.get("FLOWTALLY_DEMO_DATABASE_NAME", "").strip(),
@@ -437,3 +443,17 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
             raise ConfigurationError("Production must not use Square Sandbox credentials.")
         if mode == "production" and "staging" in square_redirect_uri.lower():
             raise ConfigurationError("Production must not use a staging Square callback.")
+
+    clover_enabled = bool(config.get("CLOVER_ENABLED"))
+    if clover_enabled:
+        clover_environment = str(config.get("CLOVER_ENVIRONMENT") or "").strip().lower()
+        clover_region = str(config.get("CLOVER_REGION") or "").strip().lower()
+        if clover_environment not in {"sandbox", "production"}:
+            raise ConfigurationError("CLOVER_ENVIRONMENT must be either sandbox or production.")
+        if clover_region not in {"north_america", "europe", "latam", "apac"}:
+            raise ConfigurationError("CLOVER_REGION must be one of north_america, europe, latam, or apac.")
+        if not config.get("CLOVER_CLIENT_ID") or not config.get("CLOVER_CLIENT_SECRET") or not config.get("CLOVER_REDIRECT_URI"):
+            raise ConfigurationError("CLOVER_CLIENT_ID, CLOVER_CLIENT_SECRET, and CLOVER_REDIRECT_URI are required when Clover is enabled.")
+        parsed_clover_redirect = urlparse(str(config.get("CLOVER_REDIRECT_URI")))
+        if mode in PROD_LIKE_MODES and (parsed_clover_redirect.scheme != "https" or not parsed_clover_redirect.netloc):
+            raise ConfigurationError("CLOVER_REDIRECT_URI must be an explicit https URL in staging and production.")
