@@ -326,6 +326,40 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByText("PDF preview is unavailable in this browser. Use the link above to open the document.")).toBeVisible();
   });
 
+  it("closes the receipt confirmation after a successful new OCR invoice receive", async () => {
+    mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
+      provider: "ocr.space",
+      fileName: "fresh-foods.pdf",
+      contentType: "application/pdf",
+      rawText: "Supplier: Fresh Dairy Toronto",
+      fields: {
+        supplier: { value: "Fresh Dairy Toronto", confidence: 0.97, needsReview: false },
+        invoiceDate: { value: "2026-08-20", confidence: 0.96, needsReview: false },
+        invoiceNumber: { value: "OCR-1002", confidence: 0.95, needsReview: false },
+        subtotal: { value: 48, confidence: 0.95, needsReview: false },
+        tax: { value: 6.24, confidence: 0.95, needsReview: false },
+        total: { value: 54.24, confidence: 0.95, needsReview: false },
+      },
+      lineItems: [{ itemName: "Milk 2L", quantity: 2, unit: "case", unitPrice: 24, lineTotal: 48, confidence: 0.97, needsReview: false }],
+      warnings: [],
+      overallConfidence: 0.96,
+      needsReview: false,
+    });
+    mockApi.receivePilotPurchaseInvoice.mockResolvedValueOnce(createInvoice({ id: 3, invoiceNumber: "OCR-1002", status: "Completed", supplierName: "Fresh Dairy Toronto" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    const file = new File(["%PDF-1.4"], "fresh-foods.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+    await screen.findByText("Invoice extracted. Review the draft before saving.");
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Confirm receipt" })).not.toBeInTheDocument());
+    expect(await screen.findByText("Invoice OCR-1002 received into inventory.")).toBeVisible();
+    expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledWith(expect.objectContaining({ invoiceNumber: "OCR-1002", status: "Ready" }));
+    expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalledWith(3);
+  });
+
   it("keeps an existing draft when invoice OCR fails", async () => {
     mockApi.uploadPilotInvoiceOcr.mockRejectedValueOnce(new PilotApiError("OCR service unavailable.", 503));
     renderPage();

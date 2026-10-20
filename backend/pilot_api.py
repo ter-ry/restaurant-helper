@@ -69,6 +69,7 @@ from .utils import (
     serialize_reorder_intent,
     serialize_supplier,
     serialize_supplier_item_mapping,
+    purchase_review_summary,
 )
 from .validation import RequestValidationError
 from invoice_ocr import InvoiceOCRFailure, InvoiceOCRTemporaryFailure, extract_invoice_document
@@ -689,6 +690,10 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
     unmapped = [line.description for line in invoice.lines if not line.inventory_item_id]
     if unmapped:
         raise RequestValidationError("Invoice receipt failed.", {"lineItems": f"Map all invoice lines before receiving. Unmapped: {', '.join(unmapped[:3])}{'...' if len(unmapped) > 3 else ''}"})
+
+    review = purchase_review_summary(invoice)
+    if review["blockers"]:
+        raise RequestValidationError("Invoice receipt failed.", {"review": "Resolve invoice review blockers before receiving."})
 
     now = _now()
     for line in invoice.lines:

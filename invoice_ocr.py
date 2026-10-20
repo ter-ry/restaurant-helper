@@ -545,8 +545,26 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
 
     quantity, quantity_confidence = parse_quantity(line)
     unit = parse_unit(line)
+    if unit and unit != "each":
+        text_part = re.sub(rf"\s+{re.escape(unit)}$", "", text_part, flags=re.I).strip()
     line_total = round(amounts[-1], 2)
     unit_price = round(amounts[-2], 2) if len(amounts) >= 2 else round(line_total / quantity, 2) if quantity else line_total
+    # OCR table extraction often separates the quantity into a standalone
+    # numeric cell while the item descriptor contains another number (for
+    # example, ``Chicken Breast 1kg | 5.00 | kg | 9.80 | 49.00``).  Prefer
+    # the candidate that reconciles quantity × unit price with the printed
+    # line total, rather than treating the descriptor's package size as qty.
+    if table_mode and quantity_confidence == 0 and len(amounts) >= 3:
+        fallback_candidate = None
+        for candidate in reversed(amounts[:-2]):
+            if candidate > 0 and fallback_candidate is None:
+                fallback_candidate = candidate
+            if candidate > 0 and abs((candidate * unit_price) - line_total) <= max(0.02, line_total * 0.01):
+                quantity, quantity_confidence = candidate, 0.9
+                break
+        else:
+            if fallback_candidate is not None:
+                quantity, quantity_confidence = fallback_candidate, 0.62
     if quantity and len(amounts) >= 2 and quantity > 0:
         unit_price = round(amounts[-2], 2)
 
@@ -568,7 +586,8 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
     if len(amounts) == 1 and quantity_confidence == 0:
         confidence = min(confidence, 0.68)
 
-    needs_review = confidence < 0.82 or not unit_price or not line_total
+    line_total_difference = round((quantity * unit_price) - line_total, 2) if quantity and unit_price else 0.0
+    needs_review = confidence < 0.82 or not unit_price or not line_total or abs(line_total_difference) > 0.01
 
     return {
         "originalDescription": text_part,
@@ -579,13 +598,16 @@ def parse_line_item(line: str, amounts: list[float], table_mode: bool = False) -
         "unit": unit or "each",
         "unitPrice": unit_price,
         "lineTotal": line_total,
+        "calculatedLineTotal": round(quantity * unit_price, 2),
+        "lineTotalDifference": line_total_difference,
         "confidence": round(confidence, 2),
         "needsReview": needs_review,
     }
 
 
 def strip_line_item_noise(line: str) -> str:
-    text = re.sub(r"\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b", " ", line, flags=re.I)
+    text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:kg|kilograms?|g|grams?|lb|pounds?|L|lit(?:re|er)s?|ml|millilit(?:re|er)s?|dozen|dz|case|cs|box|bx)\b", " ", line, flags=re.I)
+    text = re.sub(r"\b(?:qty|quantity)\s*[:\-]?\s*\d+(?:\.\d+)?\b", " ", text, flags=re.I)
     text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:x|X|@)\b", " ", text)
     text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:hrs?|hours?|hr|h)\b", " ", text, flags=re.I)
     text = re.sub(r"\$?\s*[0-9][0-9,]*(?:\.\d{2})?", " ", text)

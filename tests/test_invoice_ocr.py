@@ -185,6 +185,42 @@ class InvoiceOcrTest(unittest.TestCase):
         self.assertEqual(serialized["lineItems"][2]["itemName"], "Labor")
         self.assertEqual(serialized["lineItems"][2]["rawSourceLine"], "Labor 3hrs 5.00 15.00")
 
+    def test_parse_table_quantity_does_not_use_product_size_descriptor(self):
+        parsed = parse_invoice_text(
+            """
+            Oak Valley Meat Co
+            Invoice No: OV-DEMO-1019-01
+            Invoice Date: 2026-10-19
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast 1kg | 5.00 | kg | $9.80 | $49.00
+            Subtotal $49.00
+            Total $49.00
+            """
+        )
+        line = parsed["lineItems"][0]
+        self.assertIn("Chicken Breast", line["itemName"])
+        self.assertEqual(line["quantity"], 5.0)
+        self.assertEqual(line["unit"], "kg")
+        self.assertEqual(line["unitPrice"], 9.8)
+        self.assertEqual(line["lineTotal"], 49.0)
+        self.assertEqual(line["lineTotalDifference"], 0.0)
+
+    def test_parse_line_total_mismatch_is_marked_for_review(self):
+        parsed = parse_invoice_text(
+            """
+            Supplier Foods
+            Invoice No: SF-1001
+            QTY DESCRIPTION UNIT PRICE AMOUNT
+            Chicken Breast | 5 | kg | $9.80 | $40.00
+            Total $40.00
+            """
+        )
+        line = parsed["lineItems"][0]
+        self.assertEqual(line["quantity"], 5.0)
+        self.assertEqual(line["calculatedLineTotal"], 49.0)
+        self.assertEqual(line["lineTotalDifference"], 9.0)
+        self.assertTrue(line["needsReview"])
+
     def test_invoice_number_extraction_requires_a_real_identifier(self):
         self.assertEqual(find_invoice_number(["East Repair Inc. INVOICE"]).value, "")
         self.assertEqual(find_invoice_number(["OICE"]).value, "")

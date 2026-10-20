@@ -1009,6 +1009,8 @@ export interface PilotInvoiceOcrLine {
   confidence: number;
   needsReview: boolean;
   rawSourceLine?: string;
+  calculatedLineTotal?: number;
+  lineTotalDifference?: number;
 }
 
 export interface PilotInvoiceOcrResponse {

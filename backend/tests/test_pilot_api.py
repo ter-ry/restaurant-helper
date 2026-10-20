@@ -20,6 +20,8 @@ from backend.seed import (
 from backend.tests.conftest import make_operational_organization
 from backend.tests.test_square_integration import connect_square
 from backend.utils import purchase_review_summary
+from backend.pilot_api import _record_receipt
+from backend.validation import RequestValidationError
 
 
 def login(client):
@@ -123,6 +125,58 @@ def test_purchase_review_summary_reconciles_subtotal_and_total_separately():
     assert {item["code"] for item in summary["items"]} == {"line_subtotal_mismatch"}
     assert summary["reconciliation"]["subtotalDifference"] == -1.0
     assert summary["reconciliation"]["totalDifference"] == 0.0
+
+
+def test_purchase_review_summary_blocks_unresolved_line_total_mismatch():
+    class Line:
+        id = 2
+        description = "Chicken Breast"
+        inventory_item_id = 1
+        quantity = Decimal("5")
+        conversion_factor = Decimal("1")
+        unit_price = Decimal("9.80")
+        line_total = Decimal("40.00")
+        needs_review = True
+        confidence = Decimal("0.95")
+        price_change_percent = None
+        note = "Chicken Breast 5 kg $9.80 $40.00"
+
+    class Invoice:
+        lines = [Line()]
+        subtotal = Decimal("40.00")
+        tax = Decimal("0")
+        total_amount = Decimal("40.00")
+        status = "Ready"
+
+    summary = purchase_review_summary(Invoice())
+    assert any(item["code"] == "line_total_mismatch" for item in summary["items"])
+    assert summary["readyToReceive"] is False
+
+
+def test_record_receipt_rejects_unresolved_line_total_mismatch_before_inventory_write():
+    class Line:
+        id = 2
+        description = "Chicken Breast"
+        inventory_item_id = 1
+        quantity = Decimal("5")
+        conversion_factor = Decimal("1")
+        unit_price = Decimal("9.80")
+        line_total = Decimal("40.00")
+        needs_review = True
+        confidence = Decimal("0.95")
+        price_change_percent = None
+        note = "Chicken Breast 5 kg $9.80 $40.00"
+
+    class Invoice:
+        id = 10
+        status = "Ready"
+        lines = [Line()]
+        subtotal = Decimal("40.00")
+        tax = Decimal("0")
+        total_amount = Decimal("40.00")
+
+    with pytest.raises(RequestValidationError, match="Invoice receipt failed"):
+        _record_receipt(Invoice(), 1)
 
 
 def test_pilot_location_settings_are_tenant_scoped_and_validate_timezone(app, client):

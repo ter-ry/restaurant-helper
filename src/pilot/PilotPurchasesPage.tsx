@@ -419,6 +419,9 @@ export function PilotPurchasesPage() {
       !line.inventoryItemId ? `Map ${line.description || "this item"} to inventory.` : null,
       line.quantity <= 0 ? `Enter a quantity for ${line.description || "this item"}.` : null,
       line.conversionFactor <= 0 ? `Enter a valid conversion for ${line.description || "this item"}.` : null,
+      Math.abs((line.quantity || 0) * (line.unitPrice || 0) - (line.lineTotal || 0)) > 0.01
+        ? `${line.description || "This item"}: quantity × unit price is ${formatMoney((line.quantity || 0) * (line.unitPrice || 0))}, but the line total is ${formatMoney(line.lineTotal || 0)}. Review before receiving.`
+        : null,
     ].filter(Boolean) as string[]);
     const warnings = draft.lineItems.filter((line) => line.needsReview || line.confidence < 0.8).map((line) => `Review ${line.description || "this item"} before receiving.`);
     return { state: blockers.length ? "BLOCKING" : warnings.length ? "REVIEW" : "READY", blockers, warnings };
@@ -503,6 +506,7 @@ export function PilotPurchasesPage() {
   };
 
   const saveAndReceive = async () => {
+    if (saving) return;
     if (!authoritativeReadyToReceive) {
       setError("Map every invoice item before receiving this purchase.");
       return;
@@ -521,6 +525,7 @@ export function PilotPurchasesPage() {
       setShowReview(false);
       setEditorOpen(false);
       setReceiveMessage(`Invoice ${saved.invoiceNumber || "purchase"} received into inventory.`);
+      setReceiveConfirmOpen(false);
       navigate(location.pathname, { replace: true });
       await load(null);
     } catch (err) {
@@ -562,6 +567,7 @@ export function PilotPurchasesPage() {
     if (!draft.id) {
       return;
     }
+    if (saving) return;
     if (!authoritativeReadyToReceive) {
       setError("Map every invoice item before receiving this purchase.");
       return;
