@@ -70,6 +70,7 @@ def test_clover_merchant_launch_requires_explicit_authenticated_resume(app, clie
     continued = client.get("/api/integrations/clover/launch/resume?organizationId=1")
     assert continued.status_code == 302
     assert continued.headers["Location"].startswith("https://sandbox.dev.clover.com/oauth/v2/authorize?")
+    assert "redirect_uri=http%3A%2F%2Ftestserver%2Fapi%2Fintegrations%2Fclover%2Fcallback" in continued.headers["Location"]
     with client.session_transaction() as stored:
         context = stored["clover_oauth_context"]
         assert context["organization_id"] == 1
