@@ -326,6 +326,33 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByText("PDF preview is unavailable in this browser. Use the link above to open the document.")).toBeVisible();
   });
 
+  it("preserves OCR package sizes for inventory mapping without changing quantity", async () => {
+    mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
+      provider: "ocr.space",
+      fileName: "milk.pdf",
+      contentType: "application/pdf",
+      rawText: "Milk 2L\\nMilk 4L",
+      fields: { supplier: { value: "Fresh Dairy Toronto", confidence: 0.97, needsReview: false } },
+      lineItems: [
+        { itemName: "Milk", packaging: "2 L", quantity: 1, unit: "case", unitPrice: 4, lineTotal: 4, confidence: 0.97, needsReview: false },
+        { itemName: "Milk", packaging: "4 L", quantity: 2, unit: "case", unitPrice: 7, lineTotal: 14, confidence: 0.97, needsReview: false },
+      ],
+      warnings: [],
+      overallConfidence: 0.97,
+      needsReview: false,
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    const file = new File(["%PDF-1.4"], "milk.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getAllByLabelText("Description")).toHaveLength(2));
+    expect(screen.getAllByLabelText("Description")[0]).toHaveValue("Milk 2L");
+    expect(screen.getAllByLabelText("Description")[1]).toHaveValue("Milk 4L");
+    expect(screen.getAllByLabelText("Quantity")[0]).toHaveValue(1);
+    expect(screen.getAllByLabelText("Quantity")[1]).toHaveValue(2);
+  });
+
   it("closes the receipt confirmation after a successful new OCR invoice receive", async () => {
     mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
       provider: "ocr.space",

@@ -767,7 +767,14 @@ export function PilotPurchasesPage() {
     const fieldValue = (field: { value: string | number | null } | undefined) => field?.value ?? "";
     const supplierName = String(fieldValue(result.fields.supplier)).trim();
     const lineItems = result.lineItems.map((line) => {
-      const description = String(line.itemName || line.originalDescription || "").trim();
+      const baseDescription = String(line.itemName || line.originalDescription || "").trim();
+      // OCR keeps package size separate from purchased quantity. Preserve it
+      // in the editable description so inventory mapping can distinguish, for
+      // example, Milk 2L from Milk 4L without changing the invoice quantity.
+      const packageLabel = String(line.packaging || "").replace(/\s+/g, "").trim();
+      const description = packageLabel && !baseDescription.replace(/\s+/g, "").toLowerCase().includes(packageLabel.toLowerCase())
+        ? `${baseDescription} ${packageLabel}`.trim()
+        : baseDescription;
       const hint = applyMappingHint(supplierName, description);
       const exactMatch = inventoryItems.find((item) => item.active && normalizeLookup(item.name) === normalizeLookup(description));
       const inventoryItemId = hint?.inventoryItemId ?? exactMatch?.id ?? null;
