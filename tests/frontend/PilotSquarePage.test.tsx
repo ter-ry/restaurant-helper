@@ -21,6 +21,7 @@ const mockApi = vi.hoisted(() => ({
   fetchPilotCloverStatus: vi.fn(),
   disconnectPilotClover: vi.fn(),
   beginPilotCloverConnection: vi.fn(),
+  resumePilotCloverLaunch: vi.fn(),
 }));
 
 const configMocks = vi.hoisted(() => ({ demoReadOnly: false }));
@@ -60,6 +61,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     fetchPilotCloverStatus: mockApi.fetchPilotCloverStatus,
     disconnectPilotClover: mockApi.disconnectPilotClover,
     beginPilotCloverConnection: mockApi.beginPilotCloverConnection,
+    resumePilotCloverLaunch: mockApi.resumePilotCloverLaunch,
   };
 });
 
@@ -247,6 +249,7 @@ describe("PilotSquarePage", () => {
     mockApi.fetchPilotCloverStatus.mockReset();
     mockApi.disconnectPilotClover.mockReset();
     mockApi.beginPilotCloverConnection.mockReset();
+    mockApi.resumePilotCloverLaunch.mockReset();
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createDisconnectedConnection() });
     mockApi.fetchPilotSquareCatalogMappings.mockResolvedValue(createCatalogMappingResponse());
     mockApi.fetchPilotMenuCosting.mockResolvedValue(createMenuCosting());
@@ -282,6 +285,15 @@ describe("PilotSquarePage", () => {
     expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
     expect(screen.getByText("Clover sandbox")).toBeVisible();
     expect(screen.getByRole("button", { name: "Connect Clover sandbox" })).toBeVisible();
+  });
+
+  it("requires explicit continuation for a Clover merchant launch", async () => {
+    render(<MemoryRouter initialEntries={["/app/square?cloverLaunch=1"]}><PilotSquarePage /></MemoryRouter>);
+    expect(await screen.findByText("Clover launched Flowtally")).toBeVisible();
+    const continueButton = screen.getByRole("button", { name: "Continue Clover setup" });
+    expect(continueButton).toBeEnabled();
+    fireEvent.click(continueButton);
+    expect(mockApi.resumePilotCloverLaunch).toHaveBeenCalledWith(42);
   });
 
   it("keeps simulated wording and controls limited to read-only demo mode", async () => {

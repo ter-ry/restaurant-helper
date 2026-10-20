@@ -17,6 +17,7 @@ from .utils import isoformat, json_error, get_platform_role
 
 bp = Blueprint("clover_integration", __name__)
 STATE_KEY = "clover_oauth_context"
+LAUNCH_KEY = "clover_launch_context"
 STATE_TTL = timedelta(minutes=10)
 
 
@@ -41,6 +42,29 @@ def _require(organization: Organization | None):
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
     return None
+
+
+def _frontend_path(path: str) -> str:
+    origin = str(current_app.config.get("FLOWTALLY_FRONTEND_ORIGIN") or "").rstrip("/")
+    return f"{origin}{path}"
+
+
+def _new_oauth_context(*, organization: Organization, merchant_id: str | None = None) -> str:
+    state = secrets.token_urlsafe(32)
+    context: dict[str, Any] = {
+        "state": state,
+        "organization_id": organization.id,
+        "user_id": current_user.id,
+        "expires_at": (_now() + STATE_TTL).isoformat(),
+    }
+    if merchant_id:
+        context["launch_merchant_id"] = merchant_id
+    session[STATE_KEY] = context
+    return state
+
+
+def _authorize_redirect(*, state: str):
+    return redirect(clover_authorize_url(state=state, client_id=current_app.config["CLOVER_CLIENT_ID"], redirect_uri=current_app.config["CLOVER_REDIRECT_URI"]))
 
 
 def _serialize(connection: CloverConnection | None) -> dict[str, Any]:
@@ -78,9 +102,63 @@ def start_clover_oauth():
     if denied is not None:
         return denied
     assert organization is not None
-    state = secrets.token_urlsafe(32)
-    session[STATE_KEY] = {"state": state, "organization_id": organization.id, "user_id": current_user.id, "expires_at": (_now() + STATE_TTL).isoformat()}
-    return redirect(clover_authorize_url(state=state, client_id=current_app.config["CLOVER_CLIENT_ID"], redirect_uri=current_app.config["CLOVER_REDIRECT_URI"]))
+    return _authorize_redirect(state=_new_oauth_context(organization=organization))
+
+
+@bp.get("/api/integrations/clover/launch")
+def clover_launch():
+    """Receive Clover's merchant-dashboard launch without trusting it for tenant binding.
+
+    Clover supplies the merchant identifier, but only an authenticated Flowtally
+    user who explicitly continues for the selected organization can start OAuth.
+    """
+    if not clover_enabled():
+        return json_error("Clover is not enabled.", 404)
+    client_id = str(request.args.get("client_id") or request.args.get("clientId") or "").strip()
+    if client_id and client_id != current_app.config["CLOVER_CLIENT_ID"]:
+        return json_error("Clover launch client is not recognized.", 400)
+    merchant_id = str(request.args.get("merchant_id") or request.args.get("merchantId") or "").strip()
+    if not merchant_id or len(merchant_id) > 128:
+        return json_error("Clover launch merchant identity is required.", 400)
+    session[LAUNCH_KEY] = {
+        "merchant_id": merchant_id,
+        "client_id": current_app.config["CLOVER_CLIENT_ID"],
+        "nonce": secrets.token_urlsafe(24),
+        "expires_at": (_now() + STATE_TTL).isoformat(),
+    }
+    # The user must choose/confirm the Flowtally organization in the workspace;
+    # the Clover merchant id is never used to select one automatically.
+    return redirect(_frontend_path("/app/login?redirectTo=/app/square?cloverLaunch=1"), code=303)
+
+
+@bp.get("/api/integrations/clover/launch/resume")
+@login_required
+def resume_clover_launch():
+    if not clover_enabled():
+        return json_error("Clover is not enabled.", 404)
+    context = session.get(LAUNCH_KEY) or {}
+    try:
+        expires = datetime.fromisoformat(str(context.get("expires_at")))
+    except (TypeError, ValueError):
+        expires = None
+    if not context or expires is None or expires < _now():
+        session.pop(LAUNCH_KEY, None)
+        return json_error("Clover launch session is invalid or expired.", 400)
+    try:
+        org_id = int(request.args.get("organizationId", ""))
+    except ValueError:
+        org_id = None
+    organization = _organization(org_id)
+    denied = _require(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    merchant_id = str(context.get("merchant_id") or "").strip()
+    if not merchant_id:
+        session.pop(LAUNCH_KEY, None)
+        return json_error("Clover launch merchant identity is missing.", 400)
+    session.pop(LAUNCH_KEY, None)
+    return _authorize_redirect(state=_new_oauth_context(organization=organization, merchant_id=merchant_id))
 
 
 @bp.get("/api/integrations/clover/callback")
@@ -102,6 +180,9 @@ def clover_callback():
     code = str(request.args.get("code") or "").strip()
     if not merchant_id or client_id != current_app.config["CLOVER_CLIENT_ID"] or not code:
         return json_error("Clover authorization response is incomplete.", 400)
+    expected_merchant_id = str(context.get("launch_merchant_id") or "").strip()
+    if expected_merchant_id and merchant_id != expected_merchant_id:
+        return json_error("Clover merchant identity does not match the launch.", 400)
     try:
         token_payload = clover_request("POST", "/oauth/v2/token", payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "client_secret": current_app.config["CLOVER_CLIENT_SECRET"], "code": code})
         access_token = str(token_payload.get("access_token") or "")

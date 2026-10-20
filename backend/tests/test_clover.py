@@ -57,6 +57,52 @@ def test_clover_start_binds_state_to_user_and_organization(app, client):
         assert context["state"]
 
 
+def test_clover_merchant_launch_requires_explicit_authenticated_resume(app, client):
+    _configure(app)
+    launch = client.get("/api/integrations/clover/launch?merchant_id=merchant-1&client_id=clover-client")
+    assert launch.status_code == 303
+    assert "/app/login?redirectTo=/app/square?cloverLaunch=1" in launch.headers["Location"]
+    with client.session_transaction() as stored:
+        assert stored["clover_launch_context"]["merchant_id"] == "merchant-1"
+    _login(client)
+    missing_org = client.get("/api/integrations/clover/launch/resume")
+    assert missing_org.status_code == 404
+    continued = client.get("/api/integrations/clover/launch/resume?organizationId=1")
+    assert continued.status_code == 302
+    assert continued.headers["Location"].startswith("https://sandbox.dev.clover.com/oauth/v2/authorize?")
+    with client.session_transaction() as stored:
+        context = stored["clover_oauth_context"]
+        assert context["organization_id"] == 1
+        assert context["launch_merchant_id"] == "merchant-1"
+        assert "clover_launch_context" not in stored
+
+
+def test_clover_launch_rejects_unknown_client_or_missing_merchant(app, client):
+    _configure(app)
+    assert client.get("/api/integrations/clover/launch?merchant_id=merchant-1&client_id=other").status_code == 400
+    assert client.get("/api/integrations/clover/launch?client_id=clover-client").status_code == 400
+
+
+def test_clover_launch_resume_rejects_unrelated_organization(app, client):
+    _configure(app)
+    client.get("/api/integrations/clover/launch?merchant_id=merchant-1")
+    _login(client)
+    assert client.get("/api/integrations/clover/launch/resume?organizationId=999999").status_code == 404
+    with client.session_transaction() as stored:
+        assert stored["clover_launch_context"]["merchant_id"] == "merchant-1"
+
+
+def test_clover_launch_callback_rejects_forged_merchant(app, client):
+    _configure(app)
+    _login(client)
+    client.get("/api/integrations/clover/launch?merchant_id=merchant-1")
+    client.get("/api/integrations/clover/launch/resume?organizationId=1")
+    with client.session_transaction() as stored:
+        state = stored["clover_oauth_context"]["state"]
+    response = client.get(f"/api/integrations/clover/callback?state={state}&code=auth-code&merchant_id=forged&client_id=clover-client")
+    assert response.status_code == 400
+
+
 def test_clover_state_expires_and_cannot_be_replayed(app, client):
     _configure(app)
     _login(client)

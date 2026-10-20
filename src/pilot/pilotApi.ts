@@ -876,6 +876,10 @@ export async function beginPilotCloverConnection(organizationId: number) {
   window.location.assign(`${pilotApiBaseUrl}/api/integrations/clover/start?organizationId=${organizationId}`);
 }
 
+export async function resumePilotCloverLaunch(organizationId: number) {
+  window.location.assign(`${pilotApiBaseUrl}/api/integrations/clover/launch/resume?organizationId=${organizationId}`);
+}
+
 export async function disconnectPilotClover(organizationId: number) {
   return requestCsrfJson<{ connection: PilotCloverConnectionSummary; remoteRevocation: string }>("/api/integrations/clover/disconnect", {
     method: "POST",

@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { ExternalLink, RefreshCw, Unplug } from "lucide-react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { usePilotSession } from "./PilotSessionProvider";
-import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverStatus, type PilotCloverConnectionSummary } from "./pilotApi";
+import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverConnectionSummary } from "./pilotApi";
 import { demoReadOnly } from "./pilotConfig";
 
 export function PilotCloverConnection() {
   const { organization } = usePilotSession();
+  const location = useLocation();
   const [connection, setConnection] = useState<PilotCloverConnectionSummary | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const organizationId = organization?.id ?? null;
+  const launchedFromClover = new URLSearchParams(location.search).get("cloverLaunch") === "1";
 
   const load = useCallback(async () => {
     if (!organizationId) return;
@@ -49,6 +52,15 @@ export function PilotCloverConnection() {
         </Badge>
       </div>
       {error ? <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</p> : null}
+      {launchedFromClover ? (
+        <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted">
+          <p className="font-semibold text-ink">Clover launched Flowtally</p>
+          <p className="mt-1">Confirm this selected organization before continuing to Clover authorization.</p>
+          <Button className="mt-3" type="button" disabled={demoReadOnly || busy} onClick={() => void resumePilotCloverLaunch(organizationId)}>
+            <ExternalLink className="mr-2 h-4 w-4" />Continue Clover setup
+          </Button>
+        </div>
+      ) : null}
       {connected ? (
         <div className="mt-4 space-y-2 text-sm text-muted">
           <p><span className="font-semibold text-ink">Merchant:</span> {connection?.merchantName || connection?.merchantId}</p>
