@@ -108,7 +108,7 @@ def _serialize(connection: CloverConnection | None) -> dict[str, Any]:
 @bp.get("/api/integrations/clover/start")
 @login_required
 def start_clover_oauth():
-    if not clover_enabled():
+    if not _clover_access_configured():
         return json_error("Clover is not enabled.", 404)
     try:
         org_id = int(request.args.get("organizationId", ""))
