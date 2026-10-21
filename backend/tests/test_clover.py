@@ -24,6 +24,7 @@ def _configure(app):
         CLOVER_CLIENT_ID="clover-client",
         CLOVER_CLIENT_SECRET="clover-secret",
         CLOVER_REDIRECT_URI="http://testserver/api/integrations/clover/callback",
+        CLOVER_ALLOWED_ORGANIZATION_IDS=[1],
         INTEGRATION_ENCRYPTION_KEY=Fernet.generate_key().decode("utf-8"),
     )
 
@@ -191,3 +192,29 @@ def test_clover_refresh_preserves_credentials_on_transient_failure_and_disconnec
     response = client.post("/api/integrations/clover/disconnect", json={"organizationId": 1}, headers={"X-CSRFToken": csrf})
     assert response.status_code == 200
     assert response.get_json()["remoteRevocation"] == "not_supported"
+
+
+def test_clover_allowlist_blocks_other_organizations_and_does_not_disclose_connections(app, client):
+    _configure(app)
+    _login(client)
+    app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = []
+    assert client.get("/api/integrations/clover/start?organizationId=1").status_code == 404
+    assert client.get("/api/integrations/clover/status?organizationId=1").get_json() == {"enabled": False, "connection": None}
+
+    app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = [999]
+    assert client.get("/api/integrations/clover/start?organizationId=1").status_code == 404
+    assert client.get("/api/integrations/clover/status?organizationId=1").get_json() == {"enabled": False, "connection": None}
+
+
+def test_clover_merchant_launch_is_closed_when_production_allowlist_is_empty(app, client):
+    _configure(app)
+    app.config.update(FLOWTALLY_ENV="production", CLOVER_ALLOWED_ORGANIZATION_IDS=[])
+    response = client.get("/api/integrations/clover/launch?merchant_id=merchant-1&client_id=clover-client")
+    assert response.status_code == 404
+
+
+def test_clover_production_configuration_keeps_sandbox_api_host(app):
+    _configure(app)
+    app.config.update(FLOWTALLY_ENV="production", CLOVER_ALLOWED_ORGANIZATION_IDS=[1])
+    with app.app_context():
+        assert clover_api_base() == "https://apisandbox.dev.clover.com"
