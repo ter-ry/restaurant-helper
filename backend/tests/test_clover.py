@@ -159,12 +159,13 @@ def test_clover_actions_authorize_before_allowlist_for_both_states(app, client, 
     _configure(app)
     _login(client)
     monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: False)
+    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
 
     for allowed_ids in ([1], []):
         app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = allowed_ids
         assert client.get("/api/integrations/clover/start?organizationId=1").status_code == 403
-        assert client.post("/api/integrations/clover/refresh", json={"organizationId": 1}).status_code == 403
-        assert client.post("/api/integrations/clover/disconnect", json={"organizationId": 1}).status_code == 403
+        assert client.post("/api/integrations/clover/refresh", json={"organizationId": 1}, headers={"X-CSRFToken": csrf}).status_code == 403
+        assert client.post("/api/integrations/clover/disconnect", json={"organizationId": 1}, headers={"X-CSRFToken": csrf}).status_code == 403
 
         with client.session_transaction() as stored:
             stored["clover_launch_context"] = {
