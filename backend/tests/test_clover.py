@@ -155,6 +155,39 @@ def test_clover_status_authorizes_before_allowlist_and_hides_nonallowlisted_stat
     assert response.get_json() == {"enabled": False, "connection": None}
 
 
+def test_clover_actions_authorize_before_allowlist_for_both_states(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: False)
+
+    for allowed_ids in ([1], []):
+        app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = allowed_ids
+        assert client.get("/api/integrations/clover/start?organizationId=1").status_code == 403
+        assert client.post("/api/integrations/clover/refresh", json={"organizationId": 1}).status_code == 403
+        assert client.post("/api/integrations/clover/disconnect", json={"organizationId": 1}).status_code == 403
+
+        with client.session_transaction() as stored:
+            stored["clover_launch_context"] = {
+                "merchant_id": "merchant-1",
+                "client_id": "clover-client",
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }
+        assert client.get("/api/integrations/clover/launch/resume?organizationId=1").status_code == 403
+
+        with client.session_transaction() as stored:
+            stored["clover_oauth_context"] = {
+                "state": "state-for-guard",
+                "organization_id": 1,
+                "user_id": 1,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }
+        response = client.get(
+            "/api/integrations/clover/callback"
+            "?state=state-for-guard&code=auth-code&merchant_id=merchant-1&client_id=clover-client"
+        )
+        assert response.status_code == 403
+
+
 def test_clover_callback_verifies_authoritative_merchant_and_encrypts_tokens(app, client, monkeypatch):
     _configure(app)
     _login(client)
