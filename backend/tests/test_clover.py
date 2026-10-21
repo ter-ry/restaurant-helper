@@ -135,6 +135,26 @@ def test_clover_status_rejects_non_member_org(app, client):
     assert response.status_code == 404
 
 
+def test_clover_status_authorizes_before_allowlist_and_hides_nonallowlisted_state(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+
+    # A caller without organization-management access gets the same denial
+    # regardless of whether the organization is allowlisted.
+    monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: False)
+    app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = [1]
+    assert client.get("/api/integrations/clover/status?organizationId=1").status_code == 403
+    app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = []
+    assert client.get("/api/integrations/clover/status?organizationId=1").status_code == 403
+
+    # An authorized owner receives the frontend-safe disabled shape when the
+    # organization is not allowlisted.
+    monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: True)
+    response = client.get("/api/integrations/clover/status?organizationId=1")
+    assert response.status_code == 200
+    assert response.get_json() == {"enabled": False, "connection": None}
+
+
 def test_clover_callback_verifies_authoritative_merchant_and_encrypts_tokens(app, client, monkeypatch):
     _configure(app)
     _login(client)
