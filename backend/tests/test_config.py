@@ -244,6 +244,10 @@ def test_production_clover_requires_a_nonempty_organization_allowlist(monkeypatc
     monkeypatch.setenv("CLOVER_CLIENT_ID", "sandbox-client")
     monkeypatch.setenv("CLOVER_CLIENT_SECRET", "sandbox-secret")
     monkeypatch.setenv("CLOVER_REDIRECT_URI", "https://api.flowtally.ca/api/integrations/clover/callback")
+    monkeypatch.setenv("GOOGLE_OIDC_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "production-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "production-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://api.flowtally.ca/api/auth/google/callback")
 
     with pytest.raises(ConfigurationError, match="CLOVER_ALLOWED_ORGANIZATION_IDS"):
         choose_config().build()
