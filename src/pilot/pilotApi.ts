@@ -853,6 +853,41 @@ export type PilotSquareSyncJobSummary = SquareSyncJobSummary;
 export type PilotSquareWebhookEventSummary = SquareWebhookEventSummary;
 export type PilotSquareCatalogMappingSummary = SquareCatalogMappingSummary;
 
+export type PilotCloverConnectionSummary = {
+  id?: number;
+  organizationId?: number;
+  environment: string;
+  region: string;
+  merchantId?: string;
+  merchantName?: string;
+  status: "disconnected" | "connected" | "reauthorization_required";
+  accessExpiresAt?: string | null;
+  refreshExpiresAt?: string | null;
+  lastConnectionCheckAt?: string | null;
+  reconnectRequired?: boolean;
+  error?: string | null;
+};
+
+export async function fetchPilotCloverStatus(organizationId: number) {
+  return requestJson<{ enabled: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+}
+
+export async function beginPilotCloverConnection(organizationId: number) {
+  window.location.assign(`${pilotApiBaseUrl}/api/integrations/clover/start?organizationId=${organizationId}`);
+}
+
+export async function resumePilotCloverLaunch(organizationId: number) {
+  window.location.assign(`${pilotApiBaseUrl}/api/integrations/clover/launch/resume?organizationId=${organizationId}`);
+}
+
+export async function disconnectPilotClover(organizationId: number) {
+  return requestCsrfJson<{ connection: PilotCloverConnectionSummary; remoteRevocation: string }>("/api/integrations/clover/disconnect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId }),
+  });
+}
+
 async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const csrfToken = await getPilotCsrfToken();
   return requestJson<T>(path, {

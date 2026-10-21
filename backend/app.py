@@ -28,6 +28,7 @@ from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
 from .platform_admin import bp as platform_admin_bp
 from .square_integration import bp as square_integration_bp
+from .clover_integration import bp as clover_integration_bp
 from .policy import enforce_endpoint_permission
 from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data, seed_showcase_tenant
 from .showcase_inventory import ShowcaseInventoryError, replenish_showcase_inventory
@@ -230,6 +231,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(platform_admin_bp)
     app.register_blueprint(daily_close_bp)
     app.register_blueprint(square_integration_bp)
+    app.register_blueprint(clover_integration_bp)
     app.register_blueprint(pilot_api_bp)
 
     @app.cli.group("seed")
