@@ -53,7 +53,7 @@ def _clover_access_configured() -> bool:
 def _require(organization: Organization | None):
     if organization is None:
         return json_error("Organization not found.", 404)
-    if not _allowlisted(organization):
+    if not _clover_access_configured() or not _allowlisted(organization):
         return json_error("Clover is unavailable for this organization.", 404)
     if not _can_manage(organization):
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
