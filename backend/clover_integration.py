@@ -53,10 +53,12 @@ def _clover_access_configured() -> bool:
 def _require(organization: Organization | None):
     if organization is None:
         return json_error("Organization not found.", 404)
-    if not _clover_access_configured() or not _allowlisted(organization):
-        return json_error("Clover is unavailable for this organization.", 404)
+    # Authorize first so unavailable/allowlisted state is never observable by
+    # a caller who cannot manage the requested organization.
     if not _can_manage(organization):
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
+    if not _clover_access_configured() or not _allowlisted(organization):
+        return json_error("Clover is unavailable for this organization.", 404)
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
     return None
 
