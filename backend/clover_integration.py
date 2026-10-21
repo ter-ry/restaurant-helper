@@ -35,11 +35,30 @@ def _organization(org_id: int | None) -> Organization | None:
     return Organization.query.filter_by(id=org_id).first() if org_id else None
 
 
+def _allowlisted(organization: Organization | None) -> bool:
+    if organization is None:
+        return False
+    allowed_ids = {int(value) for value in (current_app.config.get("CLOVER_ALLOWED_ORGANIZATION_IDS") or [])}
+    return organization.id in allowed_ids
+
+
+def _clover_access_configured() -> bool:
+    if not clover_enabled():
+        return False
+    if str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() == "production":
+        return bool(current_app.config.get("CLOVER_ALLOWED_ORGANIZATION_IDS"))
+    return True
+
+
 def _require(organization: Organization | None):
     if organization is None:
         return json_error("Organization not found.", 404)
+    # Authorize first so unavailable/allowlisted state is never observable by
+    # a caller who cannot manage the requested organization.
     if not _can_manage(organization):
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
+    if not _clover_access_configured() or not _allowlisted(organization):
+        return json_error("Clover is unavailable for this organization.", 404)
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
     return None
 
@@ -91,7 +110,7 @@ def _serialize(connection: CloverConnection | None) -> dict[str, Any]:
 @bp.get("/api/integrations/clover/start")
 @login_required
 def start_clover_oauth():
-    if not clover_enabled():
+    if not _clover_access_configured():
         return json_error("Clover is not enabled.", 404)
     try:
         org_id = int(request.args.get("organizationId", ""))
@@ -112,8 +131,8 @@ def clover_launch():
     Clover supplies the merchant identifier, but only an authenticated Flowtally
     user who explicitly continues for the selected organization can start OAuth.
     """
-    if not clover_enabled():
-        return json_error("Clover is not enabled.", 404)
+    if not _clover_access_configured():
+        return json_error("Clover is unavailable.", 404)
     client_id = str(request.args.get("client_id") or request.args.get("clientId") or "").strip()
     if client_id and client_id != current_app.config["CLOVER_CLIENT_ID"]:
         return json_error("Clover launch client is not recognized.", 400)
@@ -223,12 +242,17 @@ def clover_status():
     except ValueError:
         org_id = None
     organization = _organization(org_id)
-    denied = _require(organization)
-    if denied is not None:
-        return denied
-    assert organization is not None
-    if not clover_enabled():
+    if organization is None:
+        return json_error("Organization not found.", 404)
+    # Authorize the requested organization before evaluating or revealing
+    # Clover allowlist state. This prevents callers from probing which tenant
+    # IDs are enabled for Clover.
+    if not _can_manage(organization):
+        return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
+    if not _clover_access_configured() or not _allowlisted(organization):
+        apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
         return jsonify({"enabled": False, "connection": None}), 200
+    apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
     return jsonify({"enabled": True, "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
 
 

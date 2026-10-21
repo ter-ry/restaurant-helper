@@ -225,6 +225,49 @@ def test_production_memory_rate_limits_remain_rejected(monkeypatch: pytest.Monke
         choose_config().build()
 
 
+def test_production_clover_requires_a_nonempty_organization_allowlist(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-production-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally_prod")
+    monkeypatch.setenv("FLOWTALLY_MIGRATION_DATABASE_URL", "postgresql://example.invalid/flowtally_prod")
+    monkeypatch.setenv("FLOWTALLY_PRODUCTION_DATABASE_NAME", "flowtally_prod")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://flowtally.ca")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("SESSION_COOKIE_NAME", "flowtally_session")
+    monkeypatch.setenv("FLOWTALLY_ENFORCE_SPLIT_ORIGIN_CSRF", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+    monkeypatch.setenv("CLOVER_ENABLED", "true")
+    monkeypatch.setenv("CLOVER_ENVIRONMENT", "sandbox")
+    monkeypatch.setenv("CLOVER_REGION", "north_america")
+    monkeypatch.setenv("CLOVER_CLIENT_ID", "sandbox-client")
+    monkeypatch.setenv("CLOVER_CLIENT_SECRET", "sandbox-secret")
+    monkeypatch.setenv("CLOVER_REDIRECT_URI", "https://api.flowtally.ca/api/integrations/clover/callback")
+    monkeypatch.setenv("GOOGLE_OIDC_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "production-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "production-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://api.flowtally.ca/api/auth/google/callback")
+
+    with pytest.raises(ConfigurationError, match="CLOVER_ALLOWED_ORGANIZATION_IDS"):
+        choose_config().build()
+
+
+def test_malformed_clover_allowlist_is_rejected(monkeypatch: pytest.MonkeyPatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("FLOWTALLY_ENV", "staging")
+    monkeypatch.setenv("SECRET_KEY", "a-very-long-explicit-staging-secret-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example.invalid/flowtally")
+    monkeypatch.setenv("FLOWTALLY_ALLOWED_ORIGINS", "https://staging.flowtally.ca")
+    monkeypatch.setenv("FLOWTALLY_FRONTEND_ORIGIN", "https://staging.flowtally.ca")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("FLOWTALLY_RATE_LIMIT_STORAGE_URI", "redis://example.invalid/0")
+    monkeypatch.setenv("CLOVER_ALLOWED_ORGANIZATION_IDS", "1,not-an-id")
+
+    with pytest.raises(ConfigurationError, match="numeric organization IDs"):
+        choose_config().build()
+
+
 def test_staging_config_builds_when_everything_is_explicit(monkeypatch: pytest.MonkeyPatch):
     _clear_config_env(monkeypatch)
     monkeypatch.setenv("FLOWTALLY_ENV", "staging")

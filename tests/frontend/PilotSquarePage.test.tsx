@@ -287,6 +287,16 @@ describe("PilotSquarePage", () => {
     expect(screen.getByRole("button", { name: "Connect Clover sandbox" })).toBeVisible();
   });
 
+  it("hides unavailable Clover controls while preserving Square controls", async () => {
+    mockApi.fetchPilotCloverStatus.mockResolvedValue({ enabled: false, connection: null });
+    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "Connection and health" })).toBeVisible();
+    expect(screen.queryByText("Clover sandbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Clover sandbox" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Square" })).toBeVisible();
+  });
+
   it("requires explicit continuation for a Clover merchant launch", async () => {
     render(<MemoryRouter initialEntries={["/app/square?cloverLaunch=1"]}><PilotSquarePage /></MemoryRouter>);
     expect(await screen.findByText("Clover launched Flowtally")).toBeVisible();

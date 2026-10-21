@@ -42,6 +42,24 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _organization_allowlist(name: str) -> list[int]:
+    raw = os.environ.get(name, "")
+    values: list[int] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            organization_id = int(token)
+        except ValueError as exc:
+            raise ConfigurationError(f"{name} must contain numeric organization IDs.") from exc
+        if organization_id <= 0:
+            raise ConfigurationError(f"{name} must contain positive organization IDs.")
+        if organization_id not in values:
+            values.append(organization_id)
+    return values
+
+
 def _env_mode() -> tuple[str, bool]:
     explicit = os.environ.get("FLOWTALLY_ENV", "").strip().lower()
     if explicit:
@@ -268,6 +286,7 @@ class BaseConfig:
             "CLOVER_CLIENT_ID": os.environ.get("CLOVER_CLIENT_ID", "").strip(),
             "CLOVER_CLIENT_SECRET": os.environ.get("CLOVER_CLIENT_SECRET", "").strip(),
             "CLOVER_REDIRECT_URI": os.environ.get("CLOVER_REDIRECT_URI", "").strip(),
+            "CLOVER_ALLOWED_ORGANIZATION_IDS": _organization_allowlist("CLOVER_ALLOWED_ORGANIZATION_IDS"),
             "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
             "FLOWTALLY_DEMO_DATABASE_NAME": os.environ.get("FLOWTALLY_DEMO_DATABASE_NAME", "").strip(),
@@ -454,6 +473,8 @@ def validate_runtime_config(config: dict[str, Any], *, environment: str | None =
             raise ConfigurationError("CLOVER_REGION must be one of north_america, europe, latam, or apac.")
         if not config.get("CLOVER_CLIENT_ID") or not config.get("CLOVER_CLIENT_SECRET") or not config.get("CLOVER_REDIRECT_URI"):
             raise ConfigurationError("CLOVER_CLIENT_ID, CLOVER_CLIENT_SECRET, and CLOVER_REDIRECT_URI are required when Clover is enabled.")
+        if mode == "production" and not config.get("CLOVER_ALLOWED_ORGANIZATION_IDS"):
+            raise ConfigurationError("CLOVER_ALLOWED_ORGANIZATION_IDS must contain at least one organization in production.")
         parsed_clover_redirect = urlparse(str(config.get("CLOVER_REDIRECT_URI")))
         if mode in PROD_LIKE_MODES and (parsed_clover_redirect.scheme != "https" or not parsed_clover_redirect.netloc):
             raise ConfigurationError("CLOVER_REDIRECT_URI must be an explicit https URL in staging and production.")
