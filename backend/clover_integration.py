@@ -242,11 +242,15 @@ def clover_status():
     organization = _organization(org_id)
     if organization is None:
         return json_error("Organization not found.", 404)
+    # Authorize the requested organization before evaluating or revealing
+    # Clover allowlist state. This prevents callers from probing which tenant
+    # IDs are enabled for Clover.
+    if not _can_manage(organization):
+        return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
     if not _clover_access_configured() or not _allowlisted(organization):
+        apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
         return jsonify({"enabled": False, "connection": None}), 200
-    denied = _require(organization)
-    if denied is not None:
-        return denied
+    apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
     return jsonify({"enabled": True, "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
 
 
