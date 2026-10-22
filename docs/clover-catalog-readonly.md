@@ -4,7 +4,7 @@ This milestone adds a disabled-by-default, connection-only catalog foundation. I
 
 ## Feature gate
 
-Set `CLOVER_CATALOG_ENABLED=true` only in an isolated sandbox environment after the Clover OAuth connection exists. The gate is independent from `CLOVER_ENABLED`; enabling Clover OAuth does not activate catalog reads. There are no catalog routes or UI controls in this milestone.
+Set `CLOVER_CATALOG_ENABLED=true` only in an isolated sandbox environment after the Clover OAuth connection exists. The gate is independent from `CLOVER_ENABLED`; enabling Clover OAuth does not activate catalog reads. The preview route and UI remain hidden unless this gate is enabled and the user has an authorized connected sandbox merchant.
 
 ## Read-only endpoints
 
@@ -17,6 +17,16 @@ The client uses only GET requests against Clover's North America sandbox base:
 - `GET /v3/merchants/{merchantId}/modifier_groups?expand=modifiers`.
 
 Clover collection responses are paged with `offset` and `limit` (bounded at 1,000 per request). A full final page is not assumed complete: if the configured page bound is exhausted, the client raises an explicit incomplete outcome. Clover does not paginate nested expanded fields; expanded collections reaching the documented 100-item nested limit are also rejected as incomplete rather than silently truncated. Duplicate provider IDs are de-duplicated, while distinct IDs with the same display name remain distinct.
+
+## Tenant-scoped preview
+
+Authenticated organization owners and platform setup staff can request:
+
+- `GET /api/integrations/clover/catalog?organizationId={organizationId}`
+
+The route enforces the existing Clover enablement and organization allowlist, requires a connected sandbox `CloverConnection`, decrypts the stored access token only on the server, and verifies the merchant identity through the Clover client. The response contains only normalized, read-only catalog fields; it never returns access/refresh tokens, encrypted connection fields, or raw provider payloads. Provider authorization failures and incomplete pagination are returned as bounded errors, and the route performs no database writes.
+
+When the catalog gate is disabled, the Clover integration card does not show preview controls and no catalog request is made. The preview never creates mappings or changes menu costing, recipes, inventory, orders, payments, or webhooks.
 
 ## Normalization boundary
 
