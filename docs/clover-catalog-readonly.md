@@ -11,7 +11,7 @@ Set `CLOVER_CATALOG_ENABLED=true` only in an isolated sandbox environment after 
 The client uses only GET requests against Clover's North America sandbox base:
 
 - `GET /v3/merchants/{merchantId}` for merchant identity and address metadata, plus an explicit location object only when Clover supplies a location ID.
-- `GET /v3/merchants/{merchantId}/items?expand=categories,modifierGroups`.
+- `GET /v3/merchants/{merchantId}/items?expand=categories,modifierGroups,options`.
 - `GET /v3/merchants/{merchantId}/item_groups?expand=items,attributes`.
 - `GET /v3/merchants/{merchantId}/categories`.
 - `GET /v3/merchants/{merchantId}/modifier_groups?expand=modifiers`.
@@ -20,7 +20,7 @@ Clover collection responses are paged with `offset` and `limit` (bounded at 1,00
 
 ## Normalization boundary
 
-The normalized objects retain Clover provider IDs and raw metadata while exposing names, active state, prices, categories, item-group IDs, option IDs, and modifier groups. Clover's documented variant model represents each variant as an item linked to an item group, attributes, options, and option-item associations. This foundation preserves those identifiers and does not fabricate a `variations` collection. Mapping to Flowtally MenuItem or Recipe records remains an explicit, user-reviewed future step; no Square identifiers or mappings are reused.
+The normalized objects retain Clover provider IDs and raw metadata while exposing names, deletion state, hidden state, availability, prices, categories, item-group IDs, option IDs, and modifier groups. Item options are requested explicitly through the documented `options` expansion. A deleted item (including a non-empty `deletedTime`) is never active; hidden and `available=false` remain separate source states. Clover's documented variant model represents each variant as an item linked to an item group, attributes, options, and option-item associations. This foundation preserves those identifiers and does not fabricate a `variations` collection. Mapping to Flowtally MenuItem or Recipe records remains an explicit, user-reviewed future step; no Square identifiers or mappings are reused.
 
 Merchant identity is checked against the requested merchant ID. Postal address data is retained as address metadata and is never promoted to a location ID without an explicit Clover location object.
 
