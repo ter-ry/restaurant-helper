@@ -440,6 +440,11 @@ class CloverCatalogClient:
             raise CloverCatalogDisabled("Clover catalog integration is disabled.")
         merchant = self._get(f"/v3/merchants/{self.merchant_id}")
         response_merchant_id = _identifier(merchant)
+        if not response_merchant_id:
+            raise CloverRequestError(
+                "Clover merchant response did not include an id.",
+                code="clover_merchant_identity_missing",
+            )
         if response_merchant_id != self.merchant_id:
             raise CloverRequestError(
                 "Clover merchant identity did not match the requested merchant.",
