@@ -9,9 +9,10 @@ from flask_login import current_user, login_required
 
 from .audit import record_audit_event
 from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
+from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .extensions import db
 from .models import CloverConnection, Organization, OrganizationMembership
-from .square import decrypt_integration_secret, encrypt_integration_secret
+from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
 from .tenant_context import apply_org_tenant_context
 from .utils import isoformat, json_error, get_platform_role
 
@@ -104,6 +105,41 @@ def _serialize(connection: CloverConnection | None) -> dict[str, Any]:
         "disconnectedAt": isoformat(connection.disconnected_at),
         "error": connection.last_error or None,
         "reconnectRequired": connection.status == "reauthorization_required",
+    }
+
+
+def _catalog_snapshot_payload(snapshot) -> dict[str, Any]:
+    """Return a safe, read-only catalog view without provider payloads or tokens."""
+    def category_payload(category: Any) -> dict[str, Any]:
+        return {"id": category.provider_id, "name": category.name, "active": category.active}
+
+    def modifier_payload(modifier: Any) -> dict[str, Any]:
+        return {"id": modifier.provider_id, "name": modifier.name, "priceCents": modifier.price_cents, "active": modifier.active}
+
+    return {
+        "readOnly": True,
+        "merchantName": snapshot.merchant_name,
+        "location": ({"id": snapshot.location.provider_id, "name": snapshot.location.name} if snapshot.location else None),
+        "itemCount": len(snapshot.items),
+        "items": [
+            {
+                "id": item.provider_id,
+                "name": item.name,
+                "priceCents": item.price_cents,
+                "active": item.active,
+                "deleted": item.deleted,
+                "hidden": item.hidden,
+                "available": item.available,
+                "itemGroupId": item.item_group_id,
+                "optionIds": list(item.option_ids),
+                "categories": [category_payload(category) for category in item.categories],
+                "modifierGroups": [
+                    {"id": group.provider_id, "name": group.name, "active": group.active, "modifiers": [modifier_payload(modifier) for modifier in group.modifiers]}
+                    for group in item.modifier_groups
+                ],
+            }
+            for item in snapshot.items
+        ],
     }
 
 
@@ -251,9 +287,49 @@ def clover_status():
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
     if not _clover_access_configured() or not _allowlisted(organization):
         apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-        return jsonify({"enabled": False, "connection": None}), 200
+        return jsonify({"enabled": False, "catalogEnabled": False, "connection": None}), 200
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-    return jsonify({"enabled": True, "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+
+
+@bp.get("/api/integrations/clover/catalog")
+@login_required
+def clover_catalog_preview():
+    try:
+        org_id = int(request.args.get("organizationId", ""))
+    except ValueError:
+        org_id = None
+    organization = _organization(org_id)
+    denied = _require(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    if not clover_catalog_enabled():
+        return json_error("Clover catalog preview is unavailable.", 404)
+    connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
+    if connection is None or connection.status != "connected":
+        return json_error("Clover authorization is required.", 409)
+    if connection.environment != "sandbox":
+        return json_error("Clover catalog preview is unavailable.", 404)
+    if not connection.merchant_id or not connection.access_token_ciphertext:
+        return json_error("Clover authorization is required.", 409)
+    try:
+        token = decrypt_integration_secret(connection.access_token_ciphertext)
+    except SquareSecurityError:
+        return json_error("Clover authorization could not be read.", 502)
+    if not token:
+        return json_error("Clover authorization is required.", 409)
+    try:
+        snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
+    except CloverCatalogIncomplete:
+        return json_error("Clover catalog is incomplete; try again later.", 502, code="clover_catalog_incomplete")
+    except CloverCatalogDisabled:
+        return json_error("Clover catalog preview is unavailable.", 404)
+    except CloverRequestError as exc:
+        if exc.status_code in {401, 403}:
+            return json_error("Clover authorization could not be verified.", 502, code="clover_unauthorized")
+        return json_error("Clover catalog could not be loaded.", 502, code=exc.code)
+    return jsonify(_catalog_snapshot_payload(snapshot)), 200
 
 
 @bp.post("/api/integrations/clover/disconnect")
