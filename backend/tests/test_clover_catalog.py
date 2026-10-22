@@ -114,7 +114,11 @@ def test_missing_fields_deleted_items_and_address_without_location_are_safe():
     )
     assert snapshot.location is None
     assert snapshot.merchant_address["street1"] == "1 Main St"
-    assert [item.provider_id for item in snapshot.items] == ["item-1", "item-2"]
+    assert [item.provider_id for item in snapshot.items] == ["item-1", "item-2", "item-3"]
+    assert snapshot.items[0].active is True and snapshot.items[0].hidden is True
+    assert snapshot.items[0].deleted is False
+    assert snapshot.items[1].active is False and snapshot.items[1].deleted is True
+    assert snapshot.items[2].active is True and snapshot.items[2].available is False
 
 
 def test_client_pages_resources_with_expansion_and_preserves_get_only_request(monkeypatch):
