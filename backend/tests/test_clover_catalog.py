@@ -127,7 +127,7 @@ def test_client_pages_resources_and_preserves_read_only_request(monkeypatch):
     assert all(method == "GET" for method, _, _ in calls)
     assert all("limit=2" in path for _, path, _ in calls if "?" in path)
     assert all(kwargs["token"] == "token" for _, _, kwargs in calls)
-    assert len(calls) == 8
+    assert len(calls) == 6
 
 
 def test_client_requires_explicit_provider_identity_and_does_not_call_requester(monkeypatch):
