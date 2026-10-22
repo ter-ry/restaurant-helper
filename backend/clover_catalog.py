@@ -78,6 +78,9 @@ class CloverCatalogItem:
     provider_id: str
     name: str
     active: bool
+    deleted: bool
+    hidden: bool
+    available: bool | None
     price_cents: int | None
     item_group_id: str | None
     option_ids: tuple[str, ...]
@@ -128,8 +131,22 @@ def _identifier(payload: Mapping[str, Any]) -> str:
     return _text(payload.get("id") or payload.get("uuid") or payload.get("merchantId"))
 
 
+def _deleted(payload: Mapping[str, Any]) -> bool:
+    # Clover may expose deletion as a boolean or a non-empty deletedTime.
+    return bool(payload.get("deleted") or payload.get("isDeleted") or payload.get("deletedTime"))
+
+
+def _hidden(payload: Mapping[str, Any]) -> bool:
+    return bool(payload.get("hidden"))
+
+
+def _available(payload: Mapping[str, Any]) -> bool | None:
+    value = payload.get("available")
+    return value if isinstance(value, bool) else None
+
+
 def _active(payload: Mapping[str, Any]) -> bool:
-    return not bool(payload.get("deleted") or payload.get("isDeleted") or payload.get("hidden"))
+    return not _deleted(payload)
 
 
 def _price_cents(payload: Mapping[str, Any]) -> int | None:
@@ -262,6 +279,10 @@ def _item_group_id(payload: Mapping[str, Any]) -> str | None:
     return _text(group) or None
 
 
+def _related_identifier(payload: Mapping[str, Any]) -> str:
+    return _identifier(payload) or _identifier(payload.get("option") or {}) or _identifier(payload.get("item") or {})
+
+
 def normalize_item(
     payload: Mapping[str, Any],
     *,
@@ -298,7 +319,7 @@ def normalize_item(
     option_ids = tuple(
         option_id
         for option_id in (
-            _identifier(item)
+            _related_identifier(item)
             for item in (_nested(payload, "options") or _nested(payload, "optionItems"))
         )
         if option_id
@@ -311,6 +332,9 @@ def normalize_item(
         provider_id=identifier,
         name=_text(payload.get("name")) or "(Unnamed item)",
         active=_active(payload),
+        deleted=_deleted(payload),
+        hidden=_hidden(payload),
+        available=_available(payload),
         price_cents=_price_cents(payload),
         item_group_id=_item_group_id(payload),
         option_ids=option_ids,
@@ -460,8 +484,8 @@ class CloverCatalogClient:
             nested_fields=("items", "attributes"),
         )
         items = self._paged(
-            "items?expand=categories,modifierGroups",
-            nested_fields=("categories", "modifierGroups"),
+            "items?expand=categories,modifierGroups,options",
+            nested_fields=("categories", "modifierGroups", "options"),
         )
         return normalize_catalog(
             merchant=merchant,
