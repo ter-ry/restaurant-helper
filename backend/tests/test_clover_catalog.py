@@ -40,6 +40,7 @@ def test_item_groups_preserve_item_and_option_associations_without_fake_variants
                 "price": 500,
                 "itemGroup": {"id": "group-1"},
                 "options": {"elements": [{"id": "option-small"}]},
+                "available": False,
                 "itemGroupItems": {"elements": [{"id": "invented-variant"}]},
             },
             {
@@ -57,6 +58,8 @@ def test_item_groups_preserve_item_and_option_associations_without_fake_variants
     assert snapshot.item_groups[0].attribute_ids == ("attribute-size",)
     assert snapshot.items[0].item_group_id == "group-1"
     assert snapshot.items[0].option_ids == ("option-small",)
+    assert snapshot.items[0].available is False
+    assert snapshot.items[0].hidden is False
     assert snapshot.items[0].variations == ()
     assert snapshot.items[0].raw["itemGroupItems"]
 
@@ -104,7 +107,8 @@ def test_missing_fields_deleted_items_and_address_without_location_are_safe():
         },
         items=[
             {"id": "item-1", "name": None, "hidden": True},
-            {"id": "item-2", "name": "Archived", "deleted": True},
+            {"id": "item-2", "name": "Archived", "deletedTime": 1700000000000},
+            {"id": "item-3", "name": "Unavailable", "available": False},
             {"name": "no-id"},
         ],
     )
@@ -161,6 +165,8 @@ def test_client_pages_resources_with_expansion_and_preserves_get_only_request(mo
         "item-group-3",
     ]
     assert [item.provider_id for item in snapshot.items] == ["item-1", "item-2", "item-3"]
+    item_request_paths = [path for _, path, _ in calls if "/items?" in path]
+    assert item_request_paths and all("expand=categories,modifierGroups,options" in path for path in item_request_paths)
     assert all(method == "GET" for method, _, _ in calls)
     assert all(kwargs["token"] == "token" for _, _, kwargs in calls)
     assert len(calls) == 8
