@@ -142,10 +142,10 @@ def test_client_pages_resources_with_expansion_and_preserves_get_only_request(mo
         "/v3/merchants/merchant-1/item_groups?expand=items,attributes&offset=2&limit=2": {
             "elements": [{"id": "item-group-3", "items": {"elements": []}, "attributes": {"elements": []}}]
         },
-        "/v3/merchants/merchant-1/items?expand=categories,modifierGroups&offset=0&limit=2": {
+        "/v3/merchants/merchant-1/items?expand=categories,modifierGroups,options&offset=0&limit=2": {
             "elements": [{"id": "item-1", "name": "Latte"}, {"id": "item-2", "name": "Tea"}]
         },
-        "/v3/merchants/merchant-1/items?expand=categories,modifierGroups&offset=2&limit=2": {
+        "/v3/merchants/merchant-1/items?expand=categories,modifierGroups,options&offset=2&limit=2": {
             "elements": [{"id": "item-3", "name": "Soup"}]
         },
     }
