@@ -17,8 +17,29 @@ class CloverCatalogDisabled(RuntimeError):
     """Raised when the opt-in catalog feature gate is disabled."""
 
 
+class CloverCatalogIncomplete(RuntimeError):
+    """Raised when a bounded response cannot be proven complete."""
+
+
+@dataclass(frozen=True)
+class CloverCatalogItemGroup:
+    provider_id: str
+    name: str
+    item_ids: tuple[str, ...]
+    attribute_ids: tuple[str, ...]
+    active: bool
+    raw: Mapping[str, Any]
+
+
 @dataclass(frozen=True)
 class CloverCatalogVariation:
+    """Compatibility value object; Clover variants remain unresolved.
+
+    Clover represents a variant as an item in an item group, with attributes,
+    options, and option-item associations. The foundation preserves those
+    identifiers on CloverCatalogItem rather than fabricating variations.
+    """
+
     provider_id: str
     name: str
     price_cents: int | None
@@ -58,6 +79,8 @@ class CloverCatalogItem:
     name: str
     active: bool
     price_cents: int | None
+    item_group_id: str | None
+    option_ids: tuple[str, ...]
     categories: tuple[CloverCatalogCategory, ...]
     variations: tuple[CloverCatalogVariation, ...]
     modifier_groups: tuple[CloverCatalogModifierGroup, ...]
@@ -76,7 +99,9 @@ class CloverCatalogLocation:
 class CloverCatalogSnapshot:
     merchant_id: str
     merchant_name: str
+    merchant_address: Mapping[str, Any]
     location: CloverCatalogLocation | None
+    item_groups: tuple[CloverCatalogItemGroup, ...]
     categories: tuple[CloverCatalogCategory, ...]
     modifier_groups: tuple[CloverCatalogModifierGroup, ...]
     items: tuple[CloverCatalogItem, ...]
@@ -130,6 +155,24 @@ def _elements(payload: Any) -> list[Mapping[str, Any]]:
     return []
 
 
+def _nested(payload: Mapping[str, Any], field: str) -> list[Mapping[str, Any]]:
+    return _elements(payload.get(field) or {})
+
+
+def _assert_nested_complete(
+    payload: Mapping[str, Any],
+    fields: Iterable[str],
+    *,
+    nested_limit: int = 100,
+) -> None:
+    """Clover does not paginate expanded collections; reject ambiguous truncation."""
+    for field in fields:
+        if len(_nested(payload, field)) >= nested_limit:
+            raise CloverCatalogIncomplete(
+                f"Clover expanded {field} collection reached its provider limit."
+            )
+
+
 def _dedupe_by_id(values: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
     seen: set[str] = set()
     result: list[Mapping[str, Any]] = []
@@ -171,11 +214,12 @@ def normalize_modifier_group(payload: Mapping[str, Any]) -> CloverCatalogModifie
     identifier = _identifier(payload)
     if not identifier:
         return None
+    _assert_nested_complete(payload, ("modifiers",))
     modifiers = tuple(
         modifier
         for modifier in (
             normalize_modifier(item)
-            for item in _elements(payload.get("modifiers") or payload.get("modifierItems") or {})
+            for item in _nested(payload, "modifiers")
         )
         if modifier is not None
     )
@@ -188,6 +232,36 @@ def normalize_modifier_group(payload: Mapping[str, Any]) -> CloverCatalogModifie
     )
 
 
+def normalize_item_group(payload: Mapping[str, Any]) -> CloverCatalogItemGroup | None:
+    identifier = _identifier(payload)
+    if not identifier:
+        return None
+    _assert_nested_complete(payload, ("items", "attributes"))
+    return CloverCatalogItemGroup(
+        provider_id=identifier,
+        name=_text(payload.get("name")) or "(Unnamed item group)",
+        item_ids=tuple(
+            item_id
+            for item_id in (_identifier(item) for item in _nested(payload, "items"))
+            if item_id
+        ),
+        attribute_ids=tuple(
+            attribute_id
+            for attribute_id in (_identifier(item) for item in _nested(payload, "attributes"))
+            if attribute_id
+        ),
+        active=_active(payload),
+        raw=dict(payload),
+    )
+
+
+def _item_group_id(payload: Mapping[str, Any]) -> str | None:
+    group = payload.get("itemGroup") or payload.get("item_group")
+    if isinstance(group, Mapping):
+        return _identifier(group) or None
+    return _text(group) or None
+
+
 def normalize_item(
     payload: Mapping[str, Any],
     *,
@@ -197,10 +271,11 @@ def normalize_item(
     identifier = _identifier(payload)
     if not identifier:
         return None
+    _assert_nested_complete(payload, ("categories", "modifierGroups", "options", "optionItems"))
     item_categories = tuple(
         category
         for category in (
-            normalize_category(item) for item in _elements(payload.get("categories") or {})
+            normalize_category(item) for item in _nested(payload, "categories")
         )
         if category is not None
     )
@@ -208,7 +283,10 @@ def normalize_item(
         group
         for group in (
             normalize_modifier_group(item)
-            for item in _elements(payload.get("modifierGroups") or payload.get("modifier_groups") or {})
+            for item in (
+                _nested(payload, "modifierGroups")
+                or _nested(payload, "modifier_groups")
+            )
         )
         if group is not None
     )
@@ -217,24 +295,27 @@ def normalize_item(
     if modifier_groups:
         item_groups = tuple(modifier_groups.get(item.provider_id, item) for item in item_groups)
 
-    variations = tuple(
-        CloverCatalogVariation(
-            provider_id=_identifier(item),
-            name=_text(item.get("name")) or "(Unnamed variation)",
-            price_cents=_price_cents(item),
-            active=_active(item),
-            raw=dict(item),
+    option_ids = tuple(
+        option_id
+        for option_id in (
+            _identifier(item)
+            for item in (_nested(payload, "options") or _nested(payload, "optionItems"))
         )
-        for item in _elements(payload.get("itemGroupItems") or payload.get("variations") or {})
-        if _identifier(item)
+        if option_id
     )
+    # Clover's documented item-group model represents variants as separate
+    # items linked by itemGroup/attributes/options. Do not treat itemGroupItems
+    # as variants; preserve its raw payload only for future provider-specific
+    # resolution.
     return CloverCatalogItem(
         provider_id=identifier,
         name=_text(payload.get("name")) or "(Unnamed item)",
         active=_active(payload),
         price_cents=_price_cents(payload),
+        item_group_id=_item_group_id(payload),
+        option_ids=option_ids,
         categories=item_categories,
-        variations=variations,
+        variations=(),
         modifier_groups=item_groups,
         raw=dict(payload),
     )
@@ -244,9 +325,16 @@ def normalize_catalog(
     *,
     merchant: Mapping[str, Any],
     items: Iterable[Mapping[str, Any]],
+    item_groups: Iterable[Mapping[str, Any]] = (),
     categories: Iterable[Mapping[str, Any]] = (),
     modifier_groups: Iterable[Mapping[str, Any]] = (),
 ) -> CloverCatalogSnapshot:
+    merchant_id = _identifier(merchant)
+    if not merchant_id:
+        raise CloverRequestError(
+            "Clover merchant response did not include an id.",
+            code="clover_merchant_identity_missing",
+        )
     normalized_categories = tuple(
         category
         for category in (
@@ -261,6 +349,13 @@ def normalize_catalog(
         )
         if group is not None
     )
+    normalized_item_groups = tuple(
+        group
+        for group in (
+            normalize_item_group(value) for value in _dedupe_by_id(item_groups)
+        )
+        if group is not None
+    )
     category_map = {value.provider_id: value for value in normalized_categories}
     group_map = {value.provider_id: value for value in normalized_groups}
     normalized_items = tuple(
@@ -271,19 +366,25 @@ def normalize_catalog(
         )
         if item is not None
     )
-    address = merchant.get("address") or merchant.get("location") or {}
+    address = merchant.get("address") or {}
+    address_metadata = dict(address) if isinstance(address, Mapping) else {}
+    location_id = _identifier(address) or _identifier(merchant.get("location") or {})
     location = None
-    if isinstance(address, Mapping) and (_identifier(address) or address):
-        location = CloverCatalogLocation(
-            provider_id=_identifier(address) or _identifier(merchant),
-            name=_text(address.get("name") or merchant.get("name")) or "(Unnamed location)",
-            address=dict(address),
-            raw=dict(address),
-        )
+    if location_id:
+        location_payload = merchant.get("location") or address
+        if isinstance(location_payload, Mapping):
+            location = CloverCatalogLocation(
+                provider_id=location_id,
+                name=_text(location_payload.get("name") or merchant.get("name")) or "(Unnamed location)",
+                address=dict(address_metadata),
+                raw=dict(location_payload),
+            )
     return CloverCatalogSnapshot(
-        merchant_id=_identifier(merchant),
+        merchant_id=merchant_id,
         merchant_name=_text(merchant.get("name") or merchant.get("label")),
+        merchant_address=address_metadata,
         location=location,
+        item_groups=normalized_item_groups,
         categories=normalized_categories,
         modifier_groups=normalized_groups,
         items=normalized_items,
@@ -291,11 +392,7 @@ def normalize_catalog(
 
 
 class CloverCatalogClient:
-    """Read-only Clover v3 catalog client.
-
-    The requester is injectable so all tests use fixtures. The production
-    requester is the existing GET-only-safe clover_request boundary.
-    """
+    """Read-only Clover v3 catalog client."""
 
     def __init__(
         self,
@@ -320,7 +417,7 @@ class CloverCatalogClient:
             )
         return self.requester("GET", path, token=self.token)
 
-    def _paged(self, resource: str) -> list[Mapping[str, Any]]:
+    def _paged(self, resource: str, *, nested_fields: Iterable[str] = ()) -> list[Mapping[str, Any]]:
         values: list[Mapping[str, Any]] = []
         for page in range(self.max_pages):
             offset = page * self.page_size
@@ -330,21 +427,42 @@ class CloverCatalogClient:
                 f"/v3/merchants/{self.merchant_id}/{resource}{separator}{query}"
             )
             page_values = _elements(payload)
+            for value in page_values:
+                _assert_nested_complete(value, nested_fields)
             values.extend(page_values)
             if len(page_values) < self.page_size:
-                break
-        return _dedupe_by_id(values)
+                return _dedupe_by_id(values)
+        raise CloverCatalogIncomplete(
+            f"Clover {resource.split('?')[0]} exceeded the configured page bound."
+        )
 
     def fetch_snapshot(self) -> CloverCatalogSnapshot:
         if not clover_catalog_enabled():
             raise CloverCatalogDisabled("Clover catalog integration is disabled.")
         merchant = self._get(f"/v3/merchants/{self.merchant_id}")
+        response_merchant_id = _identifier(merchant)
+        if response_merchant_id != self.merchant_id:
+            raise CloverRequestError(
+                "Clover merchant identity did not match the requested merchant.",
+                code="clover_merchant_identity_mismatch",
+            )
         categories = self._paged("categories")
-        modifier_groups = self._paged("modifier_groups")
-        items = self._paged("items?expand=categories,modifierGroups")
+        modifier_groups = self._paged(
+            "modifier_groups?expand=modifiers",
+            nested_fields=("modifiers",),
+        )
+        item_groups = self._paged(
+            "item_groups?expand=items,attributes",
+            nested_fields=("items", "attributes"),
+        )
+        items = self._paged(
+            "items?expand=categories,modifierGroups",
+            nested_fields=("categories", "modifierGroups"),
+        )
         return normalize_catalog(
             merchant=merchant,
             items=items,
+            item_groups=item_groups,
             categories=categories,
             modifier_groups=modifier_groups,
         )
