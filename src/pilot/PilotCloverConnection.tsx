@@ -88,7 +88,7 @@ export function PilotCloverConnection() {
             {catalogEnabled ? <Button type="button" variant="secondary" disabled={catalogLoading || busy} onClick={() => void loadCatalog()}><RefreshCw className="mr-2 h-4 w-4" />{catalogLoading ? "Loading catalog…" : "Preview catalog"}</Button> : null}
           </div>
           {catalog ? (
-            <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3" aria-label="Clover catalog preview">
+            <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3" role="region" aria-label="Clover catalog preview">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div><p className="font-semibold text-ink">Read-only catalog preview</p><p className="text-xs text-muted">{catalog.itemCount} items{catalog.location ? " · " + catalog.location.name : ""}</p></div>
                 <Badge tone="neutral">No changes</Badge>
