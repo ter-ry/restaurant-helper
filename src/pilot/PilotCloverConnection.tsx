@@ -5,7 +5,7 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { usePilotSession } from "./PilotSessionProvider";
-import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverConnectionSummary } from "./pilotApi";
+import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverCatalog, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverCatalogPreview, type PilotCloverConnectionSummary } from "./pilotApi";
 import { demoReadOnly } from "./pilotConfig";
 
 export function PilotCloverConnection() {
@@ -13,6 +13,9 @@ export function PilotCloverConnection() {
   const location = useLocation();
   const [connection, setConnection] = useState<PilotCloverConnectionSummary | null>(null);
   const [enabled, setEnabled] = useState(true);
+  const [catalogEnabled, setCatalogEnabled] = useState(false);
+  const [catalog, setCatalog] = useState<PilotCloverCatalogPreview | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +28,7 @@ export function PilotCloverConnection() {
     try {
       const result = await fetchPilotCloverStatus(organizationId);
       setEnabled(result.enabled);
+      setCatalogEnabled(Boolean(result.catalogEnabled));
       setConnection(result.connection);
       setError(null);
     } catch (err) {
@@ -35,6 +39,19 @@ export function PilotCloverConnection() {
   }, [organizationId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadCatalog = async () => {
+    if (!organizationId || !catalogEnabled || connection?.status !== "connected") return;
+    setCatalogLoading(true);
+    setError(null);
+    try {
+      setCatalog(await fetchPilotCloverCatalog(organizationId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load the Clover catalog preview.");
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
 
   if (!organizationId || !enabled) return null;
   const connected = connection?.status === "connected";
@@ -67,8 +84,25 @@ export function PilotCloverConnection() {
           <p><span className="font-semibold text-ink">Environment:</span> {connection?.environment}</p>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button type="button" variant="secondary" disabled={demoReadOnly || busy} onClick={() => void beginPilotCloverConnection(organizationId)}><ExternalLink className="mr-2 h-4 w-4" />Reconnect</Button>
-            <Button type="button" variant="ghost" disabled={demoReadOnly || busy} onClick={async () => { setBusy(true); try { const result = await disconnectPilotClover(organizationId); setConnection(result.connection); } catch (err) { setError(err instanceof Error ? err.message : "Could not disconnect Clover."); } finally { setBusy(false); } }}><Unplug className="mr-2 h-4 w-4" />Disconnect</Button>
+            <Button type="button" variant="ghost" disabled={demoReadOnly || busy} onClick={async () => { setBusy(true); try { const result = await disconnectPilotClover(organizationId); setConnection(result.connection); setCatalog(null); } catch (err) { setError(err instanceof Error ? err.message : "Could not disconnect Clover."); } finally { setBusy(false); } }}><Unplug className="mr-2 h-4 w-4" />Disconnect</Button>
+            {catalogEnabled ? <Button type="button" variant="secondary" disabled={catalogLoading || busy} onClick={() => void loadCatalog()}><RefreshCw className="mr-2 h-4 w-4" />{catalogLoading ? "Loading catalog…" : "Preview catalog"}</Button> : null}
           </div>
+          {catalog ? (
+            <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3" aria-label="Clover catalog preview">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div><p className="font-semibold text-ink">Read-only catalog preview</p><p className="text-xs text-muted">{catalog.itemCount} items{catalog.location ? " · " + catalog.location.name : ""}</p></div>
+                <Badge tone="neutral">No changes</Badge>
+              </div>
+              <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+                {catalog.items.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-ink">{item.name}</span><span className="text-muted">{item.priceCents == null ? "Price unavailable" : "$" + (item.priceCents / 100).toFixed(2)}</span></div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">{item.itemGroupId ? <span>Item group: {item.itemGroupId}</span> : null}{item.categories.length ? <span>{item.categories.map((category) => category.name).join(", ")}</span> : null}{item.modifierGroups.length ? <span>{item.modifierGroups.length} modifier group{item.modifierGroups.length === 1 ? "" : "s"}</span> : null}{item.deleted ? <Badge tone="danger">Deleted</Badge> : item.hidden ? <Badge tone="warning">Hidden</Badge> : item.available === false ? <Badge tone="warning">Unavailable</Badge> : null}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
