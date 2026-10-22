@@ -102,7 +102,7 @@ export function PilotCloverConnection() {
                 ))}
               </div>
             </div>
-          ) : null
+          ) : null}
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
