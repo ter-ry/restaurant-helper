@@ -368,11 +368,10 @@ def normalize_catalog(
     )
     address = merchant.get("address") or {}
     address_metadata = dict(address) if isinstance(address, Mapping) else {}
-    location_id = _identifier(address) or _identifier(merchant.get("location") or {})
+    location_payload = merchant.get("location")
+    location_id = _identifier(location_payload) if isinstance(location_payload, Mapping) else ""
     location = None
-    if location_id:
-        location_payload = merchant.get("location") or address
-        if isinstance(location_payload, Mapping):
+    if location_id and isinstance(location_payload, Mapping):
             location = CloverCatalogLocation(
                 provider_id=location_id,
                 name=_text(location_payload.get("name") or merchant.get("name")) or "(Unnamed location)",
