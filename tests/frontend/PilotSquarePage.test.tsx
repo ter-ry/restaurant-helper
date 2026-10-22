@@ -30,37 +30,6 @@ const configMocks = vi.hoisted(() => ({ demoReadOnly: false }));
 vi.mock("../../src/pilot/pilotConfig", async () => {
   const actual = await vi.importActual<typeof import("../../src/pilot/pilotConfig")>("../../src/pilot/pilotConfig");
   return { ...actual, get demoReadOnly() { return configMocks.demoReadOnly; } };
-
-
-    mockApi.fetchPilotCloverCatalog.mockResolvedValue({
-      readOnly: true,
-      merchantName: "Sandbox Cafe",
-      location: { id: "location-1", name: "Main" },
-      itemCount: 1,
-      items: [{
-        id: "item-1",
-        name: "Latte",
-        priceCents: 500,
-        active: true,
-        deleted: false,
-        hidden: false,
-        available: true,
-        itemGroupId: "group-1",
-        optionIds: ["option-1"],
-        categories: [{ id: "category-1", name: "Breakfast", active: true }],
-        modifierGroups: [],
-      }],
-    });
-
-    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
-    expect(await screen.findByRole("button", { name: "Preview catalog" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Preview catalog" }));
-    expect(await screen.findByRole("region", { name: "Clover catalog preview" })).toBeVisible();
-    expect(screen.getByText("Latte")).toBeVisible();
-    expect(screen.getByText("No changes")).toBeVisible();
-    expect(mockApi.fetchPilotCloverCatalog).toHaveBeenCalledWith(42);
-  });
-
 });
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
