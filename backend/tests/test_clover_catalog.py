@@ -143,7 +143,10 @@ def test_client_pages_resources_with_expansion_and_preserves_get_only_request(mo
             "elements": [{"id": "item-group-3", "items": {"elements": []}, "attributes": {"elements": []}}]
         },
         "/v3/merchants/merchant-1/items?expand=categories,modifierGroups,options&offset=0&limit=2": {
-            "elements": [{"id": "item-1", "name": "Latte"}, {"id": "item-2", "name": "Tea"}]
+            "elements": [
+                {"id": "item-1", "name": "Latte", "options": {"elements": [{"id": "option-1"}]}},
+                {"id": "item-2", "name": "Tea"},
+            ]
         },
         "/v3/merchants/merchant-1/items?expand=categories,modifierGroups,options&offset=2&limit=2": {
             "elements": [{"id": "item-3", "name": "Soup"}]
@@ -169,6 +172,7 @@ def test_client_pages_resources_with_expansion_and_preserves_get_only_request(mo
         "item-group-3",
     ]
     assert [item.provider_id for item in snapshot.items] == ["item-1", "item-2", "item-3"]
+    assert snapshot.items[0].option_ids == ("option-1",)
     item_request_paths = [path for _, path, _ in calls if "/items?" in path]
     assert item_request_paths and all("expand=categories,modifierGroups,options" in path for path in item_request_paths)
     assert all(method == "GET" for method, _, _ in calls)
