@@ -272,3 +272,89 @@ def test_clover_production_configuration_keeps_sandbox_api_host(app):
     app.config.update(FLOWTALLY_ENV="production", CLOVER_ALLOWED_ORGANIZATION_IDS=[1])
     with app.app_context():
         assert clover_api_base() == "https://apisandbox.dev.clover.com"
+
+
+def test_clover_catalog_preview_is_gated_connection_scoped_and_sanitized(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    monkeypatch.delenv("CLOVER_CATALOG_ENABLED", raising=False)
+    assert client.get("/api/integrations/clover/catalog?organizationId=1").status_code == 404
+
+    from backend.clover_catalog import CloverCatalogItem, CloverCatalogSnapshot
+    from backend.square import encrypt_integration_secret
+
+    with app.app_context():
+        connection = CloverConnection(
+            organization_id=1,
+            environment="sandbox",
+            merchant_id="merchant-1",
+            status="connected",
+            access_token_ciphertext=encrypt_integration_secret("catalog-token"),
+        )
+        db.session.add(connection)
+        db.session.commit()
+
+    monkeypatch.setenv("CLOVER_CATALOG_ENABLED", "true")
+    snapshot = CloverCatalogSnapshot(
+        merchant_id="merchant-1",
+        merchant_name="Sandbox Cafe",
+        merchant_address={"street1": "1 Main St"},
+        location=None,
+        item_groups=(),
+        categories=(),
+        modifier_groups=(),
+        items=(
+            CloverCatalogItem(
+                provider_id="item-1",
+                name="Latte",
+                active=True,
+                deleted=False,
+                hidden=False,
+                available=True,
+                price_cents=500,
+                item_group_id=None,
+                option_ids=(),
+                categories=(),
+                variations=(),
+                modifier_groups=(),
+                raw={"access_token": "must-not-leak"},
+            ),
+        ),
+    )
+    calls = []
+    def fake_fetch(self):
+        calls.append(self.token)
+        return snapshot
+    monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", fake_fetch)
+    response = client.get("/api/integrations/clover/catalog?organizationId=1")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["readOnly"] is True
+    assert payload["merchantName"] == "Sandbox Cafe"
+    assert payload["itemCount"] == 1
+    assert payload["items"][0]["name"] == "Latte"
+    assert "raw" not in payload["items"][0]
+    assert "access_token" not in response.get_data(as_text=True)
+    assert calls == ["catalog-token"]
+
+
+def test_clover_catalog_preview_rejects_unauthorized_and_non_sandbox_connections(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    monkeypatch.setenv("CLOVER_CATALOG_ENABLED", "true")
+    monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: False)
+    assert client.get("/api/integrations/clover/catalog?organizationId=1").status_code == 403
+
+    monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: True)
+    with app.app_context():
+        connection = CloverConnection(
+            organization_id=1,
+            environment="production",
+            merchant_id="merchant-1",
+            status="connected",
+            access_token_ciphertext="ciphertext",
+        )
+        db.session.add(connection)
+        db.session.commit()
+    response = client.get("/api/integrations/clover/catalog?organizationId=1")
+    assert response.status_code == 404

@@ -868,8 +868,34 @@ export type PilotCloverConnectionSummary = {
   error?: string | null;
 };
 
+export type PilotCloverCatalogItem = {
+  id: string;
+  name: string;
+  priceCents: number | null;
+  active: boolean;
+  deleted: boolean;
+  hidden: boolean;
+  available: boolean | null;
+  itemGroupId: string | null;
+  optionIds: string[];
+  categories: Array<{ id: string; name: string; active: boolean }>;
+  modifierGroups: Array<{ id: string; name: string; active: boolean; modifiers: Array<{ id: string; name: string; priceCents: number | null; active: boolean }> }>;
+};
+
+export type PilotCloverCatalogPreview = {
+  readOnly: true;
+  merchantName: string;
+  location: { id: string; name: string } | null;
+  itemCount: number;
+  items: PilotCloverCatalogItem[];
+};
+
 export async function fetchPilotCloverStatus(organizationId: number) {
-  return requestJson<{ enabled: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+}
+
+export async function fetchPilotCloverCatalog(organizationId: number) {
+  return requestJson<PilotCloverCatalogPreview>(`/api/integrations/clover/catalog?organizationId=${organizationId}`);
 }
 
 export async function beginPilotCloverConnection(organizationId: number) {
