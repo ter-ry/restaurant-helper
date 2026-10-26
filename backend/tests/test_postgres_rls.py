@@ -3699,6 +3699,8 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
 
     with postgres_app.app_context():
         _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
+        organization = db.session.get(Organization, organization_id)
+        assert organization is not None
         item = db.session.get(InventoryItem, item_id)
         assert item is not None
         assert Decimal(str(item.current_on_hand)) == Decimal("15.0000")
