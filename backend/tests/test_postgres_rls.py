@@ -3688,7 +3688,6 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
         organization_id = organization.id
         menu_item_id = menu_item.id
         db.session.commit()
-        db.session.commit()
 
     db.session.remove()
     receive = client.post(
