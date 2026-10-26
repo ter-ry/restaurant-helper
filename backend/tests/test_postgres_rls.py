@@ -3736,6 +3736,7 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
         warnings = _apply_square_order_inventory_consumption(organization, connection, order)
         assert warnings == []
         db.session.commit()
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
 
         item = db.session.get(InventoryItem, item_id)
         assert item is not None
@@ -3747,6 +3748,7 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
         db.session.flush()
         _apply_square_order_inventory_consumption(organization, connection, replay)
         db.session.commit()
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
         assert InventoryMovement.query.filter_by(source_type="square sale consumption", source_record_id=f"ORDER-{suffix}").count() == 1
         assert Decimal(str(db.session.get(InventoryItem, item_id).current_on_hand)).quantize(Decimal("0.0001")) == Decimal("14.5000")
 
@@ -3762,6 +3764,7 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
         db.session.flush()
         unmapped_warnings = _apply_square_order_inventory_consumption(organization, connection, unmapped)
         db.session.commit()
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
         assert any("unmapped" in warning.lower() for warning in unmapped_warnings)
         assert InventoryMovement.query.filter_by(source_record_id=f"ORDER-UNMAPPED-{suffix}").count() == 0
         assert Decimal(str(db.session.get(InventoryItem, item_id).current_on_hand)).quantize(Decimal("0.0001")) == Decimal("14.5000")
