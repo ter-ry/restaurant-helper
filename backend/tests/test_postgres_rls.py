@@ -3510,3 +3510,262 @@ def test_setup_scope_can_access_platform_data_across_organizations(postgres_app)
                 {"owner_id": seeded["owner_id"]},
             ).scalar_one()
             assert owner_membership_count >= 3, f"setup scope membership count mismatch: expected >= 3, actual={owner_membership_count}, org_a_id={org_a_id}, org_b_id={org_b_id}, owner_id={seeded['owner_id']}"
+
+
+def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consumption(postgres_app):
+    """Run the core purchase -> inventory -> recipe -> Square path on disposable PostgreSQL."""
+    from datetime import date
+    from decimal import Decimal
+    from backend.models import (
+        InventoryItem,
+        InventoryMovement,
+        MenuItem,
+        PurchaseInvoice,
+        PurchaseInvoiceLine,
+        Recipe,
+        RecipeIngredient,
+        RestaurantLocation,
+        SquareCatalogMapping,
+        SquareCatalogObject,
+        SquareConnection,
+        SquareLocation,
+        SquareLocationMapping,
+        Supplier,
+        User,
+    )
+    from backend.pilot_api import _record_receipt
+    from backend.square_integration import _apply_square_order_inventory_consumption, _upsert_order
+    from backend.seed import LOCAL_LOCATION_NAME, LOCAL_ORGANIZATION_NAME
+
+    client = postgres_app.test_client()
+    _login_owner(client)
+
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="setup", user_id=None)
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        organization = Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).one()
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id, name=LOCAL_LOCATION_NAME).one()
+
+        _set_rls_context(access_scope="organization", organization_id=organization.id, user_id=owner.id)
+        suffix = uuid4().hex[:8]
+        supplier = Supplier(
+            organization_id=organization.id,
+            name=f"Vertical Supplier {suffix}",
+            normalized_name=f"vertical supplier {suffix}",
+        )
+        item = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            supplier=supplier,
+            name=f"Vertical Ingredient {suffix}",
+            normalized_name=f"vertical ingredient {suffix}",
+            stock_unit="kg",
+            current_on_hand=Decimal("10"),
+            average_unit_cost=Decimal("2"),
+            min_quantity=Decimal("2"),
+            par_level=Decimal("10"),
+            latest_purchase_price=Decimal("2"),
+            last_purchase_unit="kg",
+            last_purchase_conversion_factor=Decimal("1"),
+            preferred_supplier_name=supplier.name,
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add_all([supplier, item])
+        db.session.flush()
+
+        recipe = Recipe(
+            organization_id=organization.id,
+            location_id=location.id,
+            name=f"Vertical Recipe {suffix}",
+            normalized_name=f"vertical recipe {suffix}",
+            yield_quantity=Decimal("1"),
+            yield_unit="serving",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add(recipe)
+        db.session.flush()
+        db.session.add(RecipeIngredient(
+            organization_id=organization.id,
+            recipe_id=recipe.id,
+            inventory_item_id=item.id,
+            quantity_required=Decimal("0.25"),
+            unit="kg",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        ))
+        menu_item = MenuItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            recipe_id=recipe.id,
+            name=f"Vertical Burger {suffix}",
+            normalized_name=f"vertical burger {suffix}",
+            selling_price=Decimal("18"),
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add(menu_item)
+        db.session.flush()
+
+        connection = SquareConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            square_merchant_id=f"merchant-{suffix}",
+            status="connected",
+            inventory_depletion_activated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(
+            square_connection_id=connection.id,
+            square_location_id=f"LOC-{suffix}",
+            name="Vertical Test Location",
+            status="active",
+        )
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(
+            square_location_id=square_location.id,
+            restaurant_location_id=location.id,
+            mapped_by_user_id=owner.id,
+        ))
+        catalog_object = SquareCatalogObject(
+            square_connection_id=connection.id,
+            square_object_id=f"VAR-{suffix}",
+            object_type="ITEM_VARIATION",
+            version=1,
+            is_deleted=False,
+            raw_payload_json={"item_variation_data": {"name": menu_item.name}},
+        )
+        db.session.add(catalog_object)
+        db.session.flush()
+        db.session.add(SquareCatalogMapping(
+            square_catalog_object_id=catalog_object.id,
+            mapping_type="menu_item",
+            flowtally_entity_type="menu_item",
+            flowtally_entity_id=str(menu_item.id),
+            status="mapped",
+            mapped_by_user_id=owner.id,
+        ))
+
+        invoice = PurchaseInvoice(
+            organization_id=organization.id,
+            location_id=location.id,
+            supplier_id=supplier.id,
+            invoice_number=f"VERTICAL-{suffix}",
+            invoice_date=date(2026, 10, 20),
+            subtotal=Decimal("15"),
+            tax=Decimal("0"),
+            total_amount=Decimal("15"),
+            status="Ready",
+            extraction_status="manual",
+            created_by_user_id=owner.id,
+            updated_by_user_id=owner.id,
+        )
+        db.session.add(invoice)
+        db.session.flush()
+        db.session.add(PurchaseInvoiceLine(
+            invoice_id=invoice.id,
+            inventory_item_id=item.id,
+            line_index=0,
+            description=item.name,
+            normalized_description=item.normalized_name,
+            purchase_unit="kg",
+            inventory_unit="kg",
+            conversion_factor=Decimal("1"),
+            quantity=Decimal("5"),
+            unit_price=Decimal("3"),
+            line_total=Decimal("15"),
+            confidence=Decimal("0.99"),
+            needs_review=False,
+        ))
+        db.session.commit()
+        invoice_id = invoice.id
+        item_id = item.id
+        recipe_id = recipe.id
+        connection_id = connection.id
+        location_id = location.id
+        organization_id = organization.id
+        menu_item_id = menu_item.id
+
+    db.session.remove()
+    receive = client.post(
+        f"/api/pilot/purchases/invoices/{invoice_id}/receive",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]},
+    )
+    assert receive.status_code == 200, receive.get_data(as_text=True)
+
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner.id)
+        item = db.session.get(InventoryItem, item_id)
+        assert item is not None
+        assert Decimal(str(item.current_on_hand)) == Decimal("15.0000")
+        assert Decimal(str(item.average_unit_cost)).quantize(Decimal("0.0001")) == Decimal("2.3333")
+        assert InventoryMovement.query.filter_by(source_type="invoice receipt", source_record_id=str(invoice_id)).count() == 1
+
+        connection = db.session.get(SquareConnection, connection_id)
+        assert connection is not None
+        payload = {
+            "id": f"ORDER-{suffix}",
+            "location_id": f"LOC-{suffix}",
+            "state": "COMPLETED",
+            "created_at": "2026-10-20T15:00:00Z",
+            "closed_at": "2026-10-20T15:05:00Z",
+            "gross_sales_money": {"amount": 1800, "currency": "CAD"},
+            "total_discount_money": {"amount": 0, "currency": "CAD"},
+            "total_tax_money": {"amount": 0, "currency": "CAD"},
+            "total_tip_money": {"amount": 0, "currency": "CAD"},
+            "total_money": {"amount": 1800, "currency": "CAD"},
+            "line_items": [{
+                "uid": "line-1",
+                "name": f"Vertical Burger {suffix}",
+                "catalog_object_id": f"VAR-{suffix}",
+                "quantity": "2",
+                "gross_sales_money": {"amount": 1800, "currency": "CAD"},
+                "total_discount_money": {"amount": 0, "currency": "CAD"},
+                "total_tax_money": {"amount": 0, "currency": "CAD"},
+                "total_money": {"amount": 1800, "currency": "CAD"},
+            }],
+        }
+        order = _upsert_order(connection, payload)
+        db.session.flush()
+        warnings = _apply_square_order_inventory_consumption(organization, connection, order)
+        assert warnings == []
+        db.session.commit()
+
+        item = db.session.get(InventoryItem, item_id)
+        assert item is not None
+        assert Decimal(str(item.current_on_hand)).quantize(Decimal("0.0001")) == Decimal("14.5000")
+        assert InventoryMovement.query.filter_by(source_type="square sale consumption", source_record_id=f"ORDER-{suffix}").count() == 1
+
+        # Replaying the same completed order must not create another movement.
+        replay = _upsert_order(connection, payload)
+        db.session.flush()
+        _apply_square_order_inventory_consumption(organization, connection, replay)
+        db.session.commit()
+        assert InventoryMovement.query.filter_by(source_type="square sale consumption", source_record_id=f"ORDER-{suffix}").count() == 1
+        assert Decimal(str(db.session.get(InventoryItem, item_id).current_on_hand)).quantize(Decimal("0.0001")) == Decimal("14.5000")
+
+        # An unmapped variation contributes no ingredient depletion.
+        unmapped_payload = {
+            **payload,
+            "id": f"ORDER-UNMAPPED-{suffix}",
+            "line_items": [{**payload["line_items"][0], "uid": "line-unmapped", "catalog_object_id": f"UNMAPPED-{suffix}", "quantity": "1", "gross_sales_money": {"amount": 500, "currency": "CAD"}, "total_money": {"amount": 500, "currency": "CAD"}}],
+            "gross_sales_money": {"amount": 500, "currency": "CAD"},
+            "total_money": {"amount": 500, "currency": "CAD"},
+        }
+        unmapped = _upsert_order(connection, unmapped_payload)
+        db.session.flush()
+        unmapped_warnings = _apply_square_order_inventory_consumption(organization, connection, unmapped)
+        db.session.commit()
+        assert any("unmapped" in warning.lower() for warning in unmapped_warnings)
+        assert InventoryMovement.query.filter_by(source_record_id=f"ORDER-UNMAPPED-{suffix}").count() == 0
+        assert Decimal(str(db.session.get(InventoryItem, item_id).current_on_hand)).quantize(Decimal("0.0001")) == Decimal("14.5000")
+
+        recipe = db.session.get(Recipe, recipe_id)
+        assert recipe is not None
+        assert Decimal(str(item.average_unit_cost)).quantize(Decimal("0.0001")) == Decimal("2.3333")
+        assert recipe.ingredients[0].quantity_required == Decimal("0.2500")
+        assert db.session.get(MenuItem, menu_item_id).selling_price == Decimal("18.00")
