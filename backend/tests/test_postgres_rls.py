@@ -3686,6 +3686,7 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
         connection_id = connection.id
         location_id = location.id
         organization_id = organization.id
+        owner_id = owner.id
         menu_item_id = menu_item.id
         db.session.commit()
 
@@ -3697,7 +3698,7 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
     assert receive.status_code == 200, receive.get_data(as_text=True)
 
     with postgres_app.app_context():
-        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner.id)
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
         item = db.session.get(InventoryItem, item_id)
         assert item is not None
         assert Decimal(str(item.current_on_hand)) == Decimal("15.0000")
