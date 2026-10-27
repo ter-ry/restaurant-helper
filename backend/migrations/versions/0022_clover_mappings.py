@@ -36,6 +36,7 @@ def upgrade() -> None:
     op.create_index("ix_clover_location_mappings_connection", "clover_location_mappings", ["clover_connection_id"])
     op.create_index("ix_clover_location_mappings_organization", "clover_location_mappings", ["organization_id"])
     op.create_index("ix_clover_location_mappings_restaurant_location", "clover_location_mappings", ["restaurant_location_id"])
+    op.create_index("uq_clover_location_mapping_merchant_level", "clover_location_mappings", ["clover_connection_id"], unique=True, postgresql_where=sa.text("clover_location_id IS NULL"))
 
     op.create_table(
         "clover_menu_mappings",
@@ -85,6 +86,7 @@ def downgrade() -> None:
     op.drop_index("ix_clover_menu_mappings_organization", table_name="clover_menu_mappings")
     op.drop_index("ix_clover_menu_mappings_connection", table_name="clover_menu_mappings")
     op.drop_table("clover_menu_mappings")
+    op.drop_index("uq_clover_location_mapping_merchant_level", table_name="clover_location_mappings")
     op.drop_index("ix_clover_location_mappings_restaurant_location", table_name="clover_location_mappings")
     op.drop_index("ix_clover_location_mappings_organization", table_name="clover_location_mappings")
     op.drop_index("ix_clover_location_mappings_connection", table_name="clover_location_mappings")
