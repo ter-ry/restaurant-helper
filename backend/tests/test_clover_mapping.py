@@ -220,6 +220,8 @@ def test_different_merchant_reconnection_invalidates_mappings_atomically(app, cl
         )
         db.session.add_all([location_mapping, menu_mapping])
         db.session.commit()
+        invalidated_location_id = location_mapping.id
+        invalidated_menu_id = menu_mapping.id
         _login(client)
         state = _prepare_oauth_callback(client, organization.id)
         monkeypatch.setattr(
@@ -236,8 +238,8 @@ def test_different_merchant_reconnection_invalidates_mappings_atomically(app, cl
         assert CloverMenuMapping.query.filter_by(clover_connection_id=connection.id).count() == 0
         event = AuditEvent.query.filter_by(event_type="clover.mapping.invalidated_merchant_change", organization_id=organization.id).one()
         assert event.metadata_json["previousMerchantId"] == "merchant-edit"
-        assert event.metadata_json["locationMappingIds"] == [location_mapping.id]
-        assert event.metadata_json["menuMappingIds"] == [menu_mapping.id]
+        assert event.metadata_json["locationMappingIds"] == [invalidated_location_id]
+        assert event.metadata_json["menuMappingIds"] == [invalidated_menu_id]
 
 
 def test_stale_mapping_merchant_identity_is_not_read_or_deleted(app, client):
