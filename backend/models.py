@@ -1104,7 +1104,7 @@ class CloverLocationMapping(TimestampMixin, db.Model):
     restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
     clover_merchant_id = db.Column(db.String(255), nullable=False)
     clover_location_id = db.Column(db.String(255), nullable=True)
-    confirmed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    confirmed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     confirmed_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
 
     connection = db.relationship("CloverConnection")
@@ -1131,7 +1131,7 @@ class CloverMenuMapping(TimestampMixin, db.Model):
     clover_modifier_group_ids_json = db.Column(db.JSON, nullable=False, default=list)
     flowtally_menu_item_id = db.Column(db.Integer, db.ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
     status = db.Column(db.String(40), nullable=False, default="active")
-    mapped_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    mapped_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     connection = db.relationship("CloverConnection")
     organization = db.relationship("Organization")
