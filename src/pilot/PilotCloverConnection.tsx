@@ -7,6 +7,7 @@ import { Card } from "../components/Card";
 import { usePilotSession } from "./PilotSessionProvider";
 import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverCatalog, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverCatalogPreview, type PilotCloverConnectionSummary } from "./pilotApi";
 import { demoReadOnly } from "./pilotConfig";
+import { PilotCloverMappingPanel } from "./PilotCloverMappingPanel";
 
 export function PilotCloverConnection() {
   const { organization, user } = usePilotSession();
@@ -120,7 +121,7 @@ export function PilotCloverConnection() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">Clover sandbox</p>
           <h2 className="mt-1 text-lg font-bold text-ink">Connection</h2>
-          <p className="mt-1 text-sm text-muted">Connection only. Clover catalog and sales sync are not enabled.</p>
+          <p className="mt-1 text-sm text-muted">Connection and catalog preview are enabled. Explicit menu mapping is available; sales synchronization remains disabled.</p>
         </div>
         <Badge tone={!statusReady || loading ? "neutral" : connected ? "success" : expired ? "warning" : "neutral"}>
           {!statusReady || loading ? "Checking" : connected ? "Connected" : expired ? "Reauthorization required" : "Disconnected"}
@@ -179,6 +180,7 @@ export function PilotCloverConnection() {
               </div>
             </div>
           ) : null}
+          {currentCatalog && catalogEnabled ? <PilotCloverMappingPanel organizationId={organizationId} catalog={currentCatalog} /> : null}
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
