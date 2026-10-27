@@ -67,3 +67,79 @@ def test_cross_tenant_mapping_is_rejected(app, client):
         _login(client)
         response = client.get(f"/api/integrations/clover/mappings?organizationId={second.id}&locationId=2")
         assert response.status_code in {403, 404}
+
+
+def _basic_snapshot(location_id=None):
+    location = SimpleNamespace(provider_id=location_id, name="Clover Main") if location_id else None
+    item = SimpleNamespace(provider_id="item-1", deleted=False, item_group_id=None, option_ids=(), modifier_groups=(), hidden=False, available=True)
+    second = SimpleNamespace(provider_id="item-2", deleted=False, item_group_id=None, option_ids=(), modifier_groups=(), hidden=False, available=True)
+    return SimpleNamespace(location=location, items=(item, second))
+
+
+def _mapping_fixture(app, owner, name="Clover Mapping Edit Org"):
+    organization = make_operational_organization(owner, name=name, location_name="Main")
+    location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+    _configure(app, organization.id)
+    connection = CloverConnection(organization_id=organization.id, environment="sandbox", merchant_id="merchant-edit", status="connected", access_token_ciphertext="encrypted")
+    menu_one = MenuItem(organization_id=organization.id, location_id=location.id, name="Burger One", normalized_name="burger one", selling_price=18)
+    menu_two = MenuItem(organization_id=organization.id, location_id=location.id, name="Burger Two", normalized_name="burger two", selling_price=19)
+    db.session.add_all([connection, menu_one, menu_two])
+    db.session.commit()
+    return organization, location, connection, menu_one, menu_two
+
+
+def test_patch_updates_exact_mapping_and_rejects_unrelated_mapping(app, client, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization, location, connection, menu_one, menu_two = _mapping_fixture(app, owner)
+        monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
+        monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: _basic_snapshot())
+        _login(client)
+        csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+        assert client.post("/api/integrations/clover/location-mapping", json={"organizationId": organization.id, "locationId": location.id, "confirm": True}, headers={"X-CSRFToken": csrf}).status_code == 200
+        created = client.post("/api/integrations/clover/menu-mappings", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_one.id, "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert created.status_code == 200
+        mapping_id = created.get_json()["mapping"]["id"]
+        edited = client.patch(f"/api/integrations/clover/menu-mappings/{mapping_id}", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_two.id, "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert edited.status_code == 200
+        assert edited.get_json()["mapping"]["flowtallyMenuItemId"] == menu_two.id
+        unrelated = client.patch("/api/integrations/clover/menu-mappings/999999", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_one.id, "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert unrelated.status_code == 404
+
+
+def test_location_removal_invalidates_dependent_menu_mappings(app, client, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization, location, connection, menu_one, _ = _mapping_fixture(app, owner, name="Clover Mapping Removal Org")
+        monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
+        monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: _basic_snapshot())
+        _login(client)
+        csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+        assert client.post("/api/integrations/clover/location-mapping", json={"organizationId": organization.id, "locationId": location.id, "confirm": True}, headers={"X-CSRFToken": csrf}).status_code == 200
+        created = client.post("/api/integrations/clover/menu-mappings", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_one.id, "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert created.status_code == 200
+        removed = client.delete(f"/api/integrations/clover/location-mapping?organizationId={organization.id}&locationId={location.id}", headers={"X-CSRFToken": csrf})
+        assert removed.status_code == 200
+        state = client.get(f"/api/integrations/clover/mappings?organizationId={organization.id}&locationId={location.id}")
+        assert state.status_code == 200
+        assert state.get_json()["locationMapping"] is None
+        assert state.get_json()["menuMappings"] == []
+
+
+def test_merchant_level_location_mapping_is_single_and_untrusted_ids_rejected(app, client, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization, location, connection, _, _ = _mapping_fixture(app, owner, name="Clover Merchant Level Org")
+        second_location = RestaurantLocation(organization_id=organization.id, name="Second", timezone="America/Toronto")
+        db.session.add(second_location)
+        db.session.commit()
+        monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
+        monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: _basic_snapshot())
+        _login(client)
+        csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+        fake = client.post("/api/integrations/clover/location-mapping", json={"organizationId": organization.id, "locationId": location.id, "cloverLocationId": "forged", "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert fake.status_code == 409
+        first = client.post("/api/integrations/clover/location-mapping", json={"organizationId": organization.id, "locationId": location.id, "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert first.status_code == 200
+        second = client.post("/api/integrations/clover/location-mapping", json={"organizationId": organization.id, "locationId": second_location.id, "confirm": True}, headers={"X-CSRFToken": csrf})
+        assert second.status_code == 409
