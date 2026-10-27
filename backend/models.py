@@ -1096,6 +1096,7 @@ class CloverLocationMapping(TimestampMixin, db.Model):
     __table_args__ = (
         UniqueConstraint("clover_connection_id", "restaurant_location_id", name="uq_clover_location_mapping_scope"),
         UniqueConstraint("clover_connection_id", "clover_location_id", name="uq_clover_location_mapping_provider_location"),
+        Index("uq_clover_location_mapping_merchant_level", "clover_connection_id", unique=True, postgresql_where=text("clover_location_id IS NULL")),
     )
 
     id = db.Column(db.Integer, primary_key=True)
