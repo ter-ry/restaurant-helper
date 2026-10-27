@@ -152,7 +152,11 @@ def test_clover_status_authorizes_before_allowlist_and_hides_nonallowlisted_stat
     monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: True)
     response = client.get("/api/integrations/clover/status?organizationId=1")
     assert response.status_code == 200
-    assert response.get_json() == {"enabled": False, "connection": None}
+    payload = response.get_json()
+    assert payload["enabled"] is False
+    assert payload["connection"] is None
+    assert payload["catalogEnabled"] is False
+    assert payload["mappingEnabled"] is False
 
 
 def test_clover_actions_authorize_before_allowlist_for_both_states(app, client, monkeypatch):
