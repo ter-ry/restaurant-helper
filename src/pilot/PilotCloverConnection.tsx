@@ -15,7 +15,8 @@ export function PilotCloverConnection() {
   const [connection, setConnection] = useState<PilotCloverConnectionSummary | null>(null);
   const [connectionOrganizationId, setConnectionOrganizationId] = useState<number | null>(null);
   const [enabled, setEnabled] = useState(true);
-  const [catalogEnabled, setCatalogEnabled] = useState(false);\n  const [mappingEnabled, setMappingEnabled] = useState(false);
+  const [catalogEnabled, setCatalogEnabled] = useState(false);
+  const [mappingEnabled, setMappingEnabled] = useState(false);
   const [statusOrganizationId, setStatusOrganizationId] = useState<number | null>(null);
   const [catalog, setCatalog] = useState<{ organizationId: number; data: PilotCloverCatalogPreview } | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -58,7 +59,8 @@ export function PilotCloverConnection() {
       if (statusRequestId.current !== requestId || activeOrganizationId.current !== requestedOrganizationId) return;
       setStatusOrganizationId(requestedOrganizationId);
       setEnabled(result.enabled);
-      setCatalogEnabled(Boolean(result.catalogEnabled));\n      setMappingEnabled(Boolean(result.mappingEnabled));
+      setCatalogEnabled(Boolean(result.catalogEnabled));
+      setMappingEnabled(Boolean(result.mappingEnabled));
       setConnectionOrganizationId(requestedOrganizationId);
       setConnection(result.connection);
       if (!result.enabled || !result.catalogEnabled || !result.connection || result.connection.status !== "connected") {
