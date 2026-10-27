@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -132,3 +135,23 @@ def test_main_reports_incomplete_catalog(monkeypatch, capsys):
     monkeypatch.setattr(smoke, "CloverCatalogClient", FakeClient)
     assert smoke.main([]) == 3
     assert "INCOMPLETE" in capsys.readouterr().err
+
+
+def test_module_invocation_starts_from_repository_root_without_network(monkeypatch):
+    environment = os.environ.copy()
+    environment.pop(smoke.MERCHANT_ENV, None)
+    environment.pop(smoke.TOKEN_ENV, None)
+    environment.pop("CLOVER_CATALOG_ENABLED", None)
+    repository_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.clover_catalog_smoke"],
+        cwd=repository_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert smoke.MERCHANT_ENV in result.stderr
+    assert "Traceback" not in result.stderr
