@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("restaurant_location_id", sa.Integer(), sa.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False),
         sa.Column("clover_merchant_id", sa.String(length=255), nullable=False),
         sa.Column("clover_location_id", sa.String(length=255), nullable=True),
-        sa.Column("confirmed_by_user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=False),
+        sa.Column("confirmed_by_user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("confirmed_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("clover_connection_id", "restaurant_location_id", name="uq_clover_location_mapping_scope"),
         sa.UniqueConstraint("clover_connection_id", "clover_location_id", name="uq_clover_location_mapping_provider_location"),
