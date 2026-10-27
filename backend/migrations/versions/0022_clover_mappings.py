@@ -50,7 +50,7 @@ def upgrade() -> None:
         sa.Column("clover_modifier_group_ids_json", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column("flowtally_menu_item_id", sa.Integer(), sa.ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False),
         sa.Column("status", sa.String(length=40), nullable=False, server_default="active"),
-        sa.Column("mapped_by_user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=False),
+        sa.Column("mapped_by_user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.UniqueConstraint("clover_connection_id", "restaurant_location_id", "clover_item_id", name="uq_clover_menu_mapping_item"),
         sa.UniqueConstraint("clover_connection_id", "restaurant_location_id", "flowtally_menu_item_id", name="uq_clover_menu_mapping_target"),
     )
