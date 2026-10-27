@@ -21,3 +21,5 @@ CLOVER_MAPPING_ENABLED defaults to false. Enable it only in an isolated sandbox 
 6. Confirm the mapped menu item and recipe status.
 
 The first phase deliberately does not map item-group variants or modifier-bearing items. It does not import sales, create webhooks, consume inventory, alter recipes, or alter Square mappings. Test Burger must be selected explicitly; it is never auto-mapped.
+
+The mapping gate remains disabled by default until explicitly enabled for a review environment.
