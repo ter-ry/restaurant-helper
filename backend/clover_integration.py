@@ -43,7 +43,11 @@ def _allowlisted(organization: Organization | None) -> bool:
     return organization.id in allowed_ids
 
 
-def clover_mapping_enabled() -> bool:\n    return str(current_app.config.get("CLOVER_MAPPING_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}\n\n\ndef _clover_access_configured() -> bool:
+def clover_mapping_enabled() -> bool:
+    return str(current_app.config.get("CLOVER_MAPPING_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _clover_access_configured() -> bool:
     if not clover_enabled():
         return False
     if str(current_app.config.get("FLOWTALLY_ENV") or "").strip().lower() == "production":
