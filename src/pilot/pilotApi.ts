@@ -898,6 +898,15 @@ export async function fetchPilotCloverCatalog(organizationId: number) {
   return requestJson<PilotCloverCatalogPreview>(`/api/integrations/clover/catalog?organizationId=${organizationId}`);
 }
 
+
+export interface PilotCloverLocationMapping { id: number; organizationId: number; restaurantLocationId: number; cloverMerchantId: string; cloverLocationId: string | null; confirmedAt: string | null; }
+export interface PilotCloverMenuMapping { id: number; organizationId: number; restaurantLocationId: number; cloverMerchantId: string; cloverItemId: string; cloverItemGroupId: string | null; cloverOptionIds: string[]; cloverModifierGroupIds: string[]; flowtallyMenuItemId: number; flowtallyMenuItemName: string | null; hasRecipe: boolean; status: string; }
+export async function fetchPilotCloverMappings(organizationId: number, locationId: number) { return requestJson<{ enabled: boolean; locationMapping: PilotCloverLocationMapping | null; menuMappings: PilotCloverMenuMapping[] }>(`/api/integrations/clover/mappings?organizationId=${organizationId}&locationId=${locationId}`); }
+export async function savePilotCloverLocationMapping(organizationId: number, locationId: number, cloverLocationId: string | null) { return requestCsrfJson<{ locationMapping: PilotCloverLocationMapping }>("/api/integrations/clover/location-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organizationId, locationId, cloverLocationId, confirm: true }) }); }
+export async function deletePilotCloverLocationMapping(organizationId: number, locationId: number) { return requestCsrfJson<{ ok: true }>(`/api/integrations/clover/location-mapping?organizationId=${organizationId}&locationId=${locationId}`, { method: "DELETE" }); }
+export async function savePilotCloverMenuMapping(payload: { organizationId: number; locationId: number; cloverItemId: string; flowtallyMenuItemId: number; mappingId?: number }) { return requestCsrfJson<{ mapping: PilotCloverMenuMapping }>("/api/integrations/clover/menu-mappings", { method: payload.mappingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, confirm: true }) }); }
+export async function deletePilotCloverMenuMapping(organizationId: number, mappingId: number) { return requestCsrfJson<{ ok: true }>(`/api/integrations/clover/menu-mappings/${mappingId}?organizationId=${organizationId}`, { method: "DELETE" }); }
+
 export async function beginPilotCloverConnection(organizationId: number) {
   window.location.assign(`${pilotApiBaseUrl}/api/integrations/clover/start?organizationId=${organizationId}`);
 }
