@@ -53,7 +53,7 @@ def test_mapping_gate_is_disabled_by_default(app, client):
         _configure(app, organization.id)
         app.config["CLOVER_MAPPING_ENABLED"] = False
         _login(client)
-        assert client.get(f"/api/integrations/clover/mappings?organizationId={organization.id}&locationId=1").status_code == 404
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()\n        assert location is not None\n        assert client.get(f"/api/integrations/clover/mappings?organizationId={organization.id}&locationId={location.id}").status_code == 404
 
 
 def test_cross_tenant_mapping_is_rejected(app, client):
