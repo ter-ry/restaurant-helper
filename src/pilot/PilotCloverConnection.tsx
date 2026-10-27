@@ -123,7 +123,7 @@ export function PilotCloverConnection() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">Clover sandbox</p>
           <h2 className="mt-1 text-lg font-bold text-ink">Connection</h2>
-          <p className="mt-1 text-sm text-muted">Connection and catalog preview are enabled. Explicit menu mapping is available; sales synchronization remains disabled.</p>
+          <p className="mt-1 text-sm text-muted">Connection is available. {catalogEnabled ? "Catalog preview is enabled." : "Catalog preview is unavailable."} {mappingEnabled ? "Explicit menu mapping is available." : "Menu mapping is unavailable."} Sales synchronization remains unavailable.</p>
         </div>
         <Badge tone={!statusReady || loading ? "neutral" : connected ? "success" : expired ? "warning" : "neutral"}>
           {!statusReady || loading ? "Checking" : connected ? "Connected" : expired ? "Reauthorization required" : "Disconnected"}
