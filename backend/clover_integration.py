@@ -287,9 +287,9 @@ def clover_status():
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
     if not _clover_access_configured() or not _allowlisted(organization):
         apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-        return jsonify({"enabled": False, "connection": None}), 200
+        return jsonify({"enabled": False, "catalogEnabled": False, "mappingEnabled": False, "connection": None}), 200
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "mappingEnabled": clover_mapping_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
 
 
 def _mapping_connection(organization: Organization) -> CloverConnection | None:
