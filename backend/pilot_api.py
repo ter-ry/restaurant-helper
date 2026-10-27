@@ -2874,6 +2874,12 @@ def menu_costing():
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
     organization, location = context
+    requested_location_id = request.args.get("locationId", type=int)
+    if requested_location_id is not None and requested_location_id != location.id:
+        requested_location = RestaurantLocation.query.filter_by(id=requested_location_id, organization_id=organization.id).first()
+        if requested_location is None:
+            return json_error("Location not found.", 404)
+        location = requested_location
     return (
         jsonify(
             {
