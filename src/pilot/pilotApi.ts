@@ -891,7 +891,7 @@ export type PilotCloverCatalogPreview = {
 };
 
 export async function fetchPilotCloverStatus(organizationId: number) {
-  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; mappingEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
 }
 
 export async function fetchPilotCloverCatalog(organizationId: number) {
