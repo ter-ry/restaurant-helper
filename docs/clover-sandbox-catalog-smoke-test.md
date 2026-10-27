@@ -21,14 +21,28 @@ The utility verifies the known Sandbox fixture:
 
 ## Windows PowerShell
 
-Run from the repository root. Supply the merchant-specific Sandbox token
-locally; do not paste it into chat, commit it, or put it in a file tracked by
-Git.
+Run from the repository root. The token is collected as a
+`SecureString` so it is not included in PowerShell command history. It is
+held briefly in the process environment only while the module runs, then
+cleared in `finally` even if the request fails.
 
 ```powershell
 $env:CLOVER_SANDBOX_MERCHANT_ID = "V7SXJVSGY5051"
-$env:CLOVER_SANDBOX_API_TOKEN = "<paste-the-sandbox-token-locally>"
-python scripts/clover_catalog_smoke.py
+$secureToken = Read-Host "Clover Sandbox API token" -AsSecureString
+$tokenPtr = [IntPtr]::Zero
+try {
+    $tokenPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+    $env:CLOVER_SANDBOX_API_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPtr)
+    python -m scripts.clover_catalog_smoke
+}
+finally {
+    if ($tokenPtr -ne [IntPtr]::Zero) {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPtr)
+    }
+    Remove-Item Env:CLOVER_SANDBOX_MERCHANT_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:CLOVER_SANDBOX_API_TOKEN -ErrorAction SilentlyContinue
+    Remove-Variable secureToken,tokenPtr -ErrorAction SilentlyContinue
+}
 ```
 
 The command prints normalized merchant, location, item, category, item-group,
@@ -36,12 +50,8 @@ option and modifier metadata. It never prints the token or authorization
 headers. A successful run prints JSON to stdout and a fixture verification
 message to stderr.
 
-Remove the variables after the run if they are no longer needed:
-
-```powershell
-Remove-Item Env:CLOVER_SANDBOX_MERCHANT_ID -ErrorAction SilentlyContinue
-Remove-Item Env:CLOVER_SANDBOX_API_TOKEN -ErrorAction SilentlyContinue
-```
+The module invocation is intentional: it starts from the repository root with
+the repository package layout on `sys.path`.
 
 The process sets the shared `CLOVER_CATALOG_ENABLED` gate internally for this
 one explicit local invocation. The application gate remains
