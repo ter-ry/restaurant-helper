@@ -109,6 +109,14 @@ def test_patch_updates_exact_mapping_and_rejects_unrelated_mapping(app, client, 
         edited = client.patch(f"/api/integrations/clover/menu-mappings/{mapping_id}", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_two.id, "confirm": True}, headers={"X-CSRFToken": csrf})
         assert edited.status_code == 200
         assert edited.get_json()["mapping"]["flowtallyMenuItemId"] == menu_two.id
+        deleted = client.delete(
+            f"/api/integrations/clover/menu-mappings/{mapping_id}?organizationId={organization.id}",
+            headers={"X-CSRFToken": csrf},
+        )
+        assert deleted.status_code == 200
+        events = {event.event_type for event in AuditEvent.query.filter_by(organization_id=organization.id).all()}
+        assert "clover.mapping.menu_item_saved" in events
+        assert "clover.mapping.menu_item_deleted" in events
         unrelated = client.patch("/api/integrations/clover/menu-mappings/999999", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_one.id, "confirm": True}, headers={"X-CSRFToken": csrf})
         assert unrelated.status_code == 404
 
