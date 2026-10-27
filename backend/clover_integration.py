@@ -394,7 +394,8 @@ def create_clover_location_mapping():
         snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
     except Exception:
         return json_error("Clover location identity could not be verified.", 502)
-    authoritative_clover_location_id = snapshot.location.provider_id if snapshot.location is not None else None
+    snapshot_location = getattr(snapshot, "location", None)
+    authoritative_clover_location_id = snapshot_location.provider_id if snapshot_location is not None else None
     if authoritative_clover_location_id:
         if requested_clover_location_id not in {None, authoritative_clover_location_id}:
             return json_error("The Clover location does not match the connected merchant.", 409)
