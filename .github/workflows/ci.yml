@@ -260,6 +260,10 @@ jobs:
         timeout-minutes: 5
         run: timeout 180s python -u -m pytest backend/tests/test_postgres_rls.py::test_setup_scope_can_access_platform_data_across_organizations -vv -x -s --durations=20
 
+      - name: PostgreSQL pilot vertical workflow
+        timeout-minutes: 10
+        run: timeout 300s python -u -m pytest backend/tests/test_postgres_rls.py::test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consumption -vv -x -s --durations=20
+
       - name: Remaining backend tests
         timeout-minutes: 25
         run: timeout 1200s python -u -m pytest backend/tests --ignore=backend/tests/test_migrations_postgres.py --ignore=backend/tests/test_postgres_rls.py -vv -x --durations=20
