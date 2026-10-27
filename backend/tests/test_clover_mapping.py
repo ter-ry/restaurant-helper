@@ -20,6 +20,9 @@ def _configure(app, organization_id):
         "CLOVER_ENABLED": True,
         "CLOVER_ENVIRONMENT": "sandbox",
         "CLOVER_ALLOWED_ORGANIZATION_IDS": [organization_id],
+        "CLOVER_CLIENT_ID": "clover-client",
+        "CLOVER_CLIENT_SECRET": "clover-secret",
+        "CLOVER_REDIRECT_URI": "http://testserver/api/integrations/clover/callback",
         "CLOVER_MAPPING_ENABLED": True,
         "INTEGRATION_ENCRYPTION_KEY": Fernet.generate_key().decode(),
     })
