@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from cryptography.fernet import Fernet
 
 from backend.extensions import db
-from backend.models import CloverConnection, MenuItem, Organization, RestaurantLocation, User
+from backend.models import AuditEvent, CloverConnection, CloverLocationMapping, CloverMenuMapping, MenuItem, Organization, RestaurantLocation, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.tests.conftest import make_operational_organization
 
@@ -44,6 +44,9 @@ def test_owner_can_confirm_location_and_map_basic_item(app, client, monkeypatch)
         mapping_response = client.post("/api/integrations/clover/menu-mappings", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_item.id, "confirm": True}, headers={"X-CSRFToken": csrf})
         assert mapping_response.status_code == 200
         assert mapping_response.get_json()["mapping"]["flowtallyMenuItemName"] == "Test Burger"
+        events = {event.event_type for event in AuditEvent.query.filter_by(organization_id=organization.id).all()}
+        assert "clover.mapping.location_confirmed" in events
+        assert "clover.mapping.menu_item_saved" in events
 
 
 def test_mapping_gate_is_disabled_by_default(app, client):
@@ -124,6 +127,9 @@ def test_location_removal_invalidates_dependent_menu_mappings(app, client, monke
         assert state.status_code == 200
         assert state.get_json()["locationMapping"] is None
         assert state.get_json()["menuMappings"] == []
+        events = {event.event_type for event in AuditEvent.query.filter_by(organization_id=organization.id).all()}
+        assert "clover.mapping.location_removed" in events
+        assert "clover.mapping.menu_item_invalidated" in events
 
 
 def test_merchant_level_location_mapping_is_single_and_untrusted_ids_rejected(app, client, monkeypatch):
@@ -143,3 +149,124 @@ def test_merchant_level_location_mapping_is_single_and_untrusted_ids_rejected(ap
         assert first.status_code == 200
         second = client.post("/api/integrations/clover/location-mapping", json={"organizationId": organization.id, "locationId": second_location.id, "confirm": True}, headers={"X-CSRFToken": csrf})
         assert second.status_code == 409
+
+
+def _prepare_oauth_callback(client, organization_id):
+    client.get(f"/api/integrations/clover/start?organizationId={organization_id}")
+    with client.session_transaction() as stored:
+        return stored["clover_oauth_context"]["state"]
+
+
+def test_same_merchant_reconnection_preserves_mappings_and_audits(app, client, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization, location, connection, menu_one, _ = _mapping_fixture(app, owner, name="Clover Same Merchant Org")
+        location_mapping = CloverLocationMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id="merchant-edit",
+            confirmed_by_user_id=owner.id,
+        )
+        menu_mapping = CloverMenuMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id="merchant-edit",
+            clover_item_id="item-1",
+            flowtally_menu_item_id=menu_one.id,
+            mapped_by_user_id=owner.id,
+        )
+        db.session.add_all([location_mapping, menu_mapping])
+        db.session.commit()
+        original_ids = (location_mapping.id, menu_mapping.id)
+        _login(client)
+        state = _prepare_oauth_callback(client, organization.id)
+        monkeypatch.setattr(
+            "backend.clover_integration.clover_request",
+            lambda method, path, **kwargs: (
+                {"access_token": "access", "refresh_token": "refresh"}
+                if path.endswith("/token")
+                else {"id": "merchant-edit", "name": "Same Merchant"}
+            ),
+        )
+        response = client.get(f"/api/integrations/clover/callback?state={state}&code=auth-code&merchant_id=merchant-edit&client_id=clover-client")
+        assert response.status_code == 302
+        assert (CloverLocationMapping.query.one().id, CloverMenuMapping.query.one().id) == original_ids
+
+
+def test_different_merchant_reconnection_invalidates_mappings_atomically(app, client, monkeypatch):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization, location, connection, menu_one, _ = _mapping_fixture(app, owner, name="Clover Different Merchant Org")
+        location_mapping = CloverLocationMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id="merchant-edit",
+            confirmed_by_user_id=owner.id,
+        )
+        menu_mapping = CloverMenuMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id="merchant-edit",
+            clover_item_id="item-1",
+            flowtally_menu_item_id=menu_one.id,
+            mapped_by_user_id=owner.id,
+        )
+        db.session.add_all([location_mapping, menu_mapping])
+        db.session.commit()
+        _login(client)
+        state = _prepare_oauth_callback(client, organization.id)
+        monkeypatch.setattr(
+            "backend.clover_integration.clover_request",
+            lambda method, path, **kwargs: (
+                {"access_token": "access", "refresh_token": "refresh"}
+                if path.endswith("/token")
+                else {"id": "merchant-new", "name": "New Merchant"}
+            ),
+        )
+        response = client.get(f"/api/integrations/clover/callback?state={state}&code=auth-code&merchant_id=merchant-new&client_id=clover-client")
+        assert response.status_code == 302
+        assert CloverLocationMapping.query.filter_by(clover_connection_id=connection.id).count() == 0
+        assert CloverMenuMapping.query.filter_by(clover_connection_id=connection.id).count() == 0
+        event = AuditEvent.query.filter_by(event_type="clover.mapping.invalidated_merchant_change", organization_id=organization.id).one()
+        assert event.metadata_json["previousMerchantId"] == "merchant-edit"
+        assert event.metadata_json["locationMappingIds"] == [location_mapping.id]
+        assert event.metadata_json["menuMappingIds"] == [menu_mapping.id]
+
+
+def test_stale_mapping_merchant_identity_is_not_read_or_deleted(app, client):
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization, location, connection, menu_one, _ = _mapping_fixture(app, owner, name="Clover Stale Merchant Org")
+        location_mapping = CloverLocationMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id="merchant-old",
+            confirmed_by_user_id=owner.id,
+        )
+        menu_mapping = CloverMenuMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id="merchant-old",
+            clover_item_id="item-1",
+            flowtally_menu_item_id=menu_one.id,
+            mapped_by_user_id=owner.id,
+        )
+        connection.merchant_id = "merchant-current"
+        db.session.add_all([location_mapping, menu_mapping])
+        db.session.commit()
+        _login(client)
+        state = client.get(f"/api/integrations/clover/mappings?organizationId={organization.id}&locationId={location.id}")
+        assert state.status_code == 200
+        assert state.get_json()["locationMapping"] is None
+        assert state.get_json()["menuMappings"] == []
+        assert client.delete(
+            f"/api/integrations/clover/menu-mappings/{menu_mapping.id}?organizationId={organization.id}",
+            headers={"X-CSRFToken": client.get("/api/auth/csrf").get_json()["csrfToken"]},
+        ).status_code == 404
+        assert CloverLocationMapping.query.one().id == location_mapping.id
