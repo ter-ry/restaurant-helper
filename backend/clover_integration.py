@@ -452,16 +452,42 @@ def delete_clover_location_mapping():
         return denied
     assert organization is not None
     connection = _mapping_connection(organization)
-    mapping = CloverLocationMapping.query.filter_by(clover_connection_id=connection.id if connection else -1, restaurant_location_id=location_id, organization_id=organization.id, clover_merchant_id=connection.merchant_id if connection else "").first()
+    mapping = CloverLocationMapping.query.filter_by(
+        clover_connection_id=connection.id if connection else -1,
+        restaurant_location_id=location_id,
+        organization_id=organization.id,
+        clover_merchant_id=connection.merchant_id if connection else "",
+    ).first()
     if mapping is not None:
-        dependent_mappings = CloverMenuMapping.query.filter_by(clover_connection_id=connection.id, restaurant_location_id=location_id, organization_id=organization.id).all()
+        dependent_mappings = CloverMenuMapping.query.filter_by(
+            clover_connection_id=connection.id,
+            restaurant_location_id=location_id,
+            organization_id=organization.id,
+            clover_merchant_id=connection.merchant_id,
+        ).all()
         dependent_ids = [item.id for item in dependent_mappings]
         for item in dependent_mappings:
             db.session.delete(item)
         db.session.delete(mapping)
-            record_audit_event(event_type="clover.mapping.location_removed", entity_type="clover_location_mapping", entity_id=mapping.id, organization_id=organization.id, location_id=location_id, actor_user_id=current_user.id, metadata={"removedMenuMappingIds": dependent_ids})
+        record_audit_event(
+            event_type="clover.mapping.location_removed",
+            entity_type="clover_location_mapping",
+            entity_id=mapping.id,
+            organization_id=organization.id,
+            location_id=location_id,
+            actor_user_id=current_user.id,
+            metadata={"removedMenuMappingIds": dependent_ids},
+        )
         for mapping_id in dependent_ids:
-            record_audit_event(event_type="clover.mapping.menu_item_invalidated", entity_type="clover_menu_mapping", entity_id=mapping_id, organization_id=organization.id, location_id=location_id, actor_user_id=current_user.id, metadata={"reason": "location_mapping_removed"})
+            record_audit_event(
+                event_type="clover.mapping.menu_item_invalidated",
+                entity_type="clover_menu_mapping",
+                entity_id=mapping_id,
+                organization_id=organization.id,
+                location_id=location_id,
+                actor_user_id=current_user.id,
+                metadata={"reason": "location_mapping_removed"},
+            )
         db.session.commit()
     return jsonify({"ok": True}), 200
 
@@ -514,6 +540,7 @@ def create_clover_menu_mapping():
             clover_connection_id=connection.id,
             restaurant_location_id=location_id,
             clover_item_id=clover_item_id,
+            clover_merchant_id=connection.merchant_id,
         ).first()
         if existing is None:
             return json_error("Mapping not found for this Clover item and location.", 404)
@@ -551,7 +578,13 @@ def delete_clover_menu_mapping(mapping_id: int):
     if denied is not None:
         return denied
     assert organization is not None
-    mapping = CloverMenuMapping.query.filter_by(id=mapping_id, organization_id=organization.id, clover_connection_id=connection.id if connection else -1, clover_merchant_id=connection.merchant_id if connection else "").first()
+    connection = _mapping_connection(organization)
+    mapping = CloverMenuMapping.query.filter_by(
+        id=mapping_id,
+        organization_id=organization.id,
+        clover_connection_id=connection.id if connection else -1,
+        clover_merchant_id=connection.merchant_id if connection else "",
+    ).first()
     if mapping is None:
         return json_error("Mapping not found.", 404)
     db.session.delete(mapping)
