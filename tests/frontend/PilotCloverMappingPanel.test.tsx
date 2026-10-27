@@ -21,7 +21,7 @@ vi.mock("../../src/pilot/PilotSessionProvider", () => ({
 }));
 
 const catalog = {
-  readOnly: true,
+  readOnly: true as const,
   merchantName: "Sandbox Cafe",
   location: { id: "clover-location-1", name: "Main" },
   itemCount: 1,
