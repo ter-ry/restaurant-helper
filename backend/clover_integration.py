@@ -731,19 +731,14 @@ def clover_catalog_preview():
         snapshot = _catalog_snapshot_for_connection(connection, organization)
     except SquareSecurityError:
         return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
-    except CloverRequestError as exc:
-        if exc.status_code == 403:
-            return json_error("Clover access is not permitted for this connection.", 502, code="clover_forbidden")
-        return json_error("Clover catalog could not be loaded.", 503, code=exc.code)
-    try:
     except CloverCatalogIncomplete:
         return json_error("Clover catalog is incomplete; try again later.", 502, code="clover_catalog_incomplete")
     except CloverCatalogDisabled:
         return json_error("Clover catalog preview is unavailable.", 404)
     except CloverRequestError as exc:
-        if exc.status_code in {401, 403}:
-            return json_error("Clover authorization could not be verified.", 502, code="clover_unauthorized")
-        return json_error("Clover catalog could not be loaded.", 502, code=exc.code)
+        if exc.status_code == 403:
+            return json_error("Clover access is not permitted for this connection.", 502, code="clover_forbidden")
+        return json_error("Clover catalog could not be loaded.", 503, code=exc.code)
     return jsonify(_catalog_snapshot_payload(snapshot)), 200
 
 
