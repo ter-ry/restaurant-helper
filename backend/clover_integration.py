@@ -31,7 +31,9 @@ CLOVER_REFRESH_SKEW = timedelta(minutes=2)
 
 def _token_is_stale(connection: CloverConnection) -> bool:
     expires_at = connection.access_expires_at
-    return not expires_at or expires_at <= _now() + CLOVER_REFRESH_SKEW
+    # Missing metadata is unknown, not proof of expiry; the first provider
+    # request is allowed to establish whether a bounded 401 refresh is needed.
+    return expires_at is not None and expires_at <= _now() + CLOVER_REFRESH_SKEW
 
 
 def _refresh_connection_token(
