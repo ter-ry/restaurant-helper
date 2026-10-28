@@ -69,7 +69,12 @@ def _refresh_connection_token(
         and not _token_is_stale(locked)
     ):
         return decrypt_integration_secret(locked.access_token_ciphertext)
-    if not force and locked.access_token_ciphertext and not _token_is_stale(locked):
+    if (
+        not force
+        and locked.status == "connected"
+        and locked.access_token_ciphertext
+        and not _token_is_stale(locked)
+    ):
         return decrypt_integration_secret(locked.access_token_ciphertext)
 
     old_refresh = decrypt_integration_secret(locked.refresh_token_ciphertext)
