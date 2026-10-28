@@ -47,9 +47,14 @@ def test_owner_can_confirm_location_and_map_basic_item(app, client, monkeypatch)
         mapping_response = client.post("/api/integrations/clover/menu-mappings", json={"organizationId": organization.id, "locationId": location.id, "cloverItemId": "item-1", "flowtallyMenuItemId": menu_item.id, "confirm": True}, headers={"X-CSRFToken": csrf})
         assert mapping_response.status_code == 200
         assert mapping_response.get_json()["mapping"]["flowtallyMenuItemName"] == "Test Burger"
-        events = {event.event_type for event in AuditEvent.query.filter_by(organization_id=organization.id).all()}
-        assert "clover.mapping.location_confirmed" in events
-        assert "clover.mapping.menu_item_saved" in events
+        events = AuditEvent.query.filter_by(organization_id=organization.id).all()
+        event_types = {event.event_type for event in events}
+        assert "clover.mapping.location_confirmed" in event_types
+        assert "clover.mapping.menu_item_saved" in event_types
+        location_audit = next(event for event in events if event.event_type == "clover.mapping.location_confirmed")
+        menu_audit = next(event for event in events if event.event_type == "clover.mapping.menu_item_saved")
+        assert location_audit.entity_id == str(location_response.get_json()["locationMapping"]["id"])
+        assert menu_audit.entity_id == str(mapping_response.get_json()["mapping"]["id"])
 
 
 def test_mapping_gate_is_disabled_by_default(app, client):
