@@ -891,12 +891,21 @@ export type PilotCloverCatalogPreview = {
 };
 
 export async function fetchPilotCloverStatus(organizationId: number) {
-  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; mappingEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
 }
 
 export async function fetchPilotCloverCatalog(organizationId: number) {
   return requestJson<PilotCloverCatalogPreview>(`/api/integrations/clover/catalog?organizationId=${organizationId}`);
 }
+
+
+export interface PilotCloverLocationMapping { id: number; organizationId: number; restaurantLocationId: number; cloverMerchantId: string; cloverLocationId: string | null; confirmedAt: string | null; }
+export interface PilotCloverMenuMapping { id: number; organizationId: number; restaurantLocationId: number; cloverMerchantId: string; cloverItemId: string; cloverItemGroupId: string | null; cloverOptionIds: string[]; cloverModifierGroupIds: string[]; flowtallyMenuItemId: number; flowtallyMenuItemName: string | null; hasRecipe: boolean; status: string; }
+export async function fetchPilotCloverMappings(organizationId: number, locationId: number) { return requestJson<{ enabled: boolean; locationMapping: PilotCloverLocationMapping | null; menuMappings: PilotCloverMenuMapping[] }>(`/api/integrations/clover/mappings?organizationId=${organizationId}&locationId=${locationId}`); }
+export async function savePilotCloverLocationMapping(organizationId: number, locationId: number, cloverLocationId: string | null) { return requestCsrfJson<{ locationMapping: PilotCloverLocationMapping }>("/api/integrations/clover/location-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organizationId, locationId, cloverLocationId, confirm: true }) }); }
+export async function deletePilotCloverLocationMapping(organizationId: number, locationId: number) { return requestCsrfJson<{ ok: true }>(`/api/integrations/clover/location-mapping?organizationId=${organizationId}&locationId=${locationId}`, { method: "DELETE" }); }
+export async function savePilotCloverMenuMapping(payload: { organizationId: number; locationId: number; cloverItemId: string; flowtallyMenuItemId: number; mappingId?: number }) { const path = payload.mappingId ? `/api/integrations/clover/menu-mappings/${payload.mappingId}` : "/api/integrations/clover/menu-mappings"; return requestCsrfJson<{ mapping: PilotCloverMenuMapping }>(path, { method: payload.mappingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, confirm: true }) }); }
+export async function deletePilotCloverMenuMapping(organizationId: number, mappingId: number) { return requestCsrfJson<{ ok: true }>(`/api/integrations/clover/menu-mappings/${mappingId}?organizationId=${organizationId}`, { method: "DELETE" }); }
 
 export async function beginPilotCloverConnection(organizationId: number) {
   window.location.assign(`${pilotApiBaseUrl}/api/integrations/clover/start?organizationId=${organizationId}`);
@@ -1275,8 +1284,9 @@ export async function fetchPilotReorderPlans() {
   return requestJson<PilotReorderPlansResponse>("/api/pilot/reorder-plans");
 }
 
-export async function fetchPilotMenuCosting() {
-  return requestJson<PilotMenuCostingResponse>("/api/pilot/menu-costing");
+export async function fetchPilotMenuCosting(locationId?: number) {
+  const query = locationId != null ? `?locationId=${locationId}` : "";
+  return requestJson<PilotMenuCostingResponse>(`/api/pilot/menu-costing${query}`);
 }
 
 export async function createPilotMenuCostingRecipe(payload: Record<string, unknown>) {

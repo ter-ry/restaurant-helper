@@ -11,7 +11,7 @@ from .audit import record_audit_event
 from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .extensions import db
-from .models import CloverConnection, Organization, OrganizationMembership
+from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, MenuItem, Organization, OrganizationMembership, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
 from .tenant_context import apply_org_tenant_context
 from .utils import isoformat, json_error, get_platform_role
@@ -41,6 +41,10 @@ def _allowlisted(organization: Organization | None) -> bool:
         return False
     allowed_ids = {int(value) for value in (current_app.config.get("CLOVER_ALLOWED_ORGANIZATION_IDS") or [])}
     return organization.id in allowed_ids
+
+
+def clover_mapping_enabled() -> bool:
+    return str(current_app.config.get("CLOVER_MAPPING_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _clover_access_configured() -> bool:
@@ -251,6 +255,14 @@ def clover_callback():
         return jsonify({"error": str(exc), "code": exc.code}), 502
     assert organization is not None
     connection = CloverConnection.query.filter_by(organization_id=organization.id).first() or CloverConnection(organization_id=organization.id)
+    previous_merchant_id = connection.merchant_id
+    invalidated_location_ids: list[int] = []
+    invalidated_menu_ids: list[int] = []
+    if connection.id is not None and previous_merchant_id and previous_merchant_id != merchant_id:
+        invalidated_location_ids = [row.id for row in CloverLocationMapping.query.filter_by(clover_connection_id=connection.id).all()]
+        invalidated_menu_ids = [row.id for row in CloverMenuMapping.query.filter_by(clover_connection_id=connection.id).all()]
+        CloverMenuMapping.query.filter_by(clover_connection_id=connection.id).delete(synchronize_session=False)
+        CloverLocationMapping.query.filter_by(clover_connection_id=connection.id).delete(synchronize_session=False)
     connection.environment = current_app.config.get("CLOVER_ENVIRONMENT", "sandbox")
     connection.region = current_app.config.get("CLOVER_REGION", "north_america")
     connection.merchant_id = merchant_id
@@ -265,6 +277,15 @@ def clover_callback():
     connection.last_error = ""
     connection.last_connection_check_at = _now()
     db.session.add(connection)
+    if previous_merchant_id and previous_merchant_id != merchant_id:
+        record_audit_event(
+            event_type="clover.mapping.invalidated_merchant_change",
+            entity_type="clover_connection",
+            entity_id=connection.id,
+            organization_id=organization.id,
+            actor_user_id=current_user.id,
+            metadata={"previousMerchantId": previous_merchant_id, "newMerchantId": merchant_id, "locationMappingIds": invalidated_location_ids, "menuMappingIds": invalidated_menu_ids},
+        )
     record_audit_event(event_type="clover.oauth.connected", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"merchantId": merchant_id, "environment": connection.environment})
     db.session.commit()
     return redirect(f"{current_app.config.get('FLOWTALLY_FRONTEND_ORIGIN', '').rstrip('/')}/app/square?clover=connected", code=302)
@@ -287,9 +308,292 @@ def clover_status():
         return json_error("Clover access is restricted to the organization owner or platform setup staff.", 403)
     if not _clover_access_configured() or not _allowlisted(organization):
         apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-        return jsonify({"enabled": False, "connection": None}), 200
+        return jsonify({"enabled": False, "catalogEnabled": False, "mappingEnabled": False, "connection": None}), 200
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "mappingEnabled": clover_mapping_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+
+
+def _mapping_connection(organization: Organization) -> CloverConnection | None:
+    connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
+    if connection is None or connection.status != "connected" or connection.environment != "sandbox":
+        return None
+    return connection
+
+
+def _serialize_location_mapping(mapping: CloverLocationMapping | None) -> dict[str, Any] | None:
+    if mapping is None:
+        return None
+    return {
+        "id": mapping.id,
+        "organizationId": mapping.organization_id,
+        "restaurantLocationId": mapping.restaurant_location_id,
+        "cloverMerchantId": mapping.clover_merchant_id,
+        "cloverLocationId": mapping.clover_location_id,
+        "confirmedAt": isoformat(mapping.confirmed_at),
+    }
+
+
+def _serialize_menu_mapping(mapping: CloverMenuMapping) -> dict[str, Any]:
+    menu_item = mapping.flowtally_menu_item
+    recipe = getattr(menu_item, "recipe", None) if menu_item is not None else None
+    return {
+        "id": mapping.id,
+        "organizationId": mapping.organization_id,
+        "restaurantLocationId": mapping.restaurant_location_id,
+        "cloverMerchantId": mapping.clover_merchant_id,
+        "cloverItemId": mapping.clover_item_id,
+        "cloverItemGroupId": mapping.clover_item_group_id,
+        "cloverOptionIds": list(mapping.clover_option_ids_json or []),
+        "cloverModifierGroupIds": list(mapping.clover_modifier_group_ids_json or []),
+        "flowtallyMenuItemId": mapping.flowtally_menu_item_id,
+        "flowtallyMenuItemName": menu_item.name if menu_item is not None else None,
+        "hasRecipe": recipe is not None,
+        "status": mapping.status,
+    }
+
+
+def _mapping_guard(organization: Organization | None):
+    denied = _require(organization)
+    if denied is not None:
+        return denied
+    if not clover_mapping_enabled():
+        return json_error("Clover menu mapping is unavailable.", 404)
+    return None
+
+
+@bp.get("/api/integrations/clover/mappings")
+@login_required
+def clover_mappings():
+    try:
+        org_id = int(request.args.get("organizationId", ""))
+        location_id = int(request.args.get("locationId", ""))
+    except ValueError:
+        return json_error("Organization and location are required.", 400)
+    organization = _organization(org_id)
+    denied = _mapping_guard(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization.id).first()
+    if location is None:
+        return json_error("Location not found.", 404)
+    connection = _mapping_connection(organization)
+    if connection is None:
+        return jsonify({"enabled": True, "locationMapping": None, "menuMappings": []}), 200
+    location_mapping = CloverLocationMapping.query.filter_by(clover_connection_id=connection.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id).first()
+    mappings = CloverMenuMapping.query.filter_by(clover_connection_id=connection.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id).order_by(CloverMenuMapping.id.asc()).all()
+    return jsonify({"enabled": True, "locationMapping": _serialize_location_mapping(location_mapping), "menuMappings": [_serialize_menu_mapping(item) for item in mappings]}), 200
+
+
+@bp.post("/api/integrations/clover/location-mapping")
+@login_required
+def create_clover_location_mapping():
+    payload = request.get_json(silent=True) or {}
+    try:
+        org_id = int(payload.get("organizationId"))
+        location_id = int(payload.get("locationId"))
+    except (TypeError, ValueError):
+        return json_error("Organization and location are required.", 400)
+    organization = _organization(org_id)
+    denied = _mapping_guard(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    if payload.get("confirm") is not True:
+        return json_error("Explicit location confirmation is required.", 400)
+    location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization.id).first()
+    connection = _mapping_connection(organization)
+    if location is None or connection is None:
+        return json_error("Connected Clover merchant and Flowtally location are required.", 409)
+    requested_clover_location_id = str(payload.get("cloverLocationId") or "").strip() or None
+    try:
+        token = decrypt_integration_secret(connection.access_token_ciphertext)
+        snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
+    except Exception:
+        return json_error("Clover location identity could not be verified.", 502)
+    snapshot_location = getattr(snapshot, "location", None)
+    authoritative_clover_location_id = snapshot_location.provider_id if snapshot_location is not None else None
+    if authoritative_clover_location_id:
+        if requested_clover_location_id not in {None, authoritative_clover_location_id}:
+            return json_error("The Clover location does not match the connected merchant.", 409)
+        clover_location_id = authoritative_clover_location_id
+    else:
+        if requested_clover_location_id is not None:
+            return json_error("Clover did not provide a trustworthy location identity.", 409)
+        clover_location_id = None
+    existing = CloverLocationMapping.query.filter_by(clover_connection_id=connection.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id).first()
+    if existing is None and clover_location_id is None:
+        merchant_level_conflict = CloverLocationMapping.query.filter_by(clover_connection_id=connection.id, clover_location_id=None).filter(CloverLocationMapping.restaurant_location_id != location.id).first()
+        if merchant_level_conflict is not None:
+            return json_error("This Clover merchant has already been confirmed for another Flowtally location.", 409)
+    if existing is None:
+        existing = CloverLocationMapping(clover_connection_id=connection.id, organization_id=organization.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id, confirmed_by_user_id=current_user.id)
+        db.session.add(existing)
+        db.session.flush([existing])
+    existing.clover_merchant_id = connection.merchant_id
+    existing.clover_location_id = clover_location_id
+    existing.confirmed_by_user_id = current_user.id
+    existing.confirmed_at = _now()
+    record_audit_event(event_type="clover.mapping.location_confirmed", entity_type="clover_location_mapping", entity_id=existing.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"restaurantLocationId": location.id, "cloverLocationId": clover_location_id})
+    db.session.commit()
+    return jsonify({"locationMapping": _serialize_location_mapping(existing)}), 200
+
+
+@bp.delete("/api/integrations/clover/location-mapping")
+@login_required
+def delete_clover_location_mapping():
+    try:
+        org_id = int(request.args.get("organizationId", ""))
+        location_id = int(request.args.get("locationId", ""))
+    except ValueError:
+        return json_error("Organization and location are required.", 400)
+    organization = _organization(org_id)
+    denied = _mapping_guard(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    connection = _mapping_connection(organization)
+    mapping = CloverLocationMapping.query.filter_by(
+        clover_connection_id=connection.id if connection else -1,
+        restaurant_location_id=location_id,
+        organization_id=organization.id,
+        clover_merchant_id=connection.merchant_id if connection else "",
+    ).first()
+    if mapping is not None:
+        dependent_mappings = CloverMenuMapping.query.filter_by(
+            clover_connection_id=connection.id,
+            restaurant_location_id=location_id,
+            organization_id=organization.id,
+            clover_merchant_id=connection.merchant_id,
+        ).all()
+        dependent_ids = [item.id for item in dependent_mappings]
+        for item in dependent_mappings:
+            db.session.delete(item)
+        db.session.delete(mapping)
+        record_audit_event(
+            event_type="clover.mapping.location_removed",
+            entity_type="clover_location_mapping",
+            entity_id=mapping.id,
+            organization_id=organization.id,
+            location_id=location_id,
+            actor_user_id=current_user.id,
+            metadata={"removedMenuMappingIds": dependent_ids},
+        )
+        for mapping_id in dependent_ids:
+            record_audit_event(
+                event_type="clover.mapping.menu_item_invalidated",
+                entity_type="clover_menu_mapping",
+                entity_id=mapping_id,
+                organization_id=organization.id,
+                location_id=location_id,
+                actor_user_id=current_user.id,
+                metadata={"reason": "location_mapping_removed"},
+            )
+        db.session.commit()
+    return jsonify({"ok": True}), 200
+
+
+@bp.post("/api/integrations/clover/menu-mappings")
+@login_required
+def create_clover_menu_mapping():
+    payload = request.get_json(silent=True) or {}
+    try:
+        org_id = int(payload.get("organizationId"))
+        location_id = int(payload.get("locationId"))
+        menu_item_id = int(payload.get("flowtallyMenuItemId"))
+    except (TypeError, ValueError):
+        return json_error("Organization, location and menu item are required.", 400)
+    organization = _organization(org_id)
+    denied = _mapping_guard(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    if payload.get("confirm") is not True:
+        return json_error("Explicit mapping confirmation is required.", 400)
+    connection = _mapping_connection(organization)
+    location_mapping = CloverLocationMapping.query.filter_by(clover_connection_id=connection.id if connection else -1, restaurant_location_id=location_id, organization_id=organization.id, clover_merchant_id=connection.merchant_id if connection else "").first()
+    menu_item = MenuItem.query.filter_by(id=menu_item_id, organization_id=organization.id, location_id=location_id, active=True).first()
+    clover_item_id = str(payload.get("cloverItemId") or "").strip()
+    if connection is None or location_mapping is None or menu_item is None or not clover_item_id:
+        return json_error("Confirm a Clover location and select a valid Flowtally menu item.", 409)
+    try:
+        token = decrypt_integration_secret(connection.access_token_ciphertext)
+        snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
+    except Exception:
+        return json_error("Clover catalog could not be verified.", 502)
+    item = next((value for value in snapshot.items if value.provider_id == clover_item_id), None)
+    if item is None or item.deleted:
+        return json_error("The Clover item is missing or deleted.", 409)
+    if item.item_group_id or item.option_ids or item.modifier_groups:
+        return json_error("Variant and modifier mappings require a later mapping phase.", 409)
+    route_mapping_id = request.view_args.get("mapping_id")
+    payload_mapping_id = payload.get("mappingId")
+    if route_mapping_id is not None and payload_mapping_id is not None:
+        try:
+            if int(payload_mapping_id) != int(route_mapping_id):
+                return json_error("Mapping identity does not match the requested resource.", 409)
+        except (TypeError, ValueError):
+            return json_error("Mapping identity is invalid.", 400)
+    if route_mapping_id is not None:
+        existing = CloverMenuMapping.query.filter_by(
+            id=route_mapping_id,
+            organization_id=organization.id,
+            clover_connection_id=connection.id,
+            restaurant_location_id=location_id,
+            clover_item_id=clover_item_id,
+            clover_merchant_id=connection.merchant_id,
+        ).first()
+        if existing is None:
+            return json_error("Mapping not found for this Clover item and location.", 404)
+    else:
+        existing = CloverMenuMapping.query.filter_by(clover_connection_id=connection.id, restaurant_location_id=location_id, clover_item_id=clover_item_id, clover_merchant_id=connection.merchant_id).first()
+    conflicting = CloverMenuMapping.query.filter_by(clover_connection_id=connection.id, restaurant_location_id=location_id, flowtally_menu_item_id=menu_item.id, clover_merchant_id=connection.merchant_id).first()
+    if conflicting is not None and (existing is None or conflicting.id != existing.id):
+        return json_error("That Flowtally menu item is already mapped for this Clover location.", 409)
+    if existing is None:
+        existing = CloverMenuMapping(clover_connection_id=connection.id, organization_id=organization.id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id, clover_item_id=clover_item_id, mapped_by_user_id=current_user.id)
+        db.session.add(existing)
+    existing.clover_merchant_id = connection.merchant_id
+    existing.clover_item_group_id = item.item_group_id
+    existing.clover_option_ids_json = list(item.option_ids)
+    existing.clover_modifier_group_ids_json = [group.provider_id for group in item.modifier_groups]
+    existing.flowtally_menu_item_id = menu_item.id
+    existing.status = "review" if item.hidden or item.available is False else "active"
+    existing.mapped_by_user_id = current_user.id
+    if existing.id is None:
+        db.session.flush([existing])
+    record_audit_event(event_type="clover.mapping.menu_item_saved", entity_type="clover_menu_mapping", entity_id=existing.id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"cloverItemId": clover_item_id, "flowtallyMenuItemId": menu_item.id, "status": existing.status})
+    db.session.commit()
+    return jsonify({"mapping": _serialize_menu_mapping(existing)}), 200
+
+
+@bp.patch("/api/integrations/clover/menu-mappings/<int:mapping_id>")
+@login_required
+def update_clover_menu_mapping(mapping_id: int):
+    return create_clover_menu_mapping()
+
+
+@bp.delete("/api/integrations/clover/menu-mappings/<int:mapping_id>")
+@login_required
+def delete_clover_menu_mapping(mapping_id: int):
+    organization = _organization(request.args.get("organizationId", type=int))
+    denied = _mapping_guard(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    connection = _mapping_connection(organization)
+    mapping = CloverMenuMapping.query.filter_by(
+        id=mapping_id,
+        organization_id=organization.id,
+        clover_connection_id=connection.id if connection else -1,
+        clover_merchant_id=connection.merchant_id if connection else "",
+    ).first()
+    if mapping is None:
+        return json_error("Mapping not found.", 404)
+    db.session.delete(mapping)
+    record_audit_event(event_type="clover.mapping.menu_item_deleted", entity_type="clover_menu_mapping", entity_id=mapping_id, organization_id=organization.id, actor_user_id=current_user.id)
+    db.session.commit()
+    return jsonify({"ok": True}), 200
 
 
 @bp.get("/api/integrations/clover/catalog")

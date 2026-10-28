@@ -152,7 +152,11 @@ def test_clover_status_authorizes_before_allowlist_and_hides_nonallowlisted_stat
     monkeypatch.setattr("backend.clover_integration._can_manage", lambda organization: True)
     response = client.get("/api/integrations/clover/status?organizationId=1")
     assert response.status_code == 200
-    assert response.get_json() == {"enabled": False, "connection": None}
+    payload = response.get_json()
+    assert payload["enabled"] is False
+    assert payload["connection"] is None
+    assert payload["catalogEnabled"] is False
+    assert payload["mappingEnabled"] is False
 
 
 def test_clover_actions_authorize_before_allowlist_for_both_states(app, client, monkeypatch):
@@ -253,11 +257,11 @@ def test_clover_allowlist_blocks_other_organizations_and_does_not_disclose_conne
     _login(client)
     app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = []
     assert client.get("/api/integrations/clover/start?organizationId=1").status_code == 404
-    assert client.get("/api/integrations/clover/status?organizationId=1").get_json() == {"enabled": False, "connection": None}
+    assert client.get("/api/integrations/clover/status?organizationId=1").get_json() == {"enabled": False, "catalogEnabled": False, "mappingEnabled": False, "connection": None}
 
     app.config["CLOVER_ALLOWED_ORGANIZATION_IDS"] = [999]
     assert client.get("/api/integrations/clover/start?organizationId=1").status_code == 404
-    assert client.get("/api/integrations/clover/status?organizationId=1").get_json() == {"enabled": False, "connection": None}
+    assert client.get("/api/integrations/clover/status?organizationId=1").get_json() == {"enabled": False, "catalogEnabled": False, "mappingEnabled": False, "connection": None}
 
 
 def test_clover_merchant_launch_is_closed_when_production_allowlist_is_empty(app, client):

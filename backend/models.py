@@ -1089,3 +1089,53 @@ class DailyCloseSession(TimestampMixin, db.Model):
     location = db.relationship("RestaurantLocation")
     completed_by = db.relationship("User", foreign_keys=[completed_by_user_id])
     created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+
+class CloverLocationMapping(TimestampMixin, db.Model):
+    __tablename__ = "clover_location_mappings"
+    __table_args__ = (
+        UniqueConstraint("clover_connection_id", "restaurant_location_id", name="uq_clover_location_mapping_scope"),
+        UniqueConstraint("clover_connection_id", "clover_location_id", name="uq_clover_location_mapping_provider_location"),
+        Index("uq_clover_location_mapping_merchant_level", "clover_connection_id", unique=True, postgresql_where=text("clover_location_id IS NULL")),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    clover_connection_id = db.Column(db.Integer, db.ForeignKey("clover_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    clover_merchant_id = db.Column(db.String(255), nullable=False)
+    clover_location_id = db.Column(db.String(255), nullable=True)
+    confirmed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    confirmed_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+
+    connection = db.relationship("CloverConnection")
+    organization = db.relationship("Organization")
+    restaurant_location = db.relationship("RestaurantLocation")
+    confirmed_by = db.relationship("User")
+
+
+class CloverMenuMapping(TimestampMixin, db.Model):
+    __tablename__ = "clover_menu_mappings"
+    __table_args__ = (
+        UniqueConstraint("clover_connection_id", "restaurant_location_id", "clover_item_id", name="uq_clover_menu_mapping_item"),
+        UniqueConstraint("clover_connection_id", "restaurant_location_id", "flowtally_menu_item_id", name="uq_clover_menu_mapping_target"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    clover_connection_id = db.Column(db.Integer, db.ForeignKey("clover_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    clover_merchant_id = db.Column(db.String(255), nullable=False)
+    clover_item_id = db.Column(db.String(255), nullable=False)
+    clover_item_group_id = db.Column(db.String(255), nullable=True)
+    clover_option_ids_json = db.Column(db.JSON, nullable=False, default=list)
+    clover_modifier_group_ids_json = db.Column(db.JSON, nullable=False, default=list)
+    flowtally_menu_item_id = db.Column(db.Integer, db.ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = db.Column(db.String(40), nullable=False, default="active")
+    mapped_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    connection = db.relationship("CloverConnection")
+    organization = db.relationship("Organization")
+    restaurant_location = db.relationship("RestaurantLocation")
+    flowtally_menu_item = db.relationship("MenuItem")
+    mapped_by = db.relationship("User")
