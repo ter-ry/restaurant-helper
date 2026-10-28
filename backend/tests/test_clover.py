@@ -479,6 +479,7 @@ def test_catalog_permission_failure_and_provider_rate_limit_are_controlled(app, 
 
 def test_mapping_catalog_verification_refreshes_expired_access(app, client, monkeypatch):
     _configure(app)
+    app.config["CLOVER_MAPPING_ENABLED"] = True
     _login(client)
     from backend.clover_catalog import CloverCatalogSnapshot
     from backend.square import encrypt_integration_secret
