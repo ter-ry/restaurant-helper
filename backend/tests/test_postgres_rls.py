@@ -3774,3 +3774,126 @@ def test_postgres_pilot_vertical_workflow_uses_real_receiving_and_square_consump
         assert Decimal(str(item.average_unit_cost)).quantize(Decimal("0.0001")) == Decimal("2.3333")
         assert recipe.ingredients[0].quantity_required == Decimal("0.2500")
         assert db.session.get(MenuItem, menu_item_id).selling_price == Decimal("18.00")
+
+
+@pytest.mark.parametrize("refresh_mode", ("proactive", "401"))
+def test_postgres_clover_refresh_serializes_single_use_rotation(postgres_app, monkeypatch, refresh_mode):
+    """Two independent PostgreSQL sessions must rotate a single-use token only once."""
+    from concurrent.futures import ThreadPoolExecutor
+    from cryptography.fernet import Fernet
+
+    from backend.clover import CloverRequestError
+    from backend.clover_integration import _catalog_snapshot_for_connection, _refresh_connection_token
+    from backend.models import CloverConnection
+    from backend.square import decrypt_integration_secret, encrypt_integration_secret
+    from backend.seed import LOCAL_ORGANIZATION_NAME
+
+    with postgres_app.app_context():
+        postgres_app.config.update(
+            CLOVER_CLIENT_ID="clover-client",
+            CLOVER_CLIENT_SECRET="clover-secret",
+            INTEGRATION_ENCRYPTION_KEY=Fernet.generate_key().decode("utf-8"),
+        )
+        _set_rls_context(access_scope="setup")
+        organization = Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).one()
+        connection = CloverConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            region="north_america",
+            merchant_id=f"concurrency-{refresh_mode}",
+            status="connected",
+            access_token_ciphertext=encrypt_integration_secret("access-old"),
+            refresh_token_ciphertext=encrypt_integration_secret("refresh-old"),
+            access_expires_at=(
+                datetime.now(timezone.utc) - timedelta(minutes=5)
+                if refresh_mode == "proactive"
+                else datetime.now(timezone.utc) + timedelta(hours=1)
+            ),
+        )
+        db.session.add(connection)
+        db.session.commit()
+        connection_id = connection.id
+        organization_id = organization.id
+
+    refresh_started = threading.Event()
+    release_refresh = threading.Event()
+    refresh_calls = []
+    refresh_lock = threading.Lock()
+
+    def fake_clover_request(method, path, **kwargs):
+        assert method == "POST"
+        assert path == "/oauth/v2/refresh"
+        with refresh_lock:
+            refresh_calls.append(kwargs["payload"]["refresh_token"])
+            call_number = len(refresh_calls)
+        if call_number == 1:
+            refresh_started.set()
+            assert release_refresh.wait(timeout=10)
+        return {
+            "access_token": "access-new",
+            "refresh_token": "refresh-new",
+            "access_token_expiration": 4102444800,
+            "refresh_token_expiration": 4102444800,
+        }
+
+    monkeypatch.setattr("backend.clover_integration.clover_request", fake_clover_request)
+
+    if refresh_mode == "401":
+        fetch_calls = []
+        fetch_lock = threading.Lock()
+
+        def fake_fetch(self):
+            with fetch_lock:
+                fetch_calls.append(self.token)
+            if self.token == "access-old":
+                raise CloverRequestError("expired", status_code=401, code="clover_unauthorized")
+            return object()
+
+        monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", fake_fetch)
+
+    barrier = threading.Barrier(2)
+
+    def worker():
+        with postgres_app.app_context():
+            _set_rls_context(access_scope="setup")
+            local_connection = db.session.get(CloverConnection, connection_id)
+            local_organization = db.session.get(Organization, organization_id)
+            assert local_connection is not None
+            assert local_organization is not None
+            observed = local_connection.access_token_ciphertext
+            barrier.wait(timeout=10)
+            if refresh_mode == "401":
+                token = _catalog_snapshot_for_connection(local_connection, local_organization)
+                assert token is not None
+                result = "catalog"
+            else:
+                result = _refresh_connection_token(
+                    local_connection,
+                    local_organization,
+                    observed_ciphertext=observed,
+                )
+            db.session.remove()
+            return result
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(worker)
+        second = executor.submit(worker)
+        assert refresh_started.wait(timeout=10)
+        # The second session must be waiting on the locked row, not rotating
+        # the single-use refresh token independently.
+        time.sleep(0.25)
+        with refresh_lock:
+            assert refresh_calls == ["refresh-old"]
+        release_refresh.set()
+        assert first.result(timeout=20) in {"access-new", "catalog"}
+        assert second.result(timeout=20) in {"access-new", "catalog"}
+
+    assert refresh_calls == ["refresh-old"]
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="setup")
+        saved = db.session.get(CloverConnection, connection_id)
+        assert saved is not None
+        assert decrypt_integration_secret(saved.access_token_ciphertext) == "access-new"
+        assert decrypt_integration_secret(saved.refresh_token_ciphertext) == "refresh-new"
+        db.session.delete(saved)
+        db.session.commit()
