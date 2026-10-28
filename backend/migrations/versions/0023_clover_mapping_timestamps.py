@@ -23,8 +23,30 @@ def _is_sqlite() -> bool:
 
 
 def _add_nullable_columns(table: str) -> None:
-    op.add_column(table, sa.Column("created_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column(table, sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
+    if _is_sqlite():
+        op.add_column(table, sa.Column("created_at", sa.DateTime(timezone=True), nullable=True))
+        op.add_column(table, sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
+        return
+
+    # PostgreSQL applies a DDL default to existing rows even when FORCE RLS
+    # prevents the migrator role from seeing those rows through DML. Remove
+    # the default immediately after the add; ORM writes use TimestampMixin.
+    for column_name in ("created_at", "updated_at"):
+        op.add_column(
+            table,
+            sa.Column(
+                column_name,
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("CURRENT_TIMESTAMP"),
+            ),
+        )
+        op.alter_column(
+            table,
+            column_name,
+            existing_type=sa.DateTime(timezone=True),
+            server_default=None,
+        )
 
 
 def _make_non_nullable(table: str) -> None:
