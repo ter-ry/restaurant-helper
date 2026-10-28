@@ -1017,6 +1017,17 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
         organization_id = seeded.organization_id
         location_id = seeded.location_id
         owner_id = seeded.owner_id
+        db.session.connection().execute(
+            text("select set_config('flowtally.access_scope', 'organization', true)")
+        )
+        db.session.connection().execute(
+            text("select set_config('flowtally.organization_id', :organization_id, true)"),
+            {"organization_id": str(organization_id)},
+        )
+        db.session.connection().execute(
+            text("select set_config('flowtally.user_id', :user_id, true)"),
+            {"user_id": str(owner_id)},
+        )
         menu_item = MenuItem(
             organization_id=organization_id,
             location_id=location_id,
@@ -1088,6 +1099,17 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
         organization_id = seeded.organization_id
         location_id = seeded.location_id
         owner_id = seeded.owner_id
+        db.session.connection().execute(
+            text("select set_config('flowtally.access_scope', 'organization', true)")
+        )
+        db.session.connection().execute(
+            text("select set_config('flowtally.organization_id', :organization_id, true)"),
+            {"organization_id": str(organization_id)},
+        )
+        db.session.connection().execute(
+            text("select set_config('flowtally.user_id', :user_id, true)"),
+            {"user_id": str(owner_id)},
+        )
         menu_item = MenuItem(
             organization_id=organization_id,
             location_id=location_id,
