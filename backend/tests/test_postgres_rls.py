@@ -3811,9 +3811,10 @@ def test_postgres_clover_refresh_serializes_single_use_rotation(postgres_app, mo
             ),
         )
         db.session.add(connection)
-        db.session.commit()
+        db.session.flush()
         connection_id = connection.id
         organization_id = organization.id
+        db.session.commit()
 
     refresh_started = threading.Event()
     release_refresh = threading.Event()
