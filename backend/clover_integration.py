@@ -524,6 +524,10 @@ def create_clover_location_mapping():
         snapshot = _catalog_snapshot_for_connection(connection, organization)
     except SquareSecurityError:
         return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
+    except CloverCatalogIncomplete:
+        return json_error("Clover catalog is incomplete; try again later.", 503, code="clover_catalog_incomplete")
+    except CloverCatalogDisabled:
+        return json_error("Clover catalog preview is unavailable.", 404, code="clover_catalog_disabled")
     except CloverRequestError as exc:
         return json_error("Clover location identity could not be verified.", 503, code=exc.code)
     snapshot_location = getattr(snapshot, "location", None)
@@ -635,6 +639,10 @@ def create_clover_menu_mapping():
         snapshot = _catalog_snapshot_for_connection(connection, organization)
     except SquareSecurityError:
         return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
+    except CloverCatalogIncomplete:
+        return json_error("Clover catalog is incomplete; try again later.", 503, code="clover_catalog_incomplete")
+    except CloverCatalogDisabled:
+        return json_error("Clover catalog preview is unavailable.", 404, code="clover_catalog_disabled")
     except CloverRequestError as exc:
         return json_error("Clover catalog could not be verified.", 503, code=exc.code)
     item = next((value for value in snapshot.items if value.provider_id == clover_item_id), None)
@@ -794,6 +802,8 @@ def clover_refresh():
         return json_error("Clover requires authorization.", 409, code="clover_authorization_required")
     try:
         _refresh_connection_token(connection, organization, force=True)
+    except SquareSecurityError:
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
     except CloverRequestError as exc:
         if exc.status_code == 409:
             return json_error("Clover authorization must be renewed.", 409, code=exc.code)
