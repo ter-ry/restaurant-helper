@@ -1017,24 +1017,19 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
         organization_id = seeded.organization_id
         location_id = seeded.location_id
         owner_id = seeded.owner_id
-        location = db.session.get(RestaurantLocation, location_id)
-        owner = db.session.get(User, owner_id)
-        menu_item = MenuItem.query.filter_by(organization_id=organization_id, location_id=location_id).first()
-        assert location is not None and owner is not None
-        if menu_item is None:
-            menu_item = MenuItem(
-                organization_id=organization_id,
-                location_id=location_id,
-                name="Migration Test Item",
-                normalized_name="migration test item",
-                category="Other",
-                selling_price=Decimal("0"),
-                active=True,
-                notes="",
-                created_by_user_id=owner_id,
-            )
-            db.session.add(menu_item)
-            db.session.flush()
+        menu_item = MenuItem(
+            organization_id=organization_id,
+            location_id=location_id,
+            name=f"Migration Test Item {organization_id}",
+            normalized_name=f"migration test item {organization_id}",
+            category="Other",
+            selling_price=Decimal("0"),
+            active=True,
+            notes="",
+            created_by_user_id=owner_id,
+        )
+        db.session.add(menu_item)
+        db.session.flush()
 
         connection = CloverConnection(
             organization_id=organization_id,
@@ -1093,24 +1088,19 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
         organization_id = seeded.organization_id
         location_id = seeded.location_id
         owner_id = seeded.owner_id
-        location = db.session.get(RestaurantLocation, location_id)
-        owner = db.session.get(User, owner_id)
-        menu_item = MenuItem.query.filter_by(organization_id=organization_id, location_id=location_id).first()
-        assert location is not None and owner is not None
-        if menu_item is None:
-            menu_item = MenuItem(
-                organization_id=organization_id,
-                location_id=location_id,
-                name="Migration Test Item",
-                normalized_name="migration test item",
-                category="Other",
-                selling_price=Decimal("0"),
-                active=True,
-                notes="",
-                created_by_user_id=owner_id,
-            )
-            db.session.add(menu_item)
-            db.session.flush()
+        menu_item = MenuItem(
+            organization_id=organization_id,
+            location_id=location_id,
+            name=f"Migration Test Item {organization_id}",
+            normalized_name=f"migration test item {organization_id}",
+            category="Other",
+            selling_price=Decimal("0"),
+            active=True,
+            notes="",
+            created_by_user_id=owner_id,
+        )
+        db.session.add(menu_item)
+        db.session.flush()
         connection = CloverConnection(
             organization_id=organization_id,
             environment="sandbox",
