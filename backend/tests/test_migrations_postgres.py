@@ -1012,7 +1012,7 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
 
     with application.app_context():
         _set_setup_migration_context(db.session.connection())
-        db.session.expire_on_commit = False
+        db.session().expire_on_commit = False
         seeded = seed_pilot_data(reset=False)
         organization_id = seeded.organization_id
         location_id = seeded.location_id
