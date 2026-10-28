@@ -50,6 +50,10 @@ def _refresh_connection_token(
     """Refresh one Clover connection while serializing single-use token rotation."""
     locked = (
         CloverConnection.query.filter_by(id=connection.id, organization_id=organization.id)
+        // Refresh the identity-mapped instance before taking the row lock. A
+        // concurrent request may have rotated the single-use refresh token
+        // since this connection was first loaded in the session.
+        .populate_existing()
         .with_for_update()
         .first()
     )
@@ -61,6 +65,7 @@ def _refresh_connection_token(
         and observed_ciphertext
         and locked.access_token_ciphertext
         and locked.access_token_ciphertext != observed_ciphertext
+        and locked.status == "connected"
         and not _token_is_stale(locked)
     ):
         return decrypt_integration_secret(locked.access_token_ciphertext)
@@ -801,7 +806,13 @@ def clover_refresh():
     if connection is None or not connection.refresh_token_ciphertext:
         return json_error("Clover requires authorization.", 409, code="clover_authorization_required")
     try:
-        _refresh_connection_token(connection, organization, force=True)
+        observed_ciphertext = connection.access_token_ciphertext
+        _refresh_connection_token(
+            connection,
+            organization,
+            observed_ciphertext=observed_ciphertext,
+            force=True,
+        )
     except SquareSecurityError:
         return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
     except CloverRequestError as exc:
