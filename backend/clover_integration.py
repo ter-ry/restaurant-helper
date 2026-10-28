@@ -50,9 +50,9 @@ def _refresh_connection_token(
     """Refresh one Clover connection while serializing single-use token rotation."""
     locked = (
         CloverConnection.query.filter_by(id=connection.id, organization_id=organization.id)
-        // Refresh the identity-mapped instance before taking the row lock. A
-        // concurrent request may have rotated the single-use refresh token
-        // since this connection was first loaded in the session.
+        # Refresh the identity-mapped instance before taking the row lock. A
+        # concurrent request may have rotated the single-use refresh token
+        # since this connection was first loaded in the session.
         .populate_existing()
         .with_for_update()
         .first()
