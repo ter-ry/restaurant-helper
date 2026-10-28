@@ -1013,14 +1013,16 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
     with application.app_context():
         _set_setup_migration_context(db.session.connection())
         seeded = seed_pilot_data(reset=False)
-        organization = db.session.get(Organization, seeded.organization_id)
-        location = db.session.get(RestaurantLocation, seeded.location_id)
-        owner = db.session.get(User, seeded.owner_id)
-        menu_item = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id).first()
-        assert organization is not None and location is not None and owner is not None and menu_item is not None
+        organization_id = seeded.organization_id
+        location_id = seeded.location_id
+        owner_id = seeded.owner_id
+        location = db.session.get(RestaurantLocation, location_id)
+        owner = db.session.get(User, owner_id)
+        menu_item = MenuItem.query.filter_by(organization_id=organization_id, location_id=location_id).first()
+        assert location is not None and owner is not None and menu_item is not None
 
         connection = CloverConnection(
-            organization_id=organization.id,
+            organization_id=organization_id,
             environment="sandbox",
             region="north_america",
             merchant_id="migration-merchant",
@@ -1030,19 +1032,19 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
         db.session.flush()
         location_mapping = CloverLocationMapping(
             clover_connection_id=connection.id,
-            organization_id=organization.id,
-            restaurant_location_id=location.id,
+            organization_id=organization_id,
+            restaurant_location_id=location_id,
             clover_merchant_id=connection.merchant_id,
-            confirmed_by_user_id=owner.id,
+            confirmed_by_user_id=owner_id,
         )
         menu_mapping = CloverMenuMapping(
             clover_connection_id=connection.id,
-            organization_id=organization.id,
-            restaurant_location_id=location.id,
+            organization_id=organization_id,
+            restaurant_location_id=location_id,
             clover_merchant_id=connection.merchant_id,
             clover_item_id="migration-item",
             flowtally_menu_item_id=menu_item.id,
-            mapped_by_user_id=owner.id,
+            mapped_by_user_id=owner_id,
         )
         db.session.add_all([location_mapping, menu_mapping])
         db.session.commit()
@@ -1072,13 +1074,15 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
     with application.app_context():
         _set_setup_migration_context(db.session.connection())
         seeded = seed_pilot_data(reset=False)
-        organization = db.session.get(Organization, seeded.organization_id)
-        location = db.session.get(RestaurantLocation, seeded.location_id)
-        owner = db.session.get(User, seeded.owner_id)
-        menu_item = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id).first()
-        assert organization is not None and location is not None and owner is not None and menu_item is not None
+        organization_id = seeded.organization_id
+        location_id = seeded.location_id
+        owner_id = seeded.owner_id
+        location = db.session.get(RestaurantLocation, location_id)
+        owner = db.session.get(User, owner_id)
+        menu_item = MenuItem.query.filter_by(organization_id=organization_id, location_id=location_id).first()
+        assert location is not None and owner is not None and menu_item is not None
         connection = CloverConnection(
-            organization_id=organization.id,
+            organization_id=organization_id,
             environment="sandbox",
             region="north_america",
             merchant_id="legacy-merchant",
@@ -1098,10 +1102,10 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
             ),
             {
                 "connection_id": connection.id,
-                "organization_id": organization.id,
-                "location_id": location.id,
+                "organization_id": organization_id,
+                "location_id": location_id,
                 "merchant_id": connection.merchant_id,
-                "owner_id": owner.id,
+                "owner_id": owner_id,
             },
         )
         db.session.execute(
@@ -1119,11 +1123,11 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
             ),
             {
                 "connection_id": connection.id,
-                "organization_id": organization.id,
-                "location_id": location.id,
+                "organization_id": organization_id,
+                "location_id": location_id,
                 "merchant_id": connection.merchant_id,
                 "menu_item_id": menu_item.id,
-                "owner_id": owner.id,
+                "owner_id": owner_id,
             },
         )
         db.session.commit()
