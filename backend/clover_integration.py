@@ -553,7 +553,6 @@ def create_clover_menu_mapping():
     if existing is None:
         existing = CloverMenuMapping(clover_connection_id=connection.id, organization_id=organization.id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id, clover_item_id=clover_item_id, mapped_by_user_id=current_user.id)
         db.session.add(existing)
-        db.session.flush([existing])
     existing.clover_merchant_id = connection.merchant_id
     existing.clover_item_group_id = item.item_group_id
     existing.clover_option_ids_json = list(item.option_ids)
@@ -561,6 +560,8 @@ def create_clover_menu_mapping():
     existing.flowtally_menu_item_id = menu_item.id
     existing.status = "review" if item.hidden or item.available is False else "active"
     existing.mapped_by_user_id = current_user.id
+    if existing.id is None:
+        db.session.flush([existing])
     record_audit_event(event_type="clover.mapping.menu_item_saved", entity_type="clover_menu_mapping", entity_id=existing.id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"cloverItemId": clover_item_id, "flowtallyMenuItemId": menu_item.id, "status": existing.status})
     db.session.commit()
     return jsonify({"mapping": _serialize_menu_mapping(existing)}), 200
