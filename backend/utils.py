@@ -35,8 +35,10 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def json_error(message: str, status_code: int, *, errors: dict[str, str] | None = None) -> tuple[Response, int]:
+def json_error(message: str, status_code: int, *, errors: dict[str, str] | None = None, code: str | None = None) -> tuple[Response, int]:
     payload: dict[str, Any] = {"error": message}
+    if code:
+        payload["code"] = code
     if errors:
         payload["errors"] = errors
     return jsonify(payload), status_code

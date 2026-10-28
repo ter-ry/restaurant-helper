@@ -62,6 +62,7 @@ def clover_request(method: str, path: str, *, token: str | None = None, payload:
             raw = response.read().decode("utf-8")
             return json.loads(raw) if raw else {}
     except HTTPError as exc:
-        raise CloverRequestError("Clover request was rejected.", status_code=exc.code, code="clover_unauthorized" if exc.code in {401, 403} else "clover_request_failed") from exc
+        error_code = "clover_unauthorized" if exc.code == 401 else "clover_forbidden" if exc.code == 403 else "clover_request_failed"
+        raise CloverRequestError("Clover request was rejected.", status_code=exc.code, code=error_code) from exc
     except (URLError, TimeoutError, ValueError) as exc:
         raise CloverRequestError("Clover request could not be completed.", code="clover_unavailable") from exc

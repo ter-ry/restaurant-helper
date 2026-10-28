@@ -26,6 +26,130 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+CLOVER_REFRESH_SKEW = timedelta(minutes=2)
+
+
+def _token_is_stale(connection: CloverConnection) -> bool:
+    expires_at = connection.access_expires_at
+    # Missing metadata is unknown, not proof of expiry; the first provider
+    # request is allowed to establish whether a bounded 401 refresh is needed.
+    if expires_at is None:
+        return False
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= _now() + CLOVER_REFRESH_SKEW
+
+
+def _refresh_connection_token(
+    connection: CloverConnection,
+    organization: Organization,
+    *,
+    observed_ciphertext: str | None = None,
+    force: bool = False,
+) -> str:
+    """Refresh one Clover connection while serializing single-use token rotation."""
+    locked = (
+        CloverConnection.query.filter_by(id=connection.id, organization_id=organization.id)
+        # Refresh the identity-mapped instance before taking the row lock. A
+        # concurrent request may have rotated the single-use refresh token
+        # since this connection was first loaded in the session.
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if locked is None or not locked.refresh_token_ciphertext:
+        raise CloverRequestError("Clover authorization must be renewed.", status_code=401, code="clover_reauthorization_required")
+
+    if (
+        force
+        and observed_ciphertext
+        and locked.access_token_ciphertext
+        and locked.access_token_ciphertext != observed_ciphertext
+        and locked.status == "connected"
+        and not _token_is_stale(locked)
+    ):
+        return decrypt_integration_secret(locked.access_token_ciphertext)
+    if (
+        not force
+        and locked.status == "connected"
+        and locked.access_token_ciphertext
+        and not _token_is_stale(locked)
+    ):
+        return decrypt_integration_secret(locked.access_token_ciphertext)
+
+    old_refresh = decrypt_integration_secret(locked.refresh_token_ciphertext)
+    try:
+        token_payload = clover_request(
+            "POST",
+            "/oauth/v2/refresh",
+            payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "refresh_token": old_refresh},
+        )
+    except CloverRequestError as exc:
+        if exc.status_code not in {401, 403}:
+            raise
+        if not locked.recovery_token_ciphertext:
+            locked.status = "reauthorization_required"
+            locked.last_error = exc.code
+            db.session.commit()
+            raise CloverRequestError("Clover authorization must be renewed.", status_code=409, code="clover_reauthorization_required") from exc
+        try:
+            token_payload = clover_request(
+                "POST",
+                "/oauth/v2/recovery",
+                payload={
+                    "client_id": current_app.config["CLOVER_CLIENT_ID"],
+                    "client_secret": current_app.config["CLOVER_CLIENT_SECRET"],
+                    "recovery_token": decrypt_integration_secret(locked.recovery_token_ciphertext),
+                },
+            )
+        except CloverRequestError as recovery_exc:
+            if recovery_exc.status_code not in {401, 403}:
+                raise
+            locked.status = "reauthorization_required"
+            locked.last_error = recovery_exc.code
+            db.session.commit()
+            raise CloverRequestError("Clover authorization must be renewed.", status_code=409, code="clover_reauthorization_required") from recovery_exc
+
+    access_token = str(token_payload.get("access_token") or "").strip()
+    new_refresh = str(token_payload.get("refresh_token") or "").strip()
+    if not access_token or not new_refresh:
+        raise CloverRequestError("Clover refresh did not return a complete token pair.", status_code=502, code="clover_incomplete_token")
+    locked.recovery_token_ciphertext = encrypt_integration_secret(old_refresh)
+    locked.recovery_expires_at = _now() + timedelta(days=14)
+    locked.refresh_token_ciphertext = encrypt_integration_secret(new_refresh)
+    locked.access_token_ciphertext = encrypt_integration_secret(access_token)
+    locked.access_expires_at = parse_clover_timestamp(token_payload.get("access_token_expiration"))
+    locked.refresh_expires_at = parse_clover_timestamp(token_payload.get("refresh_token_expiration"))
+    locked.status = "connected"
+    locked.last_error = ""
+    locked.last_connection_check_at = _now()
+    record_audit_event(
+        event_type="clover.oauth.refreshed",
+        entity_type="clover_connection",
+        entity_id=locked.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id if current_user.is_authenticated else None,
+    )
+    db.session.commit()
+    return access_token
+
+
+def _catalog_snapshot_for_connection(connection: CloverConnection, organization: Organization):
+    token = decrypt_integration_secret(connection.access_token_ciphertext)
+    if not token:
+        raise CloverRequestError("Clover authorization is required.", status_code=409, code="clover_authorization_required")
+    observed_ciphertext = connection.access_token_ciphertext
+    if _token_is_stale(connection):
+        token = _refresh_connection_token(connection, organization, observed_ciphertext=observed_ciphertext)
+    try:
+        return CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
+    except CloverRequestError as exc:
+        if exc.status_code != 401:
+            raise
+        retry_token = _refresh_connection_token(connection, organization, observed_ciphertext=observed_ciphertext, force=True)
+        return CloverCatalogClient(merchant_id=connection.merchant_id, token=retry_token).fetch_snapshot()
+
+
 def _can_manage(organization: Organization) -> bool:
     if get_platform_role(current_user.id) and get_platform_role(current_user.id).role == "setup_admin":
         return True
@@ -407,10 +531,15 @@ def create_clover_location_mapping():
         return json_error("Connected Clover merchant and Flowtally location are required.", 409)
     requested_clover_location_id = str(payload.get("cloverLocationId") or "").strip() or None
     try:
-        token = decrypt_integration_secret(connection.access_token_ciphertext)
-        snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
-    except Exception:
-        return json_error("Clover location identity could not be verified.", 502)
+        snapshot = _catalog_snapshot_for_connection(connection, organization)
+    except SquareSecurityError:
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
+    except CloverCatalogIncomplete:
+        return json_error("Clover catalog is incomplete; try again later.", 503, code="clover_catalog_incomplete")
+    except CloverCatalogDisabled:
+        return json_error("Clover catalog preview is unavailable.", 404, code="clover_catalog_disabled")
+    except CloverRequestError as exc:
+        return json_error("Clover location identity could not be verified.", 503, code=exc.code)
     snapshot_location = getattr(snapshot, "location", None)
     authoritative_clover_location_id = snapshot_location.provider_id if snapshot_location is not None else None
     if authoritative_clover_location_id:
@@ -517,10 +646,15 @@ def create_clover_menu_mapping():
     if connection is None or location_mapping is None or menu_item is None or not clover_item_id:
         return json_error("Confirm a Clover location and select a valid Flowtally menu item.", 409)
     try:
-        token = decrypt_integration_secret(connection.access_token_ciphertext)
-        snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
-    except Exception:
-        return json_error("Clover catalog could not be verified.", 502)
+        snapshot = _catalog_snapshot_for_connection(connection, organization)
+    except SquareSecurityError:
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
+    except CloverCatalogIncomplete:
+        return json_error("Clover catalog is incomplete; try again later.", 503, code="clover_catalog_incomplete")
+    except CloverCatalogDisabled:
+        return json_error("Clover catalog preview is unavailable.", 404, code="clover_catalog_disabled")
+    except CloverRequestError as exc:
+        return json_error("Clover catalog could not be verified.", 503, code=exc.code)
     item = next((value for value in snapshot.items if value.provider_id == clover_item_id), None)
     if item is None or item.deleted:
         return json_error("The Clover item is missing or deleted.", 409)
@@ -618,21 +752,17 @@ def clover_catalog_preview():
     if not connection.merchant_id or not connection.access_token_ciphertext:
         return json_error("Clover authorization is required.", 409)
     try:
-        token = decrypt_integration_secret(connection.access_token_ciphertext)
+        snapshot = _catalog_snapshot_for_connection(connection, organization)
     except SquareSecurityError:
-        return json_error("Clover authorization could not be read.", 502)
-    if not token:
-        return json_error("Clover authorization is required.", 409)
-    try:
-        snapshot = CloverCatalogClient(merchant_id=connection.merchant_id, token=token).fetch_snapshot()
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
     except CloverCatalogIncomplete:
         return json_error("Clover catalog is incomplete; try again later.", 502, code="clover_catalog_incomplete")
     except CloverCatalogDisabled:
         return json_error("Clover catalog preview is unavailable.", 404)
     except CloverRequestError as exc:
-        if exc.status_code in {401, 403}:
-            return json_error("Clover authorization could not be verified.", 502, code="clover_unauthorized")
-        return json_error("Clover catalog could not be loaded.", 502, code=exc.code)
+        if exc.status_code == 403:
+            return json_error("Clover access is not permitted for this connection.", 502, code="clover_forbidden")
+        return json_error("Clover catalog could not be loaded.", 503, code=exc.code)
     return jsonify(_catalog_snapshot_payload(snapshot)), 200
 
 
@@ -677,44 +807,25 @@ def clover_refresh():
     if denied is not None:
         return denied
     assert organization is not None
-    connection = CloverConnection.query.filter_by(organization_id=organization.id).with_for_update().first()
+    connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
     if connection is None or not connection.refresh_token_ciphertext:
-        return json_error("Clover requires authorization.", 409)
-    old_refresh = decrypt_integration_secret(connection.refresh_token_ciphertext)
+        return json_error("Clover requires authorization.", 409, code="clover_authorization_required")
     try:
-        token_payload = clover_request("POST", "/oauth/v2/refresh", payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "refresh_token": old_refresh})
+        observed_ciphertext = connection.access_token_ciphertext
+        _refresh_connection_token(
+            connection,
+            organization,
+            observed_ciphertext=observed_ciphertext,
+            force=True,
+        )
+    except SquareSecurityError:
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
     except CloverRequestError as exc:
-        # Timeouts, rate limits, and provider outages do not prove revocation;
-        # leave the current credentials and connected state intact.
-        if exc.status_code not in {401, 403}:
-            return jsonify({"connection": _serialize(connection), "error": "Clover refresh is temporarily unavailable.", "code": exc.code}), 503
-        if not connection.recovery_token_ciphertext:
-            connection.status = "reauthorization_required"
-            connection.last_error = exc.code
-            db.session.commit()
-            return jsonify({"connection": _serialize(connection), "error": "Clover authorization must be renewed.", "code": "clover_reauthorization_required"}), 409
-        try:
-            token_payload = clover_request("POST", "/oauth/v2/recovery", payload={"client_id": current_app.config["CLOVER_CLIENT_ID"], "client_secret": current_app.config["CLOVER_CLIENT_SECRET"], "recovery_token": decrypt_integration_secret(connection.recovery_token_ciphertext)})
-        except CloverRequestError as recovery_exc:
-            if recovery_exc.status_code not in {401, 403}:
-                return jsonify({"connection": _serialize(connection), "error": "Clover recovery is temporarily unavailable.", "code": recovery_exc.code}), 503
-            connection.status = "reauthorization_required"
-            connection.last_error = "clover_reauthorization_required"
-            db.session.commit()
-            return jsonify({"connection": _serialize(connection), "error": "Clover authorization must be renewed.", "code": "clover_reauthorization_required"}), 409
-    access_token = str(token_payload.get("access_token") or "").strip()
-    new_refresh = str(token_payload.get("refresh_token") or "").strip()
-    if not access_token or not new_refresh:
-        return json_error("Clover refresh did not return a complete token pair.", 502)
-    connection.recovery_token_ciphertext = encrypt_integration_secret(old_refresh)
-    connection.recovery_expires_at = _now() + timedelta(days=14)
-    connection.refresh_token_ciphertext = encrypt_integration_secret(new_refresh)
-    connection.access_token_ciphertext = encrypt_integration_secret(access_token)
-    connection.access_expires_at = parse_clover_timestamp(token_payload.get("access_token_expiration"))
-    connection.refresh_expires_at = parse_clover_timestamp(token_payload.get("refresh_token_expiration"))
-    connection.status = "connected"
-    connection.last_error = ""
-    connection.last_connection_check_at = _now()
-    record_audit_event(event_type="clover.oauth.refreshed", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, actor_user_id=current_user.id)
-    db.session.commit()
+        if exc.status_code == 409:
+            return json_error("Clover authorization must be renewed.", 409, code=exc.code)
+        if exc.status_code in {429, 500, 502, 503, 504}:
+            return json_error("Clover refresh is temporarily unavailable.", 503, code=exc.code)
+        return json_error("Clover refresh failed.", 502, code=exc.code)
+    connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
     return jsonify({"connection": _serialize(connection)}), 200
+
