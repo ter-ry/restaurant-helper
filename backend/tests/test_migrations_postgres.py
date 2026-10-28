@@ -69,6 +69,18 @@ def _set_setup_migration_context(connection) -> None:
     connection.execute(text("select set_config('flowtally.support_grant_id', '', true)"))
 
 
+
+def _set_organization_migration_context(connection, organization_id: int, user_id: int) -> None:
+    connection.execute(text("select set_config('flowtally.access_scope', 'organization', false)"))
+    connection.execute(
+        text("select set_config('flowtally.organization_id', :organization_id, false)"),
+        {"organization_id": str(organization_id)},
+    )
+    connection.execute(
+        text("select set_config('flowtally.user_id', :user_id, false)"),
+        {"user_id": str(user_id)},
+    )
+
 def _create_app():
     runtime_url = _runtime_postgres_url() or POSTGRES_URL
     return create_app(
@@ -1017,17 +1029,7 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
         organization_id = seeded.organization_id
         location_id = seeded.location_id
         owner_id = seeded.owner_id
-        db.session.connection().execute(
-            text("select set_config('flowtally.access_scope', 'organization', true)")
-        )
-        db.session.connection().execute(
-            text("select set_config('flowtally.organization_id', :organization_id, true)"),
-            {"organization_id": str(organization_id)},
-        )
-        db.session.connection().execute(
-            text("select set_config('flowtally.user_id', :user_id, true)"),
-            {"user_id": str(owner_id)},
-        )
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
         menu_item = MenuItem(
             organization_id=organization_id,
             location_id=location_id,
@@ -1069,6 +1071,7 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
         )
         db.session.add_all([location_mapping, menu_mapping])
         db.session.commit()
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
 
         assert CloverLocationMapping.query.one().created_at is not None
         assert CloverLocationMapping.query.one().updated_at is not None
@@ -1099,17 +1102,7 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
         organization_id = seeded.organization_id
         location_id = seeded.location_id
         owner_id = seeded.owner_id
-        db.session.connection().execute(
-            text("select set_config('flowtally.access_scope', 'organization', true)")
-        )
-        db.session.connection().execute(
-            text("select set_config('flowtally.organization_id', :organization_id, true)"),
-            {"organization_id": str(organization_id)},
-        )
-        db.session.connection().execute(
-            text("select set_config('flowtally.user_id', :user_id, true)"),
-            {"user_id": str(owner_id)},
-        )
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
         menu_item = MenuItem(
             organization_id=organization_id,
             location_id=location_id,
@@ -1180,7 +1173,7 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
     _upgrade_to(application, "head")
 
     with application.app_context():
-        _set_setup_migration_context(db.session.connection())
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
         _assert_clover_mapping_timestamps()
         location_mapping = db.session.get(CloverLocationMapping, location_mapping_id)
         menu_mapping = db.session.get(CloverMenuMapping, menu_mapping_id)
