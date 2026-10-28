@@ -3855,7 +3855,7 @@ def test_postgres_clover_refresh_serializes_single_use_rotation(postgres_app, mo
     barrier = threading.Barrier(2)
 
     def worker():
-        with postgres_app.app_context():
+        with postgres_app.test_request_context("/"):
             _set_rls_context(access_scope="setup")
             local_connection = db.session.get(CloverConnection, connection_id)
             local_organization = db.session.get(Organization, organization_id)
