@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.clover import clover_api_base, clover_authorize_url, parse_clover_timestamp
 from backend.extensions import db
@@ -362,3 +362,152 @@ def test_clover_catalog_preview_rejects_unauthorized_and_non_sandbox_connections
         db.session.commit()
     response = client.get("/api/integrations/clover/catalog?organizationId=1")
     assert response.status_code == 404
+
+
+def _catalog_snapshot_fixture():
+    from backend.clover_catalog import CloverCatalogSnapshot
+    return CloverCatalogSnapshot(
+        merchant_id="merchant-1",
+        merchant_name="Sandbox Cafe",
+        merchant_address={},
+        location=None,
+        item_groups=(),
+        categories=(),
+        modifier_groups=(),
+        items=(),
+    )
+
+
+def test_catalog_expired_access_token_refreshes_and_rotates_then_serves(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    monkeypatch.setenv("CLOVER_CATALOG_ENABLED", "true")
+    from backend.square import decrypt_integration_secret, encrypt_integration_secret
+    with app.app_context():
+        connection = CloverConnection(
+            organization_id=1,
+            environment="sandbox",
+            merchant_id="merchant-1",
+            status="connected",
+            access_token_ciphertext=encrypt_integration_secret("expired-access"),
+            refresh_token_ciphertext=encrypt_integration_secret("refresh-old"),
+            access_expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+        db.session.add(connection)
+        db.session.commit()
+    calls = []
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs.get("payload", {}).get("refresh_token")))
+        return {"access_token": "access-new", "refresh_token": "refresh-new", "access_token_expiration": 4102444800, "refresh_token_expiration": 4102444800}
+    monkeypatch.setattr("backend.clover_integration.clover_request", fake_request)
+    seen = []
+    monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: (seen.append(self.token) or _catalog_snapshot_fixture()))
+    response = client.get("/api/integrations/clover/catalog?organizationId=1")
+    assert response.status_code == 200
+    assert seen == ["access-new"]
+    assert calls == [("POST", "/oauth/v2/refresh", "refresh-old")]
+    with app.app_context():
+        saved = CloverConnection.query.one()
+        assert decrypt_integration_secret(saved.refresh_token_ciphertext) == "refresh-new"
+
+
+def test_catalog_401_refreshes_once_and_retries_without_refresh_loop(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    monkeypatch.setenv("CLOVER_CATALOG_ENABLED", "true")
+    from backend.clover import CloverRequestError
+    from backend.square import encrypt_integration_secret
+    with app.app_context():
+        connection = CloverConnection(
+            organization_id=1,
+            environment="sandbox",
+            merchant_id="merchant-1",
+            status="connected",
+            access_token_ciphertext=encrypt_integration_secret("access-current"),
+            refresh_token_ciphertext=encrypt_integration_secret("refresh-old"),
+            access_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        db.session.add(connection)
+        db.session.commit()
+    refresh_calls = []
+    monkeypatch.setattr(
+        "backend.clover_integration.clover_request",
+        lambda method, path, **kwargs: (
+            refresh_calls.append(path) or {"access_token": "access-retried", "refresh_token": "refresh-retried", "access_token_expiration": 4102444800, "refresh_token_expiration": 4102444800}
+        ),
+    )
+    fetch_calls = []
+    def fetch(self):
+        fetch_calls.append(self.token)
+        if len(fetch_calls) == 1:
+            raise CloverRequestError("expired", status_code=401, code="clover_unauthorized")
+        return _catalog_snapshot_fixture()
+    monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", fetch)
+    response = client.get("/api/integrations/clover/catalog?organizationId=1")
+    assert response.status_code == 200
+    assert fetch_calls == ["access-current", "access-retried"]
+    assert refresh_calls == ["/oauth/v2/refresh"]
+
+
+def test_catalog_permission_failure_and_provider_rate_limit_are_controlled(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    monkeypatch.setenv("CLOVER_CATALOG_ENABLED", "true")
+    from backend.clover import CloverRequestError
+    from backend.square import encrypt_integration_secret
+    with app.app_context():
+        connection = CloverConnection(
+            organization_id=1,
+            environment="sandbox",
+            merchant_id="merchant-1",
+            status="connected",
+            access_token_ciphertext=encrypt_integration_secret("access"),
+            refresh_token_ciphertext=encrypt_integration_secret("refresh"),
+            access_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        db.session.add(connection)
+        db.session.commit()
+    monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: (_ for _ in ()).throw(CloverRequestError("forbidden", status_code=403, code="clover_forbidden")))
+    forbidden = client.get("/api/integrations/clover/catalog?organizationId=1")
+    assert forbidden.status_code == 502
+    assert forbidden.get_json()["code"] == "clover_forbidden"
+    monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: (_ for _ in ()).throw(CloverRequestError("limited", status_code=429, code="clover_rate_limited")))
+    limited = client.get("/api/integrations/clover/catalog?organizationId=1")
+    assert limited.status_code == 503
+    assert limited.get_json()["code"] == "clover_rate_limited"
+
+
+def test_mapping_catalog_verification_refreshes_expired_access(app, client, monkeypatch):
+    _configure(app)
+    _login(client)
+    from backend.clover_catalog import CloverCatalogSnapshot
+    from backend.square import encrypt_integration_secret
+    with app.app_context():
+        connection = CloverConnection(
+            organization_id=1,
+            environment="sandbox",
+            merchant_id="merchant-1",
+            status="connected",
+            access_token_ciphertext=encrypt_integration_secret("expired-access"),
+            refresh_token_ciphertext=encrypt_integration_secret("refresh-old"),
+            access_expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+        db.session.add(connection)
+        db.session.commit()
+    refresh_calls = []
+    monkeypatch.setattr(
+        "backend.clover_integration.clover_request",
+        lambda method, path, **kwargs: refresh_calls.append(path) or {"access_token": "access-new", "refresh_token": "refresh-new", "access_token_expiration": 4102444800, "refresh_token_expiration": 4102444800},
+    )
+    monkeypatch.setattr(
+        "backend.clover_integration.CloverCatalogClient.fetch_snapshot",
+        lambda self: CloverCatalogSnapshot(merchant_id="merchant-1", merchant_name="Sandbox Cafe", merchant_address={}, location=None, item_groups=(), categories=(), modifier_groups=(), items=()),
+    )
+    csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+    response = client.post(
+        "/api/integrations/clover/location-mapping",
+        json={"organizationId": 1, "locationId": 1, "confirm": True},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 200
+    assert refresh_calls == ["/oauth/v2/refresh"]
