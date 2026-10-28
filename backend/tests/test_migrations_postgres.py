@@ -69,6 +69,18 @@ def _set_setup_migration_context(connection) -> None:
     connection.execute(text("select set_config('flowtally.support_grant_id', '', true)"))
 
 
+
+def _set_organization_migration_context(connection, organization_id: int, user_id: int) -> None:
+    connection.execute(text("select set_config('flowtally.access_scope', 'organization', false)"))
+    connection.execute(
+        text("select set_config('flowtally.organization_id', :organization_id, false)"),
+        {"organization_id": str(organization_id)},
+    )
+    connection.execute(
+        text("select set_config('flowtally.user_id', :user_id, false)"),
+        {"user_id": str(user_id)},
+    )
+
 def _create_app():
     runtime_url = _runtime_postgres_url() or POSTGRES_URL
     return create_app(
@@ -294,6 +306,16 @@ def _current_revision() -> str:
     return db.session.execute(text("select version_num from public.alembic_version")).scalar_one()
 
 
+def _assert_clover_mapping_timestamps() -> None:
+    for table_name in ("clover_location_mappings", "clover_menu_mappings"):
+        data_type, nullable, _, _ = _column_info(table_name, "created_at")
+        assert data_type == "timestamp with time zone"
+        assert nullable is False
+        data_type, nullable, _, _ = _column_info(table_name, "updated_at")
+        assert data_type == "timestamp with time zone"
+        assert nullable is False
+
+
 def _assert_runtime_connection() -> None:
     identity = db.session.execute(
         text(
@@ -459,7 +481,8 @@ def test_postgres_migrations_upgrade_from_fresh_database():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        # The Clover mapping migration is part of the current head.\n        assert _current_revision() == "0022_clover_mappings"
+        # The Clover mapping migration is part of the current head.\n        
+        assert _current_revision() == "0023_clover_mapping_timestamps"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -469,6 +492,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_table_owned_by_migrator("square_order_line_inventory_consumptions")
         _assert_table_owned_by_migrator("clover_location_mappings")
         _assert_table_owned_by_migrator("clover_menu_mappings")
+        _assert_clover_mapping_timestamps()
         consumption_type, consumption_nullable, consumption_precision, consumption_scale = _column_info(
             "square_order_line_inventory_consumptions", "applied_quantity"
         )
@@ -635,7 +659,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0022_clover_mappings"
+        assert _current_revision() == "0023_clover_mapping_timestamps"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -656,7 +680,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0022_clover_mappings"
+        assert _current_revision() == "0023_clover_mapping_timestamps"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -681,7 +705,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0022_clover_mappings"
+        assert _current_revision() == "0023_clover_mapping_timestamps"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -700,7 +724,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0022_clover_mappings"
+        assert _current_revision() == "0023_clover_mapping_timestamps"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -901,7 +925,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0022_clover_mappings"
+        assert _current_revision() == "0023_clover_mapping_timestamps"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
@@ -988,3 +1012,177 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
         ).mappings().all()
         assert [row["square_object_id"] for row in catalog_versions] == ["ITEM-REAL", "VAR-REAL"]
         assert [row["version"] for row in catalog_versions] == [1788210903620, 1788210903620]
+
+
+def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
+    """The real migrated PostgreSQL schema supports TimestampMixin ORM writes."""
+    from backend.models import CloverConnection, CloverLocationMapping, CloverMenuMapping, MenuItem, Organization, RestaurantLocation, User
+    from backend.seed import LOCAL_OWNER_EMAIL, seed_pilot_data
+
+    application = _create_app()
+    _reset_public_schema(application)
+    _upgrade_to(application, "head")
+
+    with application.app_context():
+        _set_setup_migration_context(db.session.connection())
+        db.session().expire_on_commit = False
+        seeded = seed_pilot_data(reset=False)
+        organization_id = seeded.organization_id
+        location_id = seeded.location_id
+        owner_id = seeded.owner_id
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
+        menu_item = MenuItem(
+            organization_id=organization_id,
+            location_id=location_id,
+            name=f"Migration Test Item {organization_id}",
+            normalized_name=f"migration test item {organization_id}",
+            category="Other",
+            selling_price=Decimal("0"),
+            active=True,
+            notes="",
+            created_by_user_id=owner_id,
+        )
+        db.session.add(menu_item)
+        db.session.flush()
+
+        connection = CloverConnection(
+            organization_id=organization_id,
+            environment="sandbox",
+            region="north_america",
+            merchant_id="migration-merchant",
+            status="connected",
+        )
+        db.session.add(connection)
+        db.session.flush()
+        location_mapping = CloverLocationMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization_id,
+            restaurant_location_id=location_id,
+            clover_merchant_id=connection.merchant_id,
+            confirmed_by_user_id=owner_id,
+        )
+        menu_mapping = CloverMenuMapping(
+            clover_connection_id=connection.id,
+            organization_id=organization_id,
+            restaurant_location_id=location_id,
+            clover_merchant_id=connection.merchant_id,
+            clover_item_id="migration-item",
+            flowtally_menu_item_id=menu_item.id,
+            mapped_by_user_id=owner_id,
+        )
+        db.session.add_all([location_mapping, menu_mapping])
+        db.session.commit()
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
+
+        assert CloverLocationMapping.query.one().created_at is not None
+        assert CloverLocationMapping.query.one().updated_at is not None
+        assert CloverMenuMapping.query.one().created_at is not None
+        assert CloverMenuMapping.query.one().updated_at is not None
+
+        menu_mapping.status = "review"
+        db.session.commit()
+        refreshed = db.session.get(CloverMenuMapping, menu_mapping.id)
+        assert refreshed is not None
+        assert refreshed.status == "review"
+        assert refreshed.updated_at >= refreshed.created_at
+
+
+def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
+    """Rows present at 0022 remain addressable after the corrective migration."""
+    from backend.models import CloverConnection, CloverLocationMapping, CloverMenuMapping, MenuItem, Organization, RestaurantLocation, User
+    from backend.seed import seed_pilot_data
+
+    application = _create_app()
+    _reset_public_schema(application)
+    _upgrade_to(application, "0022_clover_mappings")
+
+    with application.app_context():
+        _set_setup_migration_context(db.session.connection())
+        db.session().expire_on_commit = False
+        seeded = seed_pilot_data(reset=False)
+        organization_id = seeded.organization_id
+        location_id = seeded.location_id
+        owner_id = seeded.owner_id
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
+        menu_item = MenuItem(
+            organization_id=organization_id,
+            location_id=location_id,
+            name=f"Migration Test Item {organization_id}",
+            normalized_name=f"migration test item {organization_id}",
+            category="Other",
+            selling_price=Decimal("0"),
+            active=True,
+            notes="",
+            created_by_user_id=owner_id,
+        )
+        db.session.add(menu_item)
+        db.session.flush()
+        connection = CloverConnection(
+            organization_id=organization_id,
+            environment="sandbox",
+            region="north_america",
+            merchant_id="legacy-merchant",
+            status="connected",
+        )
+        db.session.add(connection)
+        db.session.flush()
+        db.session.execute(
+            text(
+                """
+                insert into clover_location_mappings
+                    (clover_connection_id, organization_id, restaurant_location_id,
+                     clover_merchant_id, clover_location_id, confirmed_by_user_id, confirmed_at)
+                values (:connection_id, :organization_id, :location_id,
+                        :merchant_id, null, :owner_id, CURRENT_TIMESTAMP)
+                """
+            ),
+            {
+                "connection_id": connection.id,
+                "organization_id": organization_id,
+                "location_id": location_id,
+                "merchant_id": connection.merchant_id,
+                "owner_id": owner_id,
+            },
+        )
+        db.session.execute(
+            text(
+                """
+                insert into clover_menu_mappings
+                    (clover_connection_id, organization_id, restaurant_location_id,
+                     clover_merchant_id, clover_item_id, clover_item_group_id,
+                     clover_option_ids_json, clover_modifier_group_ids_json,
+                     flowtally_menu_item_id, status, mapped_by_user_id)
+                values (:connection_id, :organization_id, :location_id,
+                        :merchant_id, 'legacy-item', null, '[]', '[]',
+                        :menu_item_id, 'active', :owner_id)
+                """
+            ),
+            {
+                "connection_id": connection.id,
+                "organization_id": organization_id,
+                "location_id": location_id,
+                "merchant_id": connection.merchant_id,
+                "menu_item_id": menu_item.id,
+                "owner_id": owner_id,
+            },
+        )
+        db.session.commit()
+        location_mapping_id = db.session.execute(text("select id from clover_location_mappings")).scalar_one()
+        menu_mapping_id = db.session.execute(text("select id from clover_menu_mappings")).scalar_one()
+        db.session.remove()
+
+    _upgrade_to(application, "head")
+
+    with application.app_context():
+        _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
+        _assert_clover_mapping_timestamps()
+        location_mapping = db.session.get(CloverLocationMapping, location_mapping_id)
+        menu_mapping = db.session.get(CloverMenuMapping, menu_mapping_id)
+        assert location_mapping is not None and menu_mapping is not None
+        assert location_mapping.created_at is not None
+        assert location_mapping.updated_at is not None
+        assert menu_mapping.created_at is not None
+        assert menu_mapping.updated_at is not None
+        menu_mapping.status = "review"
+        db.session.commit()
+        assert db.session.get(CloverMenuMapping, menu_mapping_id).status == "review"
