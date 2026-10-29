@@ -94,7 +94,7 @@ def classify_order(payload: Mapping[str, Any]) -> tuple[str, str, bool, bool]:
         return provider_status or "REFUNDED", "refunded", False, True
     if provider_status in {"PAID", "CLOSED", "LOCKED", "COMPLETED"} or (total > 0 and paid >= total):
         return provider_status or "PAID", "paid", True, False
-    if provider_status in {"OPEN", "PENDING", "UNPAID", "PAYMENT_PENDING"} or paid < total:
+    if provider_status in {"OPEN", "PENDING", "UNPAID", "PAYMENT_PENDING"}:
         return provider_status or "PENDING", "pending", False, False
     return provider_status or "UNKNOWN", "review", False, True
 
