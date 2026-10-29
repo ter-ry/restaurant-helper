@@ -57,6 +57,18 @@ def test_conflicting_or_missing_payment_information_requires_review():
     assert normalize_order(_order(paymentState="PAID", payments={"elements": [], "total": 0})).requires_review is True
     assert normalize_order(_order(state="LOCKED", paymentState="", payments={"elements": [], "total": 0})).normalized_status == "review"
     assert normalize_order(_order(paymentState="PAID", total=2000)).requires_review is True
+    assert normalize_order(_order(paymentState="PAID", payments={"elements": [{"id": "p", "amount": 1800, "result": "FAILED"}], "total": 1})).requires_review is True
+    assert normalize_order(_order(paymentState="PAID", unpaidBalance=100)).requires_review is True
+    assert normalize_order(_order(paymentState="OPEN", unpaidBalance=0)).requires_review is True
+
+
+def test_optional_empty_collections_can_be_omitted_without_fabricating_data():
+    payload = _order()
+    payload.pop("refunds")
+    payload["lineItems"]["elements"][0].pop("modifications")
+    normalized = normalize_order(payload)
+    assert normalized.incomplete is False
+    assert normalized.potentially_eligible is True
 
 
 def test_cancelled_and_deleted_orders_are_not_eligible():
