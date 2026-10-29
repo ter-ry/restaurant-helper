@@ -192,3 +192,58 @@ def test_restricted_merchant_refunds_keep_open_order_visible_and_reviewable(monk
     assert orders[0].potentially_eligible is False
     assert any("/merchants/merchant/refunds?" in path for path in captured)
     assert not any("/orders/order-1/refunds?" in path for path in captured)
+
+
+def test_shadow_failure_diagnostics_use_operation_labels_without_sensitive_data(monkeypatch, caplog):
+    from backend.clover import CloverRequestError
+
+    def fake_request(method, path, **kwargs):
+        if "/orders?" in path:
+            raise CloverRequestError("rejected", status_code=503, code="clover_unavailable")
+        raise AssertionError(path)
+
+    monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
+    client = CloverOrderClient(merchant_id="merchant-secret", token="access-secret")
+    with caplog.at_level("WARNING", logger="backend.clover_orders"):
+        try:
+            client.fetch_orders(
+                start=datetime.now(timezone.utc) - timedelta(days=1),
+                end=datetime.now(timezone.utc) + timedelta(minutes=1),
+            )
+        except CloverRequestError:
+            pass
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("operation=order_list" in message and "status=503" in message and "handled=False" in message for message in messages)
+    assert all("merchant-secret" not in message and "access-secret" not in message for message in messages)
+    assert all("order-1" not in message and "Authorization" not in message for message in messages)
+
+
+def test_shadow_handled_payment_and_refund_failures_are_labeled(monkeypatch, caplog):
+    from backend.clover import CloverRequestError
+
+    def fake_request(method, path, **kwargs):
+        if "/orders?" in path:
+            payload = _order()
+            payload.pop("lineItems")
+            payload.pop("payments")
+            payload.pop("refunds")
+            return {"elements": [payload]}
+        if "/line_items?" in path:
+            raise CloverRequestError("line item failure", status_code=503, code="clover_unavailable")
+        if "/payments?" in path:
+            raise CloverRequestError("payment denied", status_code=403, code="clover_forbidden")
+        if "/merchants/merchant/refunds?" in path:
+            raise CloverRequestError("refund denied", status_code=401, code="clover_unauthorized")
+        raise AssertionError(path)
+
+    monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
+    with caplog.at_level("WARNING", logger="backend.clover_orders"):
+        orders, complete = CloverOrderClient(merchant_id="merchant", token="token").fetch_orders(
+            start=datetime.now(timezone.utc) - timedelta(days=1),
+            end=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+    assert complete is True and len(orders) == 1
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("operation=line_items" in message and "handled=True" in message for message in messages)
+    assert any("operation=order_payments" in message and "status=403" in message and "handled=True" in message for message in messages)
+    assert any("operation=merchant_refunds" in message and "status=401" in message and "handled=True" in message for message in messages)
