@@ -5,18 +5,22 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { usePilotSession } from "./PilotSessionProvider";
-import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverCatalog, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverCatalogPreview, type PilotCloverConnectionSummary } from "./pilotApi";
+import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverCatalog, fetchPilotCloverShadowOrders, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverCatalogPreview, type PilotCloverConnectionSummary, type PilotCloverShadowOrder } from "./pilotApi";
 import { demoReadOnly } from "./pilotConfig";
 import { PilotCloverMappingPanel } from "./PilotCloverMappingPanel";
 
 export function PilotCloverConnection() {
-  const { organization, user } = usePilotSession();
+  const { organization, user, currentLocation } = usePilotSession();
   const location = useLocation();
   const [connection, setConnection] = useState<PilotCloverConnectionSummary | null>(null);
   const [connectionOrganizationId, setConnectionOrganizationId] = useState<number | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [catalogEnabled, setCatalogEnabled] = useState(false);
   const [mappingEnabled, setMappingEnabled] = useState(false);
+  const [shadowOrdersEnabled, setShadowOrdersEnabled] = useState(false);
+  const [shadowOrders, setShadowOrders] = useState<PilotCloverShadowOrder[]>([]);
+  const [shadowRetrievedAt, setShadowRetrievedAt] = useState<string | null>(null);
+  const [shadowLoading, setShadowLoading] = useState(false);
   const [statusOrganizationId, setStatusOrganizationId] = useState<number | null>(null);
   const [catalog, setCatalog] = useState<{ organizationId: number; data: PilotCloverCatalogPreview } | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -45,6 +49,9 @@ export function PilotCloverConnection() {
     setConnection(null);
     setEnabled(false);
     setCatalogEnabled(false);
+    setShadowOrders([]);
+    setShadowRetrievedAt(null);
+    setShadowLoading(false);
     clearCatalog();
     setError(null);
 
@@ -61,10 +68,13 @@ export function PilotCloverConnection() {
       setEnabled(result.enabled);
       setCatalogEnabled(Boolean(result.catalogEnabled));
       setMappingEnabled(Boolean(result.mappingEnabled));
+      setShadowOrdersEnabled(Boolean(result.shadowOrdersEnabled));
       setConnectionOrganizationId(requestedOrganizationId);
       setConnection(result.connection);
       if (!result.enabled || !result.catalogEnabled || !result.connection || result.connection.status !== "connected") {
         clearCatalog();
+        setShadowOrders([]);
+        setShadowRetrievedAt(null);
       }
     } catch (err) {
       if (statusRequestId.current !== requestId || activeOrganizationId.current !== requestedOrganizationId) return;
@@ -74,6 +84,8 @@ export function PilotCloverConnection() {
       setCatalogEnabled(false);
       setConnection(null);
       clearCatalog();
+      setShadowOrders([]);
+      setShadowRetrievedAt(null);
       setError(err instanceof Error ? err.message : "Could not load Clover status.");
     } finally {
       if (statusRequestId.current === requestId && activeOrganizationId.current === requestedOrganizationId) {
@@ -107,6 +119,20 @@ export function PilotCloverConnection() {
       setError(err instanceof Error ? err.message : "Could not load the Clover catalog preview.");
     } finally {
       if (catalogRequestId.current === requestId) setCatalogLoading(false);
+    }
+  };
+
+  const loadShadowOrders = async () => {
+    if (!organizationId || !currentLocation?.id || !shadowOrdersEnabled || !connected) return;
+    setShadowLoading(true);
+    setError(null);
+    try {
+      const result = await fetchPilotCloverShadowOrders(organizationId, currentLocation.id);
+      if (activeOrganizationId.current === organizationId) { setShadowOrders(result.orders); setShadowRetrievedAt(result.retrievedAt); }
+    } catch (err) {
+      if (activeOrganizationId.current === organizationId) setError(err instanceof Error ? err.message : "Could not load Clover shadow orders.");
+    } finally {
+      if (activeOrganizationId.current === organizationId) setShadowLoading(false);
     }
   };
 
@@ -156,6 +182,8 @@ export function PilotCloverConnection() {
                 if (activeOrganizationId.current === requestedOrganizationId && organizationId === requestedOrganizationId) {
                   setConnectionOrganizationId(requestedOrganizationId);
                   setConnection(result.connection);
+                  setShadowOrders([]);
+                  setShadowRetrievedAt(null);
                   clearCatalog();
                 }
               } catch (err) {
@@ -183,6 +211,31 @@ export function PilotCloverConnection() {
             </div>
           ) : null}
           {currentCatalog && catalogEnabled && mappingEnabled ? <PilotCloverMappingPanel organizationId={organizationId} catalog={currentCatalog} /> : null}
+          {shadowOrdersEnabled ? (
+            <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3" role="region" aria-label="Clover shadow orders">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div><p className="font-semibold text-ink">Clover shadow orders</p><p className="text-xs text-muted">Preview only — inventory unchanged.</p></div>
+                <Button type="button" variant="secondary" disabled={shadowLoading || busy || !currentLocation} onClick={() => void loadShadowOrders()}><RefreshCw className="mr-2 h-4 w-4" />{shadowLoading ? "Fetching orders…" : "Fetch recent orders"}</Button>
+              </div>
+              <p className="mt-2 text-xs text-muted">{shadowRetrievedAt ? `Last retrieved ${new Date(shadowRetrievedAt).toLocaleString()} · ${shadowOrders.length} result${shadowOrders.length === 1 ? "" : "s"}` : "No retrieval completed yet."}</p>
+              {shadowOrders.length ? <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+                {shadowOrders.map((order) => <div key={order.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-ink">{order.cloverOrderId}</span><Badge tone={order.status === "paid" ? "success" : order.requiresReview ? "warning" : "neutral"}>{order.status}</Badge></div>
+                  <p className="mt-1 text-xs text-muted">{order.createdAt ? new Date(order.createdAt).toLocaleString() : "Time unavailable"} · Provider: {order.providerStatus || "Unknown"} · Payment: {order.paymentStatus || "Unknown"}</p>
+                  {order.incomplete ? <p className="mt-2 text-xs text-amber-800">Warning: Clover expanded data was incomplete; review before relying on this preview.</p> : null}
+                  <div className="mt-2 space-y-2">{order.lines.map((line) => <div key={line.id} className="rounded-md border border-line px-2 py-2 text-xs text-muted">
+                    <p><span className="font-semibold text-ink">{line.name}</span> × {line.quantity}{line.unitPriceCents == null ? "" : ` · ${(line.unitPriceCents / 100).toFixed(2)}`}</p>
+                    <p className="mt-1">Clover item: {line.cloverItemId || "Unknown"} · Flowtally: {line.recipePreview.flowtallyMenuItemName || (line.mappingStatus === "unmapped" ? "Unmapped" : "Not available")}</p>
+                    {line.mappingStatus === "mapped" ? <p className="mt-1 font-semibold text-ink">Recipe: {line.recipePreview.recipeName || "Ready"}</p> : null}
+                    {line.mappingStatus === "mapped" && line.recipePreview.ingredients?.length ? <ul className="mt-1 list-disc pl-4">{line.recipePreview.ingredients.map((ingredient) => <li key={ingredient.inventoryItemId}>{ingredient.name}: {ingredient.quantity} {ingredient.unit}</li>)}</ul> : null}
+                    {line.mappingStatus === "missing_recipe" ? <p className="mt-1 text-amber-800">Warning: no active recipe is available.</p> : null}
+                    {line.mappingStatus === "review_required" ? <p className="mt-1 text-amber-800">Warning: {line.recipePreview.reason || "Review required before using this preview."}</p> : null}
+                    {line.mappingStatus === "unmapped" ? <p className="mt-1 text-amber-800">Warning: no Clover-to-Flowtally mapping exists.</p> : null}
+                  </div>)}</div>
+                </div>)}
+              </div> : <p className="mt-3 text-sm text-muted">No Clover orders were returned for this location.</p>}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">

@@ -891,11 +891,47 @@ export type PilotCloverCatalogPreview = {
 };
 
 export async function fetchPilotCloverStatus(organizationId: number) {
-  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; mappingEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
+  return requestJson<{ enabled: boolean; catalogEnabled?: boolean; mappingEnabled?: boolean; shadowOrdersEnabled?: boolean; connection: PilotCloverConnectionSummary | null }>(`/api/integrations/clover/status?organizationId=${organizationId}`);
 }
 
 export async function fetchPilotCloverCatalog(organizationId: number) {
   return requestJson<PilotCloverCatalogPreview>(`/api/integrations/clover/catalog?organizationId=${organizationId}`);
+}
+
+
+export type PilotCloverShadowOrderLine = {
+  id: number;
+  cloverLineItemId: string;
+  cloverItemId: string;
+  name: string;
+  quantity: number;
+  unitPriceCents: number | null;
+  mappingStatus: "mapped" | "unmapped" | "missing_recipe" | "review_required";
+  recipePreview: { recipeId?: number; recipeName?: string; flowtallyMenuItemName?: string; reason?: string; ingredients?: Array<{ inventoryItemId: number; name: string; quantity: string; unit: string }> };
+  modifiers: Array<Record<string, unknown>>;
+};
+export type PilotCloverShadowOrder = {
+  id: number;
+  cloverOrderId: string;
+  providerStatus: string;
+  status: "paid" | "pending" | "cancelled" | "refunded" | "review";
+  paymentStatus: string;
+  potentiallyEligible: boolean;
+  requiresReview: boolean;
+  incomplete: boolean;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  closedAt: string | null;
+  totalCents: number | null;
+  currency: string;
+  lines: PilotCloverShadowOrderLine[];
+};
+export async function fetchPilotCloverShadowOrders(organizationId: number, locationId: number, options: { startDate?: string; endDate?: string } = {}) {
+  return requestCsrfJson<{ readOnly: true; previewOnly: true; retrievedAt: string; count: number; orders: PilotCloverShadowOrder[] }>("/api/integrations/clover/shadow-orders/fetch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId, locationId, ...options }),
+  });
 }
 
 

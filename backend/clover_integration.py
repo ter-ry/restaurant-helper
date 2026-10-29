@@ -10,8 +10,10 @@ from flask_login import current_user, login_required
 from .audit import record_audit_event
 from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
+from .clover_orders import CloverOrderClient
+from .pos import recipe_ingredient_quantity
 from .extensions import db
-from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, MenuItem, Organization, OrganizationMembership, RestaurantLocation
+from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
 from .tenant_context import apply_org_tenant_context
 from .utils import isoformat, json_error, get_platform_role
@@ -434,7 +436,7 @@ def clover_status():
         apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
         return jsonify({"enabled": False, "catalogEnabled": False, "mappingEnabled": False, "connection": None}), 200
     apply_org_tenant_context(organization, access_scope="setup" if get_platform_role(current_user.id) else None)
-    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "mappingEnabled": clover_mapping_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
+    return jsonify({"enabled": True, "catalogEnabled": clover_catalog_enabled(), "mappingEnabled": clover_mapping_enabled(), "shadowOrdersEnabled": _clover_order_shadow_enabled(), "connection": _serialize(CloverConnection.query.filter_by(organization_id=organization.id).first())}), 200
 
 
 def _mapping_connection(organization: Organization) -> CloverConnection | None:
@@ -728,6 +730,257 @@ def delete_clover_menu_mapping(mapping_id: int):
     record_audit_event(event_type="clover.mapping.menu_item_deleted", entity_type="clover_menu_mapping", entity_id=mapping_id, organization_id=organization.id, actor_user_id=current_user.id)
     db.session.commit()
     return jsonify({"ok": True}), 200
+
+
+
+
+def _clover_order_shadow_enabled() -> bool:
+    return bool(current_app.config.get("CLOVER_ORDER_SHADOW_ENABLED"))
+
+
+def _parse_order_bound(value: str | None) -> datetime | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid Clover order date.") from exc
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+
+def _shadow_recipe_preview(menu_item: MenuItem | None, quantity) -> tuple[str, dict[str, Any]]:
+    if menu_item is None:
+        return "unmapped", {}
+    recipe = menu_item.recipe
+    if recipe is None or not recipe.active or recipe.yield_quantity is None or recipe.yield_quantity <= 0:
+        return "missing_recipe", {"reason": "A valid active recipe yield is required."}
+    ingredients: list[dict[str, Any]] = []
+    for ingredient in recipe.ingredients:
+        required = recipe_ingredient_quantity(
+            sale_quantity=quantity,
+            ingredient_quantity=ingredient.quantity_required,
+            yield_quantity=recipe.yield_quantity,
+        )
+        ingredients.append({
+            "inventoryItemId": ingredient.inventory_item_id,
+            "quantity": str(required),
+            "unit": ingredient.unit,
+            "name": ingredient.inventory_item.name if ingredient.inventory_item else "",
+        })
+    return "mapped", {"recipeId": recipe.id, "recipeName": recipe.name, "ingredients": ingredients}
+
+
+def _serialize_shadow_order(order: CloverShadowOrder) -> dict[str, Any]:
+    return {
+        "id": order.id,
+        "cloverOrderId": order.clover_order_id,
+        "providerStatus": order.provider_status,
+        "status": order.normalized_status,
+        "paymentStatus": order.payment_status,
+        "potentiallyEligible": order.potentially_eligible,
+        "requiresReview": order.requires_review,
+        "createdAt": isoformat(order.source_created_at),
+        "modifiedAt": isoformat(order.source_modified_at),
+        "closedAt": isoformat(order.source_closed_at),
+        "totalCents": order.total_cents,
+        "currency": order.currency,
+        "incomplete": bool((order.raw_payload_json or {}).get("incomplete")),
+        "lines": [
+            {
+                "id": line.id,
+                "cloverLineItemId": line.clover_line_item_id,
+                "cloverItemId": line.clover_item_id,
+                "name": line.name,
+                "quantity": float(line.quantity),
+                "unitPriceCents": line.unit_price_cents,
+                "mappingStatus": line.mapping_status,
+                "recipePreview": line.recipe_preview_json,
+                "modifiers": line.modifier_json,
+            }
+            for line in order.lines
+        ],
+    }
+
+
+def _ingest_shadow_orders(
+    *,
+    connection: CloverConnection,
+    organization: Organization,
+    location: RestaurantLocation,
+    orders,
+) -> tuple[list[CloverShadowOrder], int]:
+    mapping = CloverLocationMapping.query.filter_by(
+        clover_connection_id=connection.id,
+        organization_id=organization.id,
+        restaurant_location_id=location.id,
+        clover_merchant_id=connection.merchant_id,
+    ).first()
+    if mapping is None:
+        raise CloverRequestError(
+            "Confirm the Clover merchant/location association before retrieving orders.",
+            status_code=409,
+            code="clover_location_mapping_required",
+        )
+    ingested: list[CloverShadowOrder] = []
+    for normalized in orders:
+        shadow = CloverShadowOrder.query.filter_by(
+            clover_connection_id=connection.id,
+            clover_order_id=normalized.provider_id,
+        ).first()
+        if shadow is None:
+            shadow = CloverShadowOrder(
+                organization_id=organization.id,
+                clover_connection_id=connection.id,
+                restaurant_location_id=location.id,
+                clover_merchant_id=connection.merchant_id,
+                clover_order_id=normalized.provider_id,
+            )
+            db.session.add(shadow)
+        elif (
+            shadow.organization_id != organization.id
+            or shadow.restaurant_location_id != location.id
+            or shadow.clover_merchant_id != connection.merchant_id
+        ):
+            raise CloverRequestError("Clover order is already associated with another tenant/location.", status_code=409, code="clover_order_scope_conflict")
+        shadow.provider_status = normalized.provider_status
+        shadow.normalized_status = normalized.normalized_status
+        shadow.payment_status = normalized.payment_status
+        shadow.potentially_eligible = normalized.potentially_eligible
+        shadow.requires_review = normalized.requires_review
+        shadow.source_created_at = normalized.created_at
+        shadow.source_modified_at = normalized.modified_at
+        shadow.source_closed_at = normalized.closed_at
+        shadow.total_cents = normalized.total_cents
+        shadow.currency = normalized.currency
+        shadow.raw_payload_json = dict(normalized.raw)
+        db.session.flush()
+
+        existing_lines = {line.clover_line_item_id: line for line in list(shadow.lines)}
+        seen_line_ids: set[str] = set()
+        for line in normalized.lines:
+            seen_line_ids.add(line.provider_id)
+            local_line = existing_lines.get(line.provider_id)
+            menu_mapping = CloverMenuMapping.query.filter_by(
+                clover_connection_id=connection.id,
+                organization_id=organization.id,
+                restaurant_location_id=location.id,
+                clover_merchant_id=connection.merchant_id,
+                clover_item_id=line.item_id,
+                status="active",
+            ).first() if line.item_id else None
+            menu_item = menu_mapping.flowtally_menu_item if menu_mapping is not None else None
+            if line.modifiers:
+                mapping_status, recipe_preview = "review_required", {"reason": "Modifiers may change ingredient consumption; review required."}
+            else:
+                mapping_status, recipe_preview = _shadow_recipe_preview(menu_item, line.quantity)
+                if mapping_status == "mapped":
+                    recipe_preview["flowtallyMenuItemName"] = menu_item.name if menu_item is not None else ""
+            if normalized.incomplete:
+                mapping_status = "review_required"
+                recipe_preview = {"reason": "Clover expanded order data was incomplete."}
+            if local_line is None:
+                local_line = CloverShadowOrderLine(
+                    organization_id=organization.id,
+                    restaurant_location_id=location.id,
+                    shadow_order_id=shadow.id,
+                    clover_line_item_id=line.provider_id,
+                )
+                db.session.add(local_line)
+            local_line.clover_item_id = line.item_id
+            local_line.clover_item_group_id = line.item_group_id
+            local_line.name = line.name
+            local_line.quantity = line.quantity
+            local_line.unit_price_cents = line.unit_price_cents
+            local_line.provider_status = line.provider_status
+            local_line.modifier_json = list(line.modifiers)
+            local_line.mapping_status = mapping_status
+            local_line.recipe_preview_json = recipe_preview
+        # A response marked incomplete is not deletion evidence. Preserve all
+        # previously stored lines until a complete provider collection arrives.
+        if not normalized.incomplete:
+            for line in existing_lines.values():
+                if line.clover_line_item_id not in seen_line_ids:
+                    db.session.delete(line)
+        ingested.append(shadow)
+    db.session.flush()
+    return ingested, len(ingested)
+
+
+@bp.post("/api/integrations/clover/shadow-orders/fetch")
+@login_required
+def clover_shadow_orders_fetch():
+    if not _clover_order_shadow_enabled():
+        return json_error("Clover shadow orders are unavailable.", 404, code="clover_shadow_orders_disabled")
+    payload = request.get_json(silent=True) or {}
+    try:
+        organization_id = int(payload.get("organizationId") or request.args.get("organizationId") or "")
+        location_id = int(payload.get("locationId") or request.args.get("locationId") or "")
+    except (TypeError, ValueError):
+        return json_error("Organization and location are required.", 400, code="clover_scope_required")
+    organization = _organization(organization_id)
+    denied = _require(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    location = RestaurantLocation.query.filter_by(id=location_id, organization_id=organization.id).first()
+    if location is None:
+        return json_error("Location not found.", 404)
+    connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
+    if connection is None or connection.status != "connected" or connection.environment != "sandbox":
+        return json_error("Clover sandbox authorization is required.", 409, code="clover_authorization_required")
+    try:
+        start = _parse_order_bound(payload.get("startDate") or request.args.get("startDate"))
+        end = _parse_order_bound(payload.get("endDate") or request.args.get("endDate"))
+        max_pages = int(payload.get("maxPages") or 3)
+        if max_pages < 1 or max_pages > 5:
+            raise ValueError("Invalid maxPages.")
+        if start is not None and end is not None and (start >= end or end - start > timedelta(days=90)):
+            raise ValueError("Invalid Clover order date range.")
+    except (TypeError, ValueError):
+        return json_error("Invalid Clover order date range or pagination bounds.", 400, code="clover_order_query_invalid")
+    try:
+        token = decrypt_integration_secret(connection.access_token_ciphertext)
+        if not token:
+            raise CloverRequestError("Clover authorization is required.", status_code=409, code="clover_authorization_required")
+        observed_ciphertext = connection.access_token_ciphertext
+        if _token_is_stale(connection):
+            token = _refresh_connection_token(connection, organization, observed_ciphertext=observed_ciphertext)
+        try:
+            orders, complete = CloverOrderClient(merchant_id=connection.merchant_id, token=token).fetch_orders(start=start, end=end, max_pages=max_pages)
+        except CloverRequestError as exc:
+            if exc.status_code != 401:
+                raise
+            token = _refresh_connection_token(connection, organization, observed_ciphertext=observed_ciphertext, force=True)
+            orders, complete = CloverOrderClient(merchant_id=connection.merchant_id, token=token).fetch_orders(start=start, end=end, max_pages=max_pages)
+        if not complete:
+            return json_error("Clover order retrieval reached its safety bound; no complete snapshot was saved.", 502, code="clover_orders_incomplete")
+        imported, count = _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=orders)
+        record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": True})
+        db.session.commit()
+    except ValueError:
+        db.session.rollback()
+        return json_error("Invalid Clover order query.", 400, code="clover_order_query_invalid")
+    except SquareSecurityError:
+        db.session.rollback()
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
+    except CloverRequestError as exc:
+        db.session.rollback()
+        if exc.status_code == 403:
+            return json_error("Clover order permission is not available for this connection.", 502, code="clover_orders_forbidden")
+        if exc.status_code == 429:
+            return json_error("Clover is rate limited; try again later.", 503, code="clover_rate_limited")
+        return json_error("Clover orders could not be loaded.", 503, code=exc.code)
+    orders = CloverShadowOrder.query.filter_by(organization_id=organization.id, restaurant_location_id=location.id, clover_connection_id=connection.id).order_by(CloverShadowOrder.source_modified_at.desc().nullslast(), CloverShadowOrder.id.desc()).limit(50).all()
+    return jsonify({
+        "readOnly": True,
+        "previewOnly": True,
+        "retrievedAt": _now().isoformat(),
+        "count": len(orders),
+        "orders": [_serialize_shadow_order(order) for order in orders],
+    }), 200
 
 
 @bp.get("/api/integrations/clover/catalog")

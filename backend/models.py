@@ -1139,3 +1139,60 @@ class CloverMenuMapping(TimestampMixin, db.Model):
     restaurant_location = db.relationship("RestaurantLocation")
     flowtally_menu_item = db.relationship("MenuItem")
     mapped_by = db.relationship("User")
+
+
+
+class CloverShadowOrder(TimestampMixin, db.Model):
+    __tablename__ = "clover_shadow_orders"
+    __table_args__ = (
+        UniqueConstraint("clover_connection_id", "clover_order_id", name="uq_clover_shadow_order_provider"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    clover_connection_id = db.Column(db.Integer, db.ForeignKey("clover_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    clover_merchant_id = db.Column(db.String(255), nullable=False)
+    clover_order_id = db.Column(db.String(255), nullable=False)
+    provider_status = db.Column(db.String(80), nullable=False, default="")
+    normalized_status = db.Column(db.String(40), nullable=False, default="review")
+    payment_status = db.Column(db.String(40), nullable=False, default="unknown")
+    potentially_eligible = db.Column(db.Boolean, nullable=False, default=False)
+    requires_review = db.Column(db.Boolean, nullable=False, default=True)
+    source_created_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    source_modified_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    source_closed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    total_cents = db.Column(db.Integer, nullable=True)
+    currency = db.Column(db.String(8), nullable=False, default="CAD")
+    raw_payload_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    connection = db.relationship("CloverConnection")
+    organization = db.relationship("Organization")
+    restaurant_location = db.relationship("RestaurantLocation")
+    lines = db.relationship("CloverShadowOrderLine", back_populates="order", cascade="all, delete-orphan")
+
+
+class CloverShadowOrderLine(TimestampMixin, db.Model):
+    __tablename__ = "clover_shadow_order_lines"
+    __table_args__ = (
+        UniqueConstraint("shadow_order_id", "clover_line_item_id", name="uq_clover_shadow_order_line_provider"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    restaurant_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    shadow_order_id = db.Column(db.Integer, db.ForeignKey("clover_shadow_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    clover_line_item_id = db.Column(db.String(255), nullable=False)
+    clover_item_id = db.Column(db.String(255), nullable=False, default="")
+    clover_item_group_id = db.Column(db.String(255), nullable=True)
+    name = db.Column(db.String(255), nullable=False, default="")
+    quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    unit_price_cents = db.Column(db.Integer, nullable=True)
+    provider_status = db.Column(db.String(80), nullable=False, default="")
+    modifier_json = db.Column(db.JSON, nullable=False, default=list)
+    mapping_status = db.Column(db.String(40), nullable=False, default="unmapped")
+    recipe_preview_json = db.Column(db.JSON, nullable=False, default=dict)
+
+    order = db.relationship("CloverShadowOrder", back_populates="lines")
+    organization = db.relationship("Organization")
+    restaurant_location = db.relationship("RestaurantLocation")
