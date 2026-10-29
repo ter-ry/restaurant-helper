@@ -89,6 +89,7 @@ def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
         "state": _text(raw.get("state") or raw.get("status")),
         "paymentState": _text(raw.get("paymentState") or raw.get("payment_state")),
         "total": int(_decimal(raw.get("total"))) if raw.get("total") is not None else None,
+        "unpaidBalance": int(_decimal(raw.get("unpaidBalance"))) if raw.get("unpaidBalance") is not None else None,
         "currency": _text(raw.get("currency") or "CAD") or "CAD",
         "createdTime": raw.get("createdTime") or raw.get("clientCreatedTime"),
         "modifiedTime": raw.get("modifiedTime"),
