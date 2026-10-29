@@ -13,7 +13,7 @@ from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCa
 from .clover_orders import CloverOrderClient
 from .pos import recipe_ingredient_quantity
 from .extensions import db
-from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RecipeIngredient, RestaurantLocation
+from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
 from .tenant_context import apply_org_tenant_context
 from .utils import isoformat, json_error, get_platform_role
