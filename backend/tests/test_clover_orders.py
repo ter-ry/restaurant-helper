@@ -5,12 +5,14 @@ from urllib.parse import parse_qs, urlparse
 from backend.clover_orders import CloverOrderClient, normalize_order
 
 
-def _line(*, quantity=None, unit_qty=None, line_id="line-1", item_id="TE0BYZH7B28AJ"):
+def _line(*, quantity=None, unit_qty=None, price_type=None, line_id="line-1", item_id="TE0BYZH7B28AJ"):
     value = {"id": line_id, "name": "Test Burger", "price": 1800, "item": {"id": item_id, "name": "Test Burger"}, "modifications": {"elements": [], "total": 0}}
     if quantity is not None:
         value["quantity"] = quantity
     if unit_qty is not None:
         value["unitQty"] = unit_qty
+    if price_type is not None:
+        value["priceType"] = price_type
     return value
 
 
@@ -34,12 +36,19 @@ def test_real_clover_style_test_burger_without_quantity_is_one():
     assert normalized.lines[0].quantity_ambiguous is False
 
 
-def test_unit_quantity_and_ambiguous_quantities_are_safe():
-    assert normalize_order(_order(lineItems={"elements": [_line(unit_qty=2)], "total": 1})).lines[0].quantity == Decimal("2")
-    ambiguous = normalize_order(_order(lineItems={"elements": [_line(quantity=2, unit_qty=3)], "total": 1}))
+def test_unit_quantity_scaling_and_ambiguous_quantities_are_safe():
+    assert normalize_order(_order(lineItems={"elements": [_line(unit_qty=1000, price_type="PER_UNIT")], "total": 1})).lines[0].quantity == Decimal("1")
+    assert normalize_order(_order(lineItems={"elements": [_line(unit_qty=2500, price_type="PER_UNIT")], "total": 1})).lines[0].quantity == Decimal("2.5")
+    assert normalize_order(_order(lineItems={"elements": [_line(unit_qty=500, price_type="PER_UNIT")], "total": 1})).lines[0].quantity == Decimal("0.5")
+    ignored = normalize_order(_order(lineItems={"elements": [_line(unit_qty=2500, price_type="FIXED")], "total": 1}))
+    assert ignored.lines[0].quantity == Decimal("1")
+    ambiguous = normalize_order(_order(lineItems={"elements": [_line(quantity=2, unit_qty=2500)], "total": 1}))
     assert ambiguous.lines[0].quantity_ambiguous is True
     assert ambiguous.requires_review is True
     assert ambiguous.potentially_eligible is False
+    unknown = normalize_order(_order(lineItems={"elements": [_line(unit_qty=2500)], "total": 1}))
+    assert unknown.lines[0].quantity_ambiguous is True
+    assert unknown.requires_review is True
 
 
 def test_normalize_paid_order_preserves_provider_identity_and_line():
