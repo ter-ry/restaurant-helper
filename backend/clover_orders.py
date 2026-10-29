@@ -239,7 +239,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
     refunds_complete = True if "refunds" not in payload else _expanded(payload.get("refunds"))[1]
     provider_status, provider_payment_state, normalized_status, eligible, requires_review = classify_order(payload)
     lines: list[CloverShadowLine] = []
-    nested_incomplete = not lines_complete or not payments_complete or bool(payload.get("_shadow_incomplete"))
+    nested_incomplete = not lines_complete or bool(payload.get("_shadow_line_items_incomplete"))
     for line in line_payload:
         item = line.get("item") if isinstance(line.get("item"), Mapping) else {}
         line_id = _id(line)
@@ -261,7 +261,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
             provider_status=_text(line.get("state") or line.get("status")),
             raw=_safe_line(line),
         ))
-    line_items_incomplete = nested_incomplete or bool(payload.get("_shadow_line_items_incomplete"))
+    line_items_incomplete = nested_incomplete
     financial_incomplete = (
         not payments_complete
         or not refunds_complete
