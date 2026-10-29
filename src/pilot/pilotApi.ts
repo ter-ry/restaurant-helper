@@ -907,7 +907,7 @@ export type PilotCloverShadowOrderLine = {
   quantity: number;
   unitPriceCents: number | null;
   mappingStatus: "mapped" | "unmapped" | "missing_recipe" | "review_required";
-  recipePreview: { recipeId?: number; recipeName?: string; ingredients?: Array<{ inventoryItemId: number; name: string; quantity: string; unit: string }> };
+  recipePreview: { recipeId?: number; recipeName?: string; flowtallyMenuItemName?: string; reason?: string; ingredients?: Array<{ inventoryItemId: number; name: string; quantity: string; unit: string }> };
   modifiers: Array<Record<string, unknown>>;
 };
 export type PilotCloverShadowOrder = {
@@ -918,6 +918,7 @@ export type PilotCloverShadowOrder = {
   paymentStatus: string;
   potentiallyEligible: boolean;
   requiresReview: boolean;
+  incomplete: boolean;
   createdAt: string | null;
   modifiedAt: string | null;
   closedAt: string | null;
@@ -926,7 +927,7 @@ export type PilotCloverShadowOrder = {
   lines: PilotCloverShadowOrderLine[];
 };
 export async function fetchPilotCloverShadowOrders(organizationId: number, locationId: number, options: { startDate?: string; endDate?: string } = {}) {
-  return requestCsrfJson<{ readOnly: true; previewOnly: true; count: number; orders: PilotCloverShadowOrder[] }>("/api/integrations/clover/shadow-orders/fetch", {
+  return requestCsrfJson<{ readOnly: true; previewOnly: true; retrievedAt: string; count: number; orders: PilotCloverShadowOrder[] }>("/api/integrations/clover/shadow-orders/fetch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ organizationId, locationId, ...options }),
