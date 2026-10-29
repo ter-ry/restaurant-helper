@@ -788,6 +788,9 @@ def _serialize_shadow_order(order: CloverShadowOrder) -> dict[str, Any]:
         "totalCents": order.total_cents,
         "currency": order.currency,
         "incomplete": bool((order.raw_payload_json or {}).get("incomplete")),
+        "lineItemsIncomplete": bool((order.raw_payload_json or {}).get("lineItemsIncomplete")),
+        "financialIncomplete": bool((order.raw_payload_json or {}).get("financialIncomplete")),
+        "refundsUnverified": bool((order.raw_payload_json or {}).get("refundsUnverified")),
         "lines": [
             {
                 "id": line.id,
@@ -880,9 +883,12 @@ def _ingest_shadow_orders(
                 mapping_status, recipe_preview = _shadow_recipe_preview(menu_item, line.quantity)
                 if mapping_status == "mapped":
                     recipe_preview["flowtallyMenuItemName"] = menu_item.name if menu_item is not None else ""
-            if normalized.incomplete:
+            # Financial incompleteness (for example, unavailable refund
+            # verification) must not erase a valid line mapping or ingredient
+            # preview. Only incomplete line-item data invalidates that preview.
+            if bool(normalized.raw.get("lineItemsIncomplete")):
                 mapping_status = "review_required"
-                recipe_preview = {"reason": "Clover expanded order data was incomplete."}
+                recipe_preview = {"reason": "Clover line-item data was incomplete."}
             if local_line is None:
                 local_line = CloverShadowOrderLine(
                     organization_id=organization.id,

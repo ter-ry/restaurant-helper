@@ -145,6 +145,9 @@ def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
         "refunds": [{"id": _id(value), "amount": int(_decimal(value.get("amount")))} for value in _elements(raw.get("refunds"))],
         "lineItems": [_safe_line(value) for value in _elements(raw.get("lineItems") or raw.get("line_items"))],
         "incomplete": bool(raw.get("_shadow_incomplete")),
+        "lineItemsIncomplete": bool(raw.get("_shadow_line_items_incomplete")),
+        "financialIncomplete": bool(raw.get("_shadow_financial_incomplete")),
+        "refundsUnverified": bool(raw.get("_shadow_refunds_unverified")),
     }
 
 
@@ -236,7 +239,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
     refunds_complete = True if "refunds" not in payload else _expanded(payload.get("refunds"))[1]
     provider_status, provider_payment_state, normalized_status, eligible, requires_review = classify_order(payload)
     lines: list[CloverShadowLine] = []
-    nested_incomplete = not lines_complete or not payments_complete or bool(payload.get("_shadow_incomplete"))
+    nested_incomplete = not lines_complete or bool(payload.get("_shadow_line_items_incomplete"))
     for line in line_payload:
         item = line.get("item") if isinstance(line.get("item"), Mapping) else {}
         line_id = _id(line)
@@ -258,17 +261,27 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
             provider_status=_text(line.get("state") or line.get("status")),
             raw=_safe_line(line),
         ))
-    incomplete = nested_incomplete or not refunds_complete
+    line_items_incomplete = nested_incomplete
+    financial_incomplete = (
+        not payments_complete
+        or not refunds_complete
+        or bool(payload.get("_shadow_financial_incomplete"))
+        or bool(payload.get("_shadow_refunds_unverified"))
+    )
+    incomplete = line_items_incomplete or financial_incomplete
     if incomplete:
         eligible = False
         requires_review = True
         normalized_status = "review"
     safe_raw = _safe_order(payload)
     safe_raw["incomplete"] = incomplete
+    safe_raw["lineItemsIncomplete"] = line_items_incomplete
+    safe_raw["financialIncomplete"] = financial_incomplete
+    safe_raw["refundsUnverified"] = bool(payload.get("_shadow_refunds_unverified"))
     return CloverShadowOrder(
         provider_id=provider_id,
         provider_status=provider_status,
-        payment_status=provider_payment_state.lower() if provider_payment_state else ("refunded" if refunds_complete is False else "unknown"),
+        payment_status=provider_payment_state.lower() if provider_payment_state else "unknown",
         normalized_status=normalized_status,
         potentially_eligible=eligible,
         requires_review=requires_review,
@@ -297,7 +310,9 @@ class CloverOrderClient:
     def _hydrate_order(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
         order = dict(raw)
         order_id = _id(order)
-        incomplete = bool(order.get("_shadow_incomplete"))
+        line_incomplete = bool(order.get("_shadow_line_items_incomplete"))
+        financial_incomplete = bool(order.get("_shadow_financial_incomplete"))
+        refunds_unverified = bool(order.get("_shadow_refunds_unverified"))
         line_items, line_complete = _expanded(order.get("lineItems") or order.get("line_items"))
         if not line_items and "lineItems" not in order:
             try:
@@ -305,36 +320,41 @@ class CloverOrderClient:
                     f"/v3/merchants/{self.merchant_id}/orders/{order_id}/line_items?limit=100&offset=0&expand=modifications"
                 )
             except CloverRequestError:
-                incomplete = True
+                line_incomplete = True
                 line_complete = False
         order["lineItems"] = {"elements": line_items, "total": len(line_items)}
         if not line_complete:
-            incomplete = True
+            line_incomplete = True
         try:
             payments, payments_complete = self._get_collection(
                 f"/v3/merchants/{self.merchant_id}/orders/{order_id}/payments?limit=100&offset=0"
             )
             order["payments"] = {"elements": payments, "total": len(payments)}
             if not payments_complete:
-                incomplete = True
+                financial_incomplete = True
         except CloverRequestError as exc:
-            if exc.status_code not in {401, 403, 404}:
+            if exc.status_code not in {401, 403, 404, 429} and not (exc.status_code and exc.status_code >= 500):
                 raise
-            incomplete = True
+            financial_incomplete = True
             order.pop("payments", None)
         try:
             refunds, refunds_complete = self._get_collection(
-                f"/v3/merchants/{self.merchant_id}/orders/{order_id}/refunds?limit=100&offset=0"
+                f"/v3/merchants/{self.merchant_id}/refunds?filter=orderRef.id={order_id}&limit=100&offset=0"
             )
             order["refunds"] = {"elements": refunds, "total": len(refunds)}
             if not refunds_complete:
-                incomplete = True
+                refunds_unverified = True
+                financial_incomplete = True
         except CloverRequestError as exc:
-            if exc.status_code not in {401, 403, 404}:
+            if exc.status_code not in {401, 403, 404, 405, 429} and not (exc.status_code and exc.status_code >= 500):
                 raise
-            incomplete = True
+            refunds_unverified = True
+            financial_incomplete = True
             order.pop("refunds", None)
-        order["_shadow_incomplete"] = incomplete
+        order["_shadow_line_items_incomplete"] = line_incomplete
+        order["_shadow_financial_incomplete"] = financial_incomplete
+        order["_shadow_refunds_unverified"] = refunds_unverified
+        order["_shadow_incomplete"] = line_incomplete or financial_incomplete
         return order
 
     def fetch_orders(
