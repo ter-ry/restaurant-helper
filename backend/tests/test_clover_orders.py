@@ -247,3 +247,53 @@ def test_shadow_handled_payment_and_refund_failures_are_labeled(monkeypatch, cap
     assert any("operation=line_items" in message and "handled=True" in message for message in messages)
     assert any("operation=order_payments" in message and "status=403" in message and "handled=True" in message for message in messages)
     assert any("operation=merchant_refunds" in message and "status=401" in message and "handled=True" in message for message in messages)
+
+
+def test_merchant_refunds_400_is_handled_as_unverified_financial_data(monkeypatch, caplog):
+    from backend.clover import CloverRequestError
+
+    def fake_request(method, path, **kwargs):
+        if "/orders?" in path:
+            payload = _order(state="OPEN", paymentState="OPEN")
+            payload.pop("lineItems")
+            payload.pop("payments")
+            payload.pop("refunds")
+            return {"elements": [payload]}
+        if "/line_items?" in path:
+            return {"elements": [_line()], "total": 1}
+        if "/payments?" in path:
+            return {"elements": [], "total": 0}
+        if "/merchants/merchant/refunds?" in path:
+            raise CloverRequestError("invalid refund filter", status_code=400)
+        raise AssertionError(path)
+
+    monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
+    with caplog.at_level("WARNING", logger="backend.clover_orders"):
+        orders, complete = CloverOrderClient(merchant_id="merchant", token="token").fetch_orders(
+            start=datetime.now(timezone.utc) - timedelta(days=1),
+            end=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+    assert complete is True and len(orders) == 1
+    order = orders[0]
+    assert order.incomplete is True
+    assert order.requires_review is True
+    assert order.potentially_eligible is False
+    assert order.lines[0].item_id == "TE0BYZH7B28AJ"
+    assert any(
+        "operation=merchant_refunds" in record.getMessage()
+        and "status=400" in record.getMessage()
+        and "handled=True" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_paid_order_with_unverified_refunds_remains_ineligible():
+    normalized = normalize_order({
+        **_order(),
+        "_shadow_refunds_unverified": True,
+    })
+    assert normalized.incomplete is True
+    assert normalized.requires_review is True
+    assert normalized.potentially_eligible is False
+    assert normalized.raw["financialIncomplete"] is True
+    assert normalized.raw["refundsUnverified"] is True
