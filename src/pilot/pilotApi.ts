@@ -919,6 +919,9 @@ export type PilotCloverShadowOrder = {
   potentiallyEligible: boolean;
   requiresReview: boolean;
   incomplete: boolean;
+  lineItemsIncomplete: boolean;
+  financialIncomplete: boolean;
+  refundsUnverified: boolean;
   createdAt: string | null;
   modifiedAt: string | null;
   closedAt: string | null;
