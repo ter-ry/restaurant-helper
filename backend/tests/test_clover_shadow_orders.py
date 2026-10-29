@@ -23,23 +23,37 @@ def _login(client):
         assert response.status_code == 200
 
 
-def _order():
+def _order(*, include_second=False, incomplete=False):
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    lines = [{
+        "id": "line-1",
+        "name": "Test Burger",
+        "quantity": 1,
+        "price": 1800,
+        "item": {"id": "TE0BYZH7B28AJ", "name": "Test Burger"},
+        "modifications": {"elements": [], "total": 0},
+    }]
+    if include_second:
+        lines.append({
+            "id": "line-2",
+            "name": "Fries",
+            "quantity": 1,
+            "price": 500,
+            "item": {"id": "fries-1", "name": "Fries"},
+            "modifications": {"elements": [], "total": 0},
+        })
+    if incomplete:
+        line_items = {"elements": lines[:1], "total": len(lines)}
+    else:
+        line_items = {"elements": lines, "total": len(lines)}
     return normalize_order({
         "id": "clover-order-1",
         "state": "CLOSED",
         "paymentState": "PAID",
         "total": 1800,
-        "payments": {"elements": [{"id": "payment-1", "amount": 1800}], "total": 1},
+        "payments": {"elements": [{"id": "payment-1", "amount": 1800, "result": "SUCCESS"}], "total": 1},
         "refunds": {"elements": [], "total": 0},
-        "lineItems": {"elements": [{
-            "id": "line-1",
-            "name": "Test Burger",
-            "quantity": 1,
-            "price": 1800,
-            "item": {"id": "TE0BYZH7B28AJ", "name": "Test Burger"},
-            "modifications": {"elements": [], "total": 0},
-        }], "total": 1},
+        "lineItems": line_items,
         "createdTime": now_ms,
         "modifiedTime": now_ms,
     })
@@ -122,26 +136,36 @@ def test_shadow_order_endpoint_is_idempotent_and_non_mutating(app, client, monke
         ))
         db.session.commit()
         monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
-        monkeypatch.setattr("backend.clover_integration.CloverOrderClient.fetch_orders", lambda *args, **kwargs: ([_order()], True))
+        responses = iter([([_order(include_second=True)], True), ([_order(include_second=True, incomplete=True)], True), ([_order()], True)])
+        monkeypatch.setattr("backend.clover_integration.CloverOrderClient.fetch_orders", lambda *args, **kwargs: next(responses))
         _login(client)
         csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
         payload = {"organizationId": organization.id, "locationId": location.id, "startDate": "2026-10-20T00:00:00Z", "endDate": "2026-10-30T00:00:00Z"}
         first = client.post("/api/integrations/clover/shadow-orders/fetch", json=payload, headers={"X-CSRFToken": csrf})
         assert first.status_code == 200
         first_order = CloverShadowOrder.query.filter_by(organization_id=organization.id).one()
-        first_line = CloverShadowOrderLine.query.filter_by(shadow_order_id=first_order.id).one()
+        first_lines = {line.clover_line_item_id: line for line in CloverShadowOrderLine.query.filter_by(shadow_order_id=first_order.id).all()}
+        first_line = first_lines["line-1"]
+        assert set(first_lines) == {"line-1", "line-2"}
         order_json = first.get_json()["orders"][0]
         assert order_json["potentiallyEligible"] is True
         assert order_json["lines"][0]["mappingStatus"] == "mapped"
         assert order_json["lines"][0]["recipePreview"]["ingredients"][0]["quantity"] == "0.5000"
         assert order_json["lines"][0]["recipePreview"]["ingredients"][0]["unit"] == "head"
         assert InventoryMovement.query.filter_by(organization_id=organization.id).count() == 0
-        second = client.post("/api/integrations/clover/shadow-orders/fetch", json=payload, headers={"X-CSRFToken": csrf})
-        assert second.status_code == 200
+        incomplete_response = client.post("/api/integrations/clover/shadow-orders/fetch", json=payload, headers={"X-CSRFToken": csrf})
+        assert incomplete_response.status_code == 200
+        incomplete_order = CloverShadowOrder.query.filter_by(organization_id=organization.id).one()
+        assert incomplete_order.requires_review is True
+        preserved_lines = {line.clover_line_item_id: line for line in CloverShadowOrderLine.query.filter_by(shadow_order_id=incomplete_order.id).all()}
+        assert set(preserved_lines) == {"line-1", "line-2"}
+        assert preserved_lines["line-1"].id == first_line.id
+        complete_response = client.post("/api/integrations/clover/shadow-orders/fetch", json=payload, headers={"X-CSRFToken": csrf})
+        assert complete_response.status_code == 200
         second_order = CloverShadowOrder.query.filter_by(organization_id=organization.id).one()
-        second_line = CloverShadowOrderLine.query.filter_by(shadow_order_id=second_order.id).one()
+        second_lines = {line.clover_line_item_id: line for line in CloverShadowOrderLine.query.filter_by(shadow_order_id=second_order.id).all()}
         assert second_order.id == first_order.id
-        assert second_line.id == first_line.id
-        assert second_line.quantity == first_line.quantity
+        assert set(second_lines) == {"line-1"}
+        assert second_lines["line-1"].id == first_line.id
         assert db.session.query(CloverShadowOrder).filter_by(organization_id=organization.id).count() == 1
         assert InventoryMovement.query.filter_by(organization_id=organization.id).count() == 0
