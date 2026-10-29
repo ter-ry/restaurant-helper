@@ -787,7 +787,7 @@ def _serialize_shadow_order(order: CloverShadowOrder) -> dict[str, Any]:
         "closedAt": isoformat(order.source_closed_at),
         "totalCents": order.total_cents,
         "currency": order.currency,
-        "incomplete": False,
+        "incomplete": bool((order.raw_payload_json or {}).get("incomplete")),
         "lines": [
             {
                 "id": line.id,
