@@ -906,7 +906,7 @@ export type PilotCloverShadowOrderLine = {
   name: string;
   quantity: number;
   unitPriceCents: number | null;
-  mappingStatus: "mapped" | "unmapped" | "missing_recipe";
+  mappingStatus: "mapped" | "unmapped" | "missing_recipe" | "review_required";
   recipePreview: { recipeId?: number; recipeName?: string; ingredients?: Array<{ inventoryItemId: number; name: string; quantity: string; unit: string }> };
   modifiers: Array<Record<string, unknown>>;
 };
