@@ -222,7 +222,9 @@ export function PilotCloverConnection() {
                 {shadowOrders.map((order) => <div key={order.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-ink">{order.cloverOrderId}</span><Badge tone={order.status === "paid" ? "success" : order.requiresReview ? "warning" : "neutral"}>{order.status}</Badge></div>
                   <p className="mt-1 text-xs text-muted">{order.createdAt ? new Date(order.createdAt).toLocaleString() : "Time unavailable"} · Provider: {order.providerStatus || "Unknown"} · Payment: {order.paymentStatus || "Unknown"}</p>
-                  {order.incomplete ? <p className="mt-2 text-xs text-amber-800">Warning: Clover expanded data was incomplete; review before relying on this preview.</p> : null}
+                  {order.lineItemsIncomplete ? <p className="mt-2 text-xs text-amber-800">Warning: Clover line-item data was incomplete; review this ingredient preview.</p> : null}
+                  {order.financialIncomplete ? <p className="mt-2 text-xs text-amber-800">Warning: payment/refund verification is unavailable; financial status requires review.</p> : null}
+                  {order.refundsUnverified ? <p className="mt-1 text-xs text-amber-800">Refund status is unverified.</p> : null}
                   <div className="mt-2 space-y-2">{order.lines.map((line) => <div key={line.id} className="rounded-md border border-line px-2 py-2 text-xs text-muted">
                     <p><span className="font-semibold text-ink">{line.name}</span> × {line.quantity}{line.unitPriceCents == null ? "" : ` · ${(line.unitPriceCents / 100).toFixed(2)}`}</p>
                     <p className="mt-1">Clover item: {line.cloverItemId || "Unknown"} · Flowtally: {line.recipePreview.flowtallyMenuItemName || (line.mappingStatus === "unmapped" ? "Unmapped" : "Not available")}</p>
