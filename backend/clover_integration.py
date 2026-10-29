@@ -872,7 +872,9 @@ def _ingest_shadow_orders(
                 status="active",
             ).first() if line.item_id else None
             menu_item = menu_mapping.flowtally_menu_item if menu_mapping is not None else None
-            if line.modifiers:
+            if line.quantity_ambiguous:
+                mapping_status, recipe_preview = "review_required", {"reason": "Clover quantity or unit quantity was ambiguous."}
+            elif line.modifiers:
                 mapping_status, recipe_preview = "review_required", {"reason": "Modifiers may change ingredient consumption; review required."}
             else:
                 mapping_status, recipe_preview = _shadow_recipe_preview(menu_item, line.quantity)

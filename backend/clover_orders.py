@@ -1,6 +1,7 @@
-"""Read-only Clover shadow-order normalization and retrieval.
+"""Read-only Clover Sandbox order retrieval and normalization.
 
-This module intentionally never creates provider orders or inventory movements.
+Provider access is GET-only. Shadow orders are preview data and never create
+inventory movements or recipe-consumption records.
 """
 from __future__ import annotations
 
@@ -45,7 +46,6 @@ def _elements(value: Any) -> list[Mapping[str, Any]]:
 
 
 def _expanded(value: Any) -> tuple[list[Mapping[str, Any]], bool]:
-    """Return expanded elements and whether the provider says the collection is complete."""
     if value is None:
         return [], False
     if isinstance(value, list):
@@ -69,14 +69,57 @@ def _id(value: Any) -> str:
     return _text(value)
 
 
+def _line_quantity(raw: Mapping[str, Any]) -> tuple[Decimal, bool]:
+    """Return sold quantity using Clover's PER_UNIT fixed-point semantics."""
+    item = raw.get("item") if isinstance(raw.get("item"), Mapping) else {}
+    price_type = _text(raw.get("priceType") or item.get("priceType")).upper()
+    has_quantity = raw.get("quantity") is not None
+    has_unit_qty = raw.get("unitQty") is not None
+    if price_type == "PER_UNIT" and has_unit_qty:
+        # Clover represents unitQty as thousandths for PER_UNIT products.
+        scaled_unit_qty = _decimal(raw.get("unitQty")) / Decimal("1000")
+        ambiguous = scaled_unit_qty <= 0
+        if has_quantity:
+            quantity = _decimal(raw.get("quantity"))
+            ambiguous = ambiguous or quantity <= 0 or quantity != scaled_unit_qty
+        return scaled_unit_qty, ambiguous
+    if price_type == "PER_UNIT" and has_quantity:
+        quantity = _decimal(raw.get("quantity"))
+        return quantity, quantity <= 0
+    if price_type == "PER_UNIT" and not has_quantity and not has_unit_qty:
+        return Decimal("1"), False
+    if price_type and price_type != "PER_UNIT":
+        # Clover ignores unitQty for non-PER_UNIT products.
+        if has_quantity:
+            quantity = _decimal(raw.get("quantity"))
+            return quantity, quantity <= 0
+        return Decimal("1"), False
+    if has_quantity and has_unit_qty:
+        # Without an authoritative price type the relationship is ambiguous.
+        quantity = _decimal(raw.get("quantity"))
+        return quantity, True
+    if has_quantity:
+        quantity = _decimal(raw.get("quantity"))
+        return quantity, quantity <= 0
+    if has_unit_qty:
+        # Do not guess whether this is a thousandths-scaled PER_UNIT value.
+        return Decimal("0"), True
+    # Fixed-price line items may omit both fields: one sold item.
+    return Decimal("1"), False
+
+
 def _safe_line(raw: Mapping[str, Any]) -> dict[str, Any]:
     item = raw.get("item") if isinstance(raw.get("item"), Mapping) else {}
+    quantity, ambiguous = _line_quantity(raw)
     return {
         "id": _id(raw),
         "itemId": _id(item) or _text(raw.get("itemId")),
         "itemGroupId": _id(item.get("itemGroup")) or None,
         "name": _text(raw.get("name") or item.get("name")),
-        "quantity": str(_decimal(raw.get("quantity"))),
+        "quantity": str(quantity),
+        "quantityAmbiguous": ambiguous,
+        "unitQty": str(_decimal(raw.get("unitQty"))) if raw.get("unitQty") is not None else None,
+        "priceType": _text(raw.get("priceType") or item.get("priceType")) or None,
         "price": int(_decimal(raw.get("price"))) if raw.get("price") is not None else None,
         "state": _text(raw.get("state") or raw.get("status")),
         "modificationIds": [_id(value) for value in _elements(raw.get("modifications")) if _id(value)],
@@ -101,6 +144,7 @@ def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
         ],
         "refunds": [{"id": _id(value), "amount": int(_decimal(value.get("amount")))} for value in _elements(raw.get("refunds"))],
         "lineItems": [_safe_line(value) for value in _elements(raw.get("lineItems") or raw.get("line_items"))],
+        "incomplete": bool(raw.get("_shadow_incomplete")),
     }
 
 
@@ -111,6 +155,7 @@ class CloverShadowLine:
     item_group_id: str | None
     name: str
     quantity: Decimal
+    quantity_ambiguous: bool
     unit_price_cents: int | None
     modifiers: tuple[dict[str, Any], ...]
     provider_status: str
@@ -156,7 +201,7 @@ def _payment_totals(payments: list[Mapping[str, Any]]) -> tuple[Decimal, bool, b
 def classify_order(payload: Mapping[str, Any]) -> tuple[str, str, str, bool, bool]:
     provider_status = _text(payload.get("state") or payload.get("status")).upper()
     provider_payment_state = _text(payload.get("paymentState") or payload.get("payment_state")).upper()
-    refunds, refunds_complete = _expanded(payload.get("refunds")) if "refunds" in payload else ([], True)
+    refunds = _elements(payload.get("refunds")) if "refunds" in payload else []
     payments, payments_complete = _expanded(payload.get("payments"))
     total = _decimal(payload.get("total"))
     paid, unknown_payment, failed_payment = _payment_totals(payments)
@@ -174,13 +219,11 @@ def classify_order(payload: Mapping[str, Any]) -> tuple[str, str, str, bool, boo
     if provider_payment_state in {"OPEN", "PARTIALLY_PAID"}:
         conflict = failed_payment or unknown_payment or (unpaid_balance is not None and unpaid_balance <= 0 and paid >= total)
         return provider_status or provider_payment_state, provider_payment_state, "review" if conflict else "pending", False, conflict or provider_payment_state == "PARTIALLY_PAID"
-    # Backward-compatible fallback for older synthetic fixtures: state PAID is
-    # accepted only when successful payment results prove the amount.
     if not provider_payment_state and provider_status in {"PAID", "COMPLETED", "CLOSED"}:
         conflict = failed_payment or unknown_payment or not payments_complete or not payments or total <= 0
         conflict = conflict or (unpaid_balance is not None and unpaid_balance > 0)
         verified = not conflict and paid >= total
-        return provider_status, provider_payment_state or "UNKNOWN", "paid" if verified else "review", verified, not verified
+        return provider_status, "UNKNOWN", "paid" if verified else "review", verified, not verified
     return provider_status or "UNKNOWN", provider_payment_state or "UNKNOWN", "review", False, True
 
 
@@ -189,11 +232,11 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
     if not provider_id:
         raise CloverRequestError("Clover order did not include an id.", code="clover_order_identity_missing")
     line_payload, lines_complete = _expanded(payload.get("lineItems") or payload.get("line_items"))
-    payment_payload, payments_complete = _expanded(payload.get("payments"))
-    refund_payload, refunds_complete = _expanded(payload.get("refunds")) if "refunds" in payload else ([], True)
+    payments, payments_complete = _expanded(payload.get("payments"))
+    refunds_complete = True if "refunds" not in payload else _expanded(payload.get("refunds"))[1]
     provider_status, provider_payment_state, normalized_status, eligible, requires_review = classify_order(payload)
     lines: list[CloverShadowLine] = []
-    nested_incomplete = not lines_complete or not payments_complete
+    nested_incomplete = not lines_complete or not payments_complete or bool(payload.get("_shadow_incomplete"))
     for line in line_payload:
         item = line.get("item") if isinstance(line.get("item"), Mapping) else {}
         line_id = _id(line)
@@ -201,13 +244,15 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
             nested_incomplete = True
             continue
         modifications, modifications_complete = _expanded(line.get("modifications")) if "modifications" in line else ([], True)
-        nested_incomplete = nested_incomplete or not modifications_complete
+        quantity, quantity_ambiguous = _line_quantity(line)
+        nested_incomplete = nested_incomplete or not modifications_complete or quantity_ambiguous
         lines.append(CloverShadowLine(
             provider_id=line_id,
             item_id=_id(item) or _text(line.get("itemId")),
             item_group_id=_id(item.get("itemGroup")) or None,
             name=_text(line.get("name") or item.get("name")) or "(Unnamed item)",
-            quantity=_decimal(line.get("quantity")),
+            quantity=quantity,
+            quantity_ambiguous=quantity_ambiguous,
             unit_price_cents=int(_decimal(line.get("price"))) if line.get("price") is not None else None,
             modifiers=tuple(dict(value) for value in modifications),
             provider_status=_text(line.get("state") or line.get("status")),
@@ -223,7 +268,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
     return CloverShadowOrder(
         provider_id=provider_id,
         provider_status=provider_status,
-        payment_status=provider_payment_state.lower() if provider_payment_state else ("refunded" if refund_payload else "unknown"),
+        payment_status=provider_payment_state.lower() if provider_payment_state else ("refunded" if refunds_complete is False else "unknown"),
         normalized_status=normalized_status,
         potentially_eligible=eligible,
         requires_review=requires_review,
@@ -239,11 +284,58 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
 
 
 class CloverOrderClient:
-    """Bounded, sandbox-only order reader."""
+    """Bounded, sandbox-only Clover order reader."""
 
     def __init__(self, *, merchant_id: str, token: str):
         self.merchant_id = merchant_id
         self.token = token
+
+    def _get_collection(self, path: str) -> tuple[list[Mapping[str, Any]], bool]:
+        payload = clover_request("GET", path, token=self.token)
+        return _expanded(payload)
+
+    def _hydrate_order(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
+        order = dict(raw)
+        order_id = _id(order)
+        incomplete = bool(order.get("_shadow_incomplete"))
+        line_items, line_complete = _expanded(order.get("lineItems") or order.get("line_items"))
+        if not line_items and "lineItems" not in order:
+            try:
+                line_items, line_complete = self._get_collection(
+                    f"/v3/merchants/{self.merchant_id}/orders/{order_id}/line_items?limit=100&offset=0&expand=modifications"
+                )
+            except CloverRequestError:
+                incomplete = True
+                line_complete = False
+        order["lineItems"] = {"elements": line_items, "total": len(line_items)}
+        if not line_complete:
+            incomplete = True
+        try:
+            payments, payments_complete = self._get_collection(
+                f"/v3/merchants/{self.merchant_id}/orders/{order_id}/payments?limit=100&offset=0"
+            )
+            order["payments"] = {"elements": payments, "total": len(payments)}
+            if not payments_complete:
+                incomplete = True
+        except CloverRequestError as exc:
+            if exc.status_code not in {401, 403, 404}:
+                raise
+            incomplete = True
+            order.pop("payments", None)
+        try:
+            refunds, refunds_complete = self._get_collection(
+                f"/v3/merchants/{self.merchant_id}/orders/{order_id}/refunds?limit=100&offset=0"
+            )
+            order["refunds"] = {"elements": refunds, "total": len(refunds)}
+            if not refunds_complete:
+                incomplete = True
+        except CloverRequestError as exc:
+            if exc.status_code not in {401, 403, 404}:
+                raise
+            incomplete = True
+            order.pop("refunds", None)
+        order["_shadow_incomplete"] = incomplete
+        return order
 
     def fetch_orders(
         self,
@@ -274,12 +366,12 @@ class CloverOrderClient:
                 ("offset", str(offset)),
                 ("filter", filter_values[0]),
                 ("filter", filter_values[1]),
-                ("expand", "payments,lineItems,lineItems.modifications,discounts,refunds"),
+                ("expand", "lineItems"),
             ]
             payload = clover_request("GET", f"/v3/merchants/{self.merchant_id}/orders?{urlencode(query_items)}", token=self.token)
             elements = _elements(payload)
             for raw in elements:
-                order = normalize_order(raw)
+                order = normalize_order(self._hydrate_order(raw))
                 if order.modified_at and (order.modified_at < start or order.modified_at >= end):
                     continue
                 orders.append(order)
