@@ -339,7 +339,7 @@ class CloverOrderClient:
             order.pop("payments", None)
         try:
             refunds, refunds_complete = self._get_collection(
-                f"/v3/merchants/{self.merchant_id}/refunds?orderRef.id={order_id}&limit=100&offset=0"
+                f"/v3/merchants/{self.merchant_id}/refunds?filter=orderRef.id={order_id}&limit=100&offset=0"
             )
             order["refunds"] = {"elements": refunds, "total": len(refunds)}
             if not refunds_complete:
