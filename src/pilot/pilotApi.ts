@@ -899,6 +899,41 @@ export async function fetchPilotCloverCatalog(organizationId: number) {
 }
 
 
+export type PilotCloverShadowOrderLine = {
+  id: number;
+  cloverLineItemId: string;
+  cloverItemId: string;
+  name: string;
+  quantity: number;
+  unitPriceCents: number | null;
+  mappingStatus: "mapped" | "unmapped" | "missing_recipe";
+  recipePreview: { recipeId?: number; recipeName?: string; ingredients?: Array<{ inventoryItemId: number; name: string; quantity: string; unit: string }> };
+  modifiers: Array<Record<string, unknown>>;
+};
+export type PilotCloverShadowOrder = {
+  id: number;
+  cloverOrderId: string;
+  providerStatus: string;
+  status: "paid" | "pending" | "cancelled" | "refunded" | "review";
+  paymentStatus: string;
+  potentiallyEligible: boolean;
+  requiresReview: boolean;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  closedAt: string | null;
+  totalCents: number | null;
+  currency: string;
+  lines: PilotCloverShadowOrderLine[];
+};
+export async function fetchPilotCloverShadowOrders(organizationId: number, locationId: number, options: { startDate?: string; endDate?: string } = {}) {
+  return requestCsrfJson<{ readOnly: true; previewOnly: true; count: number; orders: PilotCloverShadowOrder[] }>("/api/integrations/clover/shadow-orders/fetch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId, locationId, ...options }),
+  });
+}
+
+
 export interface PilotCloverLocationMapping { id: number; organizationId: number; restaurantLocationId: number; cloverMerchantId: string; cloverLocationId: string | null; confirmedAt: string | null; }
 export interface PilotCloverMenuMapping { id: number; organizationId: number; restaurantLocationId: number; cloverMerchantId: string; cloverItemId: string; cloverItemGroupId: string | null; cloverOptionIds: string[]; cloverModifierGroupIds: string[]; flowtallyMenuItemId: number; flowtallyMenuItemName: string | null; hasRecipe: boolean; status: string; }
 export async function fetchPilotCloverMappings(organizationId: number, locationId: number) { return requestJson<{ enabled: boolean; locationMapping: PilotCloverLocationMapping | null; menuMappings: PilotCloverMenuMapping[] }>(`/api/integrations/clover/mappings?organizationId=${organizationId}&locationId=${locationId}`); }
