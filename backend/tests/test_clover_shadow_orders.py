@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from backend.clover_orders import normalize_order
 from backend.extensions import db
