@@ -5,18 +5,21 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { usePilotSession } from "./PilotSessionProvider";
-import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverCatalog, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverCatalogPreview, type PilotCloverConnectionSummary } from "./pilotApi";
+import { beginPilotCloverConnection, disconnectPilotClover, fetchPilotCloverCatalog, fetchPilotCloverShadowOrders, fetchPilotCloverStatus, resumePilotCloverLaunch, type PilotCloverCatalogPreview, type PilotCloverConnectionSummary, type PilotCloverShadowOrder } from "./pilotApi";
 import { demoReadOnly } from "./pilotConfig";
 import { PilotCloverMappingPanel } from "./PilotCloverMappingPanel";
 
 export function PilotCloverConnection() {
-  const { organization, user } = usePilotSession();
+  const { organization, user, currentLocation } = usePilotSession();
   const location = useLocation();
   const [connection, setConnection] = useState<PilotCloverConnectionSummary | null>(null);
   const [connectionOrganizationId, setConnectionOrganizationId] = useState<number | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [catalogEnabled, setCatalogEnabled] = useState(false);
   const [mappingEnabled, setMappingEnabled] = useState(false);
+  const [shadowOrdersEnabled, setShadowOrdersEnabled] = useState(false);
+  const [shadowOrders, setShadowOrders] = useState<PilotCloverShadowOrder[]>([]);
+  const [shadowLoading, setShadowLoading] = useState(false);
   const [statusOrganizationId, setStatusOrganizationId] = useState<number | null>(null);
   const [catalog, setCatalog] = useState<{ organizationId: number; data: PilotCloverCatalogPreview } | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -61,6 +64,7 @@ export function PilotCloverConnection() {
       setEnabled(result.enabled);
       setCatalogEnabled(Boolean(result.catalogEnabled));
       setMappingEnabled(Boolean(result.mappingEnabled));
+      setShadowOrdersEnabled(Boolean(result.shadowOrdersEnabled));
       setConnectionOrganizationId(requestedOrganizationId);
       setConnection(result.connection);
       if (!result.enabled || !result.catalogEnabled || !result.connection || result.connection.status !== "connected") {
@@ -107,6 +111,20 @@ export function PilotCloverConnection() {
       setError(err instanceof Error ? err.message : "Could not load the Clover catalog preview.");
     } finally {
       if (catalogRequestId.current === requestId) setCatalogLoading(false);
+    }
+  };
+
+  const loadShadowOrders = async () => {
+    if (!organizationId || !currentLocation?.id || !shadowOrdersEnabled || !connected) return;
+    setShadowLoading(true);
+    setError(null);
+    try {
+      const result = await fetchPilotCloverShadowOrders(organizationId, currentLocation.id);
+      if (activeOrganizationId.current === organizationId) setShadowOrders(result.orders);
+    } catch (err) {
+      if (activeOrganizationId.current === organizationId) setError(err instanceof Error ? err.message : "Could not load Clover shadow orders.");
+    } finally {
+      if (activeOrganizationId.current === organizationId) setShadowLoading(false);
     }
   };
 
@@ -183,6 +201,21 @@ export function PilotCloverConnection() {
             </div>
           ) : null}
           {currentCatalog && catalogEnabled && mappingEnabled ? <PilotCloverMappingPanel organizationId={organizationId} catalog={currentCatalog} /> : null}
+          {shadowOrdersEnabled ? (
+            <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3" role="region" aria-label="Clover shadow orders">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div><p className="font-semibold text-ink">Clover shadow orders</p><p className="text-xs text-muted">Preview only — inventory unchanged.</p></div>
+                <Button type="button" variant="secondary" disabled={shadowLoading || busy || !currentLocation} onClick={() => void loadShadowOrders()}><RefreshCw className="mr-2 h-4 w-4" />{shadowLoading ? "Fetching orders…" : "Fetch recent orders"}</Button>
+              </div>
+              {shadowOrders.length ? <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+                {shadowOrders.map((order) => <div key={order.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-ink">{order.cloverOrderId}</span><Badge tone={order.status === "paid" ? "success" : order.requiresReview ? "warning" : "neutral"}>{order.status}</Badge></div>
+                  <p className="mt-1 text-xs text-muted">{order.providerStatus || "Unknown provider status"} · {order.lines.length} line{order.lines.length === 1 ? "" : "s"}</p>
+                  <div className="mt-2 space-y-1">{order.lines.map((line) => <div key={line.id} className="text-xs text-muted"><span className="font-semibold text-ink">{line.name}</span> × {line.quantity} · {line.mappingStatus === "mapped" ? line.recipePreview.recipeName || "Recipe ready" : line.mappingStatus === "missing_recipe" ? "Recipe missing" : "Unmapped — review required"}</div>)}</div>
+                </div>)}
+              </div> : <p className="mt-3 text-sm text-muted">No Clover orders were returned for this location.</p>}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
