@@ -70,20 +70,41 @@ def _id(value: Any) -> str:
 
 
 def _line_quantity(raw: Mapping[str, Any]) -> tuple[Decimal, bool]:
-    """Return sold quantity and whether Clover supplied an ambiguous value."""
+    """Return sold quantity using Clover's PER_UNIT fixed-point semantics."""
+    item = raw.get("item") if isinstance(raw.get("item"), Mapping) else {}
+    price_type = _text(raw.get("priceType") or item.get("priceType")).upper()
     has_quantity = raw.get("quantity") is not None
     has_unit_qty = raw.get("unitQty") is not None
+    if price_type == "PER_UNIT" and has_unit_qty:
+        # Clover represents unitQty as thousandths for PER_UNIT products.
+        scaled_unit_qty = _decimal(raw.get("unitQty")) / Decimal("1000")
+        ambiguous = scaled_unit_qty <= 0
+        if has_quantity:
+            quantity = _decimal(raw.get("quantity"))
+            ambiguous = ambiguous or quantity <= 0 or quantity != scaled_unit_qty
+        return scaled_unit_qty, ambiguous
+    if price_type == "PER_UNIT" and has_quantity:
+        quantity = _decimal(raw.get("quantity"))
+        return quantity, quantity <= 0
+    if price_type == "PER_UNIT" and not has_quantity and not has_unit_qty:
+        return Decimal("1"), False
+    if price_type and price_type != "PER_UNIT":
+        # Clover ignores unitQty for non-PER_UNIT products.
+        if has_quantity:
+            quantity = _decimal(raw.get("quantity"))
+            return quantity, quantity <= 0
+        return Decimal("1"), False
+    if has_quantity and has_unit_qty:
+        # Without an authoritative price type the relationship is ambiguous.
+        quantity = _decimal(raw.get("quantity"))
+        return quantity, True
     if has_quantity:
         quantity = _decimal(raw.get("quantity"))
-        ambiguous = quantity <= 0
-        if has_unit_qty:
-            unit_qty = _decimal(raw.get("unitQty"))
-            ambiguous = ambiguous or unit_qty <= 0 or unit_qty != quantity
-        return quantity, ambiguous
+        return quantity, quantity <= 0
     if has_unit_qty:
-        unit_qty = _decimal(raw.get("unitQty"))
-        return unit_qty, unit_qty <= 0
-    # Clover fixed-price line items may omit both fields: one sold item.
+        # Do not guess whether this is a thousandths-scaled PER_UNIT value.
+        return Decimal("0"), True
+    # Fixed-price line items may omit both fields: one sold item.
     return Decimal("1"), False
 
 
