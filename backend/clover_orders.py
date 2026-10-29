@@ -218,6 +218,8 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
         eligible = False
         requires_review = True
         normalized_status = "review"
+    safe_raw = _safe_order(payload)
+    safe_raw["incomplete"] = incomplete
     return CloverShadowOrder(
         provider_id=provider_id,
         provider_status=provider_status,
@@ -232,7 +234,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
         total_cents=int(_decimal(payload.get("total"))) if payload.get("total") is not None else None,
         currency=_text(payload.get("currency") or "CAD") or "CAD",
         lines=tuple(lines),
-        raw=_safe_order(payload),
+        raw=safe_raw,
     )
 
 
