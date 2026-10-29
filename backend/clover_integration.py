@@ -11,6 +11,7 @@ from .audit import record_audit_event
 from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .clover_orders import CloverOrderClient
+from .pos import recipe_ingredient_quantity
 from .extensions import db
 from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RecipeIngredient, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
@@ -738,15 +739,15 @@ def _clover_order_shadow_enabled() -> bool:
 
 
 def _parse_order_bound(value: str | None) -> datetime | None:
-    if not value:
+    if value in (None, ""):
         return None
-    text = value.strip()
+    text = str(value).strip()
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
         parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid Clover order date.") from exc
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
 
 
@@ -754,12 +755,15 @@ def _shadow_recipe_preview(menu_item: MenuItem | None, quantity) -> tuple[str, d
     if menu_item is None:
         return "unmapped", {}
     recipe = menu_item.recipe
-    if recipe is None or not recipe.active:
-        return "missing_recipe", {}
-    yield_quantity = recipe.yield_quantity or 1
+    if recipe is None or not recipe.active or recipe.yield_quantity is None or recipe.yield_quantity <= 0:
+        return "missing_recipe", {"reason": "A valid active recipe yield is required."}
     ingredients: list[dict[str, Any]] = []
     for ingredient in recipe.ingredients:
-        required = (quantity * ingredient.quantity_required / yield_quantity)
+        required = recipe_ingredient_quantity(
+            sale_quantity=quantity,
+            ingredient_quantity=ingredient.quantity_required,
+            yield_quantity=recipe.yield_quantity,
+        )
         ingredients.append({
             "inventoryItemId": ingredient.inventory_item_id,
             "quantity": str(required),
@@ -814,7 +818,11 @@ def _ingest_shadow_orders(
         clover_merchant_id=connection.merchant_id,
     ).first()
     if mapping is None:
-        raise CloverRequestError("Confirm the Clover merchant/location association before retrieving orders.", status_code=409, code="clover_location_mapping_required")
+        raise CloverRequestError(
+            "Confirm the Clover merchant/location association before retrieving orders.",
+            status_code=409,
+            code="clover_location_mapping_required",
+        )
     ingested: list[CloverShadowOrder] = []
     for normalized in orders:
         shadow = CloverShadowOrder.query.filter_by(
@@ -830,6 +838,12 @@ def _ingest_shadow_orders(
                 clover_order_id=normalized.provider_id,
             )
             db.session.add(shadow)
+        elif (
+            shadow.organization_id != organization.id
+            or shadow.restaurant_location_id != location.id
+            or shadow.clover_merchant_id != connection.merchant_id
+        ):
+            raise CloverRequestError("Clover order is already associated with another tenant/location.", status_code=409, code="clover_order_scope_conflict")
         shadow.provider_status = normalized.provider_status
         shadow.normalized_status = normalized.normalized_status
         shadow.payment_status = normalized.payment_status
@@ -842,8 +856,12 @@ def _ingest_shadow_orders(
         shadow.currency = normalized.currency
         shadow.raw_payload_json = dict(normalized.raw)
         db.session.flush()
-        CloverShadowOrderLine.query.filter_by(shadow_order_id=shadow.id).delete(synchronize_session=False)
+
+        existing_lines = {line.clover_line_item_id: line for line in list(shadow.lines)}
+        seen_line_ids: set[str] = set()
         for line in normalized.lines:
+            seen_line_ids.add(line.provider_id)
+            local_line = existing_lines.get(line.provider_id)
             menu_mapping = CloverMenuMapping.query.filter_by(
                 clover_connection_id=connection.id,
                 organization_id=organization.id,
@@ -853,22 +871,33 @@ def _ingest_shadow_orders(
                 status="active",
             ).first() if line.item_id else None
             menu_item = menu_mapping.flowtally_menu_item if menu_mapping is not None else None
-            mapping_status, recipe_preview = _shadow_recipe_preview(menu_item, line.quantity)
-            db.session.add(CloverShadowOrderLine(
-                organization_id=organization.id,
-                restaurant_location_id=location.id,
-                shadow_order_id=shadow.id,
-                clover_line_item_id=line.provider_id,
-                clover_item_id=line.item_id,
-                clover_item_group_id=line.item_group_id,
-                name=line.name,
-                quantity=line.quantity,
-                unit_price_cents=line.unit_price_cents,
-                provider_status=line.provider_status,
-                modifier_json=list(line.modifiers),
-                mapping_status=mapping_status,
-                recipe_preview_json=recipe_preview,
-            ))
+            if line.modifiers:
+                mapping_status, recipe_preview = "review_required", {"reason": "Modifiers may change ingredient consumption; review required."}
+            else:
+                mapping_status, recipe_preview = _shadow_recipe_preview(menu_item, line.quantity)
+            if normalized.incomplete:
+                mapping_status = "review_required"
+                recipe_preview = {"reason": "Clover expanded order data was incomplete."}
+            if local_line is None:
+                local_line = CloverShadowOrderLine(
+                    organization_id=organization.id,
+                    restaurant_location_id=location.id,
+                    shadow_order_id=shadow.id,
+                    clover_line_item_id=line.provider_id,
+                )
+                db.session.add(local_line)
+            local_line.clover_item_id = line.item_id
+            local_line.clover_item_group_id = line.item_group_id
+            local_line.name = line.name
+            local_line.quantity = line.quantity
+            local_line.unit_price_cents = line.unit_price_cents
+            local_line.provider_status = line.provider_status
+            local_line.modifier_json = list(line.modifiers)
+            local_line.mapping_status = mapping_status
+            local_line.recipe_preview_json = recipe_preview
+        for line in existing_lines.values():
+            if line.clover_line_item_id not in seen_line_ids:
+                db.session.delete(line)
         ingested.append(shadow)
     db.session.flush()
     return ingested, len(ingested)
@@ -896,9 +925,16 @@ def clover_shadow_orders_fetch():
     connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
     if connection is None or connection.status != "connected" or connection.environment != "sandbox":
         return json_error("Clover sandbox authorization is required.", 409, code="clover_authorization_required")
-    start = _parse_order_bound(payload.get("startDate") or request.args.get("startDate"))
-    end = _parse_order_bound(payload.get("endDate") or request.args.get("endDate"))
-    max_pages = min(max(int(payload.get("maxPages") or 3), 1), 5)
+    try:
+        start = _parse_order_bound(payload.get("startDate") or request.args.get("startDate"))
+        end = _parse_order_bound(payload.get("endDate") or request.args.get("endDate"))
+        max_pages = int(payload.get("maxPages") or 3)
+        if max_pages < 1 or max_pages > 5:
+            raise ValueError("Invalid maxPages.")
+        if start is not None and end is not None and (start >= end or end - start > timedelta(days=90)):
+            raise ValueError("Invalid Clover order date range.")
+    except (TypeError, ValueError):
+        return json_error("Invalid Clover order date range or pagination bounds.", 400, code="clover_order_query_invalid")
     try:
         token = decrypt_integration_secret(connection.access_token_ciphertext)
         if not token:
