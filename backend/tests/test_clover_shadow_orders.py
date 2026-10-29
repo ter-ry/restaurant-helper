@@ -23,7 +23,7 @@ def _login(client):
         assert response.status_code == 200
 
 
-def _order(*, include_second=False, incomplete=False):
+def _order(*, include_second=False, incomplete=False, omit_quantity=False):
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     lines = [{
         "id": "line-1",
@@ -33,6 +33,8 @@ def _order(*, include_second=False, incomplete=False):
         "item": {"id": "TE0BYZH7B28AJ", "name": "Test Burger"},
         "modifications": {"elements": [], "total": 0},
     }]
+    if omit_quantity:
+        lines[0].pop("quantity")
     if include_second:
         lines.append({
             "id": "line-2",
@@ -136,7 +138,7 @@ def test_shadow_order_endpoint_is_idempotent_and_non_mutating(app, client, monke
         ))
         db.session.commit()
         monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
-        responses = iter([([_order(include_second=True)], True), ([_order(include_second=True, incomplete=True)], True), ([_order()], True)])
+        responses = iter([([_order(include_second=True, omit_quantity=True)], True), ([_order(include_second=True, incomplete=True)], True), ([_order()], True)])
         monkeypatch.setattr("backend.clover_integration.CloverOrderClient.fetch_orders", lambda *args, **kwargs: next(responses))
         _login(client)
         csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
