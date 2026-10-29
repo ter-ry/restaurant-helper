@@ -19,6 +19,7 @@ export function PilotCloverConnection() {
   const [mappingEnabled, setMappingEnabled] = useState(false);
   const [shadowOrdersEnabled, setShadowOrdersEnabled] = useState(false);
   const [shadowOrders, setShadowOrders] = useState<PilotCloverShadowOrder[]>([]);
+  const [shadowRetrievedAt, setShadowRetrievedAt] = useState<string | null>(null);
   const [shadowLoading, setShadowLoading] = useState(false);
   const [statusOrganizationId, setStatusOrganizationId] = useState<number | null>(null);
   const [catalog, setCatalog] = useState<{ organizationId: number; data: PilotCloverCatalogPreview } | null>(null);
@@ -120,7 +121,7 @@ export function PilotCloverConnection() {
     setError(null);
     try {
       const result = await fetchPilotCloverShadowOrders(organizationId, currentLocation.id);
-      if (activeOrganizationId.current === organizationId) setShadowOrders(result.orders);
+      if (activeOrganizationId.current === organizationId) { setShadowOrders(result.orders); setShadowRetrievedAt(result.retrievedAt); }
     } catch (err) {
       if (activeOrganizationId.current === organizationId) setError(err instanceof Error ? err.message : "Could not load Clover shadow orders.");
     } finally {
@@ -207,11 +208,21 @@ export function PilotCloverConnection() {
                 <div><p className="font-semibold text-ink">Clover shadow orders</p><p className="text-xs text-muted">Preview only — inventory unchanged.</p></div>
                 <Button type="button" variant="secondary" disabled={shadowLoading || busy || !currentLocation} onClick={() => void loadShadowOrders()}><RefreshCw className="mr-2 h-4 w-4" />{shadowLoading ? "Fetching orders…" : "Fetch recent orders"}</Button>
               </div>
+              <p className="mt-2 text-xs text-muted">{shadowRetrievedAt ? `Last retrieved ${new Date(shadowRetrievedAt).toLocaleString()} · ${shadowOrders.length} result${shadowOrders.length === 1 ? "" : "s"}` : "No retrieval completed yet."}</p>
               {shadowOrders.length ? <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
                 {shadowOrders.map((order) => <div key={order.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-ink">{order.cloverOrderId}</span><Badge tone={order.status === "paid" ? "success" : order.requiresReview ? "warning" : "neutral"}>{order.status}</Badge></div>
-                  <p className="mt-1 text-xs text-muted">{order.providerStatus || "Unknown provider status"} · {order.lines.length} line{order.lines.length === 1 ? "" : "s"}</p>
-                  <div className="mt-2 space-y-1">{order.lines.map((line) => <div key={line.id} className="text-xs text-muted"><span className="font-semibold text-ink">{line.name}</span> × {line.quantity} · {line.mappingStatus === "mapped" ? line.recipePreview.recipeName || "Recipe ready" : line.mappingStatus === "missing_recipe" ? "Recipe missing" : line.mappingStatus === "review_required" ? "Review required" : "Unmapped — review required"}</div>)}</div>
+                  <p className="mt-1 text-xs text-muted">{order.createdAt ? new Date(order.createdAt).toLocaleString() : "Time unavailable"} · Provider: {order.providerStatus || "Unknown"} · Payment: {order.paymentStatus || "Unknown"}</p>
+                  {order.incomplete ? <p className="mt-2 text-xs text-amber-800">Warning: Clover expanded data was incomplete; review before relying on this preview.</p> : null}
+                  <div className="mt-2 space-y-2">{order.lines.map((line) => <div key={line.id} className="rounded-md border border-line px-2 py-2 text-xs text-muted">
+                    <p><span className="font-semibold text-ink">{line.name}</span> × {line.quantity}{line.unitPriceCents == null ? "" : ` · ${(line.unitPriceCents / 100).toFixed(2)}`}</p>
+                    <p className="mt-1">Clover item: {line.cloverItemId || "Unknown"} · Flowtally: {line.recipePreview.flowtallyMenuItemName || (line.mappingStatus === "unmapped" ? "Unmapped" : "Not available")}</p>
+                    {line.mappingStatus === "mapped" ? <p className="mt-1 font-semibold text-ink">Recipe: {line.recipePreview.recipeName || "Ready"}</p> : null}
+                    {line.mappingStatus === "mapped" && line.recipePreview.ingredients?.length ? <ul className="mt-1 list-disc pl-4">{line.recipePreview.ingredients.map((ingredient) => <li key={ingredient.inventoryItemId}>{ingredient.name}: {ingredient.quantity} {ingredient.unit}</li>)}</ul> : null}
+                    {line.mappingStatus === "missing_recipe" ? <p className="mt-1 text-amber-800">Warning: no active recipe is available.</p> : null}
+                    {line.mappingStatus === "review_required" ? <p className="mt-1 text-amber-800">Warning: {line.recipePreview.reason || "Review required before using this preview."}</p> : null}
+                    {line.mappingStatus === "unmapped" ? <p className="mt-1 text-amber-800">Warning: no Clover-to-Flowtally mapping exists.</p> : null}
+                  </div>)}</div>
                 </div>)}
               </div> : <p className="mt-3 text-sm text-muted">No Clover orders were returned for this location.</p>}
             </div>
