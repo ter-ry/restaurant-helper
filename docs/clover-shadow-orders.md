@@ -41,3 +41,17 @@ Before any later inventory-deduction phase, Flowtally will need explicit
 provider-state reconciliation, mapping validation, duplicate protection,
 refund/void handling, and a separate authorization decision. A shadow order
 alone never authorizes stock changes.
+
+
+## Clover Sandbox retrieval compatibility
+
+Order-list retrieval requests only the supported `lineItems` expansion. The
+reader then performs bounded GET-only requests for line items, payments, and
+refunds per order. Restricted payment/refund endpoints are retained as
+review-required incomplete orders; they are never treated as paid or eligible
+for inventory use. Discounts are intentionally not requested for this
+preview-only phase.
+
+Clover fixed-price lines that omit both `quantity` and `unitQty` are treated
+as one item. Explicit `unitQty` is used when present; conflicting or invalid
+quantity fields require review.
