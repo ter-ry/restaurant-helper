@@ -49,6 +49,9 @@ export function PilotCloverConnection() {
     setConnection(null);
     setEnabled(false);
     setCatalogEnabled(false);
+    setShadowOrders([]);
+    setShadowRetrievedAt(null);
+    setShadowLoading(false);
     clearCatalog();
     setError(null);
 
@@ -70,6 +73,8 @@ export function PilotCloverConnection() {
       setConnection(result.connection);
       if (!result.enabled || !result.catalogEnabled || !result.connection || result.connection.status !== "connected") {
         clearCatalog();
+        setShadowOrders([]);
+        setShadowRetrievedAt(null);
       }
     } catch (err) {
       if (statusRequestId.current !== requestId || activeOrganizationId.current !== requestedOrganizationId) return;
@@ -79,6 +84,8 @@ export function PilotCloverConnection() {
       setCatalogEnabled(false);
       setConnection(null);
       clearCatalog();
+      setShadowOrders([]);
+      setShadowRetrievedAt(null);
       setError(err instanceof Error ? err.message : "Could not load Clover status.");
     } finally {
       if (statusRequestId.current === requestId && activeOrganizationId.current === requestedOrganizationId) {
@@ -175,6 +182,8 @@ export function PilotCloverConnection() {
                 if (activeOrganizationId.current === requestedOrganizationId && organizationId === requestedOrganizationId) {
                   setConnectionOrganizationId(requestedOrganizationId);
                   setConnection(result.connection);
+                  setShadowOrders([]);
+                  setShadowRetrievedAt(null);
                   clearCatalog();
                 }
               } catch (err) {
