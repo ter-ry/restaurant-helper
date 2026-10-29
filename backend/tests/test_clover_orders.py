@@ -114,7 +114,7 @@ def test_client_uses_one_safe_list_expansion_and_separate_gets(monkeypatch):
             return {"elements": [_line()], "total": 1}
         if "/payments?" in path:
             return {"elements": [{"id": "payment-1", "amount": 1800, "result": "SUCCESS"}], "total": 1}
-        if "/refunds?" in path:
+        if "/merchants/merchant/refunds?" in path:
             return {"elements": [], "total": 0}
         raise AssertionError(path)
     monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
@@ -127,7 +127,8 @@ def test_client_uses_one_safe_list_expansion_and_separate_gets(monkeypatch):
     assert query["expand"] == ["lineItems"]
     assert any("/line_items?" in path and "expand=modifications" in path for path in captured)
     assert any("/payments?" in path for path in captured)
-    assert any("/refunds?" in path for path in captured)
+    assert any("/merchants/merchant/refunds?" in path and "orderRef.id=order-1" in path for path in captured)
+    assert not any("/orders/order-1/refunds?" in path for path in captured)
 
 
 def test_restricted_payment_and_refund_gets_preserve_review_state(monkeypatch):
@@ -139,7 +140,9 @@ def test_restricted_payment_and_refund_gets_preserve_review_state(monkeypatch):
         if "/line_items?" in path:
             return {"elements": [_line()], "total": 1}
         from backend.clover import CloverRequestError
-        if "/payments?" in path or "/refunds?" in path:
+        if "/payments?" in path:
+            raise CloverRequestError("forbidden", status_code=403)
+        if "/merchants/merchant/refunds?" in path:
             raise CloverRequestError("forbidden", status_code=403)
         raise AssertionError(path)
     monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
@@ -159,3 +162,33 @@ def test_client_rejects_more_than_ninety_days():
         assert "90 days" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_restricted_merchant_refunds_keep_open_order_visible_and_reviewable(monkeypatch):
+    captured = []
+    def fake_request(method, path, **kwargs):
+        captured.append(path)
+        if "/orders?" in path:
+            payload = _order(state="OPEN", paymentState="OPEN")
+            payload.pop("lineItems"); payload.pop("payments"); payload.pop("refunds")
+            return {"elements": [payload]}
+        if "/line_items?" in path:
+            return {"elements": [_line()], "total": 1}
+        if "/payments?" in path:
+            return {"elements": [], "total": 0}
+        if "/merchants/merchant/refunds?" in path:
+            from backend.clover import CloverRequestError
+            raise CloverRequestError("forbidden", status_code=401)
+        raise AssertionError(path)
+    monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
+    orders, complete = CloverOrderClient(merchant_id="merchant", token="token").fetch_orders(
+        start=datetime.now(timezone.utc) - timedelta(days=1),
+        end=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    assert complete is True and len(orders) == 1
+    assert orders[0].provider_id == "order-1"
+    assert orders[0].incomplete is True
+    assert orders[0].requires_review is True
+    assert orders[0].potentially_eligible is False
+    assert any("/merchants/merchant/refunds?" in path for path in captured)
+    assert not any("/orders/order-1/refunds?" in path for path in captured)
