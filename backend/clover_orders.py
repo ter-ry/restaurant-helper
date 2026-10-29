@@ -119,6 +119,7 @@ def _safe_line(raw: Mapping[str, Any]) -> dict[str, Any]:
         "quantity": str(quantity),
         "quantityAmbiguous": ambiguous,
         "unitQty": str(_decimal(raw.get("unitQty"))) if raw.get("unitQty") is not None else None,
+        "priceType": _text(raw.get("priceType") or item.get("priceType")) or None,
         "price": int(_decimal(raw.get("price"))) if raw.get("price") is not None else None,
         "state": _text(raw.get("state") or raw.get("status")),
         "modificationIds": [_id(value) for value in _elements(raw.get("modifications")) if _id(value)],
