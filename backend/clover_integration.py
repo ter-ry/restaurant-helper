@@ -954,6 +954,9 @@ def clover_shadow_orders_fetch():
         imported, count = _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=orders)
         record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": True})
         db.session.commit()
+    except ValueError:
+        db.session.rollback()
+        return json_error("Invalid Clover order query.", 400, code="clover_order_query_invalid")
     except SquareSecurityError:
         db.session.rollback()
         return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
