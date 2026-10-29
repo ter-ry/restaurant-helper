@@ -134,27 +134,51 @@ class CloverShadowOrder:
     raw: Mapping[str, Any]
 
 
+def _payment_totals(payments: list[Mapping[str, Any]]) -> tuple[Decimal, bool, bool]:
+    successful_results = {"SUCCESS", "PAID", "COMPLETED", "APPROVED", "CAPTURED"}
+    failed_results = {"FAILED", "VOIDED", "DECLINED", "CANCELED", "CANCELLED", "REVERSED"}
+    total = Decimal("0")
+    unknown = False
+    failed = False
+    for payment in payments:
+        result = _text(payment.get("result") or payment.get("state")).upper()
+        amount = _decimal(payment.get("amount"))
+        if result in failed_results:
+            failed = True
+        elif result in successful_results:
+            total += amount
+        else:
+            unknown = True
+    return total, unknown, failed
+
+
 def classify_order(payload: Mapping[str, Any]) -> tuple[str, str, str, bool, bool]:
     provider_status = _text(payload.get("state") or payload.get("status")).upper()
     provider_payment_state = _text(payload.get("paymentState") or payload.get("payment_state")).upper()
-    refunds, refunds_complete = _expanded(payload.get("refunds"))
+    refunds, refunds_complete = _expanded(payload.get("refunds")) if "refunds" in payload else ([], True)
     payments, payments_complete = _expanded(payload.get("payments"))
     total = _decimal(payload.get("total"))
-    paid = sum((_decimal(payment.get("amount")) for payment in payments), Decimal("0"))
+    paid, unknown_payment, failed_payment = _payment_totals(payments)
+    unpaid_balance = _decimal(payload.get("unpaidBalance")) if payload.get("unpaidBalance") is not None else None
     deleted = bool(payload.get("deletedTime"))
     if deleted or provider_status in {"VOIDED", "CANCELLED", "CANCELED", "DELETED"}:
         return provider_status or "DELETED", provider_payment_state or "VOIDED", "cancelled", False, False
     if provider_payment_state in {"REFUNDED", "CREDITED", "PARTIALLY_REFUNDED"} or refunds or provider_status in {"REFUNDED", "PARTIALLY_REFUNDED"}:
         return provider_status or "REFUNDED", provider_payment_state or "REFUNDED", "refunded", False, True
     if provider_payment_state == "PAID":
-        verified = payments_complete and bool(payments) and total > 0 and paid >= total
+        conflict = failed_payment or unknown_payment or not payments_complete or not payments or total <= 0
+        conflict = conflict or (unpaid_balance is not None and unpaid_balance > 0)
+        verified = not conflict and paid >= total
         return provider_status or "PAID", provider_payment_state, "paid" if verified else "review", verified, not verified
     if provider_payment_state in {"OPEN", "PARTIALLY_PAID"}:
-        return provider_status or provider_payment_state, provider_payment_state, "pending", False, provider_payment_state == "PARTIALLY_PAID"
+        conflict = failed_payment or unknown_payment or (unpaid_balance is not None and unpaid_balance <= 0 and paid >= total)
+        return provider_status or provider_payment_state, provider_payment_state, "review" if conflict else "pending", False, conflict or provider_payment_state == "PARTIALLY_PAID"
     # Backward-compatible fallback for older synthetic fixtures: state PAID is
-    # accepted only when a complete payment collection proves the amount.
+    # accepted only when successful payment results prove the amount.
     if not provider_payment_state and provider_status in {"PAID", "COMPLETED", "CLOSED"}:
-        verified = payments_complete and bool(payments) and total > 0 and paid >= total
+        conflict = failed_payment or unknown_payment or not payments_complete or not payments or total <= 0
+        conflict = conflict or (unpaid_balance is not None and unpaid_balance > 0)
+        verified = not conflict and paid >= total
         return provider_status, provider_payment_state or "UNKNOWN", "paid" if verified else "review", verified, not verified
     return provider_status or "UNKNOWN", provider_payment_state or "UNKNOWN", "review", False, True
 
@@ -165,7 +189,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
         raise CloverRequestError("Clover order did not include an id.", code="clover_order_identity_missing")
     line_payload, lines_complete = _expanded(payload.get("lineItems") or payload.get("line_items"))
     payment_payload, payments_complete = _expanded(payload.get("payments"))
-    refund_payload, refunds_complete = _expanded(payload.get("refunds"))
+    refund_payload, refunds_complete = _expanded(payload.get("refunds")) if "refunds" in payload else ([], True)
     provider_status, provider_payment_state, normalized_status, eligible, requires_review = classify_order(payload)
     lines: list[CloverShadowLine] = []
     nested_incomplete = not lines_complete or not payments_complete
@@ -175,7 +199,7 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
         if not line_id:
             nested_incomplete = True
             continue
-        modifications, modifications_complete = _expanded(line.get("modifications"))
+        modifications, modifications_complete = _expanded(line.get("modifications")) if "modifications" in line else ([], True)
         nested_incomplete = nested_incomplete or not modifications_complete
         lines.append(CloverShadowLine(
             provider_id=line_id,
