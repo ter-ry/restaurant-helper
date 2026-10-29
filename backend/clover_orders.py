@@ -6,12 +6,15 @@ inventory movements or recipe-consumption records.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 from urllib.parse import urlencode
 
 from .clover import CloverRequestError, clover_request
+
+logger = logging.getLogger(__name__)
 
 
 def _text(value: Any) -> str:
@@ -67,6 +70,18 @@ def _id(value: Any) -> str:
     if isinstance(value, Mapping):
         return _text(value.get("id") or value.get("uuid"))
     return _text(value)
+
+
+def _log_shadow_failure(operation: str, exc: CloverRequestError, *, handled: bool) -> None:
+    # Keep diagnostics useful without leaking provider identifiers, URLs,
+    # response bodies, credentials, or authorization headers.
+    logger.warning(
+        "clover_shadow_request_failed operation=%s status=%s code=%s handled=%s",
+        operation,
+        exc.status_code if exc.status_code is not None else "unknown",
+        exc.code,
+        handled,
+    )
 
 
 def _line_quantity(raw: Mapping[str, Any]) -> tuple[Decimal, bool]:
@@ -319,7 +334,8 @@ class CloverOrderClient:
                 line_items, line_complete = self._get_collection(
                     f"/v3/merchants/{self.merchant_id}/orders/{order_id}/line_items?limit=100&offset=0&expand=modifications"
                 )
-            except CloverRequestError:
+            except CloverRequestError as exc:
+                _log_shadow_failure("line_items", exc, handled=True)
                 line_incomplete = True
                 line_complete = False
         order["lineItems"] = {"elements": line_items, "total": len(line_items)}
@@ -333,7 +349,9 @@ class CloverOrderClient:
             if not payments_complete:
                 financial_incomplete = True
         except CloverRequestError as exc:
-            if exc.status_code not in {401, 403, 404, 429} and not (exc.status_code and exc.status_code >= 500):
+            handled = exc.status_code in {401, 403, 404, 429} or bool(exc.status_code and exc.status_code >= 500)
+            _log_shadow_failure("order_payments", exc, handled=handled)
+            if not handled:
                 raise
             financial_incomplete = True
             order.pop("payments", None)
@@ -346,7 +364,9 @@ class CloverOrderClient:
                 refunds_unverified = True
                 financial_incomplete = True
         except CloverRequestError as exc:
-            if exc.status_code not in {401, 403, 404, 405, 429} and not (exc.status_code and exc.status_code >= 500):
+            handled = exc.status_code in {401, 403, 404, 405, 429} or bool(exc.status_code and exc.status_code >= 500)
+            _log_shadow_failure("merchant_refunds", exc, handled=handled)
+            if not handled:
                 raise
             refunds_unverified = True
             financial_incomplete = True
@@ -388,7 +408,11 @@ class CloverOrderClient:
                 ("filter", filter_values[1]),
                 ("expand", "lineItems"),
             ]
-            payload = clover_request("GET", f"/v3/merchants/{self.merchant_id}/orders?{urlencode(query_items)}", token=self.token)
+            try:
+                payload = clover_request("GET", f"/v3/merchants/{self.merchant_id}/orders?{urlencode(query_items)}", token=self.token)
+            except CloverRequestError as exc:
+                _log_shadow_failure("order_list", exc, handled=False)
+                raise
             elements = _elements(payload)
             for raw in elements:
                 order = normalize_order(self._hydrate_order(raw))
