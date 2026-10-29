@@ -211,7 +211,7 @@ export function PilotCloverConnection() {
                 {shadowOrders.map((order) => <div key={order.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-ink">{order.cloverOrderId}</span><Badge tone={order.status === "paid" ? "success" : order.requiresReview ? "warning" : "neutral"}>{order.status}</Badge></div>
                   <p className="mt-1 text-xs text-muted">{order.providerStatus || "Unknown provider status"} · {order.lines.length} line{order.lines.length === 1 ? "" : "s"}</p>
-                  <div className="mt-2 space-y-1">{order.lines.map((line) => <div key={line.id} className="text-xs text-muted"><span className="font-semibold text-ink">{line.name}</span> × {line.quantity} · {line.mappingStatus === "mapped" ? line.recipePreview.recipeName || "Recipe ready" : line.mappingStatus === "missing_recipe" ? "Recipe missing" : "Unmapped — review required"}</div>)}</div>
+                  <div className="mt-2 space-y-1">{order.lines.map((line) => <div key={line.id} className="text-xs text-muted"><span className="font-semibold text-ink">{line.name}</span> × {line.quantity} · {line.mappingStatus === "mapped" ? line.recipePreview.recipeName || "Recipe ready" : line.mappingStatus === "missing_recipe" ? "Recipe missing" : line.mappingStatus === "review_required" ? "Review required" : "Unmapped — review required"}</div>)}</div>
                 </div>)}
               </div> : <p className="mt-3 text-sm text-muted">No Clover orders were returned for this location.</p>}
             </div>
