@@ -787,6 +787,7 @@ def _serialize_shadow_order(order: CloverShadowOrder) -> dict[str, Any]:
         "closedAt": isoformat(order.source_closed_at),
         "totalCents": order.total_cents,
         "currency": order.currency,
+        "incomplete": False,
         "lines": [
             {
                 "id": line.id,
@@ -875,6 +876,8 @@ def _ingest_shadow_orders(
                 mapping_status, recipe_preview = "review_required", {"reason": "Modifiers may change ingredient consumption; review required."}
             else:
                 mapping_status, recipe_preview = _shadow_recipe_preview(menu_item, line.quantity)
+                if mapping_status == "mapped":
+                    recipe_preview["flowtallyMenuItemName"] = menu_item.name if menu_item is not None else ""
             if normalized.incomplete:
                 mapping_status = "review_required"
                 recipe_preview = {"reason": "Clover expanded order data was incomplete."}
@@ -895,9 +898,12 @@ def _ingest_shadow_orders(
             local_line.modifier_json = list(line.modifiers)
             local_line.mapping_status = mapping_status
             local_line.recipe_preview_json = recipe_preview
-        for line in existing_lines.values():
-            if line.clover_line_item_id not in seen_line_ids:
-                db.session.delete(line)
+        # A response marked incomplete is not deletion evidence. Preserve all
+        # previously stored lines until a complete provider collection arrives.
+        if not normalized.incomplete:
+            for line in existing_lines.values():
+                if line.clover_line_item_id not in seen_line_ids:
+                    db.session.delete(line)
         ingested.append(shadow)
     db.session.flush()
     return ingested, len(ingested)
@@ -968,7 +974,13 @@ def clover_shadow_orders_fetch():
             return json_error("Clover is rate limited; try again later.", 503, code="clover_rate_limited")
         return json_error("Clover orders could not be loaded.", 503, code=exc.code)
     orders = CloverShadowOrder.query.filter_by(organization_id=organization.id, restaurant_location_id=location.id, clover_connection_id=connection.id).order_by(CloverShadowOrder.source_modified_at.desc().nullslast(), CloverShadowOrder.id.desc()).limit(50).all()
-    return jsonify({"readOnly": True, "previewOnly": True, "count": len(orders), "orders": [_serialize_shadow_order(order) for order in orders]}), 200
+    return jsonify({
+        "readOnly": True,
+        "previewOnly": True,
+        "retrievedAt": _now().isoformat(),
+        "count": len(orders),
+        "orders": [_serialize_shadow_order(order) for order in orders],
+    }), 200
 
 
 @bp.get("/api/integrations/clover/catalog")
