@@ -364,7 +364,7 @@ class CloverOrderClient:
                 refunds_unverified = True
                 financial_incomplete = True
         except CloverRequestError as exc:
-            handled = exc.status_code in {401, 403, 404, 405, 429} or bool(exc.status_code and exc.status_code >= 500)
+            handled = exc.status_code in {400, 401, 403, 404, 405, 429} or bool(exc.status_code and exc.status_code >= 500)
             _log_shadow_failure("merchant_refunds", exc, handled=handled)
             if not handled:
                 raise
