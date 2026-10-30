@@ -385,22 +385,23 @@ class CloverOrderClient:
                 raise
             financial_incomplete = True
             order.pop("payments", None)
-        try:
-            refunds, refunds_complete = self._get_collection(
-                f"/v3/merchants/{self.merchant_id}/refunds?filter=orderRef.id={order_id}&limit=100&offset=0"
-            )
-            order["refunds"] = {"elements": refunds, "total": len(refunds)}
-            if not refunds_complete:
+        if "refunds" not in order:
+            try:
+                refunds, refunds_complete = self._get_collection(
+                    f"/v3/merchants/{self.merchant_id}/refunds?filter=orderRef.id={order_id}&limit=100&offset=0"
+                )
+                order["refunds"] = {"elements": refunds, "total": len(refunds)}
+                if not refunds_complete:
+                    refunds_unverified = True
+                    financial_incomplete = True
+            except CloverRequestError as exc:
+                handled = exc.status_code in {400, 401, 403, 404, 405, 429} or bool(exc.status_code and exc.status_code >= 500)
+                _log_shadow_failure("merchant_refunds", exc, handled=handled)
+                if not handled:
+                    raise
                 refunds_unverified = True
                 financial_incomplete = True
-        except CloverRequestError as exc:
-            handled = exc.status_code in {400, 401, 403, 404, 405, 429} or bool(exc.status_code and exc.status_code >= 500)
-            _log_shadow_failure("merchant_refunds", exc, handled=handled)
-            if not handled:
-                raise
-            refunds_unverified = True
-            financial_incomplete = True
-            order.pop("refunds", None)
+                order.pop("refunds", None)
         order["_shadow_line_items_incomplete"] = line_incomplete
         order["_shadow_financial_incomplete"] = financial_incomplete
         order["_shadow_refunds_unverified"] = refunds_unverified
