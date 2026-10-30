@@ -791,6 +791,7 @@ def _serialize_shadow_order(order: CloverShadowOrder) -> dict[str, Any]:
         "lineItemsIncomplete": bool((order.raw_payload_json or {}).get("lineItemsIncomplete")),
         "financialIncomplete": bool((order.raw_payload_json or {}).get("financialIncomplete")),
         "refundsUnverified": bool((order.raw_payload_json or {}).get("refundsUnverified")),
+        "paymentStateConflict": bool((order.raw_payload_json or {}).get("paymentStateConflict")),
         "lines": [
             {
                 "id": line.id,
