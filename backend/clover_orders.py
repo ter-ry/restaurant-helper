@@ -229,13 +229,22 @@ def classify_order(payload: Mapping[str, Any]) -> tuple[str, str, str, bool, boo
         return provider_status or "DELETED", provider_payment_state or "VOIDED", "cancelled", False, False
     if provider_payment_state in {"REFUNDED", "CREDITED", "PARTIALLY_REFUNDED"} or refunds or provider_status in {"REFUNDED", "PARTIALLY_REFUNDED"}:
         return provider_status or "REFUNDED", provider_payment_state or "REFUNDED", "refunded", False, True
+    payment_state_conflict = (
+        provider_status in {"OPEN", "OPENED"}
+        and payments_complete
+        and bool(payments)
+        and not failed_payment
+        and not unknown_payment
+        and total > 0
+        and paid >= total
+    )
     if provider_payment_state == "PAID":
         conflict = failed_payment or unknown_payment or not payments_complete or not payments or total <= 0
-        conflict = conflict or (unpaid_balance is not None and unpaid_balance > 0)
+        conflict = conflict or (unpaid_balance is not None and unpaid_balance > 0) or payment_state_conflict
         verified = not conflict and paid >= total
         return provider_status or "PAID", provider_payment_state, "paid" if verified else "review", verified, not verified
     if provider_payment_state in {"OPEN", "PARTIALLY_PAID"}:
-        conflict = failed_payment or unknown_payment or (unpaid_balance is not None and unpaid_balance <= 0 and paid >= total)
+        conflict = failed_payment or unknown_payment or payment_state_conflict or (unpaid_balance is not None and unpaid_balance <= 0 and paid >= total)
         return provider_status or provider_payment_state, provider_payment_state, "review" if conflict else "pending", False, conflict or provider_payment_state == "PARTIALLY_PAID"
     if not provider_payment_state and provider_status in {"PAID", "COMPLETED", "CLOSED"}:
         conflict = failed_payment or unknown_payment or not payments_complete or not payments or total <= 0
@@ -293,6 +302,16 @@ def normalize_order(payload: Mapping[str, Any]) -> CloverShadowOrder:
     safe_raw["lineItemsIncomplete"] = line_items_incomplete
     safe_raw["financialIncomplete"] = financial_incomplete
     safe_raw["refundsUnverified"] = bool(payload.get("_shadow_refunds_unverified"))
+    paid, unknown_payment, failed_payment = _payment_totals(payments)
+    safe_raw["paymentStateConflict"] = bool(
+        _text(payload.get("state") or payload.get("status")).upper() in {"OPEN", "OPENED"}
+        and payments_complete
+        and bool(payments)
+        and not failed_payment
+        and not unknown_payment
+        and _decimal(payload.get("total")) > 0
+        and paid >= _decimal(payload.get("total"))
+    )
     return CloverShadowOrder(
         provider_id=provider_id,
         provider_status=provider_status,
@@ -343,10 +362,21 @@ class CloverOrderClient:
             line_incomplete = True
         try:
             payments, payments_complete = self._get_collection(
-                f"/v3/merchants/{self.merchant_id}/orders/{order_id}/payments?limit=100&offset=0"
+                f"/v3/merchants/{self.merchant_id}/orders/{order_id}/payments?limit=100&offset=0&expand=refunds"
             )
             order["payments"] = {"elements": payments, "total": len(payments)}
-            if not payments_complete:
+            payment_refunds: list[Mapping[str, Any]] = []
+            payment_refunds_complete = bool(payments)
+            for payment in payments:
+                if "refunds" not in payment:
+                    payment_refunds_complete = False
+                    break
+                nested_refunds, nested_complete = _expanded(payment.get("refunds"))
+                payment_refunds.extend(nested_refunds)
+                payment_refunds_complete = payment_refunds_complete and nested_complete
+            if payments_complete and payment_refunds_complete:
+                order["refunds"] = {"elements": payment_refunds, "total": len(payment_refunds)}
+            elif not payments_complete:
                 financial_incomplete = True
         except CloverRequestError as exc:
             handled = exc.status_code in {401, 403, 404, 429} or bool(exc.status_code and exc.status_code >= 500)
