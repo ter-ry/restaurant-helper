@@ -297,3 +297,71 @@ def test_paid_order_with_unverified_refunds_remains_ineligible():
     assert normalized.potentially_eligible is False
     assert normalized.raw["financialIncomplete"] is True
     assert normalized.raw["refundsUnverified"] is True
+
+
+def test_paid_payment_with_open_provider_state_and_explicit_empty_refunds_requires_review():
+    normalized = normalize_order({
+        **_order(state="OPEN", paymentState="OPEN"),
+        "payments": {
+            "elements": [{
+                "id": "75A57AHVQX6AY",
+                "amount": 1800,
+                "result": "SUCCESS",
+                "tender": {"id": "237DRW4BQ79AE"},
+                "refunds": {"elements": [], "total": 0},
+            }],
+            "total": 1,
+        },
+        "refunds": {"elements": [], "total": 0},
+    })
+    assert normalized.provider_status == "OPEN"
+    assert normalized.payment_status == "open"
+    assert normalized.normalized_status == "review"
+    assert normalized.requires_review is True
+    assert normalized.potentially_eligible is False
+    assert normalized.raw["paymentStateConflict"] is True
+    assert normalized.raw["financialIncomplete"] is False
+
+
+def test_payment_level_refund_expansion_is_used_before_merchant_fallback(monkeypatch):
+    captured = []
+
+    def fake_request(method, path, **kwargs):
+        captured.append(path)
+        if "/orders?" in path:
+            payload = _order(state="OPEN", paymentState="OPEN")
+            payload.pop("lineItems")
+            payload.pop("payments")
+            payload.pop("refunds")
+            return {"elements": [payload]}
+        if "/line_items?" in path:
+            return {"elements": [_line()], "total": 1}
+        if "/payments?" in path:
+            return {
+                "elements": [{
+                    "id": "75A57AHVQX6AY",
+                    "amount": 1800,
+                    "result": "SUCCESS",
+                    "refunds": {"elements": [], "total": 0},
+                }],
+                "total": 1,
+            }
+        if "/merchants/merchant/refunds?" in path:
+            raise AssertionError("merchant refunds should not be called when payment refunds are complete")
+        raise AssertionError(path)
+
+    monkeypatch.setattr("backend.clover_orders.clover_request", fake_request)
+    orders, complete = CloverOrderClient(merchant_id="merchant", token="token").fetch_orders(
+        start=datetime.now(timezone.utc) - timedelta(days=1),
+        end=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    assert complete is True and len(orders) == 1
+    order = orders[0]
+    assert order.raw["refundsUnverified"] is False
+    assert order.raw["financialIncomplete"] is False
+    assert order.raw["paymentStateConflict"] is True
+    assert order.requires_review is True
+    assert order.potentially_eligible is False
+    assert not any("/merchants/merchant/refunds?" in path for path in captured)
+    payment_call = next(path for path in captured if "/payments?" in path)
+    assert "expand=refunds" in payment_call
