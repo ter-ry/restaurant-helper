@@ -4232,6 +4232,7 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         )
         db.session.add(rollback_line)
         db.session.commit()
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
         before_chicken = InventoryItem.query.get(chicken.id).current_on_hand
         before_buns = InventoryItem.query.get(buns.id).current_on_hand
         before_movements = InventoryMovement.query.count()
