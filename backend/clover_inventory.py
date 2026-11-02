@@ -165,7 +165,7 @@ def apply_clover_order_inventory(
             ).with_for_update().all()
         )
     }
-    if len(locked_lines) != len(line_ids):
+    if len(locked_lines) != len(line_ids) and not (dry_run or not clover_order_inventory_enabled()):
         raise ValueError("Clover shadow line scope changed during reconciliation.")
 
     # Lock inventory rows in deterministic ID order before changing any state.
@@ -184,7 +184,7 @@ def apply_clover_order_inventory(
             ).with_for_update().all()
         )
     }
-    if any(item_id not in locked_items for item_id in ingredient_ids):
+    if any(item_id not in locked_items for item_id in ingredient_ids) and not (dry_run or not clover_order_inventory_enabled()):
         raise ValueError("Clover recipe ingredient no longer matches the inventory scope.")
 
     ledgers = CloverShadowOrderLineInventoryConsumption.query.filter(
