@@ -4126,6 +4126,8 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
             total_cents=1800,
             raw_payload_json={},
         )
+        db.session.add(order)
+        db.session.flush()
         line = CloverShadowOrderLine(
             organization_id=organization.id,
             restaurant_location_id=location.id,
