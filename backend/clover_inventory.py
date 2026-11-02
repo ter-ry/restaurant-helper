@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from flask import current_app
+from flask import current_app, has_app_context
 
 from .extensions import db
 from .models import (
@@ -122,6 +122,8 @@ def plan_clover_order_inventory(
     if not plan["eligible"]:
         return plan
     ledgers = existing_ledgers
+    if ledgers is None and not has_app_context():
+        ledgers = []
     if ledgers is None:
         line_ids = [line.id for line in order.lines if line.id is not None]
         ledgers = CloverShadowOrderLineInventoryConsumption.query.filter(
@@ -144,6 +146,14 @@ def apply_clover_order_inventory(
 ) -> dict[str, Any]:
     """Apply a verified order atomically, or return an exact dry-run plan."""
     ensure_inventory_source(PosProvider.CLOVER)
+    if (
+        connection.organization_id != order.organization_id
+        or connection.id != order.clover_connection_id
+        or connection.status != "connected"
+        or connection.environment != "sandbox"
+        or str(order.clover_merchant_id or "") != str(connection.merchant_id or "")
+    ):
+        raise ValueError("Clover order and connection scope do not match.")
     line_ids = sorted(line.id for line in order.lines if line.id is not None)
     locked_lines = {
         line.id: line for line in (
