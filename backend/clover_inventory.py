@@ -143,8 +143,10 @@ def apply_clover_order_inventory(
     order: CloverShadowOrder,
     connection: CloverConnection,
     dry_run: bool = False,
+    session=None,
 ) -> dict[str, Any]:
     """Apply a verified order atomically, or return an exact dry-run plan."""
+    session = session or db.session
     ensure_inventory_source(PosProvider.CLOVER)
     if (
         connection.organization_id != order.organization_id
@@ -157,7 +159,7 @@ def apply_clover_order_inventory(
     line_ids = sorted(line.id for line in order.lines if line.id is not None)
     locked_lines = {
         line.id: line for line in (
-            CloverShadowOrderLine.query.filter(
+            session.query(CloverShadowOrderLine).filter(
                 CloverShadowOrderLine.id.in_(line_ids or [-1]),
                 CloverShadowOrderLine.shadow_order_id == order.id,
                 CloverShadowOrderLine.organization_id == order.organization_id,
@@ -177,7 +179,7 @@ def apply_clover_order_inventory(
     })
     locked_items = {
         item.id: item for item in (
-            InventoryItem.query.filter(
+            session.query(InventoryItem).filter(
                 InventoryItem.id.in_(ingredient_ids or [-1]),
                 InventoryItem.organization_id == order.organization_id,
                 InventoryItem.location_id == order.restaurant_location_id,
@@ -187,7 +189,7 @@ def apply_clover_order_inventory(
     if any(item_id not in locked_items for item_id in ingredient_ids) and not (dry_run or not clover_order_inventory_enabled()):
         raise ValueError("Clover recipe ingredient no longer matches the inventory scope.")
 
-    ledgers = CloverShadowOrderLineInventoryConsumption.query.filter(
+    ledgers = session.query(CloverShadowOrderLineInventoryConsumption).filter(
         CloverShadowOrderLineInventoryConsumption.clover_shadow_order_line_id.in_(line_ids or [-1]),
         CloverShadowOrderLineInventoryConsumption.organization_id == order.organization_id,
         CloverShadowOrderLineInventoryConsumption.location_id == order.restaurant_location_id,
@@ -220,22 +222,22 @@ def apply_clover_order_inventory(
                 applied_quantity=Decimal("0"),
                 unit_cost_snapshot=Decimal(str(item.average_unit_cost or 0)),
             )
-            db.session.add(ledger)
-            db.session.flush()
+            session.add(ledger)
+            session.flush()
             by_key[(line.id, item.id)] = ledger
         correction = _decimal(movement["correction"])
         if correction == 0:
             continue
         before = _decimal(item.current_on_hand or 0)
         after = (before + correction).quantize(QTY)
-        sequence = InventoryMovement.query.filter(
+        sequence = session.query(InventoryMovement).filter(
             InventoryMovement.organization_id == order.organization_id,
             InventoryMovement.location_id == order.restaurant_location_id,
             InventoryMovement.source_type.in_(("clover sale consumption", "clover sale correction")),
             InventoryMovement.source_record_id == order.clover_order_id,
             InventoryMovement.source_line_id.like(f"clover:{ledger.id}:%"),
         ).count() + 1
-        db.session.add(InventoryMovement(
+        session.add(InventoryMovement(
             organization_id=order.organization_id,
             location_id=order.restaurant_location_id,
             inventory_item_id=item.id,
