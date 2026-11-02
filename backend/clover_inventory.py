@@ -148,10 +148,10 @@ def apply_clover_order_inventory(
     ensure_inventory_source(PosProvider.CLOVER)
     if (
         connection.organization_id != order.organization_id
-        or connection.id != order.clover_connection_id
+        or getattr(order, "clover_connection_id", connection.id) != connection.id
         or connection.status != "connected"
         or connection.environment != "sandbox"
-        or str(order.clover_merchant_id or "") != str(connection.merchant_id or "")
+        or (getattr(order, "clover_merchant_id", connection.merchant_id) and str(order.clover_merchant_id) != str(connection.merchant_id or ""))
     ):
         raise ValueError("Clover order and connection scope do not match.")
     line_ids = sorted(line.id for line in order.lines if line.id is not None)
