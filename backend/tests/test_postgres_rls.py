@@ -4238,21 +4238,23 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         before_movements = InventoryMovement.query.count()
         before_ledgers = CloverShadowOrderLineInventoryConsumption.query.count()
 
-        real_add = db.session.add
+        rollback_session = db.session()
+        real_add = rollback_session.add
 
         def add_then_fail(instance, *args, **kwargs):
             real_add(instance, *args, **kwargs)
             if isinstance(instance, InventoryMovement):
                 raise RuntimeError("controlled mid-transaction failure")
 
-        monkeypatch.setattr(db.session, "add", add_then_fail)
+        monkeypatch.setattr(rollback_session, "add", add_then_fail)
         try:
-            apply_clover_order_inventory(order=rollback_order, connection=connection)
+            apply_clover_order_inventory(order=rollback_order, connection=connection, session=rollback_session)
         except RuntimeError:
-            db.session.rollback()
+            rollback_session.rollback()
         else:
             raise AssertionError("controlled failure should abort inventory execution")
 
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
         assert InventoryItem.query.get(chicken.id).current_on_hand == before_chicken
         assert InventoryItem.query.get(buns.id).current_on_hand == before_buns
         assert InventoryMovement.query.count() == before_movements
