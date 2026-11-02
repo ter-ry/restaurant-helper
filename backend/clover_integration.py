@@ -987,7 +987,7 @@ def clover_shadow_orders_fetch():
             apply_clover_order_inventory(order=order, connection=connection, dry_run=inventory_dry_run or not inventory_execute)
             for order in imported
         ]
-        record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": True})
+        record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": not (inventory_execute and clover_order_inventory_enabled()), "inventoryAutomation": bool(inventory_execute and clover_order_inventory_enabled())})
         db.session.commit()
     except ValueError:
         db.session.rollback()
@@ -1004,8 +1004,8 @@ def clover_shadow_orders_fetch():
         return json_error("Clover orders could not be loaded.", 503, code=exc.code)
     orders = CloverShadowOrder.query.filter_by(organization_id=organization.id, restaurant_location_id=location.id, clover_connection_id=connection.id).order_by(CloverShadowOrder.source_modified_at.desc().nullslast(), CloverShadowOrder.id.desc()).limit(50).all()
     return jsonify({
-        "readOnly": True,
-        "previewOnly": True,
+        "readOnly": not (inventory_execute and clover_order_inventory_enabled()),
+        "previewOnly": not (inventory_execute and clover_order_inventory_enabled()),
         "retrievedAt": _now().isoformat(),
         "count": len(orders),
         "orders": [_serialize_shadow_order(order) for order in orders],
