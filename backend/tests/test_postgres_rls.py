@@ -4180,6 +4180,8 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
             total_cents=1800,
             raw_payload_json={},
         )
+        db.session.add(rollback_order)
+        db.session.flush()
         rollback_line = CloverShadowOrderLine(
             organization_id=organization.id,
             restaurant_location_id=location.id,
@@ -4196,7 +4198,7 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
                 ],
             },
         )
-        db.session.add_all([rollback_order, rollback_line])
+        db.session.add(rollback_line)
         db.session.commit()
         before_chicken = InventoryItem.query.get(chicken.id).current_on_hand
         before_buns = InventoryItem.query.get(buns.id).current_on_hand
