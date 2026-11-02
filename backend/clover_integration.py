@@ -997,7 +997,7 @@ def clover_shadow_orders_fetch():
         "orders": [_serialize_shadow_order(order) for order in orders],
         "inventoryAutomation": {
             "enabled": clover_order_inventory_enabled(),
-            "dryRun": bool(request.get_json(silent=True) or {}).get("dryRun"),
+            "dryRun": inventory_dry_run if "inventory_dry_run" in locals() else False,
             "results": inventory_results if "inventory_results" in locals() else [],
         },
     }), 200
