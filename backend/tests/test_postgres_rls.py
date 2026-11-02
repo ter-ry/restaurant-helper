@@ -47,6 +47,7 @@ from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD, seed_pilot_dat
 from backend.tests.conftest import make_operational_organization
 from backend.tests.test_square_integration import configure_square, oauth_responder
 from backend.utils import utc_now
+from backend.clover_inventory import apply_clover_order_inventory
 
 
 MIGRATION_POSTGRES_URL = (
@@ -3898,3 +3899,158 @@ def test_postgres_clover_refresh_serializes_single_use_rotation(postgres_app, mo
         assert decrypt_integration_secret(saved.refresh_token_ciphertext) == "refresh-new"
         db.session.delete(saved)
         db.session.commit()
+
+
+def test_clover_inventory_execution_idempotency_corrections_rollback_and_concurrency(postgres_app):
+    from decimal import Decimal
+    from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, InventoryItem, RestaurantLocation, User
+
+    application = postgres_app
+    with application.app_context():
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Clover inventory {uuid4()}", location_name="Main")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        connection = CloverConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            merchant_id="merchant-inventory",
+            status="connected",
+            access_token_ciphertext="ciphertext",
+        )
+        db.session.add(connection)
+        db.session.flush()
+        chicken = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Chicken",
+            normalized_name=f"chicken-{uuid4()}",
+            stock_unit="kg",
+            current_on_hand=Decimal("10"),
+            average_unit_cost=Decimal("12.50"),
+        )
+        buns = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Buns",
+            normalized_name=f"buns-{uuid4()}",
+            stock_unit="pack",
+            current_on_hand=Decimal("20"),
+            average_unit_cost=Decimal("2.00"),
+        )
+        db.session.add_all([chicken, buns])
+        db.session.flush()
+        order = CloverShadowOrder(
+            organization_id=organization.id,
+            clover_connection_id=connection.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id=connection.merchant_id,
+            clover_order_id=f"paid-{uuid4()}",
+            provider_status="CLOSED",
+            normalized_status="paid",
+            payment_status="paid",
+            potentially_eligible=True,
+            requires_review=False,
+            total_cents=1800,
+            raw_payload_json={},
+        )
+        db.session.add(order)
+        db.session.flush()
+        line = CloverShadowOrderLine(
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            shadow_order_id=order.id,
+            clover_line_item_id=f"line-{uuid4()}",
+            clover_item_id="burger",
+            name="Test Burger",
+            quantity=Decimal("1"),
+            mapping_status="mapped",
+            recipe_preview_json={
+                "ingredients": [
+                    {"inventoryItemId": chicken.id, "quantity": "0.1800", "unit": "kg", "name": "Chicken"},
+                    {"inventoryItemId": buns.id, "quantity": "0.2500", "unit": "pack", "name": "Buns"},
+                ],
+            },
+        )
+        db.session.add(line)
+        db.session.commit()
+
+        first = apply_clover_order_inventory(order=order, connection=connection)
+        db.session.commit()
+        assert first["applied"] is True
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2
+        assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id).count() == 2
+        assert InventoryItem.query.get(chicken.id).current_on_hand == Decimal("9.8200")
+        assert InventoryItem.query.get(buns.id).current_on_hand == Decimal("19.7500")
+
+        second = apply_clover_order_inventory(order=order, connection=connection)
+        db.session.commit()
+        assert second["alreadyApplied"]
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2
+
+        line.recipe_preview_json["ingredients"][0]["quantity"] = "0.2000"
+        db.session.flush()
+        correction = apply_clover_order_inventory(order=order, connection=connection)
+        db.session.commit()
+        assert any(item["state"] == "correction" for item in correction["movements"])
+        assert InventoryItem.query.get(chicken.id).current_on_hand == Decimal("9.8000")
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 3
+        assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id, inventory_item_id=chicken.id).one().unit_cost_snapshot == Decimal("12.500000")
+
+        line.recipe_preview_json["ingredients"].append({"inventoryItemId": 999999, "quantity": "1", "unit": "kg", "name": "Missing"})
+        db.session.flush()
+        before_movements = InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count()
+        try:
+            apply_clover_order_inventory(order=order, connection=connection)
+        except ValueError:
+            db.session.rollback()
+        else:
+            raise AssertionError("missing ingredient should abort atomically")
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == before_movements
+
+        open_order = CloverShadowOrder(
+            organization_id=organization.id,
+            clover_connection_id=connection.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id=connection.merchant_id,
+            clover_order_id=f"open-{uuid4()}",
+            provider_status="OPEN",
+            normalized_status="pending",
+            payment_status="open",
+            potentially_eligible=False,
+            requires_review=True,
+            raw_payload_json={"paymentStateConflict": True},
+        )
+        db.session.add(open_order)
+        db.session.commit()
+        assert apply_clover_order_inventory(order=open_order, connection=connection)["eligible"] is False
+
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
+        dry = apply_clover_order_inventory(order=order, connection=connection, dry_run=True)
+        assert dry["dryRun"] is True
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == before_movements
+
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        barrier = threading.Barrier(2)
+        errors = []
+
+        def worker():
+            try:
+                with application.app_context():
+                    local_order = CloverShadowOrder.query.filter_by(id=order.id).one()
+                    local_connection = CloverConnection.query.filter_by(id=connection.id).one()
+                    barrier.wait(timeout=10)
+                    apply_clover_order_inventory(order=local_order, connection=local_connection)
+                    db.session.commit()
+            except Exception as exc:
+                errors.append(exc)
+                db.session.rollback()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        assert not errors
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == before_movements
+        assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id).count() == 2
