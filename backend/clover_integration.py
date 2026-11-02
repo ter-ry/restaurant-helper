@@ -11,6 +11,7 @@ from .audit import record_audit_event
 from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .clover_orders import CloverOrderClient
+from .clover_inventory import apply_clover_order_inventory, clover_order_inventory_enabled
 from .pos import recipe_ingredient_quantity
 from .extensions import db
 from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RestaurantLocation
@@ -967,6 +968,11 @@ def clover_shadow_orders_fetch():
         if not complete:
             return json_error("Clover order retrieval reached its safety bound; no complete snapshot was saved.", 502, code="clover_orders_incomplete")
         imported, count = _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=orders)
+        inventory_dry_run = bool(payload.get("dryRun"))
+        inventory_results = [
+            apply_clover_order_inventory(order=order, connection=connection, dry_run=inventory_dry_run)
+            for order in imported
+        ]
         record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": True})
         db.session.commit()
     except ValueError:
@@ -989,6 +995,11 @@ def clover_shadow_orders_fetch():
         "retrievedAt": _now().isoformat(),
         "count": len(orders),
         "orders": [_serialize_shadow_order(order) for order in orders],
+        "inventoryAutomation": {
+            "enabled": clover_order_inventory_enabled(),
+            "dryRun": bool(request.get_json(silent=True) or {}).get("dryRun"),
+            "results": inventory_results if "inventory_results" in locals() else [],
+        },
     }), 200
 
 
