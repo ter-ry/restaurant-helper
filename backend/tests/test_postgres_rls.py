@@ -3903,7 +3903,7 @@ def test_postgres_clover_refresh_serializes_single_use_rotation(postgres_app, mo
 
 def test_clover_inventory_execution_idempotency_corrections_rollback_and_concurrency(postgres_app):
     from decimal import Decimal
-    from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, InventoryItem, RestaurantLocation, User
+    from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, InventoryItem, InventoryMovement, RestaurantLocation, User
 
     application = postgres_app
     with application.app_context():
