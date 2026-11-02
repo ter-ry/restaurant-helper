@@ -4069,6 +4069,7 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         CloverShadowOrderLineInventoryConsumption,
         InventoryItem,
         InventoryMovement,
+        Organization,
         RestaurantLocation,
         User,
     )
@@ -4078,7 +4079,9 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
         _set_rls_context(access_scope="setup", user_id=None)
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
-        organization = make_operational_organization(owner, name=f"Clover concurrent {uuid4()}", location_name="Main")
+        organization_name = f"Clover concurrent {uuid4()}"
+        make_operational_organization(owner, name=organization_name, location_name="Main")
+        organization = Organization.query.filter_by(name=organization_name).one()
         location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
         _set_rls_context(access_scope="organization", organization_id=organization.id, user_id=owner.id)
         connection = CloverConnection(
