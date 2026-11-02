@@ -68,9 +68,18 @@ def test_dry_run_and_disabled_flag_are_non_mutating(app):
         assert result["enabled"] is False
 
 
-@pytest.mark.parametrize("value", ["true", "false", 1, None, object()])
-def test_inventory_execution_requires_json_boolean_true(value):
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"executeInventory": "true"},
+        {"executeInventory": "false"},
+        {"executeInventory": 1},
+        {"executeInventory": None},
+        {},
+    ],
+)
+def test_inventory_execution_requires_json_boolean_true(payload):
     from backend.clover_integration import _inventory_execution_requested
 
-    assert _inventory_execution_requested(value) is False
+    assert _inventory_execution_requested(payload.get("executeInventory")) is False
     assert _inventory_execution_requested(True) is True
