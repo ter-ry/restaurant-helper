@@ -170,6 +170,11 @@ def _allowlisted(organization: Organization | None) -> bool:
     return organization.id in allowed_ids
 
 
+def _inventory_execution_requested(value: Any) -> bool:
+    """Only a JSON boolean true may enable Clover inventory writes."""
+    return value is True
+
+
 def clover_mapping_enabled() -> bool:
     return str(current_app.config.get("CLOVER_MAPPING_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -982,7 +987,7 @@ def clover_shadow_orders_fetch():
             return json_error("Clover order retrieval reached its safety bound; no complete snapshot was saved.", 502, code="clover_orders_incomplete")
         imported, count = _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=orders)
         inventory_dry_run = bool(payload.get("dryRun"))
-        inventory_execute = bool(payload.get("executeInventory"))
+        inventory_execute = _inventory_execution_requested(payload.get("executeInventory"))
         inventory_results = [
             apply_clover_order_inventory(order=order, connection=connection, dry_run=inventory_dry_run or not inventory_execute)
             for order in imported
