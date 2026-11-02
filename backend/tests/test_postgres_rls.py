@@ -4190,10 +4190,12 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         )
         db.session.add(rollback_order)
         db.session.flush()
+        rollback_order_id = db.session.query(CloverShadowOrder.id).filter_by(clover_order_id=rollback_order.clover_order_id).scalar()
+        assert rollback_order_id is not None
         rollback_line = CloverShadowOrderLine(
             organization_id=organization.id,
             restaurant_location_id=location.id,
-            order=rollback_order,
+            shadow_order_id=rollback_order_id,
             clover_line_item_id=f"line-{uuid4()}",
             clover_item_id="burger",
             name="Test Burger",
