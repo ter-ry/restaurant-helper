@@ -492,7 +492,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
         # The Clover mapping migration is part of the current head.\n        
-        assert _current_revision() == "0024_clover_shadow_orders"
+        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -502,7 +502,15 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_table_owned_by_migrator("square_order_line_inventory_consumptions")
         _assert_table_owned_by_migrator("clover_location_mappings")
         _assert_table_owned_by_migrator("clover_menu_mappings")
+        _assert_table_owned_by_migrator("clover_shadow_order_line_inventory_consumptions")
         _assert_clover_mapping_timestamps()
+        ledger_type, ledger_nullable, ledger_precision, ledger_scale = _column_info(
+            "clover_shadow_order_line_inventory_consumptions", "applied_quantity"
+        )
+        assert ledger_type == "numeric"
+        assert ledger_nullable is False
+        assert ledger_precision == 12
+        assert ledger_scale == 4
         consumption_type, consumption_nullable, consumption_precision, consumption_scale = _column_info(
             "square_order_line_inventory_consumptions", "applied_quantity"
         )
