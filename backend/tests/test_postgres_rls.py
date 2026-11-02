@@ -4054,3 +4054,171 @@ def test_clover_inventory_execution_idempotency_corrections_rollback_and_concurr
         assert not errors
         assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == before_movements
         assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id).count() == 2
+
+
+
+def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(postgres_app, monkeypatch):
+    from decimal import Decimal
+    from backend.clover_inventory import apply_clover_order_inventory
+    from backend.models import (
+        CloverConnection,
+        CloverShadowOrder,
+        CloverShadowOrderLine,
+        CloverShadowOrderLineInventoryConsumption,
+        InventoryItem,
+        InventoryMovement,
+        RestaurantLocation,
+        User,
+    )
+
+    application = postgres_app
+    with application.app_context():
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Clover concurrent {uuid4()}", location_name="Main")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        connection = CloverConnection(
+            organization_id=organization.id,
+            environment="sandbox",
+            merchant_id=f"merchant-{uuid4()}",
+            status="connected",
+            access_token_ciphertext="ciphertext",
+        )
+        chicken = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Chicken",
+            normalized_name=f"chicken-{uuid4()}",
+            stock_unit="kg",
+            current_on_hand=Decimal("10"),
+            average_unit_cost=Decimal("12.50"),
+        )
+        buns = InventoryItem(
+            organization_id=organization.id,
+            location_id=location.id,
+            name="Buns",
+            normalized_name=f"buns-{uuid4()}",
+            stock_unit="pack",
+            current_on_hand=Decimal("20"),
+            average_unit_cost=Decimal("2.00"),
+        )
+        db.session.add_all([connection, chicken, buns])
+        db.session.flush()
+        order = CloverShadowOrder(
+            organization_id=organization.id,
+            clover_connection_id=connection.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id=connection.merchant_id,
+            clover_order_id=f"concurrent-first-{uuid4()}",
+            provider_status="CLOSED",
+            normalized_status="paid",
+            payment_status="paid",
+            potentially_eligible=True,
+            requires_review=False,
+            total_cents=1800,
+            raw_payload_json={},
+        )
+        line = CloverShadowOrderLine(
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            shadow_order_id=order.id,
+            clover_line_item_id=f"line-{uuid4()}",
+            clover_item_id="burger",
+            name="Test Burger",
+            quantity=Decimal("1"),
+            mapping_status="mapped",
+            recipe_preview_json={
+                "ingredients": [
+                    {"inventoryItemId": chicken.id, "quantity": "0.1800", "unit": "kg", "name": "Chicken"},
+                    {"inventoryItemId": buns.id, "quantity": "0.2500", "unit": "pack", "name": "Buns"},
+                ],
+            },
+        )
+        db.session.add_all([order, line])
+        db.session.commit()
+
+        barrier = threading.Barrier(2)
+        errors = []
+        results = []
+
+        def worker():
+            try:
+                with application.app_context():
+                    local_order = CloverShadowOrder.query.filter_by(id=order.id).one()
+                    local_connection = CloverConnection.query.filter_by(id=connection.id).one()
+                    barrier.wait(timeout=10)
+                    results.append(apply_clover_order_inventory(order=local_order, connection=local_connection))
+                    db.session.commit()
+            except Exception as exc:
+                errors.append(exc)
+                db.session.rollback()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        assert not errors
+        assert len(results) == 2
+        assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2
+        assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id).count() == 2
+        assert InventoryItem.query.get(chicken.id).current_on_hand == Decimal("9.8200")
+        assert InventoryItem.query.get(buns.id).current_on_hand == Decimal("19.7500")
+
+        rollback_order = CloverShadowOrder(
+            organization_id=organization.id,
+            clover_connection_id=connection.id,
+            restaurant_location_id=location.id,
+            clover_merchant_id=connection.merchant_id,
+            clover_order_id=f"rollback-{uuid4()}",
+            provider_status="CLOSED",
+            normalized_status="paid",
+            payment_status="paid",
+            potentially_eligible=True,
+            requires_review=False,
+            total_cents=1800,
+            raw_payload_json={},
+        )
+        rollback_line = CloverShadowOrderLine(
+            organization_id=organization.id,
+            restaurant_location_id=location.id,
+            shadow_order_id=rollback_order.id,
+            clover_line_item_id=f"line-{uuid4()}",
+            clover_item_id="burger",
+            name="Test Burger",
+            quantity=Decimal("1"),
+            mapping_status="mapped",
+            recipe_preview_json={
+                "ingredients": [
+                    {"inventoryItemId": chicken.id, "quantity": "0.1800", "unit": "kg", "name": "Chicken"},
+                    {"inventoryItemId": buns.id, "quantity": "0.2500", "unit": "pack", "name": "Buns"},
+                ],
+            },
+        )
+        db.session.add_all([rollback_order, rollback_line])
+        db.session.commit()
+        before_chicken = InventoryItem.query.get(chicken.id).current_on_hand
+        before_buns = InventoryItem.query.get(buns.id).current_on_hand
+        before_movements = InventoryMovement.query.count()
+        before_ledgers = CloverShadowOrderLineInventoryConsumption.query.count()
+
+        real_add = db.session.add
+
+        def add_then_fail(instance, *args, **kwargs):
+            real_add(instance, *args, **kwargs)
+            if isinstance(instance, InventoryMovement):
+                raise RuntimeError("controlled mid-transaction failure")
+
+        monkeypatch.setattr(db.session, "add", add_then_fail)
+        try:
+            apply_clover_order_inventory(order=rollback_order, connection=connection)
+        except RuntimeError:
+            db.session.rollback()
+        else:
+            raise AssertionError("controlled failure should abort inventory execution")
+
+        assert InventoryItem.query.get(chicken.id).current_on_hand == before_chicken
+        assert InventoryItem.query.get(buns.id).current_on_hand == before_buns
+        assert InventoryMovement.query.count() == before_movements
+        assert CloverShadowOrderLineInventoryConsumption.query.count() == before_ledgers
