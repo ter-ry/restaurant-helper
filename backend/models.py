@@ -1035,6 +1035,7 @@ class SquareOrderLineInventoryConsumption(TimestampMixin, db.Model):
     square_order_line_id = db.Column(db.Integer, db.ForeignKey("square_order_lines.id", ondelete="CASCADE"), nullable=False, index=True)
     inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
     applied_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    unit_cost_snapshot = db.Column(db.Numeric(14, 6), nullable=True)
 
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")
