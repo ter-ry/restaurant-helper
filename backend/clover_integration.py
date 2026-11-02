@@ -982,8 +982,9 @@ def clover_shadow_orders_fetch():
             return json_error("Clover order retrieval reached its safety bound; no complete snapshot was saved.", 502, code="clover_orders_incomplete")
         imported, count = _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=orders)
         inventory_dry_run = bool(payload.get("dryRun"))
+        inventory_execute = bool(payload.get("executeInventory"))
         inventory_results = [
-            apply_clover_order_inventory(order=order, connection=connection, dry_run=inventory_dry_run)
+            apply_clover_order_inventory(order=order, connection=connection, dry_run=inventory_dry_run or not inventory_execute)
             for order in imported
         ]
         record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": True})
@@ -1010,7 +1011,7 @@ def clover_shadow_orders_fetch():
         "orders": [_serialize_shadow_order(order) for order in orders],
         "inventoryAutomation": {
             "enabled": clover_order_inventory_enabled(),
-            "dryRun": inventory_dry_run if "inventory_dry_run" in locals() else False,
+            "dryRun": (inventory_dry_run or not inventory_execute) if "inventory_dry_run" in locals() else True,
             "results": inventory_results if "inventory_results" in locals() else [],
         },
     }), 200
