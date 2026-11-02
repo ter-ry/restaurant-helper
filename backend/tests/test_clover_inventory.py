@@ -60,7 +60,7 @@ def test_open_or_unmapped_orders_do_not_consume_inventory():
 def test_dry_run_and_disabled_flag_are_non_mutating(app):
     with app.app_context():
         app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
-        result = apply_clover_order_inventory(order=_order(), connection=SimpleNamespace(), dry_run=True)
+        result = apply_clover_order_inventory(order=_order(), connection=SimpleNamespace(organization_id=1, id=99, status="connected", environment="sandbox", merchant_id=""), dry_run=True)
         assert result["dryRun"] is True
         assert result["applied"] is False
         assert result["enabled"] is False
