@@ -225,6 +225,7 @@ export function PilotCloverConnection() {
                   {order.lineItemsIncomplete ? <p className="mt-2 text-xs text-amber-800">Warning: Clover line-item data was incomplete; review this ingredient preview.</p> : null}
                   {order.financialIncomplete ? <p className="mt-2 text-xs text-amber-800">Warning: payment/refund verification is unavailable; financial status requires review.</p> : null}
                   {order.refundsUnverified ? <p className="mt-1 text-xs text-amber-800">Refund status is unverified.</p> : null}
+                  {order.paymentStateConflict ? <p className="mt-1 text-xs text-amber-800">Warning: provider order status conflicts with verified payment evidence; review required.</p> : null}
                   <div className="mt-2 space-y-2">{order.lines.map((line) => <div key={line.id} className="rounded-md border border-line px-2 py-2 text-xs text-muted">
                     <p><span className="font-semibold text-ink">{line.name}</span> × {line.quantity}{line.unitPriceCents == null ? "" : ` · ${(line.unitPriceCents / 100).toFixed(2)}`}</p>
                     <p className="mt-1">Clover item: {line.cloverItemId || "Unknown"} · Flowtally: {line.recipePreview.flowtallyMenuItemName || (line.mappingStatus === "unmapped" ? "Unmapped" : "Not available")}</p>

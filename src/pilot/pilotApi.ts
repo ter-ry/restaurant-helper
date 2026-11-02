@@ -922,6 +922,7 @@ export type PilotCloverShadowOrder = {
   lineItemsIncomplete: boolean;
   financialIncomplete: boolean;
   refundsUnverified: boolean;
+  paymentStateConflict: boolean;
   createdAt: string | null;
   modifiedAt: string | null;
   closedAt: string | null;
