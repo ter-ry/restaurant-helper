@@ -4190,6 +4190,8 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
 
         assert not errors
         assert len(results) == 2
+        assert all(result["eligible"] for result in results), results
+        assert all(result["applied"] is True for result in results), results
         assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2
         assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id).count() == 2
         assert InventoryItem.query.get(chicken.id).current_on_hand == Decimal("9.8200")
