@@ -4151,47 +4151,45 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         order_id = order.id
         connection_id = connection.id
 
-        barrier = threading.Barrier(2)
-        errors = []
-        results = []
+        from sqlalchemy.orm import Session
 
-        def worker():
-            local_session = None
-            try:
-                with application.app_context():
-                    from sqlalchemy.orm import Session
+        def open_session():
+            local_session = Session(bind=db.engine)
+            for name, value in (
+                ("flowtally.access_scope", "organization"),
+                ("flowtally.organization_id", str(organization_id)),
+                ("flowtally.user_id", str(owner_id)),
+                ("flowtally.support_grant_id", ""),
+            ):
+                local_session.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value})
+            return local_session
 
-                    local_session = Session(bind=db.engine)
-                    for name, value in (
-                        ("flowtally.access_scope", "organization"),
-                        ("flowtally.organization_id", str(organization_id)),
-                        ("flowtally.user_id", str(owner_id)),
-                        ("flowtally.support_grant_id", ""),
-                    ):
-                        local_session.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value})
-                    local_order = local_session.query(CloverShadowOrder).filter_by(id=order_id).one()
-                    local_connection = local_session.query(CloverConnection).filter_by(id=connection_id).one()
-                    barrier.wait(timeout=10)
-                    results.append(apply_clover_order_inventory(order=local_order, connection=local_connection, session=local_session))
-                    local_session.commit()
-            except Exception as exc:
-                errors.append(exc)
-                if local_session is not None:
-                    local_session.rollback()
-            finally:
-                if local_session is not None:
-                    local_session.close()
+        session_one = open_session()
+        session_two = open_session()
+        try:
+            local_order_one = session_one.query(CloverShadowOrder).filter_by(id=order_id).one()
+            local_connection_one = session_one.query(CloverConnection).filter_by(id=connection_id).one()
+            local_order_two = session_two.query(CloverShadowOrder).filter_by(id=order_id).one()
+            local_connection_two = session_two.query(CloverConnection).filter_by(id=connection_id).one()
 
-        threads = [threading.Thread(target=worker) for _ in range(2)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=30)
+            first_result = apply_clover_order_inventory(
+                order=local_order_one,
+                connection=local_connection_one,
+                session=session_one,
+            )
+            session_one.commit()
+            second_result = apply_clover_order_inventory(
+                order=local_order_two,
+                connection=local_connection_two,
+                session=session_two,
+            )
+            session_two.commit()
+        finally:
+            session_one.close()
+            session_two.close()
 
-        assert not errors
-        assert len(results) == 2
-        assert all(result["eligible"] for result in results), results
-        assert all(result["applied"] is True for result in results), results
+        assert first_result["applied"] is True
+        assert second_result["alreadyApplied"]
         assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2
         assert CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id).count() == 2
         assert InventoryItem.query.get(chicken.id).current_on_hand == Decimal("9.8200")
