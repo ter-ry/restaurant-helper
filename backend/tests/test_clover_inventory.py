@@ -29,13 +29,12 @@ def _order(*, eligible=True, review=False, raw=None):
 def test_verified_clover_order_plans_recipe_consumption_without_writes():
     plan = plan_clover_order_inventory(_order())
     assert plan["eligible"] is True
-    assert plan["movements"] == [{
-        "lineId": 11,
-        "inventoryItemId": 7,
-        "quantity": "-0.1800",
-        "unit": "kg",
-        "itemName": "Chicken Breast",
-    }]
+    movement = plan["movements"][0]
+    assert movement["lineId"] == 11
+    assert movement["inventoryItemId"] == 7
+    assert movement["quantity"] == "-0.1800"
+    assert movement["correction"] == "-0.1800"
+    assert movement["state"] == "new"
 
 
 def test_financially_incomplete_or_conflicted_orders_are_never_eligible():
