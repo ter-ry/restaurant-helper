@@ -162,7 +162,7 @@ def apply_clover_order_inventory(
                 CloverShadowOrderLine.shadow_order_id == order.id,
                 CloverShadowOrderLine.organization_id == order.organization_id,
                 CloverShadowOrderLine.restaurant_location_id == order.restaurant_location_id,
-            ).with_for_update().all()
+            ).order_by(CloverShadowOrderLine.id.asc()).with_for_update().all()
         )
     }
     if len(locked_lines) != len(line_ids) and not (dry_run or not clover_order_inventory_enabled()):
@@ -181,7 +181,7 @@ def apply_clover_order_inventory(
                 InventoryItem.id.in_(ingredient_ids or [-1]),
                 InventoryItem.organization_id == order.organization_id,
                 InventoryItem.location_id == order.restaurant_location_id,
-            ).with_for_update().all()
+            ).order_by(InventoryItem.id.asc()).with_for_update().all()
         )
     }
     if any(item_id not in locked_items for item_id in ingredient_ids) and not (dry_run or not clover_order_inventory_enabled()):
@@ -191,6 +191,9 @@ def apply_clover_order_inventory(
         CloverShadowOrderLineInventoryConsumption.clover_shadow_order_line_id.in_(line_ids or [-1]),
         CloverShadowOrderLineInventoryConsumption.organization_id == order.organization_id,
         CloverShadowOrderLineInventoryConsumption.location_id == order.restaurant_location_id,
+    ).order_by(
+        CloverShadowOrderLineInventoryConsumption.clover_shadow_order_line_id.asc(),
+        CloverShadowOrderLineInventoryConsumption.inventory_item_id.asc(),
     ).with_for_update().all()
     plan = plan_clover_order_inventory(order, existing_ledgers=ledgers)
     plan["enabled"] = clover_order_inventory_enabled()
