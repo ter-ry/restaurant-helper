@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from backend.clover_inventory import apply_clover_order_inventory, plan_clover_order_inventory
 
 
@@ -64,3 +66,11 @@ def test_dry_run_and_disabled_flag_are_non_mutating(app):
         assert result["dryRun"] is True
         assert result["applied"] is False
         assert result["enabled"] is False
+
+
+@pytest.mark.parametrize("value", ["true", "false", 1, None, object()])
+def test_inventory_execution_requires_json_boolean_true(value):
+    from backend.clover_integration import _inventory_execution_requested
+
+    assert _inventory_execution_requested(value) is False
+    assert _inventory_execution_requested(True) is True
