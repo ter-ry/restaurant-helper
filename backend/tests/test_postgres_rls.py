@@ -4081,6 +4081,7 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         organization_name = f"Clover concurrent {uuid4()}"
         make_operational_organization(owner, name=organization_name, location_name="Main")
+        _set_rls_context(access_scope="setup", user_id=None)
         organization = Organization.query.filter_by(name=organization_name).one()
         location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
         _set_rls_context(access_scope="organization", organization_id=organization.id, user_id=owner.id)
