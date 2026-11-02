@@ -4085,6 +4085,8 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         organization = Organization.query.filter_by(name=organization_name).one()
         location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
         _set_rls_context(access_scope="organization", organization_id=organization.id, user_id=owner.id)
+        organization_id = organization.id
+        owner_id = owner.id
         connection = CloverConnection(
             organization_id=organization.id,
             environment="sandbox",
@@ -4146,6 +4148,8 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         )
         db.session.add_all([order, line])
         db.session.commit()
+        order_id = order.id
+        connection_id = connection.id
 
         barrier = threading.Barrier(2)
         errors = []
@@ -4160,13 +4164,13 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
                     local_session = Session(bind=db.engine)
                     for name, value in (
                         ("flowtally.access_scope", "organization"),
-                        ("flowtally.organization_id", str(organization.id)),
-                        ("flowtally.user_id", str(owner.id)),
+                        ("flowtally.organization_id", str(organization_id)),
+                        ("flowtally.user_id", str(owner_id)),
                         ("flowtally.support_grant_id", ""),
                     ):
                         local_session.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value})
-                    local_order = local_session.query(CloverShadowOrder).filter_by(id=order.id).one()
-                    local_connection = local_session.query(CloverConnection).filter_by(id=connection.id).one()
+                    local_order = local_session.query(CloverShadowOrder).filter_by(id=order_id).one()
+                    local_connection = local_session.query(CloverConnection).filter_by(id=connection_id).one()
                     barrier.wait(timeout=10)
                     results.append(apply_clover_order_inventory(order=local_order, connection=local_connection, session=local_session))
                     local_session.commit()
