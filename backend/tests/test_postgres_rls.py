@@ -4076,9 +4076,11 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
     application = postgres_app
     with application.app_context():
         application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        _set_rls_context(access_scope="setup", user_id=None)
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
         organization = make_operational_organization(owner, name=f"Clover concurrent {uuid4()}", location_name="Main")
         location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        _set_rls_context(access_scope="organization", organization_id=organization.id, user_id=owner.id)
         connection = CloverConnection(
             organization_id=organization.id,
             environment="sandbox",
