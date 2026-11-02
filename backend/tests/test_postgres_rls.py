@@ -4152,16 +4152,31 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         results = []
 
         def worker():
+            local_session = None
             try:
                 with application.app_context():
-                    local_order = CloverShadowOrder.query.filter_by(id=order.id).one()
-                    local_connection = CloverConnection.query.filter_by(id=connection.id).one()
+                    from sqlalchemy.orm import Session
+
+                    local_session = Session(bind=db.engine)
+                    for name, value in (
+                        ("flowtally.access_scope", "organization"),
+                        ("flowtally.organization_id", str(organization.id)),
+                        ("flowtally.user_id", str(owner.id)),
+                        ("flowtally.support_grant_id", ""),
+                    ):
+                        local_session.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value})
+                    local_order = local_session.query(CloverShadowOrder).filter_by(id=order.id).one()
+                    local_connection = local_session.query(CloverConnection).filter_by(id=connection.id).one()
                     barrier.wait(timeout=10)
-                    results.append(apply_clover_order_inventory(order=local_order, connection=local_connection))
-                    db.session.commit()
+                    results.append(apply_clover_order_inventory(order=local_order, connection=local_connection, session=local_session))
+                    local_session.commit()
             except Exception as exc:
                 errors.append(exc)
-                db.session.rollback()
+                if local_session is not None:
+                    local_session.rollback()
+            finally:
+                if local_session is not None:
+                    local_session.close()
 
         threads = [threading.Thread(target=worker) for _ in range(2)]
         for thread in threads:
