@@ -14,7 +14,7 @@ from .clover_orders import CloverOrderClient
 from .clover_inventory import apply_clover_order_inventory, clover_order_inventory_enabled
 from .pos import recipe_ingredient_quantity
 from .extensions import db
-from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RestaurantLocation
+from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, MenuItem, Organization, OrganizationMembership, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
 from .tenant_context import apply_org_tenant_context
 from .utils import isoformat, json_error, get_platform_role
@@ -913,7 +913,20 @@ def _ingest_shadow_orders(
         if not normalized.incomplete:
             for line in existing_lines.values():
                 if line.clover_line_item_id not in seen_line_ids:
-                    db.session.delete(line)
+                    # Never cascade away a line that already contributed to
+                    # inventory. Preserve it as a review-required historical
+                    # line so a provider correction cannot erase the audit
+                    # trail or applied-quantity ledger.
+                    applied = CloverShadowOrderLineInventoryConsumption.query.filter_by(
+                        clover_shadow_order_line_id=line.id,
+                    ).first()
+                    if applied is not None and applied.applied_quantity:
+                        line.mapping_status = "review_required"
+                        line.recipe_preview_json = {
+                            "reason": "Clover removed a line after inventory application; manual correction is required.",
+                        }
+                    else:
+                        db.session.delete(line)
         ingested.append(shadow)
     db.session.flush()
     return ingested, len(ingested)
