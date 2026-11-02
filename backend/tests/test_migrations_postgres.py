@@ -492,7 +492,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
         # The Clover mapping migration is part of the current head.\n        
-        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
+        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -511,6 +511,13 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         assert ledger_nullable is False
         assert ledger_precision == 12
         assert ledger_scale == 4
+        cost_type, cost_nullable, cost_precision, cost_scale = _column_info(
+            "clover_shadow_order_line_inventory_consumptions", "unit_cost_snapshot"
+        )
+        assert cost_type == "numeric"
+        assert cost_nullable is True
+        assert cost_precision == 14
+        assert cost_scale == 6
         consumption_type, consumption_nullable, consumption_precision, consumption_scale = _column_info(
             "square_order_line_inventory_consumptions", "applied_quantity"
         )
@@ -677,7 +684,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
+        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -698,7 +705,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
+        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -723,7 +730,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
+        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -742,7 +749,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
+        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -943,7 +950,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0025_clover_shadow_inventory_consumption"
+        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
