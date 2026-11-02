@@ -4188,6 +4188,7 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
             session_one.close()
             session_two.close()
 
+        _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
         assert first_result["applied"] is True
         assert second_result["alreadyApplied"]
         assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2
