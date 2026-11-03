@@ -71,11 +71,11 @@ The workflow is in `.github/workflows/deploy.yml`.
 
 To deploy:
 
-1. Push the repo to GitHub on `main`.
+1. Push the repo to GitHub; changes reach `main` only through owner-approved pull requests.
 2. In GitHub, open **Settings > Pages**.
 3. Set **Source** to **GitHub Actions**.
 4. Confirm the custom domain is `flowtally.ca` when ready.
-5. Push to `main` or run the workflow manually from the **Actions** tab.
+5. Merging to `main` (owner-approved) or running the workflow manually from the **Actions** tab triggers deployment.
 
 `public/CNAME` contains `flowtally.ca`, so the built GitHub Pages artifact includes the custom domain file.
 
