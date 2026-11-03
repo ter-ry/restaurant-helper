@@ -11,9 +11,10 @@ from .audit import record_audit_event
 from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .clover_orders import CloverOrderClient
+from .clover_inventory import apply_clover_order_inventory, clover_order_inventory_enabled
 from .pos import recipe_ingredient_quantity
 from .extensions import db
-from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, MenuItem, Organization, OrganizationMembership, RestaurantLocation
+from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, MenuItem, Organization, OrganizationMembership, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
 from .tenant_context import apply_org_tenant_context
 from .utils import isoformat, json_error, get_platform_role
@@ -167,6 +168,11 @@ def _allowlisted(organization: Organization | None) -> bool:
         return False
     allowed_ids = {int(value) for value in (current_app.config.get("CLOVER_ALLOWED_ORGANIZATION_IDS") or [])}
     return organization.id in allowed_ids
+
+
+def _inventory_execution_requested(value: Any) -> bool:
+    """Only a JSON boolean true may enable Clover inventory writes."""
+    return value is True
 
 
 def clover_mapping_enabled() -> bool:
@@ -912,7 +918,20 @@ def _ingest_shadow_orders(
         if not normalized.incomplete:
             for line in existing_lines.values():
                 if line.clover_line_item_id not in seen_line_ids:
-                    db.session.delete(line)
+                    # Never cascade away a line that already contributed to
+                    # inventory. Preserve it as a review-required historical
+                    # line so a provider correction cannot erase the audit
+                    # trail or applied-quantity ledger.
+                    applied = CloverShadowOrderLineInventoryConsumption.query.filter_by(
+                        clover_shadow_order_line_id=line.id,
+                    ).first()
+                    if applied is not None and applied.applied_quantity:
+                        line.mapping_status = "review_required"
+                        line.recipe_preview_json = {
+                            "reason": "Clover removed a line after inventory application; manual correction is required.",
+                        }
+                    else:
+                        db.session.delete(line)
         ingested.append(shadow)
     db.session.flush()
     return ingested, len(ingested)
@@ -967,7 +986,13 @@ def clover_shadow_orders_fetch():
         if not complete:
             return json_error("Clover order retrieval reached its safety bound; no complete snapshot was saved.", 502, code="clover_orders_incomplete")
         imported, count = _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=orders)
-        record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": True})
+        inventory_dry_run = bool(payload.get("dryRun"))
+        inventory_execute = _inventory_execution_requested(payload.get("executeInventory"))
+        inventory_results = [
+            apply_clover_order_inventory(order=order, connection=connection, dry_run=inventory_dry_run or not inventory_execute)
+            for order in imported
+        ]
+        record_audit_event(event_type="clover.shadow_orders.ingested", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"count": count, "previewOnly": not (inventory_execute and clover_order_inventory_enabled()), "inventoryAutomation": bool(inventory_execute and clover_order_inventory_enabled())})
         db.session.commit()
     except ValueError:
         db.session.rollback()
@@ -984,11 +1009,16 @@ def clover_shadow_orders_fetch():
         return json_error("Clover orders could not be loaded.", 503, code=exc.code)
     orders = CloverShadowOrder.query.filter_by(organization_id=organization.id, restaurant_location_id=location.id, clover_connection_id=connection.id).order_by(CloverShadowOrder.source_modified_at.desc().nullslast(), CloverShadowOrder.id.desc()).limit(50).all()
     return jsonify({
-        "readOnly": True,
-        "previewOnly": True,
+        "readOnly": not (inventory_execute and clover_order_inventory_enabled()),
+        "previewOnly": not (inventory_execute and clover_order_inventory_enabled()),
         "retrievedAt": _now().isoformat(),
         "count": len(orders),
         "orders": [_serialize_shadow_order(order) for order in orders],
+        "inventoryAutomation": {
+            "enabled": clover_order_inventory_enabled(),
+            "dryRun": (inventory_dry_run or not inventory_execute) if "inventory_dry_run" in locals() else True,
+            "results": inventory_results if "inventory_results" in locals() else [],
+        },
     }), 200
 
 

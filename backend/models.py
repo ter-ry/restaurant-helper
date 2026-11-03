@@ -1142,6 +1142,30 @@ class CloverMenuMapping(TimestampMixin, db.Model):
 
 
 
+class CloverShadowOrderLineInventoryConsumption(TimestampMixin, db.Model):
+    __tablename__ = "clover_shadow_order_line_inventory_consumptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "clover_shadow_order_line_id",
+            "inventory_item_id",
+            name="uq_clover_shadow_order_line_inventory_consumption",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    clover_shadow_order_line_id = db.Column(db.Integer, db.ForeignKey("clover_shadow_order_lines.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    applied_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    unit_cost_snapshot = db.Column(db.Numeric(14, 6), nullable=True)
+
+    shadow_line = db.relationship("CloverShadowOrderLine")
+    organization = db.relationship("Organization")
+    location = db.relationship("RestaurantLocation")
+    inventory_item = db.relationship("InventoryItem")
+
+
 class CloverShadowOrder(TimestampMixin, db.Model):
     __tablename__ = "clover_shadow_orders"
     __table_args__ = (
