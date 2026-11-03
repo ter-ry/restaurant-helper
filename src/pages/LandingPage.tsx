@@ -174,7 +174,7 @@ export function LandingPage() {
               <a href={PRODUCTION_LOGIN_URL} className="landing-cta-primary inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700" onClick={() => trackEvent("cta_request_access_click", { location: "hero" })}>Request access<ArrowRight className="ml-2 h-4 w-4" /></a>
               <a href="#how-it-works" className="landing-cta-secondary inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:border-teal-500 hover:text-teal-800">See how it works</a>
             </div>
-            <p className="mt-5 max-w-xl text-sm leading-6 text-slate-500">Keep your POS. Keep your accounting. Flowtally runs the operational layer between them.</p>
+            <p className="mt-5 max-w-xl text-sm leading-6 text-slate-500">Keep your POS. Keep your accounting. Flowtally connects purchasing, inventory, and daily close between them.</p>
           </div>
           <ProductShowcase />
         </div>
