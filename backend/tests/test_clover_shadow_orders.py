@@ -171,3 +171,52 @@ def test_shadow_order_endpoint_is_idempotent_and_non_mutating(app, client, monke
         assert second_lines["line-1"].id == first_line.id
         assert db.session.query(CloverShadowOrder).filter_by(organization_id=organization.id).count() == 1
         assert InventoryMovement.query.filter_by(organization_id=organization.id).count() == 0
+
+
+from types import SimpleNamespace
+from backend.clover_inventory import apply_clover_order_inventory, plan_clover_order_inventory
+
+
+def _inventory_order_fixture(*, eligible=True, review=False, raw=None):
+    line = SimpleNamespace(
+        id=11,
+        mapping_status="mapped",
+        recipe_preview_json={"ingredients": [{"inventoryItemId": 7, "quantity": "0.1800", "unit": "kg", "name": "Chicken Breast"}]},
+    )
+    return SimpleNamespace(
+        id=3,
+        clover_order_id="order-1",
+        organization_id=1,
+        restaurant_location_id=2,
+        potentially_eligible=eligible,
+        requires_review=review,
+        normalized_status="paid",
+        raw_payload_json=raw or {},
+        lines=[line],
+    )
+
+
+def test_verified_clover_order_plans_recipe_consumption_without_writes():
+    plan = plan_clover_order_inventory(_inventory_order_fixture())
+    assert plan["eligible"] is True
+    assert plan["movements"][0]["quantity"] == "-0.1800"
+
+
+def test_financially_incomplete_or_conflicted_orders_are_never_eligible():
+    for raw in ({"financialIncomplete": True}, {"refundsUnverified": True}, {"paymentStateConflict": True}, {"lineItemsIncomplete": True}):
+        plan = plan_clover_order_inventory(_inventory_order_fixture(raw=raw))
+        assert plan["eligible"] is False
+        assert plan["movements"] == []
+
+
+def test_clover_inventory_dry_run_and_disabled_flag_are_non_mutating(app):
+    with app.app_context():
+        app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
+        result = apply_clover_order_inventory(
+            order=_inventory_order_fixture(),
+            connection=SimpleNamespace(organization_id=1, id=99, status="connected", environment="sandbox", merchant_id=""),
+            dry_run=True,
+        )
+        assert result["dryRun"] is True
+        assert result["applied"] is False
+        assert result["enabled"] is False
