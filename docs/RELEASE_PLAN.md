@@ -11,7 +11,7 @@ Evidence baseline (2026-11-03): `main` = `ccaac01` (PR #160 merged). CI run 4147
 **Recommendation: a Square-first MVP can launch while Clover remains in development.**
 
 - Square is the only POS adapter with a CI-executed PostgreSQL vertical workflow (receive purchase, weighted-average cost, mapped sale consumption, replay idempotency, unmapped-sale warning) and a Production Showcase walkthrough (Oct 2026).
-- Clover today is Sandbox-only: OAuth, catalog read, mapping and read-only shadow orders are merged; sales-to-inventory reconciliation is open in PR #161 behind `CLOVER_ORDER_INVENTORY_ENABLED=false`. Daily Close, reporting, menu costing and costing have no Clover code paths.
+- Clover today is Sandbox-only: OAuth, catalog read, mapping and read-only shadow orders are merged; sales-to-inventory reconciliation was merged in PR #161 (`776f557`, migrations 0025/0026 on `main`) behind `CLOVER_ORDER_INVENTORY_ENABLED=false`; it is not independently reviewed, not Sandbox-validated and not known to be deployed. Daily Close, reporting, menu costing and costing have no Clover code paths.
 - Therefore Clover must not be advertised as supported. Marketing says "Square today; Clover in development".
 - Clover becomes P0 only if the owner's first pilot customers use Clover. That is an **owner decision** (see RELEASE_STATUS owner actions).
 - Restaurants without Square can still use purchasing, inventory, costing and manual Daily Close; claims must say so.
@@ -19,7 +19,7 @@ Evidence baseline (2026-11-03): `main` = `ccaac01` (PR #160 merged). CI run 4147
 ## Milestone 1 - Reconcile repository, PRs and deployed state (P0)
 
 - **Business outcome:** one trusted baseline everyone (owner, Claude, Codex) agrees on.
-- **Required:** record `main` SHA and CI; triage open PRs (only #161 at audit time); confirm what Production/Staging/Showcase/Demo currently run; confirm Alembic head on each; confirm deploy trigger for the Render services (not visible from the repo).
+- **Required:** record `main` SHA and CI; triage open PRs (only #162 after #161 merged); confirm what Production/Staging/Showcase/Demo currently run; confirm Alembic head on each; confirm deploy trigger for the Render services (not visible from the repo).
 - **Optional (P2):** archive stale docs/audit files that contradict current state.
 - **Dependencies:** owner access to Render/GitHub/hosting consoles.
 - **Acceptance:** `RELEASE_STATUS.md` lists every environment with SHA, migration head and last verified date; no unexplained open PRs or unmerged branches.
@@ -44,10 +44,10 @@ Evidence baseline (2026-11-03): `main` = `ccaac01` (PR #160 merged). CI run 4147
 
 - **Business outcome:** sales from the owner's POS reduce inventory and feed Daily Close accurately.
 - **Required (P0, Square):** confirm Square OAuth, location/catalog mapping, order sync, webhook, replay idempotency and Daily Close on current `main`; confirm unmapped/recipe-less sales warn instead of silently deducting.
-- **Optional (P1, Clover):** review and merge PR #161 (disabled by default), Showcase rehearsal of the flag-on path with a real paid Sandbox order, then Clover support in Daily Close and food-cost reporting (not implemented). **P2:** historical food-cost reconstruction from Clover cost snapshots; QuickBooks export.
-- **Dependencies:** M1; Clover items depend on PR #161 review.
+- **Optional (P1, Clover):** independent read-only review of merged `776f557` (disabled by default), then deployment/migration verification, then a controlled Showcase rehearsal of the flag-on path with a real paid Sandbox order, then Clover support in Daily Close and food-cost reporting (not implemented). **P2:** historical food-cost reconstruction from Clover cost snapshots; QuickBooks export.
+- **Dependencies:** M1; Clover items depend on the independent review of `776f557`.
 - **Acceptance:** Square: existing vertical test passes unchanged. Clover: flag-off is a verified no-op; flag-on tested through the real endpoint with idempotency, refund/void, concurrency and RLS; Square code paths untouched (diff review).
-- **Verification:** CI backend job; Showcase manual check; independent review of PR #161 (financial/inventory change).
+- **Verification:** CI backend job; Showcase manual check; independent review of merged `776f557` (financial/inventory change).
 - **Definition of Done:** Square verified on Showcase; Clover status recorded honestly (merged-disabled, Sandbox-verified, or not started).
 - **Human approval:** owner decides Clover scope for MVP; owner/merchant must supply a Clover Sandbox paid order (external prerequisite). Never enable the flag in Production without owner approval.
 - **Blocks MVP launch:** Square part Yes. Clover part No (unless owner declares Clover customer first).

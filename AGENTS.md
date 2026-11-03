@@ -54,7 +54,7 @@ Positioning:
 - Never merge a PR, deploy, change production/staging configuration, or modify live data without explicit owner approval in the current session. Approval for one action does not extend to another.
 - Merging to `main` triggers the GitHub Pages deploy (`.github/workflows/deploy.yml`); treat every merge as a release action.
 - Never expose or commit credentials, tokens, `.env` files or customer data. Use the `*.example` files and placeholders only.
-- Do not touch another agent's open PR or branch (for example Clover PR #161) unless the owner asks.
+- Do not touch another agent's open PR or branch (check `docs/RELEASE_STATUS.md` for open PRs) unless the owner asks.
 - Do not edit `.github/workflows/`, `render*.yaml`, `Procfile` or migrations unless the task is explicitly about them.
 - Commit after relevant checks pass. Never skip, disable or quarantine a test to get green.
 
