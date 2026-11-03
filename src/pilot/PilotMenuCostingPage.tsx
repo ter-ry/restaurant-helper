@@ -168,6 +168,7 @@ export function PilotMenuCostingPage() {
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [savingIngredient, setSavingIngredient] = useState(false);
   const [savingMenuItem, setSavingMenuItem] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -514,18 +515,25 @@ export function PilotMenuCostingPage() {
   };
 
   const confirmDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
     const pending = pendingDelete;
-    setPendingDelete(null);
-    if (pending.kind === "recipe") {
-      const recipe = recipes.find((candidate) => candidate.id === pending.id);
-      if (recipe) await removeRecipe(recipe);
-    } else if (pending.kind === "ingredient") {
-      const ingredient = selectedRecipe?.ingredients.find((candidate) => candidate.id === pending.id);
-      if (ingredient) await removeIngredient(ingredient);
-    } else {
-      const menuItem = menuItems.find((candidate) => candidate.id === pending.id);
-      if (menuItem) await removeMenuItem(menuItem);
+    // Keep the confirmation open (and the Delete button disabled) until the server
+    // call and the follow-up reload finish, so a double click cannot delete twice.
+    setDeleting(true);
+    try {
+      if (pending.kind === "recipe") {
+        const recipe = recipes.find((candidate) => candidate.id === pending.id);
+        if (recipe) await removeRecipe(recipe);
+      } else if (pending.kind === "ingredient") {
+        const ingredient = selectedRecipe?.ingredients.find((candidate) => candidate.id === pending.id);
+        if (ingredient) await removeIngredient(ingredient);
+      } else {
+        const menuItem = menuItems.find((candidate) => candidate.id === pending.id);
+        if (menuItem) await removeMenuItem(menuItem);
+      }
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
     }
   };
 
@@ -938,7 +946,7 @@ export function PilotMenuCostingPage() {
         </div>
       </Card>
       )}
-      {pendingDelete ? <Modal title="Confirm deletion" size="small" onClose={() => setPendingDelete(null)}><p className="text-sm leading-6 text-muted">Delete {pendingDelete.label}? This cannot be undone.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setPendingDelete(null)}>Cancel</Button><Button variant="primary" className="bg-rose-700 hover:bg-rose-800" type="button" onClick={() => void confirmDelete()}>Delete</Button></div></Modal> : null}
+      {pendingDelete ? <Modal title="Confirm deletion" size="small" onClose={() => { if (!deleting) setPendingDelete(null); }}><p className="text-sm leading-6 text-muted">Delete {pendingDelete.label}? This cannot be undone.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" type="button" disabled={deleting} onClick={() => setPendingDelete(null)}>Cancel</Button><Button variant="primary" className="bg-rose-700 hover:bg-rose-800" type="button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? "Deleting…" : "Delete"}</Button></div></Modal> : null}
       {pendingDiscard ? <Modal title={pendingDiscard.title} size="small" onClose={() => setPendingDiscard(null)}><p className="text-sm leading-6 text-muted">{pendingDiscard.message}</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" type="button" onClick={() => setPendingDiscard(null)}>Keep editing</Button><Button variant="primary" type="button" onClick={() => { const confirm = pendingDiscard.confirm; setPendingDiscard(null); confirm(); }}>Discard changes</Button></div></Modal> : null}
     </div>
   );
