@@ -283,6 +283,25 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByLabelText("Scenario selling price")).toHaveValue(null);
   });
 
+  it("shows deleting progress and ignores a second click while a delete is in flight", async () => {
+    const api = await import("../../src/pilot/pilotApi");
+    let release: () => void = () => undefined;
+    vi.mocked(api.deletePilotMenuCostingMenuItem).mockImplementation(() => new Promise((resolve) => { release = () => resolve(undefined as never); }));
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete menu item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const busy = await screen.findByRole("button", { name: "Deleting…" });
+    expect(busy).toBeDisabled();
+    fireEvent.click(busy);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(api.deletePilotMenuCostingMenuItem).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Confirm deletion" })).not.toBeInTheDocument());
+    expect(api.deletePilotMenuCostingMenuItem).toHaveBeenCalledTimes(1);
+  });
+
   it("protects unsaved recipe edits when the editor is closed", async () => {
     render(<PilotMenuCostingPage />);
     await screen.findByText("Menu costing");
