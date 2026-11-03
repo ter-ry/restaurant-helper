@@ -37,20 +37,48 @@ def _line_removed(line: Any) -> bool:
     return isinstance(preview, dict) and bool(preview.get("removed"))
 
 
-def _definitive_reversal_reason(order: CloverShadowOrder) -> str:
-    """Return a reason only for provider states that definitively void a sale.
+def _refund_kind(order: CloverShadowOrder) -> str:
+    """Classify refunds from Clover's numeric amounts, not status strings."""
+    raw = order.raw_payload_json or {}
+    try:
+        refunded = sum(int(Decimal(str(value.get("amount") or 0))) for value in (raw.get("refunds") or []) if isinstance(value, dict))
+        total = int(order.total_cents if order.total_cents is not None else (raw.get("total") or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        return "unknown"
+    if refunded <= 0:
+        return "none"
+    return "full" if total > 0 and refunded >= total else "partial"
 
-    Cancelled/voided/deleted orders and full refunds reverse applied usage.
-    Partial refunds, payment conflicts and incomplete data are NOT proof the sale
-    did not happen, so they are surfaced for review instead of silently reversed.
+
+def _not_prepared_established(order: CloverShadowOrder, line_id: int) -> bool:
+    """True only with explicit per-line evidence that the item was never prepared.
+
+    Clover refunds, voids and removed lines do not prove the food was not made
+    (a refunded burger was still cooked), and `printed` is unusable at counters
+    without kitchen printers. So stock is restored only when the line carries an
+    explicit ``notPrepared: true`` marker (reserved for a verified signal such as
+    an owner confirmation or kitchen-display status). Clover's API sets none
+    today, so every case currently surfaces for review instead.
     """
+    line = next((value for value in order.lines if value.id == line_id), None)
+    clover_line_id = getattr(line, "clover_line_item_id", None)
+    if not clover_line_id:
+        return False
+    raw_lines = (order.raw_payload_json or {}).get("lineItems") or []
+    return any(isinstance(entry, dict) and str(entry.get("id")) == str(clover_line_id) and entry.get("notPrepared") is True for entry in raw_lines)
+
+
+def _reversal_reason(order: CloverShadowOrder, rows: list[CloverShadowOrderLineInventoryConsumption]) -> str:
+    """Reversal needs a definitive cancel/full refund AND not-prepared evidence for every applied line."""
     status = str(getattr(order, "normalized_status", "") or "")
     if status == "cancelled":
-        return "order_cancelled_or_voided"
-    if status == "refunded":
-        text = f"{getattr(order, 'provider_status', '')} {getattr(order, 'payment_status', '')}".upper()
-        if "PARTIAL" not in text and ("REFUND" in text or "CREDIT" in text):
-            return "order_fully_refunded"
+        reason = "order_cancelled_or_voided_not_prepared"
+    elif status == "refunded" and _refund_kind(order) == "full":
+        reason = "order_fully_refunded_not_prepared"
+    else:
+        return ""
+    if rows and all(_not_prepared_established(order, row.clover_shadow_order_line_id) for row in rows):
+        return reason
     return ""
 
 
@@ -115,7 +143,7 @@ def _base_plan(order: CloverShadowOrder) -> dict[str, Any]:
 def _with_ledger_deltas(order: CloverShadowOrder, plan: dict[str, Any], ledgers: list[CloverShadowOrderLineInventoryConsumption]) -> dict[str, Any]:
     by_key = {(row.clover_shadow_order_line_id, row.inventory_item_id): row for row in ledgers}
     desired_keys = {(int(row["lineId"]), int(row["inventoryItemId"])) for row in plan["movements"]}
-    removed_line_ids = {line.id for line in order.lines if _line_removed(line)}
+    removed_line_ids = {line.id for line in order.lines if _line_removed(line) and _not_prepared_established(order, line.id)}
     stale_all = [row for key, row in by_key.items() if key not in desired_keys and _decimal(row.applied_quantity or 0) != 0]
     reversible = [row for row in stale_all if row.clover_shadow_order_line_id in removed_line_ids]
     stale = [row for row in stale_all if row.clover_shadow_order_line_id not in removed_line_ids]
@@ -125,6 +153,7 @@ def _with_ledger_deltas(order: CloverShadowOrder, plan: dict[str, Any], ledgers:
     ]
     if stale:
         plan["eligible"] = False
+        plan["appliedRequiresReview"] = True
         plan["reason"] = "stale_applied_ingredient_requires_review"
         for row in stale:
             plan["movements"].append({
@@ -163,7 +192,7 @@ def _with_ineligible_ledger(order: CloverShadowOrder, plan: dict[str, Any], ledg
     applied = [row for row in ledgers if _decimal(row.applied_quantity or 0) != 0]
     if not applied:
         return plan
-    reversal_reason = _definitive_reversal_reason(order)
+    reversal_reason = _reversal_reason(order, applied)
     if reversal_reason:
         plan["eligible"] = True
         plan["reason"] = reversal_reason
@@ -173,6 +202,7 @@ def _with_ineligible_ledger(order: CloverShadowOrder, plan: dict[str, Any], ledg
         plan["alreadyApplied"] = []
         return plan
     plan["appliedRequiresReview"] = True
+    plan["refundKind"] = _refund_kind(order)
     plan["staleApplied"] = [
         {"lineId": row.clover_shadow_order_line_id, "inventoryItemId": row.inventory_item_id, "appliedQuantity": str(_decimal(row.applied_quantity or 0).quantize(QTY))}
         for row in applied

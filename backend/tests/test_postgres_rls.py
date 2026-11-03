@@ -4448,7 +4448,7 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         assert CloverShadowOrderLineInventoryConsumption.query.count() == before_ledgers
 
 
-def test_clover_applied_order_refund_void_and_removed_line_reverse_idempotently(postgres_app):
+def test_clover_applied_order_reversal_requires_unprepared_evidence_and_is_idempotent(postgres_app):
     """#183: applied usage is reversed (once) when the order later becomes refunded/voided or loses a line."""
     from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, InventoryItem, InventoryMovement, RestaurantLocation, User
 
@@ -4498,11 +4498,24 @@ def test_clover_applied_order_refund_void_and_removed_line_reverse_idempotently(
         def on_hand():
             return [InventoryItem.query.get(item.id).current_on_hand for item in items]
 
-        # Full refund -> reversed once; replay is a no-op.
-        refunded, _ = make_order("refund")
+        def evidence(order, lines, refunds=()):
+            order.total_cents = 1800
+            order.raw_payload_json = {"refunds": list(refunds), "lineItems": [{"id": line.clover_line_item_id, "notPrepared": True} for line in lines]}
+
+        # Full refund WITHOUT not-prepared evidence -> flagged, stock untouched.
+        refunded, refunded_lines = make_order("refund")
         assert on_hand() == [Decimal("9.0000"), Decimal("9.0000")]
-        refunded.normalized_status, refunded.provider_status, refunded.payment_status = "refunded", "REFUNDED", "REFUNDED"
-        refunded.potentially_eligible, refunded.requires_review = False, True
+        refunded.normalized_status, refunded.provider_status, refunded.payment_status = "refunded", "PAID", "refunded"
+        refunded.potentially_eligible, refunded.requires_review, refunded.total_cents = False, True, 1800
+        refunded.raw_payload_json = {"refunds": [{"id": "r1", "amount": 1800}]}
+        db.session.commit()
+        flagged = apply_clover_order_inventory(order=refunded, connection=connection)
+        db.session.commit()
+        assert flagged["applied"] is False and flagged["appliedRequiresReview"] is True
+        assert on_hand() == [Decimal("9.0000"), Decimal("9.0000")]
+
+        # Same order once not-prepared evidence exists -> reversed once; replay is a no-op.
+        evidence(refunded, refunded_lines, refunds=[{"id": "r1", "amount": 1800}])
         db.session.commit()
         assert apply_clover_order_inventory(order=refunded, connection=connection)["applied"] is True
         db.session.commit()
@@ -4512,32 +4525,47 @@ def test_clover_applied_order_refund_void_and_removed_line_reverse_idempotently(
         assert on_hand() == [Decimal("10.0000"), Decimal("10.0000")]
         assert InventoryMovement.query.filter_by(source_record_id=refunded.clover_order_id).count() == 4
 
-        # Void -> reversed; partial refund/conflict -> flagged, no write.
-        voided, _ = make_order("void")
+        # Void with evidence -> reversed; partial refund and conflict -> flagged, no write.
+        voided, voided_lines = make_order("void")
         voided.normalized_status, voided.provider_status, voided.payment_status, voided.potentially_eligible = "cancelled", "VOIDED", "VOIDED", False
+        evidence(voided, voided_lines)
         db.session.commit()
         apply_clover_order_inventory(order=voided, connection=connection)
         db.session.commit()
         assert on_hand() == [Decimal("10.0000"), Decimal("10.0000")]
 
-        conflicted, _ = make_order("conflict")
+        partial, partial_lines = make_order("partial")
+        partial.normalized_status, partial.payment_status, partial.potentially_eligible, partial.requires_review = "refunded", "refunded", False, True
+        evidence(partial, partial_lines, refunds=[{"id": "r2", "amount": 400}])
+        db.session.commit()
+        assert apply_clover_order_inventory(order=partial, connection=connection)["appliedRequiresReview"] is True
+        db.session.commit()
+        assert on_hand() == [Decimal("9.0000"), Decimal("9.0000")]
+
+        conflicted, conflicted_lines = make_order("conflict")
         conflicted.normalized_status, conflicted.potentially_eligible, conflicted.requires_review = "review", False, True
+        evidence(conflicted, conflicted_lines)
         db.session.commit()
         flagged = apply_clover_order_inventory(order=conflicted, connection=connection)
         db.session.commit()
         assert flagged["applied"] is False and flagged["appliedRequiresReview"] is True
-        assert on_hand() == [Decimal("9.0000"), Decimal("9.0000")]
-
-        # Removed mapped line -> only that line reversed.
-        removed, lines = make_order("removed")
         assert on_hand() == [Decimal("8.0000"), Decimal("8.0000")]
+
+        # Removed mapped line -> review without evidence; only that line reversed with it.
+        removed, lines = make_order("removed")
+        assert on_hand() == [Decimal("7.0000"), Decimal("7.0000")]
         lines[1].mapping_status = "review_required"
         lines[1].recipe_preview_json = {"reason": "removed", "removed": True}
         db.session.commit()
+        assert apply_clover_order_inventory(order=removed, connection=connection)["appliedRequiresReview"] is True
+        db.session.commit()
+        assert on_hand() == [Decimal("7.0000"), Decimal("7.0000")]
+        removed.raw_payload_json = {"lineItems": [{"id": lines[1].clover_line_item_id, "notPrepared": True}]}
+        db.session.commit()
         apply_clover_order_inventory(order=removed, connection=connection)
         db.session.commit()
-        assert on_hand() == [Decimal("8.0000"), Decimal("9.0000")]
+        assert on_hand() == [Decimal("7.0000"), Decimal("8.0000")]
         apply_clover_order_inventory(order=removed, connection=connection)
         db.session.commit()
-        assert on_hand() == [Decimal("8.0000"), Decimal("9.0000")]
+        assert on_hand() == [Decimal("7.0000"), Decimal("8.0000")]
         assert InventoryMovement.query.filter_by(source_record_id=removed.clover_order_id).count() == 3

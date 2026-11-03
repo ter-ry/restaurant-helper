@@ -137,22 +137,51 @@ def _movement_count(order):
     return InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count()
 
 
+def _mark_not_prepared(order, lines, *, refunds=None, total=1800):
+    order.total_cents = total
+    order.raw_payload_json = {
+        "refunds": refunds or [],
+        "lineItems": [{"id": line.clover_line_item_id, "notPrepared": True} for line in lines],
+    }
+
+
 @pytest.mark.parametrize(
-    ("normalized", "provider", "payment"),
-    [("cancelled", "VOIDED", "VOIDED"), ("refunded", "REFUNDED", "REFUNDED")],
+    ("normalized", "provider", "payment", "refunds"),
+    [("cancelled", "VOIDED", "VOIDED", []), ("refunded", "PAID", "refunded", [{"id": "r1", "amount": 1800}])],
 )
-def test_applied_order_voided_or_fully_refunded_is_reversed_once(app, normalized, provider, payment):
+def test_void_or_full_refund_without_unprepared_evidence_is_flagged_not_restored(app, normalized, provider, payment, refunds):
+    from backend.extensions import db
+
+    order, connection, items, lines = _applied_fixture(app)
+    order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
+    order.potentially_eligible, order.requires_review, order.total_cents = False, True, 1800
+    order.raw_payload_json = {"refunds": refunds}
+    db.session.commit()
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert result["applied"] is False and result["appliedRequiresReview"] is True
+    assert len(result["staleApplied"]) == 2
+    assert _movement_count(order) == 2
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
+
+
+@pytest.mark.parametrize(
+    ("normalized", "provider", "payment", "refunds"),
+    [("cancelled", "VOIDED", "VOIDED", []), ("refunded", "PAID", "refunded", [{"id": "r1", "amount": 1800}])],
+)
+def test_void_or_full_refund_with_unprepared_evidence_reverses_once(app, normalized, provider, payment, refunds):
     from backend.extensions import db
     from backend.models import InventoryMovement
 
-    order, connection, items, _lines = _applied_fixture(app)
+    order, connection, items, lines = _applied_fixture(app)
     order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
-    order.potentially_eligible, order.requires_review = False, normalized == "refunded"
+    order.potentially_eligible, order.requires_review = False, True
+    _mark_not_prepared(order, lines, refunds=refunds)
     db.session.commit()
 
     preview = apply_clover_order_inventory(order=order, connection=connection, dry_run=True)
     assert preview["eligible"] is True and len(preview["corrections"]) == 2
-    assert _movement_count(order) == 2  # dry run wrote nothing
+    assert _movement_count(order) == 2
 
     result = apply_clover_order_inventory(order=order, connection=connection)
     db.session.commit()
@@ -161,19 +190,45 @@ def test_applied_order_voided_or_fully_refunded_is_reversed_once(app, normalized
     reversals = InventoryMovement.query.filter_by(source_record_id=order.clover_order_id, source_type="clover sale correction").all()
     assert len(reversals) == 2 and all(Decimal(str(m.quantity_delta)) == Decimal("1") for m in reversals)
 
-    # Replay is idempotent.
     replay = apply_clover_order_inventory(order=order, connection=connection)
     db.session.commit()
-    assert all(m.get("state") != "correction" for m in replay["movements"])
+    assert replay["applied"] is False  # ledger already zero: nothing to review or restore
     assert _movement_count(order) == 4
     assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("10.0000"), Decimal("10.0000")]
 
 
-def test_applied_order_reversal_is_blocked_when_flag_off(app):
+def test_evidence_covering_only_some_lines_is_not_enough(app):
     from backend.extensions import db
 
-    order, connection, items, _lines = _applied_fixture(app)
-    order.normalized_status, order.provider_status, order.payment_status, order.potentially_eligible = "cancelled", "VOIDED", "VOIDED", False
+    order, connection, items, lines = _applied_fixture(app)
+    order.normalized_status, order.provider_status, order.potentially_eligible = "cancelled", "VOIDED", False
+    _mark_not_prepared(order, lines[:1])
+    db.session.commit()
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    assert result["applied"] is False and result["appliedRequiresReview"] is True
+    assert _movement_count(order) == 2
+
+
+def test_partial_refund_is_review_required_even_with_unprepared_marker(app):
+    from backend.extensions import db
+
+    order, connection, items, lines = _applied_fixture(app)
+    # Status text says REFUNDED, but the numeric amounts prove the refund is partial.
+    order.normalized_status, order.provider_status, order.payment_status, order.potentially_eligible = "refunded", "REFUNDED", "refunded", False
+    _mark_not_prepared(order, lines, refunds=[{"id": "r1", "amount": 500}])
+    db.session.commit()
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    assert result["applied"] is False and result["appliedRequiresReview"] is True
+    assert result["refundKind"] == "partial"
+    assert _movement_count(order) == 2
+
+
+def test_reversal_is_blocked_when_flag_off(app):
+    from backend.extensions import db
+
+    order, connection, items, lines = _applied_fixture(app)
+    order.normalized_status, order.provider_status, order.potentially_eligible = "cancelled", "VOIDED", False
+    _mark_not_prepared(order, lines)
     db.session.commit()
     app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
     result = apply_clover_order_inventory(order=order, connection=connection)
@@ -184,39 +239,43 @@ def test_applied_order_reversal_is_blocked_when_flag_off(app):
 @pytest.mark.parametrize(
     ("normalized", "provider", "payment", "raw"),
     [
-        ("refunded", "PAID", "PARTIALLY_REFUNDED", {}),
         ("review", "CLOSED", "PAID", {"paymentStateConflict": True}),
         ("review", "CLOSED", "PAID", {"financialIncomplete": True}),
     ],
 )
-def test_applied_order_partial_refund_or_conflict_is_flagged_not_changed(app, normalized, provider, payment, raw):
+def test_applied_order_with_payment_conflict_is_flagged_not_changed(app, normalized, provider, payment, raw):
     from backend.extensions import db
 
-    order, connection, items, _lines = _applied_fixture(app)
+    order, connection, items, lines = _applied_fixture(app)
     order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
-    order.potentially_eligible, order.requires_review, order.raw_payload_json = False, True, raw
+    order.potentially_eligible, order.requires_review = False, True
+    order.raw_payload_json = {**raw, "lineItems": [{"id": line.clover_line_item_id, "notPrepared": True} for line in lines]}
     db.session.commit()
     result = apply_clover_order_inventory(order=order, connection=connection)
     db.session.commit()
-    assert result["applied"] is False
-    assert result["appliedRequiresReview"] is True
-    assert len(result["staleApplied"]) == 2
+    assert result["applied"] is False and result["appliedRequiresReview"] is True
     assert _movement_count(order) == 2
     assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
 
 
-def test_removed_mapped_line_reverses_only_that_line(app):
+def test_removed_line_requires_review_unless_unprepared_is_established(app):
     from backend.extensions import db
 
     order, connection, items, lines = _applied_fixture(app)
     lines[1].mapping_status = "review_required"
     lines[1].recipe_preview_json = {"reason": "removed", "removed": True}
     db.session.commit()
+    flagged = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert flagged["applied"] is False and flagged["appliedRequiresReview"] is True
+    assert _movement_count(order) == 2
+
+    order.raw_payload_json = {"lineItems": [{"id": lines[1].clover_line_item_id, "notPrepared": True}]}
+    db.session.commit()
     result = apply_clover_order_inventory(order=order, connection=connection)
     db.session.commit()
     assert result["applied"] is True
     assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("10.0000")]
-    again = apply_clover_order_inventory(order=order, connection=connection)
+    apply_clover_order_inventory(order=order, connection=connection)
     db.session.commit()
     assert _movement_count(order) == 3
-    assert again["applied"] is True
