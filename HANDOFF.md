@@ -23,7 +23,7 @@ npm run build
 
 ## Deploy
 
-Push to `main`. The GitHub Actions workflow at `.github/workflows/deploy.yml` builds the app and deploys `dist` to GitHub Pages.
+Merging an owner-approved PR to `main` triggers `.github/workflows/deploy.yml`, which builds the app and deploys `dist` to GitHub Pages.
 
 ## Configure GitHub Pages
 
