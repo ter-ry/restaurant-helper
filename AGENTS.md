@@ -95,6 +95,23 @@ The queue is GitHub issues. Labels: priority `P0`/`P1`/`P2`; state `status:ready
 - Never enable Clover inventory writes (`CLOVER_ORDER_INVENTORY_ENABLED`) or touch live data, even to test; use the PostgreSQL test fixtures.
 - In cloud sessions GraphQL is blocked: `gh pr list/view` and `gh issue list` fail. Use `gh api` (REST) or the GitHub MCP tools; `gh run list/view` works. See `docs/AUTOMATION_READINESS.md` for the verified environment recipe.
 
+## Agent Completion Reports
+
+Applies equally to Claude Code and OpenAI Codex. Finish every task with one concise, phone-readable report in exactly this format. No logs, no progress narration, no success claims the evidence does not support.
+
+```
+FLOWTALLY DEVELOPMENT REPORT
+- Status: SUCCESS / BLOCKED / FAILED
+- Task: GitHub issue number and title
+- PR: link and commit SHA, or none
+- Completed: brief summary of actual changes
+- Validation: tests and GitHub CI, each marked passed / failed / pending / not run
+- Owner action: exact approval or manual step required, or none
+- Next: next dependency-ready issue, or the blocker
+```
+
+Use the platform's native completion notification when one exists. Do not install external notification services, and never claim a notification was sent unless the platform confirmed it.
+
 ## Handoff
 
 Keep `docs/RELEASE_STATUS.md` concise and verifiable: status, evidence (PR, SHA, CI run), blockers, one NEXT TASK. Put long background in `docs/`, not in this file. `HANDOFF.md` is the legacy landing-page handoff.
