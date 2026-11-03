@@ -1,120 +1,88 @@
-# Flowtally MVP Release Plan
+# Flowtally — Full Agreed MVP Release and Feature-Freeze Plan
 
-Owner-approved changes only; see `AGENTS.md` for safety rules. Live status and the next task are in `docs/RELEASE_STATUS.md`. This plan contains no dates or effort estimates by design.
+**Owner-approved scope decision (2026-11-03):** The finish line is the **complete agreed Flowtally MVP**, not a limited Square-first launch. All previously agreed functions and fixes must be implemented, integrated, and verified before the final feature freeze; **Clover is required**. Payroll and other features **explicitly confirmed by the owner as future-release work** are excluded. An older P1/P2 label or "optional" wording does **not** by itself constitute an owner-approved deferral.
 
-Priority key: **P0** release-blocking, **P1** important (do before or shortly after launch), **P2** post-launch.
+This decision supersedes older Square-first freeze recommendations and contrary priority/optional labels in older documents or issues. It does not override `AGENTS.md` release and security restrictions. Track current evidence and the next tasks in `docs/RELEASE_STATUS.md`. GitHub issues are the executable queue. Reconcile old audit documents against live code and tests rather than assuming their status is current.
 
-Evidence baseline (2026-11-03): `main` = `ccaac01` (PR #160 merged). CI run 41477196327 on `main` and the Pages deploy run 41477196974 both succeeded. Sources: `docs/pilot-end-to-end-readiness.md` (2026-10-26, CONDITIONAL GO), `docs/release-candidate-recording-audit.md` (2026-10-07 Production Showcase), `docs/private-pilot-gap-checklist.md`, `docs/clover-*.md`. Those documents may be stale; re-verify before relying on them for a launch claim.
+**Two distinct milestones:** An earlier Square-only **pilot/sales test** may be undertaken with verified, honest claims; it is **not** the final MVP feature freeze. The final freeze requires all in-scope Clover and other agreed work. No customer-facing Clover claim or inventory enablement until its own acceptance evidence exists.
 
-## Square-first launch decision
+## Scope contract and exclusions
 
-**Recommendation: a Square-first MVP can launch while Clover remains in development.**
+- **In scope by default:** The agreed product areas and outstanding items in `docs/private-pilot-gap-checklist.md`, the release and Showcase checklists, and user-approved UI changes. Investigate each missing or unchecked item; complete it or record a **specific owner-approved deferral** in `docs/RELEASE_STATUS.md`.
+- **Explicitly deferred:** Payroll and any future features subsequently identified and approved by the owner in a recorded exclusions table. Do not silently expand the exclusion list based only on earlier P1/P2 descriptions.
+- **Owner decisions, not silent assumptions:** Where scope is ambiguous (e.g. bulk editing, inter-location transfers, invoice void semantics, scheduling depth, negative-stock policy), create a concise decision request but advance unrelated independent work. Never declare final freeze with an unresolved scope decision.
+- **P0:** Must be resolved before final freeze. **P1:** Priority/order of development, not permission to leave an agreed feature unfinished. **P2:** Explicit future-release work *only if owner-confirmed*; otherwise a pending scope decision.
+- A new, speculative feature is **not** added merely because an agent thinks it might be useful. Focus on agreed scope and reproducible defects.
 
-- Square is the only POS adapter with a CI-executed PostgreSQL vertical workflow (receive purchase, weighted-average cost, mapped sale consumption, replay idempotency, unmapped-sale warning) and a Production Showcase walkthrough (Oct 2026).
-- Clover today is Sandbox-only: OAuth, catalog read, mapping and read-only shadow orders are merged; sales-to-inventory reconciliation was merged in PR #161 (`776f557`, migrations 0025/0026 on `main`) behind `CLOVER_ORDER_INVENTORY_ENABLED=false`; it is not independently reviewed, not Sandbox-validated and not known to be deployed. Daily Close, reporting, menu costing and costing have no Clover code paths.
-- Therefore Clover must not be advertised as supported. Marketing says "Square today; Clover in development".
-- Clover becomes P0 only if the owner's first pilot customers use Clover. That is an **owner decision** (see RELEASE_STATUS owner actions).
-- Restaurants without Square can still use purchasing, inventory, costing and manual Daily Close; claims must say so.
+## Required completion matrix
 
-## Milestone 1 - Reconcile repository, PRs and deployed state (P0)
+Every row below needs implementation, applicable automated tests, integration/Showcase evidence, linked issue/PR, and final status **Verified** or **Owner-approved deferred**. "Code exists" or "CI passed" alone is insufficient. Maintain actual per-row evidence in `docs/RELEASE_STATUS.md`; do not fabricate verification.
 
-- **Business outcome:** one trusted baseline everyone (owner, Claude, Codex) agrees on.
-- **Required:** record `main` SHA and CI; triage open PRs (only #162 after #161 merged); confirm what Production/Staging/Showcase/Demo currently run; confirm Alembic head on each; confirm deploy trigger for the Render services (not visible from the repo).
-- **Optional (P2):** archive stale docs/audit files that contradict current state.
-- **Dependencies:** owner access to Render/GitHub/hosting consoles.
-- **Acceptance:** `RELEASE_STATUS.md` lists every environment with SHA, migration head and last verified date; no unexplained open PRs or unmerged branches.
-- **Verification:** `git`/GitHub API for SHAs and CI; `/api/health` on each environment; owner confirms console state.
-- **Definition of Done:** status file has no "unknown" environment rows.
-- **Human approval:** owner must provide/confirm deployed state. Agents cannot read Render/Aiven.
-- **Blocks MVP launch:** Yes.
+| Area | Required for full freeze | Current gaps / evidence to verify |
+|---|---|---|
+| Supplier management | Create/edit, status/archive policy, supplier-item mapping, agreed bulk operations | Pilot gap checklist has unchecked archive, mapping UI and bulk import/edit; owner must explicitly defer anything not needed |
+| Purchasing and OCR | Accurate quantity/price/line-total capture, review/edit, line mapping, draft corrections, receive-once, invoice void/correction with ledger-safe reversals | Confirm #142/#143 on current main and Showcase; define #168 void/correction semantics; prove quantity arithmetic and retries |
+| Inventory | Receipts, movements, counts, adjustments, waste, PAR/reorder, audit and reconciled on-hand/cost | Adjustment reversal and transfer are unchecked in gap checklist; decide exact scope, do not silently drop; no duplicated or unexplained movements |
+| Square | OAuth, locations/catalog mapping, real sync, consumption/reversals, webhook/replay idempotency, Daily Close and costing/usage | #169 Showcase walkthrough; parity and existing paths must remain unchanged by Clover |
+| Clover | OAuth/catalog/mapping, verified paid sale → inventory, corrections/reversals for refund/void/conflict/removed lines, Daily Close, food-cost reporting, safe enablement | #164 independent review; #182 POS-source variance fix PR; #183 reversal gap; #166 paid Sandbox evidence; #167 Daily Close/costing integration; flag must remain disabled until controlled owner approval |
+| Menu/food costing | Accurate ingredients/recipes, weighted-average cost, mapping and POS usage/reporting for both agreed providers | Verify actual outputs rather than only page visibility; no false Clover cost claims |
+| Daily Close | Cash/card and delivery where genuinely supported, variance basis/formula, sessions, reports, server persistence, usable layout; POS movements not counted as unexplained adjustments | Verify real calculation sources, corrections and Square/Clover parity; #182 addresses Clover source-type handling |
+| Schedule demo | Previously agreed availability/conflict preview; no payroll | Demonstrate agreed scope; avoid implying payroll or unsupported scheduling automation |
+| UI/UX | All previously agreed screens and owner-reported workflow defects fixed, usable at mobile 390px/768px, accessible states, correct layouts and labels, no misleading/useless reminders | #170 systematic walkthrough; cover mutations with loading/success/failure, data refresh, duplicate-submit protection; targeted fixes only |
+| Security and platform | Authentication, roles, PostgreSQL forced RLS, tenant isolation, transaction safety, migrations, realistic regression/e2e, observable errors | Full RLS file now runs in CI after #179; org select fix #180 merged; independent final validation #175 |
+| Deployments and demo | Production/Staging/Showcase/Demo SHAs & Alembic heads reconciled, migration/rollback rehearsed, Square+Clover evidence, reproducible clean demo | #165 environment evidence; #166 controlled Clover validation; #169 Square walkthrough; staging rollback |
+| Launch handoff | Accurate website/claims, lead form, demo script, pricing, onboarding and support process | #181 public-claims PR merged; owner #174 pricing/terms; review remaining outreach copy and claims before use |
 
-## Milestone 2 - Purchasing and inventory workflows (P0 core, P1 polish)
+## Milestones and dependencies
 
-- **Business outcome:** an owner can reliably record supplier purchases, receive stock, count, adjust and see correct on-hand and cost.
-- **Required (P0):** receive-invoice path with duplicate protection, weighted-average cost and ledger-to-on-hand reconciliation (exists; re-verify on current `main`); stock counts; manual adjustments; OCR failure falls back to manual entry. Owner decision: whether invoice void/correction after receipt is needed for first pilot (unchecked in gap checklist; if wrong receipts cannot be corrected, treat as P0).
-- **Optional (P1):** supplier archive policy, line-level mapping review UX, supplier-item mapping UI, bulk import/edit, adjustment reversal. **P2:** inter-location transfer.
-- **Dependencies:** M1.
-- **Acceptance:** acceptance tests cover receive, replay, count variance and correction on the enabled path; inventory totals equal movement ledger on seeded and Showcase data.
-- **Verification:** backend suite incl. PostgreSQL RLS vertical workflow test; Showcase walkthrough.
-- **Definition of Done:** CI green; walkthrough recorded in RELEASE_STATUS with run/SHA.
-- **Human approval:** owner sign-off on whether void/correction is in or out of MVP scope.
-- **Blocks MVP launch:** Yes (P0 items only).
+### M1 — Source, environment and issue reconciliation
 
-## Milestone 3 - POS integrations, Daily Close and food cost (P0 Square, P1 Clover)
+Record current `main` SHA, CI, open PRs and every environment's deployed SHA, Alembic head, health state and Clover flag. Owner provides read-only Render/Aiven evidence where not accessible to agents (#165). Reconcile issue labels for actually merged/completed work (#142/#143/#164/#171/#172), but require evidence before closure. No unknown migration state at freeze.
 
-- **Business outcome:** sales from the owner's POS reduce inventory and feed Daily Close accurately.
-- **Required (P0, Square):** confirm Square OAuth, location/catalog mapping, order sync, webhook, replay idempotency and Daily Close on current `main`; confirm unmapped/recipe-less sales warn instead of silently deducting.
-- **Optional (P1, Clover):** independent read-only review of merged `776f557` (disabled by default), then deployment/migration verification, then a controlled Showcase rehearsal of the flag-on path with a real paid Sandbox order, then Clover support in Daily Close and food-cost reporting (not implemented). **P2:** historical food-cost reconstruction from Clover cost snapshots; QuickBooks export.
-- **Dependencies:** M1; Clover items depend on the independent review of `776f557`.
-- **Acceptance:** Square: existing vertical test passes unchanged. Clover: flag-off is a verified no-op; flag-on tested through the real endpoint with idempotency, refund/void, concurrency and RLS; Square code paths untouched (diff review).
-- **Verification:** CI backend job; Showcase manual check; independent review of merged `776f557` (financial/inventory change).
-- **Definition of Done:** Square verified on Showcase; Clover status recorded honestly (merged-disabled, Sandbox-verified, or not started).
-- **Human approval:** owner decides Clover scope for MVP; owner/merchant must supply a Clover Sandbox paid order (external prerequisite). Never enable the flag in Production without owner approval.
-- **Blocks MVP launch:** Square part Yes. Clover part No (unless owner declares Clover customer first).
+### M2 — Purchasing, suppliers and inventory completeness
 
-## Milestone 4 - Targeted UI/UX improvements (P1)
+Finish all missing agreed workflows in the pilot gap checklist. Correct OCR arithmetic, invoice receiving, duplicate protection, invoice void/correction/reversal, stock movements/counts/waste/PAR, supplier mappings and applicable editing/transfer workflows. Ask the owner to decide exact semantics of #168 and any genuinely ambiguous items. Test real mutation paths, idempotency, rollback, weighted-average cost, and ledger-to-on-hand reconciliation.
 
-- **Business outcome:** non-technical owners can complete core workflows on desktop and phone without help.
-- **Required (P0 only if found broken):** mobile layout usable at 390px; every server mutation shows progress/success/failure and refreshes dependent state (AGENTS.md rule).
-- **Optional (P1):** copy clarity, empty states, Daily Close and Menu Costing readability. **P2:** visual redesign.
-- **Dependencies:** M2, M3 flows stable (avoid rework).
-- **Acceptance:** scoped list of defects from a walkthrough, each fixed with a UI/e2e test where behavioral.
-- **Verification:** `npm run build`, `npm test`, `npm run e2e`, manual route check incl. mobile (`MOBILE_QA.md`).
-- **Definition of Done:** listed defects closed; no new horizontal overflow.
-- **Human approval:** owner reviews walkthrough findings.
-- **Blocks MVP launch:** Only defects that stop task completion.
+### M3 — Full Square **and Clover** POS completion
 
-## Milestone 5 - Regression, security, tenant isolation, migration and end-to-end validation (P0)
+Square must retain its verified behavior. Clover is now **required for final freeze**, not P1 optional: review #164 and fix #182/#183; ensure already-applied refunded/voided/conflicted orders and removed lines are safely handled; implement Clover Daily Close and food-cost reporting (#167), with provider parity and tests. Do not equate a warning-only handling with fully reconciled inventory without an explicit owner decision. Execute #166 controlled paid Clover Sandbox/Showcase acceptance with real merchant eligibility and owner-approved temporary enablement; restore the flag off afterward. No agent may turn on production inventory writes, run unauthorized Sandbox transactions or touch customer data.
 
-- **Business outcome:** confidence that one customer cannot see another's data and upgrades are safe.
-- **Required:** full backend suite; PostgreSQL RLS and tenant-isolation tests; fresh-DB and upgrade migration checks; role-separation checks; secret scan; frontend lint/typecheck/unit/e2e/build; dependency vulnerability review.
-- **Optional (P1):** independent security review; load check using `docs/operational-performance.md` method. **P2:** penetration test.
-- **Dependencies:** M2, M3 complete for the launch scope.
-- **Acceptance:** all CI jobs green on the release candidate SHA; no open P0 defects; migration upgrade tested from the current Production head.
-- **Verification:** CI run on the RC commit; `scripts/production_preflight.py` output reviewed by owner; Showcase smoke test.
-- **Definition of Done:** evidence (run ID, SHA) recorded in RELEASE_STATUS.
-- **Human approval:** owner or independent reviewer signs off on security/RLS evidence.
-- **Blocks MVP launch:** Yes.
+### M4 — Agreed UI/UX finish
 
-## Milestone 6 - Release candidate and feature freeze (P0)
+Walk through purchasing, inventory, Square, Clover, Daily Close, menu costing, onboarding and scheduling/demo. Fix previously requested owner-facing layout/variance/reminder problems and all observed in-scope workflow defects, including mobile responsiveness, data refresh and error feedback. Avoid unrelated redesign and speculative polishing. Use Playwright and focused component tests.
 
-- **Business outcome:** a stable, reproducible build that customers can be onboarded onto.
-- **Required:** RC branch/tag proposal; freeze checklist below passed; deployment and rollback procedures rehearsed against Staging; reproducible Showcase demo script.
-- **Dependencies:** M1-M5.
-- **Acceptance:** checklist items all evidenced; open defects are P1/P2 only.
-- **Verification:** Staging deploy and rollback rehearsal; Showcase run-through from a clean state.
-- **Definition of Done:** owner has explicitly approved freeze and production release.
-- **Human approval:** owner approves freeze, tag, production deploy. Agents never do these.
-- **Blocks MVP launch:** Yes.
+### M5 — Full security, accounting and regression gate
 
-## Milestone 7 - Demo, onboarding, website, pricing and acquisition (P0 minimum, rest P1)
+All backend, PostgreSQL/RLS, migration (fresh and from Production head), role/tenant-isolation, POS concurrency/idempotency, reversal/cost reconciliation, frontend lint/typecheck/unit/Playwright/build, secrets and dependency review. No unaccounted xfails/skips on required functionality; deferred support tests must be documented. Independent review for financial, Clover, RLS and migration changes. Evidence recorded against final release-candidate SHA (#175).
 
-- **Business outcome:** the owner can show, onboard and sell to the first independent restaurants.
-- **Required (P0):** accurate claims ("Square today", no fake customers/metrics, per `docs/pre-soft-sell-checklist.md`); demo script (`docs/official-sales-demo.md`, `docs/showcase-runbook.md`); pilot onboarding and support procedure (`docs/pilot-onboarding.md`); working lead form (`VITE_FORM_ENDPOINT`); pricing decision.
-- **Optional (P1):** analytics, outreach templates, case-study material once real pilot data exists. **P2:** paid acquisition.
-- **Dependencies:** can start in parallel with M4-M5 (docs/marketing only); final claims depend on M6.
-- **Acceptance:** every public claim maps to a verified feature in RELEASE_STATUS.
-- **Verification:** claims review against status table; form submission test; demo rehearsal.
-- **Definition of Done:** owner can run a demo and onboard one pilot using documents only.
-- **Human approval:** owner decides pricing, legal/privacy copy, outreach.
-- **Blocks MVP launch:** Pricing, honest claims, onboarding/support docs: Yes. Other marketing: No.
+### M6 — Final feature-freeze and acceptance
 
-## MVP freeze checklist
+Finish *every* in-scope matrix row; no unresolved required feature gaps, unexplained discrepancies or outstanding owner scope decisions. Show Square and Clover end-to-end in controlled environments. Rehearse Staging deploy/rollback, verify financial math and clean Showcase demo, approve customer onboarding. Prepare an RC SHA/tag proposal; **only owner** authorizes release, deploy and freeze. After freeze, new feature/schema changes require a fresh owner decision; security/data-correctness fixes remain allowed.
 
-A freeze means no new features or schema changes without owner approval; bug fixes continue.
+### M7 — Marketing handoff
 
-- [ ] Core workflows (purchase to receive, count/adjust, Square sale to inventory, Daily Close, menu costing) demonstrated on Showcase.
-- [ ] No unresolved P0 defects.
-- [ ] Inventory and financial figures reconcile (ledger vs on-hand, cost, Daily Close totals).
-- [ ] Regression, RLS/tenant-isolation, migration and security checks pass on the RC SHA.
-- [ ] Deployment and rollback rehearsed on Staging; Production migration path from current head tested.
-- [ ] Showcase demo reproducible from documented steps.
-- [ ] Pilot onboarding and support procedure documented.
-- [ ] No misleading product claims (Clover, QuickBooks, supplier ordering, testimonials).
-- [ ] Owner explicitly approved freeze and production release.
+Ready the credible demo, pricing, onboarding, support and claims while implementation continues; move the primary focus to acquisition **after M6 freeze**. Pilot outreach may occur earlier where claims accurately reflect currently verified capability. Payroll, when explicitly deferred, is outside this freeze.
 
-Post-freeze, allowed without a new freeze decision: security fixes, data-correctness bugs, regressions, copy corrections.
+## Final freeze checklist (all items required unless owner explicitly defers them)
 
-## Dependency order
+- [ ] Full scope matrix reconciled against pilot gaps, previous owner requests, issues and current code. Each row Verified or specifically Owner-approved deferred.
+- [ ] Supplier/purchasing/OCR/receipt/void/correction workflows correct, including duplicate/retry and financial ledger effects.
+- [ ] Inventory, counts, adjustments, waste, PAR/reorder, costing and applicable transfer/mapping/edit flows correct and reconciled.
+- [ ] Square real end-to-end acceptance: OAuth/mapping, sales inventory use, reversals, Daily Close, reports.
+- [ ] Clover full agreed end-to-end acceptance: mapping, paid verified sale, inventory consumption, correction/refund/void/removed-line reversal, Daily Close and costing/reporting; approved Sandbox evidence, flag safely restored.
+- [ ] All agreed UI/UX and mobile defects fixed; mutation states and accuracy checked, including Daily Close variance and unnecessary UI/reminders.
+- [ ] Menu costing and scheduling-demo agreed scope demonstrated; no payroll claim or requirement.
+- [ ] No unresolved in-scope bugs, misleading feature claims, or undeclared "P1 can wait" shortcuts.
+- [ ] Full RLS/security/migration/regression/Playwright evidence green on frozen RC SHA, with justified exclusions only.
+- [ ] Inventory movement ledger, on-hand, weighted-average costs, refunds and Daily Close variance/reports reconcile.
+- [ ] Production/Staging/Showcase/Demo deployed SHAs and migration heads documented; Staging deploy/rollback rehearsal complete.
+- [ ] Clean reproducible Showcase demo, lead flow, onboarding/support/pricing/terms documented and owner-accepted.
+- [ ] Owner explicitly approves feature-complete freeze and production release. No agent automatically merges or deploys.
 
-M1 -> M2 and M3 (parallel, disjoint files) -> M4 -> M5 -> M6; M7 documents/claims run alongside and finalize after M6.
+## Autonomous execution and owner gates
+
+GitHub issues with `status:ready` + `unattended-ok` are the execution queue. At each session and before claiming each new issue, fetch current main, PRs, claims and dependencies. Complete focused test-backed PRs and continue onto independent eligible tasks; **no arbitrary two-PR cap**. Creating new follow-up issues may make them immediately eligible; re-query before declaring all work blocked. Never duplicate branches or work on another agent's claim. Keep checkout and run logs concise, avoid repeated broad audits.
+
+Stop at owner-only gates (merges, deployments, credentials, Sandbox transactions, pricing/legal/scope decisions, final freeze); work on another eligible independent issue instead. Label priorities and issue descriptions should be updated to match this plan in a focused task, not silently worked around. Use the shared phone-readable completion report in `AGENTS.md`.
+
+**Dependency outline:** M1 evidence can run parallel to M2/M3 code work; M2 and M3 can proceed on non-overlapping files, then M4/M5, then M6. M7 prep in parallel, final claims/handoff after M6.
