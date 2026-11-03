@@ -288,7 +288,6 @@ class BaseConfig:
             "CLOVER_REDIRECT_URI": os.environ.get("CLOVER_REDIRECT_URI", "").strip(),
             "CLOVER_MAPPING_ENABLED": _env_bool("CLOVER_MAPPING_ENABLED", False),
             "CLOVER_ORDER_SHADOW_ENABLED": _env_bool("CLOVER_ORDER_SHADOW_ENABLED", False),
-            "CLOVER_ORDER_INVENTORY_ENABLED": _env_bool("CLOVER_ORDER_INVENTORY_ENABLED", False),
             "CLOVER_ALLOWED_ORGANIZATION_IDS": _organization_allowlist("CLOVER_ALLOWED_ORGANIZATION_IDS"),
             "INTEGRATION_ENCRYPTION_KEY": os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").strip(),
             "FLOWTALLY_DEMO_READ_ONLY": _env_bool("FLOWTALLY_DEMO_READ_ONLY", False),
