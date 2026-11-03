@@ -21,6 +21,7 @@ from .square_integration import (
     ensure_square_orders_fresh,
     sync_square_orders_for_range,
 )
+from .pos import CLOVER_SALE_SOURCE_TYPES
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
 bp = Blueprint("daily_close", __name__)
@@ -492,7 +493,7 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
         InventoryMovement.created_at <= end_at,
     ).all()
     other_adjustment_quantity = sum(
-        (Decimal(str(movement.quantity_delta or 0)) for movement in movements if movement.source_type not in {"inventory waste", "square sale consumption", "invoice receipt", "stock count reconciliation"}),
+        (Decimal(str(movement.quantity_delta or 0)) for movement in movements if movement.source_type not in {"inventory waste", "square sale consumption", "invoice receipt", "stock count reconciliation"} | CLOVER_SALE_SOURCE_TYPES),
         start=Decimal("0"),
     )
     physical_count_correction = sum(

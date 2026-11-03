@@ -46,7 +46,7 @@ from .models import (
     SquareWebhookEvent,
     StockCountSession,
 )
-from .pos import PosProvider, eligible_sale_quantity, ensure_inventory_source, recipe_ingredient_quantity
+from .pos import POS_SALE_SOURCE_TYPES, PosProvider, eligible_sale_quantity, ensure_inventory_source, recipe_ingredient_quantity
 from .access import organization_has_enabled_module
 from .square import decrypt_square_secret, encrypt_square_secret, square_enabled, square_environment, verify_square_webhook_signature
 from .tenant_context import apply_org_tenant_context, apply_request_tenant_context
@@ -424,7 +424,7 @@ def _inventory_usage_basis(organization_id: int, location_id: int, inventory_ite
         InventoryMovement.inventory_item_id == inventory_item_id,
         InventoryMovement.created_at > datetime.fromisoformat(opening["completedAt"].replace("Z", "+00:00")),
         InventoryMovement.created_at <= datetime.fromisoformat(closing["completedAt"].replace("Z", "+00:00")),
-    ).filter(InventoryMovement.source_type.notin_({"stock count reconciliation", "square sale consumption", "square sale reversal"}))
+    ).filter(InventoryMovement.source_type.notin_({"stock count reconciliation"} | POS_SALE_SOURCE_TYPES))
     movement_net = (Decimal(str(movement_totals.get(inventory_item_id) or 0)) if movement_totals is not None else sum((Decimal(str(movement.quantity_delta or 0)) for movement in movement_query.all()), start=Decimal("0"))).quantize(QTY)
     opening_quantity = Decimal(str(opening["quantity"])).quantize(QTY)
     closing_quantity = Decimal(str(closing["quantity"])).quantize(QTY)
@@ -470,7 +470,7 @@ def _usage_basis_inputs(organization_id: int, location_id: int, start_at: dateti
             InventoryMovement.location_id == location_id,
             InventoryMovement.created_at > opening.completed_at,
             InventoryMovement.created_at <= closing.completed_at,
-            InventoryMovement.source_type.notin_({"stock count reconciliation", "square sale consumption", "square sale reversal"}),
+            InventoryMovement.source_type.notin_({"stock count reconciliation"} | POS_SALE_SOURCE_TYPES),
         ).group_by(InventoryMovement.inventory_item_id).all())
     return sessions, movements
 
