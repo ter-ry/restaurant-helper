@@ -1,92 +1,72 @@
-# Flowtally Release Status
+# Flowtally — Full MVP Release Status
 
-Last updated: 2026-11-03 by Claude Code (issue queue created after PR #162 merged). Before editing, check that existing rows are still current (`git log`, open PRs, CI); never overwrite another agent's evidence without re-verifying it. Plan: `docs/RELEASE_PLAN.md`.
+Last reconciled 2026-11-03 for the owner-approved **full agreed MVP feature-freeze**, including **Square and Clover**. Binding scope and final checklist: [RELEASE_PLAN.md](RELEASE_PLAN.md). Do not mistake a green CI build or early Square-only pilot for a completed full freeze.
 
-Status values: Not started - In progress - Implemented but unverified - Automated tests passed - Sandbox/Showcase verified - Production verified - Blocked - Complete.
+**Status vocabulary:** Missing / In progress / Implemented but unverified / Automated tests passed / Sandbox or Showcase verified / Complete and verified / Explicit owner-approved deferral / Blocked.
 
-## NEXT TASK
+## NEXT TASK — work from GitHub queue
 
-**Work from the GitHub issue queue** (labels: `P0/P1/P2`, `status:ready|in-progress|blocked|review-ready`, `unattended-ok`, `needs-owner`). Pick the highest-priority `status:ready` + `unattended-ok` issue with no open PR or `status:in-progress` claim:
+Fresh agents must query live GitHub issues, PRs, main SHA and current claims; this status file can go stale. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval.
 
-1. **#178 [P0]** Org-selection audit/RLS defect: fix PR open for review. Then **#143 [P0]** (purchases receipt-confirmation modal).
-2. **#143 [P0]** Purchases receipt-confirmation modal after OCR receive (existing issue; group with #142 only if one focused PR).
-3. **#173 [P0]** Audit public claims against verified features.
-4. **#164 [P1]** Independent read-only review of merged `776f557` (owner's preferred sequence starts Clover first; run it in parallel, it is read-only).
+1. **#183 — full-MVP blocker:** already-applied Clover inventory must properly handle refunds, voids, payment conflicts and removed mapped lines. New writes remain disabled until independently validated. Do not accept a warning-only approach as completed reconciliation without owner approval.
+2. **#182 — full-MVP blocker:** Clover sales movements must not distort Daily Close / stock count variance. PR [#184](https://github.com/ter-ry/restaurant-helper/pull/184) is open; requested additional tests for Daily Close/platform-admin paths before merge.
+3. **#167 and #166 — full-MVP required:** Clover Daily Close + food-cost reporting integration and controlled paid Sandbox flag-on validation, with owner approval for external steps. #167 is blocked by prerequisite validation/scope; prepare independent design/test scaffolding only where safe.
+4. **#170 — full-MVP required UI walkthrough and fixes:** inspect all agreed pages and owner-requested defects (layout, variance, useless reminders, mutation state, 390px mobile). Browser support has been verified; issue #172 requires closure after evidence is recorded.
+5. **#142/#143 — verify before closing:** agents report fixes already on main; confirm current code/tests and Showcase behavior rather than reimplementing or blindly closing.
+6. **#168/#165/#169/#174/#175 and pilot-gap checklist — owner gates and final freeze evidence.** Work independently on reviewable safe subtasks while external approvals are pending. Issue #176 is an old post-launch bucket and requires scope reconciliation; only owner-confirmed future features can remain deferred.
 
-Owner-only blockers that gate launch: #165 deployed state, #171 protect `main`, #168 void/correction scope, #169 Square Showcase walkthrough, #174 pricing/terms. Do not enable Clover inventory writes or touch live data.
+**Progression rule:** After every PR/review or newly created issue, re-query GitHub. Continue on another eligible independent task if available. No two-PR cap; stop only at genuine human/permission/session/usage blockers. Never duplicate another agent's work.
 
-## Baseline
+## GitHub baseline
 
-| Item | Value | Evidence |
-|---|---|---|
-| `main` | `bb7b761` (PR #162 merged, on top of `776f557`) | git |
-| CI on `main` | success | [run 41477196327](https://github.com/ter-ry/restaurant-helper/actions/runs/41477196327) |
-| Pages deploy on `main` | success | [run 41477196974](https://github.com/ter-ry/restaurant-helper/actions/runs/41477196974) |
-| `main` after #161 | `776f557ed482b9a1851425a5d0d810650c0df7cf` (PR #161 merged) | git; Pages deploy [run 41553204916](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204916) success; CI [run 41553204802](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204802) success |
-| Latest Alembic migration in repo | `0026_clover_consumption_cost_snapshot` (0025/0026 present on `main`) | `backend/migrations/versions`. **Not claimed applied to any environment**: no deployment evidence yet |
-| Open PRs | none (readiness PR pending) | GitHub |
-
-## Milestones
-
-| # | Milestone | Priority | Status | Evidence / note |
-|---|---|---|---|---|
-| 1 | Reconcile repo, PRs, deployed state | P0 | In progress | Repo/PR baseline done here; deployed SHAs/heads unknown (owner) |
-| 2 | Purchasing and inventory | P0 | Automated tests passed (as of 2026-10-26 audit; not re-run here) | `docs/pilot-end-to-end-readiness.md`, run 40341272838; invoice void/correction not implemented |
-| 3a | Square integration + Daily Close | P0 | Sandbox/Showcase verified (2026-10-07 audit; not re-verified) | `docs/release-candidate-recording-audit.md` |
-| 3b | Clover integration | P1 (P0 only if owner says) | Implemented but unverified | #161 merged to `main` at `776f557`, flag default off; needs independent review and controlled Sandbox validation |
-| 4 | UI/UX improvements | P1 | Not started | No walkthrough defect list yet |
-| 5 | Regression/security/isolation/migration/e2e | P0 | Automated tests passed on `main` CI only | Needs RC SHA run, independent review |
-| 6 | RC and feature freeze | P0 | Not started | Needs owner approval |
-| 7 | Demo/onboarding/website/pricing | P0 minimum | In progress | Docs exist (`docs/official-sales-demo.md`, `pilot-onboarding.md`); pricing undecided |
-
-## Feature confidence (do not equate code or CI with commercial readiness)
-
-| Feature | Status | Notes |
-|---|---|---|
-| Purchasing / invoice receive | Automated tests passed; Showcase verified Oct 2026 | Void/correction after receive missing |
-| Inventory ledger, counts, adjustments | Automated tests passed | Transfers, adjustment reversal missing |
-| Square sync to inventory | Automated tests passed (PostgreSQL); Showcase verified Oct 2026 | Production merchant use unverified |
-| Menu costing | Implemented but unverified | No dedicated acceptance evidence collected here |
-| Daily Close | Implemented but unverified | Square-only; no Clover code paths |
-| Clover OAuth, catalog, mapping, shadow orders | Sandbox verified per docs; merged | Read-only, no inventory effect |
-| Clover sales to inventory | Implemented but unverified | Merged in #161 (`776f557`) behind `CLOVER_ORDER_INVENTORY_ENABLED=false` (default and staging example). CI-tested only. Needs independent review and controlled Sandbox validation before any enablement |
-| Multi-tenant RLS | Automated tests passed | Independent review not yet done |
-
-## Pull requests
-
-| PR | Branch | Status | Evidence | Rule |
-|---|---|---|---|---|
-| [#161](https://github.com/ter-ry/restaurant-helper/pull/161) Guarded Clover sales-to-inventory reconciliation | `codex/clover-sales-inventory` | **Merged** to `main` as `776f557`. Pre-merge checks green ([run 41523502053](https://github.com/ter-ry/restaurant-helper/actions/runs/41523502053)) | CI only; no independent review; no flag-on Sandbox rehearsal recorded | Closed work. Do not rewrite; follow-ups go in new focused PRs. |
-| [#162](https://github.com/ter-ry/restaurant-helper/pull/162) Planning docs | `claude/nice-brown-94okjr` | **Merged** as `bb7b761` | CI green | Closed. |
-
-## Known technical blockers
-
-1. RLS test coverage (#163, merged in #179): the fixture now builds the schema with `alembic upgrade head` and CI runs the whole `test_postgres_rls.py`. The org-selection audit/RLS defect ([#178](https://github.com/ter-ry/restaurant-helper/issues/178)) is fixed in a follow-up PR that also removes the temporary expected failures; until that merges, 3 tests remain expected failures.
-2. `main` has no branch protection or ruleset and merging deploys the Pages site (#171).
-3. Cloud sandbox cannot run `npm run e2e`: Playwright expects Chromium r1234, r1243 installed (#172).
-4. Clover flag-on path (merged, disabled) has no independent review and no Sandbox/Showcase evidence (needs a paid Sandbox order; external prerequisite).
-5. Clover is absent from Daily Close, reporting, menu costing and costing.
-6. Invoice void/correction after receipt and several gap-checklist items are unimplemented (`docs/private-pilot-gap-checklist.md`).
-7. Existing audit docs are dated (Aug-Oct 2026) and not re-run on current `main`.
-8. Production uses a shared Aiven server (documented temporary arrangement).
-
-## Owner actions (agents cannot do these)
-
-| Action | Why |
+| Item | Verified state / limitation |
 |---|---|
-| Merge/approve every PR (merge deploys Pages) | Merge gate |
-| Protect `main` with a ruleset (#171) | Repo admin |
-| Fix cloud Playwright browser setup (#172) | Environment settings |
-| Decide void/correction scope (#168), Square walkthrough (#169), pricing/terms (#174), deployed state (#165) | See issues |
-| Confirm deployed SHA and Alembic head for Production, Staging, Showcase, Demo | Not visible from the repo |
-| Decide whether the first customers use Clover (changes M3b to P0) | Scope |
-| Provide a paid Clover Sandbox order for rehearsal | External |
-| Confirm whether `776f557`/migrations 0025-0026 are deployed or applied anywhere | Not visible from the repo |
-| Decide on invoice void/correction scope for MVP | Scope |
-| Pricing, legal/privacy copy, outreach | Business |
-| Production release and feature freeze approval | Mandatory approval |
-| Note: merging to `main` auto-deploys the GitHub Pages site | Release impact |
+| Main | `f64db55e71f046e7b9aacfc23e5efdb4c180fefe` (#181 public claims merged; current at reconciliation, refresh before use) |
+| CI on main | run [41658619318](https://github.com/ter-ry/restaurant-helper/actions/runs/41658619318) **in progress when checked**; recheck rather than assume passing |
+| GitHub Pages | [run 41658619288](https://github.com/ter-ry/restaurant-helper/actions/runs/41658619288) successful on this SHA; not evidence of Render backend deployment |
+| Protected main | Active `Protect Main` ruleset observed via GitHub API (issue #171 needs evidence-based cleanup) |
+| Open PR | [#184](https://github.com/ter-ry/restaurant-helper/pull/184), Clover POS source-type variance fix, head `3040723` at check; independent reviewed CI green before requested extra regression tests |
+| #179 / #180 | Merged; complete PostgreSQL RLS file covered by CI and organization-select audit context defect fixed (34 passed, 12 existing deferred-support skips, 0 xfails on #180) |
+| #181 / #173 | Public claims audit merged to `main` as `f64db55`; claims needing owner decisions/outreach cleanup remain |
+| #164 Clover read-only review | Completed, [evidence](https://github.com/ter-ry/restaurant-helper/issues/164#issuecomment-6597613125); blockers created as #182 and #183 |
+| Latest Alembic in code | `0026_clover_consumption_cost_snapshot`; **deployed database head not independently documented here** |
+| Clover execution | Implementation merged in #161, disabled by default, not safe to enable before #182/#183 and controlled #166 acceptance |
 
-## Automation boundaries
+## Full-MVP feature matrix — evidence status
 
-Agents can: audit, branch, implement, test, open PRs, read CI, fix their own PR. They cannot without a human or new session: merge, deploy, edit Render/Aiven/DNS/OAuth consoles, touch live data, run external sandbox actions, or resume after a session ends (no scheduler is configured; use `CronCreate` or a new session if the owner wants recurring checks).
+A required row cannot be marked Complete without actual integration and acceptance evidence. Refer to RELEASE_PLAN.md for acceptance requirements and owner-only exclusions.
+
+| Area | Status | Remaining action / issue |
+|---|---|---|
+| Suppliers and purchasing | Implemented, partially verified | #142/#143 Showcase verification; #168 invoice void/correction decision; pilot gap unchecked supplier archive, supplier-item mapping, line review and bulk editing |
+| Inventory ledger/counts/waste/PAR | Implemented, partially verified | End-to-end movement/cost reconciliation, adjustment reversal, inter-location transfer scope and gap checklist |
+| Square | Automated tests and past Showcase evidence | #169 repeat current-main Showcase acceptance including Daily Close and menu costing |
+| Clover catalog/mapping/shadow orders | Sandbox evidence in previous docs | Do not claim production capability; complete all agreed full-MVP flows |
+| Clover inventory | Implemented but unsafe to enable | #182/#183; #164 review; #166 paid Sandbox test with owner approval; verify reversals and idempotency |
+| Clover Daily Close + food-cost | Missing | #167; scope changed to **required for final freeze** |
+| Daily Close and variance | Implemented but not fully verified | #182; verify source math, corrections, Square/Clover parity, reports and UI |
+| Menu costing | Implemented but not fully verified | Acceptance data and results for both providers |
+| Scheduling demo | Implemented demo, not recently verified | Verify availability/conflict preview; payroll explicitly deferred |
+| UI/UX | Partial | #170; fix all agreed and observed in-scope defects (desktop/mobile, messages, layouts, variance, unnecessary reminders) |
+| RLS and security | Test suite strengthened | Final RC independent review, migration upgrade/rollback, deployment and full e2e #175 |
+| Deployments | Owner reports Render has been checked | **Exact per-environment SHA/Alembic/flag/health evidence still needs to be recorded** (#165); do not infer from GitHub Pages |
+| Marketing onboarding | In progress | Claims #181 merged; #174 pricing/terms/onboarding/support; accuracy review before outreach |
+
+## Open scope decisions (owner approval required)
+
+- **#168:** invoice void/correction after receipt and ledger-safe reversal semantics. Plan presumes in-scope unless explicitly deferred.
+- Supplier archive, supplier-item mapping UI, bulk import/edit, line-level invoice review, adjustment reversal, and inter-location transfers: unchecked pilot gaps. Determine precise previously agreed scope and obtain explicit deferral *per item* if excluded. Do not casually expand the product or silently move these to post-launch.
+- Clover #183 reversal policy and cost snapshot on correction (review note S2), negative on-hand handling, and reporting parity where choices affect finance.
+- Final pricing, terms/privacy/support channel (#174), controlled Clover Sandbox order/enablement (#166), actual deployment evidence (#165), final release approvals.
+- **Explicitly owner-deferred for this freeze:** payroll. Other future-release exclusions: none newly confirmed by this roadmap update. Older P2 labels do not constitute confirmation.
+
+## Safety and freeze blockers
+
+- No owner-approved full-MVP feature freeze while any in-scope feature remains missing, unverified or misrepresented; no silent Square-first freeze.
+- No Clover inventory flag-on in Production; do not enable anywhere without separate owner approval and completion of blockers.
+- Financial/inventory/RLS PRs require independent review and CI evidence. PR merges and deployments remain owner-only.
+- For a final freeze, complete the matrix, all applicable pilot-checklist items, Square/Clover end-to-end tests, full regression/RLS/migrations, Staging rollback rehearsal and reproducible Showcase acceptance; then owner explicitly signs off.
+
+## Coordination and evidence
+
+Agents must claim one GitHub issue per branch/PR, recheck open PRs and claims before starting additional tasks, and avoid duplicate/overlapping changes. Read `AGENTS.md` for owner gates and mobile-friendly completion reports. Add new defects as scoped GitHub issues with acceptance criteria. Do not stop after finding new independently actionable work; do stop when genuine approval or external prerequisites block further safe work.
