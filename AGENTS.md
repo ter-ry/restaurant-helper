@@ -84,6 +84,17 @@ Use parallel agents only for independent work with non-overlapping file ownershi
 
 Cannot proceed without a human or new session: merge, deploy, production/Render/Aiven/DNS/OAuth/Square/Clover console changes, live-data changes, external sandbox actions, pricing/legal/marketing decisions. Record these under "Owner actions" in `RELEASE_STATUS.md` and continue other ready work.
 
+## Work Queue and Claiming
+
+The queue is GitHub issues. Labels: priority `P0`/`P1`/`P2`; state `status:ready`, `status:in-progress`, `status:blocked`, `status:review-ready`; `unattended-ok` (may run unattended), `needs-owner` (agents cannot complete it); area labels.
+
+- Pick the highest-priority `status:ready` issue that is `unattended-ok`, whose dependencies are closed, and that has no open PR or `status:in-progress` claim. If it is blocked, take the next ready one; do not wait.
+- Before starting, re-read the issue and check open PRs and branches (`gh api 'repos/ter-ry/restaurant-helper/pulls?state=open'`, `git ls-remote --heads origin`). Claim it: swap `status:ready` for `status:in-progress` and comment your agent name and branch. One agent owns one issue and one PR.
+- On PR open with green CI, set `status:review-ready`. If you cannot finish, remove your claim, comment what was done and what remains, and set the label back.
+- Never take an issue claimed by another agent. If a claim has no branch or PR, report it to the owner instead of overriding it.
+- Never enable Clover inventory writes (`CLOVER_ORDER_INVENTORY_ENABLED`) or touch live data, even to test; use the PostgreSQL test fixtures.
+- In cloud sessions GraphQL is blocked: `gh pr list/view` and `gh issue list` fail. Use `gh api` (REST) or the GitHub MCP tools; `gh run list/view` works. See `docs/AUTOMATION_READINESS.md` for the verified environment recipe.
+
 ## Handoff
 
 Keep `docs/RELEASE_STATUS.md` concise and verifiable: status, evidence (PR, SHA, CI run), blockers, one NEXT TASK. Put long background in `docs/`, not in this file. `HANDOFF.md` is the legacy landing-page handoff.
