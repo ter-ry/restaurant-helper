@@ -8,7 +8,7 @@ Status values: Not started - In progress - Implemented but unverified - Automate
 
 **Work from the GitHub issue queue** (labels: `P0/P1/P2`, `status:ready|in-progress|blocked|review-ready`, `unattended-ok`, `needs-owner`). Pick the highest-priority `status:ready` + `unattended-ok` issue with no open PR or `status:in-progress` claim:
 
-1. **#163 [P0]** Run all PostgreSQL RLS tests in CI and fix the dormant ones: PR open for review (see Known technical blockers #1). Then **#178 [P0]** org-selection audit/RLS defect (needs owner scoping).
+1. **#178 [P0]** Org-selection audit/RLS defect: fix PR open for review. Then **#143 [P0]** (purchases receipt-confirmation modal).
 2. **#143 [P0]** Purchases receipt-confirmation modal after OCR receive (existing issue; group with #142 only if one focused PR).
 3. **#173 [P0]** Audit public claims against verified features.
 4. **#164 [P1]** Independent read-only review of merged `776f557` (owner's preferred sequence starts Clover first; run it in parallel, it is read-only).
@@ -61,7 +61,7 @@ Owner-only blockers that gate launch: #165 deployed state, #171 protect `main`, 
 
 ## Known technical blockers
 
-1. #163 (PR pending review): the RLS fixture built its schema with `create_all` plus 4 hand-applied migrations, so 18 tables (all Clover tables, `audit_events`, menu costing, daily close, others) had **no RLS in tests**. The fixture now runs `alembic upgrade head`, and CI runs the whole file (30 passed, 12 skipped for deferred support access, 3 expected failures). Product defect [#178](https://github.com/ter-ry/restaurant-helper/issues/178): `POST /api/organizations/select` fails under forced RLS on `audit_events` for multi-organization users; 3 tests are marked as known-defect expected failures until it is fixed.
+1. RLS test coverage (#163, merged in #179): the fixture now builds the schema with `alembic upgrade head` and CI runs the whole `test_postgres_rls.py`. The org-selection audit/RLS defect ([#178](https://github.com/ter-ry/restaurant-helper/issues/178)) is fixed in a follow-up PR that also removes the temporary expected failures; until that merges, 3 tests remain expected failures.
 2. `main` has no branch protection or ruleset and merging deploys the Pages site (#171).
 3. Cloud sandbox cannot run `npm run e2e`: Playwright expects Chromium r1234, r1243 installed (#172).
 4. Clover flag-on path (merged, disabled) has no independent review and no Sandbox/Showcase evidence (needs a paid Sandbox order; external prerequisite).

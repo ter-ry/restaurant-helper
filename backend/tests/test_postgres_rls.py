@@ -15,7 +15,6 @@ from flask import g
 from alembic import command as alembic_command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.pool import NullPool
 
@@ -283,28 +282,6 @@ def _set_rls_context(
         text("select set_config(:name, :value, true)"),
         {"name": "flowtally.support_grant_id", "value": "" if support_grant_id is None else str(support_grant_id)},
     )
-
-
-def _select_organization_or_xfail_known_defect(client, organization_id: int, headers: dict[str, str]):
-    """POST /api/organizations/select, marking only issue #178 as an expected failure.
-
-    Under real migrations (0020 forces RLS on audit_events) the select-organization
-    audit insert is rejected for multi-organization customers because no tenant
-    context is installed yet. Any other error, or any status other than 200, still
-    fails the calling test. Once #178 is fixed this helper simply returns the response.
-    """
-    try:
-        return client.post(
-            "/api/organizations/select",
-            base_url="http://127.0.0.1:5001",
-            headers=headers,
-            json={"organizationId": organization_id},
-        )
-    except ProgrammingError as exc:
-        message = str(exc.orig if getattr(exc, "orig", None) is not None else exc)
-        if 'row-level security policy for table "audit_events"' in message:
-            pytest.xfail("Known product defect #178: tenant.organization_selected audit insert violates forced RLS on audit_events.")
-        raise
 
 
 def _pin_rls_context(
@@ -2753,7 +2730,12 @@ def test_postgres_setup_console_mutations_materialize_before_commit(postgres_app
 
     # The owner belongs to several organizations, so the customer-facing view needs
     # an explicit selection (as the real UI does) before org-scoped reads.
-    select_org_response = _select_organization_or_xfail_known_defect(client, org_a_id, csrf_headers())
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={"organizationId": org_a_id},
+    )
     assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
 
     me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
@@ -2979,6 +2961,123 @@ def test_postgres_operational_mutations_materialize_before_commit(postgres_app):
     _github_warning("operational mutation regression: supplier, inventory, invoice, receive, and tenant isolation succeeded")
 
 
+def test_postgres_select_organization_audits_under_rls_and_enforces_membership(postgres_app):
+    """Issue #178: selecting an organization must audit under that organization's RLS context.
+
+    A multi-organization user selects A, switches to B, and is refused C (not a member).
+    Authorization must come first: a refused request leaves no audit row and does not
+    change the effective tenant.
+    """
+    suffix = uuid4().hex[:8]
+
+    def _seed():
+        user = User(email=f"select-org-{suffix}@example.com", is_active=True)
+        user.set_password("SelectOrg123!")
+        outsider = User(email=f"select-org-outsider-{suffix}@example.com", is_active=True)
+        outsider.set_password("Outsider123!")
+        db.session.add_all([user, outsider])
+        db.session.flush()
+        org_a = _create_org(user, f"Select Alpha {suffix}")
+        org_b = _create_org(user, f"Select Beta {suffix}")
+        org_c = _create_org(outsider, f"Select Gamma {suffix}")
+        db.session.add_all(
+            [
+                Supplier(organization_id=org_a.id, name=f"Alpha Supplier {suffix}", normalized_name=f"alpha supplier {suffix}"),
+                Supplier(organization_id=org_b.id, name=f"Beta Supplier {suffix}", normalized_name=f"beta supplier {suffix}"),
+                Supplier(organization_id=org_c.id, name=f"Gamma Supplier {suffix}", normalized_name=f"gamma supplier {suffix}"),
+            ]
+        )
+        db.session.commit()
+        return {"user_id": user.id, "org_a_id": org_a.id, "org_b_id": org_b.id, "org_c_id": org_c.id}
+
+    seeded = _seed_admin_fixture("RLS select organization dataset", _seed)
+    user_id, org_a_id, org_b_id, org_c_id = (seeded[key] for key in ("user_id", "org_a_id", "org_b_id", "org_c_id"))
+
+    client = postgres_app.test_client()
+    _login_user(client, f"select-org-{suffix}@example.com", "SelectOrg123!")
+
+    def csrf_headers() -> dict[str, str]:
+        return {"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]}
+
+    def select(organization_id: int):
+        return client.post(
+            "/api/organizations/select",
+            base_url="http://127.0.0.1:5001",
+            headers=csrf_headers(),
+            json={"organizationId": organization_id},
+        )
+
+    def visible_supplier_names() -> set[str]:
+        response = client.get("/api/pilot/suppliers", base_url="http://127.0.0.1:5001")
+        assert response.status_code == 200, response.get_data(as_text=True)
+        body = response.get_json()
+        rows = body.get("suppliers", body) if isinstance(body, dict) else body
+        return {row["name"] for row in rows}
+
+    def selected_audit_count(organization_id: int) -> int:
+        with postgres_app.app_context():
+            _set_rls_context(access_scope="setup")
+            return AuditEvent.query.filter_by(
+                event_type="tenant.organization_selected",
+                entity_type="organization",
+                entity_id=str(organization_id),
+                organization_id=organization_id,
+                actor_user_id=user_id,
+            ).count()
+
+    def current_organization_id() -> int | None:
+        response = client.get("/api/organizations/current", base_url="http://127.0.0.1:5001")
+        assert response.status_code == 200, response.get_data(as_text=True)
+        return response.get_json()["organization"]["id"]
+
+    # Valid selection: succeeds, the audit row is persisted, and only A's data is visible afterwards.
+    response = select(org_a_id)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert selected_audit_count(org_a_id) == 1
+    assert current_organization_id() == org_a_id
+    assert visible_supplier_names() == {f"Alpha Supplier {suffix}"}
+
+    # Switching organizations audits under the new organization and isolates the previous one.
+    response = select(org_b_id)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert selected_audit_count(org_b_id) == 1
+    assert selected_audit_count(org_a_id) == 1
+    assert current_organization_id() == org_b_id
+    assert visible_supplier_names() == {f"Beta Supplier {suffix}"}
+
+    # Unauthorized organization: refused before any tenant context or audit write for it.
+    response = select(org_c_id)
+    assert response.status_code == 403, response.get_data(as_text=True)
+    assert selected_audit_count(org_c_id) == 0
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="setup")
+        assert AuditEvent.query.filter_by(event_type="tenant.organization_selected", organization_id=org_c_id).count() == 0
+    assert current_organization_id() == org_b_id
+    assert visible_supplier_names() == {f"Beta Supplier {suffix}"}
+
+    # Unknown organization ids are refused the same way.
+    assert select(987654321).status_code == 403
+    assert current_organization_id() == org_b_id
+
+    # The runtime role itself still cannot write another tenant's audit row (RLS not weakened).
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=org_b_id, user_id=user_id)
+        db.session.add(
+            AuditEvent(
+                organization_id=org_c_id,
+                actor_user_id=user_id,
+                event_type="tenant.organization_selected",
+                entity_type="organization",
+                entity_id=str(org_c_id),
+                request_id=uuid4().hex,
+                metadata_json={},
+            )
+        )
+        with pytest.raises(Exception, match="row-level security"):
+            db.session.flush()
+        db.session.rollback()
+
+
 def test_postgres_daily_close_mutations_restore_context_after_commit(postgres_app):
     owner_email = f"daily-close-{uuid4().hex[:8]}@example.com"
     owner_password = f"DailyClose-{uuid4().hex[:12]}!"
@@ -3110,7 +3209,12 @@ def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgr
     _login_owner(client)
 
     csrf_token = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]
-    select_org_response = _select_organization_or_xfail_known_defect(client, organization_id, {"X-CSRFToken": csrf_token})
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"organizationId": organization_id},
+    )
     assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
 
     select_location_response = client.post(
@@ -3364,7 +3468,12 @@ def test_square_oauth_callback_commits_audit_event_under_rls(postgres_app, monke
     _login_owner(client)
     csrf_response = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001")
     csrf_token = csrf_response.get_json()["csrfToken"]
-    select_org_response = _select_organization_or_xfail_known_defect(client, organization_id, {"X-CSRFToken": csrf_token})
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"organizationId": organization_id},
+    )
     assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
 
     start_response = client.get(f"/api/integrations/square/start?organizationId={organization_id}", base_url="http://127.0.0.1:5001")
@@ -3438,7 +3547,12 @@ def test_square_location_mapping_serializes_before_commit_under_rls(postgres_app
     _login_owner(client)
     csrf_response = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001")
     csrf_token = csrf_response.get_json()["csrfToken"]
-    select_org_response = _select_organization_or_xfail_known_defect(client, organization_id, {"X-CSRFToken": csrf_token})
+    select_org_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers={"X-CSRFToken": csrf_token},
+        json={"organizationId": organization_id},
+    )
     assert select_org_response.status_code == 200, select_org_response.get_data(as_text=True)
 
     response = client.post(

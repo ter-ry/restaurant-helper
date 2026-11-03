@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 from .audit import record_audit_event
 from .extensions import db
 from .models import Organization, RestaurantLocation
+from .tenant_context import apply_org_tenant_context
 from .utils import (
     clear_pilot_context,
     enabled_module_keys_for_organization,
@@ -121,6 +122,12 @@ def select_organization() -> tuple[object, int]:
     session["pilot_current_organization_id"] = organization.id
     if len(locations) == 1:
         session["pilot_current_location_id"] = locations[0].id
+
+    # Membership for this exact organization was verified above, so it is now safe to
+    # install that organization's tenant context. Without it, forced RLS on
+    # audit_events rejects the audit insert (no current organization yet) and the
+    # context would be lost again after the commit below.
+    apply_org_tenant_context(organization)
 
     record_audit_event(
         event_type="tenant.organization_selected",
