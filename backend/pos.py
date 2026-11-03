@@ -18,6 +18,13 @@ class PosProvider(str, Enum):
     CLOVER = "clover"
 
 
+# Inventory movement source types written by POS sale sync. Count-variance math
+# excludes all of them (the sale is already explained by recipe consumption).
+SQUARE_SALE_SOURCE_TYPES = frozenset({"square sale consumption", "square sale reversal"})
+CLOVER_SALE_SOURCE_TYPES = frozenset({"clover sale consumption", "clover sale correction"})
+POS_SALE_SOURCE_TYPES = SQUARE_SALE_SOURCE_TYPES | CLOVER_SALE_SOURCE_TYPES
+
+
 class PosPaymentState(str, Enum):
     UNKNOWN = "unknown"
     UNPAID = "unpaid"

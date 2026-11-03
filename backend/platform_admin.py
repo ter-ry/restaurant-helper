@@ -15,6 +15,7 @@ from .audit import record_audit_event
 from .config import database_name_from_url
 from .extensions import db
 from .models import AuditEvent, DashboardLayout, DataImportJob, InventoryItem, InventoryMovement, MenuItem, Organization, OrganizationConfiguration, OrganizationConfigurationVersion, OrganizationMembership, OrganizationModule, PlatformRole, Recipe, RestaurantLocation, SquareCatalogMapping, SquareCatalogObject, SquareConnection, SquareLocation, SquareLocationMapping, SquareOrder, SquareOrderLine, StockCountSession, SupportAccessGrant, User
+from .pos import POS_SALE_SOURCE_TYPES
 from .modules import MODULE_REGISTRY, module_dependency_keys
 from .seed import seed_showcase_tenant
 from .square_integration import _build_square_usage_report, _current_square_location_ids, _parse_iso_datetime, _square_line_consumption, _square_line_sale_quantity, _usage_basis_inputs, diagnose_square_credentials as run_square_credential_diagnostic, reset_square_connection_data
@@ -610,7 +611,7 @@ def showcase_usage_diagnostic():
     opening_session = sessions.get(start_at)
     closing_session = sessions.get(end_at)
     movements_by_item: dict[int, list[dict[str, Any]]] = {}
-    excluded_sources = {"stock count reconciliation", "square sale consumption", "square sale reversal"}
+    excluded_sources = {"stock count reconciliation"} | POS_SALE_SOURCE_TYPES
     for item_id in sorted(ingredient_ids):
         rows = InventoryMovement.query.filter(
             InventoryMovement.organization_id == organization_id,
