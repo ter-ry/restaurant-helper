@@ -627,7 +627,7 @@ export function PilotReorderPlanPage() {
 
         </div>
       ) : (
-        <div className={`${draft ? "order-2" : "order-1"} grid gap-6 xl:grid-cols-[1.18fr_0.82fr]`}>
+        <div className={`${draft ? "order-2" : "order-1"} grid grid-cols-1 gap-6 xl:grid-cols-[1.18fr_0.82fr]`}>
           <Card className="p-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <SectionHeader title="Needs reorder" />
