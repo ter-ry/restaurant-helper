@@ -149,6 +149,9 @@ textarea.input {
 }
 
 .workspace-table-wrap {
+  /* Contain absolutely positioned children (e.g. sr-only labels in cells) so they
+     cannot widen the page beyond the scroll area on phones. */
+  position: relative;
   overflow-x: auto;
   border: 1px solid #e2e8f0;
   border-radius: 0.75rem;
