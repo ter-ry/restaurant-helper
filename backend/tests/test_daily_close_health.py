@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from backend.extensions import db
@@ -335,3 +335,53 @@ def test_cash_reconciliation_mixes_shift_expected_cash_and_matches_events(monkey
     assert all("location_id=SQ-1" in path for path in calls if "/events?" in path)
     assert all("location_id=SQ-1" in path for path in calls if "/shifts/shift-" in path and "/events?" not in path)
     assert result["possibleMatches"][0]["createdAt"]
+
+
+def test_daily_close_other_adjustments_exclude_pos_sale_movements(app, monkeypatch):
+    from datetime import date
+    from decimal import Decimal
+
+    from backend import daily_close
+    from backend.models import InventoryItem, InventoryMovement
+
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        organization = make_operational_organization(owner, name=f"Close Adj {uuid4().hex[:8]}", location_name="Main")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        item = InventoryItem(organization_id=organization.id, location_id=location.id, name="Flour", normalized_name="flour", stock_unit="kg")
+        db.session.add(item)
+        db.session.flush()
+        business_date = date(2026, 8, 30)
+        start_at, _end = daily_close._business_date_bounds(location, business_date)
+        sources = {
+            "square sale consumption": "-1",
+            "clover sale consumption": "-2",
+            "clover sale correction": "-4",
+            "manual adjustment": "-8",
+        }
+        for source, delta in sources.items():
+            movement = InventoryMovement(organization_id=organization.id, location_id=location.id, inventory_item_id=item.id, quantity_delta=Decimal(delta), unit="kg", source_type=source)
+            db.session.add(movement)
+            db.session.flush()
+            movement.created_at = start_at + timedelta(hours=3)
+        db.session.commit()
+
+        monkeypatch.setattr(daily_close, "ensure_square_orders_fresh", lambda *a, **k: {})
+        monkeypatch.setattr(daily_close, "_sales_summary_for_day", lambda *a, **k: {"orders": 0, "grossSales": 0, "netSales": 0, "itemQuantity": 0, "refunds": 0, "cancelledOrders": 0})
+        monkeypatch.setattr(daily_close, "_cash_reconciliation", lambda *a, **k: {"overShort": None})
+        monkeypatch.setattr(
+            daily_close,
+            "_daily_close_usage",
+            lambda *a, **k: {
+                "period": None,
+                "coverage": {},
+                "ingredientUsage": [],
+                "contributingMenuItems": [],
+                "unmappedVariations": [],
+                "totals": {"theoreticalUsage": 0, "actualUsage": None, "discrepancy": None, "discrepancyPercent": None},
+            },
+        )
+        snapshot, _usage, _exceptions, _connection = daily_close._daily_close_snapshot(organization, location, business_date)
+        # Only the manual adjustment is an unexplained "other" adjustment. Square
+        # and Clover sale consumption/correction are explained by recipe usage.
+        assert snapshot["reconciliation"]["otherAdjustmentQuantity"] == -8.0

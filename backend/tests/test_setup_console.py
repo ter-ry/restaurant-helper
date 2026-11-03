@@ -508,6 +508,21 @@ def test_showcase_usage_diagnostic_serializes_complete_non_empty_recipe(app, cli
             reason="Diagnostic movement",
             created_at=datetime(2026, 10, 7, 18, 10, tzinfo=timezone.utc),
         ))
+        for offset, pos_source in enumerate(("square sale consumption", "square sale reversal", "clover sale consumption", "clover sale correction")):
+            db.session.add(InventoryMovement(
+                organization_id=organization.id,
+                location_id=location.id,
+                inventory_item_id=inventory_item.id,
+                quantity_delta=Decimal("-0.1"),
+                quantity_before=Decimal("8"),
+                quantity_after=Decimal("7.9"),
+                unit="kg",
+                source_type=pos_source,
+                source_record_id=f"diagnostic-{offset}",
+                source_line_id="diagnostic",
+                reason="POS sale movement",
+                created_at=datetime(2026, 10, 7, 18, 11 + offset, tzinfo=timezone.utc),
+            ))
         order = SquareOrder(
             square_connection_id=connection.id,
             square_order_id="DIAGNOSTIC-ORDER",
@@ -548,6 +563,17 @@ def test_showcase_usage_diagnostic_serializes_complete_non_empty_recipe(app, cli
     assert str(inventory_item_id) in body["movements"]
     assert body["movements"][str(inventory_item_id)][0]["reason"] == "Diagnostic movement"
     assert body["usageEndpoint"]["coverage"]["totalSoldUnits"] == 1.0
+    # Square and Clover POS sale movements are all excluded from movement net;
+    # the manual adjustment still counts.
+    included = {row["sourceType"]: row["includedInMovementNet"] for row in body["movements"][str(inventory_item_id)]}
+    assert included == {
+        "manual_adjustment": True,
+        "square sale consumption": False,
+        "square sale reversal": False,
+        "clover sale consumption": False,
+        "clover sale correction": False,
+    }
+    assert body["movementTotalsFromUsageInputs"][str(inventory_item_id)] == 0.0
 
 
 def test_square_credential_diagnostic_is_setup_admin_only_safe_and_non_mutating(app, client, monkeypatch):
