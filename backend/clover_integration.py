@@ -928,13 +928,17 @@ def _ingest_shadow_orders(
                     if applied is not None and applied.applied_quantity:
                         line.mapping_status = "review_required"
                         line.recipe_preview_json = {
-                            "reason": "Clover removed a line after inventory application; its usage is reversed on the next reconciliation.",
-                            "removed": True,
+                            "reason": "Clover removed a line after inventory application; manual correction is required.",
                         }
                     else:
                         db.session.delete(line)
         ingested.append(shadow)
     db.session.flush()
+    # Lines are created/deleted through the session, not via `shadow.lines`, so the
+    # cached relationship can be stale (e.g. empty for a new order). Reconciliation
+    # reads `order.lines`, so reload it from the database.
+    for shadow in ingested:
+        db.session.expire(shadow, ["lines"])
     return ingested, len(ingested)
 
 

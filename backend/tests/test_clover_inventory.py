@@ -137,145 +137,127 @@ def _movement_count(order):
     return InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count()
 
 
-def _mark_not_prepared(order, lines, *, refunds=None, total=1800):
-    order.total_cents = total
-    order.raw_payload_json = {
-        "refunds": refunds or [],
-        "lineItems": [{"id": line.clover_line_item_id, "notPrepared": True} for line in lines],
-    }
-
-
-@pytest.mark.parametrize(
-    ("normalized", "provider", "payment", "refunds"),
-    [("cancelled", "VOIDED", "VOIDED", []), ("refunded", "PAID", "refunded", [{"id": "r1", "amount": 1800}])],
-)
-def test_void_or_full_refund_without_unprepared_evidence_is_flagged_not_restored(app, normalized, provider, payment, refunds):
+def _flag_order(order, *, normalized, provider="", payment="", raw=None):
     from backend.extensions import db
 
-    order, connection, items, lines = _applied_fixture(app)
-    order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
-    order.potentially_eligible, order.requires_review, order.total_cents = False, True, 1800
-    order.raw_payload_json = {"refunds": refunds}
-    db.session.commit()
-    result = apply_clover_order_inventory(order=order, connection=connection)
-    db.session.commit()
-    assert result["applied"] is False and result["appliedRequiresReview"] is True
-    assert len(result["staleApplied"]) == 2
-    assert _movement_count(order) == 2
-    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
-
-
-@pytest.mark.parametrize(
-    ("normalized", "provider", "payment", "refunds"),
-    [("cancelled", "VOIDED", "VOIDED", []), ("refunded", "PAID", "refunded", [{"id": "r1", "amount": 1800}])],
-)
-def test_void_or_full_refund_with_unprepared_evidence_reverses_once(app, normalized, provider, payment, refunds):
-    from backend.extensions import db
-    from backend.models import InventoryMovement
-
-    order, connection, items, lines = _applied_fixture(app)
     order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
     order.potentially_eligible, order.requires_review = False, True
-    _mark_not_prepared(order, lines, refunds=refunds)
+    order.raw_payload_json = raw or {}
     db.session.commit()
 
-    preview = apply_clover_order_inventory(order=order, connection=connection, dry_run=True)
-    assert preview["eligible"] is True and len(preview["corrections"]) == 2
-    assert _movement_count(order) == 2
 
-    result = apply_clover_order_inventory(order=order, connection=connection)
-    db.session.commit()
-    assert result["applied"] is True
-    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("10.0000"), Decimal("10.0000")]
-    reversals = InventoryMovement.query.filter_by(source_record_id=order.clover_order_id, source_type="clover sale correction").all()
-    assert len(reversals) == 2 and all(Decimal(str(m.quantity_delta)) == Decimal("1") for m in reversals)
-
-    replay = apply_clover_order_inventory(order=order, connection=connection)
-    db.session.commit()
-    assert replay["applied"] is False  # ledger already zero: nothing to review or restore
-    assert _movement_count(order) == 4
-    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("10.0000"), Decimal("10.0000")]
-
-
-def test_evidence_covering_only_some_lines_is_not_enough(app):
-    from backend.extensions import db
-
-    order, connection, items, lines = _applied_fixture(app)
-    order.normalized_status, order.provider_status, order.potentially_eligible = "cancelled", "VOIDED", False
-    _mark_not_prepared(order, lines[:1])
-    db.session.commit()
-    result = apply_clover_order_inventory(order=order, connection=connection)
-    assert result["applied"] is False and result["appliedRequiresReview"] is True
-    assert _movement_count(order) == 2
-
-
-def test_partial_refund_is_review_required_even_with_unprepared_marker(app):
-    from backend.extensions import db
-
-    order, connection, items, lines = _applied_fixture(app)
-    # Status text says REFUNDED, but the numeric amounts prove the refund is partial.
-    order.normalized_status, order.provider_status, order.payment_status, order.potentially_eligible = "refunded", "REFUNDED", "refunded", False
-    _mark_not_prepared(order, lines, refunds=[{"id": "r1", "amount": 500}])
-    db.session.commit()
-    result = apply_clover_order_inventory(order=order, connection=connection)
-    assert result["applied"] is False and result["appliedRequiresReview"] is True
-    assert result["refundKind"] == "partial"
-    assert _movement_count(order) == 2
-
-
-def test_reversal_is_blocked_when_flag_off(app):
-    from backend.extensions import db
-
-    order, connection, items, lines = _applied_fixture(app)
-    order.normalized_status, order.provider_status, order.potentially_eligible = "cancelled", "VOIDED", False
-    _mark_not_prepared(order, lines)
-    db.session.commit()
-    app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
-    result = apply_clover_order_inventory(order=order, connection=connection)
-    assert result["applied"] is False and _movement_count(order) == 2
-    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
+def _forged_markers(lines):
+    # A client/provider-supplied "notPrepared" marker must never be trusted.
+    return {"lineItems": [{"id": line.clover_line_item_id, "notPrepared": True, "state": "NOT_PREPARED"} for line in lines], "notPrepared": True}
 
 
 @pytest.mark.parametrize(
-    ("normalized", "provider", "payment", "raw"),
+    ("normalized", "provider", "payment", "extra"),
     [
+        ("cancelled", "VOIDED", "VOIDED", {}),
+        ("refunded", "PAID", "refunded", {"refunds": [{"id": "r1", "amount": 1800, "components": []}]}),
+        ("refunded", "PAID", "refunded", {"refunds": [{"id": "r1", "amount": 500, "components": []}]}),
         ("review", "CLOSED", "PAID", {"paymentStateConflict": True}),
         ("review", "CLOSED", "PAID", {"financialIncomplete": True}),
     ],
 )
-def test_applied_order_with_payment_conflict_is_flagged_not_changed(app, normalized, provider, payment, raw):
+def test_applied_order_that_becomes_ineligible_is_flagged_and_stock_never_changes(app, normalized, provider, payment, extra):
     from backend.extensions import db
 
     order, connection, items, lines = _applied_fixture(app)
-    order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
-    order.potentially_eligible, order.requires_review = False, True
-    order.raw_payload_json = {**raw, "lineItems": [{"id": line.clover_line_item_id, "notPrepared": True} for line in lines]}
-    db.session.commit()
-    result = apply_clover_order_inventory(order=order, connection=connection)
-    db.session.commit()
-    assert result["applied"] is False and result["appliedRequiresReview"] is True
+    order.total_cents = 1800
+    _flag_order(order, normalized=normalized, provider=provider, payment=payment, raw={**_forged_markers(lines), **extra})
+    for _ in range(2):  # replay is also a no-op
+        result = apply_clover_order_inventory(order=order, connection=connection)
+        db.session.commit()
+        assert result["applied"] is False
+        assert result["appliedRequiresReview"] is True
+        assert result["orderId"] == order.clover_order_id
+        assert len(result["staleApplied"]) == 2
     assert _movement_count(order) == 2
     assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
 
 
-def test_removed_line_requires_review_unless_unprepared_is_established(app):
+def test_removed_applied_line_is_flagged_and_stock_never_changes(app):
     from backend.extensions import db
 
     order, connection, items, lines = _applied_fixture(app)
     lines[1].mapping_status = "review_required"
-    lines[1].recipe_preview_json = {"reason": "removed", "removed": True}
-    db.session.commit()
-    flagged = apply_clover_order_inventory(order=order, connection=connection)
-    db.session.commit()
-    assert flagged["applied"] is False and flagged["appliedRequiresReview"] is True
-    assert _movement_count(order) == 2
-
-    order.raw_payload_json = {"lineItems": [{"id": lines[1].clover_line_item_id, "notPrepared": True}]}
+    lines[1].recipe_preview_json = {"reason": "Clover removed a line after inventory application; manual correction is required."}
+    order.raw_payload_json = _forged_markers(lines)
     db.session.commit()
     result = apply_clover_order_inventory(order=order, connection=connection)
     db.session.commit()
-    assert result["applied"] is True
-    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("10.0000")]
-    apply_clover_order_inventory(order=order, connection=connection)
-    db.session.commit()
-    assert _movement_count(order) == 3
+    assert result["applied"] is False and result["appliedRequiresReview"] is True
+    assert {row["lineId"] for row in result["staleApplied"]} >= {lines[1].id}
+    assert _movement_count(order) == 2
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
+
+
+def test_flag_off_applied_review_changes_nothing(app):
+    order, connection, items, lines = _applied_fixture(app)
+    _flag_order(order, normalized="cancelled", provider="VOIDED", payment="VOIDED")
+    app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    assert result["applied"] is False and _movement_count(order) == 2
+
+
+def _refund_raw(*, payments, refunds, components=()):
+    return {"orderComponents": list(components), "payments": payments, "refunds": refunds}
+
+
+def _pay(amount=1800, components=(), result="SUCCESS"):
+    return {"id": "p", "amount": amount, "result": result, "components": list(components)}
+
+
+def _ref(amount, components=()):
+    return {"id": "r", "amount": amount, "components": list(components)}
+
+
+@pytest.mark.parametrize(
+    ("total", "raw", "expected"),
+    [
+        (1800, _refund_raw(payments=[_pay()], refunds=[]), "none"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(1800)]), "full"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(500), _ref(1300)]), "full"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(500)]), "partial"),
+        # Tips, surcharges (additionalCharges), tax, discounts: semantics unverified -> unknown.
+        (1800, _refund_raw(payments=[_pay(components=["tipAmount"])], refunds=[_ref(1800)]), "unknown"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(1800, ["additionalCharges"])]), "unknown"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(1800, ["taxAmount"])]), "unknown"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(1800)], components=["discounts"]), "unknown"),
+        (1800, _refund_raw(payments=[_pay()], refunds=[_ref(2000)]), "unknown"),  # refund exceeds charge
+        (1800, _refund_raw(payments=[_pay(1500)], refunds=[_ref(1500)]), "unknown"),  # payments != total
+        (0, _refund_raw(payments=[_pay(0)], refunds=[_ref(0)]), "unknown"),  # zero total
+        (None, _refund_raw(payments=[_pay()], refunds=[_ref(1800)]), "unknown"),  # unknown total
+        (1800, _refund_raw(payments=[], refunds=[_ref(1800)]), "unknown"),  # no payments
+        (1800, _refund_raw(payments=[_pay(result="FAIL")], refunds=[]), "unknown"),
+        (1800, {"refunds": [{"id": "r", "amount": 1800}], "payments": [{"id": "p", "amount": 1800, "result": "SUCCESS"}]}, "unknown"),  # legacy rows lack component data
+        (1800, {**_refund_raw(payments=[_pay()], refunds=[_ref(1800)]), "financialIncomplete": True}, "unknown"),
+    ],
+)
+def test_refund_kind_is_authoritative_or_unknown(total, raw, expected):
+    from backend.clover_inventory import _refund_kind
+
+    assert _refund_kind(SimpleNamespace(total_cents=total, raw_payload_json=raw)) == expected
+
+
+def test_normalization_records_tip_surcharge_tax_and_discount_components():
+    from backend.clover_inventory import _refund_kind
+    from backend.clover_orders import normalize_order
+
+    base = {
+        "id": "o1", "state": "CLOSED", "paymentState": "REFUNDED", "total": 1800,
+        "lineItems": {"elements": [{"id": "l1", "name": "Burger", "quantity": 1, "price": 1800, "item": {"id": "i1"}}], "total": 1},
+        "createdTime": 1, "modifiedTime": 1,
+    }
+    plain = normalize_order({**base, "payments": {"elements": [{"id": "p", "amount": 1800, "result": "SUCCESS"}], "total": 1}, "refunds": {"elements": [{"id": "r", "amount": 1800}], "total": 1}})
+    assert plain.raw["payments"][0]["components"] == [] and plain.raw["refunds"][0]["components"] == []
+    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=plain.raw)) == "full"
+    tipped = normalize_order({**base, "payments": {"elements": [{"id": "p", "amount": 1800, "tipAmount": 200, "taxAmount": 0, "result": "SUCCESS"}], "total": 1}, "refunds": {"elements": [{"id": "r", "amount": 1800, "additionalCharges": {"elements": [{"id": "c1", "amount": 50}], "total": 1}}], "total": 1}})
+    assert tipped.raw["payments"][0]["components"] == ["tipAmount"]
+    assert tipped.raw["refunds"][0]["components"] == ["additionalCharges"]
+    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=tipped.raw)) == "unknown"
+    discounted = normalize_order({**base, "discounts": {"elements": [{"id": "d1", "amount": -100}], "total": 1}, "payments": {"elements": [{"id": "p", "amount": 1800, "result": "SUCCESS"}], "total": 1}, "refunds": {"elements": [], "total": 0}})
+    assert discounted.raw["orderComponents"] == ["discounts"]
+    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=discounted.raw)) == "unknown"
