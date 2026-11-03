@@ -1,30 +1,30 @@
 # Flowtally Release Status
 
-Last updated: 2026-11-03 by Claude Code (baseline refreshed after PR #161 merged). Before editing, check that existing rows are still current (`git log`, open PRs, CI); never overwrite another agent's evidence without re-verifying it. Plan: `docs/RELEASE_PLAN.md`.
+Last updated: 2026-11-03 by Claude Code (issue queue created after PR #162 merged). Before editing, check that existing rows are still current (`git log`, open PRs, CI); never overwrite another agent's evidence without re-verifying it. Plan: `docs/RELEASE_PLAN.md`.
 
 Status values: Not started - In progress - Implemented but unverified - Automated tests passed - Sandbox/Showcase verified - Production verified - Blocked - Complete.
 
 ## NEXT TASK
 
-**Milestone 1: reconcile deployed state.** Highest-priority dependency-ready work:
+**Work from the GitHub issue queue** (labels: `P0/P1/P2`, `status:ready|in-progress|blocked|review-ready`, `unattended-ok`, `needs-owner`). Pick the highest-priority `status:ready` + `unattended-ok` issue with no open PR or `status:in-progress` claim:
 
-1. Owner reviews/merges planning PR #162 (merge gate; agents do not merge).
-2. Then an independent **read-only review of merged commit `776f557`** (Clover sales-to-inventory reconciliation, merged via #161): confirm flag-off is a no-op, Square untouched, migrations 0025/0026 have forced RLS and tenant/location indexes, idempotency, concurrency, refund/void handling and cost snapshots. Report findings; fix only via a new focused PR.
-3. Then **deployment/migration verification**: owner confirms which environments run `776f557` and their Alembic head (0026 expected only where deployed), and that `CLOVER_ORDER_INVENTORY_ENABLED` is `false` everywhere except any deliberately enabled Showcase.
-4. Owner fills the "Owner actions" table (deployed SHAs/heads, Clover-first-customer decision).
+1. **#163 [P0]** Run all PostgreSQL RLS tests in CI and fix the dormant ones (8 fail locally; includes the Clover inventory execution test).
+2. **#143 [P0]** Purchases receipt-confirmation modal after OCR receive (existing issue; group with #142 only if one focused PR).
+3. **#173 [P0]** Audit public claims against verified features.
+4. **#164 [P1]** Independent read-only review of merged `776f557` (owner's preferred sequence starts Clover first; run it in parallel, it is read-only).
 
-Do not start new feature work until step 1 is merged. Do not enable Clover inventory automation without owner approval.
+Owner-only blockers that gate launch: #165 deployed state, #171 protect `main`, #168 void/correction scope, #169 Square Showcase walkthrough, #174 pricing/terms. Do not enable Clover inventory writes or touch live data.
 
 ## Baseline
 
 | Item | Value | Evidence |
 |---|---|---|
-| `main` | `ccaac01d8468e1274d0d274dde4ba74faae88a0a` (PR #160 merge) | git |
+| `main` | `bb7b761` (PR #162 merged, on top of `776f557`) | git |
 | CI on `main` | success | [run 41477196327](https://github.com/ter-ry/restaurant-helper/actions/runs/41477196327) |
 | Pages deploy on `main` | success | [run 41477196974](https://github.com/ter-ry/restaurant-helper/actions/runs/41477196974) |
 | `main` after #161 | `776f557ed482b9a1851425a5d0d810650c0df7cf` (PR #161 merged) | git; Pages deploy [run 41553204916](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204916) success; CI [run 41553204802](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204802) success |
 | Latest Alembic migration in repo | `0026_clover_consumption_cost_snapshot` (0025/0026 present on `main`) | `backend/migrations/versions`. **Not claimed applied to any environment**: no deployment evidence yet |
-| Open PRs | #162 (this planning PR) only | GitHub |
+| Open PRs | none (readiness PR pending) | GitHub |
 
 ## Milestones
 
@@ -57,21 +57,27 @@ Do not start new feature work until step 1 is merged. Do not enable Clover inven
 | PR | Branch | Status | Evidence | Rule |
 |---|---|---|---|---|
 | [#161](https://github.com/ter-ry/restaurant-helper/pull/161) Guarded Clover sales-to-inventory reconciliation | `codex/clover-sales-inventory` | **Merged** to `main` as `776f557`. Pre-merge checks green ([run 41523502053](https://github.com/ter-ry/restaurant-helper/actions/runs/41523502053)) | CI only; no independent review; no flag-on Sandbox rehearsal recorded | Closed work. Do not rewrite; follow-ups go in new focused PRs. |
-| [#162](https://github.com/ter-ry/restaurant-helper/pull/162) Planning docs (this PR) | `claude/nice-brown-94okjr` | Review-only | Docs only | Owner merge |
+| [#162](https://github.com/ter-ry/restaurant-helper/pull/162) Planning docs | `claude/nice-brown-94okjr` | **Merged** as `bb7b761` | CI green | Closed. |
 
 ## Known technical blockers
 
-1. Clover flag-on path (merged, disabled) has no independent review and no Sandbox/Showcase evidence (needs a paid Sandbox order; external prerequisite).
-2. Clover is absent from Daily Close, reporting, menu costing and costing.
-3. Invoice void/correction after receipt and several gap-checklist items are unimplemented (`docs/private-pilot-gap-checklist.md`).
-4. Existing audit docs are dated (Aug-Oct 2026) and not re-run on current `main`.
-5. Production uses a shared Aiven server (documented temporary arrangement).
+1. CI runs only 29 of 44 tests in `backend/tests/test_postgres_rls.py`; 8 unrun tests fail locally on clean PostgreSQL 16 (#163). A green CI run does not yet prove all RLS coverage.
+2. `main` has no branch protection or ruleset and merging deploys the Pages site (#171).
+3. Cloud sandbox cannot run `npm run e2e`: Playwright expects Chromium r1234, r1243 installed (#172).
+4. Clover flag-on path (merged, disabled) has no independent review and no Sandbox/Showcase evidence (needs a paid Sandbox order; external prerequisite).
+5. Clover is absent from Daily Close, reporting, menu costing and costing.
+6. Invoice void/correction after receipt and several gap-checklist items are unimplemented (`docs/private-pilot-gap-checklist.md`).
+7. Existing audit docs are dated (Aug-Oct 2026) and not re-run on current `main`.
+8. Production uses a shared Aiven server (documented temporary arrangement).
 
 ## Owner actions (agents cannot do these)
 
 | Action | Why |
 |---|---|
-| Merge/approve PR #162 | Merge gate |
+| Merge/approve every PR (merge deploys Pages) | Merge gate |
+| Protect `main` with a ruleset (#171) | Repo admin |
+| Fix cloud Playwright browser setup (#172) | Environment settings |
+| Decide void/correction scope (#168), Square walkthrough (#169), pricing/terms (#174), deployed state (#165) | See issues |
 | Confirm deployed SHA and Alembic head for Production, Staging, Showcase, Demo | Not visible from the repo |
 | Decide whether the first customers use Clover (changes M3b to P0) | Scope |
 | Provide a paid Clover Sandbox order for rehearsal | External |
