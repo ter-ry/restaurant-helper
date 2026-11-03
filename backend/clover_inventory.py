@@ -31,6 +31,43 @@ def _decimal(value: Any) -> Decimal:
         raise ValueError("Invalid Clover ingredient quantity.") from exc
 
 
+def _line_removed(line: Any) -> bool:
+    """True when Clover's complete collection dropped a line that had been applied."""
+    preview = getattr(line, "recipe_preview_json", None)
+    return isinstance(preview, dict) and bool(preview.get("removed"))
+
+
+def _definitive_reversal_reason(order: CloverShadowOrder) -> str:
+    """Return a reason only for provider states that definitively void a sale.
+
+    Cancelled/voided/deleted orders and full refunds reverse applied usage.
+    Partial refunds, payment conflicts and incomplete data are NOT proof the sale
+    did not happen, so they are surfaced for review instead of silently reversed.
+    """
+    status = str(getattr(order, "normalized_status", "") or "")
+    if status == "cancelled":
+        return "order_cancelled_or_voided"
+    if status == "refunded":
+        text = f"{getattr(order, 'provider_status', '')} {getattr(order, 'payment_status', '')}".upper()
+        if "PARTIAL" not in text and ("REFUND" in text or "CREDIT" in text):
+            return "order_fully_refunded"
+    return ""
+
+
+def _reverse_row(row: CloverShadowOrderLineInventoryConsumption) -> dict[str, Any]:
+    applied = _decimal(row.applied_quantity or 0).quantize(QTY)
+    return {
+        "lineId": row.clover_shadow_order_line_id,
+        "inventoryItemId": row.inventory_item_id,
+        "quantity": "0.0000",
+        "appliedQuantity": str(applied),
+        "correction": str((-applied).quantize(QTY)),
+        "state": "correction",
+        "unit": getattr(row.inventory_item, "stock_unit", ""),
+        "itemName": getattr(row.inventory_item, "name", ""),
+    }
+
+
 def _base_plan(order: CloverShadowOrder) -> dict[str, Any]:
     raw = order.raw_payload_json or {}
     if not order.potentially_eligible or order.requires_review or order.normalized_status != "paid":
@@ -41,6 +78,8 @@ def _base_plan(order: CloverShadowOrder) -> dict[str, Any]:
     desired: dict[tuple[int, int], dict[str, Any]] = {}
     for line in order.lines:
         preview = line.recipe_preview_json or {}
+        if _line_removed(line):
+            continue
         ingredients = preview.get("ingredients") if isinstance(preview, dict) else None
         if line.mapping_status != "mapped" or not isinstance(ingredients, list) or not ingredients:
             return {"orderId": order.clover_order_id, "eligible": False, "reason": "line_mapping_or_recipe_missing", "movements": [], "staleApplied": []}
@@ -76,7 +115,10 @@ def _base_plan(order: CloverShadowOrder) -> dict[str, Any]:
 def _with_ledger_deltas(order: CloverShadowOrder, plan: dict[str, Any], ledgers: list[CloverShadowOrderLineInventoryConsumption]) -> dict[str, Any]:
     by_key = {(row.clover_shadow_order_line_id, row.inventory_item_id): row for row in ledgers}
     desired_keys = {(int(row["lineId"]), int(row["inventoryItemId"])) for row in plan["movements"]}
-    stale = [row for key, row in by_key.items() if key not in desired_keys and _decimal(row.applied_quantity or 0) != 0]
+    removed_line_ids = {line.id for line in order.lines if _line_removed(line)}
+    stale_all = [row for key, row in by_key.items() if key not in desired_keys and _decimal(row.applied_quantity or 0) != 0]
+    reversible = [row for row in stale_all if row.clover_shadow_order_line_id in removed_line_ids]
+    stale = [row for row in stale_all if row.clover_shadow_order_line_id not in removed_line_ids]
     plan["staleApplied"] = [
         {"lineId": row.clover_shadow_order_line_id, "inventoryItemId": row.inventory_item_id, "appliedQuantity": str(_decimal(row.applied_quantity or 0).quantize(QTY))}
         for row in stale
@@ -97,7 +139,11 @@ def _with_ledger_deltas(order: CloverShadowOrder, plan: dict[str, Any], ledgers:
             })
         return plan
 
+    for row in reversible:
+        plan["movements"].append(_reverse_row(row))
     for movement in plan["movements"]:
+        if movement.get("state") == "correction" and movement.get("correction") is not None:
+            continue
         key = (int(movement["lineId"]), int(movement["inventoryItemId"]))
         ledger = by_key.get(key)
         applied = _decimal(ledger.applied_quantity or 0) if ledger else Decimal("0")
@@ -112,6 +158,28 @@ def _with_ledger_deltas(order: CloverShadowOrder, plan: dict[str, Any], ledgers:
     return plan
 
 
+def _with_ineligible_ledger(order: CloverShadowOrder, plan: dict[str, Any], ledgers: list[CloverShadowOrderLineInventoryConsumption]) -> dict[str, Any]:
+    """Never leave previously applied usage unaddressed on an ineligible order."""
+    applied = [row for row in ledgers if _decimal(row.applied_quantity or 0) != 0]
+    if not applied:
+        return plan
+    reversal_reason = _definitive_reversal_reason(order)
+    if reversal_reason:
+        plan["eligible"] = True
+        plan["reason"] = reversal_reason
+        plan["movements"] = [_reverse_row(row) for row in applied]
+        plan["newlyRequired"] = []
+        plan["corrections"] = list(plan["movements"])
+        plan["alreadyApplied"] = []
+        return plan
+    plan["appliedRequiresReview"] = True
+    plan["staleApplied"] = [
+        {"lineId": row.clover_shadow_order_line_id, "inventoryItemId": row.inventory_item_id, "appliedQuantity": str(_decimal(row.applied_quantity or 0).quantize(QTY))}
+        for row in applied
+    ]
+    return plan
+
+
 def plan_clover_order_inventory(
     order: CloverShadowOrder,
     *,
@@ -119,8 +187,6 @@ def plan_clover_order_inventory(
 ) -> dict[str, Any]:
     """Return the exact execution deltas without changing persistence."""
     plan = _base_plan(order)
-    if not plan["eligible"]:
-        return plan
     ledgers = existing_ledgers
     if ledgers is None and not has_app_context():
         ledgers = []
@@ -131,6 +197,8 @@ def plan_clover_order_inventory(
             CloverShadowOrderLineInventoryConsumption.organization_id == order.organization_id,
             CloverShadowOrderLineInventoryConsumption.location_id == order.restaurant_location_id,
         ).all()
+    if not plan["eligible"]:
+        return _with_ineligible_ledger(order, plan, ledgers)
     return _with_ledger_deltas(order, plan, ledgers)
 
 
@@ -171,12 +239,19 @@ def apply_clover_order_inventory(
         raise ValueError("Clover shadow line scope changed during reconciliation.")
 
     # Lock inventory rows in deterministic ID order before changing any state.
+    ledger_item_ids = {
+        row.inventory_item_id for row in session.query(CloverShadowOrderLineInventoryConsumption).filter(
+            CloverShadowOrderLineInventoryConsumption.clover_shadow_order_line_id.in_(line_ids or [-1]),
+            CloverShadowOrderLineInventoryConsumption.organization_id == order.organization_id,
+            CloverShadowOrderLineInventoryConsumption.location_id == order.restaurant_location_id,
+        ).all()
+    }
     ingredient_ids = sorted({
         int(ingredient.get("inventoryItemId"))
         for line in order.lines
         for ingredient in ((line.recipe_preview_json or {}).get("ingredients") or [])
         if isinstance(ingredient, dict) and ingredient.get("inventoryItemId")
-    })
+    } | ledger_item_ids)
     locked_items = {
         item.id: item for item in (
             session.query(InventoryItem).filter(
@@ -248,7 +323,7 @@ def apply_clover_order_inventory(
             source_type="clover sale consumption" if correction < 0 else "clover sale correction",
             source_record_id=order.clover_order_id,
             source_line_id=_source_line_id(ledger.id, sequence),
-            reason="Verified Clover sale recipe consumption",
+            reason="Verified Clover sale recipe consumption" if correction < 0 else "Clover sale correction or reversal",
         ))
         item.current_on_hand = after
         ledger.applied_quantity = _decimal(movement["quantity"])

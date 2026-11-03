@@ -928,7 +928,8 @@ def _ingest_shadow_orders(
                     if applied is not None and applied.applied_quantity:
                         line.mapping_status = "review_required"
                         line.recipe_preview_json = {
-                            "reason": "Clover removed a line after inventory application; manual correction is required.",
+                            "reason": "Clover removed a line after inventory application; its usage is reversed on the next reconciliation.",
+                            "removed": True,
                         }
                     else:
                         db.session.delete(line)

@@ -4446,3 +4446,98 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         assert InventoryItem.query.get(buns.id).current_on_hand == before_buns
         assert InventoryMovement.query.count() == before_movements
         assert CloverShadowOrderLineInventoryConsumption.query.count() == before_ledgers
+
+
+def test_clover_applied_order_refund_void_and_removed_line_reverse_idempotently(postgres_app):
+    """#183: applied usage is reversed (once) when the order later becomes refunded/voided or loses a line."""
+    from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, InventoryItem, InventoryMovement, RestaurantLocation, User
+
+    application = postgres_app
+    with application.test_request_context("/"):
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        _pin_rls_context(access_scope="setup")
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        organization = make_operational_organization(owner, name=f"Clover reversal {uuid4()}", location_name="Main")
+        organization_id = organization.id
+        location = RestaurantLocation.query.filter_by(organization_id=organization_id).first()
+        _pin_rls_context(access_scope="customer", organization_id=organization_id, user_id=owner_id)
+        connection = CloverConnection(organization_id=organization_id, environment="sandbox", merchant_id="merchant-reversal", status="connected", access_token_ciphertext="ciphertext")
+        db.session.add(connection)
+        db.session.flush()
+        items = [
+            InventoryItem(organization_id=organization_id, location_id=location.id, name=name, normalized_name=f"{name}-{uuid4()}", stock_unit=unit, current_on_hand=Decimal("10"), average_unit_cost=Decimal("2"))
+            for name, unit in (("Chicken", "kg"), ("Buns", "pack"))
+        ]
+        db.session.add_all(items)
+        db.session.flush()
+
+        def make_order(label):
+            order = CloverShadowOrder(
+                organization_id=organization_id, clover_connection_id=connection.id, restaurant_location_id=location.id,
+                clover_merchant_id=connection.merchant_id, clover_order_id=f"{label}-{uuid4()}", provider_status="CLOSED",
+                normalized_status="paid", payment_status="PAID", potentially_eligible=True, requires_review=False, raw_payload_json={},
+            )
+            db.session.add(order)
+            db.session.flush()
+            lines = []
+            for index, item in enumerate(items):
+                line = CloverShadowOrderLine(
+                    organization_id=organization_id, restaurant_location_id=location.id, shadow_order_id=order.id,
+                    clover_line_item_id=f"{label}-l{index}-{uuid4()}", clover_item_id=f"i{index}", name=f"Dish {index}", quantity=Decimal("1"),
+                    mapping_status="mapped",
+                    recipe_preview_json={"ingredients": [{"inventoryItemId": item.id, "quantity": "1.0000", "unit": item.stock_unit, "name": item.name}]},
+                )
+                db.session.add(line)
+                lines.append(line)
+            db.session.commit()
+            assert apply_clover_order_inventory(order=order, connection=connection)["applied"] is True
+            db.session.commit()
+            return order, lines
+
+        def on_hand():
+            return [InventoryItem.query.get(item.id).current_on_hand for item in items]
+
+        # Full refund -> reversed once; replay is a no-op.
+        refunded, _ = make_order("refund")
+        assert on_hand() == [Decimal("9.0000"), Decimal("9.0000")]
+        refunded.normalized_status, refunded.provider_status, refunded.payment_status = "refunded", "REFUNDED", "REFUNDED"
+        refunded.potentially_eligible, refunded.requires_review = False, True
+        db.session.commit()
+        assert apply_clover_order_inventory(order=refunded, connection=connection)["applied"] is True
+        db.session.commit()
+        assert on_hand() == [Decimal("10.0000"), Decimal("10.0000")]
+        apply_clover_order_inventory(order=refunded, connection=connection)
+        db.session.commit()
+        assert on_hand() == [Decimal("10.0000"), Decimal("10.0000")]
+        assert InventoryMovement.query.filter_by(source_record_id=refunded.clover_order_id).count() == 4
+
+        # Void -> reversed; partial refund/conflict -> flagged, no write.
+        voided, _ = make_order("void")
+        voided.normalized_status, voided.provider_status, voided.payment_status, voided.potentially_eligible = "cancelled", "VOIDED", "VOIDED", False
+        db.session.commit()
+        apply_clover_order_inventory(order=voided, connection=connection)
+        db.session.commit()
+        assert on_hand() == [Decimal("10.0000"), Decimal("10.0000")]
+
+        conflicted, _ = make_order("conflict")
+        conflicted.normalized_status, conflicted.potentially_eligible, conflicted.requires_review = "review", False, True
+        db.session.commit()
+        flagged = apply_clover_order_inventory(order=conflicted, connection=connection)
+        db.session.commit()
+        assert flagged["applied"] is False and flagged["appliedRequiresReview"] is True
+        assert on_hand() == [Decimal("9.0000"), Decimal("9.0000")]
+
+        # Removed mapped line -> only that line reversed.
+        removed, lines = make_order("removed")
+        assert on_hand() == [Decimal("8.0000"), Decimal("8.0000")]
+        lines[1].mapping_status = "review_required"
+        lines[1].recipe_preview_json = {"reason": "removed", "removed": True}
+        db.session.commit()
+        apply_clover_order_inventory(order=removed, connection=connection)
+        db.session.commit()
+        assert on_hand() == [Decimal("8.0000"), Decimal("9.0000")]
+        apply_clover_order_inventory(order=removed, connection=connection)
+        db.session.commit()
+        assert on_hand() == [Decimal("8.0000"), Decimal("9.0000")]
+        assert InventoryMovement.query.filter_by(source_record_id=removed.clover_order_id).count() == 3

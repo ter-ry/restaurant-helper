@@ -83,3 +83,140 @@ def test_inventory_execution_requires_json_boolean_true(payload):
 
     assert _inventory_execution_requested(payload.get("executeInventory")) is False
     assert _inventory_execution_requested(True) is True
+
+
+# --- #183: already-applied orders that later become refunded, voided, conflicted or lose a line ---
+
+def _applied_fixture(app):
+    from uuid import uuid4
+    from backend.extensions import db
+    from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, InventoryItem, RestaurantLocation, User
+    from backend.seed import LOCAL_OWNER_EMAIL
+    from backend.tests.conftest import make_operational_organization
+
+    app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name=f"Clover reversal {uuid4()}", location_name="Main")
+    location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+    connection = CloverConnection(organization_id=organization.id, environment="sandbox", merchant_id="m-rev", status="connected", access_token_ciphertext="x")
+    db.session.add(connection)
+    db.session.flush()
+    items = []
+    for name, unit in (("Chicken", "kg"), ("Buns", "pack")):
+        item = InventoryItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=f"{name}-{uuid4()}", stock_unit=unit, current_on_hand=Decimal("10"), average_unit_cost=Decimal("2"))
+        db.session.add(item)
+        items.append(item)
+    db.session.flush()
+    order = CloverShadowOrder(
+        organization_id=organization.id, clover_connection_id=connection.id, restaurant_location_id=location.id,
+        clover_merchant_id="m-rev", clover_order_id=f"o-{uuid4()}", provider_status="CLOSED", normalized_status="paid",
+        payment_status="PAID", potentially_eligible=True, requires_review=False, raw_payload_json={},
+    )
+    db.session.add(order)
+    db.session.flush()
+    lines = []
+    for index, item in enumerate(items):
+        line = CloverShadowOrderLine(
+            organization_id=organization.id, restaurant_location_id=location.id, shadow_order_id=order.id,
+            clover_line_item_id=f"l{index}-{uuid4()}", clover_item_id=f"i{index}", name=f"Dish {index}", quantity=Decimal("1"),
+            mapping_status="mapped",
+            recipe_preview_json={"ingredients": [{"inventoryItemId": item.id, "quantity": "1.0000", "unit": item.stock_unit, "name": item.name}]},
+        )
+        db.session.add(line)
+        lines.append(line)
+    db.session.commit()
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert result["applied"] is True
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
+    return order, connection, items, lines
+
+
+def _movement_count(order):
+    from backend.models import InventoryMovement
+    return InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count()
+
+
+@pytest.mark.parametrize(
+    ("normalized", "provider", "payment"),
+    [("cancelled", "VOIDED", "VOIDED"), ("refunded", "REFUNDED", "REFUNDED")],
+)
+def test_applied_order_voided_or_fully_refunded_is_reversed_once(app, normalized, provider, payment):
+    from backend.extensions import db
+    from backend.models import InventoryMovement
+
+    order, connection, items, _lines = _applied_fixture(app)
+    order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
+    order.potentially_eligible, order.requires_review = False, normalized == "refunded"
+    db.session.commit()
+
+    preview = apply_clover_order_inventory(order=order, connection=connection, dry_run=True)
+    assert preview["eligible"] is True and len(preview["corrections"]) == 2
+    assert _movement_count(order) == 2  # dry run wrote nothing
+
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert result["applied"] is True
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("10.0000"), Decimal("10.0000")]
+    reversals = InventoryMovement.query.filter_by(source_record_id=order.clover_order_id, source_type="clover sale correction").all()
+    assert len(reversals) == 2 and all(Decimal(str(m.quantity_delta)) == Decimal("1") for m in reversals)
+
+    # Replay is idempotent.
+    replay = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert all(m.get("state") != "correction" for m in replay["movements"])
+    assert _movement_count(order) == 4
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("10.0000"), Decimal("10.0000")]
+
+
+def test_applied_order_reversal_is_blocked_when_flag_off(app):
+    from backend.extensions import db
+
+    order, connection, items, _lines = _applied_fixture(app)
+    order.normalized_status, order.provider_status, order.payment_status, order.potentially_eligible = "cancelled", "VOIDED", "VOIDED", False
+    db.session.commit()
+    app.config["CLOVER_ORDER_INVENTORY_ENABLED"] = False
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    assert result["applied"] is False and _movement_count(order) == 2
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
+
+
+@pytest.mark.parametrize(
+    ("normalized", "provider", "payment", "raw"),
+    [
+        ("refunded", "PAID", "PARTIALLY_REFUNDED", {}),
+        ("review", "CLOSED", "PAID", {"paymentStateConflict": True}),
+        ("review", "CLOSED", "PAID", {"financialIncomplete": True}),
+    ],
+)
+def test_applied_order_partial_refund_or_conflict_is_flagged_not_changed(app, normalized, provider, payment, raw):
+    from backend.extensions import db
+
+    order, connection, items, _lines = _applied_fixture(app)
+    order.normalized_status, order.provider_status, order.payment_status = normalized, provider, payment
+    order.potentially_eligible, order.requires_review, order.raw_payload_json = False, True, raw
+    db.session.commit()
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert result["applied"] is False
+    assert result["appliedRequiresReview"] is True
+    assert len(result["staleApplied"]) == 2
+    assert _movement_count(order) == 2
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("9.0000")]
+
+
+def test_removed_mapped_line_reverses_only_that_line(app):
+    from backend.extensions import db
+
+    order, connection, items, lines = _applied_fixture(app)
+    lines[1].mapping_status = "review_required"
+    lines[1].recipe_preview_json = {"reason": "removed", "removed": True}
+    db.session.commit()
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert result["applied"] is True
+    assert [Decimal(str(i.current_on_hand)) for i in items] == [Decimal("9.0000"), Decimal("10.0000")]
+    again = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    assert _movement_count(order) == 3
+    assert again["applied"] is True
