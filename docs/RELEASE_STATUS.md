@@ -55,7 +55,7 @@ Do not start new feature work until step 1 is merged.
 | PR | Branch | Status | Evidence | Rule |
 |---|---|---|---|---|
 | [#161](https://github.com/ter-ry/restaurant-helper/pull/161) Guarded Clover sales-to-inventory reconciliation | `codex/clover-sales-inventory` @ `1faa548` | Open, not draft; backend and frontend checks green ([run 41523502053](https://github.com/ter-ry/restaurant-helper/actions/runs/41523502053)); not merged, not independently reviewed | CI only; no flag-on Sandbox rehearsal recorded | Existing work. Do not duplicate, rebase, push to, or overwrite. Review only. Based on `ccaac01`. |
-| This planning PR | `docs/agent-workflow-release-plan` | Review-only | Docs only | Owner merge |
+| [#162](https://github.com/ter-ry/restaurant-helper/pull/162) Planning docs (this PR) | `claude/nice-brown-94okjr` | Review-only | Docs only | Owner merge |
 
 ## Known technical blockers
 
