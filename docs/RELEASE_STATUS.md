@@ -22,7 +22,7 @@ Do not start new feature work until step 1 is merged. Do not enable Clover inven
 | `main` | `ccaac01d8468e1274d0d274dde4ba74faae88a0a` (PR #160 merge) | git |
 | CI on `main` | success | [run 41477196327](https://github.com/ter-ry/restaurant-helper/actions/runs/41477196327) |
 | Pages deploy on `main` | success | [run 41477196974](https://github.com/ter-ry/restaurant-helper/actions/runs/41477196974) |
-| `main` after #161 | `776f557ed482b9a1851425a5d0d810650c0df7cf` (PR #161 merged) | git; Pages deploy [run 41553204916](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204916) success; CI [run 41553204802](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204802) was still running when recorded (re-check) |
+| `main` after #161 | `776f557ed482b9a1851425a5d0d810650c0df7cf` (PR #161 merged) | git; Pages deploy [run 41553204916](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204916) success; CI [run 41553204802](https://github.com/ter-ry/restaurant-helper/actions/runs/41553204802) success |
 | Latest Alembic migration in repo | `0026_clover_consumption_cost_snapshot` (0025/0026 present on `main`) | `backend/migrations/versions`. **Not claimed applied to any environment**: no deployment evidence yet |
 | Open PRs | #162 (this planning PR) only | GitHub |
 
