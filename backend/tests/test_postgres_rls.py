@@ -4573,3 +4573,131 @@ def test_postgres_supplier_item_mappings_enforce_location_isolation_and_unique_r
         lambda: SupplierItemMapping.query.filter_by(supplier_id=ids["supplier_id"], normalized_supplier_item_name="racing sack").count(),
     )
     assert count == 1
+
+
+def test_clover_applied_order_is_flagged_never_restored_and_fails_closed_under_concurrency(postgres_app):
+    """#183: applied usage is reversed (once) when the order later becomes refunded/voided or loses a line."""
+    from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, InventoryItem, InventoryMovement, RestaurantLocation, User
+
+    application = postgres_app
+    with application.test_request_context("/"):
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        _pin_rls_context(access_scope="setup")
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        organization = make_operational_organization(owner, name=f"Clover reversal {uuid4()}", location_name="Main")
+        organization_id = organization.id
+        location = RestaurantLocation.query.filter_by(organization_id=organization_id).first()
+        _pin_rls_context(access_scope="customer", organization_id=organization_id, user_id=owner_id)
+        connection = CloverConnection(organization_id=organization_id, environment="sandbox", merchant_id="merchant-reversal", status="connected", access_token_ciphertext="ciphertext")
+        db.session.add(connection)
+        db.session.flush()
+        items = [
+            InventoryItem(organization_id=organization_id, location_id=location.id, name=name, normalized_name=f"{name}-{uuid4()}", stock_unit=unit, current_on_hand=Decimal("10"), average_unit_cost=Decimal("2"))
+            for name, unit in (("Chicken", "kg"), ("Buns", "pack"))
+        ]
+        db.session.add_all(items)
+        db.session.flush()
+
+        def make_order(label):
+            order = CloverShadowOrder(
+                organization_id=organization_id, clover_connection_id=connection.id, restaurant_location_id=location.id,
+                clover_merchant_id=connection.merchant_id, clover_order_id=f"{label}-{uuid4()}", provider_status="CLOSED",
+                normalized_status="paid", payment_status="PAID", potentially_eligible=True, requires_review=False, raw_payload_json={},
+            )
+            db.session.add(order)
+            db.session.flush()
+            lines = []
+            for index, item in enumerate(items):
+                line = CloverShadowOrderLine(
+                    organization_id=organization_id, restaurant_location_id=location.id, shadow_order_id=order.id,
+                    clover_line_item_id=f"{label}-l{index}-{uuid4()}", clover_item_id=f"i{index}", name=f"Dish {index}", quantity=Decimal("1"),
+                    mapping_status="mapped",
+                    recipe_preview_json={"ingredients": [{"inventoryItemId": item.id, "quantity": "1.0000", "unit": item.stock_unit, "name": item.name}]},
+                )
+                db.session.add(line)
+                lines.append(line)
+            db.session.commit()
+            assert apply_clover_order_inventory(order=order, connection=connection)["applied"] is True
+            db.session.commit()
+            return order, lines
+
+        def on_hand():
+            return [InventoryItem.query.get(item.id).current_on_hand for item in items]
+
+        forged = lambda lines: {"notPrepared": True, "lineItems": [{"id": line.clover_line_item_id, "notPrepared": True} for line in lines]}
+
+        def flag(order, lines, *, status, provider, payment, extra=None):
+            order.normalized_status, order.provider_status, order.payment_status = status, provider, payment
+            order.potentially_eligible, order.requires_review, order.total_cents = False, True, 1800
+            order.raw_payload_json = {**forged(lines), **(extra or {})}
+            db.session.commit()
+
+        def reconcile_twice(order):
+            results = []
+            for _ in range(2):
+                results.append(apply_clover_order_inventory(order=order, connection=connection))
+                db.session.commit()
+            return results
+
+        scenarios = {
+            "refund": dict(status="refunded", provider="PAID", payment="refunded", extra={"orderComponents": [], "payments": [{"id": "p", "amount": 1800, "result": "SUCCESS", "components": []}], "refunds": [{"id": "r", "amount": 1800, "components": []}]}),
+            "void": dict(status="cancelled", provider="VOIDED", payment="VOIDED"),
+            "partial": dict(status="refunded", provider="PAID", payment="refunded", extra={"refunds": [{"id": "r", "amount": 400, "components": []}]}),
+            "conflict": dict(status="review", provider="CLOSED", payment="PAID", extra={"paymentStateConflict": True}),
+        }
+        expected_on_hand = Decimal("9")
+        for label, scenario in scenarios.items():
+            order, lines = make_order(label)
+            if label == "refund":
+                refund_order_id = order.id
+            assert on_hand() == [expected_on_hand, expected_on_hand], label
+            flag(order, lines, **scenario)
+            for result in reconcile_twice(order):
+                assert result["applied"] is False and result["appliedRequiresReview"] is True, label
+                assert len(result["staleApplied"]) == 2, label
+            # Stock unchanged by the review state (forged notPrepared markers are ignored).
+            assert on_hand() == [expected_on_hand, expected_on_hand], label
+            assert InventoryMovement.query.filter_by(source_record_id=order.clover_order_id).count() == 2, label
+            expected_on_hand -= 1
+
+        # Removed mapped line: flagged, nothing restored.
+        removed, lines = make_order("removed")
+        lines[1].mapping_status = "review_required"
+        lines[1].recipe_preview_json = {"reason": "Clover removed a line after inventory application; manual correction is required."}
+        removed.raw_payload_json = forged(lines)
+        db.session.commit()
+        before = on_hand()
+        for result in reconcile_twice(removed):
+            assert result["applied"] is False and result["appliedRequiresReview"] is True
+        assert on_hand() == before
+        assert InventoryMovement.query.filter_by(source_record_id=removed.clover_order_id).count() == 2
+
+        # Two concurrent reconciliations of a flagged order both fail closed and write nothing.
+        from concurrent.futures import ThreadPoolExecutor
+        from sqlalchemy.orm import Session
+
+        flagged_id, flagged_connection_id = refund_order_id, connection.id
+        db.session.commit()
+
+        engine = db.engine
+
+        def worker():
+            local = Session(bind=engine)
+            try:
+                for name, value in (("flowtally.access_scope", "customer"), ("flowtally.organization_id", str(organization_id)), ("flowtally.user_id", str(owner_id)), ("flowtally.support_grant_id", "")):
+                    local.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value})
+                local_order = local.query(CloverShadowOrder).filter_by(id=flagged_id).one()
+                local_connection = local.query(CloverConnection).filter_by(id=flagged_connection_id).one()
+                with application.app_context():
+                    outcome = apply_clover_order_inventory(order=local_order, connection=local_connection, session=local)
+                local.commit()
+                return outcome
+            finally:
+                local.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = [future.result(timeout=30) for future in [executor.submit(worker), executor.submit(worker)]]
+        assert all(outcome["applied"] is False and outcome["appliedRequiresReview"] is True for outcome in outcomes)
+        _pin_rls_context(access_scope="customer", organization_id=organization_id, user_id=owner_id)
+        assert on_hand() == before
