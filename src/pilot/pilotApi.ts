@@ -1220,6 +1220,42 @@ export async function createPilotSupplier(payload: Record<string, unknown>) {
   });
 }
 
+export interface PilotSupplierItemMappingRow extends PilotSupplierItemMapping {
+  inventoryItemName: string;
+}
+
+export interface PilotSupplierItemMappingPayload {
+  supplierItemName: string;
+  inventoryItemId: number;
+  purchaseUnit: string;
+  inventoryUnit: string;
+  conversionFactor: number;
+}
+
+export async function fetchPilotSupplierItemMappings(supplierId: number) {
+  return requestJson<{ mappings: PilotSupplierItemMappingRow[] }>(`/api/pilot/suppliers/${supplierId}/item-mappings`);
+}
+
+export async function createPilotSupplierItemMapping(supplierId: number, payload: PilotSupplierItemMappingPayload) {
+  return requestCsrfJson<PilotSupplierItemMappingRow>(`/api/pilot/suppliers/${supplierId}/item-mappings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePilotSupplierItemMapping(supplierId: number, mappingId: number, payload: Partial<PilotSupplierItemMappingPayload>) {
+  return requestCsrfJson<PilotSupplierItemMappingRow>(`/api/pilot/suppliers/${supplierId}/item-mappings/${mappingId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePilotSupplierItemMapping(supplierId: number, mappingId: number) {
+  return requestCsrfJson<{ deleted: boolean; id: number }>(`/api/pilot/suppliers/${supplierId}/item-mappings/${mappingId}`, { method: "DELETE" });
+}
+
 export async function updatePilotSupplier(supplierId: number, payload: Record<string, unknown>) {
   return requestCsrfJson<PilotSupplierSummary>(`/api/pilot/suppliers/${supplierId}`, {
     method: "PATCH",

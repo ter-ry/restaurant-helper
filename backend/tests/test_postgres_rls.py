@@ -4448,6 +4448,133 @@ def test_clover_inventory_concurrent_first_apply_and_mid_transaction_rollback(po
         assert CloverShadowOrderLineInventoryConsumption.query.count() == before_ledgers
 
 
+def test_postgres_supplier_item_mappings_enforce_location_isolation_and_unique_races(postgres_app, monkeypatch):
+    """Supplier-item mappings are org-scoped rows whose location comes from the inventory item.
+
+    Runs the real endpoints on PostgreSQL with forced RLS: another location's mappings are
+    invisible and immutable, other organizations' suppliers are 404, and a lost
+    create race is a deterministic 409 decided by the unique constraint.
+    """
+    import threading
+    from backend import pilot_api
+    from backend.models import InventoryItem, RestaurantLocation, Supplier, SupplierItemMapping
+    from backend.seed import LOCAL_LOCATION_NAME, LOCAL_ORGANIZATION_NAME
+
+    suffix = uuid4().hex[:8]
+
+    def _seed():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        organization = Organization.query.filter_by(name=LOCAL_ORGANIZATION_NAME).one()
+        home = RestaurantLocation.query.filter_by(organization_id=organization.id, name=LOCAL_LOCATION_NAME).one()
+        other_location = RestaurantLocation(
+            organization_id=organization.id, name=f"Second {suffix}", address_line1="2 Other St",
+            city="Toronto", region="ON", postal_code="M5V 2B2", country="Canada", timezone="America/Toronto",
+        )
+        supplier = Supplier(organization_id=organization.id, name=f"Map Supplier {suffix}", normalized_name=f"map supplier {suffix}")
+        db.session.add_all([other_location, supplier])
+        db.session.flush()
+        home_item = InventoryItem(organization_id=organization.id, location_id=home.id, name=f"Home Item {suffix}", normalized_name=f"home item {suffix}", stock_unit="kg")
+        other_item = InventoryItem(organization_id=organization.id, location_id=other_location.id, name=f"Other Item {suffix}", normalized_name=f"other item {suffix}", stock_unit="kg")
+        db.session.add_all([home_item, other_item])
+        db.session.flush()
+        other_mapping = SupplierItemMapping(
+            organization_id=organization.id, supplier_id=supplier.id, inventory_item_id=other_item.id,
+            supplier_item_name="Location B Sack", normalized_supplier_item_name="location b sack",
+            purchase_unit="sack", inventory_unit="kg", conversion_factor=10,
+        )
+        db.session.add(other_mapping)
+        db.session.flush()
+        foreign_owner = User(email=f"foreign-owner-{suffix}@example.com", password_hash="!unusable", is_active=True)
+        db.session.add(foreign_owner)
+        db.session.flush()
+        foreign_org = _create_org(foreign_owner, f"Foreign {suffix}")
+        foreign_supplier = Supplier(organization_id=foreign_org.id, name=f"Foreign Supplier {suffix}", normalized_name=f"foreign supplier {suffix}")
+        db.session.add(foreign_supplier)
+        db.session.flush()
+        return {
+            "home_location_id": home.id, "supplier_id": supplier.id, "home_item_id": home_item.id, "other_item_id": other_item.id,
+            "other_mapping_id": other_mapping.id, "foreign_supplier_id": foreign_supplier.id,
+        }
+
+    ids = _seed_admin_fixture("supplier item mappings", _seed)
+    base = f"/api/pilot/suppliers/{ids['supplier_id']}/item-mappings"
+
+    def _headers(client):
+        return {"X-CSRFToken": client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]}
+
+    def _call(client, method, url, **kwargs):
+        return getattr(client, method)(url, base_url="http://127.0.0.1:5001", headers=_headers(client), **kwargs)
+
+    def _login_at_home(test_client):
+        _login_owner(test_client)
+        selected = _call(test_client, "post", "/api/locations/select", json={"locationId": ids["home_location_id"]})
+        assert selected.status_code == 200, selected.get_data(as_text=True)
+
+    client = postgres_app.test_client()
+    _login_at_home(client)
+    payload = {"supplierItemName": "Location A Sack", "inventoryItemId": ids["home_item_id"], "purchaseUnit": "sack", "inventoryUnit": "kg", "conversionFactor": 5}
+
+    first = client.get(base, base_url="http://127.0.0.1:5001")
+    assert first.status_code == 200, first.get_data(as_text=True)
+    assert first.get_json()["mappings"] == []
+    created = _call(client, "post", base, json=payload)
+    assert created.status_code == 201, created.get_data(as_text=True)
+    own_id = created.get_json()["id"]
+    listed = client.get(base, base_url="http://127.0.0.1:5001").get_json()["mappings"]
+    assert [row["supplierItemName"] for row in listed] == ["Location A Sack"]
+
+    # Cross-location read/update/delete and re-pointing are all rejected.
+    assert _call(client, "patch", f"{base}/{ids['other_mapping_id']}", json={"conversionFactor": 99}).status_code == 404
+    assert _call(client, "delete", f"{base}/{ids['other_mapping_id']}").status_code == 404
+    assert _call(client, "patch", f"{base}/{own_id}", json={"inventoryItemId": ids["other_item_id"]}).status_code == 404
+    assert _call(client, "post", base, json={**payload, "supplierItemName": "X", "inventoryItemId": ids["other_item_id"]}).status_code == 404
+    # Another organization's supplier is invisible.
+    foreign_base = f"/api/pilot/suppliers/{ids['foreign_supplier_id']}/item-mappings"
+    assert client.get(foreign_base, base_url="http://127.0.0.1:5001").status_code == 404
+    assert _call(client, "post", foreign_base, json=payload).status_code == 404
+
+    def _verify():
+        other = SupplierItemMapping.query.get(ids["other_mapping_id"])
+        own = SupplierItemMapping.query.get(own_id)
+        return float(other.conversion_factor), own.inventory_item_id, SupplierItemMapping.query.filter_by(supplier_id=ids["supplier_id"]).count()
+
+    assert _seed_admin_fixture("supplier item mappings verify", _verify) == (10.0, ids["home_item_id"], 2)
+
+    # Lost create race: both requests pass the duplicate pre-check, the unique constraint picks one winner.
+    barrier = threading.Barrier(2, timeout=10)
+    original = pilot_api._mapping_duplicate
+
+    def _racy_duplicate(*args, **kwargs):
+        result = original(*args, **kwargs)
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        return result
+
+    monkeypatch.setattr(pilot_api, "_mapping_duplicate", _racy_duplicate)
+    race_payload = {**payload, "supplierItemName": "Racing Sack"}
+    results: list[int] = []
+
+    def _worker():
+        worker_client = postgres_app.test_client()
+        _login_at_home(worker_client)
+        results.append(_call(worker_client, "post", base, json=race_payload).status_code)
+
+    threads = [threading.Thread(target=_worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert sorted(results) == [201, 409]
+
+    count = _seed_admin_fixture(
+        "supplier item mappings race verify",
+        lambda: SupplierItemMapping.query.filter_by(supplier_id=ids["supplier_id"], normalized_supplier_item_name="racing sack").count(),
+    )
+    assert count == 1
+
+
 def test_clover_applied_order_is_flagged_never_restored_and_fails_closed_under_concurrency(postgres_app):
     """#183: applied usage is reversed (once) when the order later becomes refunded/voided or loses a line."""
     from backend.models import CloverConnection, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, InventoryItem, InventoryMovement, RestaurantLocation, User
