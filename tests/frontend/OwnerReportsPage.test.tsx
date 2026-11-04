@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   fetchCustomerAuditEvents: vi.fn(),
   fetchPilotDashboard: vi.fn(),
   fetchPilotPurchases: vi.fn(),
+  fetchPilotDailyClose: vi.fn(),
   downloadCsvFile: vi.fn(),
   startGoogleLogin: vi.fn(),
 }));
@@ -25,6 +26,7 @@ vi.mock("../../src/lib/audit", () => ({
 vi.mock("../../src/pilot/pilotApi", () => ({
   fetchPilotDashboard: mocks.fetchPilotDashboard,
   fetchPilotPurchases: mocks.fetchPilotPurchases,
+  fetchPilotDailyClose: mocks.fetchPilotDailyClose,
 }));
 
 vi.mock("../../src/lib/reportExports", () => ({
@@ -59,6 +61,7 @@ describe("OwnerReportsPage", () => {
       ],
       csrfToken: "csrf-token",
     });
+    mocks.fetchPilotDailyClose.mockResolvedValueOnce({ history: [] });
     mocks.fetchPilotDashboard.mockResolvedValueOnce({
       summary: {
         weeklyInvoiceSpend: 482.5,
@@ -224,9 +227,20 @@ describe("OwnerReportsPage", () => {
       exportReadiness: { readyForCsv: 3, needsReview: 0, needsMapping: 0, quickBooksFutureOnly: true },
     });
     mocks.fetchCustomerAuditEvents.mockResolvedValueOnce({ events: [] });
+    mocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      history: [{
+        id: 7, businessDate: "2026-08-30", status: "COMPLETED", completedAt: "2026-08-30T22:00:00Z", notes: "",
+        summarySnapshot: { sales: { grossSales: 900, refunds: 20, tips: 30, netSales: 880 }, cashReconciliation: { expectedCash: 300, countedCash: 295, overShort: -5 } },
+      }],
+    });
 
     renderPage();
     await screen.findByRole("heading", { name: "Reports & exports" });
+    fireEvent.click(screen.getByRole("button", { name: "Download Daily Close CSV" }));
+    expect(mocks.downloadCsvFile).toHaveBeenLastCalledWith("flowtally-daily-close-queen-st-cafe.csv", [
+      { businessDate: "2026-08-30", completedAt: "2026-08-30T22:00:00Z", grossSales: 900, refunds: 20, tips: 30, netSales: 880, expectedCash: 300, countedCash: 295, cashOverShort: -5, notes: "" },
+    ]);
+    mocks.downloadCsvFile.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Download summary CSV" }));
     expect(mocks.downloadCsvFile).toHaveBeenCalledTimes(1);
     const [filename, rows] = mocks.downloadCsvFile.mock.calls[0];

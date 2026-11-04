@@ -1,14 +1,16 @@
-// Pure builders behind the Owner Reports CSV downloads. Everything here is a live view of current data
-// (dashboard, purchases, audit); none of it is a frozen Daily Close figure. Tested with exact CSV text.
+// Pure builders behind the Owner Reports CSV downloads. The summary, purchase and audit CSVs are live views of
+// current data; the Daily Close CSV exports the frozen figures of finalized sessions. Tested with exact CSV text.
 import type { CustomerSessionResponse } from "./customerAuth";
 import type { CustomerAuditEvent } from "./audit";
-import type { PilotDashboardResponse, PilotPurchasesResponse } from "../pilot/pilotApi";
+import type { PilotDailyCloseSession, PilotDashboardResponse, PilotPurchasesResponse } from "../pilot/pilotApi";
 
 export type OwnerReportsData = {
   session: CustomerSessionResponse;
   dashboard: PilotDashboardResponse;
   purchases: PilotPurchasesResponse;
   auditEvents: CustomerAuditEvent[];
+  /** Daily Close session history from /api/pilot/daily-close; finalized sessions carry the frozen figures. */
+  dailyCloseHistory?: PilotDailyCloseSession[];
 };
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
@@ -107,6 +109,32 @@ export function buildSummaryCsvRows(rows: StatusRow[]) {
     status: row.status,
     detail: row.detail,
   }));
+}
+
+const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : "");
+
+/** One row per finalized Daily Close session, using the figures frozen at finalize (never live recalculation). */
+export function buildDailyCloseCsvRows(sessions: PilotDailyCloseSession[] = []) {
+  return sessions
+    .filter((session) => session.status === "COMPLETED")
+    .map((session) => {
+      const snapshot = (session.summarySnapshot ?? {}) as Record<string, any>;
+      const sales = (snapshot.sales ?? {}) as Record<string, unknown>;
+      const cash = (snapshot.cashReconciliation ?? {}) as Record<string, unknown>;
+      return {
+        businessDate: session.businessDate,
+        completedAt: session.completedAt ?? "",
+        grossSales: num(sales.grossSales),
+        refunds: num(sales.refunds),
+        tips: num(sales.tips),
+        netSales: num(sales.netSales),
+        expectedCash: num(cash.expectedCash),
+        countedCash: num(cash.countedCash ?? snapshot.manualReconciliation?.countedCash),
+        cashOverShort: num(cash.overShort),
+        notes: session.notes ?? "",
+      };
+    })
+    .sort((a, b) => b.businessDate.localeCompare(a.businessDate));
 }
 
 export function buildPurchaseCsvRows(data: OwnerReportsData) {
