@@ -1,21 +1,21 @@
 # Flowtally — Full MVP Release Status
 
-Last reconciled 2026-11-03 for the owner-approved **full agreed MVP feature-freeze**, including **Square and Clover**. Binding scope and final checklist: [RELEASE_PLAN.md](RELEASE_PLAN.md). Do not mistake a green CI build or early Square-only pilot for a completed full freeze.
+Last reconciled 2026-11-04 (backlog reconciliation; main `35f2f51`) for the owner-approved **full agreed MVP feature-freeze**, including **Square and Clover**. Binding scope and final checklist: [RELEASE_PLAN.md](RELEASE_PLAN.md). Do not mistake a green CI build or early Square-only pilot for a completed full freeze.
 
 **Status vocabulary:** Missing / In progress / Implemented but unverified / Automated tests passed / Sandbox or Showcase verified / Complete and verified / Explicit owner-approved deferral / Blocked.
 
 ## NEXT TASK — work from GitHub queue
 
-Fresh agents must query live GitHub issues, PRs, main SHA and current claims; this status file can go stale. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval.
+Fresh agents follow the **Session Start Routine** in `AGENTS.md` against live GitHub (this file is a summary and can be stale). No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval. Snapshot at 2026-11-04:
 
-1. **#183 — full-MVP blocker:** already-applied Clover inventory must properly handle refunds, voids, payment conflicts and removed mapped lines. New writes remain disabled until independently validated. Do not accept a warning-only approach as completed reconciliation without owner approval.
-2. **#182 — full-MVP blocker:** Clover sales movements must not distort Daily Close / stock count variance. PR [#184](https://github.com/ter-ry/restaurant-helper/pull/184) is open; requested additional tests for Daily Close/platform-admin paths before merge.
-3. **#167 and #166 — full-MVP required:** Clover Daily Close + food-cost reporting integration and controlled paid Sandbox flag-on validation, with owner approval for external steps. #167 is blocked by prerequisite validation/scope; prepare independent design/test scaffolding only where safe.
-4. **#170 — full-MVP required UI walkthrough and fixes:** inspect all agreed pages and owner-requested defects (layout, variance, useless reminders, mutation state, 390px mobile). Browser support has been verified; issue #172 requires closure after evidence is recorded.
-5. **#142/#143 — verify before closing:** agents report fixes already on main; confirm current code/tests and Showcase behavior rather than reimplementing or blindly closing.
-6. **#168/#165/#169/#174/#175 and pilot-gap checklist — owner gates and final freeze evidence.** Work independently on reviewable safe subtasks while external approvals are pending. Issue #176 is an old post-launch bucket and requires scope reconciliation; only owner-confirmed future features can remain deferred.
+- **Open PRs awaiting review/owner (do not touch unless owning):** [#186](https://github.com/ter-ry/restaurant-helper/pull/186) Clover reversal (#183); [#189](https://github.com/ter-ry/restaurant-helper/pull/189) Clover Daily Close design note (#167 step 1, needs owner approval).
+- **Ready, independent, unattended-ok:** #142, #143 (Purchases OCR; do together, one PR), #190 supplier-item mapping UI, #192 ledger reconciliation tests, #193 menu costing acceptance tests, #194 schedule conflict preview. #170 is in progress (UI walkthrough).
+- **Blocked on a merge:** #191 (needs #142/#143 merged); #167 implementation (needs #189 approval and #166).
+- **Owner decisions pending:** #168 invoice void; #195 supplier archive; #196 adjustment reversal; #197 transfers; #198 bulk import/edit; #199 negative stock; #174 pricing/terms. Pilot-gap items stay in scope until each decision or explicit deferral is recorded.
+- **Owner/external gates:** #165, #166, #169, #171, #172, #175.
+- **Verify-before-close:** #142/#143 reported fixed on main by some agents; confirm against current code first.
 
-**Progression rule:** After every PR/review or newly created issue, re-query GitHub. Continue on another eligible independent task if available. No two-PR cap; stop only at genuine human/permission/session/usage blockers. Never duplicate another agent's work.
+**Progression rule:** After every PR/review or new issue, re-query GitHub and continue with another eligible independent task. Stop only at genuine human/permission/session/usage blockers. Never duplicate another agent's work.
 
 ## GitHub baseline
 
@@ -25,7 +25,7 @@ Fresh agents must query live GitHub issues, PRs, main SHA and current claims; th
 | CI on main | run [41658619318](https://github.com/ter-ry/restaurant-helper/actions/runs/41658619318) **in progress when checked**; recheck rather than assume passing |
 | GitHub Pages | [run 41658619288](https://github.com/ter-ry/restaurant-helper/actions/runs/41658619288) successful on this SHA; not evidence of Render backend deployment |
 | Protected main | Active `Protect Main` ruleset observed via GitHub API (issue #171 needs evidence-based cleanup) |
-| Open PR | [#184](https://github.com/ter-ry/restaurant-helper/pull/184), Clover POS source-type variance fix, head `3040723` at check; independent reviewed CI green before requested extra regression tests |
+| Open PRs | #186 (Clover reversal), #189 (Clover Daily Close design). #184 (Clover variance fix, #182) is merged. |
 | #179 / #180 | Merged; complete PostgreSQL RLS file covered by CI and organization-select audit context defect fixed (34 passed, 12 existing deferred-support skips, 0 xfails on #180) |
 | #181 / #173 | Public claims audit merged to `main` as `f64db55`; claims needing owner decisions/outreach cleanup remain |
 | #164 Clover read-only review | Completed, [evidence](https://github.com/ter-ry/restaurant-helper/issues/164#issuecomment-6597613125); blockers created as #182 and #183 |
