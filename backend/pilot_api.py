@@ -1455,20 +1455,38 @@ def _mapping_duplicate(organization_id: int, supplier_id: int, inventory_item_id
     return query.first()
 
 
+def _location_mappings(organization_id: int, location_id: int):
+    """Mappings visible in one location: SupplierItemMapping has no location_id, so scope through its inventory item."""
+    return (
+        SupplierItemMapping.query.join(InventoryItem, InventoryItem.id == SupplierItemMapping.inventory_item_id)
+        .filter(
+            SupplierItemMapping.organization_id == organization_id,
+            InventoryItem.organization_id == organization_id,
+            InventoryItem.location_id == location_id,
+        )
+    )
+
+
+def _mapping_conflict_response():
+    db.session.rollback()
+    return json_error("That supplier item is already mapped to this inventory item.", 409)
+
+
 @bp.get("/api/pilot/suppliers/<int:supplier_id>/item-mappings")
 @login_required
 def list_supplier_item_mappings(supplier_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, membership, _, _ = context
+    organization, membership, _, location = context
     permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
     if Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first() is None:
         return json_error("Supplier not found.", 404)
     rows = (
-        SupplierItemMapping.query.filter_by(organization_id=organization.id, supplier_id=supplier_id)
+        _location_mappings(organization.id, location.id)
+        .filter(SupplierItemMapping.supplier_id == supplier_id)
         .options(joinedload(SupplierItemMapping.inventory_item))
         .order_by(SupplierItemMapping.supplier_item_name.asc(), SupplierItemMapping.id.asc())
         .all()
@@ -1518,7 +1536,10 @@ def create_supplier_item_mapping(supplier_id: int):
         updated_by_user_id=current_user.id,
     )
     db.session.add(mapping)
-    db.session.flush()
+    try:
+        db.session.flush()
+    except IntegrityError:
+        return _mapping_conflict_response()
     record_audit_event(
         event_type="supplier_item_mappings.created",
         entity_type="supplier_item_mapping",
@@ -1527,9 +1548,12 @@ def create_supplier_item_mapping(supplier_id: int):
         actor_user_id=current_user.id,
         metadata={"supplierId": supplier_id, "inventoryItemId": mapping.inventory_item_id, "supplierItemName": mapping.supplier_item_name},
     )
-    db.session.flush()
-    db.session.refresh(mapping)
-    return _commit_json(_serialize_mapping_row(mapping), 201)
+    try:
+        db.session.flush()
+        db.session.refresh(mapping)
+        return _commit_json(_serialize_mapping_row(mapping), 201)
+    except IntegrityError:
+        return _mapping_conflict_response()
 
 
 @bp.patch("/api/pilot/suppliers/<int:supplier_id>/item-mappings/<int:mapping_id>")
@@ -1542,7 +1566,7 @@ def update_supplier_item_mapping(supplier_id: int, mapping_id: int):
     permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
-    mapping = SupplierItemMapping.query.filter_by(id=mapping_id, supplier_id=supplier_id, organization_id=organization.id).first()
+    mapping = _location_mappings(organization.id, location.id).filter(SupplierItemMapping.id == mapping_id, SupplierItemMapping.supplier_id == supplier_id).first()
     if mapping is None:
         return json_error("Mapping not found.", 404)
     values, errors = _parse_mapping_payload(_json_body(), partial=True)
@@ -1569,9 +1593,12 @@ def update_supplier_item_mapping(supplier_id: int, mapping_id: int):
         actor_user_id=current_user.id,
         metadata={"supplierId": supplier_id, "inventoryItemId": item_id, "supplierItemName": name},
     )
-    db.session.flush()
-    db.session.refresh(mapping)
-    return _commit_json(_serialize_mapping_row(mapping))
+    try:
+        db.session.flush()
+        db.session.refresh(mapping)
+        return _commit_json(_serialize_mapping_row(mapping))
+    except IntegrityError:
+        return _mapping_conflict_response()
 
 
 @bp.delete("/api/pilot/suppliers/<int:supplier_id>/item-mappings/<int:mapping_id>")
@@ -1580,11 +1607,11 @@ def delete_supplier_item_mapping(supplier_id: int, mapping_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    organization, membership, _, _ = context
+    organization, membership, _, location = context
     permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
-    mapping = SupplierItemMapping.query.filter_by(id=mapping_id, supplier_id=supplier_id, organization_id=organization.id).first()
+    mapping = _location_mappings(organization.id, location.id).filter(SupplierItemMapping.id == mapping_id, SupplierItemMapping.supplier_id == supplier_id).first()
     if mapping is None:
         return json_error("Mapping not found.", 404)
     record_audit_event(

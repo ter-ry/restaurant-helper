@@ -2833,3 +2833,93 @@ def test_supplier_item_mapping_is_tenant_isolated(app, client):
         headers=csrf_headers(client),
         json={"supplierItemName": "x", "inventoryItemId": 1, "purchaseUnit": "each", "inventoryUnit": "each", "conversionFactor": 1},
     ).status_code == 404
+
+
+def _second_location_mapping(app, supplier_id: int):
+    """A second location in the same organization with its own inventory item and an existing mapping."""
+    from backend.models import InventoryItem, RestaurantLocation, SupplierItemMapping
+
+    with app.app_context():
+        base_item = InventoryItem.query.filter(InventoryItem.supplier_id.isnot(None)).first() or InventoryItem.query.first()
+        other_location = RestaurantLocation(
+            organization_id=base_item.organization_id,
+            name=f"Second Location {uuid4().hex[:6]}",
+            address_line1="2 Other St", city="Toronto", region="ON", postal_code="M5V 2B2", country="Canada", timezone="America/Toronto",
+        )
+        db.session.add(other_location)
+        db.session.flush()
+        other_item = InventoryItem(
+            organization_id=base_item.organization_id,
+            location_id=other_location.id,
+            name=f"Other Location Item {uuid4().hex[:6]}",
+            normalized_name=f"other location item {uuid4().hex[:6]}",
+            stock_unit="kg",
+        )
+        db.session.add(other_item)
+        db.session.flush()
+        mapping = SupplierItemMapping(
+            organization_id=base_item.organization_id,
+            supplier_id=supplier_id,
+            inventory_item_id=other_item.id,
+            supplier_item_name="Location B Sack",
+            normalized_supplier_item_name="location b sack",
+            purchase_unit="sack",
+            inventory_unit="kg",
+            conversion_factor=10,
+        )
+        db.session.add(mapping)
+        db.session.commit()
+        return other_item.id, mapping.id
+
+
+def test_supplier_item_mapping_is_location_isolated_within_an_organization(app, client):
+    from backend.models import SupplierItemMapping
+
+    login(client)
+    supplier = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={"name": f"Loc Supply {uuid4().hex[:8]}", "categoryFocus": "Dry goods", "isActive": True},
+    ).get_json()
+    base = f"/api/pilot/suppliers/{supplier['id']}/item-mappings"
+    item_id = client.get("/api/pilot/inventory").get_json()["items"][0]["id"]
+    other_item_id, other_mapping_id = _second_location_mapping(app, supplier["id"])
+    own = client.post(base, headers=csrf_headers(client), json={"supplierItemName": "Location A Sack", "inventoryItemId": item_id, "purchaseUnit": "sack", "inventoryUnit": "kg", "conversionFactor": 5}).get_json()
+
+    names = [row["supplierItemName"] for row in client.get(base).get_json()["mappings"]]
+    assert names == ["Location A Sack"]
+
+    assert client.patch(f"{base}/{other_mapping_id}", headers=csrf_headers(client), json={"conversionFactor": 99}).status_code == 404
+    assert client.delete(f"{base}/{other_mapping_id}", headers=csrf_headers(client)).status_code == 404
+    # Cannot re-point an own mapping at another location's inventory item.
+    assert client.patch(f"{base}/{own['id']}", headers=csrf_headers(client), json={"inventoryItemId": other_item_id}).status_code == 404
+    assert client.post(base, headers=csrf_headers(client), json={"supplierItemName": "X", "inventoryItemId": other_item_id, "purchaseUnit": "sack", "inventoryUnit": "kg", "conversionFactor": 1}).status_code == 404
+
+    with app.app_context():
+        untouched = db.session.get(SupplierItemMapping, other_mapping_id)
+        assert untouched is not None and float(untouched.conversion_factor) == 10
+        assert db.session.get(SupplierItemMapping, own["id"]).inventory_item_id == item_id
+
+
+def test_supplier_item_mapping_unique_violation_race_is_a_deterministic_409(app, client, monkeypatch):
+    from backend import pilot_api
+    from backend.models import SupplierItemMapping
+
+    login(client)
+    supplier = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={"name": f"Race Supply {uuid4().hex[:8]}", "categoryFocus": "Dry goods", "isActive": True},
+    ).get_json()
+    base = f"/api/pilot/suppliers/{supplier['id']}/item-mappings"
+    item_id = client.get("/api/pilot/inventory").get_json()["items"][0]["id"]
+    payload = {"supplierItemName": "Racy Sack", "inventoryItemId": item_id, "purchaseUnit": "sack", "inventoryUnit": "kg", "conversionFactor": 5}
+    assert client.post(base, headers=csrf_headers(client), json=payload).status_code == 201
+    # Simulate the lost race: the pre-check saw no duplicate, so the unique constraint must decide.
+    monkeypatch.setattr(pilot_api, "_mapping_duplicate", lambda *a, **k: None)
+    response = client.post(base, headers=csrf_headers(client), json=payload)
+    assert response.status_code == 409
+    other = client.post(base, headers=csrf_headers(client), json={**payload, "supplierItemName": "Other Sack"}).get_json()
+    assert client.patch(f"{base}/{other['id']}", headers=csrf_headers(client), json={"supplierItemName": "Racy Sack"}).status_code == 409
+    with app.app_context():
+        assert SupplierItemMapping.query.filter_by(supplier_id=supplier["id"]).count() == 2
