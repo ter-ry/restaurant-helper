@@ -9,8 +9,8 @@ import { SectionHeader } from "../components/SectionHeader";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin } from "../lib/customerAuth";
 import { fetchCustomerAuditEvents } from "../lib/audit";
 import { downloadCsvFile } from "../lib/reportExports";
-import { buildAuditCsvRows, buildDailyCloseCsvRows, buildPurchaseCsvRows, buildSummaryCsvRows, buildSummaryRows, safeFilenamePart, type OwnerReportsData } from "../lib/ownerReportExports";
-import { fetchPilotDailyClose, fetchPilotDashboard, fetchPilotPurchases } from "../pilot/pilotApi";
+import { buildAuditCsvRows, buildPurchaseCsvRows, buildSummaryCsvRows, buildSummaryRows, safeFilenamePart, type OwnerReportsData } from "../lib/ownerReportExports";
+import { fetchPilotDashboard, fetchPilotPurchases } from "../pilot/pilotApi";
 import { formatCurrency, formatDate, formatPercent } from "../utils/format";
 
 type LoadState = "loading" | "signedOut" | "permissionDenied" | "ready" | "error";
@@ -46,15 +46,14 @@ export function OwnerReportsPage() {
           return;
         }
 
-        const [dashboard, purchases, auditEvents, dailyClose] = await Promise.all([
+        const [dashboard, purchases, auditEvents] = await Promise.all([
           fetchPilotDashboard(),
           fetchPilotPurchases(),
           fetchCustomerAuditEvents(),
-          fetchPilotDailyClose(),
         ]);
 
         if (cancelled) return;
-        setData({ session, dashboard, purchases, auditEvents: auditEvents.events, dailyCloseHistory: dailyClose.history });
+        setData({ session, dashboard, purchases, auditEvents: auditEvents.events });
         setState("ready");
       } catch (err) {
         if (cancelled) return;
@@ -81,7 +80,6 @@ export function OwnerReportsPage() {
   const summaryRows = useMemo(() => (data ? buildSummaryRows(data) : []), [data]);
   const summaryCsvRows = useMemo(() => buildSummaryCsvRows(summaryRows), [summaryRows]);
   const purchaseCsvRows = useMemo(() => (data ? buildPurchaseCsvRows(data) : []), [data]);
-  const dailyCloseCsvRows = useMemo(() => (data ? buildDailyCloseCsvRows(data.dailyCloseHistory) : []), [data]);
   const auditCsvRows = useMemo(() => (data ? buildAuditCsvRows(data.auditEvents) : []), [data]);
   const topSupplier = (data?.dashboard.supplierSpend[0] as DashboardSupplierSpendRow | undefined) ?? null;
   const latestInvoice = data?.purchases.invoices[0] ?? null;
@@ -199,14 +197,6 @@ export function OwnerReportsPage() {
               onClick={() => downloadCsvFile(`flowtally-audit-${downloadPrefix}.csv`, auditCsvRows)}
             >
               Download audit CSV
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              icon={<Download className="h-4 w-4" />}
-              onClick={() => downloadCsvFile(`flowtally-daily-close-${downloadPrefix}.csv`, dailyCloseCsvRows)}
-            >
-              Download Daily Close CSV
             </Button>
           </div>
         </div>
