@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildCsv } from "../../src/lib/reportExports";
 import {
   buildAuditCsvRows,
+  buildDailyCloseCsvRows,
   buildPurchaseCsvRows,
   buildSummaryCsvRows,
   buildSummaryRows,
@@ -13,8 +14,8 @@ import {
 // Frozen per-close financial figures are exported separately from a completed Daily Close (src/lib/dailyCloseExport.ts,
 // tests/frontend/dailyCloseExport.test.ts); the live Owner Reports exports below never mix with them.
 // These are the actual client-side CSV exports (Owner Reports: summary, purchases, audit). They are LIVE views of the
-// current dashboard/purchases/audit data. They contain no frozen Daily Close sales or cash figures; the only
-// Daily Close content is the workflow status row, which the backend reports as Complete / In progress / Open.
+// current dashboard/purchases/audit data. The summary CSV only carries the Daily Close workflow status row
+// (Complete / In progress / Open); frozen Daily Close sales and cash figures are in the dedicated Daily Close CSV.
 function fixture(close: string, overrides: Partial<{ readyForCsv: number; needsReview: number; needsMapping: number; movements: number }> = {}): OwnerReportsData {
   const { readyForCsv = 3, needsReview = 0, needsMapping = 0, movements = 9 } = overrides;
   return {
@@ -99,5 +100,33 @@ describe("owner report CSV exports (exact values)", () => {
     expect(safeFilenamePart("Queen St Cafe & Bar!")).toBe("queen-st-cafe-bar");
     expect(safeFilenamePart("   ")).toBe("organization");
     expect(safeFilenamePart("A".repeat(60))).toHaveLength(32);
+  });
+});
+
+describe("Daily Close CSV export (frozen finalized figures)", () => {
+  const session = (over: Record<string, unknown>) => ({
+    id: 1, businessDate: "2026-08-30", status: "COMPLETED", completedAt: "2026-08-30T22:00:00Z", notes: "short, by $10",
+    summarySnapshot: {
+      sales: { grossSales: 1250.5, refunds: 40, tips: 55.25, netSales: 1210.5 },
+      cashReconciliation: { expectedCash: 400, countedCash: 390, overShort: -10 },
+    },
+    ...over,
+  }) as never;
+
+  it("exports exact frozen figures for finalized sessions only, newest first", () => {
+    const csv = buildCsv(buildDailyCloseCsvRows([
+      session({}),
+      session({ id: 2, businessDate: "2026-08-31", status: "DRAFT" }),
+      session({ id: 3, businessDate: "2026-08-29", completedAt: "2026-08-29T22:00:00Z", notes: "", summarySnapshot: { sales: { grossSales: 100, refunds: 0, tips: 5, netSales: 100 }, cashReconciliation: { expectedCash: null }, manualReconciliation: { countedCash: 80 } } }),
+    ]));
+    expect(csv).toBe([
+      "businessDate,completedAt,grossSales,refunds,tips,netSales,expectedCash,countedCash,cashOverShort,notes",
+      '2026-08-30,2026-08-30T22:00:00Z,1250.5,40,55.25,1210.5,400,390,-10,"short, by $10"',
+      "2026-08-29,2026-08-29T22:00:00Z,100,0,5,100,,80,,",
+    ].join("\n"));
+  });
+
+  it("exports nothing when no session is finalized", () => {
+    expect(buildDailyCloseCsvRows(undefined)).toEqual([]);
   });
 });
