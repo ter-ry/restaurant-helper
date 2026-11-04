@@ -387,6 +387,21 @@ describe("PilotPurchasesPage", () => {
     expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalledWith(3);
   });
 
+  it("suggests an inventory item for an unmapped line and maps it only after the owner clicks", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L extra" } });
+    const suggestion = await screen.findByTestId("line-suggestion-0");
+    expect(screen.getByLabelText("Inventory item")).toHaveValue("");
+    expect(within(suggestion).getByText(/Looks like/)).toBeVisible();
+    expect(screen.getByRole("list", { name: "Line 1 issues" })).toBeVisible();
+    fireEvent.click(within(suggestion).getByRole("button", { name: /^Use / }));
+    expect(screen.getByLabelText("Inventory item")).not.toHaveValue("");
+    expect(screen.queryByTestId("line-suggestion-0")).toBeNull();
+  });
+
   it("keeps an existing draft when invoice OCR fails", async () => {
     mockApi.uploadPilotInvoiceOcr.mockRejectedValueOnce(new PilotApiError("OCR service unavailable.", 503));
     renderPage();
