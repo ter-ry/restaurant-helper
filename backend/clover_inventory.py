@@ -34,18 +34,36 @@ def _decimal(value: Any) -> Decimal:
 _EXTRA_COMPONENT_KEYS = ("tipAmount", "taxAmount", "additionalCharges", "cashbackAmount", "serviceCharge", "discounts")
 
 
+def _refund_claim(order: CloverShadowOrder) -> str | None:
+    """What the order/payment status text claims about refunds: "partial", "full" or None."""
+    raw = order.raw_payload_json or {}
+    text = " ".join(str(value or "") for value in (getattr(order, "provider_status", ""), getattr(order, "payment_status", ""), raw.get("state"), raw.get("paymentState"))).upper()
+    if "PARTIAL" in text:
+        return "partial"
+    if "REFUND" in text or "CREDIT" in text:
+        return "full"
+    return None
+
+
 def _refund_kind(order: CloverShadowOrder) -> str:
     """Classify refunds as none/partial/full, or "unknown" (fail closed).
 
-    Clover refund totals can include tax, tips, surcharges (additionalCharges) and
-    discounts, and we do not know Clover's exact component semantics. So "full" or
-    "partial" is reported only for the plain case: every payment and refund carries
-    no extra monetary component, payments are complete and equal the order total,
-    and refunds never exceed what was charged. Anything else is "unknown" and must
-    be treated as review-required.
+    Decision table (anything not listed is "unknown"):
+    - Financial evidence must be complete and plain: payments are SUCCESS, equal a
+      positive order total, refunds never exceed the charge, and no payment, refund or
+      order carries a tip, tax, surcharge, cashback, service-charge or discount
+      component (Clover's component semantics are not verified).
+    - Status must agree with the refund records:
+      * normalized "paid": "none" only with zero refund records and no refund/credit
+        claim in any status field; otherwise unknown.
+      * normalized "refunded": needs at least one refund record (a refunded status
+        with no records is unknown); a "partial" claim needs amounts < charge and a
+        "refund/credit" claim needs amounts == charge, else unknown. With no explicit
+        claim the amounts decide partial vs full.
+      * any other status (cancelled, review, pending...) is unknown.
     """
     raw = order.raw_payload_json or {}
-    if any(bool(raw.get(key)) for key in ("incomplete", "financialIncomplete", "refundsUnverified", "paymentStateConflict")):
+    if any(bool(raw.get(key)) for key in ("incomplete", "financialIncomplete", "refundsUnverified", "paymentStateConflict")) or raw.get("deletedTime"):
         return "unknown"
     payments, refunds = raw.get("payments"), raw.get("refunds")
     if not isinstance(payments, list) or not isinstance(refunds, list) or raw.get("orderComponents") is None or raw.get("orderComponents"):
@@ -68,9 +86,16 @@ def _refund_kind(order: CloverShadowOrder) -> str:
         return "unknown"
     if charged != total or refunded < 0 or refunded > charged:
         return "unknown"
-    if refunded == 0:
-        return "none"
-    return "full" if refunded == charged else "partial"
+    status = str(getattr(order, "normalized_status", "") or "")
+    claim = _refund_claim(order)
+    if status == "paid":
+        return "none" if not refunds and refunded == 0 and claim is None else "unknown"
+    if status != "refunded" or not refunds or refunded <= 0:
+        return "unknown"
+    amount_kind = "full" if refunded == charged else "partial"
+    if claim is not None and claim != amount_kind:
+        return "unknown"
+    return amount_kind
 
 
 def _with_ineligible_ledger(plan: dict[str, Any], order: CloverShadowOrder, ledgers: list[CloverShadowOrderLineInventoryConsumption]) -> dict[str, Any]:

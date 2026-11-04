@@ -239,7 +239,9 @@ def _ref(amount, components=()):
 def test_refund_kind_is_authoritative_or_unknown(total, raw, expected):
     from backend.clover_inventory import _refund_kind
 
-    assert _refund_kind(SimpleNamespace(total_cents=total, raw_payload_json=raw)) == expected
+    # Default status agrees with the records: refunded when refund rows exist, else paid.
+    status = "refunded" if (raw.get("refunds") or []) else "paid"
+    assert _refund_kind(SimpleNamespace(total_cents=total, raw_payload_json=raw, normalized_status=status, provider_status="CLOSED", payment_status="paid")) == expected
 
 
 def test_normalization_records_tip_surcharge_tax_and_discount_components():
@@ -253,11 +255,83 @@ def test_normalization_records_tip_surcharge_tax_and_discount_components():
     }
     plain = normalize_order({**base, "payments": {"elements": [{"id": "p", "amount": 1800, "result": "SUCCESS"}], "total": 1}, "refunds": {"elements": [{"id": "r", "amount": 1800}], "total": 1}})
     assert plain.raw["payments"][0]["components"] == [] and plain.raw["refunds"][0]["components"] == []
-    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=plain.raw)) == "full"
+    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=plain.raw, normalized_status=plain.normalized_status, provider_status=plain.provider_status, payment_status=plain.payment_status)) == "full"
     tipped = normalize_order({**base, "payments": {"elements": [{"id": "p", "amount": 1800, "tipAmount": 200, "taxAmount": 0, "result": "SUCCESS"}], "total": 1}, "refunds": {"elements": [{"id": "r", "amount": 1800, "additionalCharges": {"elements": [{"id": "c1", "amount": 50}], "total": 1}}], "total": 1}})
     assert tipped.raw["payments"][0]["components"] == ["tipAmount"]
     assert tipped.raw["refunds"][0]["components"] == ["additionalCharges"]
-    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=tipped.raw)) == "unknown"
+    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=tipped.raw, normalized_status=tipped.normalized_status)) == "unknown"
     discounted = normalize_order({**base, "discounts": {"elements": [{"id": "d1", "amount": -100}], "total": 1}, "payments": {"elements": [{"id": "p", "amount": 1800, "result": "SUCCESS"}], "total": 1}, "refunds": {"elements": [], "total": 0}})
     assert discounted.raw["orderComponents"] == ["discounts"]
-    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=discounted.raw)) == "unknown"
+    assert _refund_kind(SimpleNamespace(total_cents=1800, raw_payload_json=discounted.raw, normalized_status=discounted.normalized_status)) == "unknown"
+
+
+def _kind(status, provider, payment, refunds, *, raw_extra=None, total=1800):
+    from backend.clover_inventory import _refund_kind
+
+    raw = {**_refund_raw(payments=[_pay(total)], refunds=refunds), **(raw_extra or {})}
+    return _refund_kind(SimpleNamespace(total_cents=total, raw_payload_json=raw, normalized_status=status, provider_status=provider, payment_status=payment))
+
+
+_FULL = [_ref(1800)]
+_PART = [_ref(500)]
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        # Genuinely non-refunded: consistent, complete.
+        (("paid", "CLOSED", "paid", []), "none"),
+        # Refund status claimed but no verified refund records -> never "none".
+        (("paid", "CLOSED", "refunded", []), "unknown"),
+        (("paid", "CLOSED", "credited", []), "unknown"),
+        (("paid", "CLOSED", "partially_refunded", []), "unknown"),
+        (("paid", "REFUNDED", "paid", []), "unknown"),
+        (("refunded", "REFUNDED", "refunded", []), "unknown"),
+        (("refunded", "PARTIALLY_REFUNDED", "partially_refunded", []), "unknown"),
+        (("refunded", "PAID", "paid", []), "unknown"),
+        # Refund records but the order says paid / not refunded.
+        (("paid", "CLOSED", "paid", _PART), "unknown"),
+        # Status text vs amounts must agree.
+        (("refunded", "REFUNDED", "refunded", _FULL), "full"),
+        (("refunded", "CLOSED", "credited", _FULL), "full"),
+        (("refunded", "PARTIALLY_REFUNDED", "partially_refunded", _PART), "partial"),
+        (("refunded", "PARTIALLY_REFUNDED", "partially_refunded", _FULL), "unknown"),
+        (("refunded", "REFUNDED", "refunded", _PART), "unknown"),
+        (("refunded", "CLOSED", "paid", _PART), "partial"),  # records only, no contradicting claim
+        (("refunded", "CLOSED", "paid", _FULL), "full"),
+        # Other statuses are never classified.
+        (("cancelled", "VOIDED", "voided", []), "unknown"),
+        (("cancelled", "VOIDED", "voided", _FULL), "unknown"),
+        (("review", "CLOSED", "paid", []), "unknown"),
+        (("pending", "OPEN", "open", []), "unknown"),
+    ],
+)
+def test_refund_kind_status_versus_records_decision_table(args, expected):
+    assert _kind(*args) == expected
+
+
+def test_refund_kind_uses_raw_provider_state_and_deletion():
+    # A raw provider state claiming a refund contradicts a "paid" order with no records.
+    assert _kind("paid", "CLOSED", "paid", [], raw_extra={"paymentState": "REFUNDED"}) == "unknown"
+    assert _kind("paid", "CLOSED", "paid", [], raw_extra={"state": "PARTIALLY_REFUNDED"}) == "unknown"
+    assert _kind("paid", "CLOSED", "paid", [], raw_extra={"deletedTime": 123}) == "unknown"
+
+
+def test_normalized_refunded_order_with_empty_refund_collection_is_unknown_not_none():
+    from backend.clover_inventory import _refund_kind
+    from backend.clover_orders import normalize_order
+
+    base = {
+        "id": "o2", "state": "CLOSED", "total": 1800,
+        "payments": {"elements": [{"id": "p", "amount": 1800, "result": "SUCCESS"}], "total": 1},
+        "lineItems": {"elements": [{"id": "l1", "name": "Burger", "quantity": 1, "price": 1800, "item": {"id": "i1"}}], "total": 1},
+        "createdTime": 1, "modifiedTime": 1,
+    }
+    for state in ("REFUNDED", "CREDITED", "PARTIALLY_REFUNDED"):
+        order = normalize_order({**base, "paymentState": state, "refunds": {"elements": [], "total": 0}})
+        ns = SimpleNamespace(total_cents=order.total_cents, raw_payload_json=order.raw, normalized_status=order.normalized_status, provider_status=order.provider_status, payment_status=order.payment_status)
+        assert order.normalized_status == "refunded"
+        assert _refund_kind(ns) == "unknown", state
+    paid = normalize_order({**base, "paymentState": "PAID", "refunds": {"elements": [], "total": 0}})
+    ns = SimpleNamespace(total_cents=paid.total_cents, raw_payload_json=paid.raw, normalized_status=paid.normalized_status, provider_status=paid.provider_status, payment_status=paid.payment_status)
+    assert _refund_kind(ns) == "none"

@@ -71,7 +71,10 @@ complete and equal the order total, refunds never exceed the charge, and no
 payment, refund or order carries a tip, tax, surcharge (`additionalCharges`),
 cashback, service-charge or discount component (those are recorded by name during
 normalization). Anything else, including legacy rows without component data, is
-`unknown`.
+`unknown`. The status must also agree with the refund records: `none` needs a `paid`
+order with zero refund records and no refund/credit claim in any status field; a
+refunded/credited/partially-refunded status with no refund records, a "partial" claim
+with full-amount records (or the reverse), and every other order status are `unknown`.
 
 ### Future: automatic restoration (not implemented; needs owner approval)
 

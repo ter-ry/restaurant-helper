@@ -25,13 +25,13 @@ from backend.tests.conftest import make_operational_organization
 from backend.tests.test_clover_shadow_orders import _login
 
 
-def _payload(*, refunded=False, lines=True, forged=False):
+def _payload(*, refunded=False, lines=True, forged=False, state=None):
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     line = {"id": "line-1", "name": "Test Burger", "quantity": 1, "price": 1800, "item": {"id": "TE0BYZH7B28AJ"}, "modifications": {"elements": [], "total": 0}}
     if forged:
         line["notPrepared"] = True
     data = {
-        "id": "clover-order-applied", "state": "CLOSED", "paymentState": "REFUNDED" if refunded else "PAID", "total": 1800,
+        "id": "clover-order-applied", "state": "CLOSED", "paymentState": state or ("REFUNDED" if refunded else "PAID"), "total": 1800,
         "payments": {"elements": [{"id": "pay-1", "amount": 1800, "result": "SUCCESS"}], "total": 1},
         "refunds": {"elements": [{"id": "ref-1", "amount": 1800}], "total": 1} if refunded else {"elements": [], "total": 0},
         "lineItems": {"elements": [line] if lines else [], "total": 1 if lines else 0},
@@ -107,3 +107,37 @@ def test_applied_order_refund_or_removed_line_is_flagged_in_the_operator_respons
         line = CloverShadowOrderLine.query.filter_by(organization_id=organization.id).one()
         assert line.mapping_status == "review_required"
         assert CloverShadowOrder.query.filter_by(organization_id=organization.id).count() == 1
+
+
+def test_refunded_status_with_empty_refund_collection_is_unknown_through_the_endpoint(app, client, monkeypatch):
+    with app.app_context():
+        organization, location, item = _setup(app)
+        monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
+        responses = iter([
+            ([_payload()], True),
+            ([_payload(state="REFUNDED")], True),            # refunded, refunds collection empty
+            ([_payload(state="PARTIALLY_REFUNDED")], True),  # partially refunded, refunds collection empty
+            ([_payload()], True),                            # back to a consistent paid order
+        ])
+        monkeypatch.setattr("backend.clover_integration.CloverOrderClient.fetch_orders", lambda *a, **k: next(responses))
+        _login(client)
+        csrf = client.get("/api/auth/csrf").get_json()["csrfToken"]
+        body = {"organizationId": organization.id, "locationId": location.id, "startDate": "2026-10-20T00:00:00Z", "endDate": "2026-10-30T00:00:00Z", "executeInventory": True}
+
+        def fetch():
+            response = client.post("/api/integrations/clover/shadow-orders/fetch", json=body, headers={"X-CSRFToken": csrf})
+            assert response.status_code == 200
+            db.session.expire_all()
+            return response.get_json()
+
+        assert fetch()["inventoryAutomation"]["results"][0]["applied"] is True
+        for label in ("REFUNDED", "PARTIALLY_REFUNDED"):
+            data = fetch()
+            result = data["inventoryAutomation"]["results"][0]
+            assert data["orders"][0]["status"] == "refunded", label
+            assert result["appliedRequiresReview"] is True and result["refundKind"] == "unknown", label
+            assert db.session.get(InventoryItem, item.id).current_on_hand == Decimal("7.5000"), label
+        # A consistent paid order is eligible again and replays idempotently (no flag, no extra movement).
+        data = fetch()
+        assert "appliedRequiresReview" not in data["inventoryAutomation"]["results"][0]
+        assert InventoryMovement.query.filter_by(organization_id=organization.id).count() == 1
