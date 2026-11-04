@@ -934,6 +934,11 @@ def _ingest_shadow_orders(
                         db.session.delete(line)
         ingested.append(shadow)
     db.session.flush()
+    # Lines are created/deleted through the session, not via `shadow.lines`, so the
+    # cached relationship can be stale (e.g. empty for a new order). Reconciliation
+    # reads `order.lines`, so reload it from the database.
+    for shadow in ingested:
+        db.session.expire(shadow, ["lines"])
     return ingested, len(ingested)
 
 

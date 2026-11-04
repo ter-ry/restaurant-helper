@@ -141,8 +141,30 @@ def _safe_line(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_COMPONENT_KEYS = ("tipAmount", "taxAmount", "additionalCharges", "cashbackAmount", "serviceCharge", "discounts")
+
+
+def _present(value: Any) -> bool:
+    if value is None or value == "" or value == 0:
+        return False
+    if isinstance(value, Mapping):
+        return bool(_elements(value)) or any(_present(item) for key, item in value.items() if key != "href")
+    if isinstance(value, (list, tuple)):
+        return bool(value)
+    try:
+        return Decimal(str(value)) != 0
+    except Exception:
+        return True
+
+
+def _components(raw: Mapping[str, Any]) -> list[str]:
+    """Names of extra monetary components (tip, tax, surcharge, discount...) present on a record."""
+    return sorted(key for key in _COMPONENT_KEYS if _present(raw.get(key)))
+
+
 def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
     return {
+        "orderComponents": _components(raw),
         "id": _id(raw),
         "state": _text(raw.get("state") or raw.get("status")),
         "paymentState": _text(raw.get("paymentState") or raw.get("payment_state")),
@@ -154,10 +176,10 @@ def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
         "closedTime": raw.get("closedTime"),
         "deletedTime": raw.get("deletedTime"),
         "payments": [
-            {"id": _id(value), "amount": int(_decimal(value.get("amount"))), "result": _text(value.get("result") or value.get("state"))}
+            {"id": _id(value), "amount": int(_decimal(value.get("amount"))), "result": _text(value.get("result") or value.get("state")), "components": _components(value)}
             for value in _elements(raw.get("payments"))
         ],
-        "refunds": [{"id": _id(value), "amount": int(_decimal(value.get("amount")))} for value in _elements(raw.get("refunds"))],
+        "refunds": [{"id": _id(value), "amount": int(_decimal(value.get("amount"))), "components": _components(value)} for value in _elements(raw.get("refunds"))],
         "lineItems": [_safe_line(value) for value in _elements(raw.get("lineItems") or raw.get("line_items"))],
         "incomplete": bool(raw.get("_shadow_incomplete")),
         "lineItemsIncomplete": bool(raw.get("_shadow_line_items_incomplete")),

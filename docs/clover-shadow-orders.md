@@ -55,3 +55,36 @@ preview-only phase.
 Clover fixed-price lines that omit both `quantity` and `unitQty` are treated
 as one item. Explicit `unitQty` is used when present; conflicting or invalid
 quantity fields require review.
+
+
+## Applied orders that later change (#183)
+
+Once Clover inventory has been applied for an order, a later refund, void, payment
+conflict, incomplete read or removed line **never changes stock automatically**. A
+refund or void does not prove the food was not made, and Clover's API exposes no
+field that establishes non-preparation. The reconciliation result instead carries
+`appliedRequiresReview: true`, the `staleApplied` quantities per line/ingredient,
+and `refundKind` (`none` / `partial` / `full` / `unknown`) so an operator can decide.
+
+`refundKind` is fail-closed. It is `full` or `partial` only when payments are
+complete and equal the order total, refunds never exceed the charge, and no
+payment, refund or order carries a tip, tax, surcharge (`additionalCharges`),
+cashback, service-charge or discount component (those are recorded by name during
+normalization). Anything else, including legacy rows without component data, is
+`unknown`. The status must also agree with the refund records: `none` needs a `paid`
+order with zero refund records and no refund/credit claim in any status field; a
+refunded/credited/partially-refunded status with no refund records, a "partial" claim
+with full-amount records (or the reverse), and every other order status are `unknown`.
+
+### Future: automatic restoration (not implemented; needs owner approval)
+
+Restoring stock must be driven by a **server-controlled evidence record**, never by
+provider JSON or client input. Proposed design: a table
+`clover_line_fulfillment_evidence` keyed to the historical Clover line (so it
+survives line removal) with `evidence_type` (`owner_confirmed_not_prepared`,
+`kds_status` if a verified Clover field is confirmed), `actor_user_id`,
+`recorded_at`, `source` and a note, written only by an authenticated owner endpoint
+with CSRF, audit event and RLS. The reconciler would reverse only lines with such
+a record plus a definitive `refundKind == "full"` or a cancel, using the existing
+idempotent ledger. This needs a migration and an owner decision, so it is out of
+scope for #186.

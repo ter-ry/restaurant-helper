@@ -31,6 +31,92 @@ def _decimal(value: Any) -> Decimal:
         raise ValueError("Invalid Clover ingredient quantity.") from exc
 
 
+_EXTRA_COMPONENT_KEYS = ("tipAmount", "taxAmount", "additionalCharges", "cashbackAmount", "serviceCharge", "discounts")
+
+
+def _refund_claim(order: CloverShadowOrder) -> str | None:
+    """What the order/payment status text claims about refunds: "partial", "full" or None."""
+    raw = order.raw_payload_json or {}
+    text = " ".join(str(value or "") for value in (getattr(order, "provider_status", ""), getattr(order, "payment_status", ""), raw.get("state"), raw.get("paymentState"))).upper()
+    if "PARTIAL" in text:
+        return "partial"
+    if "REFUND" in text or "CREDIT" in text:
+        return "full"
+    return None
+
+
+def _refund_kind(order: CloverShadowOrder) -> str:
+    """Classify refunds as none/partial/full, or "unknown" (fail closed).
+
+    Decision table (anything not listed is "unknown"):
+    - Financial evidence must be complete and plain: payments are SUCCESS, equal a
+      positive order total, refunds never exceed the charge, and no payment, refund or
+      order carries a tip, tax, surcharge, cashback, service-charge or discount
+      component (Clover's component semantics are not verified).
+    - Status must agree with the refund records:
+      * normalized "paid": "none" only with zero refund records and no refund/credit
+        claim in any status field; otherwise unknown.
+      * normalized "refunded": needs at least one refund record (a refunded status
+        with no records is unknown); a "partial" claim needs amounts < charge and a
+        "refund/credit" claim needs amounts == charge, else unknown. With no explicit
+        claim the amounts decide partial vs full.
+      * any other status (cancelled, review, pending...) is unknown.
+    """
+    raw = order.raw_payload_json or {}
+    if any(bool(raw.get(key)) for key in ("incomplete", "financialIncomplete", "refundsUnverified", "paymentStateConflict")) or raw.get("deletedTime"):
+        return "unknown"
+    payments, refunds = raw.get("payments"), raw.get("refunds")
+    if not isinstance(payments, list) or not isinstance(refunds, list) or raw.get("orderComponents") is None or raw.get("orderComponents"):
+        return "unknown"
+    try:
+        total = int(order.total_cents if order.total_cents is not None else raw.get("total"))
+        if total <= 0 or not payments:
+            return "unknown"
+        charged = 0
+        for payment in payments:
+            if not isinstance(payment, dict) or payment.get("components") != [] or str(payment.get("result") or "").upper() != "SUCCESS":
+                return "unknown"
+            charged += int(payment["amount"])
+        refunded = 0
+        for refund in refunds:
+            if not isinstance(refund, dict) or refund.get("components") != []:
+                return "unknown"
+            refunded += int(refund["amount"])
+    except (InvalidOperation, TypeError, ValueError, KeyError):
+        return "unknown"
+    if charged != total or refunded < 0 or refunded > charged:
+        return "unknown"
+    status = str(getattr(order, "normalized_status", "") or "")
+    claim = _refund_claim(order)
+    if status == "paid":
+        return "none" if not refunds and refunded == 0 and claim is None else "unknown"
+    if status != "refunded" or not refunds or refunded <= 0:
+        return "unknown"
+    amount_kind = "full" if refunded == charged else "partial"
+    if claim is not None and claim != amount_kind:
+        return "unknown"
+    return amount_kind
+
+
+def _with_ineligible_ledger(plan: dict[str, Any], order: CloverShadowOrder, ledgers: list[CloverShadowOrderLineInventoryConsumption]) -> dict[str, Any]:
+    """Stock already applied to an order that is no longer eligible is never changed automatically.
+
+    A refund, void, payment conflict or removed line does not prove the food was not
+    made, and no authoritative fulfilment evidence exists yet, so the order is
+    surfaced for review with the applied quantities and stock is left untouched.
+    """
+    applied = [row for row in ledgers if _decimal(row.applied_quantity or 0) != 0]
+    if not applied:
+        return plan
+    plan["appliedRequiresReview"] = True
+    plan["refundKind"] = _refund_kind(order)
+    plan["staleApplied"] = [
+        {"lineId": row.clover_shadow_order_line_id, "inventoryItemId": row.inventory_item_id, "appliedQuantity": str(_decimal(row.applied_quantity or 0).quantize(QTY))}
+        for row in applied
+    ]
+    return plan
+
+
 def _base_plan(order: CloverShadowOrder) -> dict[str, Any]:
     raw = order.raw_payload_json or {}
     if not order.potentially_eligible or order.requires_review or order.normalized_status != "paid":
@@ -83,6 +169,7 @@ def _with_ledger_deltas(order: CloverShadowOrder, plan: dict[str, Any], ledgers:
     ]
     if stale:
         plan["eligible"] = False
+        plan["appliedRequiresReview"] = True
         plan["reason"] = "stale_applied_ingredient_requires_review"
         for row in stale:
             plan["movements"].append({
@@ -119,8 +206,6 @@ def plan_clover_order_inventory(
 ) -> dict[str, Any]:
     """Return the exact execution deltas without changing persistence."""
     plan = _base_plan(order)
-    if not plan["eligible"]:
-        return plan
     ledgers = existing_ledgers
     if ledgers is None and not has_app_context():
         ledgers = []
@@ -131,6 +216,8 @@ def plan_clover_order_inventory(
             CloverShadowOrderLineInventoryConsumption.organization_id == order.organization_id,
             CloverShadowOrderLineInventoryConsumption.location_id == order.restaurant_location_id,
         ).all()
+    if not plan["eligible"]:
+        return _with_ineligible_ledger(plan, order, ledgers)
     return _with_ledger_deltas(order, plan, ledgers)
 
 
