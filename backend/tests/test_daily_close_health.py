@@ -337,9 +337,11 @@ def test_cash_reconciliation_mixes_shift_expected_cash_and_matches_events(monkey
     monkeypatch.setattr(daily_close, "_square_request", request)
     result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
     assert result["basis"] == "mixed"
-    assert result["expectedCash"] == 181.5  # every shift of the day, including the still-open one
+    # One shift is still open: expected cash is not verified for the day, so there is none (and no variance).
+    assert result["expectedCash"] is None and result["expectedCashComplete"] is False
+    assert result["partialExpectedCash"] == 181.5  # informational only: every shift observed so far
+    assert "still open" in result["expectedCashUnavailableReason"]
     assert result["reconciledExpectedCash"] == 121.5  # closed shifts only: what Square's own count is compared with
-    assert result["expectedCashComplete"] is False
     assert result["closedCash"] == 121 and result["providerClosedCash"] == 121
     assert result["providerOverShort"] == -0.5  # Square's variance is provider evidence, not the primary variance
     assert "overShort" not in result

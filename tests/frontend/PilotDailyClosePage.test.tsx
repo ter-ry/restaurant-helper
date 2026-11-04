@@ -840,6 +840,22 @@ describe("PilotDailyClosePage", () => {
       expect(screen.queryByText("Balanced")).not.toBeInTheDocument();
     });
 
+    it("shows no variance while a Square drawer is open, with the partial figure labelled as unverified", async () => {
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(closeResponse({
+        expectedCash: null, partialExpectedCash: 500, expectedCashComplete: false, openShiftCount: 1,
+        varianceUnavailableReason: "A Square cash drawer is still open for this business date. Expected cash can be verified once every drawer is closed.",
+      }));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      const input = await screen.findByLabelText("Counted cash");
+      fireEvent.change(input, { target: { value: "480" } });
+      expect(screen.getByText("Variance unavailable")).toBeVisible();
+      expect(screen.queryByText("$20.00 short")).not.toBeInTheDocument();
+      expect(screen.getByTestId("variance-unavailable")).toHaveTextContent("still open");
+      expect(screen.getByTestId("partial-expected-cash")).toHaveTextContent("Observed so far in Square: $500.00");
+      expect(screen.getByTestId("partial-expected-cash")).toHaveTextContent("not a verified expected cash");
+    });
+
     it("sends the staff count, not Square's, when completing the close", async () => {
       pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, providerClosedCash: 495, unreconciledShiftCount: 0 }));
       pilotApiMocks.updatePilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, countedCash: 490, overShort: -10, unreconciledShiftCount: 0 }));

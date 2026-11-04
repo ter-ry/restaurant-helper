@@ -128,7 +128,7 @@ class SquareDrawer:
         self.detail_error: SquareRequestError | None = None
         self.payments_error: SquareRequestError | None = None
 
-    def shift(self, shift_id="SHIFT-1", *, opened=10000, payments=45000, refunds=2000, paid_in=0, paid_out=3000, closed=None, expected=None):
+    def shift(self, shift_id="SHIFT-1", *, opened=10000, payments=45000, refunds=2000, paid_in=0, paid_out=3000, closed=None, expected=None, state=None):
         record = {
             "id": shift_id, "state": "CLOSED" if closed is not None else "OPEN",
             "opened_at": "2026-08-30T11:00:00Z",
@@ -141,6 +141,8 @@ class SquareDrawer:
         if closed is not None:
             record["ended_at"] = record["closed_at"] = "2026-08-30T22:00:00Z"
             record["closed_cash_money"] = {"amount": closed, "currency": "CAD"}
+        if state is not None:
+            record["state"] = state
         if expected is not None:
             record["expected_cash_money"] = {"amount": expected, "currency": "CAD"}
         self.shifts.append(record)
@@ -312,22 +314,54 @@ def test_unknown_and_foreign_sessions_are_not_found(app, client, monkeypatch):
 # Cash policy against realistic Square drawer responses
 # --------------------------------------------------------------------------------------------------
 # Drawer arithmetic used below: opening 100.00 + cash payments 450.00 - refunds 20.00 + paid in 0.00 - paid out 30.00 = 500.00.
-def test_open_drawer_with_a_staff_count_yields_the_primary_variance(app, client, monkeypatch):
+def test_open_drawer_with_a_staff_count_has_no_primary_variance(app, client, monkeypatch):
     drawer = SquareDrawer()
-    drawer.shift()  # still open: Square has no closed count yet
+    drawer.shift()  # still open: the day's cash is not complete
     _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
     session_id = _open(client, location_id)["session"]["id"]
     snap = _count(client, session_id, 480)["snapshot"]
     cash = snap["cashReconciliation"]
-    assert cash["mode"] == "drawer_shift" and cash["basis"] == "calculated_drawer_cash"
-    assert (cash["openingFloat"], cash["cashPayments"], cash["cashRefunds"], cash["paidIn"], cash["paidOut"]) == (100.0, 450.0, 20.0, 0.0, 30.0)
-    assert cash["expectedCash"] == 500.0
-    assert cash["countedCash"] == 480.0
-    assert cash["overShort"] == -20.0 and cash["varianceStatus"] == "available"
-    assert cash["closedCash"] is None and cash["providerCountDisagrees"] is False
-    assert cash["expectedCashComplete"] is False and cash["openShiftCount"] == 1
-    assert [a["detail"] for a in snap["attentionItems"] if a["type"] == "cash_variance"] == ["$20.00 short"]
-    assert snap["healthStatus"] == "Ready with warnings"
+    assert cash["mode"] == "drawer_shift" and cash["openShiftCount"] == 1
+    assert cash["countedCash"] == 480.0  # the staff count is kept
+    # Opening 100 + payments 450 - refunds 20 + paid in 0 - paid out 30 = 500 is observed so far, but not verified for the day.
+    assert cash["partialExpectedCash"] == 500.0
+    assert cash["expectedCash"] is None and cash["expectedCashComplete"] is False
+    assert cash["overShort"] is None and cash["varianceStatus"] == "unavailable"
+    assert "still open" in cash["varianceUnavailableReason"]
+    assert not any(a["type"] == "cash_variance" for a in snap["attentionItems"])
+
+
+def test_closed_drawer_without_square_count_is_unverified_so_variance_is_unavailable(app, client, monkeypatch):
+    drawer = SquareDrawer()
+    drawer.shift(state="CLOSED")  # closed in Square's list but no closed_cash_money: unreconciled
+    _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
+    session_id = _open(client, location_id)["session"]["id"]
+    cash = _count(client, session_id, 500)["snapshot"]["cashReconciliation"]
+    assert cash["unreconciledShiftCount"] == 1 and cash["openShiftCount"] == 0
+    assert cash["expectedCash"] is None and cash["partialExpectedCash"] == 500.0
+    assert cash["overShort"] is None and cash["varianceStatus"] == "unavailable"
+    assert "closed-drawer count" in cash["varianceUnavailableReason"]
+
+
+def test_one_closed_and_one_open_shift_never_yield_a_numeric_variance(app, client, monkeypatch):
+    drawer = SquareDrawer()
+    drawer.shift("SHIFT-1", closed=49500)  # 500.00 expected, 495.00 counted by Square
+    drawer.shift("SHIFT-2", opened=5000, payments=12000, refunds=0, paid_in=0, paid_out=0)  # open: 170.00 so far
+    _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
+    session_id = _open(client, location_id)["session"]["id"]
+    snap = _count(client, session_id, 660)["snapshot"]
+    cash = snap["cashReconciliation"]
+    assert cash["partialExpectedCash"] == 670.0 and cash["expectedCash"] is None
+    assert cash["shiftCount"] == 2 and cash["openShiftCount"] == 1 and cash["expectedCashComplete"] is False
+    assert cash["overShort"] is None and cash["varianceStatus"] == "unavailable"
+    assert not any(a["type"] == "cash_variance" for a in snap["attentionItems"])
+    assert cash["providerClosedCash"] == 495.0 and cash["providerCountDisagrees"] is False  # not comparable while a shift is open
+    # Square closes the second drawer (count 170.00): the full day is verified and the variance becomes available.
+    drawer.shifts[1].update({"state": "CLOSED", "closed_at": "2026-08-30T22:00:00Z", "ended_at": "2026-08-30T22:00:00Z", "closed_cash_money": {"amount": 17000, "currency": "CAD"}})
+    cash = _patch(client, f"/api/pilot/daily-close/{session_id}", {"notes": "drawer 2 closed"}).get_json()["snapshot"]["cashReconciliation"]
+    assert cash["expectedCash"] == 670.0 and cash["expectedCashComplete"] is True and cash["partialExpectedCash"] is None
+    assert cash["overShort"] == -10.0 and cash["varianceStatus"] == "available"  # 660 - 670
+    assert cash["providerClosedCash"] == 665.0 and cash["providerCountDifference"] == -5.0  # 660 - (495 + 170)
 
 
 def test_closed_drawer_without_a_staff_count_shows_square_evidence_but_no_primary_variance(app, client, monkeypatch):
@@ -397,23 +431,11 @@ def test_exact_staff_count_on_an_exact_drawer_is_balanced_without_warnings(app, 
 
 def test_square_expected_cash_is_preferred_over_the_calculated_figure(app, client, monkeypatch):
     drawer = SquareDrawer()
-    drawer.shift(closed=None, expected=51000)  # Square's own expected_cash_money (510.00) differs from the 500.00 arithmetic
+    drawer.shift(closed=50500, expected=51000)  # Square's own expected_cash_money (510.00) differs from the 500.00 arithmetic
     _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
     session_id = _open(client, location_id)["session"]["id"]
     cash = _count(client, session_id, 505)["snapshot"]["cashReconciliation"]
     assert cash["basis"] == "square_expected_cash" and cash["expectedCash"] == 510.0 and cash["overShort"] == -5.0
-
-
-def test_multiple_shifts_are_summed_into_one_expected_figure(app, client, monkeypatch):
-    drawer = SquareDrawer()
-    drawer.shift("SHIFT-1", closed=49500)  # expected 500.00, counted 495.00 by Square
-    drawer.shift("SHIFT-2", opened=5000, payments=12000, refunds=0, paid_in=0, paid_out=0)  # open: expected 170.00
-    _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
-    session_id = _open(client, location_id)["session"]["id"]
-    cash = _count(client, session_id, 660)["snapshot"]["cashReconciliation"]
-    assert cash["expectedCash"] == 670.0 and cash["overShort"] == -10.0
-    assert cash["shiftCount"] == 2 and cash["openShiftCount"] == 1 and cash["expectedCashComplete"] is False
-    assert cash["providerClosedCash"] == 495.0 and cash["providerCountDisagrees"] is False  # one shift still open: not comparable
 
 
 def test_incomplete_drawer_evidence_makes_the_variance_unavailable_never_zero(app, client, monkeypatch):
@@ -427,7 +449,7 @@ def test_incomplete_drawer_evidence_makes_the_variance_unavailable_never_zero(ap
     assert cash["expectedCash"] is None  # payments fallback has no opening float or paid in/out: not verifiable
     assert cash["countedCash"] == 480.0  # the staff count is still saved
     assert cash["overShort"] is None and cash["varianceStatus"] == "unavailable"
-    assert "could not be verified" in cash["varianceUnavailableReason"]
+    assert "temporarily unavailable" in cash["varianceUnavailableReason"]  # the provider reason is surfaced
     assert not any(a["type"] == "cash_variance" for a in body["snapshot"]["attentionItems"])
 
 
@@ -456,7 +478,7 @@ def test_no_square_cash_evidence_at_all_is_unavailable(app, client, monkeypatch)
 
 def test_counts_are_idempotent_replaceable_and_clearable(app, client, monkeypatch):
     drawer = SquareDrawer()
-    drawer.shift()
+    drawer.shift(closed=49500)
     _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
     session_id = _open(client, location_id)["session"]["id"]
     for _ in range(3):  # duplicate submits give the identical figures and exactly one warning
@@ -501,7 +523,7 @@ def test_finalize_freezes_the_count_variance_and_square_evidence(app, client, mo
 
 def test_finalize_keeps_verified_evidence_when_square_is_unreadable_at_that_moment(app, client, monkeypatch):
     drawer = SquareDrawer()
-    drawer.shift()
+    drawer.shift(closed=49500)  # fully verified draft
     _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
     session_id = _open(client, location_id)["session"]["id"]
     assert _count(client, session_id, 480)["snapshot"]["cashReconciliation"]["overShort"] == -20.0
@@ -510,6 +532,35 @@ def test_finalize_keeps_verified_evidence_when_square_is_unreadable_at_that_mome
     cash = _post(client, f"/api/pilot/daily-close/{session_id}/finalize").get_json()["snapshot"]["cashReconciliation"]
     assert cash["carriedFromDraft"] is True  # flagged, never presented as freshly verified
     assert (cash["expectedCash"], cash["countedCash"], cash["overShort"]) == (500.0, 480.0, -20.0)
+
+
+def test_finalize_does_not_carry_draft_evidence_over_a_fresh_partial_drawer(app, client, monkeypatch):
+    drawer = SquareDrawer()
+    drawer.shift("SHIFT-1", closed=49500)
+    _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
+    session_id = _open(client, location_id)["session"]["id"]
+    assert _count(client, session_id, 480)["snapshot"]["cashReconciliation"]["overShort"] == -20.0
+    drawer.shift("SHIFT-2", opened=5000, payments=0, refunds=0, paid_in=0, paid_out=0)  # a drawer opened after the draft
+    cash = _post(client, f"/api/pilot/daily-close/{session_id}/finalize").get_json()["snapshot"]["cashReconciliation"]
+    assert "carriedFromDraft" not in cash  # Square answered: that current answer wins over the stale draft
+    assert cash["countedCash"] == 480.0 and cash["partialExpectedCash"] == 550.0
+    assert cash["expectedCash"] is None and cash["overShort"] is None and cash["varianceStatus"] == "unavailable"
+
+
+def test_finalize_with_a_drawer_still_open_freezes_an_unavailable_variance(app, client, monkeypatch):
+    drawer = SquareDrawer()
+    drawer.shift()  # open
+    _, location_id, _ = _production_cafe(app, client, monkeypatch, drawer)
+    session_id = _open(client, location_id)["session"]["id"]
+    _count(client, session_id, 480)
+    final = _post(client, f"/api/pilot/daily-close/{session_id}/finalize").get_json()
+    cash = final["snapshot"]["cashReconciliation"]
+    assert final["session"]["status"] == "COMPLETED"
+    assert cash["countedCash"] == 480.0 and cash["expectedCash"] is None and cash["overShort"] is None
+    assert cash["varianceStatus"] == "unavailable" and cash["openShiftCount"] == 1
+    db.session.expire_all()
+    stored = db.session.get(DailyCloseSession, session_id).summary_snapshot_json["cashReconciliation"]
+    assert stored["overShort"] is None and stored["partialExpectedCash"] == 500.0
 
 
 def test_finalize_without_any_verified_evidence_stays_unavailable(app, client, monkeypatch):
@@ -578,3 +629,30 @@ def test_report_follows_late_pos_data_while_the_completed_close_stays_frozen(app
     assert _report_sales(client, view="daily", date=DAY)["totalCollected"] == 1190.0  # 800 + 390, live
     frozen = _get(client, location_id).get_json()["snapshot"]["sales"]
     assert frozen["netSales"] == 1130.0 and frozen["orders"] == 45  # the close did not move
+
+
+def test_dashboard_close_status_read_by_the_owner_csv_export_tracks_the_close(app, client, monkeypatch):
+    """The Owner Reports CSV 'Daily close' row is a live status from the dashboard: Open -> In progress -> Complete.
+
+    src/lib/ownerReportExports.ts treats "Complete" as caught up; this pins the literal values the backend sends.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+
+    _, location_id, _ = _setup(app, client, monkeypatch)
+    today = _dt.now(_tz.utc).date().isoformat()  # the dashboard compares against today's (UTC) date
+
+    def close_status():
+        response = client.get("/api/pilot/dashboard")
+        assert response.status_code == 200, response.get_data(as_text=True)
+        return response.get_json()["workflow"]["close"]
+
+    assert close_status() == "Open"
+    opened = _post(client, "/api/pilot/daily-close", {"locationId": location_id, "businessDate": today})
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    session_id = opened.get_json()["session"]["id"]
+    assert close_status() == "In progress"
+    assert _post(client, f"/api/pilot/daily-close/{session_id}/finalize").status_code == 200
+    assert close_status() == "Complete"
+    # A completed close stays Complete after a duplicate finalize is rejected.
+    assert _post(client, f"/api/pilot/daily-close/{session_id}/finalize").status_code == 409
+    assert close_status() == "Complete"

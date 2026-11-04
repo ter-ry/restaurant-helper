@@ -815,6 +815,8 @@ export interface CashReconciliation {
   providerCountDifference?: number | null;
   providerCountDisagrees?: boolean;
   expectedCashComplete?: boolean;
+  partialExpectedCash?: number | null;
+  expectedCashUnavailableReason?: string | null;
   capturedAt?: string;
   carriedFromDraft?: boolean;
   openingFloat: number | null;

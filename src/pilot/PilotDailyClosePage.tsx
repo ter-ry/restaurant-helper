@@ -183,6 +183,7 @@ export function PilotDailyClosePage() {
   const isCashTakingsMode = cashReconciliation.mode === "payments";
   const cashTakings = finiteOrNull(cashReconciliation.expectedCashTakings);
   const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
+  const partialExpectedCash = expectedCash == null ? finiteOrNull(cashReconciliation.partialExpectedCash) : null;
   const providerClosedRaw = cashReconciliation.providerClosedCash ?? cashReconciliation.closedCash;
   const squareClosedCash = providerClosedRaw != null && Number.isFinite(Number(providerClosedRaw)) ? Number(providerClosedRaw) : null;
   const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -403,6 +404,7 @@ export function PilotDailyClosePage() {
                 {cashDifference == null ? (
                   <div className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted" data-testid="variance-unavailable">
                     <p>{varianceUnavailableReason}</p>
+                    {partialExpectedCash != null ? <p className="mt-1" data-testid="partial-expected-cash">Observed so far in Square: {formatMoney(partialExpectedCash)}. This is not a verified expected cash for the day, so no variance is shown.</p> : null}
                     {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
                   </div>
                 ) : null}

@@ -276,7 +276,15 @@ def _cash_reconciliation(connection: SquareConnection | None, location: Restaura
             possible_matches.sort(key=lambda item: (round(item["differenceFromVariance"], 2), str(item.get("createdAt") or ""), str(item.get("shiftId") or ""), str(item.get("type") or "")))
             reconciled_count = len(reconciled)
             open_count = sum(1 for s in shifts if str(s.get("state") or "").upper() == "OPEN")
-            return {"status": "available", "mode": "drawer_shift", "basis": basis, "capturedAt": _now().isoformat(), "expectedCash": float(expected_all), "expectedCashComplete": open_count == 0, "reconciledExpectedCash": float(reconciled_expected) if reconciled_expected is not None else None, "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "providerClosedCash": float(closed) if closed is not None else None, "providerOverShort": float(closed - expected) if closed is not None and expected is not None else None, "possibleMatches": possible_matches[:5], "shiftCount": len(shifts), "reconciledShiftCount": reconciled_count, "unreconciledShiftCount": len(shifts) - reconciled_count, "openShiftCount": open_count, "closedShiftCount": reconciled_count, "shifts": [{"id": s.get("id"), "state": s.get("state"), "openedAt": s.get("opened_at"), "closedAt": s.get("closed_at"), "expectedCash": float(_money_amount(s.get("expected_cash_money"))) if s.get("expected_cash_money") is not None else None, "closedCash": float(_money_amount(s.get("closed_cash_money"))) if s.get("closed_cash_money") is not None else None} for s in shifts], "reconnectRequired": False}
+            # Owner policy: expected cash is verified only when every relevant shift is closed and carries Square's closed
+            # count. A partly observed drawer (open, or closed without a count) yields no expected cash, so no variance.
+            expected_cash_verified = bool(shifts) and open_count == 0 and reconciled_count == len(shifts)
+            expected_cash_reason = None if expected_cash_verified else (
+                "A Square cash drawer is still open for this business date. Expected cash can be verified once every drawer is closed."
+                if open_count
+                else "Square has not provided a closed-drawer count for every cash drawer shift, so expected cash is not verified."
+            )
+            return {"status": "available", "mode": "drawer_shift", "basis": basis, "capturedAt": _now().isoformat(), "expectedCash": float(expected_all) if expected_cash_verified else None, "partialExpectedCash": None if expected_cash_verified else float(expected_all), "expectedCashComplete": expected_cash_verified, "expectedCashUnavailableReason": expected_cash_reason, "reconciledExpectedCash": float(reconciled_expected) if reconciled_expected is not None else None, "openingFloat": float(opening), "cashPayments": float(payments), "cashRefunds": float(refunds), "paidIn": float(paid_in), "paidOut": float(paid_out), "closedCash": float(closed) if closed is not None else None, "providerClosedCash": float(closed) if closed is not None else None, "providerOverShort": float(closed - expected) if closed is not None and expected is not None else None, "possibleMatches": possible_matches[:5], "shiftCount": len(shifts), "reconciledShiftCount": reconciled_count, "unreconciledShiftCount": len(shifts) - reconciled_count, "openShiftCount": open_count, "closedShiftCount": reconciled_count, "shifts": [{"id": s.get("id"), "state": s.get("state"), "openedAt": s.get("opened_at"), "closedAt": s.get("closed_at"), "expectedCash": float(_money_amount(s.get("expected_cash_money"))) if s.get("expected_cash_money") is not None else None, "closedCash": float(_money_amount(s.get("closed_cash_money"))) if s.get("closed_cash_money") is not None else None} for s in shifts], "reconnectRequired": False}
         payments: list[dict[str, Any]] = []
         cursor = None; seen_cursors = set(); payments_ok = False
         payment_query_base = {"location_id": square_location_id, "begin_time": start_at.isoformat().replace("+00:00", "Z"), "end_time": end_at.isoformat().replace("+00:00", "Z"), "limit": "100"}
@@ -589,7 +597,7 @@ def _merge_manual_reconciliation(snapshot: dict[str, Any], session_record: Daily
         cash["overShort"] = None
         cash["varianceStatus"] = "unavailable"
         cash["varianceUnavailableReason"] = (
-            "Expected cash could not be verified from Square for this business date."
+            (cash.get("expectedCashUnavailableReason") or cash.get("reason") or "Expected cash could not be verified from Square for this business date.")
             if expected is None
             else "Enter the physically counted cash to calculate the variance."
         )
@@ -879,7 +887,8 @@ def finalize_daily_close(session_id: int):
     # expected cash, keep that evidence (flagged) instead of silently dropping it from the frozen record.
     stored_cash = (session_record.summary_snapshot_json or {}).get("cashReconciliation") or {}
     fresh_cash = snapshot.get("cashReconciliation") or {}
-    if fresh_cash.get("expectedCash") is None and stored_cash.get("expectedCash") is not None:
+    # Only when the read failed (not when Square answered with a still-open or uncounted drawer): that answer is current.
+    if fresh_cash.get("expectedCash") is None and fresh_cash.get("mode") != "drawer_shift" and stored_cash.get("expectedCash") is not None:
         snapshot["cashReconciliation"] = {**stored_cash, "carriedFromDraft": True, "carriedFromDraftReason": fresh_cash.get("reason")}
     # Keep the manually counted cash and its variance in the frozen record, as update and sync do.
     snapshot = _merge_manual_reconciliation(snapshot, session_record)
