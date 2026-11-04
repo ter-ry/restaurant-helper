@@ -82,12 +82,28 @@ def _int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+UNCERTAINTY_FLAGS = ("incomplete", "lineItemsIncomplete", "financialIncomplete", "refundsUnverified", "paymentStateConflict")
+
+
+def uncertainty_reason(raw: Mapping[str, Any]) -> str | None:
+    """Why a stored order cannot be trusted for sales, or None. Fails closed on every known marker.
+
+    Refunds: any refund record (partial or full) excludes the order. Clover refund tax/tip semantics are
+    unverified (#166), so a refund is never netted off; the order is listed as an exception instead.
+    """
+    if any(raw.get(flag) for flag in UNCERTAINTY_FLAGS):
+        return "incomplete_evidence"
+    if raw.get("refunds"):
+        return "refund_present"
+    return None
+
+
 def order_financials(order_id: Any, raw: Mapping[str, Any]) -> OrderFinancials:
     """Extract per-order figures from the stored safe payload; ``None`` fields mean unavailable."""
     payments = [p for p in raw.get("payments") or [] if isinstance(p, Mapping)]
     counted = [p for p in payments if str(p.get("result") or "").upper() in SUCCESS_RESULTS]
     delivery = "delivery" in str(raw.get("orderType") or "").lower()
-    if raw.get("financialIncomplete") or not counted:
+    if uncertainty_reason(raw) or not counted:
         return OrderFinancials(order_id, None, None, None, None, delivery)
 
     taxes = [_int(p.get("taxAmount")) for p in counted]
@@ -134,7 +150,12 @@ def summarize_orders(orders: Iterable[Any], window: tuple[datetime, datetime]) -
         if status != "paid" or getattr(order, "requires_review", True):
             result.exceptions.append(_exception(order, {"refunded": "refunded_or_refund_unverified", "cancelled": "cancelled", "pending": "not_fully_paid"}.get(status, "needs_review")))
             continue
-        fin = order_financials(getattr(order, "id", None), getattr(order, "raw_payload_json", None) or {})
+        raw = getattr(order, "raw_payload_json", None) or {}
+        reason = uncertainty_reason(raw)
+        if reason:
+            result.exceptions.append(_exception(order, reason))
+            continue
+        fin = order_financials(getattr(order, "id", None), raw)
         result.order_count += 1
         if fin.net_cents is None:
             result.exceptions.append(_exception(order, "net_sales_unavailable"))

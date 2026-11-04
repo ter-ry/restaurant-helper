@@ -84,3 +84,42 @@ def test_normalize_order_captures_amounts_for_sales_math():
     n = normalize_order(payload)
     fin = order_financials(1, n.raw)
     assert (fin.net_cents, fin.tax_cents, fin.tip_cents, fin.cash_cents, fin.delivery) == (1000, 130, 150, 1280, True)
+
+
+import pytest
+
+
+@pytest.mark.parametrize("flag", ["incomplete", "lineItemsIncomplete", "financialIncomplete", "refundsUnverified", "paymentStateConflict"])
+def test_paid_order_with_any_uncertainty_marker_is_excluded_and_flagged(flag):
+    good = _order(1, [_pay(1130, tax=130)])
+    bad = _order(2, [_pay(2260, tax=260)], raw={flag: True})
+    day = summarize_orders([good, bad], WINDOW)
+    assert day.order_count == 1 and day.net_sales_cents == 1000
+    assert [e["reason"] for e in day.exceptions] == ["incomplete_evidence"]
+    assert order_financials(2, bad.raw_payload_json).net_cents is None
+
+
+def test_partial_refund_on_paid_order_is_never_overstated():
+    partial = _order(1, [_pay(2260, tax=260)], raw={"refunds": [{"id": "r", "amount": 500, "components": []}]})
+    day = summarize_orders([partial, _order(2, [_pay(1130, tax=130)])], WINDOW)
+    assert day.net_sales_cents == 1000 and day.order_count == 1  # refunded order is not counted at full value
+    assert day.exceptions[0]["reason"] == "refund_present" and day.exceptions[0]["orderId"] == 1
+
+
+def test_refunded_status_with_refund_records_stays_an_exception():
+    full = _order(1, [_pay(1130, tax=130)], status="refunded", review=True, raw={"refunds": [{"id": "r", "amount": 1130, "components": []}]})
+    day = summarize_orders([full], WINDOW)
+    assert day.order_count == 0 and day.net_sales_cents == 0 and day.exceptions[0]["reason"] == "refunded_or_refund_unverified"
+
+
+def test_normalized_order_with_unverified_refunds_never_contributes():
+    payload = {
+        "id": "o9", "state": "LOCKED", "paymentState": "PAID", "total": 1130, "closedTime": 1, "createdTime": 1, "modifiedTime": 1,
+        "lineItems": {"elements": [{"id": "l1", "name": "Burger", "quantity": 1, "price": 1000, "item": {"id": "i1"}}], "total": 1},
+        "payments": {"elements": [{"id": "p1", "amount": 1130, "taxAmount": 130, "result": "SUCCESS", "tender": {"labelKey": "com.clover.tender.cash"}}], "total": 1},
+        "_shadow_refunds_unverified": True,
+    }
+    n = normalize_order(payload)
+    order = _order(1, [], status=n.normalized_status, review=n.requires_review, raw=n.raw)
+    day = summarize_orders([order], WINDOW)
+    assert day.order_count == 0 and day.net_sales_cents == 0 and day.exceptions
