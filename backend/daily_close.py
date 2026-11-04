@@ -840,6 +840,8 @@ def finalize_daily_close(session_id: int):
     if location is None:
         return json_error("Restaurant location not found.", 404)
     snapshot, usage, exceptions, _ = _daily_close_snapshot(organization, location, session_record.business_date)
+    # Keep the manually counted cash (and its over/short) in the frozen record, as update and sync do.
+    snapshot = _merge_manual_reconciliation(snapshot, session_record)
     session_record.status = "COMPLETED"
     session_record.summary_snapshot_json = snapshot
     session_record.usage_snapshot_json = usage
