@@ -14,3 +14,4 @@ backend/instance/
 __pycache__/
 *.pyc
 square-showcase-*.manifest.json
+.venv/
