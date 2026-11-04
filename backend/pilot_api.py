@@ -1407,6 +1407,225 @@ def update_supplier(supplier_id: int):
     return _commit_json(response_payload)
 
 
+def _parse_mapping_payload(payload: dict, *, partial: bool) -> tuple[dict, dict]:
+    values: dict = {}
+    errors: dict = {}
+    if not partial or "supplierItemName" in payload:
+        name = str(payload.get("supplierItemName") or "").strip()
+        if not name:
+            errors["supplierItemName"] = "Supplier item name is required."
+        elif len(name) > 255:
+            errors["supplierItemName"] = "Supplier item name is too long."
+        else:
+            values["supplierItemName"] = name
+    if not partial or "inventoryItemId" in payload:
+        try:
+            values["inventoryItemId"] = int(payload.get("inventoryItemId"))
+        except (TypeError, ValueError):
+            errors["inventoryItemId"] = "Choose an inventory item."
+    for key in ("purchaseUnit", "inventoryUnit"):
+        if not partial or key in payload:
+            unit = str(payload.get(key) or "").strip()
+            if not unit or len(unit) > 60:
+                errors[key] = "Unit is required."
+            else:
+                values[key] = unit
+    if not partial or "conversionFactor" in payload:
+        try:
+            factor = Decimal(str(payload.get("conversionFactor")))
+            if not factor.is_finite() or factor <= 0 or factor >= Decimal("100000000"):
+                raise ValueError
+            values["conversionFactor"] = factor.quantize(Decimal("0.0001"))
+            if values["conversionFactor"] <= 0:
+                raise ValueError
+        except (ArithmeticError, ValueError):
+            errors["conversionFactor"] = "Conversion factor must be greater than 0."
+    return values, errors
+
+
+def _mapping_duplicate(organization_id: int, supplier_id: int, inventory_item_id: int, name: str, exclude_id: int | None = None):
+    query = SupplierItemMapping.query.filter(
+        SupplierItemMapping.organization_id == organization_id,
+        SupplierItemMapping.supplier_id == supplier_id,
+        SupplierItemMapping.inventory_item_id == inventory_item_id,
+        SupplierItemMapping.normalized_supplier_item_name == _normalize_name(name),
+    )
+    if exclude_id is not None:
+        query = query.filter(SupplierItemMapping.id != exclude_id)
+    return query.first()
+
+
+def _location_mappings(organization_id: int, location_id: int):
+    """Mappings visible in one location: SupplierItemMapping has no location_id, so scope through its inventory item."""
+    return (
+        SupplierItemMapping.query.join(InventoryItem, InventoryItem.id == SupplierItemMapping.inventory_item_id)
+        .filter(
+            SupplierItemMapping.organization_id == organization_id,
+            InventoryItem.organization_id == organization_id,
+            InventoryItem.location_id == location_id,
+        )
+    )
+
+
+def _mapping_conflict_response():
+    db.session.rollback()
+    return json_error("That supplier item is already mapped to this inventory item.", 409)
+
+
+@bp.get("/api/pilot/suppliers/<int:supplier_id>/item-mappings")
+@login_required
+def list_supplier_item_mappings(supplier_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "suppliers.manage")
+    if permission_error is not None:
+        return permission_error
+    if Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first() is None:
+        return json_error("Supplier not found.", 404)
+    rows = (
+        _location_mappings(organization.id, location.id)
+        .filter(SupplierItemMapping.supplier_id == supplier_id)
+        .options(joinedload(SupplierItemMapping.inventory_item))
+        .order_by(SupplierItemMapping.supplier_item_name.asc(), SupplierItemMapping.id.asc())
+        .all()
+    )
+    return jsonify({"mappings": [_serialize_mapping_row(row) for row in rows]})
+
+
+def _serialize_mapping_row(mapping: SupplierItemMapping) -> dict:
+    payload = serialize_supplier_item_mapping(mapping)
+    payload["inventoryItemName"] = mapping.inventory_item.name if mapping.inventory_item is not None else ""
+    return payload
+
+
+def _resolve_mapping_item(organization_id: int, location_id: int, item_id: int):
+    return InventoryItem.query.filter_by(id=item_id, organization_id=organization_id, location_id=location_id).first()
+
+
+@bp.post("/api/pilot/suppliers/<int:supplier_id>/item-mappings")
+@login_required
+def create_supplier_item_mapping(supplier_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "suppliers.manage")
+    if permission_error is not None:
+        return permission_error
+    if Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first() is None:
+        return json_error("Supplier not found.", 404)
+    values, errors = _parse_mapping_payload(_json_body(), partial=False)
+    if errors:
+        return json_error("Validation failed.", 400, errors=errors)
+    if _resolve_mapping_item(organization.id, location.id, values["inventoryItemId"]) is None:
+        return json_error("Inventory item not found.", 404)
+    if _mapping_duplicate(organization.id, supplier_id, values["inventoryItemId"], values["supplierItemName"]) is not None:
+        return json_error("That supplier item is already mapped to this inventory item.", 409)
+    mapping = SupplierItemMapping(
+        organization_id=organization.id,
+        supplier_id=supplier_id,
+        inventory_item_id=values["inventoryItemId"],
+        supplier_item_name=values["supplierItemName"],
+        normalized_supplier_item_name=_normalize_name(values["supplierItemName"]),
+        purchase_unit=values["purchaseUnit"],
+        inventory_unit=values["inventoryUnit"],
+        conversion_factor=values["conversionFactor"],
+        created_by_user_id=current_user.id,
+        updated_by_user_id=current_user.id,
+    )
+    db.session.add(mapping)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        return _mapping_conflict_response()
+    record_audit_event(
+        event_type="supplier_item_mappings.created",
+        entity_type="supplier_item_mapping",
+        entity_id=mapping.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"supplierId": supplier_id, "inventoryItemId": mapping.inventory_item_id, "supplierItemName": mapping.supplier_item_name},
+    )
+    try:
+        db.session.flush()
+        db.session.refresh(mapping)
+        return _commit_json(_serialize_mapping_row(mapping), 201)
+    except IntegrityError:
+        return _mapping_conflict_response()
+
+
+@bp.patch("/api/pilot/suppliers/<int:supplier_id>/item-mappings/<int:mapping_id>")
+@login_required
+def update_supplier_item_mapping(supplier_id: int, mapping_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "suppliers.manage")
+    if permission_error is not None:
+        return permission_error
+    mapping = _location_mappings(organization.id, location.id).filter(SupplierItemMapping.id == mapping_id, SupplierItemMapping.supplier_id == supplier_id).first()
+    if mapping is None:
+        return json_error("Mapping not found.", 404)
+    values, errors = _parse_mapping_payload(_json_body(), partial=True)
+    if errors:
+        return json_error("Validation failed.", 400, errors=errors)
+    item_id = values.get("inventoryItemId", mapping.inventory_item_id)
+    name = values.get("supplierItemName", mapping.supplier_item_name)
+    if "inventoryItemId" in values and _resolve_mapping_item(organization.id, location.id, item_id) is None:
+        return json_error("Inventory item not found.", 404)
+    if _mapping_duplicate(organization.id, supplier_id, item_id, name, exclude_id=mapping.id) is not None:
+        return json_error("That supplier item is already mapped to this inventory item.", 409)
+    mapping.inventory_item_id = item_id
+    mapping.supplier_item_name = name
+    mapping.normalized_supplier_item_name = _normalize_name(name)
+    for key, attr in (("purchaseUnit", "purchase_unit"), ("inventoryUnit", "inventory_unit"), ("conversionFactor", "conversion_factor")):
+        if key in values:
+            setattr(mapping, attr, values[key])
+    mapping.updated_by_user_id = current_user.id
+    record_audit_event(
+        event_type="supplier_item_mappings.updated",
+        entity_type="supplier_item_mapping",
+        entity_id=mapping.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"supplierId": supplier_id, "inventoryItemId": item_id, "supplierItemName": name},
+    )
+    try:
+        db.session.flush()
+        db.session.refresh(mapping)
+        return _commit_json(_serialize_mapping_row(mapping))
+    except IntegrityError:
+        return _mapping_conflict_response()
+
+
+@bp.delete("/api/pilot/suppliers/<int:supplier_id>/item-mappings/<int:mapping_id>")
+@login_required
+def delete_supplier_item_mapping(supplier_id: int, mapping_id: int):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "suppliers.manage")
+    if permission_error is not None:
+        return permission_error
+    mapping = _location_mappings(organization.id, location.id).filter(SupplierItemMapping.id == mapping_id, SupplierItemMapping.supplier_id == supplier_id).first()
+    if mapping is None:
+        return json_error("Mapping not found.", 404)
+    record_audit_event(
+        event_type="supplier_item_mappings.deleted",
+        entity_type="supplier_item_mapping",
+        entity_id=mapping.id,
+        organization_id=organization.id,
+        actor_user_id=current_user.id,
+        metadata={"supplierId": supplier_id, "inventoryItemId": mapping.inventory_item_id, "supplierItemName": mapping.supplier_item_name},
+    )
+    db.session.delete(mapping)
+    return _commit_json({"deleted": True, "id": mapping_id})
+
+
 @bp.get("/api/pilot/purchases/invoices/<int:invoice_id>")
 @login_required
 def purchase_invoice_detail(invoice_id: int):
