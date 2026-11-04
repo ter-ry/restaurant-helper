@@ -62,16 +62,16 @@ export function SchedulePage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" icon={<Wand2 className="h-4 w-4" />}>
-              Generate week preview
+            <Button type="button" variant="secondary" disabled title="Not part of this demo: nothing is generated or saved." icon={<Wand2 className="h-4 w-4" />}>
+              Auto-generate week (not in demo)
             </Button>
-            <Button type="button" variant="secondary" icon={<Download className="h-4 w-4" />}>
-              Export / share preview
+            <Button type="button" variant="secondary" disabled title="Not part of this demo: nothing is exported or saved." icon={<Download className="h-4 w-4" />}>
+              Export / share (not in demo)
             </Button>
           </div>
         </div>
         <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
-          Demo preview only: these controls show the intended workflow and do not create payroll, time-clock, or compliance records.
+          Demo preview only: changes stay in this browser tab and are not saved or exported. No payroll, time-clock, or compliance records are created.
         </p>
       </Card>
 

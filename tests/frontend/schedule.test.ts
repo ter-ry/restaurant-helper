@@ -49,6 +49,27 @@ describe("checkAssignment", () => {
   });
 });
 
+describe("overnight availability across the Sunday/Monday boundary", () => {
+  const sundayNight = person({ days: [6], start: 22 * 60, end: 2 * 60 });
+  it("contains an early Monday shift inside Sunday overnight availability", () => {
+    expect(checkAssignment(sundayNight, shift({ day: 0, start: 1 * 60, end: 2 * 60 }), [])).toEqual([]);
+  });
+  it("contains a shift that itself crosses Sunday night into Monday", () => {
+    expect(checkAssignment(sundayNight, shift({ day: 6, start: 23 * 60, end: 1 * 60 }), [])).toEqual([]);
+  });
+  it("still rejects Monday hours past the Sunday window or on other days", () => {
+    expect(checkAssignment(sundayNight, shift({ day: 0, start: 1 * 60, end: 3 * 60 }), [])[0].kind).toBe("availability");
+    expect(checkAssignment(sundayNight, shift({ day: 1, start: 1 * 60, end: 2 * 60 }), [])[0].kind).toBe("availability");
+  });
+  it("handles Saturday overnight into Sunday and merged Sunday+Monday windows", () => {
+    const satNight = person({ days: [5], start: 22 * 60, end: 2 * 60 });
+    expect(checkAssignment(satNight, shift({ day: 6, start: 0, end: 1 * 60 }), [])).toEqual([]);
+    const both = person({ days: [6, 0], start: 22 * 60, end: 2 * 60 });
+    expect(checkAssignment(both, shift({ day: 0, start: 1 * 60, end: 2 * 60 }), [])).toEqual([]);
+    expect(checkAssignment(both, shift({ day: 2, start: 1 * 60, end: 2 * 60 }), [])[0].kind).toBe("availability");
+  });
+});
+
 describe("derived statuses", () => {
   it("derives status from data, not hard-coded values", () => {
     const staff = SEED_STAFF;
