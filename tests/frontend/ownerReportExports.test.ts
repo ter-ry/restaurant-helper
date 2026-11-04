@@ -10,6 +10,8 @@ import {
   type OwnerReportsData,
 } from "../../src/lib/ownerReportExports";
 
+// Frozen per-close financial figures are exported separately from a completed Daily Close (src/lib/dailyCloseExport.ts,
+// tests/frontend/dailyCloseExport.test.ts); the live Owner Reports exports below never mix with them.
 // These are the actual client-side CSV exports (Owner Reports: summary, purchases, audit). They are LIVE views of the
 // current dashboard/purchases/audit data. They contain no frozen Daily Close sales or cash figures; the only
 // Daily Close content is the workflow status row, which the backend reports as Complete / In progress / Open.

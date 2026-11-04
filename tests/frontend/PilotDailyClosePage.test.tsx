@@ -880,4 +880,86 @@ describe("PilotDailyClosePage", () => {
     });
   });
 
+  describe("completed close CSV download (frozen snapshot)", () => {
+    const frozen = {
+      healthStatus: "Ready with warnings",
+      sales: { grossSales: 1000, discounts: 50, tax: 123.5, tips: 80, refunds: 40, netSales: 910, orders: 42, cancelledOrders: 2 },
+      cashReconciliation: { status: "available", mode: "drawer_shift", expectedCash: 500, countedCash: 490, overShort: -10, varianceStatus: "available", providerClosedCash: 495, closedCash: 495, providerCountDifference: -5, unreconciledShiftCount: 0 },
+      usage: { totals: {}, ingredientUsage: [] },
+      reconciliation: {},
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+      readyToFinalize: true,
+    };
+    const response = (status: string, summarySnapshot: Record<string, unknown>, live: Record<string, unknown> = frozen) => ({
+      session: { id: 31, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status, summarySnapshot, usageSnapshot: {}, exceptionsSnapshot: [], notes: "Short by $10, rechecked", completedAt: status === "COMPLETED" ? "2026-08-31T02:00:00+00:00" : null, currentSnapshot: live },
+      snapshot: live,
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    // The real downloadCsvFile runs; only the browser primitives it calls are captured.
+    async function captureDownload(click: () => void) {
+      let blob: Blob | null = null;
+      let filename = "";
+      const originalCreate = URL.createObjectURL;
+      const originalRevoke = URL.revokeObjectURL;
+      URL.createObjectURL = vi.fn((b: Blob) => { blob = b; return "blob:daily-close"; });
+      URL.revokeObjectURL = vi.fn();
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { filename = this.download; });
+      try {
+        click();
+        const captured = blob as Blob | null;
+        const text = captured ? await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(captured); }) : null;
+        return { text, filename, type: captured?.type ?? "" };
+      } finally {
+        clickSpy.mockRestore();
+        URL.createObjectURL = originalCreate;
+        URL.revokeObjectURL = originalRevoke;
+      }
+    }
+
+    const HEADER = "businessDate,location,status,completedAt,grossSales,discounts,tax,tips,refunds,netSales,orders,cancelledOrders,expectedCash,countedCash,cashVariance,cashVarianceStatus,cashVarianceUnavailableReason,squareClosedDrawerCash,squareCountDifference,observedExpectedCashUnverified,notes";
+
+    it("downloads the exact frozen figures, ignoring later live POS data on the same response", async () => {
+      const live = { ...frozen, sales: { ...frozen.sales, netSales: 1234, orders: 99, refunds: 0 }, cashReconciliation: { ...frozen.cashReconciliation, expectedCash: 999, overShort: -509 } };
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(response("COMPLETED", frozen, live));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      const button = await screen.findByRole("button", { name: "Download close CSV" });
+      const result = await captureDownload(() => fireEvent.click(button));
+      expect(result.filename).toBe("flowtally-daily-close-line-kitchen-2026-08-30.csv");
+      expect(result.type).toContain("text/csv");
+      expect(result.text).toBe([
+        HEADER,
+        '2026-08-30,Line Kitchen,COMPLETED,2026-08-31T02:00:00+00:00,1000.00,50.00,123.50,80.00,40.00,910.00,42,2,500.00,490.00,-10.00,available,,495.00,-5.00,,"Short by $10, rechecked"',
+      ].join("\n"));
+    });
+
+    it("downloads unavailable amounts as empty cells with a status and reason, never zeros", async () => {
+      const partial = {
+        ...frozen,
+        cashReconciliation: { status: "available", mode: "drawer_shift", expectedCash: null, partialExpectedCash: 500, countedCash: 480, overShort: null, varianceStatus: "unavailable", varianceUnavailableReason: "A Square cash drawer is still open.", openShiftCount: 1 },
+      };
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(response("COMPLETED", partial));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      const button = await screen.findByRole("button", { name: "Download close CSV" });
+      const result = await captureDownload(() => fireEvent.click(button));
+      expect(result.text?.split("\n")[1]).toBe(
+        '2026-08-30,Line Kitchen,COMPLETED,2026-08-31T02:00:00+00:00,1000.00,50.00,123.50,80.00,40.00,910.00,42,2,,480.00,,unavailable,A Square cash drawer is still open.,,,500.00,"Short by $10, rechecked"',
+      );
+    });
+
+    it("offers no frozen download for a draft close", async () => {
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(response("DRAFT", {}));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+      await screen.findByLabelText("Counted cash");
+      expect(screen.queryByRole("button", { name: "Download close CSV" })).not.toBeInTheDocument();
+    });
+  });
+
 });

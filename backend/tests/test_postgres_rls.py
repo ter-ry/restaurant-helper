@@ -3216,6 +3216,10 @@ def test_postgres_daily_close_cash_policy_persists_through_finalize_and_matches_
 
     refetched = client.get("/api/pilot/daily-close", base_url=base, query_string={"locationId": seeded["location_id"], "businessDate": "2026-08-30"})
     assert refetched.get_json()["snapshot"]["cashReconciliation"]["countedCash"] == 490.0
+    # The completed-close CSV export reads the persisted session.summarySnapshot: it must carry the frozen figures under RLS.
+    persisted = refetched.get_json()["session"]["summarySnapshot"]
+    assert (persisted["sales"]["netSales"], persisted["sales"]["orders"], persisted["cashReconciliation"]["expectedCash"],
+            persisted["cashReconciliation"]["countedCash"], persisted["cashReconciliation"]["overShort"]) == (910.0, 42, 500.0, 490.0, -10.0)
 
     report = client.get("/api/pilot/reports", base_url=base, query_string={"view": "daily", "date": "2026-08-30"})
     assert report.status_code == 200, report.get_data(as_text=True)

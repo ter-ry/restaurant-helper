@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, Download, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
 import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
+import { downloadDailyCloseCsv } from "../lib/dailyCloseExport";
 import { Link, useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -485,6 +486,16 @@ export function PilotDailyClosePage() {
                     <Save className="h-4 w-4" />
                     Save notes
                   </button>
+                  {completed && currentSession ? (
+                    <button
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                      type="button"
+                      onClick={() => downloadDailyCloseCsv(currentSession, selectedLocation?.name ?? data?.location?.name ?? "")}
+                    >
+                      <Download className="h-4 w-4" />
+                      Download close CSV
+                    </button>
+                  ) : null}
                   {currentSession ? (
                     <span className="inline-flex items-center rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
                       {completed ? `Completed ${formatDateTime(currentSession.completedAt)}` : "Draft"}

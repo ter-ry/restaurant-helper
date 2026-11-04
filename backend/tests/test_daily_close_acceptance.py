@@ -656,3 +656,36 @@ def test_dashboard_close_status_read_by_the_owner_csv_export_tracks_the_close(ap
     # A completed close stays Complete after a duplicate finalize is rejected.
     assert _post(client, f"/api/pilot/daily-close/{session_id}/finalize").status_code == 409
     assert close_status() == "Complete"
+
+
+def test_persisted_summary_snapshot_the_csv_export_reads_stays_frozen_after_later_pos_and_drawer_changes(app, client, monkeypatch):
+    """The completed-close CSV (src/lib/dailyCloseExport.ts) reads session.summarySnapshot from these endpoints."""
+    drawer = SquareDrawer()
+    drawer.shift(closed=49500)
+    _, location_id, connection_id = _production_cafe(app, client, monkeypatch, drawer)
+    _summary(connection_id, location_id, "LOC-A", gross_amount=1000, discount_amount=50, tax_amount=123.5, tip_amount=80, refund_amount=40, net_amount=910, order_count=42, cancelled_order_count=2)
+    db.session.commit()
+    session_id = _open(client, location_id)["session"]["id"]
+    _count(client, session_id, 490)
+    final = _post(client, f"/api/pilot/daily-close/{session_id}/finalize").get_json()
+
+    def exported(body):
+        snapshot = body["session"]["summarySnapshot"]
+        cash = snapshot["cashReconciliation"]
+        return (snapshot["sales"]["grossSales"], snapshot["sales"]["discounts"], snapshot["sales"]["tax"], snapshot["sales"]["tips"], snapshot["sales"]["refunds"],
+                snapshot["sales"]["netSales"], snapshot["sales"]["orders"], snapshot["sales"]["cancelledOrders"],
+                cash["expectedCash"], cash["countedCash"], cash["overShort"], cash["varianceStatus"], cash["providerClosedCash"], cash["providerCountDifference"])
+
+    expected = (1000.0, 50.0, 123.5, 80.0, 40.0, 910.0, 42, 2, 500.0, 490.0, -10.0, "available", 495.0, -5.0)
+    assert exported(final) == expected
+
+    # Later POS transactions and a changed Square drawer: nothing the export reads may move.
+    row = SquareDailySalesSummary.query.filter_by(square_location_id="LOC-A", sale_date=date(2026, 8, 30)).one()
+    row.gross_amount, row.net_amount, row.tax_amount, row.tip_amount, row.refund_amount, row.order_count = 2000, 1800, 250, 150, 0, 99
+    db.session.commit()
+    drawer.shifts[0]["closed_cash_money"]["amount"] = 1000
+    for body in (_get(client, location_id).get_json(), _open(client, location_id)):
+        assert exported(body) == expected
+        assert body["session"]["status"] == "COMPLETED"
+    # ...while the live report does follow the new POS data (the two are intentionally separate).
+    assert _report_sales(client, view="daily", date=DAY)["orderCount"] == 99
