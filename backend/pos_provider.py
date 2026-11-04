@@ -6,11 +6,21 @@ from .models import (
     CloverLocationMapping,
     SquareConnection,
     SquareLocation,
+    RestaurantLocation,
     SquareLocationMapping,
 )
 from .pos import PosProvider
 
 _ACTIVE_STATUS = "connected"
+
+
+def lock_location_for_provider_change(location_id: int, organization_id: int) -> None:
+    """Serialize provider changes per restaurant location (row lock held until the caller commits).
+
+    Both mapping endpoints take this lock before checking exclusivity and writing, so two concurrent
+    Square/Clover requests cannot each observe "no other provider" (PostgreSQL; a no-op on SQLite).
+    """
+    RestaurantLocation.query.filter_by(id=location_id, organization_id=organization_id).with_for_update().first()
 
 
 def other_active_provider(location_id: int, organization_id: int, connecting: PosProvider) -> PosProvider | None:

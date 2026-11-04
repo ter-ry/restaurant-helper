@@ -22,6 +22,7 @@ from backend.app import create_app
 from backend.extensions import db
 from backend.models import (
     AuditEvent,
+    CloverConnection,
     DataImportChange,
     DataImportFile,
     DataImportJob,
@@ -3958,7 +3959,6 @@ def test_postgres_clover_refresh_serializes_single_use_rotation(postgres_app, mo
 
     from backend.clover import CloverRequestError
     from backend.clover_integration import _catalog_snapshot_for_connection, _refresh_connection_token
-    from backend.models import CloverConnection
     from backend.square import decrypt_integration_secret, encrypt_integration_secret
     from backend.seed import LOCAL_ORGANIZATION_NAME
 
@@ -4701,3 +4701,148 @@ def test_clover_applied_order_is_flagged_never_restored_and_fails_closed_under_c
         assert all(outcome["applied"] is False and outcome["appliedRequiresReview"] is True for outcome in outcomes)
         _pin_rls_context(access_scope="customer", organization_id=organization_id, user_id=owner_id)
         assert on_hand() == before
+
+
+# --- #215: one active POS provider per location (PostgreSQL, endpoint-level) ---------------------
+
+def _provider_fixture(*, square_status: str = "connected", extra_org: bool = False):
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    assert owner is not None
+    organization = _create_org(owner, f"RLS Provider {uuid4().hex[:6]}")
+    location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+    square_connection = SquareConnection(organization_id=organization.id, environment="sandbox", square_merchant_id="m-sq", status=square_status)
+    clover_connection = CloverConnection(organization_id=organization.id, environment="sandbox", merchant_id="m-cl", status="connected", access_token_ciphertext="x")
+    db.session.add_all([square_connection, clover_connection])
+    db.session.flush()
+    square_location = SquareLocation(square_connection_id=square_connection.id, square_location_id=f"L-{uuid4().hex[:6]}", name="SQ", status="active", raw_payload_json={})
+    db.session.add(square_location)
+    db.session.flush()
+    result = {"organization_id": organization.id, "location_id": location.id, "square_location_id": square_location.id}
+    if extra_org:
+        other = _create_org(owner, f"RLS Provider Other {uuid4().hex[:6]}")
+        result["other_location_id"] = RestaurantLocation.query.filter_by(organization_id=other.id).first().id
+    return result
+
+
+def _provider_client(app, organization_id):
+    from types import SimpleNamespace  # noqa: F401  (kept local; used by monkeypatch targets)
+
+    client = app.test_client()
+    _login_owner(client)
+    token = client.get("/api/auth/csrf", base_url="http://127.0.0.1:5001").get_json()["csrfToken"]
+    selected = client.post("/api/organizations/select", base_url="http://127.0.0.1:5001", headers={"X-CSRFToken": token}, json={"organizationId": organization_id})
+    assert selected.status_code == 200, selected.get_data(as_text=True)
+    return client, token
+
+
+def _provider_requests(app, seeded, tokens):
+    base = "http://127.0.0.1:5001"
+    org_id, loc_id = seeded["organization_id"], seeded["location_id"]
+    return {
+        "square": lambda client: client.post("/api/integrations/square/location-mappings", base_url=base, headers={"X-CSRFToken": tokens[id(client)]},
+                                             json={"organizationId": org_id, "squareLocationId": seeded["square_location_id"], "restaurantLocationId": loc_id}),
+        "clover": lambda client: client.post("/api/integrations/clover/location-mapping", base_url=base, headers={"X-CSRFToken": tokens[id(client)]},
+                                             json={"organizationId": org_id, "locationId": loc_id, "cloverLocationId": None, "confirm": True}),
+    }
+
+
+def _prepare_provider_app(postgres_app, monkeypatch, organization_id, *, delay=0.0):
+    import time as _time
+    from types import SimpleNamespace
+
+    from backend import clover_integration, pos_provider, square_integration
+    from backend.tests.test_clover_mapping import _configure
+
+    configure_square(postgres_app)
+    _configure(postgres_app, organization_id)
+    monkeypatch.setattr("backend.clover_integration.decrypt_integration_secret", lambda _: "token")
+    monkeypatch.setattr("backend.clover_integration.CloverCatalogClient.fetch_snapshot", lambda self: SimpleNamespace(items=(), location=None))
+    if delay:
+        real = pos_provider.other_active_provider
+
+        def slow_check(*args, **kwargs):
+            found = real(*args, **kwargs)
+            _time.sleep(delay)  # widen the check-then-write window; only the row lock can close it
+            return found
+
+        monkeypatch.setattr(clover_integration, "other_active_provider", slow_check)
+        monkeypatch.setattr(square_integration, "other_active_provider", slow_check)
+
+
+def _active_providers_at(organization_id, location_id):
+    from backend.models import CloverLocationMapping
+
+    with_square = SquareLocationMapping.query.join(SquareLocation, SquareLocation.id == SquareLocationMapping.square_location_id).filter(SquareLocationMapping.restaurant_location_id == location_id).count()
+    with_clover = CloverLocationMapping.query.filter_by(restaurant_location_id=location_id, organization_id=organization_id).count()
+    return with_square, with_clover
+
+
+@pytest.mark.parametrize("square_status", ["connected"])
+def test_concurrent_square_and_clover_mapping_never_activate_two_providers(postgres_app, monkeypatch, square_status):
+    seeded = _seed_admin_fixture("provider race dataset", lambda: _provider_fixture())
+    org_id, loc_id = int(seeded["organization_id"]), int(seeded["location_id"])
+    _prepare_provider_app(postgres_app, monkeypatch, org_id, delay=0.6)
+    clients, tokens = [], {}
+    for _ in range(2):
+        client, token = _provider_client(postgres_app, org_id)
+        clients.append(client)
+        tokens[id(client)] = token
+    requests = _provider_requests(postgres_app, seeded, tokens)
+    barrier = threading.Barrier(2)
+    results: dict[str, int] = {}
+
+    def _run(name, client):
+        barrier.wait()
+        results[name] = requests[name](client).status_code
+
+    threads = [threading.Thread(target=_run, args=("square", clients[0])), threading.Thread(target=_run, args=("clover", clients[1]))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    assert sorted(results.values()) == [200, 409], results
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=org_id)
+        square_count, clover_count = _active_providers_at(org_id, loc_id)
+        assert square_count + clover_count == 1, (results, square_count, clover_count)
+
+
+def test_sequential_provider_conflict_and_disconnected_switch_via_endpoints(postgres_app, monkeypatch):
+    seeded = _seed_admin_fixture("provider switch dataset", lambda: _provider_fixture(square_status="disconnected"))
+    org_id, loc_id = int(seeded["organization_id"]), int(seeded["location_id"])
+    _prepare_provider_app(postgres_app, monkeypatch, org_id)
+    client, token = _provider_client(postgres_app, org_id)
+    requests = _provider_requests(postgres_app, seeded, {id(client): token})
+    # Square is disconnected, so Clover may take the location...
+    assert requests["clover"](client).status_code == 200
+    # ...and Square (still disconnected) is not blocked by an inactive state of its own, but Clover is active now.
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=org_id)
+        assert _active_providers_at(org_id, loc_id) == (0, 1)
+    # Reconnect Square: a second active provider must be refused without a partial write.
+    def _reconnect():
+        SquareConnection.query.filter_by(organization_id=org_id).update({"status": "connected"})
+
+    _seed_admin_fixture("provider reconnect", _reconnect)
+    refused = requests["square"](client)
+    assert refused.status_code == 409 and "Clover" in refused.get_json()["error"]
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=org_id)
+        assert _active_providers_at(org_id, loc_id) == (0, 1)
+
+
+def test_provider_mapping_cannot_target_another_organizations_location(postgres_app, monkeypatch):
+    seeded = _seed_admin_fixture("provider tenant dataset", lambda: _provider_fixture(extra_org=True))
+    org_id = int(seeded["organization_id"])
+    other_location_id = int(seeded["other_location_id"])
+    _prepare_provider_app(postgres_app, monkeypatch, org_id)
+    client, token = _provider_client(postgres_app, org_id)
+    base = "http://127.0.0.1:5001"
+    square = client.post("/api/integrations/square/location-mappings", base_url=base, headers={"X-CSRFToken": token},
+                         json={"organizationId": org_id, "squareLocationId": seeded["square_location_id"], "restaurantLocationId": other_location_id})
+    clover = client.post("/api/integrations/clover/location-mapping", base_url=base, headers={"X-CSRFToken": token},
+                         json={"organizationId": org_id, "locationId": other_location_id, "cloverLocationId": None, "confirm": True})
+    assert square.status_code == 404 and clover.status_code in {404, 409}
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=org_id)
+        assert _active_providers_at(org_id, other_location_id) == (0, 0)
