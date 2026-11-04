@@ -26,6 +26,7 @@ import {
   type PilotPurchasesResponse,
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
+import { lineBlockers, suggestInventoryItem } from "./purchaseMapping";
 
 interface DraftLine {
   id?: number;
@@ -1154,6 +1155,21 @@ export function PilotPurchasesPage() {
                               </button>
                             </div>
                           </div>
+                          {!finalizedStatus && !line.inventoryItemId ? (() => {
+                            const suggestion = suggestInventoryItem(line.description, inventoryItems);
+                            return suggestion ? (
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm" data-testid={`line-suggestion-${index}`}>
+                                <Badge tone="info">Suggested</Badge>
+                                <span className="text-muted">Looks like {suggestion.name}.</span>
+                                <Button variant="secondary" type="button" onClick={() => setLineInventoryItem(index, suggestion.id, line.description)}>Use {suggestion.name}</Button>
+                              </div>
+                            ) : null;
+                          })() : null}
+                          {!finalizedStatus && line.description.trim() && lineBlockers(line).length > 0 ? (
+                            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-danger" aria-label={`Line ${index + 1} issues`}>
+                              {lineBlockers(line).map((reason) => <li key={reason}>{reason}</li>)}
+                            </ul>
+                          ) : null}
                           {line.inventoryItemId ? (
                             <p className="mt-3 text-xs leading-5 text-muted">
                               {line.purchaseUnit !== line.inventoryUnit
