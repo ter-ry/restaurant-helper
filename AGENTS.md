@@ -70,7 +70,7 @@ Positioning:
 
 Read this file, then `docs/RELEASE_STATUS.md` (current state and NEXT TASK) before starting. `docs/RELEASE_PLAN.md` holds milestones, priorities and freeze criteria; read it only when planning. Full loop:
 
-1. Select the highest-priority dependency-ready task from `RELEASE_STATUS.md`.
+1. Follow the Session Start Routine below to select the task (live GitHub state first; `RELEASE_STATUS.md` is a summary).
 2. Write testable acceptance criteria first.
 3. Implement on an isolated branch from current `main`.
 4. Run relevant unit, integration, PostgreSQL/RLS, build and UI checks.
@@ -94,6 +94,41 @@ The queue is GitHub issues. Labels: priority `P0`/`P1`/`P2`; state `status:ready
 - Never take an issue claimed by another agent. If a claim has no branch or PR, report it to the owner instead of overriding it.
 - Never enable Clover inventory writes (`CLOVER_ORDER_INVENTORY_ENABLED`) or touch live data, even to test; use the PostgreSQL test fixtures.
 - In cloud sessions GraphQL is blocked: `gh pr list/view` and `gh issue list` fail. Use `gh api` (REST) or the GitHub MCP tools; `gh run list/view` works. See `docs/AUTOMATION_READINESS.md` for the verified environment recipe.
+
+## Shared Agent Coordination Protocol (Claude Code and Codex)
+
+Agents coordinate through GitHub only. The owner is never the message relay between agents; write findings where the other agent will read them.
+
+| Concern | Authoritative location |
+|---|---|
+| Task ownership, status, dependencies, owner decisions | GitHub issues (labels and comments) |
+| Implementation evidence, exact head SHA, test results, review findings | PR description, comments and reviews |
+| Agreed feature scope and freeze requirements | `docs/RELEASE_PLAN.md` |
+| Release-level progress summary | `docs/RELEASE_STATUS.md` (a snapshot; never overrides live GitHub state) |
+
+**Author duties.** Put in the PR description: issue link, acceptance criteria, exact head SHA, commands run with results, CI run link, known risks, owner approvals needed. On every push, post a comment with the new head SHA and what changed. Before new work, read all review comments on your PRs (`pull_request_read` `get_reviews`, `get_review_comments`, `get_comments`) and fix findings on the same PR and branch. Reply to each finding as fixed (with SHA), disputed (with evidence) or deferred (with a linked issue and owner approval if scope).
+
+**Reviewer duties.** Review a specific head SHA and state it. Post one of:
+- `APPROVE @ <sha>`: acceptance criteria met, tests inspected for the real execution path, no open findings.
+- `REQUEST CHANGES @ <sha>`: each finding has file/line, observed vs expected and a suggested test or fix.
+- `BLOCKED @ <sha>`: cannot review or cannot approve; state the missing evidence or owner decision.
+
+Every review lists findings as `OPEN`, `RESOLVED @ <sha>` or `WITHDRAWN`. On a new head SHA, review the diff since the last reviewed SHA (`git diff <old>..<new>`) and re-verify only the previously open findings; do not repeat resolved or outdated ones. Green CI is evidence, never approval by itself. Financial, POS, database, security and inventory PRs need review by an agent session other than the author, or the owner. An agent never reviews or approves its own PR. Approval is a recommendation; only the owner merges.
+
+**Owner decisions.** Ask only for genuine scope, business, financial-policy or authorization choices. Put the question in the relevant issue with options, a recommended default and impact, and label it `needs-owner`. Record the owner's answer in that issue as a comment starting `OWNER DECISION:` with date and wording; later sessions reuse it. Never infer or invent approval. While a decision is pending, work on other independent tasks.
+
+## Session Start Routine
+
+Run this at the start of every scheduled or manual session, using GitHub MCP tools or `gh api` (REST):
+
+1. `git fetch origin main`; record the main SHA and its latest CI result.
+2. List open PRs and branches. For each PR read reviews, review comments and issue comments, and note the exact SHA each review covers versus the current head.
+3. If this session's agent owns a PR with open findings (or a stale head SHA review), address them on that PR before any unrelated work, unless unsafe or blocked on an owner decision (comment why).
+4. Otherwise select the highest-priority issue that is `status:ready` + `unattended-ok`, not `needs-owner`/`status:blocked`/`status:in-progress`, with every dependency issue closed **and its PR merged to main** (never stack work on unmerged code), no open PR, and no overlapping files with an open PR.
+5. Claim it, implement on a fresh branch from current main, run the checks, open a review-only PR, check CI and fix failures.
+6. Record evidence in the PR and issue, then re-query GitHub and go to step 2 for the next eligible issue.
+
+Skip anything awaiting review, merge, owner decision or external validation and take another independent task; a blocked top priority is not a reason to stop. If no eligible issue exists, reconcile the `docs/RELEASE_PLAN.md` matrix and final-freeze checklist against code, open issues and PRs, and open focused issues for untracked agreed work (with priority, area, scope, acceptance criteria, dependencies, files, required tests, unattended-safety and owner decisions; no duplicates) before concluding that development is blocked. Do not manufacture speculative work. Never duplicate a claim or weaken a safety requirement to proceed.
 
 ## Agent Completion Reports
 
