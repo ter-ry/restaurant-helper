@@ -33,6 +33,7 @@ import { demoReadOnly } from "./pilotConfig";
 import { sortRows, type SortDirection } from "../components/DataTable";
 import { subscribePilotCache } from "./pilotDataCache";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 
 interface InventoryDraft {
   id: number | null;
@@ -833,6 +834,11 @@ export function PilotInventoryPage() {
                   </div>
                 </div>
               </div>
+              <SupplierMappingsPanel
+                supplierId={selectedSupplier.id}
+                inventoryItems={(data?.items ?? []).map((entry) => ({ id: entry.id, name: entry.name }))}
+                onChanged={() => void load()}
+              />
             </div>
           ) : null}
         </div>

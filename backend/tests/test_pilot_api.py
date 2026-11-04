@@ -2773,3 +2773,63 @@ def test_reports_api_exposes_units_sold_separately_from_order_count(monkeypatch,
     sales = response.get_json()["sales"]
     assert sales["orderCount"] == 8
     assert sales["unitsSold"] == 10
+
+
+def test_supplier_item_mapping_crud_validation_duplicates_and_audit(app, client):
+    from backend.models import AuditEvent
+
+    login(client)
+    supplier = client.post(
+        "/api/pilot/suppliers",
+        headers=csrf_headers(client),
+        json={"name": f"Mapping Supply {uuid4().hex[:8]}", "categoryFocus": "Dry goods", "isActive": True},
+    ).get_json()
+    item_id = client.get("/api/pilot/inventory").get_json()["items"][0]["id"]
+    base = f"/api/pilot/suppliers/{supplier['id']}/item-mappings"
+    payload = {"supplierItemName": "Flour 20kg Bag", "inventoryItemId": item_id, "purchaseUnit": "bag", "inventoryUnit": "kg", "conversionFactor": 20}
+
+    assert client.get(base).get_json()["mappings"] == []
+    created = client.post(base, headers=csrf_headers(client), json=payload)
+    assert created.status_code == 201
+    mapping = created.get_json()
+    assert mapping["conversionFactor"] == 20 and mapping["inventoryItemName"]
+
+    duplicate = client.post(base, headers=csrf_headers(client), json={**payload, "supplierItemName": "  flour 20kg bag "})
+    assert duplicate.status_code == 409
+
+    for bad in ({**payload, "conversionFactor": 0}, {**payload, "conversionFactor": -1}, {**payload, "conversionFactor": "abc"}, {**payload, "supplierItemName": ""}):
+        assert client.post(base, headers=csrf_headers(client), json=bad).status_code == 400
+    assert client.post(base, headers=csrf_headers(client), json={**payload, "inventoryItemId": 999999}).status_code == 404
+
+    updated = client.patch(f"{base}/{mapping['id']}", headers=csrf_headers(client), json={"conversionFactor": 25, "purchaseUnit": "sack"})
+    assert updated.status_code == 200
+    assert updated.get_json()["conversionFactor"] == 25 and updated.get_json()["purchaseUnit"] == "sack"
+    assert client.patch(f"{base}/{mapping['id']}", headers=csrf_headers(client), json={"conversionFactor": 0}).status_code == 400
+    assert client.get("/api/pilot/suppliers").get_json()["suppliers"]
+
+    assert client.delete(f"{base}/{mapping['id']}", headers=csrf_headers(client)).status_code == 200
+    assert client.delete(f"{base}/{mapping['id']}", headers=csrf_headers(client)).status_code == 404
+    assert client.get(base).get_json()["mappings"] == []
+
+    with app.app_context():
+        events = {e.event_type for e in AuditEvent.query.filter(AuditEvent.event_type.like("supplier_item_mappings.%")).all()}
+    assert events == {"supplier_item_mappings.created", "supplier_item_mappings.updated", "supplier_item_mappings.deleted"}
+
+
+def test_supplier_item_mapping_is_tenant_isolated(app, client):
+    login(client)
+    with app.app_context():
+        other = Supplier.query.filter(Supplier.organization_id != 0).first()
+        owner = User.query.first()
+        other_org = make_operational_organization(owner, name=f"Other {uuid4().hex[:6]}", location_name="Other Loc")
+        foreign = Supplier(organization_id=other_org.id if hasattr(other_org, "id") else other_org[0].id, name="Foreign", normalized_name=f"foreign-{uuid4().hex[:6]}")
+        db.session.add(foreign)
+        db.session.commit()
+        foreign_id = foreign.id
+    response = client.get(f"/api/pilot/suppliers/{foreign_id}/item-mappings")
+    assert response.status_code == 404
+    assert client.post(
+        f"/api/pilot/suppliers/{foreign_id}/item-mappings",
+        headers=csrf_headers(client),
+        json={"supplierItemName": "x", "inventoryItemId": 1, "purchaseUnit": "each", "inventoryUnit": "each", "conversionFactor": 1},
+    ).status_code == 404
