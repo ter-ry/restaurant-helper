@@ -788,4 +788,80 @@ describe("PilotDailyClosePage", () => {
     expect(screen.queryByLabelText("Counted cash")).not.toBeInTheDocument();
   });
 
+  describe("owner cash policy (#206)", () => {
+    const closeResponse = (cash: Record<string, unknown>, status = "DRAFT") => ({
+      session: { id: 31, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status, notes: "", completedAt: status === "COMPLETED" ? "2026-08-31T02:00:00Z" : null, currentSnapshot: null },
+      snapshot: {
+        healthStatus: "Ready",
+        sales: { netSales: 910, orders: 42, refunds: 0, cancelledOrders: 0 },
+        cashReconciliation: { status: "available", mode: "drawer_shift", openingFloat: 100, cashPayments: 450, cashRefunds: 20, paidIn: 0, paidOut: 30, ...cash },
+        usage: { totals: {}, ingredientUsage: [] },
+        reconciliation: {},
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: true,
+      },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+
+    it("keeps Square's drawer count separate, editable staff count, and flags the disagreement", async () => {
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, providerClosedCash: 495, unreconciledShiftCount: 0 }));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      const input = await screen.findByLabelText("Counted cash");
+      expect(input).toBeEnabled();
+      expect(input).toHaveValue(null); // Square's 495 is not copied into the staff count
+      expect(screen.getByTestId("square-drawer-count")).toHaveTextContent("Square drawer count (provider-reported): $495.00");
+      expect(screen.getByText("Variance unavailable")).toBeVisible();
+      expect(screen.getByTestId("variance-unavailable")).toHaveTextContent("Enter the physically counted cash");
+
+      fireEvent.change(input, { target: { value: "490" } });
+      expect(screen.getByText("$10.00 short")).toBeVisible(); // 490 - 500 expected
+      expect(screen.getByTestId("count-disagreement")).toHaveTextContent("You counted $490.00; Square reported $495.00 (-$5.00)");
+
+      fireEvent.change(input, { target: { value: "495" } });
+      expect(screen.getByText("$5.00 short")).toBeVisible();
+      expect(screen.queryByTestId("count-disagreement")).not.toBeInTheDocument();
+    });
+
+    it("shows Variance unavailable with the reason when expected cash cannot be verified, and still accepts a count", async () => {
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(closeResponse({ status: "unavailable", mode: null, expectedCash: null, varianceUnavailableReason: "Expected cash could not be verified from Square for this business date." }));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      const input = await screen.findByLabelText("Counted cash");
+      expect(input).toBeEnabled();
+      fireEvent.change(input, { target: { value: "480" } });
+      expect(screen.getByText("Variance unavailable")).toBeVisible();
+      expect(screen.getByTestId("variance-unavailable")).toHaveTextContent("could not be verified from Square");
+      expect(screen.queryByText("Balanced")).not.toBeInTheDocument();
+    });
+
+    it("sends the staff count, not Square's, when completing the close", async () => {
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, providerClosedCash: 495, unreconciledShiftCount: 0 }));
+      pilotApiMocks.updatePilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, countedCash: 490, overShort: -10, unreconciledShiftCount: 0 }));
+      pilotApiMocks.finalizePilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, countedCash: 490, overShort: -10, unreconciledShiftCount: 0 }, "COMPLETED"));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      fireEvent.change(await screen.findByLabelText("Counted cash"), { target: { value: "490" } });
+      fireEvent.click(screen.getByRole("button", { name: "Complete close" }));
+      await waitFor(() => expect(pilotApiMocks.updatePilotDailyClose).toHaveBeenCalledWith(31, { notes: "", reconciliation: { countedCash: 490 } }));
+      await waitFor(() => expect(pilotApiMocks.finalizePilotDailyClose).toHaveBeenCalledWith(31));
+    });
+
+    it("shows the frozen count and variance on a completed close and keeps the count read-only", async () => {
+      pilotApiMocks.fetchPilotDailyClose.mockResolvedValue(closeResponse({ expectedCash: 500, closedCash: 495, providerClosedCash: 495, countedCash: 490, overShort: -10, unreconciledShiftCount: 0 }, "COMPLETED"));
+      render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+      const input = await screen.findByLabelText("Counted cash");
+      expect(input).toHaveValue(490);
+      expect(input).toBeDisabled();
+      expect(screen.getByText("$10.00 short")).toBeVisible();
+      expect(screen.getByTestId("count-disagreement")).toHaveTextContent("-$5.00");
+    });
+  });
+
 });

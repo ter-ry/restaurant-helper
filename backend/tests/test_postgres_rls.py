@@ -3133,6 +3133,99 @@ def test_postgres_daily_close_mutations_restore_context_after_commit(postgres_ap
     assert refetched.get_json()["session"]["notes"] == "Post-commit RLS context"
 
 
+def test_postgres_daily_close_cash_policy_persists_through_finalize_and_matches_reports(postgres_app, monkeypatch):
+    """#206 on PostgreSQL with forced RLS: staff count + Square drawer evidence survive finalize; reports match."""
+    from datetime import date
+    from backend.models import SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
+
+    owner_email = f"close-cash-{uuid4().hex[:8]}@example.com"
+    owner_password = f"CloseCash-{uuid4().hex[:12]}!"
+
+    def seed():
+        owner = User(email=owner_email, is_active=True)
+        owner.set_password(owner_password)
+        db.session.add(owner)
+        db.session.flush()
+        organization = _create_org(owner, f"Close Cash RLS {uuid4().hex[:8]}")
+        for module in ("INVENTORY", "REPORTING", "DAILY_CLOSE"):
+            db.session.add(OrganizationModule(organization_id=organization.id, module_key=module, status="ENABLED"))
+        db.session.commit()
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        connection = SquareConnection(
+            organization_id=organization.id, environment="production", square_merchant_id=f"m-{uuid4().hex[:6]}",
+            status="connected", sync_status="idle", last_sync_at=datetime(2026, 8, 30, 23, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(connection)
+        db.session.flush()
+        square_location = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-PG", name="PG", status="ACTIVE", raw_payload_json={})
+        db.session.add(square_location)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
+        db.session.add(SquareDailySalesSummary(
+            square_connection_id=connection.id, square_location_id="LOC-PG", restaurant_location_id=location.id, sale_date=date(2026, 8, 30),
+            gross_amount=1000, discount_amount=50, tax_amount=123.5, tip_amount=80, refund_amount=40, net_amount=910, order_count=42, cancelled_order_count=2,
+            raw_payload_json={},
+        ))
+        db.session.commit()
+        return {"location_id": location.id}
+
+    seeded = _seed_admin_fixture("daily close cash policy", seed)
+    shift = {
+        "id": "SHIFT-PG", "state": "CLOSED", "opened_at": "2026-08-30T11:00:00Z", "ended_at": "2026-08-30T22:00:00Z", "closed_at": "2026-08-30T22:00:00Z",
+        "opened_cash_money": {"amount": 10000}, "cash_payment_money": {"amount": 45000}, "cash_refunds_money": {"amount": 2000},
+        "cash_paid_in_money": {"amount": 0}, "cash_paid_out_money": {"amount": 3000}, "closed_cash_money": {"amount": 49500},
+    }
+
+    def fake_square(method, path, **kwargs):
+        if "/events" in path:
+            return {"cash_drawer_shift_events": []}
+        if path.startswith("/v2/cash-drawers/shifts/"):
+            return {"cash_drawer_shift": shift}
+        if path.startswith("/v2/cash-drawers/shifts"):
+            return {"cash_drawer_shifts": [{"id": "SHIFT-PG", "opened_at": shift["opened_at"], "closed_at": shift["closed_at"]}]}
+        return {"payments": []}
+
+    monkeypatch.setattr("backend.daily_close._square_request", fake_square)
+    monkeypatch.setattr("backend.daily_close._connection_token", lambda connection: "token")
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "fresh"})
+
+    client = postgres_app.test_client()
+    _login_user(client, owner_email, owner_password)
+    base = "http://127.0.0.1:5001"
+
+    def headers():
+        return {"X-CSRFToken": client.get("/api/auth/csrf", base_url=base).get_json()["csrfToken"]}
+
+    opened = client.post("/api/pilot/daily-close", base_url=base, headers=headers(), json={"locationId": seeded["location_id"], "businessDate": "2026-08-30"})
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    session_id = opened.get_json()["session"]["id"]
+    assert opened.get_json()["snapshot"]["cashReconciliation"]["overShort"] is None  # no staff count yet
+
+    counted = client.patch(f"/api/pilot/daily-close/{session_id}", base_url=base, headers=headers(), json={"reconciliation": {"countedCash": 490}})
+    assert counted.status_code == 200, counted.get_data(as_text=True)
+    cash = counted.get_json()["snapshot"]["cashReconciliation"]
+    assert (cash["expectedCash"], cash["countedCash"], cash["overShort"], cash["closedCash"]) == (500.0, 490.0, -10.0, 495.0)
+
+    finalized = client.post(f"/api/pilot/daily-close/{session_id}/finalize", base_url=base, headers=headers())
+    assert finalized.status_code == 200, finalized.get_data(as_text=True)
+    frozen = finalized.get_json()["snapshot"]["cashReconciliation"]
+    assert (frozen["expectedCash"], frozen["countedCash"], frozen["overShort"], frozen["providerClosedCash"], frozen["providerCountDifference"]) == (500.0, 490.0, -10.0, 495.0, -5.0)
+
+    assert client.post(f"/api/pilot/daily-close/{session_id}/finalize", base_url=base, headers=headers()).status_code == 409
+    assert client.patch(f"/api/pilot/daily-close/{session_id}", base_url=base, headers=headers(), json={"reconciliation": {"countedCash": 500}}).status_code == 409
+
+    refetched = client.get("/api/pilot/daily-close", base_url=base, query_string={"locationId": seeded["location_id"], "businessDate": "2026-08-30"})
+    assert refetched.get_json()["snapshot"]["cashReconciliation"]["countedCash"] == 490.0
+
+    report = client.get("/api/pilot/reports", base_url=base, query_string={"view": "daily", "date": "2026-08-30"})
+    assert report.status_code == 200, report.get_data(as_text=True)
+    sales = report.get_json()["sales"]
+    close_sales = finalized.get_json()["snapshot"]["sales"]
+    assert (sales["grossItemSales"], sales["discounts"], sales["tax"], sales["tips"], sales["refunds"], sales["totalCollected"], sales["orderCount"], sales["cancelledOrderCount"]) == (
+        close_sales["grossSales"], close_sales["discounts"], close_sales["tax"], close_sales["tips"], close_sales["refunds"], close_sales["netSales"], close_sales["orders"], close_sales["cancelledOrders"],
+    ) == (1000.0, 50.0, 123.5, 80.0, 40.0, 910.0, 42, 2)
+
+
 def test_postgres_active_owner_can_load_dashboard_after_request_bootstrap(postgres_app):
     def _seed():
         owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
