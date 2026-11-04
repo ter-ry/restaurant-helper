@@ -43,15 +43,3 @@ Scheduled/unattended permission behavior (no schedule created), Codex sessions, 
 4. Record deployed SHAs/Alembic heads (#165).
 5. Run one supervised fresh-session resume test: new session, read `AGENTS.md` and `docs/RELEASE_STATUS.md`, claim one `unattended-ok` issue, open a PR, stop at the merge gate. Repeat once with Codex if it will be used.
 6. Decide the schedule, permission mode and per-run limits when creating the scheduled task; none exists yet.
-
-## Repository skills (`.claude/skills/`)
-
-Three project skills shorten repeated cloud and scheduled sessions. They hold recipes only; policy stays in `AGENTS.md`.
-
-| Skill | Use when |
-|---|---|
-| `flowtally-verify` | Running backend/PostgreSQL/RLS/frontend checks, diagnosing failures against main. Ships `scripts/setup-env.sh` (Python 3.12 `.venv`, local PostgreSQL 16, CI env vars) |
-| `flowtally-pr-repair` | Continuing an owned PR: exact HEAD, CI, review findings, ownership gate, request review of the new SHA |
-| `flowtally-acceptance` | Checking a change against issue criteria and owner decisions; local vs Showcase/Sandbox evidence |
-
-Discovery (checked 2026-11-04, cloud session): a fresh `claude -p` in the repo lists all three, and natural-language prompts (acceptance check, red-CI repair, run tests with PostgreSQL) selected the matching skill. Skills are loaded when a session starts, so a skill added mid-session is not visible until a new session. Scheduled routines need no registration: the checked-out repo supplies them. Invoke by name in the routine prompt (for example "use flowtally-pr-repair on PR N") or rely on the descriptions. Limits: PostgreSQL setup needs root; `npm run e2e` is still affected by the Playwright/Chromium revision mismatch (#172); Showcase/Sandbox acceptance remains an owner action. `/run-skill-generator` and `/verify` were not available in this environment, so no launch recipe was generated; the built-in `run` skill covers launching the app.
