@@ -2600,3 +2600,111 @@ test("OCR upload opens the structured review workspace with source evidence", as
   await expect(page.getByText("Needs mapping")).toBeVisible();
 });
 
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`inventory supplier dialog shows a failed save inside the dialog at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const organization = makeOrganization({ id: 5, name: "Starter Cafe" });
+    const state: MockState = {
+      session: makeActiveOwnerSession({
+        currentOrganizationId: organization.id,
+        currentLocationId: 9,
+        enabledModuleKeys: ["PURCHASES", "INVENTORY"],
+        organizations: [{ organization, membershipRole: "owner", selected: true }],
+      }),
+      csrfToken: "csrf-token",
+      currentOrganization: organization,
+      invitations: [],
+      auditEvents: [],
+      supportGrants: [],
+      squareConnection: null,
+      importJobs: [],
+      importJob: null,
+    };
+    enableEmptyPurchaseWorkflow(state, makeEmptyPurchaseFlowState());
+    await installMockApi(page, state);
+    // Registered after the shared mock so it takes precedence: the server rejects the supplier save.
+    await page.route("**/api/pilot/suppliers", async (route) => {
+      if (route.request().method() === "POST") {
+        await jsonResponse(route, { error: "Supplier save failed on the server." }, 500);
+        return;
+      }
+      await jsonResponse(route, { suppliers: [] });
+    });
+
+    await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+    await page.getByRole("tab", { name: /Suppliers/ }).click();
+    await page.getByRole("button", { name: "Add supplier" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Supplier name").fill("Harbour Dry Goods");
+    await dialog.getByRole("button", { name: "Create supplier" }).click();
+
+    const alert = dialog.getByRole("alert");
+    await expect(alert).toContainText("Supplier save failed on the server.");
+    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(alert).toBeInViewport();
+    // Inside the viewport is not enough: the dialog's sticky header or overlay must not cover the message.
+    const uncovered = await alert.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return hit !== null && element.contains(hit);
+    });
+    expect(uncovered).toBe(true);
+    await expect(dialog.getByLabel("Supplier name")).toHaveValue("Harbour Dry Goods");
+  });
+}
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`inventory create-item dialog shows a failed save uncovered below its sticky header at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const organization = makeOrganization({ id: 5, name: "Starter Cafe" });
+    const state: MockState = {
+      session: makeActiveOwnerSession({
+        currentOrganizationId: organization.id,
+        currentLocationId: 9,
+        enabledModuleKeys: ["PURCHASES", "INVENTORY"],
+        organizations: [{ organization, membershipRole: "owner", selected: true }],
+      }),
+      csrfToken: "csrf-token",
+      currentOrganization: organization,
+      invitations: [],
+      auditEvents: [],
+      supportGrants: [],
+      squareConnection: null,
+      importJobs: [],
+      importJob: null,
+    };
+    enableEmptyPurchaseWorkflow(state, makeEmptyPurchaseFlowState());
+    await installMockApi(page, state);
+    // Registered after the shared mock so it takes precedence: the server rejects the supplier save.
+    await page.route("**/api/pilot/suppliers", (route) => jsonResponse(route, { suppliers: [] }));
+    await page.route("**/api/pilot/inventory/items", async (route) => {
+      if (route.request().method() === "POST") {
+        await jsonResponse(route, { error: "Item save failed on the server." }, 500);
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+    if (viewport.width < 640) await page.getByRole("button", { name: "Open inventory actions" }).click();
+    await page.getByRole("button", { name: "Create item" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Item name").fill("Test flour");
+    // The submit button is at the bottom of a long form, so the dialog is scrolled when the error arrives.
+    await dialog.getByRole("button", { name: "Create item" }).last().click();
+
+    const alert = dialog.getByRole("alert");
+    await expect(alert).toContainText("Item save failed on the server.");
+    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(alert).toBeInViewport();
+    // Inside the viewport is not enough: the dialog's sticky header or overlay must not cover the message.
+    const uncovered = await alert.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return hit !== null && element.contains(hit);
+    });
+    expect(uncovered).toBe(true);
+    await expect(dialog.getByLabel("Item name")).toHaveValue("Test flour");
+  });
+}

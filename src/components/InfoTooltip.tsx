@@ -1,11 +1,11 @@
 import { Info } from "lucide-react";
 import { useState } from "react";
 
-export function InfoTooltip({ label, children }: { label: string; children: string }) {
+export function InfoTooltip({ label, children, hideLabel = false }: { label: string; children: string; hideLabel?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="relative inline-flex items-center gap-1">
-      <span>{label}</span>
+      {hideLabel ? null : <span>{label}</span>}
       <button
         type="button"
         aria-label={`Explain ${label}`}

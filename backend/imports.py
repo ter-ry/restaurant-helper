@@ -86,6 +86,7 @@ ENTITY_FIELDS: dict[str, list[dict[str, Any]]] = {
     "supplier_item_mapping": [
         {"field": "supplierName", "label": "Supplier name", "required": True},
         {"field": "inventoryItemName", "label": "Inventory item name", "required": True},
+        {"field": "locationName", "label": "Location name", "required": True},
         {"field": "supplierItemName", "label": "Supplier item name", "required": True},
         {"field": "purchaseUnit", "label": "Purchase unit", "required": False},
         {"field": "inventoryUnit", "label": "Inventory unit", "required": False},
@@ -179,7 +180,10 @@ def _parse_csv(content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
 
 
 def _parse_xlsx(content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
-    workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    try:
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as exc:  # corrupt, truncated, password-protected or non-XLSX content
+        raise ValueError("The uploaded XLSX file could not be read. Re-save it as a valid .xlsx or export a CSV.") from exc
     sheet = workbook[workbook.sheetnames[0]]
     iterator = sheet.iter_rows(values_only=True)
     try:
@@ -883,8 +887,8 @@ def _preview_job(job: DataImportJob, organization: Organization) -> None:
     for row in job.rows:
         row.normalized_row_json = _build_normalized_row(job, dict(row.source_row_json or {}))
         _build_preview_row(job, organization, row)
-    job.status = "READY_FOR_PREVIEW" if job.blocked_row_count == 0 else "VALIDATION_REQUIRED"
     _refresh_summary(job)
+    job.status = "READY_FOR_PREVIEW" if job.blocked_row_count == 0 else "VALIDATION_REQUIRED"
 
 
 def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRow, user_id: int) -> tuple[str, Any, dict[str, Any], dict[str, Any], bool]:
