@@ -26,9 +26,12 @@ def clover_order_inventory_enabled() -> bool:
 
 def _decimal(value: Any) -> Decimal:
     try:
-        return Decimal(str(value))
+        number = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValueError("Invalid Clover ingredient quantity.") from exc
+    if not number.is_finite():
+        raise ValueError("Invalid Clover ingredient quantity.")
+    return number
 
 
 _EXTRA_COMPONENT_KEYS = ("tipAmount", "taxAmount", "additionalCharges", "cashbackAmount", "serviceCharge", "discounts")
@@ -135,7 +138,7 @@ def _base_plan(order: CloverShadowOrder) -> dict[str, Any]:
                 return {"orderId": order.clover_order_id, "eligible": False, "reason": "invalid_recipe_ingredient", "movements": [], "staleApplied": []}
             try:
                 quantity = _decimal(ingredient.get("quantity")).quantize(QTY)
-            except ValueError:
+            except (ValueError, InvalidOperation):  # InvalidOperation: finite but too large to quantize
                 return {"orderId": order.clover_order_id, "eligible": False, "reason": "invalid_recipe_quantity", "movements": [], "staleApplied": []}
             inventory_item_id = ingredient.get("inventoryItemId")
             unit = str(ingredient.get("unit") or "").strip()

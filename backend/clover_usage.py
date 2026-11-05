@@ -1,6 +1,6 @@
 """Clover ingredient usage, food cost and menu sales for Daily Close (#167).
 
-Reads the recorded consumption ledger (``applied_quantity`` x ``unit_cost_snapshot``) instead of
+Reads the recorded consumption ledger (consumed quantity = ``-applied_quantity``, the engine's signed stock delta, x ``unit_cost_snapshot``) instead of
 recomputing from recipes, so figures reconcile to the inventory movement ledger. Read-only.
 """
 from __future__ import annotations
@@ -44,6 +44,11 @@ def _order_problem(order) -> str | None:
     if order.normalized_status != "paid" or order.requires_review:
         return "cancelled" if order.normalized_status == "cancelled" else f"not_counted_{order.normalized_status or 'review'}"
     return None
+
+
+def _consumed(ledger) -> Decimal:
+    """Positive quantity consumed. The engine stores the signed stock delta (negative for consumption)."""
+    return -Decimal(str(ledger.applied_quantity or 0))
 
 
 def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int | None = None) -> dict[str, Any]:
@@ -108,6 +113,7 @@ def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int 
             exceptions.append({"orderId": line.shadow_order_id, "lineId": line.id, "name": line.name, "reason": "recipe_missing"})
             continue
         line_ok = True
+        expected_by_item: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
         for ingredient in ingredients:
             if not isinstance(ingredient, dict):
                 line_ok = False
@@ -118,9 +124,18 @@ def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int 
             except (TypeError, ValueError, ArithmeticError):
                 line_ok = False
                 continue
-            ledger = ledger_by_key.get((line.id, item_id))
-            if ledger is None or ledger.unit_cost_snapshot is None or Decimal(str(ledger.applied_quantity or 0)) != expected:
+            if not expected.is_finite() or expected <= 0:
                 line_ok = False
+                continue
+            # The engine sums repeated ingredients of one line into a single movement.
+            expected_by_item[item_id] += expected
+        for item_id, expected in expected_by_item.items():
+            ledger = ledger_by_key.get((line.id, item_id))
+            if ledger is None or ledger.unit_cost_snapshot is None or _consumed(ledger) != expected:
+                line_ok = False
+        # Applied stock for an ingredient the recipe no longer lists is a stale/corrected row: fail closed.
+        if any(_consumed(l) != 0 for (line_id, item_id), l in ledger_by_key.items() if line_id == line.id and item_id not in expected_by_item):
+            line_ok = False
         if line_ok:
             covered_lines.add(line.id)
             name = recipe.get("flowtallyMenuItemName") or line.name
@@ -132,7 +147,7 @@ def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int 
     ingredient_qty: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     ingredient_cost: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     for ledger in ledgers:
-        qty = Decimal(str(ledger.applied_quantity or 0))
+        qty = _consumed(ledger)
         ingredient_qty[ledger.inventory_item_id] += qty
         ingredient_cost[ledger.inventory_item_id] += qty * Decimal(str(ledger.unit_cost_snapshot or 0))
 
