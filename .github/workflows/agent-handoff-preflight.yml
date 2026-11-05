@@ -1,0 +1,44 @@
+# REVIEW-ONLY STAGING: This workflow is manual/read-only by design.
+# It does not claim issues, dispatch agents, approve reviews, merge, or deploy.
+# Owner approval and a separately authenticated reviewer are required before
+# any future PR enables push/review event triggers or GitHub writes.
+name: Agent handoff preflight (manual/read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR to inspect without modifying GitHub"
+        type: number
+        required: true
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  advisory-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout inspected code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify fail-closed evaluator
+        run: python -m unittest discover -s scripts/tests -p 'test_agent_handoff_audit.py' -v
+      - name: Inspect current PR without writing to GitHub
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          TRUSTED_REVIEWERS: ${{ vars.FLOWTALLY_TRUSTED_REVIEWERS }}
+        run: |
+          python scripts/agent_handoff_audit.py \
+            --repository "$REPOSITORY" \
+            --pr "$PR_NUMBER" \
+            --trusted-reviewers "$TRUSTED_REVIEWERS"
