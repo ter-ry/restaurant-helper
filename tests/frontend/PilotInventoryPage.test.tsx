@@ -609,9 +609,57 @@ describe("PilotInventoryPage", () => {
     fireEvent.change(await screen.findByLabelText("Item name"), { target: { value: "Test flour" } });
     const create = screen.getAllByRole("button", { name: "Create item" }).at(-1)!;
     fireEvent.click(create);
-    // The banner is at the top of the workspace; it must be announced, not only rendered off screen.
-    expect(await screen.findByRole("alert")).toHaveTextContent("Inventory save failed");
+    // A page-level banner would sit behind the dialog overlay, so the error must live inside the dialog.
+    const dialog = screen.getByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Inventory save failed");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(inventoryMocks.createPilotInventoryItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed supplier save inside the supplier dialog and keeps it editable", async () => {
+    inventoryMocks.updatePilotSupplier.mockReset();
+    inventoryMocks.createPilotSupplier.mockRejectedValue(new Error("Supplier save failed"));
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole("tab", { name: /Suppliers/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add supplier" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Supplier name"), { target: { value: "Harbour Dry Goods" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create supplier" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Supplier save failed");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByLabelText("Supplier name")).toHaveValue("Harbour Dry Goods");
+    expect(within(dialog).getByRole("button", { name: "Create supplier" })).toBeEnabled();
+    expect(inventoryMocks.createPilotSupplier).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a failed stock adjustment only in the adjustment dialog, not twice behind the item dialog", async () => {
+    inventoryMocks.createPilotInventoryAdjustment.mockReset();
+    inventoryMocks.createPilotInventoryAdjustment.mockRejectedValue(new Error("Adjustment failed"));
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
+    fireEvent.click(screen.getByRole("button", { name: "Adjust inventory" }));
+    const adjustmentDialog = await waitFor(() => {
+      const dialogs = screen.getAllByRole("dialog");
+      expect(dialogs).toHaveLength(2);
+      return dialogs[1];
+    });
+    fireEvent.change(within(adjustmentDialog).getByLabelText("Quantity delta (kg)"), { target: { value: "2" } });
+    fireEvent.change(within(adjustmentDialog).getByLabelText("Reason"), { target: { value: "Periodic review" } });
+    fireEvent.click(within(adjustmentDialog).getByRole("button", { name: "Save stock movement" }));
+
+    expect(await within(adjustmentDialog).findByRole("alert")).toHaveTextContent("Adjustment failed");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(inventoryMocks.createPilotInventoryAdjustment).toHaveBeenCalledTimes(1);
   });
 
   it("opens the create workspace full width and keeps stock counts navigation available", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, MoreHorizontal, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -194,12 +194,6 @@ export function PilotInventoryPage() {
   const [supplierEditorOpen, setSupplierEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const errorBannerRef = useRef<HTMLDivElement | null>(null);
-  // The banner sits at the top of the workspace. Inside the scrolled create/edit dialog it would be off
-  // screen after the submit button at the bottom is pressed, so bring a new error into view.
-  useEffect(() => {
-    if (error) errorBannerRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [error]);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
   const load = async () => {
@@ -724,6 +718,7 @@ export function PilotInventoryPage() {
           size="large"
           onClose={() => setSupplierEditorOpen(false)}
         >
+        {renderDialogFeedback({ withMessage: true })}
         <div className="rounded-2xl border border-line bg-slate-50 p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">{supplierDraft.id ? `Edit ${supplierDraft.name || "supplier"}` : "New supplier"}</p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -1240,9 +1235,24 @@ export function PilotInventoryPage() {
     </div>
   );
 
+  // Dialogs cover the page-level banners, so every mutation dialog owns its feedback region. A new error
+  // remounts the alert (key) and centers it, and it sticks below the dialog's sticky header so a long form
+  // never scrolls it out of sight or tucks it under that header.
+  const anyDialogOpen = supplierEditorOpen || workspaceMode !== "browse" || adjustmentModalOpen || wasteModalOpen;
+  const renderDialogFeedback = (options: { withMessage: boolean }) => (
+    <>
+      {error ? (
+        <div key={error} ref={(element) => element?.scrollIntoView?.({ block: "center" })} role="alert" className="sticky top-[4.75rem] z-[5] mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-soft">
+          {error}
+        </div>
+      ) : null}
+      {options.withMessage && message ? <div aria-live="polite" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
+    </>
+  );
+
   return (
     <div className="workspace-page">
-      {error ? <div ref={errorBannerRef} role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+      {error && !anyDialogOpen ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
         <>
           <div className="inventory-toolbar pilot-inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
@@ -1286,14 +1296,15 @@ export function PilotInventoryPage() {
               </div>
             </div>
           </div>
-          {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
+          {message && !anyDialogOpen ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
           {inventoryTab === "suppliers" ? renderSupplierWorkspace() : renderItemTable()}
         </>
       ) : null}
-      {workspaceMode === "create" ? <Modal title="Add inventory item" size="large" onClose={closeItemWorkspace}>{renderCreateWorkspace()}</Modal> : null}
-      {workspaceMode === "existing" ? <Modal title={selectedItemDetail?.name || draft.name || "Inventory item"} size="full" onClose={closeItemWorkspace}>{renderExistingWorkspace()}</Modal> : null}
+      {workspaceMode === "create" ? <Modal title="Add inventory item" size="large" onClose={closeItemWorkspace}>{renderDialogFeedback({ withMessage: false })}{renderCreateWorkspace()}</Modal> : null}
+      {workspaceMode === "existing" ? <Modal title={selectedItemDetail?.name || draft.name || "Inventory item"} size="full" onClose={closeItemWorkspace}>{adjustmentModalOpen || wasteModalOpen ? null : renderDialogFeedback({ withMessage: false })}{renderExistingWorkspace()}</Modal> : null}
       {adjustmentModalOpen ? (
         <Modal title="Adjust inventory" size="small" onClose={() => setAdjustmentModalOpen(false)}>
+          {renderDialogFeedback({ withMessage: true })}
           <p className="text-sm text-muted">Record a stock movement for {draft.name || "this item"} without changing its master data.</p>
           <div className="mt-5 space-y-4">
             <label className="block">
@@ -1319,6 +1330,7 @@ export function PilotInventoryPage() {
       ) : null}
       {wasteModalOpen ? (
         <Modal title="Record waste / loss" size="large" onClose={() => setWasteModalOpen(false)}>
+          {renderDialogFeedback({ withMessage: true })}
           <p className="text-sm text-muted">Waste is recorded separately from adjustments and becomes a linked inventory deduction.</p>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1" type="number" min="0" step="0.0001" value={wasteQuantity} onChange={(event) => setWasteQuantity(Number(event.target.value))} /></label>
