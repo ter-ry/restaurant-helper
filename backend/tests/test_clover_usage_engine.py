@@ -173,14 +173,14 @@ def test_malformed_recipe_after_apply_never_yields_a_figure(app):
     with app.app_context():
         org, loc, conn, order, line, chicken, buns = _scenario(app, "h")
         _apply(order, conn)
-        for bad in ("0", "-0.1800", "NaN", "Infinity", "bad"):
+        for bad in ("0", "-0.1800", "NaN", "sNaN", "Infinity", "-Infinity", "1E+40", "bad"):
             _set_recipe(line, chicken, buns, bad)
             r = clover_usage_for_day(loc, DAY, net_sales_cents=1000)
             assert not r["usageAvailable"] and r["usageCostCents"] is None and r["foodCostPercent"] is None, bad
-            if bad in {"NaN", "Infinity"}:
-                continue  # clover_inventory._base_plan raises InvalidOperation on these (separate finding); usage still fails closed
             before = _movements(org)
-            assert _apply(order, conn)["applied"] is False and _movements(org) == before, bad
+            result = _apply(order, conn)  # must return an ineligible plan, never raise
+            assert result["applied"] is False and result["eligible"] is False and _movements(org) == before, bad
+            assert result["reason"] in {"invalid_recipe_quantity", "invalid_recipe_ingredient"}, bad
 
 
 def test_positive_or_legacy_signed_ledger_rows_fail_closed(app):
