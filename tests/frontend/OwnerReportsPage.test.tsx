@@ -202,6 +202,46 @@ describe("OwnerReportsPage", () => {
     );
   });
 
+  it("downloads the exact summary rows for a completed close as the backend reports it (Complete)", async () => {
+    mocks.fetchCustomerSession.mockResolvedValueOnce({
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: 42,
+      currentLocationId: 7,
+      organizations: [{ organization: { id: 42, name: "Queen St Cafe", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE" }, membershipRole: "owner", selected: true }],
+      csrfToken: "csrf-token",
+    });
+    mocks.fetchPilotDashboard.mockResolvedValueOnce({
+      summary: { inventoryItemCount: 12, inventoryMovementCount: 9, recentPriceChangeCount: 0 },
+      recentInvoices: [], recentMovements: [], recentPriceChanges: [], pendingDraftInvoices: [], pendingDraftCountSessions: [], pendingDraftReorderPlans: [],
+      supplierSpend: [{ supplier: "Dairy Co", spend: 240.5, invoiceCount: 3 }],
+      reorderSuggestions: [],
+      workflow: { purchase: "Done", review: "Done", inventory: "Updated", reorder: "Done", close: "Complete", export: "Not ready" },
+    });
+    mocks.fetchPilotPurchases.mockResolvedValueOnce({
+      invoices: [], suppliers: [], purchaseLines: [], priceChanges: [],
+      summary: { thisMonthSpend: 0, uploadsNeedingReview: 0, priceChangesFlagged: 0, mappedItems: 0, exportReady: 3, needsMapping: 0 },
+      exportReadiness: { readyForCsv: 3, needsReview: 0, needsMapping: 0, quickBooksFutureOnly: true },
+    });
+    mocks.fetchCustomerAuditEvents.mockResolvedValueOnce({ events: [] });
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Reports & exports" });
+    fireEvent.click(screen.getByRole("button", { name: "Download summary CSV" }));
+    expect(mocks.downloadCsvFile).toHaveBeenCalledTimes(1);
+    const [filename, rows] = mocks.downloadCsvFile.mock.calls[0];
+    expect(filename).toBe("flowtally-owner-report-queen-st-cafe.csv");
+    expect(rows).toEqual([
+      { section: "Purchase CSV", status: "Ready", detail: "3 invoices are ready for bookkeeping export." },
+      { section: "Supplier spend", status: "Ready", detail: "Dairy Co leads spending this period." },
+      { section: "Inventory summary", status: "Ready", detail: "12 items and 9 movement records tracked." },
+      { section: "Daily close", status: "Complete", detail: "Close workflow is caught up." },
+      { section: "Price changes", status: "No events", detail: "No price changes were detected." },
+      { section: "Monthly owner report", status: "Ready", detail: "Queen St Cafe is ready for the accountant handoff when the blockers clear." },
+      { section: "Audit trail", status: "No events", detail: "No audit events have been recorded yet." },
+    ]);
+  });
+
   it("shows the owner-only permission state for non-owner sessions", async () => {
     mocks.fetchCustomerSession.mockResolvedValueOnce({
       user: { id: 1, email: "manager@example.com", isActive: true, createdAt: null, updatedAt: null },
