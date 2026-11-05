@@ -8,7 +8,7 @@ Current scope: one restaurant tenant, DB-backed pilot workspace under `/app`, pu
 - [x] Supplier status / active-state control
 - [ ] Supplier archive/delete policy
 - [ ] Supplier-item mapping management UI
-- [ ] Bulk import / bulk edit
+- [ ] Bulk import / bulk edit (existing import verified, gaps listed in [import-capability-matrix.md](import-capability-matrix.md); bulk edit awaits #198)
 
 ## Milestone 2: Complete invoice workflow
 - [x] Draft invoice create and edit

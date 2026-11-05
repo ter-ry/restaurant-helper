@@ -31,6 +31,7 @@ export const DATA_IMPORT_FIELDS: Record<string, DataImportFieldSpec[]> = {
   supplier_item_mapping: [
     { field: "supplierName", label: "Supplier name", required: true },
     { field: "inventoryItemName", label: "Inventory item name", required: true },
+    { field: "locationName", label: "Location name", required: true },
     { field: "supplierItemName", label: "Supplier item name", required: true },
     { field: "purchaseUnit", label: "Purchase unit", required: false },
     { field: "inventoryUnit", label: "Inventory unit", required: false },
