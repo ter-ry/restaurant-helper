@@ -2600,3 +2600,64 @@ test("OCR upload opens the structured review workspace with source evidence", as
   await expect(page.getByText("Needs mapping")).toBeVisible();
 });
 
+
+test("Clover Daily Close shows the provider, exact figures and unavailable cash at phone width without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const organization = makeOrganization({ id: 42, name: "Clover Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({
+      currentOrganizationId: organization.id,
+      currentLocationId: 7,
+      enabledModuleKeys: ["PURCHASES", "INVENTORY", "DAILY_CLOSE"],
+      organizations: [{ organization, membershipRole: "owner", selected: true }],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: organization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+  const businessDate = new Date().toLocaleDateString("en-CA");
+  const reason = "Cash reconciliation unavailable: Clover did not report the payment type for every paid order.";
+  const usage = {
+    period: { startAt: "2026-08-30T04:00:00Z", endAt: "2026-08-31T03:59:59Z" },
+    coverage: {},
+    totals: { theoreticalUsage: null, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+    contributingMenuItems: [],
+    unmappedVariations: [],
+    ingredientUsage: [],
+  };
+  const snapshot = {
+    provider: "clover",
+    healthStatus: "Ready with warnings",
+    inventoryValue: 1250,
+    sales: { provider: "clover", cloverStatus: "connected", locationMapped: true, orders: 4, netSales: 36, netSalesAvailable: true, tax: 4.68, tips: 1.5, deliveryOrders: 1, excludedOrders: 0, grossSales: null, discounts: null, refunds: null, cancelledOrders: null },
+    usage,
+    foodCost: { available: false, usageCostCents: null, netSalesCents: 3600, percent: null, unavailableReason: "Usage cost is not complete for this day." },
+    variance: { quantity: null, percent: null, value: null },
+    reconciliation: { recordedWasteQuantity: 0, recordedWasteCost: 0, otherAdjustmentQuantity: 0 },
+    cashReconciliation: { status: "unavailable", mode: "clover_cash_tenders", expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null, reason, varianceStatus: "unavailable", varianceUnavailableReason: reason },
+    attentionItems: [{ type: "clover_cash_unavailable", title: "Cash reconciliation unavailable", severity: "info", detail: reason }],
+    manualReconciliation: {},
+    readyToFinalize: true,
+  };
+  const session = { id: 9, organizationId: 42, locationId: 7, businessDate, status: "DRAFT", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: [], notes: "", completedAt: null, completedByUserId: null, createdByUserId: 1, createdAt: nowIso(), updatedAt: nowIso(), currentSnapshot: snapshot };
+  await page.route("**/api/pilot/daily-close**", async (route) => {
+    await jsonResponse(route, { session, snapshot, usage, exceptions: [], history: [session], location: { id: 7, name: "Queen St Cafe", timezone: "America/Toronto" }, businessDate, square: null });
+  });
+
+  await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("h1").filter({ hasText: "Daily Close" })).toBeVisible();
+  await expect(page.getByTestId("clover-net-sales")).toHaveText("$36.00");
+  await expect(page.getByTestId("clover-food-cost")).toHaveText("Unavailable");
+  await expect(page.getByText("Open Clover settings").first()).toBeVisible();
+  await expect(page.getByText("Expected cash", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("variance-unavailable")).toContainText(reason);
+  await expect(page.locator("body")).not.toContainText("Square");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

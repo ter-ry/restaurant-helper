@@ -32,3 +32,14 @@ Status: **direction approved by the owner; decisions below are final. No code is
 2. Cash: verified Clover cash-tender total = expected cash; manual counted cash entry gives variance; unavailable state if tender data incomplete.
 3. One active POS provider per location.
 4. Delivery orders in verified Clover sales data are included in sales, costing and inventory; payout reconciliation not required.
+
+## Implementation status (#222, slice 4)
+Implemented in `backend/clover_daily_close.py` (builder) with a provider switch in `backend/daily_close.py`. A location uses the Clover path only when Clover is its sole active provider; every other location keeps the unchanged Square path (guarded by `backend/tests/test_daily_close_square_golden.py`, generated from `main` before this change). Daily Close UI shows the provider, exact or "Unavailable" figures and cash variance.
+
+Known limits, all fail-closed (never zero or invented):
+- **Usage cost / food-cost % are unavailable for real engine data** until #240 is fixed: `clover_usage.py` compares the ledger's signed (negative) `applied_quantity` with the positive recipe quantity.
+- **Expected cash** is unavailable whenever any day order lacks a tender identifier or is excluded for review (refund, incomplete evidence); the order fetch does not yet request tender detail, so expect "unavailable" until it does.
+- **Physical-count usage variance** for Clover is not provided (actual usage and variance stay unavailable).
+- **Owner Reports** (`backend/reporting.py`) and the completed-close CSV are unchanged and remain Square-sourced; the CSV has no provider column so the Square export stays byte-identical.
+- Sales reflect Clover orders already fetched into Flowtally; there is no Daily Close sync for Clover.
+- Not externally verified: needs #166 Sandbox evidence. `CLOVER_ORDER_INVENTORY_ENABLED` is unchanged.

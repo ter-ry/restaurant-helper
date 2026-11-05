@@ -21,7 +21,9 @@ from .square_integration import (
     ensure_square_orders_fresh,
     sync_square_orders_for_range,
 )
-from .pos import CLOVER_SALE_SOURCE_TYPES
+from .clover_daily_close import build_clover_snapshot
+from .pos import CLOVER_SALE_SOURCE_TYPES, PosProvider
+from .pos_provider import other_active_provider
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
 bp = Blueprint("daily_close", __name__)
@@ -431,9 +433,22 @@ def _attention_items(summary: dict[str, Any], usage: dict[str, Any], location: R
         items.append({"type": "sales_exceptions", "title": "Refunds or cancellations", "severity": "info", "href": "/app/square", "detail": "Review finalized Square sales before completing the close."})
     return items
 
+def _location_uses_clover(organization_id: int, location: RestaurantLocation) -> bool:
+    """True only when Clover is the sole active POS for this location (one provider per location).
+
+    A location with no active provider, or with Square active, keeps the existing Square path unchanged.
+    """
+    return (
+        other_active_provider(location.id, organization_id, PosProvider.SQUARE) == PosProvider.CLOVER
+        and other_active_provider(location.id, organization_id, PosProvider.CLOVER) is None
+    )
+
+
 def _daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
-    connection = _connection_for_organization(organization.id)
     start_at, end_at = _business_date_bounds(location, business_date)
+    if _location_uses_clover(organization.id, location):
+        return build_clover_snapshot(organization, location, business_date, start_at=start_at, end_at=end_at, inventory_value=_inventory_value(location.id))
+    connection = _connection_for_organization(organization.id)
     freshness = ensure_square_orders_fresh(
         organization,
         connection,
@@ -694,7 +709,7 @@ def daily_close():
             "history": history,
             "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
             "businessDate": business_date.isoformat(),
-            "square": snapshot["square"],
+            "square": snapshot.get("square"),
         }
     ), 200
 
@@ -756,7 +771,7 @@ def open_daily_close():
             "history": history,
             "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
             "businessDate": business_date.isoformat(),
-            "square": snapshot["square"],
+            "square": snapshot.get("square"),
         }
     ), 200
 
@@ -777,6 +792,8 @@ def sync_daily_close_sales(session_id: int):
     location = next((entry for entry in locations if entry.id == session_record.location_id), None)
     if location is None:
         return json_error("Restaurant location not found.", 404)
+    if _location_uses_clover(organization.id, location):
+        return json_error("Clover sales are read from the orders already fetched in Clover settings; there is nothing to sync from Daily Close.", 409)
     connection = _connection_for_organization(organization.id)
     if connection is None:
         return json_error("Square is not connected.", 409)
@@ -818,7 +835,7 @@ def sync_daily_close_sales(session_id: int):
             "history": history,
             "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
             "businessDate": session_record.business_date.isoformat(),
-            "square": snapshot["square"],
+            "square": snapshot.get("square"),
         }
     ), 200
 
@@ -862,7 +879,7 @@ def update_daily_close(session_id: int):
             ],
             "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
             "businessDate": session_record.business_date.isoformat(),
-            "square": snapshot["square"],
+            "square": snapshot.get("square"),
         }
     ), 200
 
@@ -888,7 +905,8 @@ def finalize_daily_close(session_id: int):
     stored_cash = (session_record.summary_snapshot_json or {}).get("cashReconciliation") or {}
     fresh_cash = snapshot.get("cashReconciliation") or {}
     # Only when the read failed (not when Square answered with a still-open or uncounted drawer): that answer is current.
-    if fresh_cash.get("expectedCash") is None and fresh_cash.get("mode") != "drawer_shift" and stored_cash.get("expectedCash") is not None:
+    # Clover reads local stored orders, so a missing figure there is current truth, never a failed read to paper over.
+    if snapshot.get("provider") != "clover" and fresh_cash.get("expectedCash") is None and fresh_cash.get("mode") != "drawer_shift" and stored_cash.get("expectedCash") is not None:
         snapshot["cashReconciliation"] = {**stored_cash, "carriedFromDraft": True, "carriedFromDraftReason": fresh_cash.get("reason")}
     # Keep the manually counted cash and its variance in the frozen record, as update and sync do.
     snapshot = _merge_manual_reconciliation(snapshot, session_record)
@@ -915,6 +933,6 @@ def finalize_daily_close(session_id: int):
             ],
             "location": {"id": location.id, "name": location.name, "timezone": location.timezone},
             "businessDate": session_record.business_date.isoformat(),
-            "square": snapshot["square"],
+            "square": snapshot.get("square"),
         }
     ), 200

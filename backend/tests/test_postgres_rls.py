@@ -4943,3 +4943,69 @@ def test_provider_mapping_cannot_target_another_organizations_location(postgres_
     with postgres_app.app_context():
         _set_rls_context(access_scope="customer", organization_id=org_id)
         assert _active_providers_at(org_id, other_location_id) == (0, 0)
+
+
+def test_clover_daily_close_snapshot_reads_only_the_callers_tenant_under_rls(postgres_app):
+    """#222: the Clover Daily Close builder under forced RLS returns exact figures for its own tenant only.
+
+    Org A has one cash order (amount 1130, tax 130, tip 150 -> net 1000, cash 1280). Org B has a large order on the
+    same day. With org A's context the builder must see A's figures, and B's location must look empty (the
+    application filters by organization AND RLS hides the rows). Org B's context sees only B.
+    """
+    from datetime import date, datetime, timezone
+    from backend.clover_daily_close import build_clover_snapshot
+    from backend.daily_close import _business_date_bounds, _location_uses_clover
+    from backend.models import CloverConnection, CloverLocationMapping, CloverShadowOrder, Organization, RestaurantLocation, User
+
+    day = date(2026, 8, 30)
+    closed = datetime(2026, 8, 30, 16, 0, tzinfo=timezone.utc)
+    application = postgres_app
+    with application.app_context():
+        _set_rls_context(access_scope="setup", user_id=None)
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        made = {}
+        for key, amount, tax, tip in (("a", 1130, 130, 150), ("b", 999000, 99000, 0)):
+            organization = make_operational_organization(owner, name=f"Clover close {key} {uuid4()}", location_name=f"Site {key}")
+            _set_rls_context(access_scope="setup", user_id=None)  # the helper commits, which drops the transaction-local context
+            location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+            organization_id, location_id = organization.id, location.id
+            _set_rls_context(access_scope="organization", organization_id=organization_id, user_id=owner_id)
+            connection = CloverConnection(organization_id=organization.id, environment="sandbox", merchant_id=f"m-{key}-{uuid4().hex[:6]}", status="connected", access_token_ciphertext="x")
+            db.session.add(connection)
+            db.session.flush()
+            db.session.add(CloverLocationMapping(clover_connection_id=connection.id, organization_id=organization.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id))
+            db.session.add(CloverShadowOrder(
+                organization_id=organization.id, clover_connection_id=connection.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id,
+                clover_order_id=f"o-{key}-{uuid4().hex[:6]}", normalized_status="paid", requires_review=False, source_closed_at=closed,
+                raw_payload_json={"payments": [{"id": "p", "amount": amount, "result": "SUCCESS", "taxAmount": tax, "tipAmount": tip, "tender": "com.clover.tender.cash"}], "orderType": ""},
+            ))
+            db.session.commit()
+            made[key] = (organization_id, location_id)
+            _set_rls_context(access_scope="setup", user_id=None)
+
+    def snapshot_for(context_org_id, target_org_id, target_location_id):
+        with application.app_context():
+            _set_rls_context(access_scope="organization", organization_id=context_org_id, user_id=owner_id)
+            organization = db.session.get(Organization, target_org_id)
+            location = RestaurantLocation.query.filter_by(id=target_location_id, organization_id=target_org_id).first()
+            if organization is None or location is None:
+                return None, None
+            uses_clover = _location_uses_clover(target_org_id, location)
+            start_at, end_at = _business_date_bounds(location, day)
+            snapshot, _, _, _ = build_clover_snapshot(organization, location, day, start_at=start_at, end_at=end_at, inventory_value=0.0)
+            return uses_clover, snapshot
+
+    a_org, a_loc = made["a"]
+    b_org, b_loc = made["b"]
+    uses, snap_a = snapshot_for(a_org, a_org, a_loc)
+    assert uses is True
+    assert (snap_a["provider"], snap_a["sales"]["orders"], snap_a["sales"]["netSales"], snap_a["sales"]["tax"], snap_a["sales"]["tips"]) == ("clover", 1, 10.0, 1.3, 1.5)
+    assert snap_a["cashReconciliation"]["expectedCash"] == 12.8 and snap_a["cashReconciliation"]["status"] == "available"
+
+    # Org A's session cannot read org B's tenant: its rows are hidden, so nothing is returned or counted.
+    leaked, snap_cross = snapshot_for(a_org, b_org, b_loc)
+    assert leaked is None and snap_cross is None
+
+    uses_b, snap_b = snapshot_for(b_org, b_org, b_loc)
+    assert uses_b is True and snap_b["sales"]["orders"] == 1 and snap_b["sales"]["netSales"] == 9000.0 and snap_b["cashReconciliation"]["expectedCash"] == 9990.0

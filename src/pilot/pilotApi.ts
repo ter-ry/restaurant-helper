@@ -766,6 +766,8 @@ export interface PilotDailyCloseSession {
 }
 
 export interface PilotDailyCloseSnapshot {
+  /** Present only for Clover locations ("clover"); Square snapshots omit it and keep the Square block below. */
+  provider?: "clover" | string;
   healthStatus: string;
   inventoryValue: number;
   sales: Record<string, unknown>;
@@ -781,11 +783,15 @@ export interface PilotDailyCloseSnapshot {
     contributingMenuItems: Array<Record<string, unknown>>;
     unmappedVariations: Array<Record<string, unknown>>;
     ingredientUsage: Array<Record<string, unknown>>;
+    /** Clover only: whether ledger usage and food cost are complete for the day. */
+    availability?: { usageAvailable: boolean; usageCostCents: number | null; foodCostPercent: number | null; mixedUnits: boolean };
   };
+  /** Clover only. */
+  foodCost?: { available: boolean; usageCostCents: number | null; netSalesCents: number | null; percent: number | null; unavailableReason: string | null };
   variance: {
     quantity: number | null;
     percent: number | null;
-    value: number;
+    value: number | null;
   };
   cashReconciliation?: CashReconciliation;
   manualReconciliation?: { countedCash?: number };
@@ -795,7 +801,8 @@ export interface PilotDailyCloseSnapshot {
     recordedWasteCost?: number;
     otherAdjustmentQuantity?: number;
   };
-  square: Record<string, unknown>;
+  /** Absent for Clover locations. */
+  square?: Record<string, unknown>;
   readyToFinalize: boolean;
 }
 
@@ -852,7 +859,7 @@ export interface PilotDailyCloseResponse {
   history: PilotDailyCloseSession[];
   location: { id: number; name: string; timezone: string };
   businessDate: string;
-  square: Record<string, unknown>;
+  square?: Record<string, unknown> | null;
 }
 
 export type PilotSquareConnectionSummary = SquareConnectionSummary;

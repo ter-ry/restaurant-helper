@@ -1,0 +1,4051 @@
+{
+  "counted": {
+    "businessDate": "2026-08-30",
+    "exceptions": [
+      "Refunds/cancellations present.",
+      "Square cash drawer short."
+    ],
+    "history": [
+      {
+        "businessDate": "2026-08-30",
+        "completedAt": null,
+        "completedByUserId": null,
+        "createdAt": "<timestamp>",
+        "createdByUserId": "<id>",
+        "currentSnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            },
+            {
+              "detail": "$10.00 short",
+              "severity": "warning",
+              "title": "Cash drawer short",
+              "type": "cash_variance"
+            },
+            {
+              "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+              "severity": "warning",
+              "title": "Staff count differs from Square's drawer count",
+              "type": "cash_count_disagreement"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "countedCash": 490.0,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": -10.0,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDifference": -5.0,
+            "providerCountDisagrees": true,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "available"
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {
+            "countedCash": 490.0
+          },
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "exceptionsSnapshot": [
+          "Refunds/cancellations present.",
+          "Square cash drawer short."
+        ],
+        "id": "<id>",
+        "locationId": "<id>",
+        "notes": "",
+        "organizationId": "<id>",
+        "status": "DRAFT",
+        "summarySnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            },
+            {
+              "detail": "$10.00 short",
+              "severity": "warning",
+              "title": "Cash drawer short",
+              "type": "cash_variance"
+            },
+            {
+              "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+              "severity": "warning",
+              "title": "Staff count differs from Square's drawer count",
+              "type": "cash_count_disagreement"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "countedCash": 490.0,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": -10.0,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDifference": -5.0,
+            "providerCountDisagrees": true,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "available"
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {
+            "countedCash": 490.0
+          },
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "updatedAt": "<timestamp>",
+        "usageSnapshot": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "locationId": "<id>",
+          "organizationId": "<id>",
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": [],
+          "warnings": []
+        }
+      }
+    ],
+    "location": {
+      "id": "<id>",
+      "name": "Queen St Cafe",
+      "timezone": "America/Toronto"
+    },
+    "session": {
+      "businessDate": "2026-08-30",
+      "completedAt": null,
+      "completedByUserId": null,
+      "createdAt": "<timestamp>",
+      "createdByUserId": "<id>",
+      "currentSnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          },
+          {
+            "detail": "$10.00 short",
+            "severity": "warning",
+            "title": "Cash drawer short",
+            "type": "cash_variance"
+          },
+          {
+            "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+            "severity": "warning",
+            "title": "Staff count differs from Square's drawer count",
+            "type": "cash_count_disagreement"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "countedCash": 490.0,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": -10.0,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDifference": -5.0,
+          "providerCountDisagrees": true,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "available"
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {
+          "countedCash": 490.0
+        },
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "exceptionsSnapshot": [
+        "Refunds/cancellations present.",
+        "Square cash drawer short."
+      ],
+      "id": "<id>",
+      "locationId": "<id>",
+      "notes": "",
+      "organizationId": "<id>",
+      "status": "DRAFT",
+      "summarySnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          },
+          {
+            "detail": "$10.00 short",
+            "severity": "warning",
+            "title": "Cash drawer short",
+            "type": "cash_variance"
+          },
+          {
+            "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+            "severity": "warning",
+            "title": "Staff count differs from Square's drawer count",
+            "type": "cash_count_disagreement"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "countedCash": 490.0,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": -10.0,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDifference": -5.0,
+          "providerCountDisagrees": true,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "available"
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {
+          "countedCash": 490.0
+        },
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "updatedAt": "<timestamp>",
+      "usageSnapshot": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "locationId": "<id>",
+        "organizationId": "<id>",
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": [],
+        "warnings": []
+      }
+    },
+    "snapshot": {
+      "attentionItems": [
+        {
+          "detail": "Review finalized Square sales before completing the close.",
+          "href": "/app/square",
+          "severity": "info",
+          "title": "Refunds or cancellations",
+          "type": "sales_exceptions"
+        },
+        {
+          "detail": "$5.00 short per Square",
+          "severity": "warning",
+          "title": "Square reports the cash drawer short",
+          "type": "provider_cash_variance"
+        },
+        {
+          "detail": "$10.00 short",
+          "severity": "warning",
+          "title": "Cash drawer short",
+          "type": "cash_variance"
+        },
+        {
+          "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+          "severity": "warning",
+          "title": "Staff count differs from Square's drawer count",
+          "type": "cash_count_disagreement"
+        }
+      ],
+      "cashReconciliation": {
+        "basis": "calculated_drawer_cash",
+        "capturedAt": "<timestamp>",
+        "cashPayments": 450.0,
+        "cashRefunds": 20.0,
+        "closedCash": 495.0,
+        "closedShiftCount": 1,
+        "countedCash": 490.0,
+        "expectedCash": 500.0,
+        "expectedCashComplete": true,
+        "expectedCashUnavailableReason": null,
+        "mode": "drawer_shift",
+        "openShiftCount": 0,
+        "openingFloat": 100.0,
+        "overShort": -10.0,
+        "paidIn": 0.0,
+        "paidOut": 30.0,
+        "partialExpectedCash": null,
+        "possibleMatches": [],
+        "providerClosedCash": 495.0,
+        "providerCountDifference": -5.0,
+        "providerCountDisagrees": true,
+        "providerOverShort": -5.0,
+        "reconciledExpectedCash": 500.0,
+        "reconciledShiftCount": 1,
+        "reconnectRequired": false,
+        "shiftCount": 1,
+        "shifts": [
+          {
+            "closedAt": "2026-08-30T22:00:00Z",
+            "closedCash": 495.0,
+            "expectedCash": null,
+            "id": "SHIFT-1",
+            "openedAt": "2026-08-30T11:00:00Z",
+            "state": "CLOSED"
+          }
+        ],
+        "status": "available",
+        "unreconciledShiftCount": 0,
+        "varianceStatus": "available"
+      },
+      "healthStatus": "Ready with warnings",
+      "inventoryValue": 0.0,
+      "manualReconciliation": {
+        "countedCash": 490.0
+      },
+      "readyToFinalize": true,
+      "reconciliation": {
+        "otherAdjustmentQuantity": 0.0,
+        "physicalCountCorrectionQuantity": 0.0,
+        "recordedWasteCost": 0.0,
+        "recordedWasteQuantity": 0.0,
+        "theoreticalPosUsage": 0,
+        "unexplainedVarianceQuantity": null
+      },
+      "sales": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "square": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "usage": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": []
+      },
+      "variance": {
+        "percent": null,
+        "quantity": null,
+        "value": 0.0
+      }
+    },
+    "square": {
+      "cancelledOrders": 1,
+      "discounts": 40.0,
+      "environment": "production",
+      "freshness": {
+        "state": "fresh"
+      },
+      "grossSales": 800.0,
+      "lastSyncAt": "2026-08-30T23:00:00",
+      "locationMapped": true,
+      "netSales": 740.0,
+      "orders": 30,
+      "refunds": 20.0,
+      "squareLocationIds": [
+        "LOC-A"
+      ],
+      "squareMerchantId": "<merchant>",
+      "squareStatus": "connected",
+      "squareSynced": true,
+      "syncError": "",
+      "syncStatus": "idle",
+      "tax": 100.0,
+      "tips": 60.0
+    },
+    "usage": {
+      "contributingMenuItems": [],
+      "coverage": {
+        "calculableSalesCoveragePercent": 0,
+        "calculableSoldUnits": 0.0,
+        "excludedCancelledUnits": 0.0,
+        "excludedIncompleteUnits": 0.0,
+        "excludedUnmappedUnits": 0.0,
+        "mappedSalesCoveragePercent": 0,
+        "mappedSoldUnits": 0.0,
+        "mappedVariationCount": 0,
+        "totalSoldUnits": 0.0,
+        "unmappedVariationCount": 0
+      },
+      "ingredientUsage": [],
+      "locationId": "<id>",
+      "organizationId": "<id>",
+      "period": {
+        "endAt": "2026-08-31T03:59:59Z",
+        "startAt": "2026-08-30T04:00:00Z"
+      },
+      "totals": {
+        "actualUsage": null,
+        "discrepancy": null,
+        "discrepancyPercent": null,
+        "theoreticalUsage": 0.0
+      },
+      "unmappedVariations": [],
+      "warnings": []
+    }
+  },
+  "dailyReport": {
+    "changes": null,
+    "costing": {
+      "costCoveragePercent": 0,
+      "costReadySalesAmount": 0.0,
+      "estimatedFoodCostPercent": null,
+      "totalMappedMenuSalesAmount": 0.0
+    },
+    "exceptions": [
+      {
+        "entityType": "stock_count",
+        "href": "/app/stock-counts",
+        "severity": "info",
+        "title": "No completed count evidence",
+        "type": "missing_count_evidence"
+      }
+    ],
+    "generatedAt": "<wall-clock>",
+    "inventory": {
+      "recentMovements": [],
+      "reorderNow": [],
+      "statusCounts": {
+        "inStock": 0,
+        "lowStock": 0,
+        "outOfStock": 0,
+        "reorderNow": 0
+      },
+      "summary": {
+        "inventoryCountNeededCount": 0,
+        "inventoryItemCount": 0,
+        "inventoryLowStockCount": 0,
+        "inventoryMovementCount": 0,
+        "inventoryOutOfStockCount": 0,
+        "inventoryReceiptCount": 0,
+        "inventoryReorderNowCount": 0,
+        "inventoryValue": 0
+      }
+    },
+    "period": {
+      "endDate": "2026-08-30",
+      "priorEndDate": null,
+      "priorStartDate": null,
+      "startDate": "2026-08-30",
+      "view": "daily"
+    },
+    "purchasing": {
+      "completedInvoiceCount": 0,
+      "draftInvoiceCount": 0,
+      "invoiceCount": 0,
+      "needsReviewCount": 0,
+      "spend": 0.0,
+      "supplierSpend": []
+    },
+    "sales": {
+      "byMenuItem": [],
+      "cancelledOrderCount": 1,
+      "currency": "CAD",
+      "discounts": 50.0,
+      "grossItemSales": 1200.0,
+      "netItemSales": 1150.0,
+      "orderCount": 45,
+      "refunds": 20.0,
+      "source": "square_daily_sales_summaries",
+      "tax": 150.0,
+      "tips": 80.0,
+      "totalCollected": 1130.0,
+      "unitsSold": null,
+      "unmappedLines": []
+    },
+    "scope": {
+      "locationId": "<id>",
+      "locationName": "Queen St Cafe",
+      "organizationId": "<id>",
+      "timezone": "America/Toronto"
+    },
+    "usageVariance": {
+      "message": "No completed count evidence for this period",
+      "rows": [],
+      "valid": false
+    },
+    "variance": {
+      "completedCountSessions": 0,
+      "lineCount": 0,
+      "missingCountEvidence": true,
+      "rows": [],
+      "varianceExceptionCount": 0
+    }
+  },
+  "finalized": {
+    "businessDate": "2026-08-30",
+    "exceptions": [
+      "Refunds/cancellations present.",
+      "Square cash drawer short."
+    ],
+    "history": [
+      {
+        "businessDate": "2026-08-30",
+        "completedAt": "<timestamp>",
+        "completedByUserId": "<id>",
+        "createdAt": "<timestamp>",
+        "createdByUserId": "<id>",
+        "currentSnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            },
+            {
+              "detail": "$10.00 short",
+              "severity": "warning",
+              "title": "Cash drawer short",
+              "type": "cash_variance"
+            },
+            {
+              "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+              "severity": "warning",
+              "title": "Staff count differs from Square's drawer count",
+              "type": "cash_count_disagreement"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "countedCash": 490.0,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": -10.0,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDifference": -5.0,
+            "providerCountDisagrees": true,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "available"
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {
+            "countedCash": 490.0
+          },
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "exceptionsSnapshot": [
+          "Refunds/cancellations present.",
+          "Square cash drawer short."
+        ],
+        "id": "<id>",
+        "locationId": "<id>",
+        "notes": "",
+        "organizationId": "<id>",
+        "status": "COMPLETED",
+        "summarySnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            },
+            {
+              "detail": "$10.00 short",
+              "severity": "warning",
+              "title": "Cash drawer short",
+              "type": "cash_variance"
+            },
+            {
+              "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+              "severity": "warning",
+              "title": "Staff count differs from Square's drawer count",
+              "type": "cash_count_disagreement"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "countedCash": 490.0,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": -10.0,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDifference": -5.0,
+            "providerCountDisagrees": true,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "available"
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {
+            "countedCash": 490.0
+          },
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "updatedAt": "<timestamp>",
+        "usageSnapshot": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "locationId": "<id>",
+          "organizationId": "<id>",
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": [],
+          "warnings": []
+        }
+      }
+    ],
+    "location": {
+      "id": "<id>",
+      "name": "Queen St Cafe",
+      "timezone": "America/Toronto"
+    },
+    "session": {
+      "businessDate": "2026-08-30",
+      "completedAt": "<timestamp>",
+      "completedByUserId": "<id>",
+      "createdAt": "<timestamp>",
+      "createdByUserId": "<id>",
+      "currentSnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          },
+          {
+            "detail": "$10.00 short",
+            "severity": "warning",
+            "title": "Cash drawer short",
+            "type": "cash_variance"
+          },
+          {
+            "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+            "severity": "warning",
+            "title": "Staff count differs from Square's drawer count",
+            "type": "cash_count_disagreement"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "countedCash": 490.0,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": -10.0,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDifference": -5.0,
+          "providerCountDisagrees": true,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "available"
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {
+          "countedCash": 490.0
+        },
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "exceptionsSnapshot": [
+        "Refunds/cancellations present.",
+        "Square cash drawer short."
+      ],
+      "id": "<id>",
+      "locationId": "<id>",
+      "notes": "",
+      "organizationId": "<id>",
+      "status": "COMPLETED",
+      "summarySnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          },
+          {
+            "detail": "$10.00 short",
+            "severity": "warning",
+            "title": "Cash drawer short",
+            "type": "cash_variance"
+          },
+          {
+            "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+            "severity": "warning",
+            "title": "Staff count differs from Square's drawer count",
+            "type": "cash_count_disagreement"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "countedCash": 490.0,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": -10.0,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDifference": -5.0,
+          "providerCountDisagrees": true,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "available"
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {
+          "countedCash": 490.0
+        },
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "updatedAt": "<timestamp>",
+      "usageSnapshot": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "locationId": "<id>",
+        "organizationId": "<id>",
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": [],
+        "warnings": []
+      }
+    },
+    "snapshot": {
+      "attentionItems": [
+        {
+          "detail": "Review finalized Square sales before completing the close.",
+          "href": "/app/square",
+          "severity": "info",
+          "title": "Refunds or cancellations",
+          "type": "sales_exceptions"
+        },
+        {
+          "detail": "$5.00 short per Square",
+          "severity": "warning",
+          "title": "Square reports the cash drawer short",
+          "type": "provider_cash_variance"
+        },
+        {
+          "detail": "$10.00 short",
+          "severity": "warning",
+          "title": "Cash drawer short",
+          "type": "cash_variance"
+        },
+        {
+          "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+          "severity": "warning",
+          "title": "Staff count differs from Square's drawer count",
+          "type": "cash_count_disagreement"
+        }
+      ],
+      "cashReconciliation": {
+        "basis": "calculated_drawer_cash",
+        "capturedAt": "<timestamp>",
+        "cashPayments": 450.0,
+        "cashRefunds": 20.0,
+        "closedCash": 495.0,
+        "closedShiftCount": 1,
+        "countedCash": 490.0,
+        "expectedCash": 500.0,
+        "expectedCashComplete": true,
+        "expectedCashUnavailableReason": null,
+        "mode": "drawer_shift",
+        "openShiftCount": 0,
+        "openingFloat": 100.0,
+        "overShort": -10.0,
+        "paidIn": 0.0,
+        "paidOut": 30.0,
+        "partialExpectedCash": null,
+        "possibleMatches": [],
+        "providerClosedCash": 495.0,
+        "providerCountDifference": -5.0,
+        "providerCountDisagrees": true,
+        "providerOverShort": -5.0,
+        "reconciledExpectedCash": 500.0,
+        "reconciledShiftCount": 1,
+        "reconnectRequired": false,
+        "shiftCount": 1,
+        "shifts": [
+          {
+            "closedAt": "2026-08-30T22:00:00Z",
+            "closedCash": 495.0,
+            "expectedCash": null,
+            "id": "SHIFT-1",
+            "openedAt": "2026-08-30T11:00:00Z",
+            "state": "CLOSED"
+          }
+        ],
+        "status": "available",
+        "unreconciledShiftCount": 0,
+        "varianceStatus": "available"
+      },
+      "healthStatus": "Ready with warnings",
+      "inventoryValue": 0.0,
+      "manualReconciliation": {
+        "countedCash": 490.0
+      },
+      "readyToFinalize": true,
+      "reconciliation": {
+        "otherAdjustmentQuantity": 0.0,
+        "physicalCountCorrectionQuantity": 0.0,
+        "recordedWasteCost": 0.0,
+        "recordedWasteQuantity": 0.0,
+        "theoreticalPosUsage": 0,
+        "unexplainedVarianceQuantity": null
+      },
+      "sales": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "square": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "usage": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": []
+      },
+      "variance": {
+        "percent": null,
+        "quantity": null,
+        "value": 0.0
+      }
+    },
+    "square": {
+      "cancelledOrders": 1,
+      "discounts": 40.0,
+      "environment": "production",
+      "freshness": {
+        "state": "fresh"
+      },
+      "grossSales": 800.0,
+      "lastSyncAt": "2026-08-30T23:00:00",
+      "locationMapped": true,
+      "netSales": 740.0,
+      "orders": 30,
+      "refunds": 20.0,
+      "squareLocationIds": [
+        "LOC-A"
+      ],
+      "squareMerchantId": "<merchant>",
+      "squareStatus": "connected",
+      "squareSynced": true,
+      "syncError": "",
+      "syncStatus": "idle",
+      "tax": 100.0,
+      "tips": 60.0
+    },
+    "usage": {
+      "contributingMenuItems": [],
+      "coverage": {
+        "calculableSalesCoveragePercent": 0,
+        "calculableSoldUnits": 0.0,
+        "excludedCancelledUnits": 0.0,
+        "excludedIncompleteUnits": 0.0,
+        "excludedUnmappedUnits": 0.0,
+        "mappedSalesCoveragePercent": 0,
+        "mappedSoldUnits": 0.0,
+        "mappedVariationCount": 0,
+        "totalSoldUnits": 0.0,
+        "unmappedVariationCount": 0
+      },
+      "ingredientUsage": [],
+      "locationId": "<id>",
+      "organizationId": "<id>",
+      "period": {
+        "endAt": "2026-08-31T03:59:59Z",
+        "startAt": "2026-08-30T04:00:00Z"
+      },
+      "totals": {
+        "actualUsage": null,
+        "discrepancy": null,
+        "discrepancyPercent": null,
+        "theoreticalUsage": 0.0
+      },
+      "unmappedVariations": [],
+      "warnings": []
+    }
+  },
+  "opened": {
+    "businessDate": "2026-08-30",
+    "exceptions": [
+      "Refunds/cancellations present.",
+      "Square cash drawer short."
+    ],
+    "history": [
+      {
+        "businessDate": "2026-08-30",
+        "completedAt": null,
+        "completedByUserId": null,
+        "createdAt": "<timestamp>",
+        "createdByUserId": "<id>",
+        "currentSnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": null,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDisagrees": false,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "unavailable",
+            "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {},
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "exceptionsSnapshot": [
+          "Refunds/cancellations present.",
+          "Square cash drawer short."
+        ],
+        "id": "<id>",
+        "locationId": "<id>",
+        "notes": "",
+        "organizationId": "<id>",
+        "status": "DRAFT",
+        "summarySnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": null,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDisagrees": false,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "unavailable",
+            "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {},
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "updatedAt": "<timestamp>",
+        "usageSnapshot": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "locationId": "<id>",
+          "organizationId": "<id>",
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": [],
+          "warnings": []
+        }
+      }
+    ],
+    "location": {
+      "id": "<id>",
+      "name": "Queen St Cafe",
+      "timezone": "America/Toronto"
+    },
+    "session": {
+      "businessDate": "2026-08-30",
+      "completedAt": null,
+      "completedByUserId": null,
+      "createdAt": "<timestamp>",
+      "createdByUserId": "<id>",
+      "currentSnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": null,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDisagrees": false,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "unavailable",
+          "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {},
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "exceptionsSnapshot": [
+        "Refunds/cancellations present.",
+        "Square cash drawer short."
+      ],
+      "id": "<id>",
+      "locationId": "<id>",
+      "notes": "",
+      "organizationId": "<id>",
+      "status": "DRAFT",
+      "summarySnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": null,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDisagrees": false,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "unavailable",
+          "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {},
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "updatedAt": "<timestamp>",
+      "usageSnapshot": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "locationId": "<id>",
+        "organizationId": "<id>",
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": [],
+        "warnings": []
+      }
+    },
+    "snapshot": {
+      "attentionItems": [
+        {
+          "detail": "Review finalized Square sales before completing the close.",
+          "href": "/app/square",
+          "severity": "info",
+          "title": "Refunds or cancellations",
+          "type": "sales_exceptions"
+        },
+        {
+          "detail": "$5.00 short per Square",
+          "severity": "warning",
+          "title": "Square reports the cash drawer short",
+          "type": "provider_cash_variance"
+        }
+      ],
+      "cashReconciliation": {
+        "basis": "calculated_drawer_cash",
+        "capturedAt": "<timestamp>",
+        "cashPayments": 450.0,
+        "cashRefunds": 20.0,
+        "closedCash": 495.0,
+        "closedShiftCount": 1,
+        "expectedCash": 500.0,
+        "expectedCashComplete": true,
+        "expectedCashUnavailableReason": null,
+        "mode": "drawer_shift",
+        "openShiftCount": 0,
+        "openingFloat": 100.0,
+        "overShort": null,
+        "paidIn": 0.0,
+        "paidOut": 30.0,
+        "partialExpectedCash": null,
+        "possibleMatches": [],
+        "providerClosedCash": 495.0,
+        "providerCountDisagrees": false,
+        "providerOverShort": -5.0,
+        "reconciledExpectedCash": 500.0,
+        "reconciledShiftCount": 1,
+        "reconnectRequired": false,
+        "shiftCount": 1,
+        "shifts": [
+          {
+            "closedAt": "2026-08-30T22:00:00Z",
+            "closedCash": 495.0,
+            "expectedCash": null,
+            "id": "SHIFT-1",
+            "openedAt": "2026-08-30T11:00:00Z",
+            "state": "CLOSED"
+          }
+        ],
+        "status": "available",
+        "unreconciledShiftCount": 0,
+        "varianceStatus": "unavailable",
+        "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
+      },
+      "healthStatus": "Ready with warnings",
+      "inventoryValue": 0.0,
+      "manualReconciliation": {},
+      "readyToFinalize": true,
+      "reconciliation": {
+        "otherAdjustmentQuantity": 0.0,
+        "physicalCountCorrectionQuantity": 0.0,
+        "recordedWasteCost": 0.0,
+        "recordedWasteQuantity": 0.0,
+        "theoreticalPosUsage": 0,
+        "unexplainedVarianceQuantity": null
+      },
+      "sales": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "square": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "usage": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": []
+      },
+      "variance": {
+        "percent": null,
+        "quantity": null,
+        "value": 0.0
+      }
+    },
+    "square": {
+      "cancelledOrders": 1,
+      "discounts": 40.0,
+      "environment": "production",
+      "freshness": {
+        "state": "fresh"
+      },
+      "grossSales": 800.0,
+      "lastSyncAt": "2026-08-30T23:00:00",
+      "locationMapped": true,
+      "netSales": 740.0,
+      "orders": 30,
+      "refunds": 20.0,
+      "squareLocationIds": [
+        "LOC-A"
+      ],
+      "squareMerchantId": "<merchant>",
+      "squareStatus": "connected",
+      "squareSynced": true,
+      "syncError": "",
+      "syncStatus": "idle",
+      "tax": 100.0,
+      "tips": 60.0
+    },
+    "usage": {
+      "contributingMenuItems": [],
+      "coverage": {
+        "calculableSalesCoveragePercent": 0,
+        "calculableSoldUnits": 0.0,
+        "excludedCancelledUnits": 0.0,
+        "excludedIncompleteUnits": 0.0,
+        "excludedUnmappedUnits": 0.0,
+        "mappedSalesCoveragePercent": 0,
+        "mappedSoldUnits": 0.0,
+        "mappedVariationCount": 0,
+        "totalSoldUnits": 0.0,
+        "unmappedVariationCount": 0
+      },
+      "ingredientUsage": [],
+      "locationId": "<id>",
+      "organizationId": "<id>",
+      "period": {
+        "endAt": "2026-08-31T03:59:59Z",
+        "startAt": "2026-08-30T04:00:00Z"
+      },
+      "totals": {
+        "actualUsage": null,
+        "discrepancy": null,
+        "discrepancyPercent": null,
+        "theoreticalUsage": 0.0
+      },
+      "unmappedVariations": [],
+      "warnings": []
+    }
+  },
+  "reread": {
+    "businessDate": "2026-08-30",
+    "exceptions": [
+      "Refunds/cancellations present.",
+      "Square cash drawer short."
+    ],
+    "history": [
+      {
+        "businessDate": "2026-08-30",
+        "completedAt": "<timestamp>",
+        "completedByUserId": "<id>",
+        "createdAt": "<timestamp>",
+        "createdByUserId": "<id>",
+        "currentSnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            },
+            {
+              "detail": "$10.00 short",
+              "severity": "warning",
+              "title": "Cash drawer short",
+              "type": "cash_variance"
+            },
+            {
+              "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+              "severity": "warning",
+              "title": "Staff count differs from Square's drawer count",
+              "type": "cash_count_disagreement"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "countedCash": 490.0,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": -10.0,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDifference": -5.0,
+            "providerCountDisagrees": true,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "available"
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {
+            "countedCash": 490.0
+          },
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "exceptionsSnapshot": [
+          "Refunds/cancellations present.",
+          "Square cash drawer short."
+        ],
+        "id": "<id>",
+        "locationId": "<id>",
+        "notes": "",
+        "organizationId": "<id>",
+        "status": "COMPLETED",
+        "summarySnapshot": {
+          "attentionItems": [
+            {
+              "detail": "Review finalized Square sales before completing the close.",
+              "href": "/app/square",
+              "severity": "info",
+              "title": "Refunds or cancellations",
+              "type": "sales_exceptions"
+            },
+            {
+              "detail": "$5.00 short per Square",
+              "severity": "warning",
+              "title": "Square reports the cash drawer short",
+              "type": "provider_cash_variance"
+            },
+            {
+              "detail": "$10.00 short",
+              "severity": "warning",
+              "title": "Cash drawer short",
+              "type": "cash_variance"
+            },
+            {
+              "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+              "severity": "warning",
+              "title": "Staff count differs from Square's drawer count",
+              "type": "cash_count_disagreement"
+            }
+          ],
+          "cashReconciliation": {
+            "basis": "calculated_drawer_cash",
+            "capturedAt": "<timestamp>",
+            "cashPayments": 450.0,
+            "cashRefunds": 20.0,
+            "closedCash": 495.0,
+            "closedShiftCount": 1,
+            "countedCash": 490.0,
+            "expectedCash": 500.0,
+            "expectedCashComplete": true,
+            "expectedCashUnavailableReason": null,
+            "mode": "drawer_shift",
+            "openShiftCount": 0,
+            "openingFloat": 100.0,
+            "overShort": -10.0,
+            "paidIn": 0.0,
+            "paidOut": 30.0,
+            "partialExpectedCash": null,
+            "possibleMatches": [],
+            "providerClosedCash": 495.0,
+            "providerCountDifference": -5.0,
+            "providerCountDisagrees": true,
+            "providerOverShort": -5.0,
+            "reconciledExpectedCash": 500.0,
+            "reconciledShiftCount": 1,
+            "reconnectRequired": false,
+            "shiftCount": 1,
+            "shifts": [
+              {
+                "closedAt": "2026-08-30T22:00:00Z",
+                "closedCash": 495.0,
+                "expectedCash": null,
+                "id": "SHIFT-1",
+                "openedAt": "2026-08-30T11:00:00Z",
+                "state": "CLOSED"
+              }
+            ],
+            "status": "available",
+            "unreconciledShiftCount": 0,
+            "varianceStatus": "available"
+          },
+          "healthStatus": "Ready with warnings",
+          "inventoryValue": 0.0,
+          "manualReconciliation": {
+            "countedCash": 490.0
+          },
+          "readyToFinalize": true,
+          "reconciliation": {
+            "otherAdjustmentQuantity": 0.0,
+            "physicalCountCorrectionQuantity": 0.0,
+            "recordedWasteCost": 0.0,
+            "recordedWasteQuantity": 0.0,
+            "theoreticalPosUsage": 0,
+            "unexplainedVarianceQuantity": null
+          },
+          "sales": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "square": {
+            "cancelledOrders": 1,
+            "discounts": 40.0,
+            "environment": "production",
+            "freshness": {
+              "state": "fresh"
+            },
+            "grossSales": 800.0,
+            "lastSyncAt": "2026-08-30T23:00:00",
+            "locationMapped": true,
+            "netSales": 740.0,
+            "orders": 30,
+            "refunds": 20.0,
+            "squareLocationIds": [
+              "LOC-A"
+            ],
+            "squareMerchantId": "<merchant>",
+            "squareStatus": "connected",
+            "squareSynced": true,
+            "syncError": "",
+            "syncStatus": "idle",
+            "tax": 100.0,
+            "tips": 60.0
+          },
+          "usage": {
+            "contributingMenuItems": [],
+            "coverage": {
+              "calculableSalesCoveragePercent": 0,
+              "calculableSoldUnits": 0.0,
+              "excludedCancelledUnits": 0.0,
+              "excludedIncompleteUnits": 0.0,
+              "excludedUnmappedUnits": 0.0,
+              "mappedSalesCoveragePercent": 0,
+              "mappedSoldUnits": 0.0,
+              "mappedVariationCount": 0,
+              "totalSoldUnits": 0.0,
+              "unmappedVariationCount": 0
+            },
+            "ingredientUsage": [],
+            "period": {
+              "endAt": "2026-08-31T03:59:59Z",
+              "startAt": "2026-08-30T04:00:00Z"
+            },
+            "totals": {
+              "actualUsage": null,
+              "discrepancy": null,
+              "discrepancyPercent": null,
+              "theoreticalUsage": 0.0
+            },
+            "unmappedVariations": []
+          },
+          "variance": {
+            "percent": null,
+            "quantity": null,
+            "value": 0.0
+          }
+        },
+        "updatedAt": "<timestamp>",
+        "usageSnapshot": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "locationId": "<id>",
+          "organizationId": "<id>",
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": [],
+          "warnings": []
+        }
+      }
+    ],
+    "location": {
+      "id": "<id>",
+      "name": "Queen St Cafe",
+      "timezone": "America/Toronto"
+    },
+    "session": {
+      "businessDate": "2026-08-30",
+      "completedAt": "<timestamp>",
+      "completedByUserId": "<id>",
+      "createdAt": "<timestamp>",
+      "createdByUserId": "<id>",
+      "currentSnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          },
+          {
+            "detail": "$10.00 short",
+            "severity": "warning",
+            "title": "Cash drawer short",
+            "type": "cash_variance"
+          },
+          {
+            "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+            "severity": "warning",
+            "title": "Staff count differs from Square's drawer count",
+            "type": "cash_count_disagreement"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "countedCash": 490.0,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": -10.0,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDifference": -5.0,
+          "providerCountDisagrees": true,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "available"
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {
+          "countedCash": 490.0
+        },
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "exceptionsSnapshot": [
+        "Refunds/cancellations present.",
+        "Square cash drawer short."
+      ],
+      "id": "<id>",
+      "locationId": "<id>",
+      "notes": "",
+      "organizationId": "<id>",
+      "status": "COMPLETED",
+      "summarySnapshot": {
+        "attentionItems": [
+          {
+            "detail": "Review finalized Square sales before completing the close.",
+            "href": "/app/square",
+            "severity": "info",
+            "title": "Refunds or cancellations",
+            "type": "sales_exceptions"
+          },
+          {
+            "detail": "$5.00 short per Square",
+            "severity": "warning",
+            "title": "Square reports the cash drawer short",
+            "type": "provider_cash_variance"
+          },
+          {
+            "detail": "$10.00 short",
+            "severity": "warning",
+            "title": "Cash drawer short",
+            "type": "cash_variance"
+          },
+          {
+            "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+            "severity": "warning",
+            "title": "Staff count differs from Square's drawer count",
+            "type": "cash_count_disagreement"
+          }
+        ],
+        "cashReconciliation": {
+          "basis": "calculated_drawer_cash",
+          "capturedAt": "<timestamp>",
+          "cashPayments": 450.0,
+          "cashRefunds": 20.0,
+          "closedCash": 495.0,
+          "closedShiftCount": 1,
+          "countedCash": 490.0,
+          "expectedCash": 500.0,
+          "expectedCashComplete": true,
+          "expectedCashUnavailableReason": null,
+          "mode": "drawer_shift",
+          "openShiftCount": 0,
+          "openingFloat": 100.0,
+          "overShort": -10.0,
+          "paidIn": 0.0,
+          "paidOut": 30.0,
+          "partialExpectedCash": null,
+          "possibleMatches": [],
+          "providerClosedCash": 495.0,
+          "providerCountDifference": -5.0,
+          "providerCountDisagrees": true,
+          "providerOverShort": -5.0,
+          "reconciledExpectedCash": 500.0,
+          "reconciledShiftCount": 1,
+          "reconnectRequired": false,
+          "shiftCount": 1,
+          "shifts": [
+            {
+              "closedAt": "2026-08-30T22:00:00Z",
+              "closedCash": 495.0,
+              "expectedCash": null,
+              "id": "SHIFT-1",
+              "openedAt": "2026-08-30T11:00:00Z",
+              "state": "CLOSED"
+            }
+          ],
+          "status": "available",
+          "unreconciledShiftCount": 0,
+          "varianceStatus": "available"
+        },
+        "healthStatus": "Ready with warnings",
+        "inventoryValue": 0.0,
+        "manualReconciliation": {
+          "countedCash": 490.0
+        },
+        "readyToFinalize": true,
+        "reconciliation": {
+          "otherAdjustmentQuantity": 0.0,
+          "physicalCountCorrectionQuantity": 0.0,
+          "recordedWasteCost": 0.0,
+          "recordedWasteQuantity": 0.0,
+          "theoreticalPosUsage": 0,
+          "unexplainedVarianceQuantity": null
+        },
+        "sales": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "square": {
+          "cancelledOrders": 1,
+          "discounts": 40.0,
+          "environment": "production",
+          "freshness": {
+            "state": "fresh"
+          },
+          "grossSales": 800.0,
+          "lastSyncAt": "2026-08-30T23:00:00",
+          "locationMapped": true,
+          "netSales": 740.0,
+          "orders": 30,
+          "refunds": 20.0,
+          "squareLocationIds": [
+            "LOC-A"
+          ],
+          "squareMerchantId": "<merchant>",
+          "squareStatus": "connected",
+          "squareSynced": true,
+          "syncError": "",
+          "syncStatus": "idle",
+          "tax": 100.0,
+          "tips": 60.0
+        },
+        "usage": {
+          "contributingMenuItems": [],
+          "coverage": {
+            "calculableSalesCoveragePercent": 0,
+            "calculableSoldUnits": 0.0,
+            "excludedCancelledUnits": 0.0,
+            "excludedIncompleteUnits": 0.0,
+            "excludedUnmappedUnits": 0.0,
+            "mappedSalesCoveragePercent": 0,
+            "mappedSoldUnits": 0.0,
+            "mappedVariationCount": 0,
+            "totalSoldUnits": 0.0,
+            "unmappedVariationCount": 0
+          },
+          "ingredientUsage": [],
+          "period": {
+            "endAt": "2026-08-31T03:59:59Z",
+            "startAt": "2026-08-30T04:00:00Z"
+          },
+          "totals": {
+            "actualUsage": null,
+            "discrepancy": null,
+            "discrepancyPercent": null,
+            "theoreticalUsage": 0.0
+          },
+          "unmappedVariations": []
+        },
+        "variance": {
+          "percent": null,
+          "quantity": null,
+          "value": 0.0
+        }
+      },
+      "updatedAt": "<timestamp>",
+      "usageSnapshot": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "locationId": "<id>",
+        "organizationId": "<id>",
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": [],
+        "warnings": []
+      }
+    },
+    "snapshot": {
+      "attentionItems": [
+        {
+          "detail": "Review finalized Square sales before completing the close.",
+          "href": "/app/square",
+          "severity": "info",
+          "title": "Refunds or cancellations",
+          "type": "sales_exceptions"
+        },
+        {
+          "detail": "$5.00 short per Square",
+          "severity": "warning",
+          "title": "Square reports the cash drawer short",
+          "type": "provider_cash_variance"
+        },
+        {
+          "detail": "$10.00 short",
+          "severity": "warning",
+          "title": "Cash drawer short",
+          "type": "cash_variance"
+        },
+        {
+          "detail": "Staff counted $490.00; Square reported $495.00 (-$5.00)",
+          "severity": "warning",
+          "title": "Staff count differs from Square's drawer count",
+          "type": "cash_count_disagreement"
+        }
+      ],
+      "cashReconciliation": {
+        "basis": "calculated_drawer_cash",
+        "capturedAt": "<timestamp>",
+        "cashPayments": 450.0,
+        "cashRefunds": 20.0,
+        "closedCash": 495.0,
+        "closedShiftCount": 1,
+        "countedCash": 490.0,
+        "expectedCash": 500.0,
+        "expectedCashComplete": true,
+        "expectedCashUnavailableReason": null,
+        "mode": "drawer_shift",
+        "openShiftCount": 0,
+        "openingFloat": 100.0,
+        "overShort": -10.0,
+        "paidIn": 0.0,
+        "paidOut": 30.0,
+        "partialExpectedCash": null,
+        "possibleMatches": [],
+        "providerClosedCash": 495.0,
+        "providerCountDifference": -5.0,
+        "providerCountDisagrees": true,
+        "providerOverShort": -5.0,
+        "reconciledExpectedCash": 500.0,
+        "reconciledShiftCount": 1,
+        "reconnectRequired": false,
+        "shiftCount": 1,
+        "shifts": [
+          {
+            "closedAt": "2026-08-30T22:00:00Z",
+            "closedCash": 495.0,
+            "expectedCash": null,
+            "id": "SHIFT-1",
+            "openedAt": "2026-08-30T11:00:00Z",
+            "state": "CLOSED"
+          }
+        ],
+        "status": "available",
+        "unreconciledShiftCount": 0,
+        "varianceStatus": "available"
+      },
+      "healthStatus": "Ready with warnings",
+      "inventoryValue": 0.0,
+      "manualReconciliation": {
+        "countedCash": 490.0
+      },
+      "readyToFinalize": true,
+      "reconciliation": {
+        "otherAdjustmentQuantity": 0.0,
+        "physicalCountCorrectionQuantity": 0.0,
+        "recordedWasteCost": 0.0,
+        "recordedWasteQuantity": 0.0,
+        "theoreticalPosUsage": 0,
+        "unexplainedVarianceQuantity": null
+      },
+      "sales": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "square": {
+        "cancelledOrders": 1,
+        "discounts": 40.0,
+        "environment": "production",
+        "freshness": {
+          "state": "fresh"
+        },
+        "grossSales": 800.0,
+        "lastSyncAt": "2026-08-30T23:00:00",
+        "locationMapped": true,
+        "netSales": 740.0,
+        "orders": 30,
+        "refunds": 20.0,
+        "squareLocationIds": [
+          "LOC-A"
+        ],
+        "squareMerchantId": "<merchant>",
+        "squareStatus": "connected",
+        "squareSynced": true,
+        "syncError": "",
+        "syncStatus": "idle",
+        "tax": 100.0,
+        "tips": 60.0
+      },
+      "usage": {
+        "contributingMenuItems": [],
+        "coverage": {
+          "calculableSalesCoveragePercent": 0,
+          "calculableSoldUnits": 0.0,
+          "excludedCancelledUnits": 0.0,
+          "excludedIncompleteUnits": 0.0,
+          "excludedUnmappedUnits": 0.0,
+          "mappedSalesCoveragePercent": 0,
+          "mappedSoldUnits": 0.0,
+          "mappedVariationCount": 0,
+          "totalSoldUnits": 0.0,
+          "unmappedVariationCount": 0
+        },
+        "ingredientUsage": [],
+        "period": {
+          "endAt": "2026-08-31T03:59:59Z",
+          "startAt": "2026-08-30T04:00:00Z"
+        },
+        "totals": {
+          "actualUsage": null,
+          "discrepancy": null,
+          "discrepancyPercent": null,
+          "theoreticalUsage": 0.0
+        },
+        "unmappedVariations": []
+      },
+      "variance": {
+        "percent": null,
+        "quantity": null,
+        "value": 0.0
+      }
+    },
+    "square": {
+      "cancelledOrders": 1,
+      "discounts": 40.0,
+      "environment": "production",
+      "freshness": {
+        "state": "fresh"
+      },
+      "grossSales": 800.0,
+      "lastSyncAt": "2026-08-30T23:00:00",
+      "locationMapped": true,
+      "netSales": 740.0,
+      "orders": 30,
+      "refunds": 20.0,
+      "squareLocationIds": [
+        "LOC-A"
+      ],
+      "squareMerchantId": "<merchant>",
+      "squareStatus": "connected",
+      "squareSynced": true,
+      "syncError": "",
+      "syncStatus": "idle",
+      "tax": 100.0,
+      "tips": 60.0
+    },
+    "usage": {
+      "contributingMenuItems": [],
+      "coverage": {
+        "calculableSalesCoveragePercent": 0,
+        "calculableSoldUnits": 0.0,
+        "excludedCancelledUnits": 0.0,
+        "excludedIncompleteUnits": 0.0,
+        "excludedUnmappedUnits": 0.0,
+        "mappedSalesCoveragePercent": 0,
+        "mappedSoldUnits": 0.0,
+        "mappedVariationCount": 0,
+        "totalSoldUnits": 0.0,
+        "unmappedVariationCount": 0
+      },
+      "ingredientUsage": [],
+      "locationId": "<id>",
+      "organizationId": "<id>",
+      "period": {
+        "endAt": "2026-08-31T03:59:59Z",
+        "startAt": "2026-08-30T04:00:00Z"
+      },
+      "totals": {
+        "actualUsage": null,
+        "discrepancy": null,
+        "discrepancyPercent": null,
+        "theoreticalUsage": 0.0
+      },
+      "unmappedVariations": [],
+      "warnings": []
+    }
+  },
+  "weeklyReport": {
+    "changes": {
+      "menuMovers": [],
+      "orders": {
+        "current": 45.0,
+        "delta": 45.0,
+        "percent": null,
+        "prior": 0.0
+      },
+      "purchaseSpend": {
+        "current": 0.0,
+        "delta": 0.0,
+        "percent": null,
+        "prior": 0.0
+      },
+      "sales": {
+        "current": 1130.0,
+        "delta": 1130.0,
+        "percent": null,
+        "prior": 0.0
+      }
+    },
+    "costing": {
+      "costCoveragePercent": 0,
+      "costReadySalesAmount": 0.0,
+      "estimatedFoodCostPercent": null,
+      "totalMappedMenuSalesAmount": 0.0
+    },
+    "exceptions": [
+      {
+        "entityType": "stock_count",
+        "href": "/app/stock-counts",
+        "severity": "info",
+        "title": "No completed count evidence",
+        "type": "missing_count_evidence"
+      }
+    ],
+    "generatedAt": "<wall-clock>",
+    "inventory": {
+      "recentMovements": [],
+      "reorderNow": [],
+      "statusCounts": {
+        "inStock": 0,
+        "lowStock": 0,
+        "outOfStock": 0,
+        "reorderNow": 0
+      },
+      "summary": {
+        "inventoryCountNeededCount": 0,
+        "inventoryItemCount": 0,
+        "inventoryLowStockCount": 0,
+        "inventoryMovementCount": 0,
+        "inventoryOutOfStockCount": 0,
+        "inventoryReceiptCount": 0,
+        "inventoryReorderNowCount": 0,
+        "inventoryValue": 0
+      }
+    },
+    "period": {
+      "endDate": "2026-08-30",
+      "priorEndDate": "2026-08-23",
+      "priorStartDate": "2026-08-17",
+      "startDate": "2026-08-24",
+      "view": "weekly"
+    },
+    "purchasing": {
+      "completedInvoiceCount": 0,
+      "draftInvoiceCount": 0,
+      "invoiceCount": 0,
+      "needsReviewCount": 0,
+      "spend": 0.0,
+      "supplierSpend": []
+    },
+    "sales": {
+      "byMenuItem": [],
+      "cancelledOrderCount": 1,
+      "currency": "CAD",
+      "discounts": 50.0,
+      "grossItemSales": 1200.0,
+      "netItemSales": 1150.0,
+      "orderCount": 45,
+      "refunds": 20.0,
+      "source": "square_daily_sales_summaries",
+      "tax": 150.0,
+      "tips": 80.0,
+      "totalCollected": 1130.0,
+      "unitsSold": null,
+      "unmappedLines": []
+    },
+    "scope": {
+      "locationId": "<id>",
+      "locationName": "Queen St Cafe",
+      "organizationId": "<id>",
+      "timezone": "America/Toronto"
+    },
+    "usageVariance": {
+      "message": "No completed count evidence for this period",
+      "rows": [],
+      "valid": false
+    },
+    "variance": {
+      "completedCountSessions": 0,
+      "lineCount": 0,
+      "missingCountEvidence": true,
+      "rows": [],
+      "varianceExceptionCount": 0
+    }
+  }
+}
