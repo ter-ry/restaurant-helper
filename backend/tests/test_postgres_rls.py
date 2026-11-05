@@ -5279,3 +5279,93 @@ def test_clover_usage_queries_respect_rls_and_tenant_scope(postgres_app):
         location_b = RestaurantLocation.query.filter_by(id=org_b["location_id"]).one()
         assert clover_usage_for_day(location_b, date(2026, 11, 3), net_sales_cents=1000)["usage"][0]["quantity"] == "50.0000"
         db.session.rollback()
+
+
+def test_engine_driven_clover_daily_close_is_exact_and_tenant_isolated_under_forced_rls(postgres_app):
+    """#222: the real Clover engine applies orders for two tenants (test app only, flag on); Daily Close's own snapshot
+    entry point returns each tenant's exact figures and never the other's.
+
+    Tenant A: chicken 0.18 kg x $12.50 + buns 0.25 pack x $2.00 = $2.75 (275c) on 1000c net = 27.5%.
+    Tenant B: chicken 0.36 kg x $12.50 + buns 0.25 pack x $2.00 = $5.00 (500c) on 1000c net = 50.0%.
+    """
+    from datetime import date, datetime, timezone
+    from backend.clover_inventory import apply_clover_order_inventory
+    from backend.daily_close import _business_date_bounds, _daily_close_snapshot
+    from backend.models import (
+        CloverConnection, CloverLocationMapping, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption,
+        InventoryItem, Organization, RestaurantLocation, User,
+    )
+
+    day = date(2026, 8, 30)
+    closed = datetime(2026, 8, 30, 16, 0, tzinfo=timezone.utc)
+    application = postgres_app
+    made = {}
+    with application.test_request_context("/"):
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True  # controlled test app; the shipped default stays off
+        _pin_rls_context(access_scope="setup")
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        for key, chicken_qty in (("a", "0.1800"), ("b", "0.3600")):
+            _pin_rls_context(access_scope="setup")
+            organization = make_operational_organization(owner, name=f"Engine close {key} {uuid4()}", location_name=f"Site {key}")
+            organization_id = organization.id
+            location_id = RestaurantLocation.query.filter_by(organization_id=organization_id).first().id
+            _pin_rls_context(access_scope="customer", organization_id=organization_id, user_id=owner_id)
+            connection = CloverConnection(organization_id=organization_id, environment="sandbox", merchant_id=f"m-{key}-{uuid4().hex[:6]}", status="connected", access_token_ciphertext="x")
+            db.session.add(connection)
+            db.session.flush()
+            db.session.add(CloverLocationMapping(clover_connection_id=connection.id, organization_id=organization_id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id))
+            chicken = InventoryItem(organization_id=organization_id, location_id=location_id, name="Chicken", normalized_name=f"chicken-{uuid4()}", stock_unit="kg", current_on_hand=Decimal("10"), average_unit_cost=Decimal("12.50"))
+            buns = InventoryItem(organization_id=organization_id, location_id=location_id, name="Buns", normalized_name=f"buns-{uuid4()}", stock_unit="pack", current_on_hand=Decimal("20"), average_unit_cost=Decimal("2.00"))
+            db.session.add_all([chicken, buns])
+            db.session.flush()
+            order = CloverShadowOrder(
+                organization_id=organization_id, clover_connection_id=connection.id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id,
+                clover_order_id=f"paid-{key}-{uuid4()}", provider_status="CLOSED", normalized_status="paid", payment_status="paid", potentially_eligible=True,
+                requires_review=False, total_cents=1130, source_closed_at=closed,
+                raw_payload_json={"payments": [{"id": "p", "amount": 1130, "result": "SUCCESS", "taxAmount": 130, "tipAmount": 0, "tender": "com.clover.tender.cash"}], "orderType": ""},
+            )
+            db.session.add(order)
+            db.session.flush()
+            db.session.add(CloverShadowOrderLine(
+                organization_id=organization_id, restaurant_location_id=location_id, shadow_order_id=order.id, clover_line_item_id=f"line-{uuid4()}", clover_item_id="burger",
+                name="Test Burger", quantity=Decimal("1"), mapping_status="mapped",
+                recipe_preview_json={"flowtallyMenuItemName": "Test Burger", "ingredients": [
+                    {"inventoryItemId": chicken.id, "quantity": chicken_qty, "unit": "kg", "name": "Chicken"},
+                    {"inventoryItemId": buns.id, "quantity": "0.2500", "unit": "pack", "name": "Buns"},
+                ]},
+            ))
+            db.session.commit()
+            assert apply_clover_order_inventory(order=order, connection=connection)["applied"] is True
+            db.session.commit()
+            made[key] = (organization_id, location_id)
+
+    def close_for(context_org_id, target_org_id, target_location_id):
+        with application.test_request_context("/"):
+            _pin_rls_context(access_scope="customer", organization_id=context_org_id, user_id=owner_id)
+            organization = db.session.get(Organization, target_org_id)
+            location = RestaurantLocation.query.filter_by(id=target_location_id, organization_id=target_org_id).first()
+            if organization is None or location is None:
+                return None
+            return _daily_close_snapshot(organization, location, day)[0]
+
+    a_org, a_loc = made["a"]
+    b_org, b_loc = made["b"]
+    snap_a = close_for(a_org, a_org, a_loc)
+    assert snap_a["provider"] == "clover" and snap_a["sales"]["netSales"] == 10.0
+    assert snap_a["foodCost"] == {"available": True, "usageCostCents": 275, "netSalesCents": 1000, "percent": 27.5, "unavailableReason": None}
+    snap_b = close_for(b_org, b_org, b_loc)
+    assert snap_b["foodCost"] == {"available": True, "usageCostCents": 500, "netSalesCents": 1000, "percent": 50.0, "unavailableReason": None}
+
+    # Tenant A cannot see tenant B's organization, location, orders or consumption ledger at all.
+    assert close_for(a_org, b_org, b_loc) is None
+    with application.test_request_context("/"):
+        _pin_rls_context(access_scope="customer", organization_id=a_org, user_id=owner_id)
+        assert CloverShadowOrder.query.filter_by(organization_id=b_org).count() == 0
+        assert CloverShadowOrderLineInventoryConsumption.query.filter_by(organization_id=b_org).count() == 0
+        # Replay under A's context changes nothing: still 275c.
+        order = CloverShadowOrder.query.filter_by(organization_id=a_org).one()
+        connection = CloverConnection.query.filter_by(organization_id=a_org).one()
+        assert apply_clover_order_inventory(order=order, connection=connection)["alreadyApplied"]
+        db.session.commit()
+    assert close_for(a_org, a_org, a_loc)["foodCost"]["usageCostCents"] == 275

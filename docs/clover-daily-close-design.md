@@ -37,7 +37,7 @@ Status: **direction approved by the owner; decisions below are final. No code is
 Implemented in `backend/clover_daily_close.py` (builder) with a provider switch in `backend/daily_close.py`. A location uses the Clover path only when Clover is its sole active provider; every other location keeps the unchanged Square path (guarded by `backend/tests/test_daily_close_square_golden.py`, generated from `main` before this change). Daily Close UI shows the provider, exact or "Unavailable" figures and cash variance.
 
 Known limits, all fail-closed (never zero or invented):
-- **Usage cost / food-cost % are unavailable for real engine data** until #240 is fixed: `clover_usage.py` compares the ledger's signed (negative) `applied_quantity` with the positive recipe quantity.
+- **Usage cost / food-cost %** are read from the real engine's ledger (fixed in #240/#247) and verified end to end through Daily Close: $2.75 / 27.5% for the reference order, $3.00 / 30% after a recipe correction, replay-safe, with historical cost snapshots. They stay unavailable (never partial) for any day with a missing/malformed recipe, unmapped item or unapplied sale.
 - **Expected cash** is unavailable whenever any day order lacks a tender identifier or is excluded for review (refund, incomplete evidence); the order fetch does not yet request tender detail, so expect "unavailable" until it does.
 - **Physical-count usage variance** for Clover is not provided (actual usage and variance stay unavailable).
 - **Owner Reports** (`backend/reporting.py`) and the completed-close CSV are unchanged and remain Square-sourced; the CSV has no provider column so the Square export stays byte-identical.

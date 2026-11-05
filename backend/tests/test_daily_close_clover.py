@@ -29,6 +29,7 @@ from backend.models import (
     CloverShadowOrderLineInventoryConsumption,
     DailyCloseSession,
     InventoryItem,
+    InventoryMovement,
     RestaurantLocation,
     SquareConnection,
     SquareLocation,
@@ -132,7 +133,7 @@ def _line(org, location, order, item, quantity="0.5000", *, ledger=True, mapping
     db.session.add(line)
     db.session.flush()
     if ledger:
-        db.session.add(CloverShadowOrderLineInventoryConsumption(organization_id=org.id, location_id=location.id, clover_shadow_order_line_id=line.id, inventory_item_id=item.id, applied_quantity=Decimal(quantity), unit_cost_snapshot=item.average_unit_cost))
+        db.session.add(CloverShadowOrderLineInventoryConsumption(organization_id=org.id, location_id=location.id, clover_shadow_order_line_id=line.id, inventory_item_id=item.id, applied_quantity=-Decimal(quantity), unit_cost_snapshot=item.average_unit_cost))
         db.session.flush()
     return line
 
@@ -343,3 +344,157 @@ def test_sync_sales_is_not_offered_for_clover_and_never_calls_square(app, client
     session_id = _open(client, location.id)["session"]["id"]
     response = _post(client, f"/api/pilot/daily-close/{session_id}/sync-sales")
     assert response.status_code == 409 and "Clover" in response.get_json()["error"]
+
+
+# --------------------------------------------------------------------------------------------------
+# Engine-driven Daily Close: the REAL Clover inventory engine writes the ledger (test app only, flag on),
+# and every figure below is read back through the Daily Close API, never through the usage helper alone.
+# Hand figures: chicken 0.18 kg x $12.50 = $2.25 and buns 0.25 pack x $2.00 = $0.50 -> $2.75 (275c) on a 1000c
+# net sale = 27.5%. Corrected recipe 0.20 kg chicken: $2.50 + $0.50 = $3.00 (300c) = 30.0%.
+# --------------------------------------------------------------------------------------------------
+def _engine_world(app, monkeypatch, org, location, connection, *, chicken_cost="12.50"):
+    monkeypatch.setitem(app.config, "CLOVER_ORDER_INVENTORY_ENABLED", True)  # controlled test app only; default stays off
+    chicken = _item(org, location, "Chicken", "kg", chicken_cost)
+    buns = _item(org, location, "Buns", "pack", "2.00")
+    chicken.current_on_hand, buns.current_on_hand = Decimal("10"), Decimal("20")
+    db.session.commit()
+    return chicken, buns
+
+
+def _engine_order(org, location, connection, chicken, buns, *, chicken_qty="0.1800", recipe=None):
+    order = _order(org, location, connection, [_pay(1130, 130, 0, CASH)])  # net 1000c
+    order.provider_status, order.payment_status, order.potentially_eligible, order.total_cents = "CLOSED", "paid", True, 1130
+    ingredients = [
+        {"inventoryItemId": chicken.id, "quantity": chicken_qty, "unit": "kg", "name": "Chicken"},
+        {"inventoryItemId": buns.id, "quantity": "0.2500", "unit": "pack", "name": "Buns"},
+    ]
+    line = CloverShadowOrderLine(
+        organization_id=org.id, restaurant_location_id=location.id, shadow_order_id=order.id, clover_line_item_id=f"l-{uuid4().hex[:6]}", clover_item_id="burger",
+        name="Test Burger", quantity=Decimal("1"), mapping_status="mapped",
+        recipe_preview_json=recipe if recipe is not None else {"flowtallyMenuItemName": "Test Burger", "ingredients": ingredients},
+    )
+    db.session.add(line)
+    db.session.commit()
+    return order, line
+
+
+def _apply(order, connection):
+    from backend.clover_inventory import apply_clover_order_inventory
+
+    result = apply_clover_order_inventory(order=order, connection=connection)
+    db.session.commit()
+    return result
+
+
+def _close(client, location_id):
+    body = _get(client, location_id).get_json()
+    return body["snapshot"], body["exceptions"]
+
+
+def test_engine_applied_order_shows_275_and_27_5_percent_in_daily_close_then_300_and_30_after_correction(app, client, cafe, monkeypatch):
+    from sqlalchemy.orm.attributes import flag_modified
+
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    order, line = _engine_order(org, location, connection, chicken, buns)
+
+    snapshot, exceptions = _close(client, location.id)
+    assert snapshot["foodCost"]["available"] is False  # nothing applied yet: never a guessed cost
+    assert "Clover inventory has not been applied for some sold items." in exceptions
+
+    assert _apply(order, connection)["applied"] is True
+    assert (db.session.get(type(chicken), chicken.id).current_on_hand, db.session.get(type(buns), buns.id).current_on_hand) == (Decimal("9.8200"), Decimal("19.7500"))
+    snapshot, exceptions = _close(client, location.id)
+    assert snapshot["foodCost"] == {"available": True, "usageCostCents": 275, "netSalesCents": 1000, "percent": 27.5, "unavailableReason": None}
+    assert {r["inventoryItemName"]: (r["theoreticalUsage"], r["costCents"]) for r in snapshot["usage"]["ingredientUsage"]} == {"Chicken": (0.18, 225), "Buns": (0.25, 50)}
+    assert snapshot["usage"]["availability"]["usageAvailable"] is True and exceptions == []
+
+    # Replay is idempotent: no new movement, no new ledger row, same Daily Close.
+    movements_before = InventoryMovement.query.filter_by(organization_id=org.id).count()
+    assert _apply(order, connection)["alreadyApplied"]
+    assert InventoryMovement.query.filter_by(organization_id=org.id).count() == movements_before
+    assert _close(client, location.id)[0]["foodCost"]["usageCostCents"] == 275
+
+    line.recipe_preview_json["ingredients"][0]["quantity"] = "0.2000"
+    flag_modified(line, "recipe_preview_json")
+    db.session.flush()
+    assert any(m["state"] == "correction" for m in _apply(order, connection)["movements"])
+    assert db.session.get(type(chicken), chicken.id).current_on_hand == Decimal("9.8000")
+    corrected, _ = _close(client, location.id)
+    assert (corrected["foodCost"]["usageCostCents"], corrected["foodCost"]["percent"]) == (300, 30.0)
+    assert {r["inventoryItemName"]: r["costCents"] for r in corrected["usage"]["ingredientUsage"]} == {"Chicken": 250, "Buns": 50}
+    # Reconciles to the stock that actually moved: (10 - 9.80) x 12.50 + (20 - 19.75) x 2.00 = $3.00.
+    assert (Decimal("10") - Decimal("9.80")) * Decimal("12.50") + (Decimal("20") - Decimal("19.75")) * Decimal("2.00") == Decimal("3.00")
+
+
+def test_historical_cost_snapshots_do_not_move_when_the_current_item_cost_changes(app, client, cafe, monkeypatch):
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    first, _ = _engine_order(org, location, connection, chicken, buns)
+    _apply(first, connection)
+    assert _close(client, location.id)[0]["foodCost"]["usageCostCents"] == 275
+
+    chicken.average_unit_cost = Decimal("20.00")  # supplier price rises after the first sale
+    db.session.commit()
+    assert _close(client, location.id)[0]["foodCost"]["usageCostCents"] == 275  # first sale keeps its recorded $12.50
+
+    second, _ = _engine_order(org, location, connection, chicken, buns)
+    _apply(second, connection)
+    snapshot, _ = _close(client, location.id)
+    # Second sale uses the new cost: 0.18 x $20.00 + 0.25 x $2.00 = $4.10; total $2.75 + $4.10 = $6.85 on 2000c net = 34.25%.
+    assert (snapshot["foodCost"]["usageCostCents"], snapshot["foodCost"]["netSalesCents"], snapshot["foodCost"]["percent"]) == (685, 2000, 34.25)
+    assert {r["inventoryItemName"]: r["costCents"] for r in snapshot["usage"]["ingredientUsage"]} == {"Chicken": 225 + 360, "Buns": 100}
+
+
+def test_completed_close_keeps_the_engine_figures_after_a_later_correction(app, client, cafe, monkeypatch):
+    from sqlalchemy.orm.attributes import flag_modified
+
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    order, line = _engine_order(org, location, connection, chicken, buns)
+    _apply(order, connection)
+    session_id = _open(client, location.id)["session"]["id"]
+    final = _post(client, f"/api/pilot/daily-close/{session_id}/finalize")
+    assert final.status_code == 200 and final.get_json()["snapshot"]["foodCost"]["usageCostCents"] == 275
+
+    line.recipe_preview_json["ingredients"][0]["quantity"] = "0.2000"
+    flag_modified(line, "recipe_preview_json")
+    db.session.flush()
+    _apply(order, connection)
+    reread, _ = _close(client, location.id)
+    assert (reread["foodCost"]["usageCostCents"], reread["foodCost"]["percent"]) == (275, 27.5)  # frozen, not the corrected $3.00
+    assert _patch(client, f"/api/pilot/daily-close/{session_id}", {"notes": "late"}).status_code == 409
+    db.session.expire_all()
+    assert db.session.get(DailyCloseSession, session_id).summary_snapshot_json["foodCost"]["usageCostCents"] == 275
+
+
+@pytest.mark.parametrize("bad_recipe", [
+    {},                                                                        # no ingredients at all
+    {"flowtallyMenuItemName": "Test Burger", "ingredients": []},               # empty recipe
+    {"flowtallyMenuItemName": "Test Burger", "ingredients": ["chicken"]},      # malformed ingredient entry
+    "not-a-recipe",                                                            # malformed recipe payload
+])
+def test_missing_or_malformed_recipes_make_the_whole_day_unavailable_never_partial(app, client, cafe, monkeypatch, bad_recipe):
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    good, _ = _engine_order(org, location, connection, chicken, buns)
+    _apply(good, connection)
+    assert _close(client, location.id)[0]["foodCost"]["usageCostCents"] == 275
+    _engine_order(org, location, connection, chicken, buns, recipe=bad_recipe)  # a second sale whose recipe cannot be trusted
+
+    snapshot, exceptions = _close(client, location.id)
+    assert snapshot["usage"]["availability"]["usageAvailable"] is False
+    assert (snapshot["foodCost"]["available"], snapshot["foodCost"]["usageCostCents"], snapshot["foodCost"]["percent"]) == (False, None, None)
+    assert snapshot["sales"]["netSales"] == 20.0  # sales stay exact; only the cost claim is withheld
+    assert "Recipe or inventory mapping gaps exist." in exceptions or "Clover inventory has not been applied for some sold items." in exceptions
+
+
+def test_a_nonpositive_recipe_quantity_is_never_costed(app, client, cafe, monkeypatch):
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    order, _ = _engine_order(org, location, connection, chicken, buns, chicken_qty="-0.1800")
+    result = _apply(order, connection)
+    assert result["applied"] is False  # the engine refuses it, so nothing moves and nothing is costed
+    assert db.session.get(type(chicken), chicken.id).current_on_hand == Decimal("10.0000")
+    snapshot, _ = _close(client, location.id)
+    assert snapshot["foodCost"]["available"] is False and snapshot["foodCost"]["usageCostCents"] is None
