@@ -1,0 +1,59 @@
+# REVIEW-ONLY STAGING: PR events run unit tests only; live audits are manual.
+# This does not claim issues, dispatch agents, approve reviews, merge, or deploy.
+# Owner approval and distinct reviewer identity required for future write automation.
+name: Agent handoff preflight (read-only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/agent_handoff_audit.py"
+      - "scripts/tests/test_agent_handoff_audit.py"
+      - ".github/workflows/agent-handoff-preflight.yml"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR to inspect without modifying GitHub"
+        type: number
+        required: true
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  evaluator-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s scripts/tests -p 'test_agent_handoff_audit.py' -v
+
+  advisory-audit:
+    if: github.event_name == 'workflow_dispatch'
+    needs: evaluator-unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout inspected code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect current PR without writing to GitHub
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          TRUSTED_REVIEWERS: ${{ vars.FLOWTALLY_TRUSTED_REVIEWERS }}
+        run: |
+          python scripts/agent_handoff_audit.py \
+            --repository "$REPOSITORY" \
+            --pr "$PR_NUMBER" \
+            --trusted-reviewers "$TRUSTED_REVIEWERS"
