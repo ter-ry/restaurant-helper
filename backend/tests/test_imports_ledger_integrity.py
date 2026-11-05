@@ -100,7 +100,7 @@ def _snapshot(organization_id: int, name: str) -> tuple:
     return (Decimal(item.current_on_hand), Decimal(item.average_unit_cost), movements)
 
 
-def _receive(client, item_id: int, *, quantity_kg: int, unit_price: float) -> None:
+def _receive(client, item_id: int, *, quantity_kg: int, unit_price: float, receive: bool = True) -> None:
     total = round(quantity_kg * unit_price, 2)
     invoice = _post(
         client,
@@ -136,6 +136,8 @@ def _receive(client, item_id: int, *, quantity_kg: int, unit_price: float) -> No
         },
     )
     assert invoice.status_code == 201, invoice.get_data(as_text=True)
+    if not receive:
+        return
     received = _post(client, f"/api/pilot/purchases/invoices/{invoice.get_json()['id']}/receive")
     assert received.status_code == 200, received.get_data(as_text=True)
 
@@ -336,3 +338,34 @@ def test_other_tenant_history_neither_blocks_nor_leaks(app, client):
         assert_ledger_reconciles(b_item_id, expected_on_hand="20", opening="10")
         # The owner is a member of both organizations; nothing was written across tenants.
         assert OrganizationMembership.query.filter_by(organization_id=org_a).count() == 1
+
+
+@pytest.mark.parametrize("history", ["unreceived_invoice_line", "count", "waste"])
+def test_each_history_kind_alone_blocks_quantity_reimport(app, client, history):
+    login(client)
+    organization_id = _new_org(app, client, f"Ledger Kind {history}")
+    _import(client, organization_id, _csv([("Flour", 10, 20, "2.00")]))
+    with app.app_context():
+        item_id = _item(organization_id, "Flour").id
+
+    if history == "unreceived_invoice_line":
+        # A drafted-but-unreceived invoice references the item; stock has not moved yet, but receiving
+        # it later would post against whatever baseline is current, so the baseline is frozen.
+        _receive(client, item_id, quantity_kg=5, unit_price=2.0, receive=False)
+        expected = "10"
+    elif history == "count":
+        _finalize_count(client, item_id, counted=8)
+        expected = "8"
+    else:
+        waste = _post(client, "/api/pilot/inventory/waste-events", {"inventoryItemId": item_id, "quantity": 2, "unit": "kg", "reason": "spoilage / expired"})
+        assert waste.status_code == 201, waste.get_data(as_text=True)
+        expected = "8"
+
+    with app.app_context():
+        before = _snapshot(organization_id, "Flour")
+    _, preview = _preview(client, organization_id, _csv([("Flour", 99, 20, "2.00")]))
+    assert preview["blockedRowCount"] == 1 and "ledger_history" in _row_issue_codes(preview)
+    with app.app_context():
+        assert _snapshot(organization_id, "Flour") == before
+        opening = "10"
+        assert_ledger_reconciles(item_id, expected_on_hand=expected, opening=opening)

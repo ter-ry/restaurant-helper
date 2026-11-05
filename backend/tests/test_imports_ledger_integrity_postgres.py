@@ -127,3 +127,33 @@ def test_postgres_import_ledger_guard_under_forced_rls(postgres_app):
 
     # Tenant B is untouched by everything done in tenant A.
     assert _item_state(postgres_app, seeded["b"], "Flour")[1:] == (Decimal("15"), Decimal("5"))
+
+
+def test_postgres_execute_is_all_or_nothing_when_history_appears_after_approval(postgres_app):
+    seeded = _seed_orgs()
+    client = postgres_app.test_client()
+    _login_owner(client)
+    assert _post(client, "/api/organizations/select", {"organizationId": seeded["a"]}).status_code == 200
+    create_job, _ = _run_import(client, seeded["a"], seeded["a_loc"], "Flour", 10, 20, "x1")
+    assert _execute(client, create_job).status_code == 200
+    item_id, _, _ = _item_state(postgres_app, seeded["a"], "Flour")
+
+    # Approved while still legal: two rows, a new item plus a quantity change on Flour.
+    csv = f"Item,Location,Unit,Qty,Par,Ref\nSugar,{seeded['a_loc']},kg,5,10,x2\nFlour,{seeded['a_loc']},kg,4,20,x2\n".encode()
+    upload = client.post("/api/imports/jobs", headers={"X-CSRFToken": client.get("/api/auth/csrf", base_url=BASE).get_json()["csrfToken"]}, data={"organizationId": str(seeded["a"]), "entityScope": "inventory_item", "file": (__import__("io").BytesIO(csv), "x2.csv")}, content_type="multipart/form-data", base_url=BASE)
+    job_id = upload.get_json()["job"]["id"]
+    assert _post(client, f"/api/imports/jobs/{job_id}/mapping", {"entityScope": "inventory_item", "fieldMappings": MAP, "fixedValues": {}}).status_code == 200
+    assert _post(client, f"/api/imports/jobs/{job_id}/preview").get_json()["job"]["status"] == "READY_FOR_PREVIEW"
+    assert _post(client, f"/api/imports/jobs/{job_id}/approve").status_code == 200
+
+    _add_movement(seeded["a"], item_id, "10", "5")  # a receipt posts before execute
+
+    assert _post(client, f"/api/imports/jobs/{job_id}/execute").status_code == 400
+    _, on_hand, ledger_sum = _item_state(postgres_app, seeded["a"], "Flour")
+    assert (on_hand, ledger_sum) == (Decimal("15"), Decimal("5"))
+    from backend.tests.test_postgres_rls import _set_rls_context
+
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=seeded["a"])
+        assert InventoryItem.query.filter_by(organization_id=seeded["a"], normalized_name="sugar").count() == 0
+        assert db.session.get(DataImportJob, job_id).status == "FAILED"
