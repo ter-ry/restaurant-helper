@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, Download, ExternalLink, Lock, RefreshCw, Save } from "lucide-react";
 import { ThemedDateTimeInput } from "../components/ThemedDateTimeInput";
+import { downloadDailyCloseCsv } from "../lib/dailyCloseExport";
 import { Link, useLocation } from "react-router-dom";
 import { Badge } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -178,14 +179,26 @@ export function PilotDailyClosePage() {
   const squareFreshness = snapshot?.square?.freshness as { state?: string } | undefined;
   const completed = currentSession?.status === "COMPLETED";
   const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
-  const expectedCash = Number.isFinite(Number(cashReconciliation.expectedCash)) ? Number(cashReconciliation.expectedCash) : null;
+  const finiteOrNull = (value: unknown) => (value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null); // Number(null) is 0: never invent a figure
+  const expectedCash = finiteOrNull(cashReconciliation.expectedCash);
   const isCashTakingsMode = cashReconciliation.mode === "payments";
-  const cashTakings = Number.isFinite(Number(cashReconciliation.expectedCashTakings)) ? Number(cashReconciliation.expectedCashTakings) : null;
+  const cashTakings = finiteOrNull(cashReconciliation.expectedCashTakings);
   const countedCashValue = countedCash.trim() === "" ? null : Number(countedCash);
-  const squareClosedCash = Number.isFinite(Number(cashReconciliation.closedCash)) ? Number(cashReconciliation.closedCash) : null;
-  const cashDifference = expectedCash != null && (squareClosedCash != null || countedCashValue != null) && Number.isFinite(squareClosedCash ?? countedCashValue)
-    ? (squareClosedCash ?? countedCashValue)! - expectedCash
-    : (cashReconciliation.overShort != null ? Number(cashReconciliation.overShort) : null);
+  const partialExpectedCash = expectedCash == null ? finiteOrNull(cashReconciliation.partialExpectedCash) : null;
+  const providerClosedRaw = cashReconciliation.providerClosedCash ?? cashReconciliation.closedCash;
+  const squareClosedCash = providerClosedRaw != null && Number.isFinite(Number(providerClosedRaw)) ? Number(providerClosedRaw) : null;
+  const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  // Owner policy: variance = staff-counted cash minus verified expected cash. Square's drawer count is evidence only.
+  const liveCount = !completed && countedCashValue != null && Number.isFinite(countedCashValue) ? countedCashValue : null;
+  const cashDifference = liveCount != null
+    ? (expectedCash != null ? round2(liveCount - expectedCash) : null)
+    : (cashReconciliation.overShort != null && Number.isFinite(Number(cashReconciliation.overShort)) ? Number(cashReconciliation.overShort) : null);
+  const countedForCompare = liveCount ?? (cashReconciliation.countedCash != null ? Number(cashReconciliation.countedCash) : null);
+  const squareComparable = squareClosedCash != null && Number(cashReconciliation.unreconciledShiftCount ?? 0) === 0;
+  const providerDifference = countedForCompare != null && squareComparable ? round2(countedForCompare - (squareClosedCash as number)) : null;
+  const varianceUnavailableReason = expectedCash == null
+    ? (cashReconciliation.varianceUnavailableReason ?? cashReconciliation.reason ?? "Expected cash could not be verified from Square for this business date.")
+    : "Enter the physically counted cash to calculate the variance.";
   const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
   const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
   const wasteLabel = recordedWasteCost > 0
@@ -376,26 +389,35 @@ export function PilotDailyClosePage() {
                       inputMode="decimal"
                       min="0"
                       step="0.01"
-                      value={squareClosedCash == null ? countedCash : String(squareClosedCash)}
-                      disabled={completed || expectedCash == null || squareClosedCash != null}
+                      value={countedCash}
+                      disabled={completed}
                       onChange={(event) => setCountedCash(event.target.value)}
-                      placeholder={expectedCash == null ? "Unavailable" : "0.00"}
+                      placeholder="0.00"
                     />
                   </label>
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-muted">Over / short</p>
                     <p className={`mt-1 text-lg font-semibold ${cashDifference == null ? "text-muted" : cashDifference === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                      {cashDifference == null ? "—" : cashDifference === 0 ? "Balanced" : cashDifference > 0 ? `${formatMoney(cashDifference)} over` : `${formatMoney(Math.abs(cashDifference))} short`}
+                      {cashDifference == null ? "Variance unavailable" : cashDifference === 0 ? "Balanced" : cashDifference > 0 ? `${formatMoney(cashDifference)} over` : `${formatMoney(Math.abs(cashDifference))} short`}
                     </p>
                   </div>
                 </div>
-                {expectedCash == null ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted">
-                    <p>{cashReconciliation.reason ?? "Square has not provided tender-level cash for this close."} No cash count is required from this screen.</p>
+                {cashDifference == null ? (
+                  <div className="mt-3 rounded-2xl border border-dashed border-line px-3 py-2 text-sm text-muted" data-testid="variance-unavailable">
+                    <p>{varianceUnavailableReason}</p>
+                    {partialExpectedCash != null ? <p className="mt-1" data-testid="partial-expected-cash">Observed so far in Square: {formatMoney(partialExpectedCash)}. This is not a verified expected cash for the day, so no variance is shown.</p> : null}
                     {cashReconciliation.reconnectRequired ? <Link className="mt-2 inline-flex font-semibold text-ink underline" to="/app/square">Reconnect Square →</Link> : null}
                   </div>
                 ) : null}
-                {squareClosedCash != null ? <p className="mt-3 text-sm text-muted">Square counted close: {formatMoney(squareClosedCash)}. Manual counting is not required.</p> : null}
+                {squareClosedCash != null ? (
+                  <p className="mt-3 text-sm text-muted" data-testid="square-drawer-count">Square drawer count (provider-reported): {formatMoney(squareClosedCash)}. This does not replace the cash your team counted.</p>
+                ) : null}
+                {providerDifference != null && Math.abs(providerDifference) >= 0.01 ? (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" data-testid="count-disagreement">
+                    <p className="font-semibold">Your count differs from Square&apos;s drawer count</p>
+                    <p>You counted {formatMoney(countedForCompare as number)}; Square reported {formatMoney(squareClosedCash as number)} ({providerDifference > 0 ? "+" : "-"}{formatMoney(Math.abs(providerDifference))}).</p>
+                  </div>
+                ) : null}
                 {cashDifference != null && cashDifference !== 0 ? (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                     {cashReconciliation.possibleMatches?.length ? (
@@ -464,6 +486,16 @@ export function PilotDailyClosePage() {
                     <Save className="h-4 w-4" />
                     Save notes
                   </button>
+                  {completed && currentSession ? (
+                    <button
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                      type="button"
+                      onClick={() => downloadDailyCloseCsv(currentSession, selectedLocation?.name ?? data?.location?.name ?? "")}
+                    >
+                      <Download className="h-4 w-4" />
+                      Download close CSV
+                    </button>
+                  ) : null}
                   {currentSession ? (
                     <span className="inline-flex items-center rounded-full border border-line bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
                       {completed ? `Completed ${formatDateTime(currentSession.completedAt)}` : "Draft"}

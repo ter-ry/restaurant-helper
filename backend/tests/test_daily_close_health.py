@@ -127,7 +127,19 @@ def test_manual_cash_reconciliation_is_namespaced_and_recomputed():
 
     square_snapshot = {"cashReconciliation": {"status": "available", "expectedCash": 100.0, "closedCash": 105.0, "overShort": 5.0}, "manualReconciliation": {}, "attentionItems": []}
     square_merged = _merge_manual_reconciliation(square_snapshot, Session())
-    assert square_merged["cashReconciliation"]["overShort"] == 5.0
+    # Owner policy (#206): Square's closed-drawer count is provider evidence and never overrides the staff count.
+    # Staff counted 97.50 against expected 100.00 -> -2.50, while Square's 105.00 is kept and the disagreement flagged.
+    cash = square_merged["cashReconciliation"]
+    assert cash["overShort"] == -2.5 and cash["closedCash"] == 105.0
+    assert cash["providerCountDifference"] == -7.5 and cash["providerCountDisagrees"] is True
+    assert "cash_count_disagreement" in [item["type"] for item in square_merged["attentionItems"]]
+
+    class NoCount:
+        summary_snapshot_json = {}
+
+    uncounted = _merge_manual_reconciliation({"cashReconciliation": dict(square_snapshot["cashReconciliation"]), "manualReconciliation": {}, "attentionItems": []}, NoCount())
+    assert uncounted["cashReconciliation"]["overShort"] is None
+    assert uncounted["cashReconciliation"]["varianceStatus"] == "unavailable"
 
 
 def test_intraday_usage_period_does_not_create_daily_close_variance_attention():
@@ -325,9 +337,14 @@ def test_cash_reconciliation_mixes_shift_expected_cash_and_matches_events(monkey
     monkeypatch.setattr(daily_close, "_square_request", request)
     result = daily_close._cash_reconciliation(connection, location, date(2026, 10, 4))
     assert result["basis"] == "mixed"
-    assert result["expectedCash"] == 121.5
-    assert result["closedCash"] == 121
-    assert result["overShort"] == -0.5
+    # One shift is still open: expected cash is not verified for the day, so there is none (and no variance).
+    assert result["expectedCash"] is None and result["expectedCashComplete"] is False
+    assert result["partialExpectedCash"] == 181.5  # informational only: every shift observed so far
+    assert "still open" in result["expectedCashUnavailableReason"]
+    assert result["reconciledExpectedCash"] == 121.5  # closed shifts only: what Square's own count is compared with
+    assert result["closedCash"] == 121 and result["providerClosedCash"] == 121
+    assert result["providerOverShort"] == -0.5  # Square's variance is provider evidence, not the primary variance
+    assert "overShort" not in result
     assert result["reconciledShiftCount"] == 1
     assert result["openShiftCount"] == 1
     assert result["unreconciledShiftCount"] == 1

@@ -808,6 +808,17 @@ export interface CashReconciliation {
   reconciledExpectedCash?: number | null;
   countedCash?: number | null;
   overShort?: number | null;
+  varianceStatus?: "available" | "unavailable" | string;
+  varianceUnavailableReason?: string;
+  providerClosedCash?: number | null;
+  providerOverShort?: number | null;
+  providerCountDifference?: number | null;
+  providerCountDisagrees?: boolean;
+  expectedCashComplete?: boolean;
+  partialExpectedCash?: number | null;
+  expectedCashUnavailableReason?: string | null;
+  capturedAt?: string;
+  carriedFromDraft?: boolean;
   openingFloat: number | null;
   cashPayments: number | null;
   cashRefunds: number | null;
