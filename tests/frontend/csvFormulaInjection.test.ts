@@ -13,6 +13,30 @@ describe("CSV spreadsheet formula injection protection", () => {
     ].join("\n"));
   });
 
+  it("blocks leading controls and Unicode-equivalent formula operators", () => {
+    const values = ["\n=1+1", "\u0000\uFF1D1+1", "\u200B\uFF0Bcmd", "\uFEFF\uFF0D1+1", "\u2028\uFF20SUM(A1:A2)"];
+    for (const build of [
+      (value: string) => buildCsv([{ value }]),
+      (value: string) => buildExportCsv([{ value }]),
+      (value: string) => buildReorderCsv([{
+        supplier: value,
+        itemName: "Coffee",
+        currentQuantity: 1,
+        unit: "bag",
+        parLevel: 2,
+        suggestedQuantity: 1,
+        latestPurchasePrice: 10,
+        estimatedCost: 10,
+        notes: value,
+      }]),
+    ]) {
+      for (const value of values) {
+        expect(build(value)).toContain("'" + value);
+      }
+    }
+    expect(buildCsv([{ value: "－１０.００" }])).toBe("value\n－１０.００");
+  });
+
   it("protects the readiness and reorder export helpers too", () => {
     expect(buildExportCsv([{ supplier: "=HYPERLINK(\"https://evil.example\")", amount: "-10.00" }])).toBe(
       'supplier,amount\n"\'=HYPERLINK(""https://evil.example"")",-10.00',
