@@ -493,9 +493,14 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     }
 
 
-def _get_supplier_by_name(organization_id: int, name: str) -> Supplier:
+def _get_supplier_by_name(organization_id: int, name: str, *, reject_archived_except_id: int | None = None, reject_archived: bool = False) -> Supplier:
     normalized = _normalize_name(name)
     supplier = Supplier.query.filter_by(organization_id=organization_id, normalized_name=normalized).first()
+    if supplier is not None and reject_archived and not supplier.is_active and supplier.id != reject_archived_except_id:
+        raise RequestValidationError(
+            "Supplier validation failed.",
+            {"supplierName": f"{supplier.name} is archived. Restore it before creating new purchases."},
+        )
     if supplier is None:
         supplier = Supplier(organization_id=organization_id, name=name.strip(), normalized_name=normalized, category_focus="Other", notes="")
         db.session.add(supplier)
@@ -567,7 +572,12 @@ def _validate_invoice_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[str, Any], *, existing: PurchaseInvoice | None = None):
-    supplier = _get_supplier_by_name(organization_id, str(payload.get("supplierName") or payload.get("supplier") or ""))
+    supplier = _get_supplier_by_name(
+        organization_id,
+        str(payload.get("supplierName") or payload.get("supplier") or ""),
+        reject_archived=True,
+        reject_archived_except_id=existing.supplier_id if existing is not None else None,
+    )
     invoice = existing or PurchaseInvoice(
         organization_id=organization_id,
         location_id=location_id,

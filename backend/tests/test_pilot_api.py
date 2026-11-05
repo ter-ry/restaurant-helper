@@ -329,6 +329,44 @@ def test_purchase_invoice_accepts_blank_number_for_mapped_line(client):
     assert fetched.get_json()["lineItems"][0]["quantity"] == 10
 
 
+def test_archived_supplier_blocks_new_invoices_but_keeps_history(client):
+    login(client)
+    name = f"Archive Supplier {uuid4().hex[:8]}"
+    supplier = client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name, "isActive": True}).get_json()
+    inventory_item = next(item for item in client.get("/api/pilot/inventory").get_json()["items"] if item["name"] == "Chicken Breast")
+
+    def payload(number):
+        return {
+            "supplierName": name, "invoiceNumber": number, "invoiceDate": "2026-09-02",
+            "subtotal": 10, "tax": 0, "totalAmount": 10, "status": "Draft",
+            "lineItems": [{"description": "Chicken Breast", "inventoryItemId": inventory_item["id"], "purchaseUnit": "kg",
+                           "inventoryUnit": "kg", "conversionFactor": 1, "quantity": 1, "unitPrice": 10, "lineTotal": 10,
+                           "confidence": 1, "needsReview": False}],
+        }
+
+    first = client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload("ARC-1"))
+    assert first.status_code == 201
+    invoice_id = first.get_json()["id"]
+
+    for _ in range(2):  # archive is idempotent
+        archived = client.patch(f"/api/pilot/suppliers/{supplier['id']}", headers=csrf_headers(client), json={"isActive": False})
+        assert archived.status_code == 200 and archived.get_json()["isActive"] is False
+
+    blocked = client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload("ARC-2"))
+    assert blocked.status_code == 400
+    assert "archived" in str(blocked.get_json()).lower()
+
+    # Historical invoice stays legible and editable with its original supplier.
+    fetched = client.get(f"/api/pilot/purchases/invoices/{invoice_id}")
+    assert fetched.status_code == 200 and fetched.get_json()["supplier"]["name"] == name
+    edited = client.patch(f"/api/pilot/purchases/invoices/{invoice_id}", headers=csrf_headers(client), json=payload("ARC-1"))
+    assert edited.status_code == 200, edited.get_data(as_text=True)
+
+    restored = client.patch(f"/api/pilot/suppliers/{supplier['id']}", headers=csrf_headers(client), json={"isActive": True})
+    assert restored.get_json()["isActive"] is True
+    assert client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload("ARC-3")).status_code == 201
+
+
 def test_pilot_dashboard_lists_live_drafts(client):
     login(client)
 
