@@ -31,6 +31,7 @@ from backend.models import (
     DataImportRow,
     DashboardLayout,
     InventoryItem,
+    InventoryMovement,
     Organization,
     OrganizationMembership,
     PlatformRole,
@@ -2173,6 +2174,132 @@ def test_rls_blocks_cross_tenant_insert_and_update(postgres_app):
         assert result.rowcount == 0
         _set_rls_context(access_scope="customer", organization_id=org_a_id)
         assert Supplier.query.filter_by(id=supplier.id).first().name == "Changed"
+
+
+def test_postgres_runtime_rejects_cross_tenant_inventory_adjustment(postgres_app):
+    """The runtime role cannot adjust another tenant's item or write its ledger."""
+
+    def seed_inventory_tenants():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        org_a = _create_org(owner, f"Inventory RLS Alpha {uuid4().hex[:8]}")
+        org_b = _create_org(owner, f"Inventory RLS Beta {uuid4().hex[:8]}")
+        location_a = RestaurantLocation.query.filter_by(organization_id=org_a.id).one()
+        location_b = RestaurantLocation.query.filter_by(organization_id=org_b.id).one()
+        db.session.add_all(
+            [
+                OrganizationModule(organization_id=org_a.id, module_key="INVENTORY", status="ENABLED"),
+                OrganizationModule(organization_id=org_b.id, module_key="INVENTORY", status="ENABLED"),
+            ]
+        )
+        foreign_item = InventoryItem(
+            organization_id=org_b.id,
+            location_id=location_b.id,
+            name="Foreign RLS Flour",
+            normalized_name=f"foreign-rls-flour-{uuid4().hex}",
+            stock_unit="kg",
+            current_on_hand=Decimal("7"),
+            average_unit_cost=Decimal("2"),
+        )
+        db.session.add(foreign_item)
+        db.session.flush()
+        return {
+            "organization_id": org_a.id,
+            "location_id": location_a.id,
+            "foreign_organization_id": org_b.id,
+            "foreign_location_id": location_b.id,
+            "foreign_item_id": foreign_item.id,
+        }
+
+    seeded = _seed_admin_fixture(
+        "test_postgres_runtime_rejects_cross_tenant_inventory_adjustment",
+        seed_inventory_tenants,
+    )
+    source_record_id = f"postgres-cross-tenant-{uuid4().hex}"
+    client = postgres_app.test_client()
+
+    _login_owner(client)
+
+    def csrf_headers() -> dict[str, str]:
+        return {
+            "X-CSRFToken": client.get(
+                "/api/auth/csrf", base_url="http://127.0.0.1:5001"
+            ).get_json()["csrfToken"]
+        }
+
+    select_response = client.post(
+        "/api/organizations/select",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={"organizationId": seeded["organization_id"]},
+    )
+    assert select_response.status_code == 200, select_response.get_data(as_text=True)
+    me_response = client.get("/api/auth/me", base_url="http://127.0.0.1:5001")
+    assert me_response.status_code == 200, me_response.get_data(as_text=True)
+    assert me_response.get_json()["currentOrganizationId"] == seeded["organization_id"]
+    assert me_response.get_json()["currentLocationId"] == seeded["location_id"]
+
+    response = client.post(
+        f"/api/pilot/inventory/items/{seeded['foreign_item_id']}/adjustments",
+        base_url="http://127.0.0.1:5001",
+        headers=csrf_headers(),
+        json={
+            "reason": "cross-tenant PostgreSQL RLS probe",
+            "quantityDelta": 1,
+            "movementType": "manual increase",
+            "sourceRecordId": source_record_id,
+            "sourceLineId": "foreign-item",
+        },
+    )
+    assert response.status_code == 404, response.get_data(as_text=True)
+
+    # The request used postgres_app's normal runtime role and request tenant
+    # context. Inspect through the admin connection so RLS cannot hide a
+    # forbidden mutation from this assertion.
+    with postgres_app.app_context():
+        assert db.session.execute(
+            text("select current_user, current_setting('row_security')"),
+        ).one() == ("flowtally_runtime", "on")
+
+    admin_engine = create_engine(ADMIN_POSTGRES_URL or MIGRATION_POSTGRES_URL, poolclass=NullPool)
+    try:
+        with admin_engine.connect() as connection:
+            item_state = connection.execute(
+                text(
+                    """
+                    select organization_id, location_id, current_on_hand
+                    from inventory_items
+                    where id = :item_id
+                    """
+                ),
+                {"item_id": seeded["foreign_item_id"]},
+            ).one()
+            movement_count = connection.execute(
+                text(
+                    """
+                    select count(*)
+                    from inventory_movements
+                    where organization_id = :organization_id
+                      and location_id = :location_id
+                      and inventory_item_id = :item_id
+                      and source_record_id = :source_record_id
+                    """
+                ),
+                {
+                    "organization_id": seeded["foreign_organization_id"],
+                    "location_id": seeded["foreign_location_id"],
+                    "item_id": seeded["foreign_item_id"],
+                    "source_record_id": source_record_id,
+                },
+            ).scalar_one()
+    finally:
+        admin_engine.dispose()
+
+    assert item_state == (
+        seeded["foreign_organization_id"],
+        seeded["foreign_location_id"],
+        Decimal("7.0000"),
+    )
+    assert movement_count == 0
 
 
 @SUPPORT_ACCESS_DEFERRED
