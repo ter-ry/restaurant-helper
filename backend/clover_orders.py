@@ -162,6 +162,30 @@ def _components(raw: Mapping[str, Any]) -> list[str]:
     return sorted(key for key in _COMPONENT_KEYS if _present(raw.get(key)))
 
 
+def _cents_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(Decimal(str(value)))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _tender_key(payment: Mapping[str, Any]) -> str:
+    """Lower-cased Clover tender identifier (e.g. ``com.clover.tender.cash``), or "" when not supplied."""
+    tender = payment.get("tender")
+    if isinstance(tender, Mapping):
+        return _text(tender.get("labelKey") or tender.get("label")).lower()
+    return ""
+
+
+def _order_type_label(raw: Mapping[str, Any]) -> str:
+    order_type = raw.get("orderType")
+    if isinstance(order_type, Mapping):
+        return _text(order_type.get("label") or order_type.get("labelKey"))
+    return ""
+
+
 def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "orderComponents": _components(raw),
@@ -176,10 +200,20 @@ def _safe_order(raw: Mapping[str, Any]) -> dict[str, Any]:
         "closedTime": raw.get("closedTime"),
         "deletedTime": raw.get("deletedTime"),
         "payments": [
-            {"id": _id(value), "amount": int(_decimal(value.get("amount"))), "result": _text(value.get("result") or value.get("state")), "components": _components(value)}
+            {
+                "id": _id(value),
+                "amount": int(_decimal(value.get("amount"))),
+                "result": _text(value.get("result") or value.get("state")),
+                "components": _components(value),
+                # Amounts below are additive (Daily Close net sales / cash). None = not supplied by Clover.
+                "taxAmount": _cents_or_none(value.get("taxAmount")),
+                "tipAmount": _cents_or_none(value.get("tipAmount")),
+                "tender": _tender_key(value),
+            }
             for value in _elements(raw.get("payments"))
         ],
         "refunds": [{"id": _id(value), "amount": int(_decimal(value.get("amount"))), "components": _components(value)} for value in _elements(raw.get("refunds"))],
+        "orderType": _order_type_label(raw),
         "lineItems": [_safe_line(value) for value in _elements(raw.get("lineItems") or raw.get("line_items"))],
         "incomplete": bool(raw.get("_shadow_incomplete")),
         "lineItemsIncomplete": bool(raw.get("_shadow_line_items_incomplete")),
