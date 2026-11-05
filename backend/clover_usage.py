@@ -101,13 +101,17 @@ def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int 
             exceptions.append({"orderId": line.shadow_order_id, "lineId": line.id, "name": line.name,
                                "reason": "needs_mapping" if line.mapping_status == "unmapped" else "line_needs_review"})
             continue
-        ingredients = (line.recipe_preview_json or {}).get("ingredients")
+        recipe = line.recipe_preview_json if isinstance(line.recipe_preview_json, dict) else {}
+        ingredients = recipe.get("ingredients")
         if not isinstance(ingredients, list) or not ingredients:
             complete = False
             exceptions.append({"orderId": line.shadow_order_id, "lineId": line.id, "name": line.name, "reason": "recipe_missing"})
             continue
         line_ok = True
         for ingredient in ingredients:
+            if not isinstance(ingredient, dict):
+                line_ok = False
+                continue
             try:
                 item_id = int(ingredient.get("inventoryItemId"))
                 expected = Decimal(str(ingredient.get("quantity")))
@@ -119,7 +123,7 @@ def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int 
                 line_ok = False
         if line_ok:
             covered_lines.add(line.id)
-            name = (line.recipe_preview_json or {}).get("flowtallyMenuItemName") or line.name
+            name = recipe.get("flowtallyMenuItemName") or line.name
             menu_sales[name] += Decimal(str(line.quantity or 0))
         else:
             complete = False
