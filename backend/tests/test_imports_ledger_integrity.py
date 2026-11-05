@@ -18,10 +18,18 @@ import pytest
 
 from backend.extensions import db
 from backend.models import (
+    CloverConnection,
+    CloverShadowOrder,
+    CloverShadowOrderLine,
+    CloverShadowOrderLineInventoryConsumption,
     DataImportJob,
     InventoryItem,
     InventoryMovement,
     OrganizationMembership,
+    SquareConnection,
+    SquareOrder,
+    SquareOrderLine,
+    SquareOrderLineInventoryConsumption,
     User,
 )
 from backend.seed import LOCAL_OWNER_EMAIL
@@ -369,3 +377,89 @@ def test_each_history_kind_alone_blocks_quantity_reimport(app, client, history):
         assert _snapshot(organization_id, "Flour") == before
         opening = "10"
         assert_ledger_reconciles(item_id, expected_on_hand=expected, opening=opening)
+
+
+def add_real_pos_consumption(organization_id: int, item_id: int, kind: str, tag: str = "t") -> None:
+    """Insert a REAL POS consumption record (not an InventoryMovement) for an item.
+
+    No movement row, no invoice, count or waste is written, so this is the only history the item has.
+    Caller commits. Works on SQLite and, when run through the admin fixture, on PostgreSQL.
+    """
+    item = db.session.get(InventoryItem, item_id)
+    if kind == "square":
+        connection = SquareConnection(organization_id=organization_id, environment="sandbox", square_merchant_id=f"m-{tag}", status="connected", sync_status="idle")
+        db.session.add(connection)
+        db.session.flush()
+        order = SquareOrder(square_connection_id=connection.id, square_order_id=f"sq-{tag}-{item_id}", restaurant_location_id=item.location_id, order_state="COMPLETED")
+        db.session.add(order)
+        db.session.flush()
+        line = SquareOrderLine(square_order_id=order.id, line_uid=f"line-{tag}-{item_id}", quantity=Decimal("1"))
+        db.session.add(line)
+        db.session.flush()
+        db.session.add(SquareOrderLineInventoryConsumption(
+            organization_id=organization_id, location_id=item.location_id, square_order_line_id=line.id,
+            inventory_item_id=item_id, applied_quantity=Decimal("1"),
+        ))
+    elif kind == "clover":
+        connection = CloverConnection(organization_id=organization_id, environment="sandbox", merchant_id=f"m-{tag}", status="connected", access_token_ciphertext="x")
+        db.session.add(connection)
+        db.session.flush()
+        order = CloverShadowOrder(
+            organization_id=organization_id, clover_connection_id=connection.id, restaurant_location_id=item.location_id,
+            clover_merchant_id=f"m-{tag}", clover_order_id=f"cl-{tag}-{item_id}", provider_status="CLOSED", normalized_status="paid",
+            payment_status="PAID", potentially_eligible=True, requires_review=False, raw_payload_json={},
+        )
+        db.session.add(order)
+        db.session.flush()
+        line = CloverShadowOrderLine(
+            organization_id=organization_id, restaurant_location_id=item.location_id, shadow_order_id=order.id,
+            clover_line_item_id=f"cl-line-{tag}-{item_id}", clover_item_id="i1", name="Dish", quantity=Decimal("1"), mapping_status="mapped",
+        )
+        db.session.add(line)
+        db.session.flush()
+        db.session.add(CloverShadowOrderLineInventoryConsumption(
+            organization_id=organization_id, location_id=item.location_id, clover_shadow_order_line_id=line.id,
+            inventory_item_id=item_id, applied_quantity=Decimal("1"), unit_cost_snapshot=Decimal("2"),
+        ))
+    else:
+        raise ValueError(kind)
+
+
+@pytest.mark.parametrize("kind", ["square", "clover"])
+def test_real_pos_consumption_record_alone_blocks_quantity_reimport_and_rollback(app, client, kind):
+    login(client)
+    organization_id = _new_org(app, client, f"Ledger POS {kind}")
+    create_job = _import(client, organization_id, _csv([("Flour", 10, 20, "2.00")]))
+    update_job = _import(client, organization_id, _csv([("Flour", 12, 25, "2.00")]))
+    with app.app_context():
+        item_id = _item(organization_id, "Flour").id
+        add_real_pos_consumption(organization_id, item_id, kind)
+        db.session.commit()
+        # The only history is the POS consumption record: no movement, invoice line, count or waste.
+        assert InventoryMovement.query.filter_by(inventory_item_id=item_id).count() == 0
+        before = _snapshot(organization_id, "Flour")
+        assert before == (Decimal("12"), Decimal("2"), 0)
+
+    # Preview/apply path: changing quantity is a blocked row that names the POS sale.
+    job_id, preview = _preview(client, organization_id, _csv([("Flour", 99, 25, "2.00")]))
+    assert preview["status"] == "VALIDATION_REQUIRED" and preview["blockedRowCount"] == 1
+    message = next(i["message"] for r in preview["rows"] for i in r["issues"] if i["code"] == "ledger_history")
+    assert "1 POS sale" in message and "stock count or adjustment" in message
+    assert _post(client, f"/api/imports/jobs/{job_id}/approve").status_code == 400
+    assert _post(client, f"/api/imports/jobs/{job_id}/execute").status_code == 400
+
+    # An unchanged quantity still updates other fields and leaves on-hand and cost untouched.
+    _import(client, organization_id, _csv([("Flour", 12, 40, "2.00")]))
+    with app.app_context():
+        assert Decimal(_item(organization_id, "Flour").par_level) == Decimal("40")
+        assert _snapshot(organization_id, "Flour") == before
+
+    # Rollback of both the update and the create import is refused and changes nothing.
+    for rollback_job in (update_job, create_job):
+        response = _post(client, f"/api/imports/jobs/{rollback_job}/rollback")
+        assert response.status_code == 409, response.get_data(as_text=True)
+        assert "1 POS sale" in response.get_json()["errors"]["blockers"]
+    with app.app_context():
+        assert _snapshot(organization_id, "Flour") == before
+        assert db.session.get(DataImportJob, update_job).status == "COMPLETED"
+        assert db.session.get(DataImportJob, create_job).status == "COMPLETED"

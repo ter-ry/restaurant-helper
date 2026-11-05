@@ -157,3 +157,52 @@ def test_postgres_execute_is_all_or_nothing_when_history_appears_after_approval(
         _set_rls_context(access_scope="customer", organization_id=seeded["a"])
         assert InventoryItem.query.filter_by(organization_id=seeded["a"], normalized_name="sugar").count() == 0
         assert db.session.get(DataImportJob, job_id).status == "FAILED"
+
+
+def _add_pos_consumption(org_id: int, item_id: int, kind: str) -> None:
+    from backend.tests.test_imports_ledger_integrity import add_real_pos_consumption
+
+    def _seed():
+        add_real_pos_consumption(org_id, item_id, kind, tag=f"pg{org_id}")
+        assert InventoryMovement.query.filter_by(inventory_item_id=item_id).count() == 0
+
+    _seed_admin_fixture(f"ledger pg {kind} consumption", _seed)
+
+
+def test_postgres_real_square_and_clover_consumption_rows_under_forced_rls(postgres_app):
+    seeded = _seed_orgs()
+    client = postgres_app.test_client()
+    _login_owner(client)
+
+    # Tenant B: Flour has a real Square consumption row, Rice a real Clover shadow consumption row.
+    assert _post(client, "/api/organizations/select", {"organizationId": seeded["b"]}).status_code == 200
+    created = {}
+    for name in ("Flour", "Rice"):
+        created[name], _ = _run_import(client, seeded["b"], seeded["b_loc"], name, 10, 20, f"b-{name}")
+        assert _execute(client, created[name]).status_code == 200
+    ids = {name: _item_state(postgres_app, seeded["b"], name)[0] for name in ("Flour", "Rice")}
+    _add_pos_consumption(seeded["b"], ids["Flour"], "square")
+    _add_pos_consumption(seeded["b"], ids["Rice"], "clover")
+
+    for name in ("Flour", "Rice"):
+        # Preview (read through the runtime role) sees the consumption row and blocks the quantity change.
+        job_id, preview = _run_import(client, seeded["b"], seeded["b_loc"], name, 99, 30, f"b2-{name}")
+        assert preview["status"] == "VALIDATION_REQUIRED", name
+        assert {i["code"] for r in preview["rows"] for i in r["issues"]} == {"ledger_history"}
+        assert _post(client, f"/api/imports/jobs/{job_id}/approve").status_code == 400
+        # Rollback is refused under the row lock.
+        rollback = _post(client, f"/api/imports/jobs/{created[name]}/rollback")
+        assert rollback.status_code == 409, rollback.get_data(as_text=True)
+        assert "POS sale" in rollback.get_json()["errors"]["blockers"]
+        assert _item_state(postgres_app, seeded["b"], name)[1:] == (Decimal("10"), Decimal("0"))
+
+    # Tenant A: same item names, no history. B's POS rows neither block nor leak; clean rollback works.
+    assert _post(client, "/api/organizations/select", {"organizationId": seeded["a"]}).status_code == 200
+    for name in ("Flour", "Rice"):
+        create_job, _ = _run_import(client, seeded["a"], seeded["a_loc"], name, 10, 20, f"a-{name}")
+        assert _execute(client, create_job).status_code == 200
+        fix_job, preview = _run_import(client, seeded["a"], seeded["a_loc"], name, 12, 20, f"a2-{name}")
+        assert preview["status"] == "READY_FOR_PREVIEW", name
+        assert _execute(client, fix_job).status_code == 200
+        assert _post(client, f"/api/imports/jobs/{fix_job}/rollback").status_code == 200
+        assert _post(client, f"/api/imports/jobs/{create_job}/rollback").status_code == 200

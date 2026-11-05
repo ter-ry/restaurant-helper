@@ -23,6 +23,8 @@ Stock quantity and weighted-average cost change only through the movement ledger
 - **Existing item with history:** a row that changes `currentOnHand` is a blocked row ("use a stock count or adjustment"); the job cannot be approved or executed, and execute re-checks inside its transaction so a receipt posted after approval fails the whole job with nothing written. A blank or unchanged quantity is accepted and updates only the other fields. Weighted-average cost is never recomputed or overwritten by import once history exists.
 - **Rollback:** refused with 409 for any inventory import (create or update) whose item now has stock history. Rollback without history still restores or deletes as before.
 
+**What is and is not serialized.** Import execute and rollback lock the item row (`FOR UPDATE`) and re-read stock history under that lock. Square and Clover POS consumption also lock item rows, so they serialize with an import. Receipts, invoice corrections, adjustments, waste and count finalize do **not** lock the item row today, so an import that runs at the same instant as one of those can still interleave and lose an update. History that has already committed is always detected; an in-flight write in another transaction is not. This is a known remaining race, tracked separately from #227 as [#248](https://github.com/ter-ry/restaurant-helper/issues/248) with a deterministic reproduction and the recommended fix (lock item rows in the other writers, in item-id order). The guard is therefore not a claim of full concurrency safety.
+
 Tests: `backend/tests/test_imports_ledger_integrity.py` (SQLite) and `test_imports_ledger_integrity_postgres.py` (forced RLS, runtime role).
 
 ## Defects found and fixed in this PR (existing behavior)
