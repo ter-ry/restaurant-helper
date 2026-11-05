@@ -27,11 +27,20 @@ from .models import (
     DataImportIssue,
     DataImportJob,
     DataImportMapping,
+    CloverShadowOrderLineInventoryConsumption,
     DataImportRow,
     InventoryItem,
+    InventoryMovement,
+    InventoryWasteEvent,
     Organization,
     OrganizationMembership,
+    PurchaseInvoice,
+    PurchaseInvoiceLine,
+    RecipeIngredient,
     RestaurantLocation,
+    SquareOrderLineInventoryConsumption,
+    StockCountSession,
+    StockCountSessionLine,
     Supplier,
     SupplierItemMapping,
 )
@@ -604,6 +613,86 @@ def _lookup_mapping(organization_id: int, supplier_id: int, inventory_item_id: i
     )
 
 
+def _lock_inventory_item(organization_id: int, item_id: int) -> InventoryItem | None:
+    """Re-read an item under a row lock (``FOR UPDATE``).
+
+    Scope of the guarantee (#227): this serializes the import only against other writers that also lock
+    the item row, which today are the Square and Clover POS consumption paths and other import
+    executes/rollbacks. Receipts, invoice corrections, adjustments, waste and count finalize read the
+    item without a lock (``backend/pilot_api.py`` has no ``with_for_update``), so an import racing one
+    of those can still lose an update. History that has already committed is always detected; a write
+    that is in flight in another transaction is not. Tracked separately as issue #248.
+    """
+    return (
+        InventoryItem.query.execution_options(populate_existing=True)
+        .filter_by(id=item_id, organization_id=organization_id)
+        .with_for_update()
+        .first()
+    )
+
+
+def _item_ledger_history(organization_id: int, item_id: int) -> dict[str, int]:
+    """Records that tie an item's on-hand and weighted-average cost to the movement ledger (#227).
+
+    Once any of these exist, on-hand must only change through the ledger (receipt, count, adjustment,
+    POS consumption), so an import may neither overwrite it nor roll it back.
+    """
+    history = {
+        "movements": InventoryMovement.query.filter_by(organization_id=organization_id, inventory_item_id=item_id).count(),
+        "invoiceLines": (
+            PurchaseInvoiceLine.query.join(PurchaseInvoice, PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id)
+            .filter(PurchaseInvoice.organization_id == organization_id, PurchaseInvoiceLine.inventory_item_id == item_id)
+            .count()
+        ),
+        "countLines": (
+            StockCountSessionLine.query.join(StockCountSession, StockCountSessionLine.session_id == StockCountSession.id)
+            .filter(StockCountSession.organization_id == organization_id, StockCountSessionLine.inventory_item_id == item_id)
+            .count()
+        ),
+        "posConsumptions": (
+            SquareOrderLineInventoryConsumption.query.filter_by(organization_id=organization_id, inventory_item_id=item_id).count()
+            + CloverShadowOrderLineInventoryConsumption.query.filter_by(organization_id=organization_id, inventory_item_id=item_id).count()
+        ),
+        "wasteEvents": InventoryWasteEvent.query.filter_by(organization_id=organization_id, inventory_item_id=item_id).count(),
+    }
+    return {key: value for key, value in history.items() if value}
+
+
+_LEDGER_HISTORY_LABELS = {
+    "movements": "stock movement",
+    "invoiceLines": "purchase invoice line",
+    "countLines": "stock count line",
+    "posConsumptions": "POS sale",
+    "wasteEvents": "waste record",
+}
+
+
+def _describe_ledger_history(history: dict[str, int]) -> str:
+    parts = []
+    for key, label in _LEDGER_HISTORY_LABELS.items():
+        count = history.get(key)
+        if count:
+            parts.append(f"{count} {label}{'' if count == 1 else 's'}")
+    return ", ".join(parts)
+
+
+def _quantity_change_requested(normalized: dict[str, Any], item: InventoryItem) -> bool:
+    raw = normalized.get("currentOnHand")
+    if raw in (None, ""):
+        return False
+    try:
+        requested = _to_decimal(raw, field_name="currentOnHand")
+    except ValueError:
+        return False
+    return requested is not None and requested != Decimal(str(item.current_on_hand or 0))
+
+
+LEDGER_HISTORY_QUANTITY_MESSAGE = (
+    "{name} already has stock history ({history}). Its quantity can no longer be changed by import; "
+    "use a stock count or adjustment instead. Leave the quantity blank or unchanged to update other fields."
+)
+
+
 def _serialize_entity(entity: Any, entity_type: str) -> dict[str, Any]:
     if entity_type == "supplier":
         return serialize_supplier(entity)
@@ -679,6 +768,15 @@ def _row_issues_for_entity(job: DataImportJob, organization: Organization, row: 
         location = _lookup_location_by_name(organization.id, str(location_value or ""))
         if location_value and location is None:
             add_issue("locationName", "missing_location", "The selected location does not belong to this organization.")
+        existing_item = _lookup_item_by_name(organization.id, location.id, str(normalized.get(name_field) or "")) if location is not None else None
+        if existing_item is not None and _quantity_change_requested(normalized, existing_item):
+            history = _item_ledger_history(organization.id, existing_item.id)
+            if history:
+                add_issue(
+                    "currentOnHand",
+                    "ledger_history",
+                    LEDGER_HISTORY_QUANTITY_MESSAGE.format(name=existing_item.name, history=_describe_ledger_history(history)),
+                )
         if normalized.get("supplierName") and _lookup_supplier_by_name(organization.id, str(normalized.get("supplierName") or "")) is None:
             add_issue("supplierName", "missing_supplier", "The selected supplier does not belong to this organization.")
         elif normalized.get("supplierName"):
@@ -988,6 +1086,12 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
             item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
             applied_json = serialize_inventory_item(item)
             return "create", item, previous_json, applied_json, rollbackable
+        item = _lock_inventory_item(organization.id, item.id) or item
+        has_ledger_history = bool(_item_ledger_history(organization.id, item.id))
+        if has_ledger_history and _quantity_change_requested(normalized, item):
+            # Re-checked at apply time on top of the preview check, so history that committed between
+            # approval and execute is caught. See _lock_inventory_item for what the row lock does not cover.
+            raise ValueError(f"{item.name} already has stock history; use a stock count or adjustment to change its quantity.")
         previous_json = serialize_inventory_item(item)
         item.name = item_name
         item.normalized_name = _normalize_key(item_name)
@@ -1000,12 +1104,16 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
         item.category = str(normalized.get("category") or item.category or "Other")
         item.stock_unit = str(normalized.get("stockUnit") or item.stock_unit or "each")
         for field_name, attr_name in [("currentOnHand", "current_on_hand"), ("minQuantity", "min_quantity"), ("parLevel", "par_level"), ("latestPurchasePrice", "latest_purchase_price")]:
+            if field_name == "currentOnHand" and has_ledger_history:
+                continue
             if normalized.get(field_name) not in (None, ""):
                 setattr(item, attr_name, _to_decimal(normalized.get(field_name), field_name=field_name))
-        if normalized.get("averageUnitCost") not in (None, ""):
-            item.average_unit_cost = _to_decimal(normalized.get("averageUnitCost"), field_name="averageUnitCost")
-        else:
-            item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
+        if not has_ledger_history:
+            # Opening baseline only: with ledger history the weighted-average cost is owned by receipts.
+            if normalized.get("averageUnitCost") not in (None, ""):
+                item.average_unit_cost = _to_decimal(normalized.get("averageUnitCost"), field_name="averageUnitCost")
+            else:
+                item.average_unit_cost = stock_unit_cost_from_purchase(item.latest_purchase_price, item.last_purchase_conversion_factor)
         applied_json = serialize_inventory_item(item)
         return "update", item, previous_json, applied_json, rollbackable
 
@@ -1051,26 +1159,42 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
 
 def _dependency_blockers(job: DataImportJob, change: DataImportChange) -> list[str]:
     blockers: list[str] = []
-    if change.change_type != "create" or not change.rollbackable:
+    if change.change_type not in {"create", "update"} or not change.rollbackable:
         return blockers
     try:
         target_id = int(change.target_entity_id)
     except (TypeError, ValueError):
+        return blockers
+    if job.entity_scope in {"inventory_item", "opening_inventory"}:
+        # Rolling back an inventory row restores (update) or deletes (create) the item's on-hand and
+        # cost, so it is only safe while nothing in the ledger depends on that baseline (#227).
+        item = _lock_inventory_item(job.organization_id, target_id)
+        if item is None:
+            return blockers
+        history = _item_ledger_history(job.organization_id, target_id)
+        if history:
+            blockers.append(
+                f"{item.name} now has stock history ({_describe_ledger_history(history)}); rolling back would change its on-hand or cost outside the stock ledger."
+            )
+        if change.change_type == "create":
+            mappings = SupplierItemMapping.query.filter_by(organization_id=job.organization_id, inventory_item_id=target_id).count()
+            recipes = RecipeIngredient.query.filter_by(organization_id=job.organization_id, inventory_item_id=target_id).count()
+            if mappings or recipes:
+                blockers.append(f"{item.name} is now used by supplier mappings or recipes.")
+        return blockers
+    if change.change_type != "create":
         return blockers
     if job.entity_scope == "supplier":
         dependent_items = InventoryItem.query.filter_by(organization_id=job.organization_id, supplier_id=target_id).count()
         dependent_mappings = SupplierItemMapping.query.filter_by(organization_id=job.organization_id, supplier_id=target_id).count()
         if dependent_items or dependent_mappings:
             blockers.append("The supplier now has linked records.")
-    elif job.entity_scope in {"inventory_item", "opening_inventory"}:
-        invoice_lines = 0
-        movements = 0
-        counts = 0
-        mappings = SupplierItemMapping.query.filter_by(organization_id=job.organization_id, inventory_item_id=target_id).count()
-        if invoice_lines or movements or counts or mappings:
-            blockers.append("The inventory item now has dependent records.")
     elif job.entity_scope == "supplier_item_mapping":
-        invoice_lines = 0
+        invoice_lines = (
+            PurchaseInvoiceLine.query.join(PurchaseInvoice, PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id)
+            .filter(PurchaseInvoice.organization_id == job.organization_id, PurchaseInvoiceLine.supplier_item_mapping_id == target_id)
+            .count()
+        )
         if invoice_lines:
             blockers.append("The mapping is now referenced by downstream records.")
     return blockers

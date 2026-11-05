@@ -10,7 +10,7 @@ This runbook covers only what the current code supports. Anything marked **OWNER
 |---|---|---|
 | Google sign-in, owner and manager roles | Supported | Customers use Google sign-in. The email/password form appears only when seed login is turned on, and is not for customers. |
 | Organization, locations, timezone | Supported | The customer creates the organization. Flowtally staff add locations in the setup console. |
-| Supplier, item, supplier-item mapping and opening-inventory import (CSV/XLSX) | Supported, with a limit | Import opening inventory **once, before** the first receipt, count or POS sync. See [#227](https://github.com/ter-ry/restaurant-helper/issues/227). Import scope verification: #224. |
+| Supplier, item, supplier-item mapping and opening-inventory import (CSV/XLSX) | Supported, with a limit | Opening quantities can be corrected by re-import only until the item has stock history; after that, quantity changes are rejected and rollback is blocked ([#227](https://github.com/ter-ry/restaurant-helper/issues/227)). Import scope verification: #224. |
 | Purchases: draft, OCR draft, review, receive | Supported | OCR needs a provider configured in that environment. Every OCR line is reviewed by a person before receiving. |
 | Stock counts | Supported | |
 | Menu costing (recipes, menu items) | Supported | Recipes are entered by hand. There is no recipe import. |
@@ -54,7 +54,7 @@ Done at `/imports` by the owner or setup staff, in this order: **suppliers → i
 1. Upload a CSV/XLSX file, map the columns, preview it and fix the reported issues. Then **approve** and **execute** it. Imports are not complete until they are approved or executed, and activation stays blocked until then.
 2. Check the counts and a sample of rows in Inventory.
 3. To undo an import, use **rollback** on the job. Rollback is refused for a supplier that already has linked items or mappings.
-4. **Limitation ([#227](https://github.com/ter-ry/restaurant-helper/issues/227)):** re-importing an item that already exists overwrites on-hand and cost without a ledger movement. After the first receipt, count or POS sync, correct quantities only with a stock count or adjustment. Do not re-import or roll back opening inventory after that point.
+4. **Guard ([#227](https://github.com/ter-ry/restaurant-helper/issues/227)):** once an item has a receipt, count, POS sale, adjustment or waste record, an import row that changes its quantity is rejected and rolling back that import is blocked. Correct quantities with a stock count or adjustment. Other fields (par, minimum, supplier) can still be re-imported.
 
 ## 4. Approval and activation
 

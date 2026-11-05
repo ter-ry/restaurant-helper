@@ -1,5 +1,6 @@
 import { buildDemoPath, defaultDemoProfileSlug, type DemoProfileSlug } from "../data/demoProfiles";
 import { summarizeInvoiceInventoryStatus } from "./invoiceInventory";
+import { escapeCsvCell } from "./reportExports";
 import type { InventoryInvoiceReceipt, PilotInvoiceRecord, PilotReconciliationRecord, PilotWorkspaceSummary } from "../types";
 
 export type DemoWalkthroughStep = {
@@ -197,17 +198,10 @@ export function buildExportCsv(contentRows: Array<Record<string, string | number
   }
 
   const headers = Object.keys(contentRows[0]);
-  const escapeCell = (value: string | number | null | undefined) => {
-    const text = value === null || value === undefined ? "" : String(value);
-    if (/[",\n]/.test(text)) {
-      return `"${text.replace(/"/g, '""')}"`;
-    }
-    return text;
-  };
 
   return [
-    headers.join(","),
-    ...contentRows.map((row) => headers.map((header) => escapeCell(row[header])).join(",")),
+    headers.map(escapeCsvCell).join(","),
+    ...contentRows.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(",")),
   ].join("\n");
 }
 

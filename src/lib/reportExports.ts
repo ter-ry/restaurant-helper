@@ -1,5 +1,21 @@
 export type CsvCell = string | number | boolean | null | undefined;
 
+/** Keep spreadsheet formulas from executing while preserving genuine numeric values. */
+export function escapeCsvCell(value: CsvCell): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  // NFKC handles full-width operators; normalize the mathematical minus sign too.
+  const normalizedText = text.normalize("NFKC").replace(/\u2212/g, "-");
+  const numericValue = Number(normalizedText);
+  const formulaCandidate = normalizedText.replace(/^[\s\p{C}]*/u, "");
+  const safeText = typeof value === "string" && text !== "" && !Number.isFinite(numericValue) && /^[=+\-@]/.test(formulaCandidate)
+    ? `'${text}`
+    : text;
+  if (/[",\r\n]/.test(safeText)) {
+    return `"${safeText.replace(/"/g, '""')}"`;
+  }
+  return safeText;
+}
+
 export function buildCsv(rows: Array<Record<string, CsvCell>>) {
   if (rows.length === 0) {
     return "";
@@ -7,17 +23,9 @@ export function buildCsv(rows: Array<Record<string, CsvCell>>) {
 
   const headers = Object.keys(rows[0]);
 
-  const escapeCell = (value: CsvCell) => {
-    const text = value === null || value === undefined ? "" : String(value);
-    if (/[",\n]/.test(text)) {
-      return `"${text.replace(/"/g, '""')}"`;
-    }
-    return text;
-  };
-
   return [
-    headers.join(","),
-    ...rows.map((row) => headers.map((header) => escapeCell(row[header])).join(",")),
+    headers.map(escapeCsvCell).join(","),
+    ...rows.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(",")),
   ].join("\n");
 }
 
