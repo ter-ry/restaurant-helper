@@ -10,13 +10,13 @@ Last reconciled 2026-11-05 against live GitHub (main `9d2099c`, issue #225, PR #
 
 Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval. Snapshot at 2026-11-05:
 
-- **Open PRs (live, 2026-11-05; each needs an independent review verdict at its current head before owner merge):**
+- **Open PRs (live, 2026-11-05, as of 17:11Z; heads move quickly, so re-check GitHub; each needs an independent review verdict at its current head before owner merge):**
 
   | PR | Issue | Head | CI at head | Review state |
   |---|---|---|---|---|
-  | [#238](https://github.com/ter-ry/restaurant-helper/pull/238) 768px UI/mutation-state fixes | #223 | `cca3528` | passed | `REQUEST CHANGES @ 3b52734` replied to on the PR; re-review of `cca3528` pending |
-  | [#239](https://github.com/ter-ry/restaurant-helper/pull/239) import verification and fixes | #224 | `44bc61a` | in progress when checked | `REQUEST CHANGES @ bd20749` addressed in `44bc61a`; re-review pending |
-  | [#241](https://github.com/ter-ry/restaurant-helper/pull/241) Clover Daily Close provider integration | #222 | `3294b79` | passed | `REQUEST CHANGES @ 3294b79` open |
+  | [#238](https://github.com/ter-ry/restaurant-helper/pull/238) 768px UI/mutation-state fixes | #223 | `534204e` | frontend passed, backend in progress | `REQUEST CHANGES @ 3b52734` replied to; re-review of `534204e` requested on the PR (only tests changed since `cca3528`) |
+  | [#239](https://github.com/ter-ry/restaurant-helper/pull/239) import verification and fixes | #224 | `44bc61a` | passed | `REQUEST CHANGES @ bd20749` addressed in `44bc61a`; re-review pending |
+  | [#241](https://github.com/ter-ry/restaurant-helper/pull/241) Clover Daily Close provider integration | #222 | `133bd0d` | frontend passed, backend in progress | `REQUEST CHANGES @ 3294b79` is the latest recorded verdict; none recorded at `133bd0d` |
   | [#242](https://github.com/ter-ry/restaurant-helper/pull/242) supplier soft archive | #229 | `2e154c1` | passed | `REQUEST CHANGES @ 2e154c1` open |
   | [#243](https://github.com/ter-ry/restaurant-helper/pull/243) negative-stock acceptance tests | #230 | `3b8d229` | passed | no review recorded |
   | [#236](https://github.com/ter-ry/restaurant-helper/pull/236) this document | #225 | see PR | see PR | `REQUEST CHANGES @ 33782a5` addressed by this update |
