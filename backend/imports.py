@@ -552,6 +552,18 @@ def _lookup_location_by_name(organization_id: int, location_name: str) -> Restau
     )
 
 
+def _archived_supplier_assignment(supplier: Supplier | None, current_supplier_id: int | None) -> bool:
+    """True when a row would set or change a reference to an archived supplier (#229).
+
+    An unchanged reference (the record already points at this supplier) stays legal so
+    historical data can still be re-imported and updated.
+    """
+    return supplier is not None and not supplier.is_active and supplier.id != current_supplier_id
+
+
+ARCHIVED_SUPPLIER_IMPORT_MESSAGE = "{name} is archived. Restore it before importing new items or mappings that use it."
+
+
 def _lookup_supplier_by_name(organization_id: int, supplier_name: str) -> Supplier | None:
     normalized = _normalize_key(supplier_name)
     if not normalized:
@@ -669,6 +681,11 @@ def _row_issues_for_entity(job: DataImportJob, organization: Organization, row: 
             add_issue("locationName", "missing_location", "The selected location does not belong to this organization.")
         if normalized.get("supplierName") and _lookup_supplier_by_name(organization.id, str(normalized.get("supplierName") or "")) is None:
             add_issue("supplierName", "missing_supplier", "The selected supplier does not belong to this organization.")
+        elif normalized.get("supplierName"):
+            row_supplier = _lookup_supplier_by_name(organization.id, str(normalized.get("supplierName") or ""))
+            row_item = _lookup_item_by_name(organization.id, location.id, str(normalized.get(name_field) or "")) if location is not None else None
+            if _archived_supplier_assignment(row_supplier, row_item.supplier_id if row_item is not None else None):
+                add_issue("supplierName", "archived_supplier", ARCHIVED_SUPPLIER_IMPORT_MESSAGE.format(name=row_supplier.name))
         if normalized.get("stockUnit") and _normalize_key(normalized.get("stockUnit")) not in { _normalize_key(unit) for unit in ALLOWED_UNITS }:
             add_issue("stockUnit", "unknown_unit", "That stock unit is not recognized.", severity="warning")
         for numeric_field in ["currentOnHand", "minQuantity", "parLevel", "latestPurchasePrice"]:
@@ -698,6 +715,17 @@ def _row_issues_for_entity(job: DataImportJob, organization: Organization, row: 
                 add_issue("locationName", "missing_location", "The selected location does not belong to this organization.")
             elif _lookup_item_by_name(organization.id, location.id, str(normalized.get("inventoryItemName") or "")) is None:
                 add_issue("inventoryItemName", "missing_item", "The selected inventory item does not belong to this organization.")
+            else:
+                map_supplier = _lookup_supplier_by_name(organization.id, str(normalized.get("supplierName") or ""))
+                map_item = _lookup_item_by_name(organization.id, location.id, str(normalized.get("inventoryItemName") or ""))
+                if (
+                    map_supplier is not None
+                    and map_item is not None
+                    and not map_supplier.is_active
+                    and _lookup_mapping(organization.id, map_supplier.id, map_item.id, str(normalized.get("supplierItemName") or "")) is None
+                ):
+                    # Only a NEW mapping is blocked; an existing one is an unchanged historical reference.
+                    add_issue("supplierName", "archived_supplier", ARCHIVED_SUPPLIER_IMPORT_MESSAGE.format(name=map_supplier.name))
         if not _normalize_text(normalized.get("supplierItemName")):
             add_issue("supplierItemName", "required", "Supplier item name is required.")
         if normalized.get("conversionFactor") not in (None, ""):
@@ -939,6 +967,8 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
             db.session.flush()
             if normalized.get("supplierName"):
                 supplier = _lookup_supplier_by_name(organization.id, str(normalized.get("supplierName") or ""))
+                if _archived_supplier_assignment(supplier, None):
+                    raise ValueError(ARCHIVED_SUPPLIER_IMPORT_MESSAGE.format(name=supplier.name))
                 if supplier:
                     item.supplier_id = supplier.id
             item.category = str(normalized.get("category") or "Other")
@@ -963,6 +993,8 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
         item.normalized_name = _normalize_key(item_name)
         if normalized.get("supplierName"):
             supplier = _lookup_supplier_by_name(organization.id, str(normalized.get("supplierName") or ""))
+            if _archived_supplier_assignment(supplier, item.supplier_id):
+                raise ValueError(ARCHIVED_SUPPLIER_IMPORT_MESSAGE.format(name=supplier.name))
             if supplier:
                 item.supplier_id = supplier.id
         item.category = str(normalized.get("category") or item.category or "Other")
@@ -986,6 +1018,8 @@ def _apply_row(job: DataImportJob, organization: Organization, row: DataImportRo
             raise ValueError("Referenced supplier or inventory item could not be found.")
         supplier_item_name = str(normalized.get("supplierItemName") or "").strip()
         mapping = _lookup_mapping(organization.id, supplier.id, item.id, supplier_item_name)
+        if mapping is None and not supplier.is_active:
+            raise ValueError(ARCHIVED_SUPPLIER_IMPORT_MESSAGE.format(name=supplier.name))
         if mapping is None:
             mapping = SupplierItemMapping(
                 organization_id=organization.id,
