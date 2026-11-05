@@ -1,4 +1,5 @@
 import { describeInventoryStatus, sortInventoryItems } from "./inventoryWorkspace";
+import { escapeCsvCell } from "./reportExports";
 import type {
   InventoryCountLineStatus,
   InventoryCountSession,
@@ -423,14 +424,7 @@ export function buildReorderCsv(lines: Array<{
     line.estimatedCost === null ? "" : line.estimatedCost.toFixed(2),
     line.notes,
   ]);
-  return [header, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\n");
-}
-
-function escapeCsv(value: string) {
-  if (/[,"\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
+  return [header, ...rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
 }
 
 export function upsertReorderIntent(
