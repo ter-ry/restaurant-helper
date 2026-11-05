@@ -14,7 +14,7 @@ describe("CSV spreadsheet formula injection protection", () => {
   });
 
   it("blocks leading controls and Unicode-equivalent formula operators", () => {
-    const values = ["\n=1+1", "\u0000\uFF1D1+1", "\u200B\uFF0Bcmd", "\uFEFF\uFF0D1+1", "\u2028\uFF20SUM(A1:A2)"];
+    const values = ["\n=1+1", "\u0000\uFF1D1+1", "\u200B\uFF0Bcmd", "\uFEFF\uFF0D1+1", "\u2028\uFF20SUM(A1:A2)", "\u22121+1"];
     for (const build of [
       (value: string) => buildCsv([{ value }]),
       (value: string) => buildExportCsv([{ value }]),

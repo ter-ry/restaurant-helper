@@ -3,7 +3,8 @@ export type CsvCell = string | number | boolean | null | undefined;
 /** Keep spreadsheet formulas from executing while preserving genuine numeric values. */
 export function escapeCsvCell(value: CsvCell): string {
   const text = value === null || value === undefined ? "" : String(value);
-  const normalizedText = text.normalize("NFKC");
+  // NFKC handles full-width operators; normalize the mathematical minus sign too.
+  const normalizedText = text.normalize("NFKC").replace(/\u2212/g, "-");
   const numericValue = Number(normalizedText);
   const formulaCandidate = normalizedText.replace(/^[\s\p{C}]*/u, "");
   const safeText = typeof value === "string" && text !== "" && !Number.isFinite(numericValue) && /^[=+\-@]/.test(formulaCandidate)
