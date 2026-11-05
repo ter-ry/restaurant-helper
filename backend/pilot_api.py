@@ -262,6 +262,7 @@ def _reorder_suggestion_for_item(item: InventoryItem) -> dict[str, Any] | None:
         "inventoryItemName": item.name,
         "category": item.category,
         "supplier": item.preferred_supplier_name or (item.supplier.name if item.supplier else "Unknown supplier"),
+        "supplierArchived": bool(item.supplier is not None and not item.supplier.is_active),
         "currentQuantity": decimal_to_float(current_decimal) or 0,
         "unit": item.stock_unit,
         "minimumQuantity": decimal_to_float(item.min_quantity) or 0,
@@ -493,14 +494,24 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     }
 
 
+def _require_active_supplier(supplier: Supplier, *, allow_existing_id: int | None = None, field: str = "supplierName") -> None:
+    """Reject a new/changed reference to an archived supplier.
+
+    Historical records may keep pointing at an archived supplier: pass that supplier's id as
+    ``allow_existing_id`` when the record's supplier is not being changed.
+    """
+    if not supplier.is_active and supplier.id != allow_existing_id:
+        raise RequestValidationError(
+            "Supplier validation failed.",
+            {field: f"{supplier.name} is archived. Restore it before using it for new purchasing."},
+        )
+
+
 def _get_supplier_by_name(organization_id: int, name: str, *, reject_archived_except_id: int | None = None, reject_archived: bool = False) -> Supplier:
     normalized = _normalize_name(name)
     supplier = Supplier.query.filter_by(organization_id=organization_id, normalized_name=normalized).first()
-    if supplier is not None and reject_archived and not supplier.is_active and supplier.id != reject_archived_except_id:
-        raise RequestValidationError(
-            "Supplier validation failed.",
-            {"supplierName": f"{supplier.name} is archived. Restore it before creating new purchases."},
-        )
+    if supplier is not None and reject_archived:
+        _require_active_supplier(supplier, allow_existing_id=reject_archived_except_id)
     if supplier is None:
         supplier = Supplier(organization_id=organization_id, name=name.strip(), normalized_name=normalized, category_focus="Other", notes="")
         db.session.add(supplier)
@@ -1524,8 +1535,11 @@ def create_supplier_item_mapping(supplier_id: int):
     permission_error = _require_role(membership, "suppliers.manage")
     if permission_error is not None:
         return permission_error
-    if Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first() is None:
+    mapping_supplier = Supplier.query.filter_by(id=supplier_id, organization_id=organization.id).first()
+    if mapping_supplier is None:
         return json_error("Supplier not found.", 404)
+    if not mapping_supplier.is_active:
+        return json_error("Supplier is archived. Restore it before adding item mappings.", 409, errors={"supplierId": "Supplier is archived."})
     values, errors = _parse_mapping_payload(_json_body(), partial=False)
     if errors:
         return json_error("Validation failed.", 400, errors=errors)
@@ -1579,6 +1593,8 @@ def update_supplier_item_mapping(supplier_id: int, mapping_id: int):
     mapping = _location_mappings(organization.id, location.id).filter(SupplierItemMapping.id == mapping_id, SupplierItemMapping.supplier_id == supplier_id).first()
     if mapping is None:
         return json_error("Mapping not found.", 404)
+    if mapping.supplier is not None and not mapping.supplier.is_active:
+        return json_error("Supplier is archived. Restore it before changing item mappings.", 409, errors={"supplierId": "Supplier is archived."})
     values, errors = _parse_mapping_payload(_json_body(), partial=True)
     if errors:
         return json_error("Validation failed.", 400, errors=errors)
@@ -1989,7 +2005,7 @@ def create_inventory_item():
     if existing:
         return json_error("An inventory item with that name already exists.", 409)
     supplier_name = str(payload.get("preferredSupplierName") or payload.get("preferredSupplier") or "").strip()
-    supplier = _get_supplier_by_name(organization.id, supplier_name) if supplier_name else None
+    supplier = _get_supplier_by_name(organization.id, supplier_name, reject_archived=True) if supplier_name else None
     latest_purchase_price = _to_decimal(payload.get("latestPurchasePrice", 0), field="latestPurchasePrice", required=False)
     last_purchase_conversion_factor = _to_quantity(payload.get("lastPurchaseConversionFactor", 1), field="lastPurchaseConversionFactor", required=False)
     item = InventoryItem(
@@ -2078,9 +2094,12 @@ def update_inventory_item(item_id: int):
     if "parLevel" in payload:
         item.par_level = _to_quantity(payload.get("parLevel"), field="parLevel")
     if "preferredSupplierName" in payload or "preferredSupplier" in payload:
+        previous_supplier_id = item.supplier_id
         item.preferred_supplier_name = str(payload.get("preferredSupplierName") or payload.get("preferredSupplier") or "").strip()
         if item.preferred_supplier_name:
-            supplier = _get_supplier_by_name(organization.id, item.preferred_supplier_name)
+            supplier = _get_supplier_by_name(
+                organization.id, item.preferred_supplier_name, reject_archived=True, reject_archived_except_id=previous_supplier_id
+            )
             item.supplier_id = supplier.id
     if "latestPurchasePrice" in payload:
         item.latest_purchase_price = _to_decimal(payload.get("latestPurchasePrice"), field="latestPurchasePrice")

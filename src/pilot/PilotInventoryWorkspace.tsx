@@ -946,7 +946,7 @@ export function PilotInventoryPage() {
           <ReadOnlyStat label="Average cost" value={averageCost !== null ? formatMoney(averageCost) : "Not yet available"} />
           <ReadOnlyStat label="Latest cost / stock unit" value={formatLatestStockUnitCost(item)} />
           <ReadOnlyStat label="Inventory value" value={formatInventoryValue(item.currentOnHand, averageCost)} />
-          <ReadOnlyStat label="Preferred supplier" value={isEditing ? (suppliers.length ? <select aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}><option value="">Unassigned</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}</select> : <input aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />) : item.preferredSupplierName || "Unassigned"} />
+          <ReadOnlyStat label="Preferred supplier" value={isEditing ? (suppliers.length ? <select aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}><option value="">Unassigned</option>{suppliers.filter((supplier) => supplier.isActive || supplier.name === draft.preferredSupplierName).map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.isActive ? supplier.name : `${supplier.name} (archived)`}</option>)}</select> : <input aria-label="Preferred supplier" className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))} />) : item.preferredSupplierName || "Unassigned"} />
           <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
         </div>
 
@@ -1193,9 +1193,9 @@ export function PilotInventoryPage() {
             {suppliers.length ? (
               <select className="input mt-1" value={draft.preferredSupplierName} onChange={(event) => setDraft((current) => ({ ...current, preferredSupplierName: event.target.value }))}>
                 <option value="">Unassigned</option>
-                {suppliers.map((supplier) => (
+                {suppliers.filter((supplier) => supplier.isActive || supplier.name === draft.preferredSupplierName).map((supplier) => (
                   <option key={supplier.id} value={supplier.name}>
-                    {supplier.name}
+                    {supplier.isActive ? supplier.name : `${supplier.name} (archived)`}
                   </option>
                 ))}
               </select>

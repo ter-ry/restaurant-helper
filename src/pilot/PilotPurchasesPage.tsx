@@ -1024,7 +1024,7 @@ export function PilotPurchasesPage() {
                   </div>
                   <select aria-label="Supplier" className="input mt-1" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.target.value }))} disabled={finalizedStatus}>
                     <option value="">Choose a supplier</option>
-                    {data?.suppliers?.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
+                    {data?.suppliers?.filter((supplier) => supplier.isActive !== false || normalizeLookup(supplier.name) === normalizeLookup(draft.supplierName)).map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.isActive === false ? `${supplier.name} (archived)` : supplier.name}</option>)}
                   </select>
                   {draft.supplierName && !(data?.suppliers ?? []).some((supplier) => normalizeLookup(supplier.name) === normalizeLookup(draft.supplierName)) ? <p className="mt-2 text-xs text-warning-700">Supplier not in directory. Confirm the name or add it before saving.</p> : null}
                   {showSupplierForm ? <div className="mt-2 flex gap-2"><input aria-label="New supplier name" className="input" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} placeholder="Supplier name" disabled={supplierSaving} /><Button type="button" disabled={supplierSaving || !newSupplierName.trim()} onClick={() => void createSupplier()}>{supplierSaving ? "Adding..." : "Add"}</Button></div> : null}
