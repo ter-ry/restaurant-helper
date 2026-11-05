@@ -547,6 +547,16 @@ export function PilotMenuCostingPage() {
     );
   }
 
+  // While an editor dialog is open it covers the page-level banners, so show save errors/confirmations
+  // inside the dialog (where the submit button is) instead of silently behind the overlay.
+  const editorOpen = showRecipeEditor || showMenuItemEditor;
+  const dialogFeedback = (
+    <>
+      {error ? <div role="alert" className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{error}</p></div> : null}
+      {message ? <div role="status" className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{message}</div> : null}
+    </>
+  );
+
   return (
     <div className="workspace-page">
       <WorkspacePageHeader
@@ -573,7 +583,7 @@ export function PilotMenuCostingPage() {
       {loading ? (
         <Card className="workspace-card text-sm text-muted">{initialLoading ? "Loading menu costing…" : "Refreshing menu costing…"}</Card>
       ) : null}
-      {error ? (
+      {error && !editorOpen ? (
         <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{error}</p></div>
@@ -581,7 +591,7 @@ export function PilotMenuCostingPage() {
           </div>
         </Card>
       ) : null}
-      {message ? (
+      {message && !editorOpen ? (
         <Card className="border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{message}</Card>
       ) : null}
 
@@ -645,6 +655,7 @@ export function PilotMenuCostingPage() {
         </Card>
 
         {showRecipeEditor ? <Modal title={recipeDraft.id ? "Edit recipe" : recipeEditorMode === "create" ? "New recipe" : "Recipe editor"} size="large" onClose={requestRecipeClose}>
+          {dialogFeedback}
           <SectionHeader
             title="Recipe details"
             description={recipeDraft.id ? "Recipes stay linked to the current location and inherit live inventory costs." : recipeEditorMode === "create" ? "Build the new recipe and save it deliberately." : "Select an existing recipe or start a new one."}
@@ -857,6 +868,7 @@ export function PilotMenuCostingPage() {
             ) : null}
           </div>
           {showMenuItemEditor ? <Modal title={menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"} size="large" onClose={requestMenuItemClose}>
+            {dialogFeedback}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm font-medium text-ink">Name</span>
@@ -897,7 +909,7 @@ export function PilotMenuCostingPage() {
               <>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveMenuItem()} type="button" disabled={savingMenuItem}>
-                {savingMenuItem ? "Saving…" : menuItemDraft.recipeId === "" ? "Assign recipe" : menuItemDraft.id ? "Update menu item" : "Create menu item"}
+                {savingMenuItem ? "Saving…" : menuItemDraft.id ? "Update menu item" : "Create menu item"}
               </Button>
               {menuItemDraft.id ? (
                 <Button
