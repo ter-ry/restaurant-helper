@@ -280,6 +280,18 @@ describe("PilotReorderPlanPage", () => {
     expect(await screen.findByText("Item added to the working order plan.")).toBeVisible();
   });
 
+  it("announces a failed add-to-draft as an alert and keeps the button available for retry", async () => {
+    mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [createPlan("Completed", 2)], activeDraftPlanId: null });
+    mockApi.createPilotReorderPlan.mockRejectedValue(new Error("Reorder draft failed"));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to draft" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Reorder draft failed");
+    expect(mockApi.createPilotReorderPlan).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add to draft" })).toBeEnabled());
+  });
+
   it("completes a prepared snapshot without attempting another update", async () => {
     const prepared = createPlan("Prepared", 4);
     mockApi.fetchPilotReorderPlans.mockResolvedValue({ plans: [prepared], activeDraftPlanId: null });

@@ -533,6 +533,43 @@ describe("PilotPurchasesPage", () => {
     expect(screen.queryByRole("button", { name: "Receive into inventory" })).not.toBeInTheDocument();
   });
 
+  it("shows progress only on the clicked action and reports the save result inside the open editor dialog", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Fresh Dairy Toronto" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
+    fireEvent.change(screen.getByLabelText("Inventory item"), { target: { value: "301" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "12" } });
+
+    mockApi.createPilotPurchaseInvoice.mockClear();
+    const original = mockApi.createPilotPurchaseInvoice.getMockImplementation()!;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    mockApi.createPilotPurchaseInvoice.mockImplementationOnce(async (...args: unknown[]) => {
+      await gate;
+      return original(...args);
+    });
+
+    const dialog = screen.getByRole("dialog");
+    const saveDraft = within(dialog).getAllByRole("button", { name: "Save draft" })[0];
+    fireEvent.click(saveDraft);
+    fireEvent.click(saveDraft);
+
+    // Only the draft save announces progress; "Save & receive" must not claim it is receiving.
+    expect(await within(dialog).findByRole("button", { name: "Saving..." })).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Receiving..." })).toBeNull();
+    expect(within(dialog).getAllByRole("button", { name: "Save & receive" })[0]).toBeDisabled();
+
+    release();
+    // The page-level banner sits behind the full-screen dialog, so the success state must be inside it.
+    const message = await within(dialog).findByText(/saved successfully/);
+    expect(message.closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
+    expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledTimes(1);
+  });
+
   it("resets to a blank draft after receiving a purchase", async () => {
     renderPage();
 

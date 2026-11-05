@@ -300,6 +300,8 @@ export function PilotPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Which action is in flight, so only that button announces progress ("Receiving..." must not show for a draft save).
+  const [savingAction, setSavingAction] = useState<"draft" | "receive" | null>(null);
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
   const [receiveReconciliationInvoiceId, setReceiveReconciliationInvoiceId] = useState<number | null>(null);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
@@ -502,7 +504,9 @@ export function PilotPurchasesPage() {
   });
 
   const saveDraft = async (status: string) => {
+    if (saving) return;
     setSaving(true);
+    setSavingAction("draft");
     setReceiveMessage(null);
     setError(null);
     setDuplicateInvoiceId(null);
@@ -522,6 +526,7 @@ export function PilotPurchasesPage() {
       setError(purchaseErrorMessage(err));
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -532,6 +537,7 @@ export function PilotPurchasesPage() {
       return;
     }
     setSaving(true);
+    setSavingAction("receive");
     setReceiveMessage(null);
     setError(null);
     setDuplicateInvoiceId(null);
@@ -583,6 +589,7 @@ export function PilotPurchasesPage() {
       }
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -953,7 +960,7 @@ export function PilotPurchasesPage() {
 
         {loading ? <div className="mt-5 text-sm text-muted">{initialLoading ? "Loading purchases…" : "Refreshing purchases…"}</div> : null}
         {error && !editorOpen ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
-        {receiveMessage ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
+        {receiveMessage && !editorOpen ? <div aria-live="polite" className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
       </Card>
 
@@ -991,10 +998,10 @@ export function PilotPurchasesPage() {
                 {!finalizedStatus ? (
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button variant="secondary" disabled={saving || ocrLoading} type="button" onClick={() => void saveDraft("Draft")}>
-                      {saving ? "Saving..." : "Save draft"}
+                      {savingAction === "draft" ? "Saving..." : "Save draft"}
                     </Button>
                     <Button disabled={saving || ocrLoading || !authoritativeReadyToReceive} type="button" onClick={requestReceive}>
-                      {saving ? "Receiving..." : "Save & receive"}
+                      {savingAction === "receive" ? "Receiving..." : "Save & receive"}
                     </Button>
                     <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
                       Review
@@ -1004,8 +1011,10 @@ export function PilotPurchasesPage() {
               </div>
             </div>
 
+            {receiveMessage ? <div aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
+
             {!showReview ? (
-              <div className="mt-4 grid gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-3 md:grid-cols-[minmax(14rem,1.3fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_auto] md:items-end">
+              <div className="mt-4 grid gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-3 md:grid-cols-[minmax(12rem,1.3fr)_minmax(9rem,0.8fr)_minmax(11rem,0.9fr)_auto] md:items-end">
                 <div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-semibold text-ink">Supplier</span>

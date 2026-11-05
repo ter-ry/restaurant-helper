@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { formatMenuCostingQuantity, formatMenuCostingUnitCost, PilotMenuCostingPage } from "../../src/pilot/PilotMenuCostingPage";
 
@@ -8,6 +8,7 @@ const mockApi = vi.hoisted(() => ({
   fetchPilotInventory: vi.fn(),
   updatePilotMenuCostingRecipe: vi.fn(),
   updatePilotMenuCostingRecipeIngredient: vi.fn(),
+  createPilotMenuCostingMenuItem: vi.fn(),
 }));
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
@@ -29,7 +30,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     createPilotMenuCostingRecipeIngredient: vi.fn(),
     updatePilotMenuCostingRecipeIngredient: mockApi.updatePilotMenuCostingRecipeIngredient,
     deletePilotMenuCostingRecipeIngredient: vi.fn(),
-    createPilotMenuCostingMenuItem: vi.fn(),
+    createPilotMenuCostingMenuItem: mockApi.createPilotMenuCostingMenuItem,
     updatePilotMenuCostingMenuItem: vi.fn(),
     deletePilotMenuCostingMenuItem: vi.fn(),
   };
@@ -51,6 +52,7 @@ describe("PilotMenuCostingPage", () => {
   beforeEach(() => {
     mockApi.updatePilotMenuCostingRecipe.mockReset();
     mockApi.updatePilotMenuCostingRecipeIngredient.mockReset();
+    mockApi.createPilotMenuCostingMenuItem.mockReset();
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
       organizationId: 42,
       locationId: 7,
@@ -364,5 +366,21 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update ingredient" }));
     await waitFor(() => expect(screen.getByText("Ingredient save failed")).toBeVisible());
     expect(screen.getByDisplayValue("3")).toBeVisible();
+  });
+
+  it("labels a new menu item save as Create (not Assign recipe) and reports a failed save inside the open dialog", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getAllByRole("button", { name: /new menu item/i }).at(0)!);
+    const dialog = await screen.findByRole("dialog");
+    // With no recipe chosen the button still creates the menu item; it must not claim to assign a recipe.
+    expect(within(dialog).queryByRole("button", { name: "Assign recipe" })).toBeNull();
+    mockApi.createPilotMenuCostingMenuItem.mockRejectedValue(new Error("Menu item save failed"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create menu item" }));
+    // The page-level banner sits behind the dialog overlay, so the error must be announced inside it.
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Menu item save failed");
+    expect(within(dialog).getByRole("button", { name: "Create menu item" })).toBeEnabled();
+    expect(mockApi.createPilotMenuCostingMenuItem).toHaveBeenCalledTimes(1);
   });
 });
