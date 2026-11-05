@@ -43,7 +43,7 @@ A required row cannot be marked Complete without actual integration and acceptan
 | Square | Automated tests and past Showcase evidence | #169 repeat current-main Showcase acceptance including Daily Close and menu costing |
 | Clover catalog/mapping/shadow orders | Sandbox evidence in previous docs | Do not claim production capability; complete all agreed full-MVP flows |
 | Clover inventory | Implemented but unsafe to enable | #182/#183; #164 review; #166 paid Sandbox test with owner approval; verify reversals and idempotency |
-| Clover Daily Close + food-cost | Implemented but unverified (slice 4 in PR #241, CI green); food cost/usage fail closed until #240; expected cash mostly unavailable until order fetch adds tender detail | #167/#222; **required for final freeze**; needs independent review and #166 |
+| Clover Daily Close + food-cost | Implemented but unverified (slice 4 in PR #241, merged with main after #219; independent review REQUEST CHANGES, sole blocker #240, now claimable). #241 stays blocked from final approval until #240 is merged and the real-ledger food cost is re-verified; usage/food cost fail closed meanwhile; expected cash mostly unavailable until order fetch adds tender detail | #167/#222; **required for final freeze**; needs independent review and #166 |
 | Daily Close and variance | Implemented but not fully verified | #182; verify source math, corrections, Square/Clover parity, reports and UI |
 | Menu costing | Implemented but not fully verified | Acceptance data and results for both providers |
 | Scheduling demo | Implemented demo, not recently verified | Verify availability/conflict preview; payroll explicitly deferred |
