@@ -4943,3 +4943,57 @@ def test_provider_mapping_cannot_target_another_organizations_location(postgres_
     with postgres_app.app_context():
         _set_rls_context(access_scope="customer", organization_id=org_id)
         assert _active_providers_at(org_id, other_location_id) == (0, 0)
+
+
+def _clover_usage_fixture():
+    from backend.models import CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption
+
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    ids = []
+    for label in ("A", "B"):
+        organization = _create_org(owner, f"RLS Clover Usage {label} {uuid4().hex[:6]}")
+        location = RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+        connection = CloverConnection(organization_id=organization.id, environment="sandbox", merchant_id=f"m-{label}", status="connected", access_token_ciphertext="x")
+        item = InventoryItem(organization_id=organization.id, location_id=location.id, name="Chicken", normalized_name=f"chicken-{uuid4().hex[:6]}", stock_unit="kg", current_on_hand=10, average_unit_cost=8)
+        db.session.add_all([connection, item])
+        db.session.flush()
+        order = CloverShadowOrder(organization_id=organization.id, clover_connection_id=connection.id, restaurant_location_id=location.id, clover_merchant_id=f"m-{label}",
+                                  clover_order_id=f"o-{uuid4().hex[:6]}", normalized_status="paid", requires_review=False, raw_payload_json={},
+                                  source_closed_at=datetime(2026, 11, 3, 17, 0, tzinfo=timezone.utc))
+        db.session.add(order)
+        db.session.flush()
+        qty = "0.5000" if label == "A" else "50.0000"
+        line = CloverShadowOrderLine(organization_id=organization.id, restaurant_location_id=location.id, shadow_order_id=order.id, clover_line_item_id=f"l-{uuid4().hex[:6]}",
+                                     clover_item_id="i", name="Plate", quantity=2, mapping_status="mapped",
+                                     recipe_preview_json={"flowtallyMenuItemName": "Plate", "ingredients": [{"inventoryItemId": item.id, "quantity": qty, "unit": "kg", "name": "Chicken"}]})
+        db.session.add(line)
+        db.session.flush()
+        db.session.add(CloverShadowOrderLineInventoryConsumption(organization_id=organization.id, location_id=location.id, clover_shadow_order_line_id=line.id,
+                                                                 inventory_item_id=item.id, applied_quantity=qty, unit_cost_snapshot=8))
+        ids.append({"organization_id": organization.id, "location_id": location.id})
+    return ids
+
+
+def test_clover_usage_queries_respect_rls_and_tenant_scope(postgres_app):
+    from datetime import date
+
+    from backend.clover_usage import clover_usage_for_day
+
+    org_a, org_b = _seed_admin_fixture("clover usage rls dataset", _clover_usage_fixture)
+    with postgres_app.app_context():
+        _set_rls_context(access_scope="customer", organization_id=org_a["organization_id"])
+        location_a = RestaurantLocation.query.filter_by(id=org_a["location_id"]).one()
+        result = clover_usage_for_day(location_a, date(2026, 11, 3), net_sales_cents=1000)
+        assert result["usageAvailable"] and result["usageCostCents"] == 400 and result["foodCostPercent"] == 40.0
+        assert [row["quantity"] for row in result["usage"]] == ["0.5000"]
+        db.session.rollback()
+        # Organization B's rows are invisible under A's context even when asked for B's location id directly.
+        _set_rls_context(access_scope="customer", organization_id=org_a["organization_id"])
+        foreign = RestaurantLocation(id=org_b["location_id"], organization_id=org_b["organization_id"], timezone="America/Toronto")
+        leaked = clover_usage_for_day(foreign, date(2026, 11, 3), net_sales_cents=1000)
+        assert leaked["usage"] == [] and leaked["menuSales"] == [] and leaked["exceptions"] == []
+        db.session.rollback()
+        _set_rls_context(access_scope="customer", organization_id=org_b["organization_id"])
+        location_b = RestaurantLocation.query.filter_by(id=org_b["location_id"]).one()
+        assert clover_usage_for_day(location_b, date(2026, 11, 3), net_sales_cents=1000)["usage"][0]["quantity"] == "50.0000"
+        db.session.rollback()
