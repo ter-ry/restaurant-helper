@@ -15,6 +15,7 @@ const inventoryMocks = vi.hoisted(() => ({
   createPilotInventoryItem: vi.fn(),
   updatePilotInventoryItem: vi.fn(),
   createPilotInventoryAdjustment: vi.fn(),
+  createPilotInventoryWasteEvent: vi.fn(),
   createPilotSupplier: vi.fn(),
   updatePilotSupplier: vi.fn(),
 }));
@@ -44,6 +45,7 @@ vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
     createPilotInventoryItem: inventoryMocks.createPilotInventoryItem,
     updatePilotInventoryItem: inventoryMocks.updatePilotInventoryItem,
     createPilotInventoryAdjustment: inventoryMocks.createPilotInventoryAdjustment,
+    createPilotInventoryWasteEvent: inventoryMocks.createPilotInventoryWasteEvent,
     createPilotSupplier: inventoryMocks.createPilotSupplier,
     updatePilotSupplier: inventoryMocks.updatePilotSupplier,
   };
@@ -660,6 +662,30 @@ describe("PilotInventoryPage", () => {
     expect(await within(adjustmentDialog).findByRole("alert")).toHaveTextContent("Adjustment failed");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(inventoryMocks.createPilotInventoryAdjustment).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a failed waste record only in the waste dialog", async () => {
+    inventoryMocks.createPilotInventoryWasteEvent.mockReset();
+    inventoryMocks.createPilotInventoryWasteEvent.mockRejectedValue(new Error("Waste record failed"));
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
+    fireEvent.click(screen.getByRole("button", { name: "Record waste" }));
+    const wasteDialog = await waitFor(() => {
+      const dialogs = screen.getAllByRole("dialog");
+      expect(dialogs).toHaveLength(2);
+      return dialogs[1];
+    });
+    fireEvent.change(within(wasteDialog).getByLabelText(/Quantity/), { target: { value: "1" } });
+    fireEvent.click(within(wasteDialog).getByRole("button", { name: "Record waste" }));
+
+    expect(await within(wasteDialog).findByRole("alert")).toHaveTextContent("Waste record failed");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(inventoryMocks.createPilotInventoryWasteEvent).toHaveBeenCalledTimes(1);
   });
 
   it("opens the create workspace full width and keeps stock counts navigation available", async () => {
