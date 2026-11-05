@@ -188,12 +188,15 @@ def test_empty_day_and_malformed_recipe_payloads_never_look_complete(app):
         assert empty["usage"] == [] and empty["usageCostCents"] == 0 and empty["foodCostPercent"] is None  # no sales -> no %
         o = _order(org, loc, conn)
         for payload in ({}, {"ingredients": None}, {"ingredients": "x"}, {"ingredients": [{}]}, {"ingredients": [{"inventoryItemId": None, "quantity": "1"}]},
-                        {"ingredients": [{"inventoryItemId": item.id, "quantity": "bad"}]}):
+                        {"ingredients": [{"inventoryItemId": item.id, "quantity": "bad"}]},
+                        {"ingredients": [None]}, {"ingredients": [7]}, {"ingredients": ["x"]}, {"ingredients": [[1]]},
+                        {"ingredients": [None, {"inventoryItemId": item.id, "quantity": "1"}]}, ["not", "a", "dict"], "scalar"):
             line = CloverShadowOrderLine(organization_id=org.id, restaurant_location_id=loc.id, shadow_order_id=o.id, clover_line_item_id=f"l-{uuid4()}",
                                          clover_item_id="i", name="Odd", quantity=Decimal("1"), mapping_status="mapped", recipe_preview_json=payload)
             db.session.add(line)
             db.session.commit()
             r = clover_usage_for_day(loc, DAY, net_sales_cents=1000)
             assert not r["usageAvailable"] and r["usageCostCents"] is None and r["foodCostPercent"] is None, payload
+            assert any(e.get("lineId") == line.id for e in r["exceptions"]), payload
             db.session.delete(line)
             db.session.commit()
