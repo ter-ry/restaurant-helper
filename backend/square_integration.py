@@ -47,6 +47,7 @@ from .models import (
     StockCountSession,
 )
 from .pos import POS_SALE_SOURCE_TYPES, PosProvider, eligible_sale_quantity, ensure_inventory_source, recipe_ingredient_quantity
+from .pos_provider import lock_location_for_provider_change, other_active_provider, provider_conflict_message
 from .access import organization_has_enabled_module
 from .square import decrypt_square_secret, encrypt_square_secret, square_enabled, square_environment, verify_square_webhook_signature
 from .tenant_context import apply_org_tenant_context, apply_request_tenant_context
@@ -2477,6 +2478,10 @@ def square_location_mapping():
         return json_error("Square location not found.", 404)
     if restaurant_location is None:
         return json_error("Restaurant location not found.", 404)
+    lock_location_for_provider_change(restaurant_location.id, organization.id)
+    other_provider = other_active_provider(restaurant_location.id, organization.id, PosProvider.SQUARE)
+    if other_provider is not None:
+        return json_error(provider_conflict_message(other_provider), 409)
     mapping = SquareLocationMapping.query.filter_by(square_location_id=square_location.id).first()
     if mapping is None:
         mapping = SquareLocationMapping(square_location_id=square_location.id, restaurant_location_id=restaurant_location_id, mapped_by_user_id=current_user.id)

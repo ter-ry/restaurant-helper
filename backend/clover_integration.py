@@ -12,7 +12,8 @@ from .clover import CloverRequestError, clover_authorize_url, clover_enabled, cl
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .clover_orders import CloverOrderClient
 from .clover_inventory import apply_clover_order_inventory, clover_order_inventory_enabled
-from .pos import recipe_ingredient_quantity
+from .pos import PosProvider, recipe_ingredient_quantity
+from .pos_provider import lock_location_for_provider_change, other_active_provider, provider_conflict_message
 from .extensions import db
 from .models import CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, MenuItem, Organization, OrganizationMembership, RestaurantLocation
 from .square import SquareSecurityError, decrypt_integration_secret, encrypt_integration_secret
@@ -563,6 +564,10 @@ def create_clover_location_mapping():
         merchant_level_conflict = CloverLocationMapping.query.filter_by(clover_connection_id=connection.id, clover_location_id=None).filter(CloverLocationMapping.restaurant_location_id != location.id).first()
         if merchant_level_conflict is not None:
             return json_error("This Clover merchant has already been confirmed for another Flowtally location.", 409)
+    lock_location_for_provider_change(location.id, organization.id)
+    other_provider = other_active_provider(location.id, organization.id, PosProvider.CLOVER)
+    if other_provider is not None:
+        return json_error(provider_conflict_message(other_provider), 409)
     if existing is None:
         existing = CloverLocationMapping(clover_connection_id=connection.id, organization_id=organization.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id, confirmed_by_user_id=current_user.id)
         db.session.add(existing)
