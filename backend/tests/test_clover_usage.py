@@ -50,7 +50,7 @@ def _line(org, loc, order, items=(), *, mapping="mapped", qty="2", name="Chicken
 
 def _ledger(org, loc, line, item, qty, cost="8"):
     db.session.add(CloverShadowOrderLineInventoryConsumption(organization_id=org.id, location_id=loc.id, clover_shadow_order_line_id=line.id,
-                                                             inventory_item_id=item.id, applied_quantity=Decimal(qty), unit_cost_snapshot=None if cost is None else Decimal(cost)))
+                                                             inventory_item_id=item.id, applied_quantity=-Decimal(qty), unit_cost_snapshot=None if cost is None else Decimal(cost)))
     db.session.flush()
 
 

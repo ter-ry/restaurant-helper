@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildCsv, downloadCsvFile } from "../src/lib/reportExports";
+import { buildExportCsv } from "../src/lib/demoReadiness";
 
 describe("report exports", () => {
   it("builds csv rows with escaped values", () => {
@@ -11,6 +12,21 @@ describe("report exports", () => {
     expect(csv).toContain("section,status,detail");
     expect(csv).toContain('"Needs ""quotes"", commas, and newlines');
     expect(csv.split("\n")).toHaveLength(3);
+  });
+
+  it("neutralizes formula-like text without changing numeric values", () => {
+    expect(buildCsv([
+      { formula: "=1+1", atFormula: "@SUM(A1:A2)", plusFormula: "+cmd|' /C calc'!A0", dashFormula: "-1+1", negativeAmount: "-10.00", zero: 0, numeric: 12.5 },
+    ])).toBe([
+      "formula,atFormula,plusFormula,dashFormula,negativeAmount,zero,numeric",
+      "'=1+1,'@SUM(A1:A2),'+cmd|' /C calc'!A0,'-1+1,-10.00,0,12.5",
+    ].join("\n"));
+  });
+
+  it("protects the export-readiness CSV path too", () => {
+    expect(buildExportCsv([{ supplier: "=HYPERLINK(\"https://evil.example\")", amount: "-10.00" }])).toBe(
+      'supplier,amount\n"\'=HYPERLINK(""https://evil.example"")",-10.00',
+    );
   });
 
   it("creates a downloadable csv blob", () => {

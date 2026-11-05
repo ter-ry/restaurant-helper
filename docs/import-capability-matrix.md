@@ -8,21 +8,24 @@ Verified against `backend/imports.py` on `main` c6cee28 for issue #224. This doc
 | Update existing (matched by trimmed, case-insensitive name) | Yes | Yes (name + location) | Yes (supplier + item + supplier item name) |
 | Preview before write, no live-table change | Yes | Yes | Yes |
 | Per-row blockers (required, unknown location/supplier/item, negative or non-numeric, factor <= 0) | Yes | Yes | Yes (fixed in #224: `locationName` was unreachable) |
-| Rollback (create deleted, update restored) | Yes; blocked if the supplier has linked items or mappings | **Unsafe once any movement exists, see below (#227)**; only blocked by linked mappings | Yes (no downstream-reference check exists) |
+| Rollback (create deleted, update restored) | Yes; blocked if the supplier has linked items or mappings | Blocked once the item has stock history (#227, see below) or linked mappings/recipes | Yes (no downstream-reference check exists) |
 | Tenant scoping of lookups and job access | Verified | Verified | Verified |
 | Audit events (upload, mapping, preview, approve, execute, rollback) | Yes | Yes | Yes |
 
 Also supported: `opening_inventory` scope (reuses the inventory-item path; not exercised by new tests). Limits: `.csv`/`.xlsx` only, 10 MB default, first XLSX sheet only, one identical file per organization (SHA-256) until rolled back.
 
-## Known unsafe boundary: inventory quantity/cost re-import and rollback (#227, not fixed here)
+## Inventory quantity/cost re-import and rollback guard (#227)
 
-Do not read this matrix as proof that inventory import integrity is complete. Issue [#227](https://github.com/ter-ry/restaurant-helper/issues/227) is open and unfixed:
+Stock quantity and weighted-average cost change only through the movement ledger once an item has stock history. "Stock history" means any inventory movement, purchase invoice line, stock count line, Square/Clover POS consumption or waste record for the item.
 
-- **Re-importing an existing item** (`inventory_item` or `opening_inventory` matching by name and location) overwrites `current_on_hand` and `average_unit_cost` directly. No inventory movement is written, so on-hand no longer equals opening quantity plus the movement ledger and weighted-average cost is replaced rather than recalculated.
-- **Rollback after receipts, counts or POS consumption** is not blocked: the inventory rollback check hardcodes zero invoice lines, movements and counts (only supplier-item mappings are counted). A rollback can restore an old quantity, or delete a created item, after real movements exist.
-- A brand-new item's opening quantity is the supported baseline.
+- **New item:** the imported quantity is the opening baseline (opening + sum of movements = on-hand). Unchanged.
+- **Existing item without history:** a corrected opening sheet may still change quantity and cost (it is still the baseline).
+- **Existing item with history:** a row that changes `currentOnHand` is a blocked row ("use a stock count or adjustment"); the job cannot be approved or executed, and execute re-checks inside its transaction so a receipt posted after approval fails the whole job with nothing written. A blank or unchanged quantity is accepted and updates only the other fields. Weighted-average cost is never recomputed or overwritten by import once history exists.
+- **Rollback:** refused with 409 for any inventory import (create or update) whose item now has stock history. Rollback without history still restores or deletes as before.
 
-Until #227 is fixed and independently reviewed, treat importing quantity or cost for an existing item, and rolling back an inventory import after any movement, as **blocked/unsafe**. Safe use: import opening inventory only before the first receipt, count or POS sync. This PR does not change that behavior and its tests do not cover it.
+**What is and is not serialized.** Import execute and rollback lock the item row (`FOR UPDATE`) and re-read stock history under that lock. Square and Clover POS consumption also lock item rows, so they serialize with an import. Receipts, invoice corrections, adjustments, waste and count finalize do **not** lock the item row today, so an import that runs at the same instant as one of those can still interleave and lose an update. History that has already committed is always detected; an in-flight write in another transaction is not. This is a known remaining race, tracked separately from #227 as [#248](https://github.com/ter-ry/restaurant-helper/issues/248) with a deterministic reproduction and the recommended fix (lock item rows in the other writers, in item-id order). The guard is therefore not a claim of full concurrency safety.
+
+Tests: `backend/tests/test_imports_ledger_integrity.py` (SQLite) and `test_imports_ledger_integrity_postgres.py` (forced RLS, runtime role).
 
 ## Defects found and fixed in this PR (existing behavior)
 
@@ -42,4 +45,4 @@ These are rule choices, so no code was changed:
 
 ## Evidence
 
-`backend/tests/test_imports_acceptance.py` (8 tests) plus the existing `test_imports.py` (4). Without the three fixes, 6 of the 8 new tests fail. They cover mapping create/update/rollback, blocking reasons, status vs counts, malformed uploads, per-row inventory counts, blank XLSX rows, cross-tenant lookups, and cross-tenant job access (403 on read, preview, approve, execute, rollback, list). They do not test ledger reconciliation or rollback after movements (#227). Tests run on the default SQLite fixture; no scoped query changed, and no Square, Clover or Daily Close file was touched.
+`backend/tests/test_imports_acceptance.py` (8 tests) plus the existing `test_imports.py` (4). Without the three fixes, 6 of the 8 new tests fail. They cover mapping create/update/rollback, blocking reasons, status vs counts, malformed uploads, per-row inventory counts, blank XLSX rows, cross-tenant lookups, and cross-tenant job access (403 on read, preview, approve, execute, rollback, list). Ledger reconciliation and rollback after movements are covered by the #227 tests below. Tests run on the default SQLite fixture; no scoped query changed, and no Square, Clover or Daily Close file was touched.
