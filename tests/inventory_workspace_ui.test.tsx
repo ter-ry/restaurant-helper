@@ -294,6 +294,20 @@ function testReorderSuggestionsAndExport() {
   ]);
   assert.ok(csv.includes("supplier,item,current quantity,unit,PAR"));
 
+  const unsafeCsv = buildReorderCsv([{
+    supplier: "=HYPERLINK(\"https://evil.example\")",
+    itemName: "Coffee",
+    currentQuantity: 1,
+    unit: "bag",
+    parLevel: 2,
+    suggestedQuantity: 1,
+    latestPurchasePrice: -10,
+    estimatedCost: -10,
+    notes: "-10.00",
+  }]);
+  assert.ok(unsafeCsv.includes("'=HYPERLINK(\"\"https://evil.example\"\")"));
+  assert.ok(unsafeCsv.includes(",-10.00,-10.00,-10.00"));
+
   const intent = upsertReorderIntent([], {
     itemId: "beans",
     itemName: "House Espresso Beans 5lb",
