@@ -507,8 +507,8 @@ export function PilotReorderPlanPage() {
         </div>
 
         {loading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">{initialLoading ? "Loading reorder plans…" : "Refreshing reorder plans…"}</div> : null}
-        {error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
-        {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
+        {error ? <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+        {message ? <div aria-live="polite" className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
@@ -660,7 +660,7 @@ export function PilotReorderPlanPage() {
                         <td className="px-3 py-3 text-ink">{suggestion.suggestedPurchaseQuantity == null ? "—" : `${formatNumber(suggestion.suggestedPurchaseQuantity)} ${suggestion.purchaseUnit}`}</td>
                         <td className="px-3 py-3 text-ink">{suggestion.estimatedCost === null ? "Unknown" : formatMoney(suggestion.estimatedCost)}</td>
                         <td className="px-3 py-3"><Badge tone={statusTone(suggestion.stockStatus)}>{suggestion.stockStatus}</Badge></td>
-                        <td className="px-3 py-3"><Button variant="secondary" type="button" disabled={creating || saving || loading} onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity, suggestedPurchaseQuantity: suggestion.suggestedPurchaseQuantity }])}>{isInDraft ? "In draft" : "Add to draft"}</Button></td>
+                        <td className="px-3 py-3"><Button className="whitespace-nowrap" variant="secondary" type="button" disabled={creating || saving || loading} onClick={() => isInDraft ? setMessage(`${suggestion.inventoryItemName} is already in the working order plan.`) : void addItemsToDraft([{ id: suggestion.inventoryItemId, suggestedQuantity: suggestion.suggestedQuantity, suggestedPurchaseQuantity: suggestion.suggestedPurchaseQuantity }])}>{isInDraft ? "In draft" : "Add to draft"}</Button></td>
                       </tr>
                     );
                   })}

@@ -592,6 +592,28 @@ describe("PilotInventoryPage", () => {
     expect(screen.queryByText("Initial receipt")).not.toBeInTheDocument();
   });
 
+  it("renders each threshold column label once and announces a failed create as an alert", async () => {
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+    // The help button used to repeat the label ("Minimum ↕ MINIMUM ⓘ") next to the sortable heading.
+    for (const label of ["Minimum", "PAR"]) {
+      const header = await screen.findByRole("columnheader", { name: new RegExp(label) });
+      expect((header.textContent ?? "").match(new RegExp(label, "g"))).toHaveLength(1);
+    }
+
+    inventoryMocks.createPilotInventoryItem.mockRejectedValue(new Error("Inventory save failed"));
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.change(await screen.findByLabelText("Item name"), { target: { value: "Test flour" } });
+    const create = screen.getAllByRole("button", { name: "Create item" }).at(-1)!;
+    fireEvent.click(create);
+    // The banner is at the top of the workspace; it must be announced, not only rendered off screen.
+    expect(await screen.findByRole("alert")).toHaveTextContent("Inventory save failed");
+    expect(inventoryMocks.createPilotInventoryItem).toHaveBeenCalledTimes(1);
+  });
+
   it("opens the create workspace full width and keeps stock counts navigation available", async () => {
     render(
       <MemoryRouter initialEntries={["/app/inventory"]}>

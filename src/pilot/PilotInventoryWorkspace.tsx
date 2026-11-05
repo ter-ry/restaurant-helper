@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, MoreHorizontal, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -194,6 +194,12 @@ export function PilotInventoryPage() {
   const [supplierEditorOpen, setSupplierEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const errorBannerRef = useRef<HTMLDivElement | null>(null);
+  // The banner sits at the top of the workspace. Inside the scrolled create/edit dialog it would be off
+  // screen after the submit button at the bottom is pressed, so bring a new error into view.
+  useEffect(() => {
+    if (error) errorBannerRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [error]);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
   const load = async () => {
@@ -564,7 +570,7 @@ export function PilotInventoryPage() {
                         <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => setItemSort((current) => current?.key !== key ? { key, direction: "asc" } : current.direction === "asc" ? { key, direction: "desc" } : null)}>
                           {heading}<span aria-hidden="true" className="text-[10px]">{active ? (itemSort?.direction === "asc" ? "▲" : "▼") : "↕"}</span>
                         </button>
-                        {heading === "PAR" ? <InfoTooltip label="PAR">Target stock level used to plan replenishment.</InfoTooltip> : heading === "Minimum" ? <InfoTooltip label="Minimum">Urgent reorder threshold for this item.</InfoTooltip> : null}
+                        {heading === "PAR" ? <InfoTooltip hideLabel label="PAR">Target stock level used to plan replenishment.</InfoTooltip> : heading === "Minimum" ? <InfoTooltip hideLabel label="Minimum">Urgent reorder threshold for this item.</InfoTooltip> : null}
                       </span>
                     </th>
                   );
@@ -1236,7 +1242,7 @@ export function PilotInventoryPage() {
 
   return (
     <div className="workspace-page">
-      {error ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+      {error ? <div ref={errorBannerRef} role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
       {workspaceMode === "browse" ? (
         <>
           <div className="inventory-toolbar pilot-inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
