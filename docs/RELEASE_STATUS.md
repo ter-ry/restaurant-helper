@@ -21,7 +21,7 @@ Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs.
   | [#243](https://github.com/ter-ry/restaurant-helper/pull/243) negative-stock acceptance tests | #230 | `3b8d229` | passed | no review recorded |
   | [#236](https://github.com/ter-ry/restaurant-helper/pull/236) this document | #225 | see PR | see PR | `REQUEST CHANGES @ 33782a5` addressed by this update |
 
-  Documentation overlap: #241 edits one row of this file (Clover Daily Close) and #239 edits one line of `docs/private-pilot-gap-checklist.md` (bulk import). Both are single-line hunks; whichever of #236, #239 and #241 merges second needs a one-line conflict resolution in that row. See the coordination comments on those PRs.
+  Documentation overlap: #241 edits one row of this file (Clover Daily Close) and #239 edits one line of `docs/private-pilot-gap-checklist.md` (bulk import). Both are single-line hunks; whichever of #236, #239 and #241 merges second needs a one-line conflict resolution in that row; guidance is in the #236 review-response comment.
 - **Owner decisions approved 2026-11-05 (decision issues #168, #195, #196, #197, #198, #199 closed). Policy is settled; every implementation below is still pending, not done:**
   - #168 received-invoice void/correction is in the MVP: append-only compensating movements exactly once, corrected invoice re-received with lineage, unsafe cases rejected. Implementation #232.
   - #195 supplier soft archive only, no hard delete. Implementation #229.
