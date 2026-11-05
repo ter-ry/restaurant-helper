@@ -4969,9 +4969,98 @@ def _clover_usage_fixture():
         db.session.add(line)
         db.session.flush()
         db.session.add(CloverShadowOrderLineInventoryConsumption(organization_id=organization.id, location_id=location.id, clover_shadow_order_line_id=line.id,
-                                                                 inventory_item_id=item.id, applied_quantity=qty, unit_cost_snapshot=8))
+                                                                 inventory_item_id=item.id, applied_quantity=f"-{qty}", unit_cost_snapshot=8))
         ids.append({"organization_id": organization.id, "location_id": location.id})
     return ids
+
+
+def test_clover_usage_reconciles_with_real_engine_output_under_rls(postgres_app):
+    """#240: usage/food cost read what the real engine wrote (signed negative ledger), under forced RLS, per tenant."""
+    from datetime import date
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from backend.clover_inventory import apply_clover_order_inventory
+    from backend.clover_usage import clover_usage_for_day
+    from backend.models import CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption, InventoryMovement
+
+    application = postgres_app
+    with application.test_request_context("/"):
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True
+        _pin_rls_context(access_scope="setup")
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        scenarios = []
+        for label, chicken_qty in (("A", "0.1800"), ("B", "1.5000")):
+            _pin_rls_context(access_scope="setup")
+            organization = make_operational_organization(owner, name=f"Clover usage engine {label} {uuid4()}", location_name="Main")
+            org_id = organization.id
+            location = RestaurantLocation.query.filter_by(organization_id=org_id).first()
+            location_id = location.id
+            _pin_rls_context(access_scope="customer", organization_id=org_id, user_id=owner_id)
+            connection = CloverConnection(organization_id=org_id, environment="sandbox", merchant_id=f"m-eng-{label}", status="connected", access_token_ciphertext="x")
+            db.session.add(connection)
+            db.session.flush()
+            chicken = InventoryItem(organization_id=org_id, location_id=location_id, name="Chicken", normalized_name=f"chicken-{uuid4()}", stock_unit="kg",
+                                    current_on_hand=Decimal("10"), average_unit_cost=Decimal("12.50"))
+            buns = InventoryItem(organization_id=org_id, location_id=location_id, name="Buns", normalized_name=f"buns-{uuid4()}", stock_unit="pack",
+                                 current_on_hand=Decimal("20"), average_unit_cost=Decimal("2.00"))
+            db.session.add_all([chicken, buns])
+            db.session.flush()
+            order = CloverShadowOrder(organization_id=org_id, clover_connection_id=connection.id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id,
+                                      clover_order_id=f"paid-{uuid4()}", provider_status="CLOSED", normalized_status="paid", payment_status="paid",
+                                      potentially_eligible=True, requires_review=False, raw_payload_json={},
+                                      source_closed_at=datetime(2026, 11, 3, 17, 0, tzinfo=timezone.utc))
+            db.session.add(order)
+            db.session.flush()
+            line = CloverShadowOrderLine(organization_id=org_id, restaurant_location_id=location_id, shadow_order_id=order.id, clover_line_item_id=f"line-{uuid4()}",
+                                         clover_item_id="burger", name="Test Burger", quantity=Decimal("1"), mapping_status="mapped",
+                                         recipe_preview_json={"flowtallyMenuItemName": "Test Burger", "ingredients": [
+                                             {"inventoryItemId": chicken.id, "quantity": chicken_qty, "unit": "kg", "name": "Chicken"},
+                                             {"inventoryItemId": buns.id, "quantity": "0.2500", "unit": "pack", "name": "Buns"}]})
+            db.session.add(line)
+            db.session.commit()
+            assert apply_clover_order_inventory(order=order, connection=connection)["applied"] is True
+            db.session.commit()
+            scenarios.append({"org": org_id, "loc": location_id, "order": order.id, "conn": connection.id, "line": line.id, "chicken": chicken.id})
+            db.session.rollback()
+
+        a, b = scenarios
+        _pin_rls_context(access_scope="customer", organization_id=a["org"], user_id=owner_id)
+        loc_a = RestaurantLocation.query.filter_by(id=a["loc"]).one()
+        ledgers = CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=a["line"]).all()
+        assert sorted(Decimal(l.applied_quantity) for l in ledgers) == [Decimal("-0.2500"), Decimal("-0.1800")]
+        result = clover_usage_for_day(loc_a, date(2026, 11, 3), net_sales_cents=1000)
+        assert result["usageAvailable"] and result["usageCostCents"] == 275 and result["foodCostPercent"] == 27.5
+        assert InventoryItem.query.get(a["chicken"]).current_on_hand == Decimal("9.8200")
+
+        # Correction, then replay: totals move once and a replay changes nothing.
+        line = CloverShadowOrderLine.query.filter_by(id=a["line"]).one()
+        line.recipe_preview_json["ingredients"][0]["quantity"] = "0.2000"
+        flag_modified(line, "recipe_preview_json")
+        db.session.flush()
+        order = CloverShadowOrder.query.filter_by(id=a["order"]).one()
+        connection = CloverConnection.query.filter_by(id=a["conn"]).one()
+        apply_clover_order_inventory(order=order, connection=connection)
+        db.session.commit()
+        moved = InventoryMovement.query.filter_by(organization_id=a["org"]).count()
+        apply_clover_order_inventory(order=order, connection=connection)
+        db.session.commit()
+        assert InventoryMovement.query.filter_by(organization_id=a["org"]).count() == moved == 3
+        result = clover_usage_for_day(loc_a, date(2026, 11, 3), net_sales_cents=1000)
+        assert result["usageAvailable"] and result["usageCostCents"] == 300 and result["foodCostPercent"] == 30.0
+        db.session.rollback()
+
+        # Tenant B is invisible from A's context and has its own figure (1.5 kg x 12.50 + 0.25 x 2.00 = $19.25).
+        _pin_rls_context(access_scope="customer", organization_id=a["org"], user_id=owner_id)
+        foreign = RestaurantLocation(id=b["loc"], organization_id=b["org"], timezone="America/Toronto")
+        leaked = clover_usage_for_day(foreign, date(2026, 11, 3), net_sales_cents=1000)
+        assert leaked["usage"] == [] and leaked["exceptions"] == [] and leaked["usageCostCents"] == 0
+        db.session.rollback()
+        _pin_rls_context(access_scope="customer", organization_id=b["org"], user_id=owner_id)
+        loc_b = RestaurantLocation.query.filter_by(id=b["loc"]).one()
+        assert clover_usage_for_day(loc_b, date(2026, 11, 3), net_sales_cents=1000)["usageCostCents"] == 1925
+        db.session.rollback()
 
 
 def test_clover_usage_queries_respect_rls_and_tenant_scope(postgres_app):
