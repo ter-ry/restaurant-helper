@@ -132,18 +132,30 @@ Skip anything awaiting review, merge, owner decision or external validation and 
 
 ## Agent Completion Reports
 
-Applies equally to Claude Code and OpenAI Codex. Finish every task with one concise, phone-readable report in exactly this format. No logs, no progress narration, no success claims the evidence does not support.
+Applies equally to Claude Code and OpenAI Codex, including scheduled runs where nothing was changed. End with one concise, phone-readable report. Never use `SUCCESS (NO ACTION)`: a successful queue check is not successful development delivery. No logs, progress narration, invented readiness or success claims unsupported by evidence.
+
+Classify the run based on the actual result:
+- `SUCCESS`: delivered a real task result (for example, opened or updated a PR, completed an independent review, or recorded verifiable acceptance evidence). State what was delivered; green CI alone is not a review approval.
+- `BLOCKED (owner)`: agreed work remains, but only owner merge, re-review, decisions or manual Showcase verification can unblock it.
+- `BLOCKED (dependency)`: agreed work remains, but unmerged PRs, externally gated items or claimed work prevent a safe new claim. Say which gate and who owns the next action.
+- `IDLE (backlog clear)`: only when the queue and release/freeze checklist have been reconciled and no remaining agreed task or blocker was found. Do not claim that a blocked queue is clear.
+- `FAILED`: the run could not complete its intended work or safely verify repository state; identify the error and next step.
+
+Use this format; write `none` or `not checked` rather than guessing:
 
 ```
 FLOWTALLY DEVELOPMENT REPORT
-- Status: SUCCESS / BLOCKED / FAILED
-- Task: GitHub issue number and title
-- PR: link and commit SHA, or none
-- Completed: brief summary of actual changes
-- Validation: tests and GitHub CI, each marked passed / failed / pending / not run
-- Owner action: exact approval or manual step required, or none
-- Next: next dependency-ready issue, or the blocker
+- Status: SUCCESS / BLOCKED (owner | dependency) / IDLE (backlog clear) / FAILED
+- Task: GitHub issue number and title, or none claimed
+- PR: link and exact head SHA, or none
+- Completed: specific changes/review completed, or "Queue check only; no changes"
+- Validation: tests and GitHub CI, each passed / failed / pending / not run
+- Queue: verified claimable count; awaiting review/merge; in-progress elsewhere; owner/external gates (include issue/PR numbers, not just totals)
+- Owner action: top actionable approval, decision or Showcase step with issue/PR links, or none
+- Next: exact issue that becomes claimable WHEN the named dependency clears, or explain why no claim is possible
 ```
+
+For a no-change run, distinguish owner-controlled blockers from dependency/active-session blockers, and name the smallest concrete action that unlocks useful work. Do not promise a follow-up issue is eligible until its current labels, dependency closure, merged PRs and file ownership have been checked. Limit owner actions to the top three by release priority; mention the remaining count if there are more. Never remove `needs-owner` or auto-approve a PR merely to make a run non-idle.
 
 Use the platform's native completion notification when one exists. Do not install external notification services, and never claim a notification was sent unless the platform confirmed it.
 
