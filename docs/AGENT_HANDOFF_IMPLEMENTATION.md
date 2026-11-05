@@ -25,10 +25,11 @@ the source of truth; issue #211 is a dashboard, not a lock or approval source.
 - Prints a machine-readable advisory with candidate handoff action,
   reason codes and the latest SHA. It always sets
   `eligible_for_automatic_merge=false` and `actions_executed=[]`.
-- Adds the manually dispatched
-  `.github/workflows/agent-handoff-preflight.yml` with read-only permissions
-  and unit tests. It has **no push, issue, comment, CI-completion or schedule
-  trigger**, so merely merging cannot start an autonomous loop.
+- Adds `.github/workflows/agent-handoff-preflight.yml` with read-only
+  permissions. Pull requests touching the evaluator run **unit tests only**;
+  live PR audits require manual `workflow_dispatch`. There is **no push,
+  review, comment, CI-completion or schedule trigger** for agent handoffs,
+  so merely merging cannot start an autonomous development loop.
 
 ### How to test it
 
