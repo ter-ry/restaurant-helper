@@ -1492,3 +1492,26 @@ export async function completePilotReorderPlan(planId: number) {
     method: "POST",
   });
 }
+
+export type PilotNegativeStockPosition = {
+  inventoryItemId: number;
+  inventoryItemName: string;
+  unit: string;
+  onHand: number;
+  shortfall: number;
+  cause: "pos_sale" | "unverified";
+  provider: string | null;
+  posConsumedQuantity: number | null;
+  orderCount: number;
+  reviewOrderCount: number;
+  crossedZeroAt: string | null;
+  lastPosSaleAt: string | null;
+  explanation: string;
+};
+
+export type PilotNegativeStock = { count: number; posCausedCount: number; items: PilotNegativeStockPosition[] };
+
+/** Items below zero on hand, explained from the movement ledger (#199 Option A). Read-only. */
+export async function fetchPilotNegativeStock() {
+  return requestJson<PilotNegativeStock>("/api/pilot/inventory/negative-stock");
+}

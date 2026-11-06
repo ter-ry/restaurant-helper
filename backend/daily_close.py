@@ -22,7 +22,8 @@ from .square_integration import (
     sync_square_orders_for_range,
 )
 from .clover_daily_close import build_clover_snapshot
-from .pos import CLOVER_SALE_SOURCE_TYPES, PosProvider
+from .negative_stock import negative_stock_attention_item, negative_stock_summary
+from .pos import POS_SALE_SOURCE_TYPES, PosProvider
 from .pos_provider import other_active_provider
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
@@ -445,6 +446,26 @@ def _location_uses_clover(organization_id: int, location: RestaurantLocation) ->
 
 
 def _daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
+    snapshot, usage, exceptions, connection = _build_daily_close_snapshot(organization, location, business_date)
+    return _attach_negative_stock(snapshot, organization.id, location.id), usage, exceptions, connection
+
+
+def _attach_negative_stock(snapshot: dict[str, Any], organization_id: int, location_id: int) -> dict[str, Any]:
+    """Show POS-caused negative on-hand (#199 Option A) without touching variance, usage, cash or cost figures.
+
+    Added only when an item is actually below zero, so closes without negative stock are unchanged.
+    """
+    summary = negative_stock_summary(organization_id, location_id)
+    if not summary["count"]:
+        return snapshot
+    snapshot["negativeStock"] = summary
+    snapshot["attentionItems"] = [*(snapshot.get("attentionItems") or []), negative_stock_attention_item(summary)]
+    if snapshot.get("healthStatus") in {"Ready", "Reconciled"}:
+        snapshot["healthStatus"] = "Ready with warnings"
+    return snapshot
+
+
+def _build_daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
     start_at, end_at = _business_date_bounds(location, business_date)
     if _location_uses_clover(organization.id, location):
         return build_clover_snapshot(organization, location, business_date, start_at=start_at, end_at=end_at, inventory_value=_inventory_value(location.id))
@@ -519,7 +540,7 @@ def _daily_close_snapshot(organization, location: RestaurantLocation, business_d
         InventoryMovement.created_at <= end_at,
     ).all()
     other_adjustment_quantity = sum(
-        (Decimal(str(movement.quantity_delta or 0)) for movement in movements if movement.source_type not in {"inventory waste", "square sale consumption", "invoice receipt", "stock count reconciliation"} | CLOVER_SALE_SOURCE_TYPES),
+        (Decimal(str(movement.quantity_delta or 0)) for movement in movements if movement.source_type not in {"inventory waste", "invoice receipt", "stock count reconciliation"} | POS_SALE_SOURCE_TYPES),
         start=Decimal("0"),
     )
     physical_count_correction = sum(
