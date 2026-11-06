@@ -163,6 +163,12 @@ def _evaluate(organization_id: int, location_id: int, ids: list[int], changes: d
                 continue  # already at target: idempotent, never stale
             if _expected_value(field, expected_item[field]) != current[field]:
                 stale = True
+            if field == "supplierId":
+                # Both stored representations are validated: receipts change the name without the id.
+                if "supplierName" not in expected_item or not isinstance(expected_item["supplierName"], str):
+                    raise _Reject("Validation failed.", 400, {"expected": f"Missing the reviewed supplierName for {item.name}."})
+                if expected_item["supplierName"].strip() != (item.preferred_supplier_name or "").strip():
+                    stale = True
             after[field] = target
         if stale:
             errors[f"item-{item_id}"] = f"{item.name} was changed by someone else since you reviewed it. Refresh and review again."

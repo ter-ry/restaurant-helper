@@ -23,7 +23,7 @@ export interface BulkEditResponse {
 export interface BulkEditRequest {
   itemIds: number[];
   changes: BulkChanges;
-  expected: Record<string, Record<string, number | boolean | null>>;
+  expected: Record<string, Record<string, number | boolean | string | null>>;
   dryRun?: boolean;
 }
 

@@ -37,6 +37,10 @@ describe("selection helpers", () => {
     const items = [item(1, { parLevel: 6 }), item(2)];
     expect(buildExpected(items, [1, 2, 99], { parLevel: 9 })).toEqual({ "1": { parLevel: 6 }, "2": { parLevel: 4 } });
   });
+  it("sends the reviewed supplier id and name together", () => {
+    const items = [item(1, { supplierId: null, preferredSupplierName: "Acme Foods" })];
+    expect(buildExpected(items, [1], { supplierId: null })).toEqual({ "1": { supplierId: null, supplierName: "Acme Foods" } });
+  });
   it("filters by search and active state", () => {
     const items = [item(1, { name: "Flour" }), item(2, { name: "Milk", active: false, preferredSupplierName: "Dairy Co" })];
     expect(filterItems(items, "dairy", "all").map((i) => i.id)).toEqual([2]);

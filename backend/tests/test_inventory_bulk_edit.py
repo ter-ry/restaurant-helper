@@ -37,6 +37,8 @@ def _expected(app, ids, fields):
         s = _state(app, item_id)
         values = {"minQuantity": float(s["min"]), "parLevel": float(s["par"]), "supplierId": s["supplier"], "active": s["active"]}
         out[str(item_id)] = {field: values[field] for field in fields}
+        if "supplierId" in fields:
+            out[str(item_id)]["supplierName"] = s["name"]
     return out
 
 
@@ -299,3 +301,32 @@ def test_supplier_name_without_supplier_id_can_be_cleared_and_is_reported_as_a_c
     response = _post(client, {"itemIds": [ids[0]], "changes": assign, "expected": _expected(app, [ids[0]], ["supplierId"])})
     assert response.status_code == 200 and response.get_json()["summary"]["changed"] == 1
     assert _state(app, ids[0])["name"] == supplier_name
+
+
+def test_supplier_name_changed_between_review_and_apply_is_a_stale_conflict(app, client):
+    """Receipt sets preferred_supplier_name without supplier_id; a review of clearing 'Acme' must not clear 'Beta'."""
+    login(client)
+    _, ids = _items(app, 2)
+    with app.app_context():
+        for item_id in ids:
+            item = db.session.get(InventoryItem, item_id)
+            item.supplier_id, item.preferred_supplier_name = None, "Acme Foods"
+        db.session.commit()
+    clear = {"supplierId": None}
+    reviewed = _expected(app, ids, ["supplierId"])
+    assert _post(client, {"itemIds": ids, "changes": clear, "expected": reviewed, "dryRun": True}).status_code == 200
+    with app.app_context():  # another user receives an invoice from Beta for the first item
+        db.session.get(InventoryItem, ids[0]).preferred_supplier_name = "Beta Produce"
+        db.session.commit()
+    before = {i: _state(app, i) for i in ids}
+    for dry in (True, False):
+        response = _post(client, {"itemIds": ids, "changes": clear, "expected": reviewed, "dryRun": dry})
+        assert response.status_code == 409, response.get_data(as_text=True)
+        assert list(response.get_json()["errors"]) == [f"item-{ids[0]}"]
+    assert {i: _state(app, i) for i in ids} == before  # atomic: the other item was not cleared either
+    # The supplier name is a required part of the reviewed values.
+    missing = {str(i): {"supplierId": None} for i in ids}
+    assert _post(client, {"itemIds": ids, "changes": clear, "expected": missing}).status_code == 400
+    # After a refresh the new reviewed name applies cleanly.
+    assert _post(client, {"itemIds": ids, "changes": clear, "expected": _expected(app, ids, ["supplierId"])}).status_code == 200
+    assert all(_state(app, i)["name"] == "" for i in ids)

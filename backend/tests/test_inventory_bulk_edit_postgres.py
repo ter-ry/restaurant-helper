@@ -105,7 +105,7 @@ def test_bulk_edit_is_atomic_stale_safe_and_tenant_isolated_under_forced_rls(pos
 
     # Apply PAR + supplier + inactive to A's three items.
     changes = {"parLevel": 9, "supplierId": a["supplier"], "active": False}
-    expected = _expected(a["items"], parLevel=4, supplierId=None, active=True)
+    expected = _expected(a["items"], parLevel=4, supplierId=None, supplierName="", active=True)
     response = _post(client_a, {"itemIds": a["items"], "changes": changes, "expected": expected})
     assert response.status_code == 200, response.get_data(as_text=True)
     assert response.get_json()["summary"] == {"selected": 3, "changed": 3, "unchanged": 0}
@@ -131,7 +131,7 @@ def test_bulk_edit_is_atomic_stale_safe_and_tenant_isolated_under_forced_rls(pos
     # Cross-tenant: B's item ids and supplier are unreachable from A's session, and B is untouched.
     cross_item = _post(client_a, {"itemIds": [a["items"][0], b["items"][0]], "changes": {"parLevel": 1}, "expected": _expected([a["items"][0], b["items"][0]], parLevel=9)})
     assert cross_item.status_code == 404 and list(cross_item.get_json()["errors"]) == [f"item-{b['items'][0]}"]
-    cross_supplier = _post(client_a, {"itemIds": a["items"], "changes": {"supplierId": b["supplier"]}, "expected": _expected(a["items"], supplierId=a["supplier"])})
+    cross_supplier = _post(client_a, {"itemIds": a["items"], "changes": {"supplierId": b["supplier"]}, "expected": _expected(a["items"], supplierId=a["supplier"], supplierName="A Supplier")})
     assert cross_supplier.status_code == 400
     assert _post(client_a, {"organizationId": b["org"]}, "/api/organizations/select").status_code == 403
     assert _admin_state(b["items"])[0] == initial_b

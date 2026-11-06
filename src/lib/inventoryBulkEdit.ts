@@ -66,14 +66,17 @@ export function buildBulkChanges(form: BulkFormState): { changes: BulkChanges; e
 /** The values the user saw for each changed field, sent back so the server can detect stale edits. */
 export function buildExpected(items: PilotInventoryItem[], selectedIds: number[], changes: BulkChanges) {
   const byId = new Map(items.map((item) => [item.id, item]));
-  const expected: Record<string, Record<string, number | boolean | null>> = {};
+  const expected: Record<string, Record<string, number | boolean | string | null>> = {};
   for (const id of selectedIds) {
     const item = byId.get(id);
     if (!item) continue;
-    const seen: Record<string, number | boolean | null> = {};
+    const seen: Record<string, number | boolean | string | null> = {};
     if ("minQuantity" in changes) seen.minQuantity = item.minQuantity;
     if ("parLevel" in changes) seen.parLevel = item.parLevel;
-    if ("supplierId" in changes) seen.supplierId = item.supplierId;
+    if ("supplierId" in changes) {
+      seen.supplierId = item.supplierId;
+      seen.supplierName = item.preferredSupplierName ?? "";
+    }
     if ("active" in changes) seen.active = item.active;
     expected[String(id)] = seen;
   }
