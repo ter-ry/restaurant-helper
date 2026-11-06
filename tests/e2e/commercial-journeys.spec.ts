@@ -2787,6 +2787,7 @@ const negativeBeef = {
   provider: "Square",
   posConsumedQuantity: 1.8,
   orderCount: 1,
+  reviewOrderCount: 0,
   crossedZeroAt: "2026-08-30T16:00:00",
   lastPosSaleAt: "2026-08-30T16:00:00",
   explanation: "1 Square order used 1.8 kg before enough stock was received; on hand is -1.8 kg. Record the delivery or count the item to reconcile.",
@@ -2880,6 +2881,40 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(panel).toContainText("1 item below zero on hand");
     await expect(panel).toContainText(detail);
     await expect(panel.getByRole("link", { name: "Review stock" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+}
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`Daily Close shows a cancelled-after-consumption negative as a review state, not a ready close, at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await negativeStockWorld(page);
+    const businessDate = new Date().toLocaleDateString("en-CA");
+    const usage = { period: { startAt: "2026-08-30T04:00:00Z", endAt: "2026-08-31T03:59:59Z" }, coverage: {}, totals: { theoreticalUsage: null, actualUsage: null, discrepancy: null, discrepancyPercent: null }, contributingMenuItems: [], unmappedVariations: [], ingredientUsage: [] };
+    const reviewDetail = "On hand: Chicken -0.08 kg (Clover sales, order under review).";
+    const snapshot = {
+      provider: "clover", healthStatus: "Ready with warnings", inventoryValue: 0,
+      sales: { provider: "clover", cloverStatus: "connected", locationMapped: true, orders: 0, netSales: 0, netSalesAvailable: true, tax: 0, tips: 0, deliveryOrders: 0, excludedOrders: 1, grossSales: null, discounts: null, refunds: null, cancelledOrders: 0 },
+      usage, foodCost: { available: false, usageCostCents: null, netSalesCents: 0, percent: null, unavailableReason: "Usage cost is not complete for this day." },
+      variance: { quantity: null, percent: null, value: null },
+      reconciliation: { recordedWasteQuantity: 0, recordedWasteCost: 0, otherAdjustmentQuantity: 0 },
+      cashReconciliation: { status: "unavailable", mode: "clover_cash_tenders", expectedCash: null, reason: "Cash reconciliation unavailable.", varianceStatus: "unavailable", overShort: null },
+      negativeStock: { count: 1, posCausedCount: 1, items: [{ ...negativeBeef, inventoryItemName: "Chicken", onHand: -0.08, provider: "Clover", reviewOrderCount: 1 }] },
+      attentionItems: [
+        { type: "clover_cancelled_after_inventory", title: "Cancelled order already used stock", severity: "warning", href: "/app/square", label: "Review Clover", detail: "Stock was used and not restored." },
+        { type: "negative_stock", title: "1 item below zero on hand", severity: "warning", href: "/app/reorder-plan", label: "Review stock", detail: reviewDetail },
+      ],
+      manualReconciliation: {}, readyToFinalize: true,
+    };
+    const session = { id: 5, organizationId: 61, locationId: 8, businessDate, status: "DRAFT", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: [], notes: "", completedAt: null, completedByUserId: null, createdByUserId: 1, createdAt: null, updatedAt: null };
+    await page.route("**/api/pilot/daily-close**", (route) => jsonResponse(route, { session, snapshot, usage, exceptions: ["Clover order cancelled after inventory was applied."], history: [session], location: { id: 8, name: "Queen St Cafe", timezone: "America/Toronto" }, businessDate, square: null }));
+
+    await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
+    const panel = page.locator(".daily-close-exceptions");
+    await expect(panel).toContainText("Cancelled order already used stock");
+    await expect(panel).toContainText(reviewDetail);
+    await expect(page.getByText("Ready with warnings", { exact: true }).first()).toBeVisible();
+    await expect(page.getByTestId("clover-food-cost")).toHaveText("Unavailable");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
 }

@@ -335,3 +335,222 @@ def test_square_and_clover_locations_do_not_borrow_each_others_labels(app, clien
     _apply_order(organization_id)
     position = _negative(client)["items"][0]
     assert position["provider"] == "Square" and "Clover" not in position["explanation"]
+
+
+# --------------------------------------------------------------------------------------------------
+# Independent acceptance findings (Codex, issue #237 comment 6689009842)
+# --------------------------------------------------------------------------------------------------
+PARITY = {"onHand": -1.8, "shortfall": 1.8, "cause": "pos_sale", "posConsumedQuantity": 1.8, "orderCount": 1, "reviewOrderCount": 0}
+
+
+def _core(position):
+    return {key: position[key] for key in PARITY}
+
+
+def _make_in_day(organization_id):
+    for movement in InventoryMovement.query.filter_by(organization_id=organization_id):
+        movement.created_at = IN_DAY
+    db.session.commit()
+
+
+def test_reorder_api_keeps_the_actual_negative_quantity_and_the_report_explains_it(app, client, beef_world):
+    organization_id, _, beef_id = beef_world
+    beef = db.session.get(InventoryItem, beef_id)
+    beef.min_quantity, beef.par_level = Decimal("2"), Decimal("10")
+    db.session.commit()
+    _apply_order(organization_id)
+
+    suggestion = next(s for s in client.get("/api/pilot/reorder-plan").get_json()["suggestions"] if s["inventoryItemId"] == beef_id)
+    # The reorder API reports the real quantity (never clamped to zero) and the shortfall is ordered on top of PAR:
+    # 10 PAR - (-1.8) on hand = 11.8 kg.
+    assert (suggestion["currentQuantity"], suggestion["stockStatus"], suggestion["suggestedQuantity"]) == (-1.8, "Out of stock", 11.8)
+    position = next(p for p in _negative(client)["items"] if p["inventoryItemId"] == beef_id)
+    assert _core(position) == PARITY and position["onHand"] == suggestion["currentQuantity"]
+    # Manual guards are unchanged by the report: still no ledger write.
+    movements = InventoryMovement.query.filter_by(inventory_item_id=beef_id).count()
+    assert client.post(f"/api/pilot/inventory/items/{beef_id}/adjustments", headers=csrf_headers(client), json={
+        "reason": "x", "quantityDelta": "-0.5", "movementType": "manual decrease", "sourceRecordId": f"g-{uuid4().hex}", "sourceLineId": "m",
+    }).status_code == 400
+    assert InventoryMovement.query.filter_by(inventory_item_id=beef_id).count() == movements
+
+
+def test_square_late_receipt_keeps_the_pos_movement_and_is_not_an_unexplained_adjustment(app, client, beef_world):
+    organization_id, location_id, beef_id = beef_world
+    _apply_order(organization_id)
+    _receive(client, beef_id, 10, 2)  # -1.8 + 10 = 8.2 kg; weighted cost restarts at the receipt's $2.00/kg
+    _make_in_day(organization_id)
+
+    types = [m.source_type for m in InventoryMovement.query.filter_by(inventory_item_id=beef_id).order_by(InventoryMovement.id)]
+    assert types == ["square sale consumption", "invoice receipt"]  # the POS movement stays attributable
+    item = db.session.get(InventoryItem, beef_id)
+    assert (Decimal(item.current_on_hand), Decimal(item.average_unit_cost)) == (Decimal("8.2000"), Decimal("2.00"))
+    assert_ledger_reconciles(beef_id, opening="0", expected_on_hand="8.2")
+    snapshot = _daily_close(client, location_id)["snapshot"]
+    assert "negativeStock" not in snapshot and not any(a["type"] == "negative_stock" for a in snapshot["attentionItems"])
+    assert snapshot["reconciliation"]["otherAdjustmentQuantity"] == 0.0  # neither the sale nor the receipt is an adjustment
+    assert snapshot["reconciliation"]["unexplainedVarianceQuantity"] is None
+
+
+def test_square_negative_close_never_claims_variance_or_a_reconciled_close_without_count_evidence(app, client, beef_world):
+    organization_id, location_id, beef_id = beef_world
+    _apply_order(organization_id)
+    _make_in_day(organization_id)
+    snapshot = _daily_close(client, location_id)["snapshot"]
+
+    assert snapshot["healthStatus"] == "Ready with warnings"  # not "Ready" / "Reconciled"
+    assert snapshot["usage"]["totals"]["actualUsage"] is None
+    assert (snapshot["variance"]["quantity"], snapshot["variance"]["percent"]) == (None, None)
+    assert snapshot["reconciliation"]["unexplainedVarianceQuantity"] is None
+
+
+def test_mixed_units_keep_aggregate_usage_unavailable_while_the_negative_is_flagged(app, client, beef_world):
+    from backend.models import Recipe, RecipeIngredient
+
+    organization_id, location_id, beef_id = beef_world
+    recipe = Recipe.query.filter_by(organization_id=organization_id, name="Classic Cheeseburger").one()
+    milk = InventoryItem(organization_id=organization_id, location_id=location_id, name="Milk", normalized_name="milk", stock_unit="L",
+                         current_on_hand=Decimal("50"), average_unit_cost=Decimal("2"), active=True)
+    db.session.add(milk)
+    db.session.flush()
+    db.session.add(RecipeIngredient(organization_id=organization_id, recipe_id=recipe.id, inventory_item_id=milk.id,
+                                    quantity_required=Decimal("0.05"), unit="L", notes="", sort_order=1))
+    order = SquareOrder.query.filter_by(square_order_id="ORDER-1").one()
+    order.ordered_at = order.closed_at = IN_DAY  # sold on the business day being closed
+    db.session.commit()
+    _apply_order(organization_id)
+    _make_in_day(organization_id)
+
+    snapshot = _daily_close(client, location_id)["snapshot"]
+    assert {r["unit"] for r in snapshot["usage"]["ingredientUsage"]} == {"kg", "L"}
+    assert snapshot["usage"]["totals"]["theoreticalUsage"] is None and snapshot["usage"]["totals"]["actualUsage"] is None
+    assert snapshot["negativeStock"]["items"][0]["inventoryItemName"] == "Beef"  # only Beef is below zero; Milk 50 - 0.5 L is not
+    assert [i["inventoryItemName"] for i in snapshot["negativeStock"]["items"]] == ["Beef"]
+    assert snapshot["healthStatus"] == "Ready with warnings"
+
+
+def test_a_square_order_cancelled_after_consumption_restores_stock_and_makes_no_negative_or_variance_claim(app, client, beef_world):
+    organization_id, location_id, beef_id = beef_world
+    _apply_order(organization_id)
+    assert _negative(client)["count"] == 1
+    order = SquareOrder.query.filter_by(square_order_id="ORDER-1").one()
+    order.order_state = "CANCELED"
+    db.session.commit()
+    _apply_order(organization_id)
+    _make_in_day(organization_id)
+
+    assert [m.source_type for m in InventoryMovement.query.filter_by(inventory_item_id=beef_id).order_by(InventoryMovement.id)] == [
+        "square sale consumption", "square sale reversal",
+    ]
+    assert _negative(client) == {"count": 0, "posCausedCount": 0, "items": []}
+    assert_ledger_reconciles(beef_id, opening="0", expected_on_hand="0")
+    snapshot = _daily_close_snapshot_for(client, location_id)
+    assert "negativeStock" not in snapshot
+    assert snapshot["reconciliation"]["otherAdjustmentQuantity"] == 0.0  # the reversal is POS-explained, not an adjustment
+    assert snapshot["reconciliation"]["unexplainedVarianceQuantity"] is None
+
+
+def _daily_close_snapshot_for(client, location_id):
+    return _daily_close(client, location_id)["snapshot"]
+
+
+# ---- Clover ---------------------------------------------------------------------------------------
+def test_clover_and_square_report_the_same_quantities_for_the_same_sale_and_clover_replay_is_idempotent(app, client, cafe, monkeypatch):  # noqa: F811
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    chicken.current_on_hand = Decimal("0")
+    db.session.commit()
+    order, _ = _engine_order(org, location, connection, chicken, buns, chicken_qty="1.8000")  # 1.8 kg consumed from 0
+    assert _apply(order, connection)["applied"] is True
+    movements = InventoryMovement.query.filter_by(inventory_item_id=chicken.id).count()
+    assert _apply(order, connection)["alreadyApplied"]
+    assert InventoryMovement.query.filter_by(inventory_item_id=chicken.id).count() == movements == 1
+
+    position = _negative(client)["items"][0]
+    assert _core(position) == PARITY  # identical to the Square position in test_verified_square_sale_is_reported...
+    assert position["provider"] == "Clover" and "Clover order" in position["explanation"]
+    reorder = client.get("/api/pilot/reorder-plan").get_json()
+    assert next(i for i in reorder["inventoryItems"] if i["id"] == chicken.id)["currentOnHand"] == -1.8
+    assert db.session.get(InventoryItem, chicken.id).average_unit_cost == Decimal("12.5000")  # POS consumption never changes cost
+
+
+def test_clover_late_receipt_reconciles_ledger_and_cost_and_is_not_an_adjustment(app, client, cafe, monkeypatch):  # noqa: F811
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    chicken.current_on_hand = Decimal("0")
+    db.session.commit()
+    order, _ = _engine_order(org, location, connection, chicken, buns)  # 0.18 kg
+    _apply(order, connection)
+    assert _negative(client)["items"][0]["onHand"] == -0.18
+
+    _receive(client, chicken.id, 5, 10)  # -0.18 + 5 = 4.82 kg at $10.00/kg
+    _make_in_day(org.id)
+
+    item = db.session.get(InventoryItem, chicken.id)
+    assert (Decimal(item.current_on_hand), Decimal(item.average_unit_cost)) == (Decimal("4.8200"), Decimal("10.00"))
+    assert [m.source_type for m in InventoryMovement.query.filter_by(inventory_item_id=chicken.id).order_by(InventoryMovement.id)] == [
+        "clover sale consumption", "invoice receipt",
+    ]
+    assert_ledger_reconciles(chicken.id, opening="0", expected_on_hand="4.82")
+    snapshot, _ = _close(client, location.id)
+    assert "negativeStock" not in snapshot and snapshot["reconciliation"]["otherAdjustmentQuantity"] == 0.0
+
+
+def test_clover_close_with_a_negative_is_a_review_state_with_no_variance_claim(app, client, cafe, monkeypatch):  # noqa: F811
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    chicken.current_on_hand = Decimal("0.10")
+    db.session.commit()
+    order, line = _engine_order(org, location, connection, chicken, buns)
+    _apply(order, connection)
+    _make_in_day(org.id)
+    snapshot, _ = _close(client, location.id)
+
+    assert snapshot["healthStatus"] == "Ready with warnings"
+    assert (snapshot["variance"]["quantity"], snapshot["variance"]["percent"]) == (None, None)
+    assert snapshot["reconciliation"]["otherAdjustmentQuantity"] == 0.0
+    assert snapshot["negativeStock"]["items"][0]["onHand"] == -0.08
+
+    # A later recipe correction writes a 'clover sale correction' movement: still POS-explained, never an adjustment.
+    from sqlalchemy.orm.attributes import flag_modified
+
+    line.recipe_preview_json["ingredients"][0]["quantity"] = "0.1200"
+    flag_modified(line, "recipe_preview_json")
+    db.session.flush()
+    _apply(order, connection)
+    _make_in_day(org.id)
+    corrected, _ = _close(client, location.id)
+    assert [m.source_type for m in InventoryMovement.query.filter_by(inventory_item_id=chicken.id).order_by(InventoryMovement.id)] == [
+        "clover sale consumption", "clover sale correction",
+    ]
+    assert corrected["reconciliation"]["otherAdjustmentQuantity"] == 0.0
+    # 0.10 - 0.18 + 0.06 (corrected to 0.12 kg used) = -0.02: still short, now by the net 0.12 kg the order used.
+    position = corrected["negativeStock"]["items"][0]
+    assert (position["onHand"], position["posConsumedQuantity"], position["orderCount"]) == (-0.02, 0.12, 1)
+
+
+def test_clover_order_cancelled_after_consumption_stays_attributable_but_is_marked_for_review(app, client, cafe, monkeypatch):  # noqa: F811
+    org, location, connection = cafe
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    chicken.current_on_hand = Decimal("0.10")
+    db.session.commit()
+    order, _ = _engine_order(org, location, connection, chicken, buns)
+    _apply(order, connection)
+    assert db.session.get(InventoryItem, chicken.id).current_on_hand == Decimal("-0.0800")
+
+    order.normalized_status, order.provider_status = "cancelled", "DELETED"
+    db.session.commit()
+    assert _apply(order, connection)["applied"] is False  # Clover never auto-restocks
+    assert db.session.get(InventoryItem, chicken.id).current_on_hand == Decimal("-0.0800")
+    _make_in_day(org.id)
+
+    position = _negative(client)["items"][0]
+    assert (position["onHand"], position["cause"], position["reviewOrderCount"]) == (-0.08, "pos_sale", 1)
+    assert position["explanation"].endswith("1 of those orders was cancelled or flagged for review after stock was used; the stock was not restored.")
+    snapshot, exceptions = _close(client, location.id)
+    types = {a["type"] for a in snapshot["attentionItems"]}
+    assert {"clover_cancelled_after_inventory", "negative_stock"} <= types  # a distinct review state, not a normal ready close
+    assert "Clover order cancelled after inventory was applied." in exceptions
+    assert snapshot["healthStatus"] == "Ready with warnings"
+    assert [a["detail"] for a in snapshot["attentionItems"] if a["type"] == "negative_stock"] == ["On hand: Chicken -0.08 kg (Clover sales, order under review)."]
+    assert snapshot["usage"]["availability"]["usageAvailable"] is False and snapshot["foodCost"]["available"] is False
+    assert snapshot["reconciliation"]["otherAdjustmentQuantity"] == 0.0

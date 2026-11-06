@@ -16,7 +16,7 @@ from flask import Blueprint, jsonify
 from flask_login import login_required
 
 from .access import organization_is_operational
-from .models import InventoryItem, InventoryMovement
+from .models import CloverShadowOrder, InventoryItem, InventoryMovement
 from .policy import require_permission
 from .pos import CLOVER_SALE_SOURCE_TYPES, POS_SALE_SOURCE_TYPES, SQUARE_SALE_SOURCE_TYPES
 from .utils import get_current_location, get_current_organization_bundle, json_error
@@ -44,6 +44,23 @@ def _providers(source_types: set[str]) -> list[str]:
     return providers
 
 
+def _clover_orders_under_review(organization_id: int, location_id: int, movements: list[InventoryMovement]) -> set[str]:
+    """Clover orders that consumed stock but are now cancelled or flagged for review.
+
+    Clover never restores stock for such an order (it is surfaced for review instead), so the position stays
+    negative and must not be presented as a plain verified sale.  Square reverses consumption itself.
+    """
+    order_ids = {m.source_record_id for m in movements if m.source_type in CLOVER_SALE_SOURCE_TYPES}
+    if not order_ids:
+        return set()
+    rows = CloverShadowOrder.query.filter(
+        CloverShadowOrder.organization_id == organization_id,
+        CloverShadowOrder.restaurant_location_id == location_id,
+        CloverShadowOrder.clover_order_id.in_(order_ids),
+    ).all()
+    return {row.clover_order_id for row in rows if row.requires_review or row.normalized_status != "paid"}
+
+
 def _position(item: InventoryItem, movements: list[InventoryMovement]) -> dict[str, Any]:
     on_hand = Decimal(item.current_on_hand or 0)
     shortfall = -on_hand
@@ -61,6 +78,7 @@ def _position(item: InventoryItem, movements: list[InventoryMovement]) -> dict[s
     caused_by_pos = bool(run) and run[0].source_type in POS_SALE_SOURCE_TYPES
     pos_consumed = -sum((Decimal(m.quantity_delta or 0) for m in pos_run), start=Decimal("0"))
     orders = {m.source_record_id for m in pos_run if Decimal(m.quantity_delta or 0) < 0}
+    review_orders = _clover_orders_under_review(item.organization_id, item.location_id, pos_run) if caused_by_pos else set()
     providers = _providers({m.source_type for m in pos_run})
     provider_label = " and ".join(providers)
 
@@ -72,6 +90,12 @@ def _position(item: InventoryItem, movements: list[InventoryMovement]) -> dict[s
             f"on hand is {_plain(on_hand)} {unit}."
         )
         explanation += " Record the delivery or count the item to reconcile."
+        if review_orders:
+            n = len(review_orders)
+            explanation += (
+                f" {n} of those order{'s was' if n == 1 else 's were'} cancelled or flagged for review after stock was used; "
+                "the stock was not restored."
+            )
     else:
         explanation = (
             f"On hand is {_plain(on_hand)} {unit} but no verified POS sale caused it. "
@@ -88,6 +112,7 @@ def _position(item: InventoryItem, movements: list[InventoryMovement]) -> dict[s
         "provider": provider_label or None,
         "posConsumedQuantity": float(pos_consumed) if caused_by_pos else None,
         "orderCount": len(orders) if caused_by_pos else 0,
+        "reviewOrderCount": len(review_orders),
         "crossedZeroAt": _iso(run[0].created_at) if run else None,
         "lastPosSaleAt": _iso(pos_run[-1].created_at) if pos_run else None,
         "explanation": explanation,
@@ -134,7 +159,7 @@ def negative_stock_attention_item(summary: dict[str, Any]) -> dict[str, Any]:
     items = summary["items"]
     shown = [
         f"{item['inventoryItemName']} {_plain(Decimal(str(item['onHand'])))} {item['unit']}"
-        + (f" ({item['provider']} sales)" if item["cause"] == "pos_sale" else " (not from POS sales)")
+        + (f" ({item['provider']} sales{', order under review' if item['reviewOrderCount'] else ''})" if item["cause"] == "pos_sale" else " (not from POS sales)")
         for item in items[:3]
     ]
     more = len(items) - len(shown)

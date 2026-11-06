@@ -6,7 +6,7 @@ import type { PilotNegativeStockPosition } from "../../src/pilot/pilotApi";
 
 const base: PilotNegativeStockPosition = {
   inventoryItemId: 31, inventoryItemName: "Beef", unit: "kg", onHand: -1.8, shortfall: 1.8, cause: "pos_sale", provider: "Square",
-  posConsumedQuantity: 1.8, orderCount: 1, crossedZeroAt: null, lastPosSaleAt: null,
+  posConsumedQuantity: 1.8, orderCount: 1, reviewOrderCount: 0, crossedZeroAt: null, lastPosSaleAt: null,
   explanation: "1 Square order used 1.8 kg before enough stock was received; on hand is -1.8 kg. Record the delivery or count the item to reconcile.",
 };
 
@@ -14,6 +14,10 @@ describe("negative stock note", () => {
   it("shows the actual quantity and the POS provider that caused it", () => {
     expect(negativeStockShortLabel(base)).toBe("Below zero: -1.8 kg · Square sales ahead of receipt");
     expect(negativeStockShortLabel({ ...base, provider: "Clover", onHand: -0.08, unit: "kg" })).toBe("Below zero: -0.08 kg · Clover sales ahead of receipt");
+  });
+
+  it("says when a consuming order was cancelled or flagged for review", () => {
+    expect(negativeStockShortLabel({ ...base, provider: "Clover", reviewOrderCount: 1 })).toBe("Below zero: -1.8 kg · Clover sales ahead of receipt · order under review");
   });
 
   it("never blames POS sales when the ledger does not show them", () => {

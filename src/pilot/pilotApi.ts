@@ -1503,6 +1503,7 @@ export type PilotNegativeStockPosition = {
   provider: string | null;
   posConsumedQuantity: number | null;
   orderCount: number;
+  reviewOrderCount: number;
   crossedZeroAt: string | null;
   lastPosSaleAt: string | null;
   explanation: string;

@@ -11,7 +11,8 @@ function quantity(value: number) {
 /** One short line for dense lists: the actual quantity and what caused it. */
 export function negativeStockShortLabel(position: PilotNegativeStockPosition) {
   const cause = position.cause === "pos_sale" && position.provider ? `${position.provider} sales ahead of receipt` : "not from POS sales";
-  return `Below zero: ${quantity(position.onHand)} ${position.unit} · ${cause}`;
+  const review = position.reviewOrderCount > 0 ? " · order under review" : "";
+  return `Below zero: ${quantity(position.onHand)} ${position.unit} · ${cause}${review}`;
 }
 
 /** The full evidence sentence from the ledger (quantities, order count, what to do). */
