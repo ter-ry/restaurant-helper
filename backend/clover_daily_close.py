@@ -204,6 +204,9 @@ def _messages(sales: CloverDaySales, cu: dict[str, Any], cash: dict[str, Any]) -
         items.append({"type": "unmapped_clover_sales", "label": "Review mappings", "title": "Unmapped Clover items", "severity": "warning", "href": "/app/square", "detail": "Map sold Clover items before relying on recipe usage."})
     if by_reason.get("recipe_missing") or by_reason.get("line_needs_review"):
         exceptions.append("Recipe or inventory mapping gaps exist.")
+    if by_reason.get("cancelled_after_inventory_applied"):
+        exceptions.append("Clover order cancelled after inventory was applied.")
+        items.append({"type": "clover_cancelled_after_inventory", "title": "Cancelled order already used stock", "severity": "warning", "href": "/app/square", "label": "Review Clover", "detail": "Stock was deducted before the order was cancelled and is not restocked automatically, so usage and food cost stay unavailable until it is reviewed."})
     if by_reason.get("inventory_not_applied"):
         exceptions.append("Clover inventory has not been applied for some sold items.")
         items.append({"type": "clover_inventory_not_applied", "title": "Inventory not applied for some Clover sales", "severity": "info", "detail": "Usage and food cost stay unavailable until Clover inventory reconciliation has been run for these sales."})

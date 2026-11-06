@@ -498,3 +498,134 @@ def test_a_nonpositive_recipe_quantity_is_never_costed(app, client, cafe, monkey
     assert db.session.get(type(chicken), chicken.id).current_on_hand == Decimal("10.0000")
     snapshot, _ = _close(client, location.id)
     assert snapshot["foodCost"]["available"] is False and snapshot["foodCost"]["usageCostCents"] is None
+
+
+# --------------------------------------------------------------------------------------------------
+# Multi-quantity lines (reviewer finding at e672db7). A real stored line is built by the production ingestion path
+# (_ingest_shadow_orders -> _shadow_recipe_preview), which already scales every ingredient by quantity / yield, so
+# recipe_preview_json holds LINE-TOTAL quantities and the engine must not multiply again. These tests prove the whole
+# chain (ingestion -> enabled engine -> Daily Close) for quantity 2 and for quantity 4 on a yield-2 recipe.
+# --------------------------------------------------------------------------------------------------
+def _raw_clover_order(order_id, *, quantity, tax, closed=NOON, payment_state="PAID", refunds=None, state="CLOSED"):
+    ms = int(closed.timestamp() * 1000)
+    amount = quantity * 1000 + tax
+    refunds = refunds or []
+    return {
+        "id": order_id, "state": state, "paymentState": payment_state, "total": amount, "currency": "CAD",
+        "createdTime": ms, "modifiedTime": ms, "closedTime": ms,
+        "lineItems": {"elements": [{"id": "line-1", "name": "Test Burger", "quantity": quantity, "price": 1000, "item": {"id": "burger-1"}, "modifications": {"elements": [], "total": 0}}], "total": 1},
+        "payments": {"elements": [{"id": "p1", "amount": amount, "taxAmount": tax, "tipAmount": 0, "result": "SUCCESS", "tender": {"labelKey": CASH}}], "total": 1},
+        "refunds": {"elements": refunds, "total": len(refunds)},
+    }
+
+
+def _mapped_recipe(app, monkeypatch, org, location, connection, *, yield_quantity="1", chicken_per_yield="0.18"):
+    from backend.models import CloverMenuMapping, MenuItem, Recipe, RecipeIngredient
+
+    chicken, buns = _engine_world(app, monkeypatch, org, location, connection)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    recipe = Recipe(organization_id=org.id, location_id=location.id, name="Burger recipe", normalized_name=f"burger-{uuid4().hex[:6]}", yield_quantity=Decimal(yield_quantity), yield_unit="serving", active=True)
+    menu_item = MenuItem(organization_id=org.id, location_id=location.id, recipe=recipe, name="Test Burger", normalized_name=f"tb-{uuid4().hex[:6]}", selling_price=Decimal("10"))
+    db.session.add_all([recipe, menu_item])
+    db.session.flush()
+    chicken_row = RecipeIngredient(organization_id=org.id, recipe_id=recipe.id, inventory_item_id=chicken.id, quantity_required=Decimal(chicken_per_yield), unit="kg")
+    db.session.add_all([chicken_row, RecipeIngredient(organization_id=org.id, recipe_id=recipe.id, inventory_item_id=buns.id, quantity_required=Decimal("0.25"), unit="pack")])
+    db.session.add(CloverMenuMapping(clover_connection_id=connection.id, organization_id=org.id, restaurant_location_id=location.id, clover_merchant_id=connection.merchant_id, clover_item_id="burger-1", flowtally_menu_item_id=menu_item.id, mapped_by_user_id=owner.id))
+    db.session.commit()
+    return chicken, buns, chicken_row
+
+
+def _ingest(org, location, connection, raw):
+    from backend.clover_integration import _ingest_shadow_orders
+    from backend.clover_orders import normalize_order
+
+    _ingest_shadow_orders(connection=connection, organization=org, location=location, orders=[normalize_order(raw)])
+    db.session.commit()
+    return CloverShadowOrder.query.filter_by(organization_id=org.id, clover_order_id=raw["id"]).one()
+
+
+def test_quantity_two_line_is_consumed_and_costed_at_line_total_through_ingestion_engine_and_daily_close(app, client, cafe, monkeypatch):
+    """Quantity 2 x (0.18 kg chicken + 0.25 pack buns): ledger -0.36 / -0.50, stock 9.64 / 19.50, usage $4.50 + $1.00 = $5.50
+    (550c) on 2000c net = 27.5%. Recipe corrected to 0.20 kg: 0.40 / 0.50 -> $5.00 + $1.00 = $6.00 (600c) = 30.0%."""
+    org, location, connection = cafe
+    chicken, buns, chicken_row = _mapped_recipe(app, monkeypatch, org, location, connection)
+    order = _ingest(org, location, connection, _raw_clover_order("multi-2", quantity=2, tax=260))
+    line = CloverShadowOrderLine.query.filter_by(shadow_order_id=order.id).one()
+    assert line.quantity == Decimal("2")
+    assert {i["name"]: i["quantity"] for i in line.recipe_preview_json["ingredients"]} == {"Chicken": "0.3600", "Buns": "0.5000"}  # already line totals
+
+    assert _apply(order, connection)["applied"] is True
+    assert (db.session.get(type(chicken), chicken.id).current_on_hand, db.session.get(type(buns), buns.id).current_on_hand) == (Decimal("9.6400"), Decimal("19.5000"))
+    ledger = {l.inventory_item_id: (l.applied_quantity, l.unit_cost_snapshot) for l in CloverShadowOrderLineInventoryConsumption.query.filter_by(clover_shadow_order_line_id=line.id)}
+    assert ledger == {chicken.id: (Decimal("-0.3600"), Decimal("12.500000")), buns.id: (Decimal("-0.5000"), Decimal("2.000000"))}
+    assert sorted(m.quantity_delta for m in InventoryMovement.query.filter_by(organization_id=org.id)) == [Decimal("-0.5000"), Decimal("-0.3600")]
+    snapshot, exceptions = _close(client, location.id)
+    assert snapshot["foodCost"] == {"available": True, "usageCostCents": 550, "netSalesCents": 2000, "percent": 27.5, "unavailableReason": None}
+    assert {r["inventoryItemName"]: (r["theoreticalUsage"], r["costCents"]) for r in snapshot["usage"]["ingredientUsage"]} == {"Chicken": (0.36, 450), "Buns": (0.5, 100)}
+    assert snapshot["usage"]["contributingMenuItems"] == [{"name": "Test Burger", "quantity": 2.0}] and exceptions == []
+    # Stock that actually left the shelf, priced independently: 0.36 x 12.50 + 0.50 x 2.00 = $5.50.
+    assert (Decimal("10") - Decimal("9.64")) * Decimal("12.50") + (Decimal("20") - Decimal("19.50")) * Decimal("2.00") == Decimal("5.50")
+
+    # Replay: re-fetching the identical order and re-applying changes nothing.
+    movements = InventoryMovement.query.filter_by(organization_id=org.id).count()
+    again = _ingest(org, location, connection, _raw_clover_order("multi-2", quantity=2, tax=260))
+    assert _apply(again, connection)["alreadyApplied"] and InventoryMovement.query.filter_by(organization_id=org.id).count() == movements
+    assert _close(client, location.id)[0]["foodCost"]["usageCostCents"] == 550
+
+    # Recipe correction through the production path: the changed recipe is re-previewed at line total (0.20 x 2 = 0.40).
+    chicken_row.quantity_required = Decimal("0.20")
+    db.session.commit()
+    corrected_order = _ingest(org, location, connection, _raw_clover_order("multi-2", quantity=2, tax=260))
+    assert any(m["state"] == "correction" for m in _apply(corrected_order, connection)["movements"])
+    assert db.session.get(type(chicken), chicken.id).current_on_hand == Decimal("9.6000")
+    corrected, _ = _close(client, location.id)
+    assert (corrected["foodCost"]["usageCostCents"], corrected["foodCost"]["percent"]) == (600, 30.0)
+    assert {r["inventoryItemName"]: r["costCents"] for r in corrected["usage"]["ingredientUsage"]} == {"Chicken": 500, "Buns": 100}
+
+
+def test_quantity_four_line_on_a_yield_two_recipe_scales_by_quantity_over_yield_once(app, client, cafe, monkeypatch):
+    """Recipe makes 2 servings from 0.18 kg chicken + 0.25 pack buns; 4 sold -> x2 -> 0.36 kg / 0.50 pack, $5.50 (550c) on 4000c net = 13.75%."""
+    org, location, connection = cafe
+    chicken, buns, _ = _mapped_recipe(app, monkeypatch, org, location, connection, yield_quantity="2")
+    order = _ingest(org, location, connection, _raw_clover_order("multi-4", quantity=4, tax=520))
+    assert _apply(order, connection)["applied"] is True
+    assert (db.session.get(type(chicken), chicken.id).current_on_hand, db.session.get(type(buns), buns.id).current_on_hand) == (Decimal("9.6400"), Decimal("19.5000"))
+    snapshot, _ = _close(client, location.id)
+    assert (snapshot["foodCost"]["usageCostCents"], snapshot["foodCost"]["netSalesCents"], snapshot["foodCost"]["percent"]) == (550, 4000, 13.75)
+
+
+def test_a_multi_quantity_order_refunded_after_application_never_reports_an_available_understated_cost(app, client, cafe, monkeypatch):
+    org, location, connection = cafe
+    chicken, buns, _ = _mapped_recipe(app, monkeypatch, org, location, connection)
+    order = _ingest(org, location, connection, _raw_clover_order("multi-refund", quantity=2, tax=260))
+    _apply(order, connection)
+    assert _close(client, location.id)[0]["foodCost"]["usageCostCents"] == 550
+
+    refunded = _ingest(org, location, connection, _raw_clover_order("multi-refund", quantity=2, tax=260, payment_state="PARTIALLY_REFUNDED", refunds=[{"id": "r1", "amount": 1000}]))
+    plan = _apply(refunded, connection)
+    assert plan["applied"] is False and plan["appliedRequiresReview"] is True  # stock is left alone and surfaced for review
+    assert db.session.get(type(chicken), chicken.id).current_on_hand == Decimal("9.6400")  # nothing silently restocked
+    snapshot, exceptions = _close(client, location.id)
+    assert snapshot["foodCost"]["available"] is False and snapshot["foodCost"]["usageCostCents"] is None
+    assert snapshot["sales"]["orders"] == 0 and snapshot["sales"]["excludedOrders"] == 1  # the refunded order is excluded, not counted as a clean sale
+    assert snapshot["cashReconciliation"]["expectedCash"] is None
+
+
+def test_a_multi_quantity_order_voided_after_application_is_not_hidden_from_usage(app, client, cafe, monkeypatch):
+    org, location, connection = cafe
+    chicken, buns, _ = _mapped_recipe(app, monkeypatch, org, location, connection)
+    order = _ingest(org, location, connection, _raw_clover_order("multi-void", quantity=2, tax=260))
+    _apply(order, connection)
+    stock_after_sale = db.session.get(type(chicken), chicken.id).current_on_hand
+    assert stock_after_sale == Decimal("9.6400")
+
+    voided = _ingest(org, location, connection, _raw_clover_order("multi-void", quantity=2, tax=260, state="DELETED", payment_state="PAID"))
+    _apply(voided, connection)
+    assert db.session.get(type(chicken), chicken.id).current_on_hand == stock_after_sale  # the engine never auto-restocks a void
+    snapshot, exceptions = _close(client, location.id)
+    # Stock really left the shelf (550c), so Daily Close must not present a complete, smaller (here $0) cost that ignores it.
+    assert snapshot["usage"]["availability"]["usageAvailable"] is False
+    assert (snapshot["foodCost"]["available"], snapshot["foodCost"]["usageCostCents"]) == (False, None)
+    assert "Clover order cancelled after inventory was applied." in exceptions
+    assert "clover_cancelled_after_inventory" in {a["type"] for a in snapshot["attentionItems"]}
+    assert snapshot["sales"]["orders"] == 0  # the void is not counted as a sale

@@ -43,3 +43,5 @@ Known limits, all fail-closed (never zero or invented):
 - **Owner Reports** (`backend/reporting.py`) and the completed-close CSV are unchanged and remain Square-sourced; the CSV has no provider column so the Square export stays byte-identical.
 - Sales reflect Clover orders already fetched into Flowtally; there is no Daily Close sync for Clover.
 - Not externally verified: needs #166 Sandbox evidence. `CLOVER_ORDER_INVENTORY_ENABLED` is unchanged.
+- **Multi-quantity lines:** ingestion (`_shadow_recipe_preview`) stores line-total ingredient quantities (sold quantity / recipe yield), so the engine and usage read them as totals and must not multiply again. Verified end to end for quantity 2 (550c / 27.5%, corrected 600c / 30%) and quantity 4 on a yield-2 recipe, plus two tenants under forced RLS.
+- **Voids and refunds after stock was applied:** the engine never restocks automatically. A refunded order is excluded from sales and makes usage unavailable; a cancelled order that already used stock now also makes usage unavailable (`cancelled_after_inventory_applied`) instead of reporting a complete, smaller cost.

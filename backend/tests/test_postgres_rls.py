@@ -5369,3 +5369,103 @@ def test_engine_driven_clover_daily_close_is_exact_and_tenant_isolated_under_for
         assert apply_clover_order_inventory(order=order, connection=connection)["alreadyApplied"]
         db.session.commit()
     assert close_for(a_org, a_org, a_loc)["foodCost"]["usageCostCents"] == 275
+
+
+def test_multi_quantity_clover_lines_ingest_apply_and_close_exactly_per_tenant_under_forced_rls(postgres_app):
+    """#222: real ingestion (quantity scaling), enabled engine and Daily Close on PostgreSQL with two tenants.
+
+    Tenant A sells 2 burgers (0.18 kg chicken + 0.25 pack buns each): ledger -0.36 / -0.50, $4.50 + $1.00 = 550c on 2000c net = 27.5%.
+    Tenant B sells 3 burgers (0.20 kg chicken + 0.25 pack buns each): ledger -0.60 / -0.75, $7.50 + $1.50 = 900c on 3000c net = 30.0%.
+    Voiding A's order after application makes A's usage unavailable and leaves B untouched.
+    """
+    from datetime import date, datetime, timezone
+    from backend.clover_inventory import apply_clover_order_inventory
+    from backend.clover_integration import _ingest_shadow_orders
+    from backend.clover_orders import normalize_order
+    from backend.daily_close import _daily_close_snapshot
+    from backend.models import (
+        CloverConnection, CloverLocationMapping, CloverMenuMapping, CloverShadowOrder, CloverShadowOrderLine, CloverShadowOrderLineInventoryConsumption,
+        InventoryItem, MenuItem, Organization, Recipe, RecipeIngredient, RestaurantLocation, User,
+    )
+    from backend.tests.test_daily_close_clover import _raw_clover_order
+
+    day = date(2026, 8, 30)
+    closed = datetime(2026, 8, 30, 16, 0, tzinfo=timezone.utc)
+    application = postgres_app
+    made = {}
+    with application.test_request_context("/"):
+        application.config["CLOVER_ORDER_INVENTORY_ENABLED"] = True  # controlled test app; the shipped default stays off
+        _pin_rls_context(access_scope="setup")
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        owner_id = owner.id
+        for key, quantity, tax, chicken_per_serving in (("a", 2, 260, "0.18"), ("b", 3, 390, "0.20")):
+            _pin_rls_context(access_scope="setup")
+            organization = make_operational_organization(owner, name=f"Multi qty {key} {uuid4()}", location_name=f"Site {key}")
+            organization_id = organization.id
+            location_id = RestaurantLocation.query.filter_by(organization_id=organization_id).first().id
+            _pin_rls_context(access_scope="customer", organization_id=organization_id, user_id=owner_id)
+            connection = CloverConnection(organization_id=organization_id, environment="sandbox", merchant_id=f"m-{key}-{uuid4().hex[:6]}", status="connected", access_token_ciphertext="x")
+            db.session.add(connection)
+            db.session.flush()
+            db.session.add(CloverLocationMapping(clover_connection_id=connection.id, organization_id=organization_id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id))
+            chicken = InventoryItem(organization_id=organization_id, location_id=location_id, name="Chicken", normalized_name=f"chicken-{uuid4()}", stock_unit="kg", current_on_hand=Decimal("10"), average_unit_cost=Decimal("12.50"))
+            buns = InventoryItem(organization_id=organization_id, location_id=location_id, name="Buns", normalized_name=f"buns-{uuid4()}", stock_unit="pack", current_on_hand=Decimal("20"), average_unit_cost=Decimal("2.00"))
+            recipe = Recipe(organization_id=organization_id, location_id=location_id, name="Burger recipe", normalized_name=f"burger-{uuid4()}", yield_quantity=Decimal("1"), yield_unit="serving", active=True)
+            menu_item = MenuItem(organization_id=organization_id, location_id=location_id, recipe=recipe, name="Test Burger", normalized_name=f"tb-{uuid4()}", selling_price=Decimal("10"))
+            db.session.add_all([chicken, buns, recipe, menu_item])
+            db.session.flush()
+            db.session.add_all([
+                RecipeIngredient(organization_id=organization_id, recipe_id=recipe.id, inventory_item_id=chicken.id, quantity_required=Decimal(chicken_per_serving), unit="kg"),
+                RecipeIngredient(organization_id=organization_id, recipe_id=recipe.id, inventory_item_id=buns.id, quantity_required=Decimal("0.25"), unit="pack"),
+                CloverMenuMapping(clover_connection_id=connection.id, organization_id=organization_id, restaurant_location_id=location_id, clover_merchant_id=connection.merchant_id, clover_item_id="burger-1", flowtally_menu_item_id=menu_item.id, mapped_by_user_id=owner_id),
+            ])
+            db.session.commit()
+            organization = db.session.get(Organization, organization_id)
+            location = db.session.get(RestaurantLocation, location_id)
+            connection = db.session.get(CloverConnection, connection.id)
+            raw = _raw_clover_order(f"multi-{key}", quantity=quantity, tax=tax, closed=closed)
+            _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=[normalize_order(raw)])
+            db.session.commit()
+            order = CloverShadowOrder.query.filter_by(organization_id=organization_id).one()
+            assert apply_clover_order_inventory(order=order, connection=connection)["applied"] is True
+            db.session.commit()
+            made[key] = (organization_id, location_id, chicken.id, buns.id)
+
+    def close_for(context_org_id, target_org_id, target_location_id):
+        with application.test_request_context("/"):
+            _pin_rls_context(access_scope="customer", organization_id=context_org_id, user_id=owner_id)
+            organization = db.session.get(Organization, target_org_id)
+            location = RestaurantLocation.query.filter_by(id=target_location_id, organization_id=target_org_id).first()
+            if organization is None or location is None:
+                return None
+            return _daily_close_snapshot(organization, location, day)[0]
+
+    a_org, a_loc, a_chicken, a_buns = made["a"]
+    b_org, b_loc, b_chicken, b_buns = made["b"]
+    with application.test_request_context("/"):
+        _pin_rls_context(access_scope="customer", organization_id=a_org, user_id=owner_id)
+        assert (db.session.get(InventoryItem, a_chicken).current_on_hand, db.session.get(InventoryItem, a_buns).current_on_hand) == (Decimal("9.6400"), Decimal("19.5000"))
+        assert {l.inventory_item_id: l.applied_quantity for l in CloverShadowOrderLineInventoryConsumption.query.filter_by(organization_id=a_org)} == {a_chicken: Decimal("-0.3600"), a_buns: Decimal("-0.5000")}
+        assert db.session.get(InventoryItem, b_chicken) is None  # tenant B's stock is invisible to A
+    with application.test_request_context("/"):
+        _pin_rls_context(access_scope="customer", organization_id=b_org, user_id=owner_id)
+        assert (db.session.get(InventoryItem, b_chicken).current_on_hand, db.session.get(InventoryItem, b_buns).current_on_hand) == (Decimal("9.4000"), Decimal("19.2500"))
+        assert {l.inventory_item_id: l.applied_quantity for l in CloverShadowOrderLineInventoryConsumption.query.filter_by(organization_id=b_org)} == {b_chicken: Decimal("-0.6000"), b_buns: Decimal("-0.7500")}
+
+    assert close_for(a_org, a_org, a_loc)["foodCost"] == {"available": True, "usageCostCents": 550, "netSalesCents": 2000, "percent": 27.5, "unavailableReason": None}
+    assert close_for(b_org, b_org, b_loc)["foodCost"] == {"available": True, "usageCostCents": 900, "netSalesCents": 3000, "percent": 30.0, "unavailableReason": None}
+    assert close_for(a_org, b_org, b_loc) is None
+
+    # Void A's order after its stock was applied: A's usage becomes unavailable (stock stays deducted); B is unaffected.
+    with application.test_request_context("/"):
+        _pin_rls_context(access_scope="customer", organization_id=a_org, user_id=owner_id)
+        organization = db.session.get(Organization, a_org)
+        location = db.session.get(RestaurantLocation, a_loc)
+        connection = CloverConnection.query.filter_by(organization_id=a_org).one()
+        voided = _raw_clover_order("multi-a", quantity=2, tax=260, closed=closed, state="DELETED")
+        _ingest_shadow_orders(connection=connection, organization=organization, location=location, orders=[normalize_order(voided)])
+        db.session.commit()
+        assert db.session.get(InventoryItem, a_chicken).current_on_hand == Decimal("9.6400")
+    voided_close = close_for(a_org, a_org, a_loc)
+    assert voided_close["usage"]["availability"]["usageAvailable"] is False and voided_close["foodCost"]["usageCostCents"] is None
+    assert close_for(b_org, b_org, b_loc)["foodCost"]["usageCostCents"] == 900

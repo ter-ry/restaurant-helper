@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from .extensions import db
 from .models import (
     CloverShadowOrder,
     CloverShadowOrderLine,
@@ -84,6 +85,30 @@ def clover_usage_for_day(location, business_date: date, *, net_sales_cents: int 
         if problem != "cancelled":
             # An excluded order may still have moved stock, so the day's usage cannot be called complete.
             blocking_exclusion = True
+
+    # A cancelled/voided order normally moved no stock, but if inventory was applied before the cancel the stock
+    # really left the shelf (the engine never auto-restocks). Leaving it out would show a complete, understated cost.
+    cancelled_ids = {e["orderId"] for e in exceptions if e["reason"] == "cancelled"}
+    if cancelled_ids:
+        moved = {
+            row[0]
+            for row in db.session.query(CloverShadowOrderLine.shadow_order_id)
+            .join(CloverShadowOrderLineInventoryConsumption, CloverShadowOrderLineInventoryConsumption.clover_shadow_order_line_id == CloverShadowOrderLine.id)
+            .filter(
+                CloverShadowOrderLine.organization_id == location.organization_id,
+                CloverShadowOrderLine.restaurant_location_id == location.id,
+                CloverShadowOrderLine.shadow_order_id.in_(cancelled_ids),
+                CloverShadowOrderLineInventoryConsumption.organization_id == location.organization_id,
+                CloverShadowOrderLineInventoryConsumption.location_id == location.id,
+                CloverShadowOrderLineInventoryConsumption.applied_quantity != 0,
+            )
+            .distinct()
+            .all()
+        }
+        for exception in exceptions:
+            if exception["orderId"] in moved:
+                exception["reason"] = "cancelled_after_inventory_applied"
+                blocking_exclusion = True
 
     lines = CloverShadowOrderLine.query.filter(
         CloverShadowOrderLine.organization_id == location.organization_id,
