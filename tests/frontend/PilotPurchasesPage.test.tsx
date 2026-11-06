@@ -387,6 +387,102 @@ describe("PilotPurchasesPage", () => {
     expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalledWith(3);
   });
 
+  it("persists corrected OCR fields through close and reopen before receiving once", async () => {
+    const persisted = { ...createInvoice({ id: 3, invoiceNumber: "OCR-EDITED", status: "Draft", supplierName: "Fresh Dairy Toronto" }) };
+    const ocrLine = { itemName: "Milk 2L", quantity: 2, unit: "case", unitPrice: 24, lineTotal: 48, confidence: 0.8, needsReview: true };
+    mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
+      provider: "ocr.space",
+      fileName: "correct-me.pdf",
+      contentType: "application/pdf",
+      rawText: "OCR invoice",
+      fields: {
+        supplier: { value: "Fresh Dairy Toronto", confidence: 0.9, needsReview: false },
+        invoiceDate: { value: "2026-08-20", confidence: 0.9, needsReview: false },
+        invoiceNumber: { value: "OCR-EDITED", confidence: 0.9, needsReview: false },
+        subtotal: { value: 48, confidence: 0.9, needsReview: false },
+        tax: { value: 6.24, confidence: 0.9, needsReview: false },
+        total: { value: 54.24, confidence: 0.9, needsReview: false },
+      },
+      lineItems: [ocrLine],
+      warnings: [],
+      overallConfidence: 0.85,
+      needsReview: true,
+    });
+    mockApi.createPilotPurchaseInvoice.mockImplementationOnce(async (payload) => {
+      Object.assign(persisted, {
+        ...persisted,
+        ...payload,
+        supplier: createInvoice({ id: 3, invoiceNumber: payload.invoiceNumber, status: payload.status || "Draft", supplierName: payload.supplierName }).supplier,
+        lineItems: payload.lineItems.map((line: Record<string, unknown>, index: number) => ({ ...createLine({ id: 31 + index }), ...line })),
+      });
+      return persisted;
+    });
+    mockApi.fetchPilotPurchases.mockImplementation(async () => {
+      const response = createPurchasesResponse();
+      response.invoices = [persisted, ...response.invoices.filter((invoice) => invoice.id !== persisted.id)];
+      response.suppliers = [persisted.supplier!, ...response.suppliers.filter((supplier) => supplier.id !== persisted.supplier?.id)];
+      response.purchaseLines = persisted.lineItems;
+      return response;
+    });
+    mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
+      if (invoiceId === persisted.id) return persisted;
+      const response = createPurchasesResponse();
+      const invoice = response.invoices.find((entry) => entry.id === invoiceId);
+      if (!invoice) throw new Error("Invoice not found");
+      return invoice;
+    });
+    mockApi.updatePilotPurchaseInvoice.mockImplementation(async (_invoiceId, payload) => {
+      Object.assign(persisted, {
+        ...persisted,
+        ...payload,
+        supplier: createInvoice({ id: 3, invoiceNumber: payload.invoiceNumber, status: payload.status || "Draft", supplierName: payload.supplierName }).supplier,
+        lineItems: payload.lineItems.map((line: Record<string, unknown>, index: number) => ({ ...createLine({ id: 31 + index }), ...line })),
+      });
+      return persisted;
+    });
+    mockApi.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
+      if (invoiceId !== persisted.id || persisted.status === "Completed") throw new PilotApiError("Already received", 409);
+      persisted.status = "Completed";
+      persisted.receivedAt = "2026-08-20T10:30:00.000Z";
+      return persisted;
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    fireEvent.change(screen.getByLabelText("Invoice file"), { target: { files: [new File(["ocr"], "correct-me.pdf", { type: "application/pdf" })] } });
+    await screen.findByText("Invoice extracted. Review the highlighted fields before saving.");
+
+    fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Heritage Dairy" } });
+    fireEvent.change(screen.getByLabelText("Inventory item"), { target: { value: "301" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "30" } });
+    expect(screen.getByLabelText("Line total")).toHaveValue(90);
+    fireEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]);
+
+    await waitFor(() => expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledWith(expect.objectContaining({
+      supplierName: "Heritage Dairy",
+      invoiceNumber: "OCR-EDITED",
+      subtotal: 90,
+      totalAmount: 96.24,
+      lineItems: [expect.objectContaining({ quantity: 3, unitPrice: 30, lineTotal: 90, inventoryItemId: 301 })],
+    })));
+    expect(await screen.findByText("Invoice OCR-EDITED saved successfully.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Close Review uploaded invoice/ }));
+    fireEvent.click(screen.getByRole("button", { name: /OCR-EDITED/ }));
+    expect(await screen.findByRole("heading", { name: "Review OCR-EDITED" })).toBeVisible();
+    expect(screen.getByLabelText("Supplier")).toHaveValue("Heritage Dairy");
+    expect(screen.getByLabelText("Quantity")).toHaveValue(3);
+    expect(screen.getByLabelText("Unit price")).toHaveValue(30);
+    expect(screen.getByLabelText("Line total")).toHaveValue(90);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    await waitFor(() => expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Invoice OCR-EDITED received into inventory.")).toBeVisible();
+    expect(persisted.lineItems[0]).toMatchObject({ quantity: 3, unitPrice: 30, lineTotal: 90, inventoryItemId: 301 });
+  });
+
   it("suggests an inventory item for an unmapped line and maps it only after the owner clicks", async () => {
     renderPage();
 
