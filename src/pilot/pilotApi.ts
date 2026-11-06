@@ -1320,11 +1320,18 @@ export async function createPilotInventoryAdjustment(itemId: number, payload: Re
 }
 
 export async function reversePilotInventoryAdjustment(movementId: number, payload: { reason: string; idempotencyKey: string }) {
-  return requestCsrfJson<PilotInventoryMovement>(`/api/pilot/inventory/movements/${movementId}/reverse`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    return await requestCsrfJson<PilotInventoryMovement>(`/api/pilot/inventory/movements/${movementId}/reverse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    // Successful mutations clear the read cache; a rejected one (e.g. 409 already reversed by another session)
+    // means our cached history is stale, so drop it before the caller reconciles with the server.
+    clearPilotDataCache();
+    throw error;
+  }
 }
 
 export async function fetchPilotInventoryWasteEvents() {

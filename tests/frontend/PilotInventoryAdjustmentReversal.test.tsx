@@ -114,4 +114,41 @@ describe("adjustment reversal UI (#231)", () => {
     expect(await screen.findByText("Count fix")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Reverse" })).not.toBeInTheDocument();
   });
+
+  it("ignores a late reversal response after the user closed item A and opened item B", async () => {
+    const itemB = { ...item(12), id: 31, name: "Tomatoes", normalizedName: "tomatoes" };
+    mocks.fetchPilotInventory.mockResolvedValue({ ...list(6), items: [item(6), itemB] });
+    const detailA = (onHand: number, rows: any[]) => ({ ...detail(onHand, rows) });
+    mocks.fetchPilotInventoryItem.mockImplementation(async (id: number) =>
+      id === 30
+        ? detailA(10, [movement({ id: 5, reason: "A reason", reversedByMovementId: 6, reversible: false })])
+        : { item: itemB, purchaseHistory: [], supplierMappings: [], movementHistory: [movement({ id: 20, inventoryItemId: 31, inventoryItemName: "Tomatoes", reason: "B reason" })] },
+    );
+    let resolve!: (value: unknown) => void;
+    mocks.reversePilotInventoryAdjustment.mockReturnValue(new Promise((r) => { resolve = r; }));
+    mocks.fetchPilotInventoryItem.mockImplementationOnce(async () => detail(6, [movement({ reason: "A reason" })]));
+
+    render(<MemoryRouter initialEntries={["/app/inventory"]}><PilotInventoryPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: "History" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Movements" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reverse" }));
+    fireEvent.change(screen.getByLabelText("Reason for reversing"), { target: { value: "Typo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm reversal" }));
+    await waitFor(() => expect(mocks.reversePilotInventoryAdjustment).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Inventory" }));
+    fireEvent.click(await screen.findByRole("row", { name: /Tomatoes/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: "History" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Movements" }));
+    expect(await screen.findByText("B reason")).toBeVisible();
+
+    resolve({ id: 6, quantityBefore: 6, quantityAfter: 10, unit: "kg", inventoryItemName: "Chicken Breast" });
+    await waitFor(() => expect(mocks.fetchPilotInventoryItem).toHaveBeenCalledWith(30));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(screen.getByText("B reason")).toBeVisible();
+    expect(screen.queryByText("A reason")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Adjustment reversed/)).not.toBeInTheDocument();
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, MoreHorizontal, Plus, RefreshCcw, Scale, Search, SquarePen, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/Badge";
@@ -484,10 +484,15 @@ export function PilotInventoryPage() {
     }
   };
 
+  // The workspace may be closed or switched to another item while a reversal is in flight; late responses for
+  // an item that is no longer selected must not be installed into the new item's workspace.
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+
   const refreshItemAfterReversal = async (itemId: number) => {
     // Reconcile with authoritative server state: item detail (history + linkage) and the inventory list (on-hand).
     const [detail] = await Promise.all([fetchPilotInventoryItem(itemId), load()]);
-    setItemDetail(detail);
+    if (selectedIdRef.current === itemId) setItemDetail(detail);
   };
 
   const reverseAdjustment = async (movement: PilotInventoryMovement, reason: string, idempotencyKey: string) => {
@@ -503,9 +508,9 @@ export function PilotInventoryPage() {
     const summary = `Adjustment reversed: ${movement.inventoryItemName} ${formatInventoryQuantity(result.quantityBefore)} → ${formatInventoryQuantity(result.quantityAfter)} ${result.unit}. The original entry is kept.`;
     try {
       await refreshItemAfterReversal(movement.inventoryItemId);
-      setReversalNotice(summary);
+      if (selectedIdRef.current === movement.inventoryItemId) setReversalNotice(summary);
     } catch {
-      setReversalNotice(`${summary} Reload the page to see the latest history.`);
+      if (selectedIdRef.current === movement.inventoryItemId) setReversalNotice(`${summary} Reload the page to see the latest history.`);
     }
   };
 

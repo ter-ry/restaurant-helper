@@ -230,3 +230,28 @@ def test_rollback_when_audit_write_fails_leaves_no_partial_state(app, client, mo
     retry_client = client
     select_org(retry_client, org_id)
     assert _reverse(retry_client, original["id"]).status_code == 201  # nothing was committed by the failed attempt
+
+
+def test_reversal_respects_the_inventory_module_gate_like_adjustments(app, client):
+    from backend.models import OrganizationModule
+
+    login(client)
+    org_id, item_id = _new_item(app)
+    select_org(client, org_id)
+    original = _adjust(client, item_id, -2, "manual decrease")
+    with app.app_context():
+        OrganizationModule.query.filter_by(organization_id=org_id, module_key="INVENTORY").one().status = "DISABLED"
+        db.session.commit()
+        before = _snapshot(item_id)
+
+    response = _reverse(client, original["id"])
+    adjust = client.post(
+        f"/api/pilot/inventory/items/{item_id}/adjustments",
+        headers=csrf_headers(client),
+        json={"reason": "x", "quantityDelta": 1, "movementType": "manual increase"},
+    )
+
+    assert response.status_code == 403 and adjust.status_code == 403
+    with app.app_context():
+        assert _snapshot(item_id) == before
+        assert AuditEvent.query.filter_by(event_type="inventory.adjustment_reversed").count() == 0
