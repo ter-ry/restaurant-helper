@@ -1593,13 +1593,20 @@ def update_supplier_item_mapping(supplier_id: int, mapping_id: int):
     mapping = _location_mappings(organization.id, location.id).filter(SupplierItemMapping.id == mapping_id, SupplierItemMapping.supplier_id == supplier_id).first()
     if mapping is None:
         return json_error("Mapping not found.", 404)
-    if mapping.supplier is not None and not mapping.supplier.is_active:
-        return json_error("Supplier is archived. Restore it before changing item mappings.", 409, errors={"supplierId": "Supplier is archived."})
     values, errors = _parse_mapping_payload(_json_body(), partial=True)
     if errors:
         return json_error("Validation failed.", 400, errors=errors)
     item_id = values.get("inventoryItemId", mapping.inventory_item_id)
     name = values.get("supplierItemName", mapping.supplier_item_name)
+    if mapping.supplier is not None and not mapping.supplier.is_active:
+        # A historical mapping on an archived supplier stays editable (units, conversion factor, resubmitting
+        # the same item/name). Changing the item or the supplier item name would create a new association.
+        if item_id != mapping.inventory_item_id or _normalize_name(name) != mapping.normalized_supplier_item_name:
+            return json_error(
+                "Supplier is archived. Restore it before pointing a mapping at a different item or supplier item name.",
+                409,
+                errors={"supplierId": "Supplier is archived."},
+            )
     if "inventoryItemId" in values and _resolve_mapping_item(organization.id, location.id, item_id) is None:
         return json_error("Inventory item not found.", 404)
     if _mapping_duplicate(organization.id, supplier_id, item_id, name, exclude_id=mapping.id) is not None:

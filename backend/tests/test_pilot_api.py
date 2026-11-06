@@ -416,15 +416,54 @@ def test_archived_supplier_blocked_for_item_mapping_create_and_update(client):
 
     assert _archive(client, supplier["id"], False).status_code == 200
     assert client.post(base, headers=csrf_headers(client), json={**body, "supplierItemName": "Case B"}).status_code == 409
-    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"conversionFactor": 3}).status_code == 409
-    # Historical mapping stays readable.
+    # Historical mapping stays readable and safely editable (same item, same supplier item name).
     listed = client.get(base)
     assert listed.status_code == 200 and len(listed.get_json()["mappings"]) == 1
     assert listed.get_json()["mappings"][0]["conversionFactor"] == 2
+    edited = client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"conversionFactor": 3, "purchaseUnit": "box"})
+    assert edited.status_code == 200, edited.get_data(as_text=True)
+    assert edited.get_json()["conversionFactor"] == 3 and edited.get_json()["purchaseUnit"] == "box"
+    # Resubmitting the unchanged identity (full-body PATCH) is also fine.
+    same = client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={**body, "supplierItemName": " case a ", "conversionFactor": 4})
+    assert same.status_code == 200, same.get_data(as_text=True)
+    # Re-pointing to another item or renaming the supplier item creates a new association: rejected, nothing changed.
+    other_item_id = client.get("/api/pilot/inventory").get_json()["items"][1]["id"]
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"inventoryItemId": other_item_id}).status_code == 409
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"supplierItemName": "Case Z"}).status_code == 409
+    unchanged = client.get(base).get_json()["mappings"][0]
+    # Same normalized identity (case-only rename is allowed); the rejected renames/re-points changed nothing.
+    assert (unchanged["inventoryItemId"], unchanged["supplierItemName"].lower(), unchanged["conversionFactor"]) == (item_id, "case a", 4)
 
     assert _archive(client, supplier["id"], True).status_code == 200
     assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"conversionFactor": 3}).status_code == 200
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"inventoryItemId": other_item_id}).status_code == 200
     assert client.post(base, headers=csrf_headers(client), json={**body, "supplierItemName": "Case B"}).status_code == 201
+
+
+def test_archived_supplier_mapping_can_still_be_deleted_and_cross_tenant_edit_is_404(app, client):
+    login(client)
+    name = f"Arch Map Delete {uuid4().hex[:8]}"
+    supplier = client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name}).get_json()
+    item_id = client.get("/api/pilot/inventory").get_json()["items"][0]["id"]
+    base = f"/api/pilot/suppliers/{supplier['id']}/item-mappings"
+    mapping_id = client.post(
+        base, headers=csrf_headers(client),
+        json={"supplierItemName": "Case A", "inventoryItemId": item_id, "purchaseUnit": "case", "inventoryUnit": "kg", "conversionFactor": 2},
+    ).get_json()["id"]
+    assert _archive(client, supplier["id"], False).status_code == 200
+    assert client.delete(f"{base}/{mapping_id}", headers=csrf_headers(client)).status_code == 200
+    assert client.get(base).get_json()["mappings"] == []
+
+    # Another tenant's archived supplier/mapping is never editable from this organization.
+    with app.app_context():
+        owner = User.query.first()
+        other_org = make_operational_organization(owner, name=f"MapX {uuid4().hex[:6]}", location_name="MapX Loc")
+        org_id = other_org.id if hasattr(other_org, "id") else other_org[0].id
+        foreign = Supplier(organization_id=org_id, name="Foreign Map", normalized_name=f"foreign-map-{uuid4().hex[:6]}", is_active=False)
+        db.session.add(foreign)
+        db.session.commit()
+        foreign_id = foreign.id
+    assert client.patch(f"/api/pilot/suppliers/{foreign_id}/item-mappings/1", headers=csrf_headers(client), json={"conversionFactor": 9}).status_code == 404
 
 
 def test_archived_supplier_flagged_in_reorder_plan_but_history_kept(client):

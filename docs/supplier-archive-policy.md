@@ -4,13 +4,13 @@ Owner decision (#195): suppliers are archived, never hard-deleted. An archived s
 
 ## Where the rule is enforced
 
-New or changed supplier references are rejected (HTTP 400, field error "is archived. Restore it...") on every write path:
+New or changed supplier references are rejected on every write path. Invoice, inventory-item and import paths return a field validation error (HTTP 400, "is archived. Restore it..."); the supplier-item-mapping endpoints return HTTP 409 (conflict with the supplier's archived state):
 
 | Path | Rule |
 |---|---|
 | Purchase invoice create / update | New invoice or changed supplier rejected; an existing invoice keeps its supplier and stays editable |
 | Inventory item create / update | Assigning an archived supplier rejected; an item already pointing at it stays editable, supplier unchanged |
-| Supplier-item mapping create / update | Creating or re-pointing rejected; existing mappings stay listable, editable and deletable |
+| Supplier-item mapping create / update | Creating a mapping, re-pointing it to a different inventory item, or changing its supplier item name is rejected (409). An existing mapping stays listable and deletable, and safe edits to it (purchase unit, inventory unit, conversion factor, or resubmitting the same item and name) are allowed |
 | CSV/XLSX import: `inventory_item` create and update | Preview blocks the row (`archived_supplier`); execute re-checks, so archiving after approval fails the whole job with nothing written; an unchanged reference on an update is allowed |
 | CSV/XLSX import: `supplier_item_mapping` | A **new** mapping for an archived supplier is blocked in preview and execute; updating an already-existing mapping is allowed |
 
