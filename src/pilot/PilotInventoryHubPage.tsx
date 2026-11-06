@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { PilotModuleGate } from "./PilotModuleGate";
 import { PilotInventoryPage } from "./PilotInventoryPage";
 import { PilotStockCountsPage } from "./PilotStockCountsPage";
+import { PilotInventoryBulkEdit } from "./PilotInventoryBulkEdit";
 import { PilotReorderPlanPage } from "./PilotReorderPlanPage";
 import { PilotSquareUsagePage } from "./PilotSquareUsagePage";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
@@ -26,6 +27,7 @@ export function PilotInventoryHubPage() {
           { id: "stock", label: "Stock" },
           { id: "counts", label: "Counts" },
           { id: "reorder", label: "Reorder" },
+          { id: "bulk", label: "Bulk edit" },
           { id: "usage", label: "Usage & Variance" },
         ]}
       />
@@ -34,6 +36,8 @@ export function PilotInventoryHubPage() {
           <PilotModuleGate moduleKey="STOCK_COUNTS" moduleName="Stock Counts"><PilotStockCountsPage /></PilotModuleGate>
         ) : view === "reorder" ? (
           <PilotModuleGate moduleKey="REORDER_PLANS" moduleName="Reorder Plans"><PilotReorderPlanPage /></PilotModuleGate>
+        ) : view === "bulk" ? (
+          <PilotModuleGate moduleKey="INVENTORY" moduleName="Inventory"><PilotInventoryBulkEdit /></PilotModuleGate>
         ) : view === "usage" ? (
           <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Usage & Variance"><PilotSquareUsagePage /></PilotModuleGate>
         ) : (
