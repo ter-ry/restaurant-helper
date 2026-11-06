@@ -1584,7 +1584,12 @@ def _apply_square_order_inventory_consumption(
         correction = (wanted - applied).quantize(QTY)
         if correction == 0:
             continue
-        item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=consumption.location_id).with_for_update().first()
+        item = (
+            InventoryItem.query.execution_options(populate_existing=True)
+            .filter_by(id=item_id, organization_id=organization.id, location_id=consumption.location_id)
+            .with_for_update()
+            .first()
+        )  # populate_existing: a copy loaded before the lock wait must not supply a stale on-hand (#248)
         if item is None:
             warnings.append(f"Inventory item {item_id} is no longer available for Square consumption.")
             continue
