@@ -20,7 +20,7 @@ from typing import Any
 from .clover_sales import CloverDaySales, clover_sales_for_day
 from .clover_usage import clover_usage_for_day
 from .models import CloverConnection, CloverLocationMapping, InventoryMovement, InventoryWasteEvent
-from .pos import CLOVER_SALE_SOURCE_TYPES
+from .pos import POS_SALE_SOURCE_TYPES
 
 CENT = Decimal("0.01")
 # Sales exceptions that do not put cash evidence in doubt: the order moved no cash (cancelled / never paid), or
@@ -171,7 +171,7 @@ def _movement_reconciliation(organization_id: int, location_id: int, start_at: d
         InventoryMovement.created_at <= end_at,
     ).all()
     # Same exclusions as the Square path: POS consumption, receipts and count corrections are not "other adjustments".
-    explained = {"inventory waste", "square sale consumption", "invoice receipt", "stock count reconciliation"} | CLOVER_SALE_SOURCE_TYPES
+    explained = {"inventory waste", "invoice receipt", "stock count reconciliation"} | POS_SALE_SOURCE_TYPES
     return {
         "recordedWasteQuantity": float(sum((Decimal(str(e.quantity or 0)) for e in waste), Decimal("0"))),
         "recordedWasteCost": float(sum((Decimal(str(e.total_cost or 0)) for e in waste), Decimal("0")).quantize(CENT)),

@@ -10,6 +10,8 @@ import { sortRows, type SortDirection } from "../components/DataTable";
 import {
   completePilotReorderPlan,
   createPilotReorderPlan,
+  fetchPilotNegativeStock,
+  type PilotNegativeStockPosition,
   fetchPilotReorderPlan,
   fetchPilotReorderPlanDetail,
   fetchPilotReorderPlans,
@@ -20,6 +22,7 @@ import {
   type PilotReorderPlanLine,
   type PilotReorderSuggestion,
 } from "./pilotApi";
+import { NegativeStockNote, negativeStockByItem } from "./NegativeStockNote";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatConversionFactor, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 
@@ -104,6 +107,7 @@ export function PilotReorderPlanPage() {
   const location = useLocation();
   const [currentSuggestions, setCurrentSuggestions] = useState<PilotReorderSuggestion[]>([]);
   const [currentGroups, setCurrentGroups] = useState<PilotInventoryResponse["reorderPlan"]["groupedBySupplier"]>([]);
+  const [negativeStock, setNegativeStock] = useState<Map<number, PilotNegativeStockPosition>>(new Map());
   const [inventoryItems, setInventoryItems] = useState<NonNullable<Awaited<ReturnType<typeof fetchPilotReorderPlan>>["inventoryItems"]>>([]);
   const [activeInventoryItemCount, setActiveInventoryItemCount] = useState(0);
   const [recommendationsRefreshedAt, setRecommendationsRefreshedAt] = useState<string | null>(null);
@@ -160,7 +164,8 @@ export function PilotReorderPlanPage() {
     }
 
     try {
-      const [suggestionsResponse, plansResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans()]);
+      const [suggestionsResponse, plansResponse, negativeResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans(), fetchPilotNegativeStock().catch(() => null)]);
+      setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setCurrentSuggestions(suggestionsResponse.suggestions);
       setCurrentGroups(suggestionsResponse.groupedBySupplier);
       setInventoryItems(suggestionsResponse.inventoryItems ?? []);
@@ -435,7 +440,7 @@ export function PilotReorderPlanPage() {
     setMessage(null);
     setError(null);
     try {
-      const response = await fetchPilotReorderPlan();
+      const [response, negativeResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotNegativeStock().catch(() => null)]);
       const latestDraft = draftRef.current;
       if (requestId !== recommendationRequestRef.current || !latestDraft || latestDraft.id !== planId || latestDraft.status !== "Draft" || editableDraftSnapshot(latestDraft) !== savedDraftSnapshot) {
         setMessage("The draft changed while recommendations were loading. Review again to compare safely.");
@@ -443,6 +448,7 @@ export function PilotReorderPlanPage() {
       }
       setCurrentSuggestions(response.suggestions);
       setCurrentGroups(response.groupedBySupplier);
+      setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setRecommendationsRefreshedAt(response.refreshedAt ?? null);
       const suggestionByItem = new Map(response.suggestions.map((suggestion) => [suggestion.inventoryItemId, suggestion]));
       const rows = latestDraft.lines.map((line) => recommendationReviewRow(line, suggestionByItem.get(line.inventoryItemId) ?? null));
@@ -653,7 +659,7 @@ export function PilotReorderPlanPage() {
                     const isInDraft = draft?.status === "Draft" && draft.lines.some((line) => line.inventoryItemId === suggestion.inventoryItemId);
                     return (
                       <tr key={suggestion.id} className="bg-white">
-                        <td className="px-3 py-3"><p className="font-semibold text-ink">{suggestion.inventoryItemName}</p></td>
+                        <td className="px-3 py-3"><p className="font-semibold text-ink">{suggestion.inventoryItemName}</p>{negativeStock.get(suggestion.inventoryItemId) ? <div className="max-w-[16rem]"><NegativeStockNote position={negativeStock.get(suggestion.inventoryItemId)!} /></div> : null}</td>
                         <td className="px-3 py-3 text-muted">{suggestion.supplier || "Unassigned supplier"}</td>
                         <td className="px-3 py-3 text-ink">{formatNumber(suggestion.currentQuantity)} / {formatNumber(suggestion.parLevel)} {suggestion.unit}</td>
                         <td className="px-3 py-3 font-semibold text-ink">{formatNumber(suggestion.suggestedQuantity)} {suggestion.unit}</td>

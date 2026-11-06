@@ -2769,3 +2769,113 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(dialog.getByLabel("Item name")).toHaveValue("Test flour");
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Negative on-hand caused by verified POS sales (#237, owner decision #199 Option A): exact quantities, no overflow.
+// ---------------------------------------------------------------------------------------------------------------
+const negativeBeef = {
+  inventoryItemId: 31,
+  inventoryItemName: "Beef",
+  unit: "kg",
+  onHand: -1.8,
+  shortfall: 1.8,
+  cause: "pos_sale",
+  provider: "Square",
+  posConsumedQuantity: 1.8,
+  orderCount: 1,
+  crossedZeroAt: "2026-08-30T16:00:00",
+  lastPosSaleAt: "2026-08-30T16:00:00",
+  explanation: "1 Square order used 1.8 kg before enough stock was received; on hand is -1.8 kg. Record the delivery or count the item to reconcile.",
+};
+
+async function negativeStockWorld(page: Page) {
+  const organization = makeOrganization({ id: 61, name: "Negative Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({
+      currentOrganizationId: organization.id,
+      currentLocationId: 8,
+      enabledModuleKeys: ["PURCHASES", "INVENTORY", "REORDER_PLANS", "DAILY_CLOSE"],
+      organizations: [{ organization, membershipRole: "owner", selected: true }],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: organization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+  await page.route("**/api/pilot/inventory/negative-stock", (route) => jsonResponse(route, { count: 1, posCausedCount: 1, items: [negativeBeef] }));
+  return organization;
+}
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`Reorder shows the POS-caused negative quantity and its evidence at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await negativeStockWorld(page);
+    const suggestion = {
+      id: 31, inventoryItemId: 31, inventoryItemName: "Beef", category: "Meat", supplier: "Cedar Meats", supplierArchived: false,
+      currentQuantity: -1.8, unit: "kg", minimumQuantity: 2, parLevel: 10, suggestedQuantity: 11.8, adjustedQuantity: 11.8,
+      latestPurchasePrice: 2, purchaseUnit: "kg", conversionFactor: 1, suggestedPurchaseQuantity: 11.8, estimateStatus: "complete",
+      estimatedCost: 23.6, stockStatus: "Out of stock", status: "Needs ordering", daysRemaining: null,
+    };
+    await page.route("**/api/pilot/reorder-plan", (route) => jsonResponse(route, { suggestions: [suggestion], groupedBySupplier: [], activeInventoryItemCount: 1, inventoryItems: [], refreshedAt: "2026-08-30T16:00:00Z" }));
+    await page.route("**/api/pilot/reorder-plans", (route) => jsonResponse(route, { plans: [] }));
+
+    await page.goto("/app/reorder-plan", { waitUntil: "domcontentloaded" });
+    const note = page.getByTestId("negative-stock-31");
+    await expect(note).toHaveText(negativeBeef.explanation);
+    await expect(page.getByRole("cell", { name: /-1\.8 \/ 10 kg/ })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+
+  test(`Inventory flags the POS-caused negative item with the actual quantity at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await negativeStockWorld(page);
+    const item = {
+      id: 31, organizationId: 61, locationId: 8, supplierId: null, name: "Beef", normalizedName: "beef", category: "Meat", stockUnit: "kg",
+      currentOnHand: -1.8, minQuantity: 2, parLevel: 10, preferredSupplierName: "Cedar Meats", latestPurchasePrice: 2, lastPurchaseUnit: "kg",
+      lastPurchaseConversionFactor: 1, lastReceivedAt: null, lastCountedAt: null, averageDailyUsage: null, estimatedCostMethod: "latest_purchase_price",
+      active: true, notes: "", createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null,
+    };
+    await page.route("**/api/pilot/inventory", (route) => jsonResponse(route, { items: [item], movements: [], countSessions: [], reorderPlan: { suggestions: [], groupedBySupplier: [] }, summary: {} }));
+    await page.route("**/api/pilot/suppliers", (route) => jsonResponse(route, { suppliers: [] }));
+
+    await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("negative-stock-31")).toHaveText("Below zero: -1.8 kg · Square sales ahead of receipt");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+
+  test(`Daily Close lists the negative position in the existing attention panel at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await negativeStockWorld(page);
+    const businessDate = new Date().toLocaleDateString("en-CA");
+    const usage = {
+      period: { startAt: "2026-08-30T04:00:00Z", endAt: "2026-08-31T03:59:59Z" }, coverage: {},
+      totals: { theoreticalUsage: 0, actualUsage: null, discrepancy: null, discrepancyPercent: null },
+      contributingMenuItems: [], unmappedVariations: [], ingredientUsage: [],
+    };
+    const detail = "On hand: Beef -1.8 kg (Square sales).";
+    const snapshot = {
+      healthStatus: "Ready with warnings", inventoryValue: 0,
+      sales: { orders: 0, grossSales: 0, discounts: 0, netSales: 0, tax: 0, tips: 0, refunds: 0, cancelledOrders: 0, locationMapped: true },
+      usage, variance: { quantity: null, percent: null, value: 0 },
+      reconciliation: { theoreticalPosUsage: 0, recordedWasteQuantity: 0, recordedWasteCost: 0, otherAdjustmentQuantity: 0, physicalCountCorrectionQuantity: 0, unexplainedVarianceQuantity: null },
+      cashReconciliation: { status: "unavailable", varianceStatus: "unavailable", expectedCash: null, overShort: null },
+      negativeStock: { count: 1, posCausedCount: 1, items: [negativeBeef] },
+      attentionItems: [{ type: "negative_stock", title: "1 item below zero on hand", severity: "warning", href: "/app/reorder-plan", label: "Review stock", detail }],
+      manualReconciliation: {}, readyToFinalize: true,
+    };
+    const session = { id: 4, organizationId: 61, locationId: 8, businessDate, status: "DRAFT", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: [], notes: "", completedAt: null, completedByUserId: null, createdByUserId: 1, createdAt: null, updatedAt: null };
+    await page.route("**/api/pilot/daily-close**", (route) => jsonResponse(route, { session, snapshot, usage, exceptions: [], history: [session], location: { id: 8, name: "Queen St Cafe", timezone: "America/Toronto" }, businessDate, square: null }));
+
+    await page.goto("/app/daily-close", { waitUntil: "domcontentloaded" });
+    const panel = page.locator(".daily-close-exceptions");
+    await expect(panel).toContainText("1 item below zero on hand");
+    await expect(panel).toContainText(detail);
+    await expect(panel.getByRole("link", { name: "Review stock" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+}

@@ -14,6 +14,7 @@ import {
   createPilotInventoryItem,
   createPilotSupplier,
   fetchPilotInventory,
+  fetchPilotNegativeStock,
   fetchPilotInventoryItem,
   fetchPilotSuppliers,
   type PilotInventoryItem,
@@ -26,6 +27,7 @@ import {
   updatePilotInventoryItem,
   updatePilotSupplier,
 } from "./pilotApi";
+import { NegativeStockNote, negativeStockByItem } from "./NegativeStockNote";
 import { formatDateTime, formatInventoryQuantity, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { locationDatetimeLocalToUtcIso, locationNowDatetimeLocal } from "./workspace/timezone";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -178,6 +180,7 @@ export function PilotInventoryPage() {
   const [supplierDraft, setSupplierDraft] = useState<SupplierDraft>(blankSupplierDraft());
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [negativeStock, setNegativeStock] = useState<ReturnType<typeof negativeStockByItem>>(new Map());
   const [saving, setSaving] = useState(false);
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -201,7 +204,8 @@ export function PilotInventoryPage() {
     setError(null);
 
     try {
-      const [response, supplierResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers()]);
+      const [response, supplierResponse, negativeResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers(), fetchPilotNegativeStock().catch(() => null)]);
+      setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setData(response);
       setSuppliers(supplierResponse.suppliers);
       if (workspaceMode === "browse" && !selectedId && !response.items.length) {
@@ -599,6 +603,7 @@ export function PilotInventoryPage() {
                       <div>
                         <p>{item.name}</p>
                         <p className="mt-1 text-xs text-muted">{item.preferredSupplierName || "No supplier"}</p>
+                        {negativeStock.get(item.id) ? <NegativeStockNote position={negativeStock.get(item.id)!} short /> : null}
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-muted">{item.category}</td>
@@ -896,6 +901,7 @@ export function PilotInventoryPage() {
                 <p className="mt-2 text-sm text-muted">
                   {formatInventoryQuantity(item.currentOnHand)} {item.stockUnit} on hand · {item.preferredSupplierName || "Unassigned supplier"}
                 </p>
+                {item.id != null && negativeStock.get(item.id) ? <div className="max-w-xl"><NegativeStockNote position={negativeStock.get(item.id)!} /></div> : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge tone={statusTone(status)}>{status}</Badge>
                   <Badge tone="neutral">{item.category || "Other"}</Badge>
