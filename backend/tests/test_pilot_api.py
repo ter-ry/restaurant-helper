@@ -329,6 +329,175 @@ def test_purchase_invoice_accepts_blank_number_for_mapped_line(client):
     assert fetched.get_json()["lineItems"][0]["quantity"] == 10
 
 
+def test_archived_supplier_blocks_new_invoices_but_keeps_history(client):
+    login(client)
+    name = f"Archive Supplier {uuid4().hex[:8]}"
+    supplier = client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name, "isActive": True}).get_json()
+    inventory_item = next(item for item in client.get("/api/pilot/inventory").get_json()["items"] if item["name"] == "Chicken Breast")
+
+    def payload(number):
+        return {
+            "supplierName": name, "invoiceNumber": number, "invoiceDate": "2026-09-02",
+            "subtotal": 10, "tax": 0, "totalAmount": 10, "status": "Draft",
+            "lineItems": [{"description": "Chicken Breast", "inventoryItemId": inventory_item["id"], "purchaseUnit": "kg",
+                           "inventoryUnit": "kg", "conversionFactor": 1, "quantity": 1, "unitPrice": 10, "lineTotal": 10,
+                           "confidence": 1, "needsReview": False}],
+        }
+
+    first = client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload("ARC-1"))
+    assert first.status_code == 201
+    invoice_id = first.get_json()["id"]
+
+    for _ in range(2):  # archive is idempotent
+        archived = client.patch(f"/api/pilot/suppliers/{supplier['id']}", headers=csrf_headers(client), json={"isActive": False})
+        assert archived.status_code == 200 and archived.get_json()["isActive"] is False
+
+    blocked = client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload("ARC-2"))
+    assert blocked.status_code == 400
+    assert "archived" in str(blocked.get_json()).lower()
+
+    # Historical invoice stays legible and editable with its original supplier.
+    fetched = client.get(f"/api/pilot/purchases/invoices/{invoice_id}")
+    assert fetched.status_code == 200 and fetched.get_json()["supplier"]["name"] == name
+    edited = client.patch(f"/api/pilot/purchases/invoices/{invoice_id}", headers=csrf_headers(client), json=payload("ARC-1"))
+    assert edited.status_code == 200, edited.get_data(as_text=True)
+
+    restored = client.patch(f"/api/pilot/suppliers/{supplier['id']}", headers=csrf_headers(client), json={"isActive": True})
+    assert restored.get_json()["isActive"] is True
+    assert client.post("/api/pilot/purchases/invoices", headers=csrf_headers(client), json=payload("ARC-3")).status_code == 201
+
+
+def _archive(client, supplier_id, active):
+    return client.patch(f"/api/pilot/suppliers/{supplier_id}", headers=csrf_headers(client), json={"isActive": active})
+
+
+def _item_payload(name, supplier_name):
+    return {"name": name, "category": "Dry goods", "stockUnit": "kg", "preferredSupplierName": supplier_name}
+
+
+def test_archived_supplier_blocked_for_inventory_item_create_and_update(client):
+    login(client)
+    name = f"Arch Inv Supplier {uuid4().hex[:8]}"
+    supplier = client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name}).get_json()
+    # Item created while active keeps its historical reference after archive.
+    existing = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json=_item_payload(f"Hist {uuid4().hex[:6]}", name))
+    assert existing.status_code == 201, existing.get_data(as_text=True)
+    existing_id = existing.get_json()["id"]
+    unrelated = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": f"Plain {uuid4().hex[:6]}", "category": "Dry goods", "stockUnit": "kg"})
+    unrelated_id = unrelated.get_json()["id"]
+
+    assert _archive(client, supplier["id"], False).status_code == 200
+
+    created = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json=_item_payload(f"New {uuid4().hex[:6]}", name))
+    assert created.status_code == 400 and "archived" in str(created.get_json()).lower()
+    moved = client.patch(f"/api/pilot/inventory/items/{unrelated_id}", headers=csrf_headers(client), json={"preferredSupplierName": name})
+    assert moved.status_code == 400 and "archived" in str(moved.get_json()).lower()
+
+    # Historical item can still be edited without changing its (archived) supplier.
+    kept = client.patch(f"/api/pilot/inventory/items/{existing_id}", headers=csrf_headers(client), json={"preferredSupplierName": name, "parLevel": 9})
+    assert kept.status_code == 200, kept.get_data(as_text=True)
+    assert kept.get_json()["preferredSupplierName"] == name
+
+    assert _archive(client, supplier["id"], True).status_code == 200
+    ok = client.patch(f"/api/pilot/inventory/items/{unrelated_id}", headers=csrf_headers(client), json={"preferredSupplierName": name})
+    assert ok.status_code == 200
+
+
+def test_archived_supplier_blocked_for_item_mapping_create_and_update(client):
+    login(client)
+    name = f"Arch Map Supplier {uuid4().hex[:8]}"
+    supplier = client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name}).get_json()
+    item_id = client.get("/api/pilot/inventory").get_json()["items"][0]["id"]
+    base = f"/api/pilot/suppliers/{supplier['id']}/item-mappings"
+    body = {"supplierItemName": "Case A", "inventoryItemId": item_id, "purchaseUnit": "case", "inventoryUnit": "kg", "conversionFactor": 2}
+    mapping = client.post(base, headers=csrf_headers(client), json=body)
+    assert mapping.status_code == 201
+    mapping_id = mapping.get_json()["id"]
+
+    assert _archive(client, supplier["id"], False).status_code == 200
+    assert client.post(base, headers=csrf_headers(client), json={**body, "supplierItemName": "Case B"}).status_code == 409
+    # Historical mapping stays readable and safely editable (same item, same supplier item name).
+    listed = client.get(base)
+    assert listed.status_code == 200 and len(listed.get_json()["mappings"]) == 1
+    assert listed.get_json()["mappings"][0]["conversionFactor"] == 2
+    edited = client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"conversionFactor": 3, "purchaseUnit": "box"})
+    assert edited.status_code == 200, edited.get_data(as_text=True)
+    assert edited.get_json()["conversionFactor"] == 3 and edited.get_json()["purchaseUnit"] == "box"
+    # Resubmitting the unchanged identity (full-body PATCH) is also fine.
+    same = client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={**body, "supplierItemName": " case a ", "conversionFactor": 4})
+    assert same.status_code == 200, same.get_data(as_text=True)
+    # Re-pointing to another item or renaming the supplier item creates a new association: rejected, nothing changed.
+    other_item_id = client.get("/api/pilot/inventory").get_json()["items"][1]["id"]
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"inventoryItemId": other_item_id}).status_code == 409
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"supplierItemName": "Case Z"}).status_code == 409
+    unchanged = client.get(base).get_json()["mappings"][0]
+    # Same normalized identity (case-only rename is allowed); the rejected renames/re-points changed nothing.
+    assert (unchanged["inventoryItemId"], unchanged["supplierItemName"].lower(), unchanged["conversionFactor"]) == (item_id, "case a", 4)
+
+    assert _archive(client, supplier["id"], True).status_code == 200
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"conversionFactor": 3}).status_code == 200
+    assert client.patch(f"{base}/{mapping_id}", headers=csrf_headers(client), json={"inventoryItemId": other_item_id}).status_code == 200
+    assert client.post(base, headers=csrf_headers(client), json={**body, "supplierItemName": "Case B"}).status_code == 201
+
+
+def test_archived_supplier_mapping_can_still_be_deleted_and_cross_tenant_edit_is_404(app, client):
+    login(client)
+    name = f"Arch Map Delete {uuid4().hex[:8]}"
+    supplier = client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name}).get_json()
+    item_id = client.get("/api/pilot/inventory").get_json()["items"][0]["id"]
+    base = f"/api/pilot/suppliers/{supplier['id']}/item-mappings"
+    mapping_id = client.post(
+        base, headers=csrf_headers(client),
+        json={"supplierItemName": "Case A", "inventoryItemId": item_id, "purchaseUnit": "case", "inventoryUnit": "kg", "conversionFactor": 2},
+    ).get_json()["id"]
+    assert _archive(client, supplier["id"], False).status_code == 200
+    assert client.delete(f"{base}/{mapping_id}", headers=csrf_headers(client)).status_code == 200
+    assert client.get(base).get_json()["mappings"] == []
+
+    # Another tenant's archived supplier/mapping is never editable from this organization.
+    with app.app_context():
+        owner = User.query.first()
+        other_org = make_operational_organization(owner, name=f"MapX {uuid4().hex[:6]}", location_name="MapX Loc")
+        org_id = other_org.id if hasattr(other_org, "id") else other_org[0].id
+        foreign = Supplier(organization_id=org_id, name="Foreign Map", normalized_name=f"foreign-map-{uuid4().hex[:6]}", is_active=False)
+        db.session.add(foreign)
+        db.session.commit()
+        foreign_id = foreign.id
+    assert client.patch(f"/api/pilot/suppliers/{foreign_id}/item-mappings/1", headers=csrf_headers(client), json={"conversionFactor": 9}).status_code == 404
+
+
+def test_archived_supplier_flagged_in_reorder_plan_but_history_kept(client):
+    login(client)
+    name = f"Arch Reorder Supplier {uuid4().hex[:8]}"
+    client.post("/api/pilot/suppliers", headers=csrf_headers(client), json={"name": name})
+    supplier_id = next(s for s in client.get("/api/pilot/suppliers").get_json()["suppliers"] if s["name"] == name)["id"]
+    item = client.post(
+        "/api/pilot/inventory/items", headers=csrf_headers(client),
+        json={**_item_payload(f"Low {uuid4().hex[:6]}", name), "minQuantity": 5, "parLevel": 10},
+    )
+    assert item.status_code == 201, item.get_data(as_text=True)
+    item_id = item.get_json()["id"]
+    assert _archive(client, supplier_id, False).status_code == 200
+    plan = client.get("/api/pilot/reorder-plan").get_json()
+    suggestion = next(s for s in plan["suggestions"] if s["inventoryItemId"] == item_id)
+    assert suggestion["supplier"] == name and suggestion["supplierArchived"] is True
+
+
+def test_supplier_archive_restore_is_tenant_isolated(app, client):
+    login(client)
+    with app.app_context():
+        owner = User.query.first()
+        other_org = make_operational_organization(owner, name=f"Other {uuid4().hex[:6]}", location_name="Other Loc")
+        org_id = other_org.id if hasattr(other_org, "id") else other_org[0].id
+        foreign = Supplier(organization_id=org_id, name="Foreign Arch", normalized_name=f"foreign-arch-{uuid4().hex[:6]}", is_active=True)
+        db.session.add(foreign)
+        db.session.commit()
+        foreign_id = foreign.id
+    assert _archive(client, foreign_id, False).status_code == 404
+    with app.app_context():
+        assert db.session.get(Supplier, foreign_id).is_active is True
+
+
 def test_pilot_dashboard_lists_live_drafts(client):
     login(client)
 
