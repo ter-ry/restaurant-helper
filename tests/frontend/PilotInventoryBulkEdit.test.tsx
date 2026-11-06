@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotInventoryBulkEdit } from "../../src/pilot/PilotInventoryBulkEdit";
 import { PilotApiError } from "../../src/pilot/pilotApi";
 
-const mocks = vi.hoisted(() => ({ fetchPilotInventory: vi.fn(), fetchPilotSuppliers: vi.fn(), submitBulkEdit: vi.fn() }));
+const mocks = vi.hoisted(() => ({ fetchPilotInventory: vi.fn(), fetchPilotSuppliers: vi.fn(), submitBulkEdit: vi.fn(), clearPilotDataCache: vi.fn() }));
+vi.mock("../../src/pilot/pilotDataCache", () => ({ clearPilotDataCache: mocks.clearPilotDataCache }));
 
 vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
   const actual = (await importOriginal()) as typeof import("../../src/pilot/pilotApi");
@@ -96,8 +97,35 @@ describe("PilotInventoryBulkEdit", () => {
     expect(await screen.findByText(/Nothing was saved/)).toBeInTheDocument();
     expect(screen.getByText(/Sugar was changed by someone else/)).toBeInTheDocument();
     expect(screen.getByTestId("selected-count")).toHaveTextContent("2 selected");
+    // Another user changed Sugar; the refresh must bypass the GET cache and pick up the new reviewed value.
+    items = items.map((item) => (item.id === 2 ? { ...item, parLevel: 33 } : item));
+    mocks.clearPilotDataCache.mockClear();
+    const callsBefore = mocks.fetchPilotInventory.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Refresh list" }));
-    await waitFor(() => expect(mocks.fetchPilotInventory).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.fetchPilotInventory).toHaveBeenCalledTimes(callsBefore + 1));
+    expect(mocks.clearPilotDataCache).toHaveBeenCalled();
+    expect(mocks.clearPilotDataCache.mock.invocationCallOrder[0]).toBeLessThan(mocks.fetchPilotInventory.mock.invocationCallOrder[callsBefore]);
+    expect(await screen.findByText(/PAR 33/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing was saved/)).not.toBeInTheDocument(); // warning cleared only after fresh data arrived
+    // The next review sends the fresh value, so it no longer conflicts.
+    mocks.submitBulkEdit.mockResolvedValueOnce(reviewResponse(false));
+    fireEvent.click(screen.getByRole("button", { name: /Review changes/ }));
+    await waitFor(() => expect(mocks.submitBulkEdit).toHaveBeenCalledTimes(2));
+    expect(mocks.submitBulkEdit.mock.calls[1][0].expected["2"]).toEqual({ parLevel: 33 });
+  });
+
+  it("reviews a supplier change using the supplier names the user sees", async () => {
+    render(<PilotInventoryBulkEdit />);
+    await screen.findByText("Flour");
+    fireEvent.click(screen.getByLabelText("Select Flour"));
+    fireEvent.click(screen.getByLabelText("Preferred supplier"));
+    mocks.submitBulkEdit.mockResolvedValueOnce({
+      applied: false, batchId: null, summary: { selected: 1, changed: 1, unchanged: 0 },
+      items: [{ id: 1, name: "Flour", status: "changed", changedFields: ["supplierId"], beforeSupplierName: "Acme Foods", afterSupplierName: "", before: { supplierId: null }, after: { supplierId: null } }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Review changes/ }));
+    expect(await screen.findByText(/Supplier: Acme Foods → None/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply to 1 item" })).toBeEnabled();
   });
 
   it("surfaces a generic failure without losing the selection", async () => {

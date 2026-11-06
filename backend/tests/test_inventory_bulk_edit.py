@@ -240,3 +240,62 @@ def test_permission_is_enforced_server_side(app, client, monkeypatch):
     response = _post(client, {"itemIds": ids, "changes": {"parLevel": 4}, "expected": _expected(app, ids, ["parLevel"])})
     assert response.status_code == 403
     assert _state(app, ids[0]) == before
+
+
+def test_module_dependencies_are_enforced_like_other_inventory_endpoints(app, client):
+    """INVENTORY depends on PURCHASES (backend/modules.py); the bulk endpoint must not bypass that."""
+    login(client)
+    with app.app_context():
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
+        org = make_operational_organization(owner, name=f"No Purchases {uuid4().hex[:6]}", location_name="Kitchen", enabled_modules=("INVENTORY",))
+        org_id = org.id
+        location_id = RestaurantLocation.query.filter_by(organization_id=org_id).one().id
+        item = InventoryItem(organization_id=org_id, location_id=location_id, name="Rice", normalized_name="rice", par_level=Decimal("4"))
+        db.session.add(item)
+        db.session.commit()
+        item_id = item.id
+    select_org(client, org_id)
+    payload = {"itemIds": [item_id], "changes": {"parLevel": 9}, "expected": {str(item_id): {"parLevel": 4}}}
+    # The existing endpoint rejects this configuration; so must bulk edit, for both dry run and apply.
+    assert client.patch(f"/api/pilot/inventory/items/{item_id}", json={"parLevel": 9}, headers=csrf_headers(client)).status_code == 403
+    for dry in (True, False):
+        response = _post(client, {**payload, "dryRun": dry})
+        assert response.status_code == 403 and "PURCHASES" in response.get_json()["errors"]["dependencies"]
+    with app.app_context():
+        assert db.session.get(InventoryItem, item_id).par_level == Decimal("4")
+
+
+def test_supplier_name_without_supplier_id_can_be_cleared_and_is_reported_as_a_change(app, client):
+    """Receipts set preferred_supplier_name but not supplier_id (pilot_api receipt path); clearing must still work."""
+    login(client)
+    org_id, ids = _items(app, 2)
+    with app.app_context():
+        for item_id in ids:
+            item = db.session.get(InventoryItem, item_id)
+            item.supplier_id = None
+            item.preferred_supplier_name = "Acme Foods"
+        db.session.commit()
+    clear = {"supplierId": None}
+    review = _post(client, {"itemIds": ids, "changes": clear, "expected": _expected(app, ids, ["supplierId"]), "dryRun": True})
+    assert review.status_code == 200
+    body = review.get_json()
+    assert body["summary"] == {"selected": 2, "changed": 2, "unchanged": 0}
+    assert all(entry["beforeSupplierName"] == "Acme Foods" and entry["afterSupplierName"] == "" and entry["changedFields"] == ["supplierId"] for entry in body["items"])
+    applied = _post(client, {"itemIds": ids, "changes": clear, "expected": _expected(app, ids, ["supplierId"])})
+    assert applied.status_code == 200 and applied.get_json()["summary"]["changed"] == 2
+    for item_id in ids:
+        state = _state(app, item_id)
+        assert state["supplier"] is None and state["name"] == ""
+    replay = _post(client, {"itemIds": ids, "changes": clear, "expected": _expected(app, ids, ["supplierId"])})
+    assert replay.get_json()["summary"] == {"selected": 2, "changed": 0, "unchanged": 2}
+    # Assigning a supplier whose id already matches but whose stored name drifted is also a real change.
+    with app.app_context():
+        supplier = Supplier.query.filter_by(organization_id=org_id, is_active=True).first()
+        supplier_id, supplier_name = supplier.id, supplier.name
+        item = db.session.get(InventoryItem, ids[0])
+        item.supplier_id, item.preferred_supplier_name = supplier_id, "Old Name"
+        db.session.commit()
+    assign = {"supplierId": supplier_id}
+    response = _post(client, {"itemIds": [ids[0]], "changes": assign, "expected": _expected(app, [ids[0]], ["supplierId"])})
+    assert response.status_code == 200 and response.get_json()["summary"]["changed"] == 1
+    assert _state(app, ids[0])["name"] == supplier_name

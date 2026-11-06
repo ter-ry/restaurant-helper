@@ -14,6 +14,7 @@ import {
 } from "../lib/inventoryBulkEdit";
 import { itemErrorsFrom, submitBulkEdit, type BulkEditResponse } from "./inventoryBulkEditApi";
 import { fetchPilotInventory, fetchPilotSuppliers, PilotApiError, type PilotInventoryItem, type PilotSupplierSummary } from "./pilotApi";
+import { clearPilotDataCache } from "./pilotDataCache";
 import { demoReadOnly } from "./pilotConfig";
 
 type Phase = "edit" | "reviewing" | "review" | "applying";
@@ -41,6 +42,8 @@ export function PilotInventoryBulkEdit() {
   const errorBox = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
+    // Always read authoritative server state: the GET cache can serve (and only background-revalidate) old values.
+    clearPilotDataCache();
     const [inventory, supplierResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers()]);
     setItems(inventory.items);
     setSuppliers(supplierResponse.suppliers);
@@ -273,7 +276,10 @@ export function PilotInventoryBulkEdit() {
                 {entry.status === "unchanged" ? <span className="text-muted"> — no change</span> : (
                   <ul className="text-xs text-muted">
                     {entry.changedFields.map((field) => (
-                      <li key={field}>{FIELD_LABELS[field] ?? field}: {formatValue(field, entry.before[field], supplierName)} → {formatValue(field, entry.after[field], supplierName)}</li>
+                      <li key={field}>
+                        {FIELD_LABELS[field] ?? field}:{" "}
+                        {field === "supplierId" ? `${entry.beforeSupplierName || "None"} → ${entry.afterSupplierName || "None"}` : `${formatValue(field, entry.before[field], supplierName)} → ${formatValue(field, entry.after[field], supplierName)}`}
+                      </li>
                     ))}
                   </ul>
                 )}

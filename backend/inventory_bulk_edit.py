@@ -25,7 +25,7 @@ from uuid import uuid4
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
-from .access import organization_has_enabled_module, organization_is_operational
+from .access import missing_module_dependencies, organization_has_enabled_module, organization_is_operational
 from .audit import record_audit_event
 from .extensions import db
 from .models import InventoryItem, Supplier
@@ -97,6 +97,18 @@ def _current_values(item: InventoryItem) -> dict[str, Any]:
     }
 
 
+def _supplier_at_target(item: InventoryItem, target: int | None, supplier: Supplier | None) -> bool:
+    """A supplier change is a no-op only when BOTH stored representations already match.
+
+    Receipts set ``preferred_supplier_name`` without ``supplier_id``, so an item can show a supplier name while
+    ``supplier_id`` is null; clearing (or assigning) must still act on it.
+    """
+    name = (item.preferred_supplier_name or "").strip()
+    if target is None:
+        return item.supplier_id is None and name == ""
+    return item.supplier_id == target and supplier is not None and name == supplier.name
+
+
 def _expected_value(field: str, value: Any) -> Any:
     if field in ("minQuantity", "parLevel"):
         return _quantity(value, f"expected.{field}")
@@ -144,7 +156,10 @@ def _evaluate(organization_id: int, location_id: int, ids: list[int], changes: d
         for field, target in changes.items():
             if field not in expected_item:
                 raise _Reject("Validation failed.", 400, {"expected": f"Missing the reviewed {field} for {item.name}."})
-            if current[field] == target:
+            if field == "supplierId":
+                if _supplier_at_target(item, target, supplier):
+                    continue
+            elif current[field] == target:
                 continue  # already at target: idempotent, never stale
             if _expected_value(field, expected_item[field]) != current[field]:
                 stale = True
@@ -157,7 +172,13 @@ def _evaluate(organization_id: int, location_id: int, ids: list[int], changes: d
             errors[f"item-{item_id}"] = f"PAR for {item.name} cannot be below its reorder threshold."
             continue
         changed_fields = [field for field in changes if before[field] != after[field]]
-        rows.append({"item": item, "before": before, "after": after, "changedFields": changed_fields})
+        if "supplierId" in changes and "supplierId" not in changed_fields and not _supplier_at_target(item, changes["supplierId"], supplier):
+            changed_fields.append("supplierId")
+        rows.append({
+            "item": item, "before": before, "after": after, "changedFields": changed_fields,
+            "beforeSupplierName": (item.preferred_supplier_name or "").strip(),
+            "afterSupplierName": supplier.name if supplier is not None else "",
+        })
     if errors:
         status = 409 if any("changed by someone else" in message for message in errors.values()) else 400
         raise _Reject("Bulk edit was not applied. Nothing was changed.", status, errors)
@@ -171,6 +192,8 @@ def _review_payload(rows: list[dict[str, Any]], *, applied: bool, batch_id: str 
             "name": row["item"].name,
             "status": "changed" if row["changedFields"] else "unchanged",
             "changedFields": row["changedFields"],
+            "beforeSupplierName": row["beforeSupplierName"],
+            "afterSupplierName": row["afterSupplierName"],
             "before": {key: _plain(value) for key, value in row["before"].items()},
             "after": {key: _plain(value) for key, value in row["after"].items()},
         }
@@ -199,8 +222,12 @@ def bulk_edit_inventory_items():
     permission_error = require_permission(membership.role, "inventory.manage")
     if permission_error is not None:
         return permission_error
+    # Same boundary the central pilot_api middleware enforces: the module itself and its declared dependencies.
     if not organization_has_enabled_module(organization.id, "INVENTORY"):
-        return json_error("This organization does not have access to that module yet.", 403, errors={"module": "Inventory"})
+        return json_error("This organization does not have access to that module yet.", 403, errors={"module": "Inventory", "dependencies": "PURCHASES"})
+    missing = missing_module_dependencies(organization.id, "INVENTORY")
+    if missing:
+        return json_error("This organization does not have access to that module yet.", 403, errors={"module": "Inventory", "dependencies": ", ".join(missing)})
 
     payload = request.get_json(silent=True)
     try:
@@ -261,6 +288,7 @@ def bulk_edit_inventory_items():
                     "fields": row["changedFields"],
                     "before": {key: _plain(row["before"][key]) for key in row["changedFields"]},
                     "after": {key: _plain(after[key]) for key in row["changedFields"]},
+                    **({"beforeSupplierName": row["beforeSupplierName"], "afterSupplierName": row["afterSupplierName"]} if "supplierId" in row["changedFields"] else {}),
                 },
             )
         review = _review_payload(rows, applied=True, batch_id=batch_id)

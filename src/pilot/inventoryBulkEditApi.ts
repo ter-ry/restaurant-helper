@@ -6,6 +6,8 @@ export interface BulkEditReviewItem {
   name: string;
   status: "changed" | "unchanged";
   changedFields: string[];
+  beforeSupplierName?: string;
+  afterSupplierName?: string;
   before: Record<string, number | boolean | null>;
   after: Record<string, number | boolean | null>;
 }
