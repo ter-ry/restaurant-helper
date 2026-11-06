@@ -52,6 +52,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "pilot_api.create_inventory_item": "inventory.manage",
     "pilot_api.update_inventory_item": "inventory.manage",
     "pilot_api.create_inventory_adjustment": "inventory.manage",
+    "pilot_api.reverse_inventory_adjustment": "inventory.manage",
     "pilot_api.list_inventory_waste_events": "operational.read",
     "pilot_api.create_inventory_waste_event": "inventory.manage",
     "pilot_api.list_count_sessions": "stock_counts.manage",

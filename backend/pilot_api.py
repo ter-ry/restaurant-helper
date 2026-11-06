@@ -2018,7 +2018,7 @@ def inventory_item_detail(item_id: int):
             {
                 "item": serialize_inventory_item(item),
                 "purchaseHistory": [serialize_purchase_invoice_line(line) for line in purchase_history],
-                "movementHistory": [serialize_inventory_movement(movement) for movement in movement_history],
+                "movementHistory": _serialize_movements_with_reversal_links(organization.id, location.id, movement_history),
                 "supplierMappings": [serialize_supplier_item_mapping(mapping) for mapping in supplier_mappings],
             }
         ),
@@ -2225,6 +2225,172 @@ def create_inventory_adjustment(item_id: int):
     )
     response_payload = serialize_inventory_movement(movement)
     return _commit_json(response_payload, 201)
+
+
+ADJUSTMENT_REVERSAL_SOURCE_TYPE = "adjustment reversal"
+ADJUSTMENT_REVERSAL_LINE_ID = "reversal"
+# Only movements written by the manual adjustment endpoint can be reversed (#231, owner decision #196).
+# POS sales, receipts, invoice corrections, waste events, count reconciliations and reversals are excluded.
+REVERSIBLE_ADJUSTMENT_SOURCE_TYPES = frozenset(
+    {
+        "manual decrease",
+        "waste",
+        "spoilage / expired",
+        "damaged",
+        "staff meal / comped",
+        "breakage",
+        "manual increase",
+        "manual addition",
+        "adjustment",
+        "correction",
+    }
+)
+
+
+def _reversal_movements_by_original(organization_id: int, location_id: int, original_ids) -> dict[int, InventoryMovement]:
+    ids = {str(int(original_id)) for original_id in original_ids}
+    if not ids:
+        return {}
+    rows = InventoryMovement.query.filter(
+        InventoryMovement.organization_id == organization_id,
+        InventoryMovement.location_id == location_id,
+        InventoryMovement.source_type == ADJUSTMENT_REVERSAL_SOURCE_TYPE,
+        InventoryMovement.source_line_id == ADJUSTMENT_REVERSAL_LINE_ID,
+        InventoryMovement.source_record_id.in_(ids),
+    ).all()
+    return {int(row.source_record_id): row for row in rows}
+
+
+def _serialize_movements_with_reversal_links(organization_id: int, location_id: int, movements) -> list[dict[str, Any]]:
+    movements = list(movements)
+    reversals = _reversal_movements_by_original(organization_id, location_id, [movement.id for movement in movements])
+    payloads = []
+    for movement in movements:
+        payload = serialize_inventory_movement(movement)
+        reversal = reversals.get(movement.id)
+        is_reversal = movement.source_type == ADJUSTMENT_REVERSAL_SOURCE_TYPE
+        payload["reversalOfMovementId"] = int(movement.source_record_id) if is_reversal and str(movement.source_record_id).isdigit() else None
+        payload["reversedByMovementId"] = reversal.id if reversal else None
+        payload["reversible"] = movement.source_type in REVERSIBLE_ADJUSTMENT_SOURCE_TYPES and reversal is None
+        payloads.append(payload)
+    return payloads
+
+
+def _reversal_idempotency_key(payload: dict[str, Any]) -> str:
+    key = str(payload.get("idempotencyKey") or "").strip()
+    if len(key) > 120:
+        raise RequestValidationError("Validation failed.", {"idempotencyKey": "Idempotency key must be 120 characters or fewer."})
+    return key
+
+
+@bp.post("/api/pilot/inventory/movements/<int:movement_id>/reverse")
+@login_required
+def reverse_inventory_adjustment(movement_id: int):
+    """Reverse a manual adjustment exactly once with a linked compensating movement (#231).
+
+    Append-only: the original movement is never modified. The compensating movement is keyed
+    ``(adjustment reversal, <original id>, reversal)`` so the existing unique source constraint is the
+    database backstop for exactly-once; the item row lock (#248) serializes concurrent attempts.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "inventory.manage")
+    if permission_error is not None:
+        return permission_error
+    payload = _json_body()
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return json_error("Validation failed.", 400, errors={"reason": "A reason for the reversal is required."})
+    idempotency_key = _reversal_idempotency_key(payload)
+
+    original = InventoryMovement.query.filter_by(id=movement_id, organization_id=organization.id, location_id=location.id).first()
+    if original is None:
+        return json_error("Inventory movement not found.", 404)
+    item = lock_inventory_items(organization.id, location.id, [original.inventory_item_id]).get(original.inventory_item_id)
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+
+    # Checked after the item lock so a concurrent reversal that just committed is always visible.
+    existing = _reversal_movements_by_original(organization.id, location.id, [original.id]).get(original.id)
+    if existing is not None:
+        replay_key = ""
+        if idempotency_key:
+            events = AuditEvent.query.filter_by(
+                organization_id=organization.id, event_type="inventory.adjustment_reversed", entity_type="inventory_movement", entity_id=str(existing.id)
+            ).all()
+            replay_key = next((event.metadata_json.get("idempotencyKey", "") for event in events if event.metadata_json.get("idempotencyKey") == idempotency_key), "")
+        db.session.rollback()
+        if replay_key:
+            body = serialize_inventory_movement(existing)
+            body["replayed"] = True
+            return jsonify(body), 200
+        return json_error("This adjustment has already been reversed.", 409, errors={"movement": "An adjustment can only be reversed once."})
+
+    if original.source_type not in REVERSIBLE_ADJUSTMENT_SOURCE_TYPES:
+        db.session.rollback()
+        return json_error("This movement cannot be reversed.", 400, errors={"movement": "Only manual adjustments can be reversed."})
+    if original.unit != item.stock_unit:
+        db.session.rollback()
+        return json_error("This movement cannot be reversed.", 409, errors={"movement": "The item's stock unit changed after this adjustment."})
+
+    delta = (-Decimal(original.quantity_delta)).quantize(QTY)
+    before = Decimal(item.current_on_hand)
+    after = (before + delta).quantize(QTY)
+    if after < 0:
+        db.session.rollback()
+        return json_error(
+            "Reversal would make inventory negative.",
+            409,
+            errors={"movement": f"Reversing this adjustment would leave {after} {item.stock_unit} on hand. Stock cannot go below zero."},
+        )
+    reversal = InventoryMovement(
+        organization_id=organization.id,
+        location_id=location.id,
+        inventory_item_id=item.id,
+        quantity_delta=delta,
+        quantity_before=before,
+        quantity_after=after,
+        unit=item.stock_unit,
+        source_type=ADJUSTMENT_REVERSAL_SOURCE_TYPE,
+        source_record_id=str(original.id),
+        source_line_id=ADJUSTMENT_REVERSAL_LINE_ID,
+        reason=reason,
+        actor_user_id=current_user.id,
+    )
+    # Manual adjustments never touch the weighted-average cost, so neither does their reversal.
+    item.current_on_hand = after
+    item.updated_by_user_id = current_user.id
+    item.updated_at = _now()
+    db.session.add(reversal)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This adjustment has already been reversed.", 409, errors={"movement": "An adjustment can only be reversed once."})
+    record_audit_event(
+        event_type="inventory.adjustment_reversed",
+        entity_type="inventory_movement",
+        entity_id=reversal.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "inventoryItemId": item.id,
+            "originalMovementId": original.id,
+            "originalSourceType": original.source_type,
+            "originalQuantityDelta": float(original.quantity_delta),
+            "quantityDelta": float(delta),
+            "quantityBefore": float(before),
+            "quantityAfter": float(after),
+            "reason": reason,
+            "idempotencyKey": idempotency_key,
+        },
+    )
+    body = serialize_inventory_movement(reversal)
+    body["replayed"] = False
+    return _commit_json(body, 201)
 
 
 WASTE_REASONS = {
