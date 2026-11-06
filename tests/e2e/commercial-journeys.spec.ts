@@ -707,6 +707,10 @@ async function installMockApi(page: Page, state: MockState) {
     }
 
     const menuState = state.menuState;
+    if (path === "/api/pilot/inventory/negative-stock" && method === "GET") {
+      return jsonResponse(route, { count: 0, posCausedCount: 0, items: [] });
+    }
+
     if (path === "/api/pilot/inventory" && method === "GET") {
       if (purchaseFlow) {
         return jsonResponse(route, buildEmptyInventoryResponse(purchaseFlow));
