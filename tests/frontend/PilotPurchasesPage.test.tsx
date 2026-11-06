@@ -389,6 +389,40 @@ describe("PilotPurchasesPage", () => {
 
   it("persists corrected OCR fields through close and reopen before receiving once", async () => {
     const persisted = { ...createInvoice({ id: 3, invoiceNumber: "OCR-EDITED", status: "Draft", supplierName: "Fresh Dairy Toronto" }) };
+    const persistPayload = (payload: Record<string, any>) => {
+      const line = payload.lineItems[0];
+      Object.assign(persisted, {
+        ...payload,
+        supplier: createInvoice({ id: 3, invoiceNumber: payload.invoiceNumber, status: payload.status || "Draft", supplierName: payload.supplierName }).supplier,
+        lineItems: payload.lineItems.map((candidate: Record<string, any>, index: number) => ({
+          ...createLine({ id: 31 + index }),
+          description: candidate.description,
+          inventoryItemId: candidate.inventoryItemId,
+          purchaseUnit: candidate.purchaseUnit,
+          inventoryUnit: candidate.inventoryUnit,
+          conversionFactor: candidate.conversionFactor,
+          quantity: candidate.quantity,
+          unitPrice: candidate.unitPrice,
+          lineTotal: candidate.lineTotal,
+          confidence: candidate.confidence,
+          needsReview: candidate.needsReview,
+          note: candidate.note,
+        })),
+      });
+      expect(persisted.supplier?.name).toBe(payload.supplierName);
+      expect(persisted.invoiceNumber).toBe(payload.invoiceNumber);
+      expect(persisted.lineItems[0]).toMatchObject({
+        description: line.description,
+        inventoryItemId: line.inventoryItemId,
+        purchaseUnit: line.purchaseUnit,
+        inventoryUnit: line.inventoryUnit,
+        conversionFactor: line.conversionFactor,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+      });
+      return persisted;
+    };
     const ocrLine = { itemName: "Milk 2L", quantity: 2, unit: "case", unitPrice: 24, lineTotal: 48, confidence: 0.8, needsReview: true };
     mockApi.uploadPilotInvoiceOcr.mockResolvedValueOnce({
       provider: "ocr.space",
@@ -409,13 +443,7 @@ describe("PilotPurchasesPage", () => {
       needsReview: true,
     });
     mockApi.createPilotPurchaseInvoice.mockImplementationOnce(async (payload) => {
-      Object.assign(persisted, {
-        ...persisted,
-        ...payload,
-        supplier: createInvoice({ id: 3, invoiceNumber: payload.invoiceNumber, status: payload.status || "Draft", supplierName: payload.supplierName }).supplier,
-        lineItems: payload.lineItems.map((line: Record<string, unknown>, index: number) => ({ ...createLine({ id: 31 + index }), ...line })),
-      });
-      return persisted;
+      return persistPayload(payload);
     });
     mockApi.fetchPilotPurchases.mockImplementation(async () => {
       const response = createPurchasesResponse();
@@ -432,13 +460,7 @@ describe("PilotPurchasesPage", () => {
       return invoice;
     });
     mockApi.updatePilotPurchaseInvoice.mockImplementation(async (_invoiceId, payload) => {
-      Object.assign(persisted, {
-        ...persisted,
-        ...payload,
-        supplier: createInvoice({ id: 3, invoiceNumber: payload.invoiceNumber, status: payload.status || "Draft", supplierName: payload.supplierName }).supplier,
-        lineItems: payload.lineItems.map((line: Record<string, unknown>, index: number) => ({ ...createLine({ id: 31 + index }), ...line })),
-      });
-      return persisted;
+      return persistPayload(payload);
     });
     mockApi.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
       if (invoiceId !== persisted.id || persisted.status === "Completed") throw new PilotApiError("Already received", 409);
@@ -575,6 +597,33 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByText(/Supplier is required\./)).toBeVisible();
   });
 
+  it("keeps corrected edits after a failed draft save and retries successfully", async () => {
+    mockApi.createPilotPurchaseInvoice.mockRejectedValueOnce(new PilotApiError("Save failed. Try again.", 503));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
+    await screen.findByRole("heading", { name: "New purchase" });
+    fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Heritage Dairy" } });
+    fireEvent.change(screen.getByLabelText("Invoice number"), { target: { value: "RETRY-EDITED" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Milk 2L" } });
+    fireEvent.change(screen.getByLabelText("Inventory item"), { target: { value: "301" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "30" } });
+    mockApi.createPilotPurchaseInvoice.mockClear();
+    const saveDraft = screen.getAllByRole("button", { name: "Save draft" })[0];
+    fireEvent.click(saveDraft);
+
+    expect(await screen.findByText("Save failed. Try again.")).toBeVisible();
+    expect(screen.getByLabelText("Supplier")).toHaveValue("Heritage Dairy");
+    expect(screen.getByLabelText("Invoice number")).toHaveValue("RETRY-EDITED");
+    expect(screen.getByLabelText("Quantity")).toHaveValue(3);
+    expect(screen.getByLabelText("Unit price")).toHaveValue(30);
+
+    fireEvent.click(saveDraft);
+    await waitFor(() => expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Invoice RETRY-EDITED saved successfully.")).toBeVisible();
+  });
+
   it("moves a draft invoice through details, lines, and review tabs", async () => {
     renderPage();
 
@@ -675,7 +724,9 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    const confirmReceive = screen.getByRole("button", { name: "Confirm receive" });
+    fireEvent.click(confirmReceive);
+    fireEvent.click(confirmReceive);
 
     expect(await screen.findByText("Invoice FD-1002 received into inventory.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "New purchase" }));
