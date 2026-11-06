@@ -10,6 +10,7 @@ import { SectionHeader } from "../components/SectionHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotInventoryAdjustment,
+  reversePilotInventoryAdjustment,
   createPilotInventoryWasteEvent,
   createPilotInventoryItem,
   createPilotSupplier,
@@ -36,6 +37,7 @@ import { sortRows, type SortDirection } from "../components/DataTable";
 import { subscribePilotCache } from "./pilotDataCache";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
+import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
 
 interface InventoryDraft {
   id: number | null;
@@ -196,6 +198,7 @@ export function PilotInventoryPage() {
   const [wasteModalOpen, setWasteModalOpen] = useState(false);
   const [supplierEditorOpen, setSupplierEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [reversalNotice, setReversalNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
@@ -481,6 +484,31 @@ export function PilotInventoryPage() {
     }
   };
 
+  const refreshItemAfterReversal = async (itemId: number) => {
+    // Reconcile with authoritative server state: item detail (history + linkage) and the inventory list (on-hand).
+    const [detail] = await Promise.all([fetchPilotInventoryItem(itemId), load()]);
+    setItemDetail(detail);
+  };
+
+  const reverseAdjustment = async (movement: PilotInventoryMovement, reason: string, idempotencyKey: string) => {
+    setReversalNotice(null);
+    let result: PilotInventoryMovement;
+    try {
+      result = await reversePilotInventoryAdjustment(movement.id, { reason, idempotencyKey });
+    } catch (err) {
+      // A conflict usually means another session already changed this item; show the current state too.
+      void refreshItemAfterReversal(movement.inventoryItemId).catch(() => undefined);
+      throw err;
+    }
+    const summary = `Adjustment reversed: ${movement.inventoryItemName} ${formatInventoryQuantity(result.quantityBefore)} → ${formatInventoryQuantity(result.quantityAfter)} ${result.unit}. The original entry is kept.`;
+    try {
+      await refreshItemAfterReversal(movement.inventoryItemId);
+      setReversalNotice(summary);
+    } catch {
+      setReversalNotice(`${summary} Reload the page to see the latest history.`);
+    }
+  };
+
   const saveWaste = async () => {
     if (!draft.id || wasteQuantity <= 0) {
       setError("Enter a waste quantity greater than zero.");
@@ -518,6 +546,7 @@ export function PilotInventoryPage() {
   const closeItemWorkspace = () => {
     setWorkspaceMode("browse");
     setSelectedId(null);
+    setReversalNotice(null);
     setItemDetail(null);
     setItemDetailTab("overview");
     setIsEditing(false);
@@ -1052,13 +1081,14 @@ export function PilotInventoryPage() {
 
             {itemHistoryTab === "movements" ? (
               <Card className="p-5">
-                <SectionHeader title="Movement history" description="What changed and why." />
+                <SectionHeader title="Movement history" description="What changed and why. A manual adjustment can be reversed once; the original entry is always kept." />
+                {reversalNotice ? <div role="status" aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{reversalNotice}</div> : null}
                 <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
                   <div className="overflow-x-auto">
                     <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
                       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
                         <tr>
-                          {["Type", "Quantity delta", "Reason", "Source", "When"].map((heading) => (
+                          {["Type", "Quantity delta", "Reason", "Source", "When", "Reversal"].map((heading) => (
                             <th key={heading} className="border-b border-line px-4 py-3 font-bold">
                               {heading}
                             </th>
@@ -1068,7 +1098,7 @@ export function PilotInventoryPage() {
                       <tbody>
                         {itemDetailLoading ? (
                           <tr>
-                            <td className="px-4 py-8 text-sm text-muted" colSpan={5}>
+                            <td className="px-4 py-8 text-sm text-muted" colSpan={6}>
                               Loading movement history...
                             </td>
                           </tr>
@@ -1083,11 +1113,14 @@ export function PilotInventoryPage() {
                               <td className="px-4 py-3 text-muted">{movement.reason}</td>
                               <td className="px-4 py-3 text-muted">{movement.sourceType} · {movement.sourceRecordId}</td>
                               <td className="px-4 py-3 text-muted">{movement.createdAt ? formatDateTime(movement.createdAt) : "—"}</td>
+                              <td className="px-4 py-3">
+                                <AdjustmentReversalAction movement={movement} onReverse={reverseAdjustment} disabled={demoReadOnly} />
+                              </td>
                             </tr>
                           ))
                         ) : (
                           <tr>
-                            <td className="px-4 py-8 text-sm text-muted" colSpan={5}>
+                            <td className="px-4 py-8 text-sm text-muted" colSpan={6}>
                               No movement history yet.
                             </td>
                           </tr>

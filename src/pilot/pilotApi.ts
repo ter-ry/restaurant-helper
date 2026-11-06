@@ -457,6 +457,11 @@ export interface PilotInventoryMovement {
   actorUserId: number | null;
   createdAt: string | null;
   updatedAt: string | null;
+  /** Item-detail history only (#231): linkage and eligibility for the append-only adjustment reversal. */
+  reversalOfMovementId?: number | null;
+  reversedByMovementId?: number | null;
+  reversible?: boolean;
+  replayed?: boolean;
 }
 
 export interface PilotInventoryWasteEvent {
@@ -1310,6 +1315,14 @@ export async function createPilotInventoryAdjustment(itemId: number, payload: Re
     headers: {
       "Content-Type": "application/json",
     },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function reversePilotInventoryAdjustment(movementId: number, payload: { reason: string; idempotencyKey: string }) {
+  return requestCsrfJson<PilotInventoryMovement>(`/api/pilot/inventory/movements/${movementId}/reverse`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
