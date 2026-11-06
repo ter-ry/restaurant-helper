@@ -290,9 +290,13 @@ describe("PilotInventoryPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
+    // The heading renders before the inventory request resolves, so wait for the loaded rows
+    // (not the heading) before asserting on table contents.
+    const paperCupsRow = await screen.findByRole("row", { name: /Paper Cups/ });
+    expect(inventoryMocks.fetchPilotInventory).toHaveBeenCalled();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Latest cost" })).toBeVisible();
-    expect(screen.getByRole("row", { name: /Paper Cups/ })).toHaveTextContent("$0.08");
+    expect(paperCupsRow).toHaveTextContent("$0.08");
     expect(screen.queryByText("Count sessions")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
@@ -304,6 +308,34 @@ describe("PilotInventoryPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Inventory" }));
     expect(await screen.findByRole("columnheader", { name: "Item" })).toBeVisible();
+  });
+
+  it("renders the heading before a slow inventory response and shows rows only once it resolves", async () => {
+    let resolveInventory!: (value: PilotInventoryResponse) => void;
+    inventoryMocks.fetchPilotInventory.mockReset();
+    inventoryMocks.fetchPilotInventory.mockReturnValue(
+      new Promise<PilotInventoryResponse>((resolve) => {
+        resolveInventory = resolve;
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/app/inventory"]}>
+        <PilotInventoryPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
+    // Deterministic form of the original race: heading is up, rows are not.
+    expect(screen.queryByRole("row", { name: /Paper Cups/ })).not.toBeInTheDocument();
+
+    resolveInventory(createInventoryResponse());
+    const row = await screen.findByRole("row", { name: /Paper Cups/ });
+    expect(row).toHaveTextContent("$0.08");
+
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Back to Inventory" }));
+    expect(await screen.findByRole("row", { name: /Paper Cups/ })).toBeVisible();
   });
 
   it("includes out-of-stock items in the reorder list action count", async () => {
@@ -423,7 +455,7 @@ describe("PilotInventoryPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
-    fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
     expect(screen.getByText("Average cost")).toBeVisible();
@@ -502,7 +534,7 @@ describe("PilotInventoryPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
-    fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
     fireEvent.click(screen.getByRole("button", { name: "Edit item" }));
@@ -578,7 +610,7 @@ describe("PilotInventoryPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Inventory" })).toBeVisible();
-    fireEvent.click(screen.getByRole("row", { name: /Chicken Breast/ }));
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
 
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
