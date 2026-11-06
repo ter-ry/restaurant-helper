@@ -40,6 +40,7 @@ function exceptionAction(exception: string) {
   };
   if (exact[exception]) return exact[exception];
   const text = exception.toLowerCase();
+  if (text.includes("clover")) return { href: "/app/square", label: "Review Clover" };
   if (text.includes("variation") && text.includes("unmapped")) return { href: "/app/square", label: "Review mappings" };
   if (text.includes("refund") || text.includes("cancel")) return { href: "/app/square", label: "Review sales" };
   if (text.includes("sync") || text.includes("location") || text.includes("square")) return { href: "/app/square", label: "Review Square" };
@@ -177,6 +178,13 @@ export function PilotDailyClosePage() {
   const locationMapped = squareSnapshotReady && Boolean(snapshot?.square?.locationMapped);
   const squareConnected = squareSnapshotReady && squareStatus.toLowerCase() === "connected";
   const squareFreshness = snapshot?.square?.freshness as { state?: string } | undefined;
+  // Clover locations return provider "clover" and no Square block; Square snapshots never carry a provider key.
+  const isClover = snapshot?.provider === "clover";
+  const cloverStatus = isClover ? String(sales.cloverStatus ?? "Not connected") : "";
+  const cloverConnected = cloverStatus.toLowerCase() === "connected";
+  const providerMapped = isClover ? Boolean(sales.locationMapped) : locationMapped;
+  const moneyOrUnavailable = (value: unknown) => (value == null || value === "" || !Number.isFinite(Number(value)) ? "Unavailable" : formatMoney(Number(value)));
+  const foodCost = snapshot?.foodCost;
   const completed = currentSession?.status === "COMPLETED";
   const cashReconciliation: CashReconciliation = snapshot?.cashReconciliation ?? { status: "unavailable", mode: null, expectedCash: null, openingFloat: null, cashPayments: null, cashRefunds: null, paidIn: null, paidOut: null, closedCash: null };
   const finiteOrNull = (value: unknown) => (value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null); // Number(null) is 0: never invent a figure
@@ -197,7 +205,7 @@ export function PilotDailyClosePage() {
   const squareComparable = squareClosedCash != null && Number(cashReconciliation.unreconciledShiftCount ?? 0) === 0;
   const providerDifference = countedForCompare != null && squareComparable ? round2(countedForCompare - (squareClosedCash as number)) : null;
   const varianceUnavailableReason = expectedCash == null
-    ? (cashReconciliation.varianceUnavailableReason ?? cashReconciliation.reason ?? "Expected cash could not be verified from Square for this business date.")
+    ? (cashReconciliation.varianceUnavailableReason ?? cashReconciliation.reason ?? `Expected cash could not be verified from ${isClover ? "Clover" : "Square"} for this business date.`)
     : "Enter the physically counted cash to calculate the variance.";
   const recordedWasteQuantity = Number(snapshot?.reconciliation?.recordedWasteQuantity ?? 0);
   const recordedWasteCost = Number(snapshot?.reconciliation?.recordedWasteCost ?? 0);
@@ -220,7 +228,7 @@ export function PilotDailyClosePage() {
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
               <ExternalLink className="h-4 w-4" />
-              {squareSnapshotReady ? (squareConnected ? "Open Square" : "Connect Square") : "Checking Square…"}
+              {isClover ? "Open Clover settings" : squareSnapshotReady ? (squareConnected ? "Open Square" : "Connect Square") : "Checking Square…"}
             </Link>
             <button
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -324,8 +332,9 @@ export function PilotDailyClosePage() {
             <div className="mt-5 space-y-5">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={statusTone(snapshot?.healthStatus ?? currentSession.status)}>{snapshot?.healthStatus ?? currentSession.status}</Badge>
-                <Badge tone={squareSynced ? "success" : "orange"}>{squareStatus}</Badge>
-                <Badge tone={locationMapped ? "success" : "orange"}>{locationMapped ? "Mapped" : "Unmapped"}</Badge>
+                {isClover ? <Badge tone="neutral">Clover</Badge> : null}
+                <Badge tone={isClover ? (cloverConnected ? "success" : "orange") : squareSynced ? "success" : "orange"}>{isClover ? cloverStatus : squareStatus}</Badge>
+                <Badge tone={providerMapped ? "success" : "orange"}>{providerMapped ? "Mapped" : "Unmapped"}</Badge>
                 {Number(cashReconciliation.openShiftCount ?? 0) > 0 ? <Badge tone="orange">{cashReconciliation.openShiftCount} cash drawer open</Badge> : null}
                 {completed ? (
                   <Badge tone="neutral">
@@ -340,9 +349,42 @@ export function PilotDailyClosePage() {
                 <p className="text-sm text-muted">Square sales are waiting for an update. Flowtally will reconcile them automatically when a secure connection is available.</p>
               ) : null}
 
+              {isClover ? (
+                <p className="text-sm text-muted" data-testid="clover-data-basis">Clover figures use the orders already fetched into Flowtally for this business date. Fetch recent orders in Clover settings if sales look incomplete.</p>
+              ) : null}
+
               <div>
                 <div className="rounded-3xl border border-line bg-slate-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Sales snapshot</p>
+                  {isClover ? (
+                    <dl className="mt-3 space-y-2 text-sm" data-testid="clover-sales">
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted">Net sales (excl. tax and tips)</dt>
+                        <dd className="font-semibold text-ink" data-testid="clover-net-sales">{moneyOrUnavailable(sales.netSales)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted">Orders</dt>
+                        <dd className="font-semibold text-ink">{formatNumber(Number(sales.orders ?? 0))}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted">Tips</dt>
+                        <dd className="font-semibold text-ink">{moneyOrUnavailable(sales.tips)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted">Delivery orders</dt>
+                        <dd className="font-semibold text-ink">{formatNumber(Number(sales.deliveryOrders ?? 0))}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted">Orders needing review</dt>
+                        <dd className="font-semibold text-ink">{formatNumber(Number(sales.excludedOrders ?? 0))}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted">Food cost</dt>
+                        <dd className="font-semibold text-ink" data-testid="clover-food-cost">{foodCost?.available && foodCost.percent != null ? `${foodCost.percent}%` : "Unavailable"}</dd>
+                      </div>
+                      {!foodCost?.available && foodCost?.unavailableReason ? <p className="text-xs text-muted" data-testid="clover-food-cost-reason">{foodCost.unavailableReason}</p> : null}
+                    </dl>
+                  ) : (
                   <dl className="mt-3 space-y-2 text-sm">
                     <div className="flex items-center justify-between gap-3">
                       <dt className="text-muted">Net sales</dt>
@@ -361,6 +403,7 @@ export function PilotDailyClosePage() {
                       <dd className="font-semibold text-ink">{formatNumber(Number(sales.cancelledOrders ?? 0))}</dd>
                     </div>
                   </dl>
+                  )}
                 </div>
 
               </div>
@@ -522,7 +565,7 @@ export function PilotDailyClosePage() {
               </p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/app/square">
-                  Review Square
+                  {isClover ? "Review Clover" : "Review Square"}
                 </Link>
               </div>
             </div>
@@ -533,14 +576,23 @@ export function PilotDailyClosePage() {
           <Card className="workspace-card">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-muted">Square</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">{isClover ? "Clover" : "Square"}</p>
                 <div className="mt-2 flex flex-wrap gap-2 text-sm">
-                  <Badge tone={squareConnected ? "success" : "neutral"}>{squareStatus}</Badge>
-                  <Badge tone={!squareSnapshotReady ? "neutral" : locationMapped ? "success" : "warning"}>{!squareSnapshotReady ? "Checking mapping…" : locationMapped ? "Location mapped" : "Location unmapped"}</Badge>
-                  {squareSynced ? <Badge tone="neutral">Synced</Badge> : null}
+                  {isClover ? (
+                    <>
+                      <Badge tone={cloverConnected ? "success" : "neutral"}>{cloverStatus}</Badge>
+                      <Badge tone={providerMapped ? "success" : "warning"}>{providerMapped ? "Location mapped" : "Location unmapped"}</Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Badge tone={squareConnected ? "success" : "neutral"}>{squareStatus}</Badge>
+                      <Badge tone={!squareSnapshotReady ? "neutral" : locationMapped ? "success" : "warning"}>{!squareSnapshotReady ? "Checking mapping…" : locationMapped ? "Location mapped" : "Location unmapped"}</Badge>
+                      {squareSynced ? <Badge tone="neutral">Synced</Badge> : null}
+                    </>
+                  )}
                 </div>
               </div>
-              <Link className="font-semibold text-ink underline" to="/app/square">Open Square →</Link>
+              <Link className="font-semibold text-ink underline" to="/app/square">{isClover ? "Open Clover settings →" : "Open Square →"}</Link>
             </div>
           </Card>
 

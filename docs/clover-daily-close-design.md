@@ -32,3 +32,16 @@ Status: **direction approved by the owner; decisions below are final. No code is
 2. Cash: verified Clover cash-tender total = expected cash; manual counted cash entry gives variance; unavailable state if tender data incomplete.
 3. One active POS provider per location.
 4. Delivery orders in verified Clover sales data are included in sales, costing and inventory; payout reconciliation not required.
+
+## Implementation status (#222, slice 4)
+Implemented in `backend/clover_daily_close.py` (builder) with a provider switch in `backend/daily_close.py`. A location uses the Clover path only when Clover is its sole active provider; every other location keeps the unchanged Square path (guarded by `backend/tests/test_daily_close_square_golden.py`, generated from `main` before this change). Daily Close UI shows the provider, exact or "Unavailable" figures and cash variance.
+
+Known limits, all fail-closed (never zero or invented):
+- **Usage cost / food-cost %** are read from the real engine's ledger (fixed in #240/#247) and verified end to end through Daily Close: $2.75 / 27.5% for the reference order, $3.00 / 30% after a recipe correction, replay-safe, with historical cost snapshots. They stay unavailable (never partial) for any day with a missing/malformed recipe, unmapped item or unapplied sale.
+- **Expected cash** is unavailable whenever any day order lacks a tender identifier or is excluded for review (refund, incomplete evidence); the order fetch does not yet request tender detail, so expect "unavailable" until it does.
+- **Physical-count usage variance** for Clover is not provided (actual usage and variance stay unavailable).
+- **Owner Reports** (`backend/reporting.py`) and the completed-close CSV are unchanged and remain Square-sourced; the CSV has no provider column so the Square export stays byte-identical.
+- Sales reflect Clover orders already fetched into Flowtally; there is no Daily Close sync for Clover.
+- Not externally verified: needs #166 Sandbox evidence. `CLOVER_ORDER_INVENTORY_ENABLED` is unchanged.
+- **Multi-quantity lines:** ingestion (`_shadow_recipe_preview`) stores line-total ingredient quantities (sold quantity / recipe yield), so the engine and usage read them as totals and must not multiply again. Verified end to end for quantity 2 (550c / 27.5%, corrected 600c / 30%) and quantity 4 on a yield-2 recipe, plus two tenants under forced RLS.
+- **Voids and refunds after stock was applied:** the engine never restocks automatically. A refunded order is excluded from sales and makes usage unavailable; a cancelled order that already used stock now also makes usage unavailable (`cancelled_after_inventory_applied`) instead of reporting a complete, smaller cost.
