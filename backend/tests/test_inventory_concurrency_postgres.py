@@ -181,7 +181,20 @@ class World:
             db.session.remove()
         return snapshot
 
+    def source_keys(self, item_id: int) -> list[tuple[str, str, str]]:
+        with self.app.app_context():
+            _set_rls_context(access_scope="customer", organization_id=self.org_id)
+            keys = [
+                (m.source_type, m.source_record_id, m.source_line_id)
+                for m in InventoryMovement.query.filter_by(inventory_item_id=item_id).order_by(InventoryMovement.id)
+            ]
+            db.session.rollback()
+            db.session.remove()
+        return keys
+
     def assert_reconciles(self, item_id: int, *, opening: str, expected_on_hand: str, movements: int | None = None):
+        keys = self.source_keys(item_id)
+        assert len(keys) == len(set(keys)), f"duplicate source record in the ledger: {keys}"
         on_hand, avg_cost, rows = self.state(item_id)
         running = Decimal(opening)
         for source_type, before, delta, after in rows:
