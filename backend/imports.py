@@ -616,12 +616,10 @@ def _lookup_mapping(organization_id: int, supplier_id: int, inventory_item_id: i
 def _lock_inventory_item(organization_id: int, item_id: int) -> InventoryItem | None:
     """Re-read an item under a row lock (``FOR UPDATE``).
 
-    Scope of the guarantee (#227): this serializes the import only against other writers that also lock
-    the item row, which today are the Square and Clover POS consumption paths and other import
-    executes/rollbacks. Receipts, invoice corrections, adjustments, waste and count finalize read the
-    item without a lock (``backend/pilot_api.py`` has no ``with_for_update``), so an import racing one
-    of those can still lose an update. History that has already committed is always detected; a write
-    that is in flight in another transaction is not. Tracked separately as issue #248.
+    Scope of the guarantee (#227, #248): this serializes the import against every other stock writer,
+    because receipts, invoice corrections, adjustments, waste and count finalize now take the same row
+    lock through ``pilot_api.lock_inventory_items`` (ascending item-id order), as do the Square and
+    Clover POS consumption paths. History that has already committed is detected after the lock.
     """
     return (
         InventoryItem.query.execution_options(populate_existing=True)

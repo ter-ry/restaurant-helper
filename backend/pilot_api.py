@@ -700,6 +700,35 @@ def _sync_supplier_item_mappings(invoice: PurchaseInvoice, actor_id: int):
             line.supplier_item_mapping = mapping
 
 
+def lock_inventory_items(organization_id: int, location_id: int, item_ids) -> dict[int, InventoryItem]:
+    """Lock inventory item rows (``SELECT ... FOR UPDATE``) and return them keyed by id (#248).
+
+    Every writer that reads ``current_on_hand`` and then writes a movement plus the new on-hand
+    (receipt, invoice correction, manual adjustment, waste, count finalize) must call this *before*
+    reading the quantity, so concurrent writers serialize instead of losing updates. Rows are
+    locked in ascending item-id order (the order the POS consumption paths and the import use),
+    which makes two multi-item writers over overlapping items deadlock-free. ``populate_existing``
+    overwrites any copy already in the session identity map, so a stale ORM object cannot defeat
+    the lock; later queries in the same transaction (READ COMMITTED) also see the winner's commits.
+    Items outside the organization/location are simply not returned.
+    """
+    ids = sorted({int(item_id) for item_id in item_ids if item_id is not None})
+    if not ids:
+        return {}
+    rows = (
+        InventoryItem.query.execution_options(populate_existing=True)
+        .filter(
+            InventoryItem.id.in_(ids),
+            InventoryItem.organization_id == organization_id,
+            InventoryItem.location_id == location_id,
+        )
+        .order_by(InventoryItem.id.asc())
+        .with_for_update()
+        .all()
+    )
+    return {row.id: row for row in rows}
+
+
 def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
     if invoice.status in {"Completed", "Corrected"}:
         raise RequestValidationError("Invoice already received.", {"invoice": "This invoice has already been received."})
@@ -717,8 +746,9 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
         raise RequestValidationError("Invoice receipt failed.", {"review": "Resolve invoice review blockers before receiving."})
 
     now = _now()
+    locked_items = lock_inventory_items(invoice.organization_id, invoice.location_id, [line.inventory_item_id for line in invoice.lines])
     for line in invoice.lines:
-        item = InventoryItem.query.filter_by(id=line.inventory_item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first() if line.inventory_item_id else None
+        item = locked_items.get(line.inventory_item_id) if line.inventory_item_id else None
         if item is None:
             continue
         quantity_delta = (Decimal(line.quantity) * Decimal(line.conversion_factor)).quantize(QTY)
@@ -880,6 +910,9 @@ def correct_purchase_invoice(invoice_id: int):
     if not reason:
         return json_error("Validation failed.", 400, errors={"reason": "Enter a correction reason."})
 
+    # Lock first, then check for a prior correction, so a concurrent correction that committed while
+    # we waited is seen and a second compensating movement is never written (#248).
+    locked_items = lock_inventory_items(invoice.organization_id, invoice.location_id, [line.inventory_item_id for line in invoice.lines])
     existing_correction = InventoryMovement.query.filter_by(
         organization_id=invoice.organization_id,
         location_id=invoice.location_id,
@@ -894,7 +927,7 @@ def correct_purchase_invoice(invoice_id: int):
 
     try:
         for line in invoice.lines:
-            item = InventoryItem.query.filter_by(id=line.inventory_item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first() if line.inventory_item_id else None
+            item = locked_items.get(line.inventory_item_id) if line.inventory_item_id else None
             if item is None:
                 continue
 
@@ -942,8 +975,8 @@ def correct_purchase_invoice(invoice_id: int):
         invoice.updated_by_user_id = current_user.id
         invoice.posted_at = now
 
-        for item_id in affected_items:
-            item = InventoryItem.query.filter_by(id=item_id, organization_id=invoice.organization_id, location_id=invoice.location_id).first()
+        for item_id in sorted(affected_items):
+            item = locked_items.get(item_id)
             if item is None:
                 continue
             _refresh_inventory_snapshot_from_recent_receipt(
@@ -2140,7 +2173,7 @@ def create_inventory_adjustment(item_id: int):
     permission_error = _require_role(membership, "inventory.manage")
     if permission_error is not None:
         return permission_error
-    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    item = lock_inventory_items(organization.id, location.id, [item_id]).get(item_id)
     if item is None:
         return json_error("Inventory item not found.", 404)
     payload = _json_body()
@@ -2274,7 +2307,7 @@ def create_inventory_waste_event():
         return permission_error
     payload = _json_body()
     item_id = _to_int(payload.get("inventoryItemId"), field="inventoryItemId")
-    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    item = lock_inventory_items(organization.id, location.id, [item_id]).get(item_id)
     if item is None:
         return json_error("Inventory item not found.", 404)
     quantity = _to_quantity(payload.get("quantity"), field="quantity")
@@ -2545,6 +2578,10 @@ def finalize_count_session(session_id: int):
     session_record = StockCountSession.query.filter_by(id=session_id, organization_id=organization.id, location_id=location.id).first()
     if session_record is None:
         return json_error("Stock count session not found.", 404)
+    # Lock every counted item (ascending id) before the status and concurrency checks, so a writer that
+    # committed while we waited is reflected in both and a duplicate finalize sees "Completed" (#248).
+    lock_inventory_items(organization.id, location.id, [line.inventory_item_id for line in session_record.lines])
+    db.session.refresh(session_record)
     if session_record.status == "Completed":
         return json_error("This stock count has already been finalized.", 409)
     incomplete = [line for line in session_record.lines if line.counted_quantity is None]

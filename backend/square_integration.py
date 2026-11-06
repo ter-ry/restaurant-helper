@@ -1506,6 +1506,21 @@ def _square_line_consumption(
     return {"status": "mapped", "lineQuantity": line_quantity, "ingredients": ingredients, "warnings": warnings, "menuItem": menu_item, "recipe": recipe}
 
 
+def _lock_square_items(organization_id: int, item_ids) -> dict[int, InventoryItem]:
+    """``SELECT ... ORDER BY id FOR UPDATE`` with populate_existing; the Square counterpart of pilot_api.lock_inventory_items."""
+    ids = sorted({int(item_id) for item_id in item_ids})
+    if not ids:
+        return {}
+    rows = (
+        InventoryItem.query.execution_options(populate_existing=True)
+        .filter(InventoryItem.id.in_(ids), InventoryItem.organization_id == organization_id)
+        .order_by(InventoryItem.id.asc())
+        .with_for_update()
+        .all()
+    )
+    return {row.id: row for row in rows}
+
+
 def _apply_square_order_inventory_consumption(
     organization: Organization,
     connection: SquareConnection,
@@ -1566,7 +1581,33 @@ def _apply_square_order_inventory_consumption(
     by_key = {(row.square_order_line_id, row.inventory_item_id): row for row in existing_consumptions}
     for key, row in by_key.items():
         desired.setdefault(key, {"quantity": Decimal("0"), "item": row.inventory_item, "line": row.square_order_line})
-    for key, target in desired.items():
+
+    # Lock every affected inventory row, in ascending item-id order, BEFORE reading or changing any of
+    # them (#248). Locking one ingredient at a time in recipe order let two orders whose recipes list the
+    # same ingredients in opposite order deadlock, and also let a receipt/count that locks in id order
+    # interleave. populate_existing makes the locked values authoritative over any copy loaded earlier.
+    locked_items = _lock_square_items(organization.id, {item_id for _, item_id in desired})
+    # Re-read the consumption ledger under the lock: a concurrent duplicate or retry of the same order
+    # that committed while this call waited is now visible, so its quantities are not applied twice.
+    existing_consumptions = (
+        SquareOrderLineInventoryConsumption.query.execution_options(populate_existing=True)
+        .filter(
+            SquareOrderLineInventoryConsumption.organization_id == organization.id,
+            SquareOrderLineInventoryConsumption.square_order_line_id.in_(existing_line_ids or [-1]),
+        )
+        .all()
+    )
+    by_key = {(row.square_order_line_id, row.inventory_item_id): row for row in existing_consumptions}
+    late_ids = set()
+    for key, row in by_key.items():
+        if key not in desired:
+            desired[key] = {"quantity": Decimal("0"), "item": row.inventory_item, "line": row.square_order_line}
+            if key[1] not in locked_items:
+                late_ids.add(key[1])
+    if late_ids:  # only if a concurrent edit added a ledger row for an item we did not know about
+        locked_items = _lock_square_items(organization.id, {item_id for _, item_id in desired})
+    for key in sorted(desired, key=lambda value: (value[1], value[0])):
+        target = desired[key]
         line_id, item_id = key
         consumption = by_key.get(key)
         if consumption is None:
@@ -1584,7 +1625,9 @@ def _apply_square_order_inventory_consumption(
         correction = (wanted - applied).quantize(QTY)
         if correction == 0:
             continue
-        item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=consumption.location_id).with_for_update().first()
+        item = locked_items.get(item_id)
+        if item is not None and item.location_id != consumption.location_id:
+            item = None
         if item is None:
             warnings.append(f"Inventory item {item_id} is no longer available for Square consumption.")
             continue

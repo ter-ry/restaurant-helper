@@ -269,7 +269,7 @@ def apply_clover_order_inventory(
     })
     locked_items = {
         item.id: item for item in (
-            session.query(InventoryItem).filter(
+            session.query(InventoryItem).execution_options(populate_existing=True).filter(
                 InventoryItem.id.in_(ingredient_ids or [-1]),
                 InventoryItem.organization_id == order.organization_id,
                 InventoryItem.location_id == order.restaurant_location_id,
