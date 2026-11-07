@@ -114,7 +114,9 @@ def _expected_value(field: str, value: Any) -> Any:
         return _quantity(value, f"expected.{field}")
     if field == "supplierId":
         return None if value is None else _int_id(value, "expected.supplierId")
-    return bool(value)
+    if not isinstance(value, bool):
+        raise _Reject("Validation failed.", 400, {"expected": "expected.active must be true or false."})
+    return value
 
 
 def _plain(value: Any) -> Any:
@@ -153,20 +155,24 @@ def _evaluate(organization_id: int, location_id: int, ids: list[int], changes: d
         before = {field: current[field] for field in changes}
         after = dict(before)
         stale = False
-        for field, target in changes.items():
+        # Every reviewed value must be well-formed even when the item is already at target (fail closed).
+        reviewed: dict[str, Any] = {}
+        for field in changes:
             if field not in expected_item:
                 raise _Reject("Validation failed.", 400, {"expected": f"Missing the reviewed {field} for {item.name}."})
+            reviewed[field] = _expected_value(field, expected_item[field])
+        if "supplierId" in changes and not isinstance(expected_item.get("supplierName"), str):
+            raise _Reject("Validation failed.", 400, {"expected": f"Missing the reviewed supplierName for {item.name}."})
+        for field, target in changes.items():
             if field == "supplierId":
                 if _supplier_at_target(item, target, supplier):
                     continue
             elif current[field] == target:
                 continue  # already at target: idempotent, never stale
-            if _expected_value(field, expected_item[field]) != current[field]:
+            if reviewed[field] != current[field]:
                 stale = True
             if field == "supplierId":
                 # Both stored representations are validated: receipts change the name without the id.
-                if "supplierName" not in expected_item or not isinstance(expected_item["supplierName"], str):
-                    raise _Reject("Validation failed.", 400, {"expected": f"Missing the reviewed supplierName for {item.name}."})
                 if expected_item["supplierName"].strip() != (item.preferred_supplier_name or "").strip():
                     stale = True
             after[field] = target
@@ -246,7 +252,11 @@ def bulk_edit_inventory_items():
         if len(ids) > MAX_ITEMS:
             raise _Reject("Validation failed.", 400, {"itemIds": f"Select at most {MAX_ITEMS} items at a time."})
         changes = _parse_changes(payload.get("changes"))
-        dry_run = payload.get("dryRun") is True
+        # The preview flag must be a real boolean: a truthy string or number must never silently turn into an apply.
+        raw_dry_run = payload.get("dryRun", False)
+        if not isinstance(raw_dry_run, bool):
+            raise _Reject("Validation failed.", 400, {"dryRun": "Must be true or false."})
+        dry_run = raw_dry_run
 
         if dry_run:
             items = {

@@ -330,3 +330,79 @@ def test_supplier_name_changed_between_review_and_apply_is_a_stale_conflict(app,
     # After a refresh the new reviewed name applies cleanly.
     assert _post(client, {"itemIds": ids, "changes": clear, "expected": _expected(app, ids, ["supplierId"])}).status_code == 200
     assert all(_state(app, i)["name"] == "" for i in ids)
+
+
+def _everything(app, ids):
+    """Item rows, audit events and movements: the full write surface of the endpoint."""
+    return ({i: _state(app, i) for i in ids}, _audit_count(app), _movement_count(app))
+
+
+NON_BOOLEANS = ["true", "false", "True", "1", "0", "", 1, 0, 2, 1.0, None, [], [True], {}, {"a": 1}]
+
+
+def test_non_boolean_dry_run_is_rejected_and_never_mutates(app, client):
+    """A truthy string/number must not turn the review step into a real apply (review finding @ 8851874)."""
+    login(client)
+    _, ids = _items(app, 3)
+    changes = {"parLevel": 77}
+    expected = _expected(app, ids, ["parLevel"])
+    before = _everything(app, ids)
+    for bad in NON_BOOLEANS:
+        response = _post(client, {"itemIds": ids, "changes": changes, "expected": expected, "dryRun": bad})
+        assert response.status_code == 400, (bad, response.get_data(as_text=True))
+        assert response.get_json()["errors"] == {"dryRun": "Must be true or false."}, bad
+        assert _everything(app, ids) == before, f"dryRun={bad!r} changed data, audit or ledger"
+    # Real booleans (and an omitted flag) behave exactly as before.
+    ok_dry = _post(client, {"itemIds": ids, "changes": changes, "expected": expected, "dryRun": True})
+    assert ok_dry.status_code == 200 and ok_dry.get_json()["applied"] is False
+    assert _everything(app, ids) == before
+    ok_apply = _post(client, {"itemIds": ids, "changes": changes, "expected": expected, "dryRun": False})
+    assert ok_apply.status_code == 200 and ok_apply.get_json()["applied"] is True
+    assert all(_state(app, i)["par"] == Decimal("77") for i in ids)
+
+
+def test_non_boolean_expected_active_is_rejected_and_never_mutates(app, client):
+    """expected.active was coerced with bool(), so the string "false" read as True and passed stale detection."""
+    login(client)
+    _, ids = _items(app, 3)
+    changes = {"active": False}
+    before = _everything(app, ids)
+    for bad in NON_BOOLEANS:
+        expected = _expected(app, ids, ["active"])
+        expected[str(ids[1])]["active"] = bad  # one malformed item must fail the whole batch atomically
+        for dry in (True, False):
+            response = _post(client, {"itemIds": ids, "changes": changes, "expected": expected, "dryRun": dry})
+            assert response.status_code == 400, (bad, dry, response.get_data(as_text=True))
+            assert "expected" in response.get_json()["errors"], (bad, dry)
+            assert _everything(app, ids) == before, f"expected.active={bad!r} changed data, audit or ledger"
+    assert all(_state(app, i)["active"] is True for i in ids)
+    # A well-formed boolean still applies.
+    assert _post(client, {"itemIds": ids, "changes": changes, "expected": _expected(app, ids, ["active"])}).status_code == 200
+    assert all(_state(app, i)["active"] is False for i in ids)
+
+
+def test_malformed_expected_is_rejected_even_when_item_is_already_at_target(app, client):
+    """Fail closed: validation of `expected` must not depend on whether the item still needs the change."""
+    login(client)
+    _, ids = _items(app, 2)
+    with app.app_context():
+        for item_id in ids:
+            db.session.get(InventoryItem, item_id).active = False
+        db.session.commit()
+    before = _everything(app, ids)
+    for bad in ("false", 0, None):
+        expected = _expected(app, ids, ["active"])
+        expected[str(ids[0])]["active"] = bad
+        response = _post(client, {"itemIds": ids, "changes": {"active": False}, "expected": expected})
+        assert response.status_code == 400, (bad, response.get_data(as_text=True))
+        assert _everything(app, ids) == before
+    # Same for numeric expected values and a missing/non-string supplierName.
+    for field_change, bad_expected in (
+        ({"parLevel": 9}, {"parLevel": "abc"}),
+        ({"parLevel": 9}, {"parLevel": True}),
+        ({"supplierId": None}, {"supplierId": None, "supplierName": 5}),
+        ({"supplierId": None}, {"supplierId": True, "supplierName": ""}),
+    ):
+        response = _post(client, {"itemIds": ids, "changes": field_change, "expected": {str(i): dict(bad_expected) for i in ids}})
+        assert response.status_code == 400, (bad_expected, response.get_data(as_text=True))
+        assert _everything(app, ids) == before

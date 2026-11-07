@@ -191,3 +191,25 @@ def test_bulk_edit_waits_for_a_concurrent_writer_then_reports_it_as_stale(postgr
     assert list(response.get_json()["errors"]) == [f"item-{target}"]
     state, _ = _admin_state([target])
     assert state[0][4] == "6.0000"  # the concurrent writer's value survived; nothing was overwritten
+
+
+def test_non_boolean_flags_fail_closed_under_forced_rls_without_writes_or_audit(postgres_app):
+    seeded = _seed()
+    a = seeded["a"]
+    client = postgres_app.test_client()
+    _login_owner(client)
+    assert _post(client, {"organizationId": a["org"]}, "/api/organizations/select").status_code == 200
+    before = _admin_state(a["items"])
+    audit_before = _admin_audit(a["org"])
+
+    for bad in ("true", "false", 1, 0, None, []):
+        response = _post(client, {"itemIds": a["items"], "changes": {"parLevel": 50}, "expected": _expected(a["items"], parLevel=4), "dryRun": bad})
+        assert response.status_code == 400 and response.get_json()["errors"] == {"dryRun": "Must be true or false."}, bad
+    for bad in ("false", "true", 0, 1, None):
+        expected = _expected(a["items"], active=True)
+        expected[str(a["items"][2])]["active"] = bad
+        response = _post(client, {"itemIds": a["items"], "changes": {"active": False}, "expected": expected})
+        assert response.status_code == 400 and "expected" in response.get_json()["errors"], bad
+
+    assert _admin_state(a["items"]) == before  # items and the movement ledger untouched
+    assert _admin_audit(a["org"]) == audit_before == []  # no audit events were created
