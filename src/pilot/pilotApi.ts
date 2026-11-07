@@ -457,6 +457,11 @@ export interface PilotInventoryMovement {
   actorUserId: number | null;
   createdAt: string | null;
   updatedAt: string | null;
+  /** Item-detail history only (#231): linkage and eligibility for the append-only adjustment reversal. */
+  reversalOfMovementId?: number | null;
+  reversedByMovementId?: number | null;
+  reversible?: boolean;
+  replayed?: boolean;
 }
 
 export interface PilotInventoryWasteEvent {
@@ -1312,6 +1317,21 @@ export async function createPilotInventoryAdjustment(itemId: number, payload: Re
     },
     body: JSON.stringify(payload),
   });
+}
+
+export async function reversePilotInventoryAdjustment(movementId: number, payload: { reason: string; idempotencyKey: string }) {
+  try {
+    return await requestCsrfJson<PilotInventoryMovement>(`/api/pilot/inventory/movements/${movementId}/reverse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    // Successful mutations clear the read cache; a rejected one (e.g. 409 already reversed by another session)
+    // means our cached history is stale, so drop it before the caller reconciles with the server.
+    clearPilotDataCache();
+    throw error;
+  }
 }
 
 export async function fetchPilotInventoryWasteEvents() {
