@@ -349,3 +349,27 @@ def test_void_racing_manual_consumption_serializes_on_the_item_lock(postgres_app
         assert run_b.result.status_code in {200, 201, 400, 409}
     else:
         assert run_a.result.status_code == 409 and on_hand == Decimal("4")  # waste won; the void was refused
+
+
+def test_void_with_correction_copy_handles_max_length_invoice_number_and_purchases_summary(postgres_app):
+    world = _make_world(postgres_app)
+    flour = world.items["Flour"]
+    client = world.client()
+    invoice_id = _invoice(world, client, [(flour, 5, 6.0)])  # $30.00
+    long_number = "N" * 120
+    engine = _admin_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("update purchase_invoices set invoice_number = :n, invoice_date = current_date where id = :i"), {"n": long_number, "i": invoice_id})
+    finally:
+        engine.dispose()
+    assert _receive(client, invoice_id).status_code == 200
+    before = client.get("/api/pilot/purchases", base_url=BASE).get_json()["summary"]["thisMonthSpend"]
+
+    response = _void(client, invoice_id, createCorrectionDraft=True)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    draft = _get(client, response.get_json()["correctedByInvoiceId"])
+    assert len(draft["invoiceNumber"]) <= 120 and draft["invoiceNumber"] != long_number and draft["invoiceNumber"].endswith("-C1")
+    after = client.get("/api/pilot/purchases", base_url=BASE).get_json()["summary"]["thisMonthSpend"]
+    # The voided original no longer counts; the Draft copy replaces it rather than doubling spend.
+    assert after == pytest.approx(30.0) and before == pytest.approx(30.0)

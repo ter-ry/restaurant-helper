@@ -941,17 +941,22 @@ def _create_correction_draft(invoice: PurchaseInvoice, actor_id: int) -> Purchas
     The supplier + number is unique per location, so the copy gets a ``-C<n>`` suffix the user can edit
     to the supplier's real corrected number. The original rows are never touched.
     """
-    base = f"{invoice.invoice_number}-C"
     number = 1
+
+    def _candidate(n: int) -> str:
+        suffix = f"-C{n}"
+        # Reserve room for the suffix so a 120-character original can never truncate back onto itself.
+        return f"{invoice.invoice_number[: 120 - len(suffix)]}{suffix}"
+
     while PurchaseInvoice.query.filter_by(
-        organization_id=invoice.organization_id, location_id=invoice.location_id, supplier_id=invoice.supplier_id, invoice_number=f"{base}{number}"
+        organization_id=invoice.organization_id, location_id=invoice.location_id, supplier_id=invoice.supplier_id, invoice_number=_candidate(number)
     ).first() is not None:
         number += 1
     draft = PurchaseInvoice(
         organization_id=invoice.organization_id,
         location_id=invoice.location_id,
         supplier_id=invoice.supplier_id,
-        invoice_number=f"{base}{number}"[:120],
+        invoice_number=_candidate(number),
         invoice_date=invoice.invoice_date,
         subtotal=invoice.subtotal,
         tax=invoice.tax,
@@ -1417,7 +1422,7 @@ def purchases():
                 "purchaseLines": [serialize_purchase_invoice_line(line) for line in purchase_lines],
                 "priceChanges": price_changes,
                 "summary": {
-                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if invoice.invoice_date >= first_of_month), 2),
+                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if invoice.invoice_date >= first_of_month and invoice.status != VOIDED_INVOICE_STATUS), 2),
                     "receivedThisMonth": received_this_month,
                     "uploadsNeedingReview": needs_review,
                     "priceChangesFlagged": len(price_changes),

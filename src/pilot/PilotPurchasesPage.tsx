@@ -467,7 +467,7 @@ export function PilotPurchasesPage() {
     return hints;
   }, [data?.purchaseLines]);
 
-  const load = async (preferredInvoiceId: number | null | undefined = requestedInvoiceId) => {
+  const load = async (preferredInvoiceId: number | null | undefined = requestedInvoiceId): Promise<boolean> => {
     setLoading(true);
     setError(null);
 
@@ -489,8 +489,10 @@ export function PilotPurchasesPage() {
         setShowReview(false);
       }
       setHasLoaded(true);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load purchases.");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -843,8 +845,13 @@ export function PilotPurchasesPage() {
         ? `Invoice ${voided.invoiceNumber} was voided and its inventory movements were reversed. A corrected draft is ready to review.`
         : `Invoice ${voided.invoiceNumber} was voided and its inventory movements were reversed.`,
     );
+    // Show the confirmed void immediately so the void controls cannot be reused if the refresh below fails.
+    setDetailInvoice(voided);
     // Reconcile with the server: the invoice list, inventory and dashboard figures all changed.
-    await load(voided.id);
+    const reconciled = await load(voided.id);
+    if (!reconciled) {
+      setError(`Invoice ${voided.invoiceNumber} was voided, but the page could not refresh. Reload the page to see updated totals and stock.`);
+    }
   };
 
   const openInvoice = async (invoiceId: number) => {
