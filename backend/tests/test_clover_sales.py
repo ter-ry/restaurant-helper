@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from backend.clover_orders import normalize_order
 from backend.clover_sales import CASH_TENDER_KEY, business_day_window, order_financials, summarize_orders
+from backend.clover_usage import _window as usage_business_day_window
 
 WINDOW = business_day_window(date(2026, 11, 3), "America/Toronto")
 NOON = datetime(2026, 11, 3, 17, 0, tzinfo=timezone.utc)
@@ -48,6 +49,38 @@ def test_non_paid_and_review_orders_are_exceptions_not_sales():
     day = summarize_orders(orders, WINDOW)
     assert day.order_count == 1 and day.net_sales_cents == 500
     assert sorted(e["reason"] for e in day.exceptions) == ["cancelled", "needs_review", "refunded_or_refund_unverified"]
+
+
+def test_excluded_cash_order_is_marked_as_cash_evidence_but_cash_neutral_cancel_is_not():
+    cancelled_cash = _order(1, [_pay(500)], status="cancelled")
+    partial_cash = _order(2, [_pay(500)], status="pending", review=True)
+    cancelled_card = _order(3, [_pay(500, tender="com.clover.tender.credit_card")], status="cancelled")
+
+    day = summarize_orders([cancelled_cash, partial_cash, cancelled_card], WINDOW)
+
+    by_id = {exception["orderId"]: exception for exception in day.exceptions}
+    assert by_id[1] == {"orderId": 1, "cloverOrderId": "C1", "reason": "cancelled", "cashEvidence": True}
+    assert by_id[2] == {"orderId": 2, "cloverOrderId": "C2", "reason": "not_fully_paid", "cashEvidence": True}
+    assert "cashEvidence" not in by_id[3]
+
+
+def test_sales_and_usage_helpers_use_the_same_dst_aware_local_day_window():
+    cases = ((date(2026, 3, 8), 23), (date(2026, 11, 1), 25), (date(2026, 2, 15), 24))
+    for business_date, hours in cases:
+        sales_window = business_day_window(business_date, "America/Toronto")
+        usage_window = usage_business_day_window(business_date, "America/Toronto")
+        assert sales_window == usage_window
+        assert (sales_window[1] - sales_window[0]).total_seconds() == hours * 3600
+
+
+def test_order_is_attributed_by_closed_time_not_an_untrusted_payment_date():
+    in_day = datetime(2026, 11, 4, 4, 59, tzinfo=timezone.utc)
+    out_of_day = datetime(2026, 11, 4, 5, 1, tzinfo=timezone.utc)
+    order = _order(1, [_pay(500)], closed=in_day, raw={"payments": [{**_pay(500), "createdTime": int(out_of_day.timestamp() * 1000)}]})
+
+    day = summarize_orders([order], WINDOW)
+
+    assert day.order_count == 1 and day.net_sales_cents == 500
 
 
 def test_failed_payment_not_counted_and_financial_incomplete_unavailable():

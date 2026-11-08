@@ -244,6 +244,20 @@ def test_an_excluded_order_makes_expected_cash_unavailable_not_understated(app, 
     assert snapshot["healthStatus"] == "Ready with warnings"
 
 
+@pytest.mark.parametrize("status", ["cancelled", "pending"])
+def test_cash_bearing_cancelled_or_partially_paid_order_makes_expected_cash_unavailable(app, client, cafe, status):
+    org, location, connection = cafe
+    _order(org, location, connection, [_pay(1130, 130, 0, CARD)])
+    _order(org, location, connection, [_pay(500, 0, 0, CASH)], status=status, review=status == "pending")
+    db.session.commit()
+
+    snapshot = _get(client, location.id).get_json()["snapshot"]
+
+    assert snapshot["sales"]["orders"] == 1
+    assert snapshot["cashReconciliation"]["status"] == "unavailable"
+    assert snapshot["cashReconciliation"]["expectedCash"] is None
+
+
 def test_missing_tax_breakdown_never_shows_gross_as_net_and_blocks_food_cost(app, client, cafe):
     org, location, connection = cafe
     order = _order(org, location, connection, [_pay(1130, None, 0, CASH)])
