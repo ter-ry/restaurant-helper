@@ -252,10 +252,62 @@ def test_cash_bearing_cancelled_or_partially_paid_order_makes_expected_cash_unav
     db.session.commit()
 
     snapshot = _get(client, location.id).get_json()["snapshot"]
+    session_id = _open(client, location.id)["session"]["id"]
+    counted = _patch(client, f"/api/pilot/daily-close/{session_id}", {"reconciliation": {"countedCash": 11.3}}).get_json()["snapshot"]
 
     assert snapshot["sales"]["orders"] == 1
     assert snapshot["cashReconciliation"]["status"] == "unavailable"
     assert snapshot["cashReconciliation"]["expectedCash"] is None
+    assert counted["cashReconciliation"]["varianceStatus"] == "unavailable"
+    assert counted["cashReconciliation"]["overShort"] is None
+    assert "unavailable" in counted["cashReconciliation"]["varianceUnavailableReason"]
+
+
+def test_cancelled_card_order_keeps_expected_cash_and_zero_variance_available(app, client, cafe):
+    org, location, connection = cafe
+    _order(org, location, connection, [_pay(1130, 130, 0, CASH)])
+    _order(org, location, connection, [_pay(500, 0, 0, CARD)], status="cancelled")
+    db.session.commit()
+
+    session_id = _open(client, location.id)["session"]["id"]
+    counted = _patch(client, f"/api/pilot/daily-close/{session_id}", {"reconciliation": {"countedCash": 11.3}}).get_json()["snapshot"]["cashReconciliation"]
+
+    assert counted["status"] == "available"
+    assert counted["expectedCash"] == 11.3
+    assert counted["varianceStatus"] == "available"
+    assert counted["overShort"] == 0.0
+
+
+@pytest.mark.parametrize("tender", [None, ""])
+def test_excluded_successful_payment_without_tender_makes_cash_unavailable(app, client, cafe, tender):
+    org, location, connection = cafe
+    _order(org, location, connection, [_pay(1130, 130, 0, CARD)])
+    _order(org, location, connection, [_pay(500, 0, 0, tender)], status="cancelled")
+    db.session.commit()
+
+    session_id = _open(client, location.id)["session"]["id"]
+    counted = _patch(client, f"/api/pilot/daily-close/{session_id}", {"reconciliation": {"countedCash": 11.3}}).get_json()["snapshot"]["cashReconciliation"]
+
+    assert counted["status"] == "unavailable"
+    assert counted["expectedCash"] is None
+    assert counted["varianceStatus"] == "unavailable"
+    assert counted["overShort"] is None
+    assert "unavailable" in counted["varianceUnavailableReason"]
+
+
+def test_null_closed_time_open_partially_paid_order_is_not_attributed_and_requires_sandbox_policy(app, client, cafe):
+    """Known limitation: an open Clover tab has no business-day attribution without owner/Sandbox policy (#166)."""
+    org, location, connection = cafe
+    _order(org, location, connection, [_pay(1130, 130, 0, CARD)])
+    _order(org, location, connection, [_pay(500, 0, 0, CASH)], status="pending", review=True, closed=None)
+    db.session.commit()
+
+    snapshot = _get(client, location.id).get_json()["snapshot"]
+
+    assert snapshot["sales"]["orders"] == 1
+    assert snapshot["cashReconciliation"]["status"] == "available"
+    assert snapshot["cashReconciliation"]["expectedCash"] == 0.0
+    assert snapshot["cashReconciliation"].get("reason") is None
 
 
 def test_missing_tax_breakdown_never_shows_gross_as_net_and_blocks_food_cost(app, client, cafe):

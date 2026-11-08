@@ -1,7 +1,10 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from backend.clover_orders import normalize_order
+from backend.daily_close import _business_date_bounds
 from backend.clover_sales import CASH_TENDER_KEY, business_day_window, order_financials, summarize_orders
 from backend.clover_usage import _window as usage_business_day_window
 
@@ -55,22 +58,30 @@ def test_excluded_cash_order_is_marked_as_cash_evidence_but_cash_neutral_cancel_
     cancelled_cash = _order(1, [_pay(500)], status="cancelled")
     partial_cash = _order(2, [_pay(500)], status="pending", review=True)
     cancelled_card = _order(3, [_pay(500, tender="com.clover.tender.credit_card")], status="cancelled")
+    cancelled_missing = _order(4, [{key: value for key, value in _pay(500).items() if key != "tender"}], status="cancelled")
+    partial_empty = _order(5, [_pay(500, tender="")], status="pending", review=True)
 
-    day = summarize_orders([cancelled_cash, partial_cash, cancelled_card], WINDOW)
+    day = summarize_orders([cancelled_cash, partial_cash, cancelled_card, cancelled_missing, partial_empty], WINDOW)
 
     by_id = {exception["orderId"]: exception for exception in day.exceptions}
     assert by_id[1] == {"orderId": 1, "cloverOrderId": "C1", "reason": "cancelled", "cashEvidence": True}
     assert by_id[2] == {"orderId": 2, "cloverOrderId": "C2", "reason": "not_fully_paid", "cashEvidence": True}
     assert "cashEvidence" not in by_id[3]
+    assert by_id[4]["cashEvidence"] is True and by_id[5]["cashEvidence"] is True
 
 
-def test_sales_and_usage_helpers_use_the_same_dst_aware_local_day_window():
-    cases = ((date(2026, 3, 8), 23), (date(2026, 11, 1), 25), (date(2026, 2, 15), 24))
-    for business_date, hours in cases:
-        sales_window = business_day_window(business_date, "America/Toronto")
-        usage_window = usage_business_day_window(business_date, "America/Toronto")
-        assert sales_window == usage_window
-        assert (sales_window[1] - sales_window[0]).total_seconds() == hours * 3600
+@pytest.mark.parametrize(
+    ("business_date", "hours"),
+    ((date(2026, 3, 8), 23), (date(2026, 11, 1), 25), (date(2026, 2, 15), 24)),
+)
+def test_sales_usage_and_daily_close_helpers_use_the_same_dst_aware_local_day_window(business_date, hours):
+    sales_window = business_day_window(business_date, "America/Toronto")
+    usage_window = usage_business_day_window(business_date, "America/Toronto")
+    daily_start, daily_inclusive_end = _business_date_bounds(SimpleNamespace(timezone="America/Toronto"), business_date)
+
+    assert sales_window == usage_window
+    assert (sales_window[1] - sales_window[0]).total_seconds() == hours * 3600
+    assert (daily_start, daily_inclusive_end + timedelta(microseconds=1)) == sales_window
 
 
 def test_order_is_attributed_by_closed_time_not_an_untrusted_payment_date():
@@ -117,9 +128,6 @@ def test_normalize_order_captures_amounts_for_sales_math():
     n = normalize_order(payload)
     fin = order_financials(1, n.raw)
     assert (fin.net_cents, fin.tax_cents, fin.tip_cents, fin.cash_cents, fin.delivery) == (1000, 130, 150, 1280, True)
-
-
-import pytest
 
 
 @pytest.mark.parametrize("flag", ["incomplete", "lineItemsIncomplete", "financialIncomplete", "refundsUnverified", "paymentStateConflict"])

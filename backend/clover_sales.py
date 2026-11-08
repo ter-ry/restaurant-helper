@@ -107,7 +107,7 @@ def _has_successful_cash_payment(raw: Mapping[str, Any]) -> bool:
     return any(
         isinstance(payment, Mapping)
         and str(payment.get("result") or "").upper() in SUCCESS_RESULTS
-        and str(payment.get("tender") or "") == CASH_TENDER_KEY
+        and (not str(payment.get("tender") or "") or str(payment.get("tender")) == CASH_TENDER_KEY)
         for payment in (raw.get("payments") or [])
     )
 
