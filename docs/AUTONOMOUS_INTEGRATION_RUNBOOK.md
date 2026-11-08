@@ -12,6 +12,8 @@
 
 The `develop` branch was initialized from `main` at `ef45f4806273592b30d94477359bc236ced61617`. The default branch stays `main`. `CI` runs on pull requests and pushes for both branches. Do not change `deploy.yml` to deploy from `develop`. Independently verify Render service branch/auto-deploy and database-migration settings before activation; no inference from GitHub Pages alone.
 
+**Bootstrap order:** first merge the independently reviewed foundation PR #269 into `main` with explicit owner approval. This does **not** automatically update the already-created `develop` branch. The owner must then sync the approved foundation commit from `main` into `develop` through a separate reviewed, manual PR, so `develop` itself contains the new CI trigger and runbook. Confirm CI executes for a harmless `develop`-targeting PR *before* activating strict required checks or shifting workers. Keep main/develop synchronized for later main-only hotfixes via reviewed sync PRs; never force-update develop.
+
 **Transition:** existing PRs #265, #266 and #267 keep their current target bases until their owners complete them or explicitly agree on retargeting. Do not turn scheduled workers toward `develop` while the gatekeeper is disabled or the ruleset is unconfigured. After protection and successful dry runs, update the persistent `AGENTS.md`, `CLAUDE.md` import where appropriate, worker/reviewer schedule instructions, and issue claim rules together. Never silently strand open PRs on `main`. New feature PRs should then target `develop`, not `main`; release PRs should target `main` from `develop` and remain owner-controlled.
 
 ## Required GitHub protection settings — OWNER ACTION
@@ -48,7 +50,7 @@ Merge with an expected exact head SHA (compare-and-swap) and revalidate after an
 
 ## Controlled activation and rollback checklist
 
-1. Owner merges the reviewed **foundation PR**. Confirm CI runs on a harmless PR into `develop`, and that `develop` pushes do not invoke the Pages deployment.
+1. Owner merges the reviewed **foundation PR** to `main`, then separately syncs that approved commit into `develop` by an owner-controlled PR. Confirm CI runs on a harmless PR into `develop`, and that `develop` pushes do not invoke the Pages deployment.
 2. Owner configures and verifies separate `main` and `develop` rulesets. Demonstrate required checks and unresolved conversations block merging.
 3. Repair #266 and independently review any new merge gatekeeper implementation. Verify actual GitHub permission provenance; all gatekeeper tests run in CI.
 4. Dry-run a harmless low-risk PR on `develop` with auto-merge **OFF**; test success, failed CI, missing review, stale review, unresolved outdated thread, changed SHA, merge conflict, blocked task, high-risk module, and internal workflow change cases. Test code must not execute with privileged workflow credentials.
