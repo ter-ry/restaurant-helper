@@ -146,6 +146,16 @@ it("ranks weekly menu movers by absolute quantity change", async () => {
       expect(screen.getByText("Collected sales").nextElementSibling).toHaveTextContent("Unavailable");
     });
 
+    it("shows No comparison for menu items when the prior period is unverified (no quantityDelta)", async () => {
+      const { quantityDelta: _d, quantityDeltaPercent: _p, ...noDelta } = cloverSales.byMenuItem[0];
+      mockFetch.mockResolvedValueOnce({ ...cloverReport, sales: { ...cloverSales, byMenuItem: [noDelta] }, period: { ...cloverReport.period, view: "weekly" }, changes: { sales: null, orders: null, purchaseSpend: { current: 0, prior: 0, delta: 0, percent: null }, menuMovers: [] } });
+      render(<MemoryRouter><PilotReportsPage initialView="weekly" /></MemoryRouter>);
+      await waitFor(() => expect(screen.getByText("Menu-item breakdown")).toBeInTheDocument());
+      const row = screen.getByText("Chicken Plate").closest("tr") as HTMLElement;
+      expect(row).toHaveTextContent("No comparison");
+      expect(row).not.toHaveTextContent("New");
+    });
+
     it("lists menu items without fake money columns and says why when item sales are unavailable", async () => {
       mockFetch.mockResolvedValueOnce({ ...cloverReport, sales: { ...cloverSales, byMenuItem: [], byMenuItemUnavailableReason: "Item sales need verified sales and complete inventory usage for the whole period." } });
       render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);

@@ -123,3 +123,12 @@ def test_normalized_order_with_unverified_refunds_never_contributes():
     order = _order(1, [], status=n.normalized_status, review=n.requires_review, raw=n.raw)
     day = summarize_orders([order], WINDOW)
     assert day.order_count == 0 and day.net_sales_cents == 0 and day.exceptions
+
+
+def test_refund_is_flagged_even_when_incomplete_evidence_is_the_primary_reason():
+    refunded_incomplete = _order(1, [_pay(100)], status="paid", review=True, raw={"refunds": [{"id": "r", "amount": 100}], "incomplete": True})
+    plain_review = _order(2, [_pay(100)], status="paid", review=True)
+    day = summarize_orders([refunded_incomplete, plain_review], WINDOW)
+    by_id = {e["orderId"]: e for e in day.exceptions}
+    assert by_id[1]["reason"] == "needs_review" and by_id[1]["hasRefund"] is True
+    assert by_id[2]["hasRefund"] is False

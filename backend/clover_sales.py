@@ -124,7 +124,10 @@ def order_financials(order_id: Any, raw: Mapping[str, Any]) -> OrderFinancials:
 
 
 def _exception(order: Any, reason: str) -> dict[str, Any]:
-    return {"orderId": getattr(order, "id", None), "cloverOrderId": getattr(order, "clover_order_id", None), "reason": reason}
+    raw = getattr(order, "raw_payload_json", None) or {}
+    has_refund = bool(raw.get("refunds")) or getattr(order, "normalized_status", "") == "refunded"
+    # hasRefund records known refund evidence independently of the primary exclusion reason (e.g. incomplete evidence).
+    return {"orderId": getattr(order, "id", None), "cloverOrderId": getattr(order, "clover_order_id", None), "reason": reason, "hasRefund": has_refund}
 
 
 def summarize_orders(orders: Iterable[Any], window: tuple[datetime, datetime]) -> CloverDaySales:

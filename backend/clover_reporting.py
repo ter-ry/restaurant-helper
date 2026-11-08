@@ -86,7 +86,7 @@ def clover_period(location, start: date, end: date, *, today: date | None = None
         usage_days.append(clover_usage_for_day(location, day, net_sales_cents=sales.net_sales_cents))
 
     excluded = [e for e in exceptions if e["reason"] not in _NON_BLOCKING_REASONS]
-    refund_orders = len({e["orderId"] for e in excluded if e["reason"] in _REFUND_REASONS})
+    refund_orders = len({e["orderId"] for e in excluded if e["reason"] in _REFUND_REASONS or e.get("hasRefund")})
     verified = {"orderCount": order_count, "netItemSales": _dollars(net), "tax": _dollars(tax), "tips": _dollars(tips)}
     includes_today = today is not None and start <= today <= end
 
