@@ -986,7 +986,7 @@ export async function disconnectPilotClover(organizationId: number) {
   });
 }
 
-async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function requestCsrfJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const csrfToken = await getPilotCsrfToken();
   return requestJson<T>(path, {
     ...init,

@@ -24,6 +24,7 @@ from .models import AuditEvent, DailyCloseSession, InventoryItem, InventoryMovem
 from .ocr import bp as ocr_bp
 from .tenant_context import apply_request_tenant_context
 from .daily_close import bp as daily_close_bp
+from .inventory_bulk_edit import bp as inventory_bulk_edit_bp
 from .negative_stock import bp as negative_stock_bp
 from .pilot_api import bp as pilot_api_bp
 from .organizations import bp as organizations_bp
@@ -232,6 +233,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(platform_admin_bp)
     app.register_blueprint(daily_close_bp)
     app.register_blueprint(negative_stock_bp)
+    app.register_blueprint(inventory_bulk_edit_bp)
     app.register_blueprint(square_integration_bp)
     app.register_blueprint(clover_integration_bp)
     app.register_blueprint(pilot_api_bp)
