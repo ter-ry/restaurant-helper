@@ -200,7 +200,7 @@ def _menu_sales(orders: list[SquareOrder], connection: SquareConnection | None, 
 
 
 def _purchasing(invoices: list[PurchaseInvoice], start: date, end: date) -> dict[str, Any]:
-    scoped = [invoice for invoice in invoices if start <= invoice.invoice_date <= end]
+    scoped = [invoice for invoice in invoices if start <= invoice.invoice_date <= end and invoice.status != "Corrected"]  # voided invoices are not spend (#232)
     completed = [invoice for invoice in scoped if invoice.status == "Completed"]
     supplier: dict[str, dict[str, Any]] = {}
     for invoice in completed:

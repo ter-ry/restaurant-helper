@@ -311,7 +311,7 @@ def _price_changes_for_location(
     invoices: list[PurchaseInvoice] | None = None,
 ):
     invoices = invoices if invoices is not None else PurchaseInvoice.query.filter_by(location_id=location_id).order_by(PurchaseInvoice.invoice_date.asc(), PurchaseInvoice.created_at.asc()).all()
-    invoices = sorted(invoices, key=lambda invoice: (invoice.invoice_date, invoice.created_at))
+    invoices = sorted((invoice for invoice in invoices if invoice.status != "Corrected"), key=lambda invoice: (invoice.invoice_date, invoice.created_at))
     seen: dict[tuple[str, str], Decimal] = {}
     changes: list[dict[str, Any]] = []
     for invoice in invoices:
@@ -436,6 +436,7 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     )
     if "DAILY_CLOSE" in enabled_modules and square_connection and has_square_sales and (today_daily_close is None or today_daily_close.status == "DRAFT"):
         daily_close_attention = 1
+    invoices = [invoice for invoice in invoices if invoice.status != VOIDED_INVOICE_STATUS]  # voided invoices are not spend (#232)
     week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
     purchase_workflow = {
@@ -921,9 +922,222 @@ def _refresh_inventory_snapshot_from_recent_receipt(
     item.last_received_at = latest_line.invoice.received_at or latest_line.invoice.posted_at or now
 
 
-@bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/correct")
-@login_required
-def correct_purchase_invoice(invoice_id: int):
+INVOICE_VOID_SOURCE_TYPE = "invoice correction"
+VOIDED_INVOICE_STATUS = "Corrected"  # legacy status name kept: the UI and reports already treat it as voided
+
+
+def _find_void_replay(invoice: PurchaseInvoice, idempotency_key: str) -> bool:
+    if not idempotency_key:
+        return False
+    events = AuditEvent.query.filter_by(
+        organization_id=invoice.organization_id, event_type="purchases.invoice_corrected", entity_type="purchase_invoice", entity_id=str(invoice.id)
+    ).all()
+    return any((event.metadata_json or {}).get("idempotencyKey") == idempotency_key for event in events)
+
+
+def _create_correction_draft(invoice: PurchaseInvoice, actor_id: int) -> PurchaseInvoice:
+    """Copy a voided invoice into a new Draft that is reviewed and received as a new transaction (#232).
+
+    The supplier + number is unique per location, so the copy gets a ``-C<n>`` suffix the user can edit
+    to the supplier's real corrected number. The original rows are never touched.
+    """
+    base = f"{invoice.invoice_number}-C"
+    number = 1
+    while PurchaseInvoice.query.filter_by(
+        organization_id=invoice.organization_id, location_id=invoice.location_id, supplier_id=invoice.supplier_id, invoice_number=f"{base}{number}"
+    ).first() is not None:
+        number += 1
+    draft = PurchaseInvoice(
+        organization_id=invoice.organization_id,
+        location_id=invoice.location_id,
+        supplier_id=invoice.supplier_id,
+        invoice_number=f"{base}{number}"[:120],
+        invoice_date=invoice.invoice_date,
+        subtotal=invoice.subtotal,
+        tax=invoice.tax,
+        total_amount=invoice.total_amount,
+        notes=f"Corrected copy of invoice {invoice.invoice_number}. {invoice.notes}".strip(),
+        status="Draft",
+        source_file_name=invoice.source_file_name,
+        source_file_type=invoice.source_file_type,
+        source_file_key=invoice.source_file_key,
+        extracted_text=invoice.extracted_text,
+        extraction_status=invoice.extraction_status,
+        corrects_invoice_id=invoice.id,
+        created_by_user_id=actor_id,
+        updated_by_user_id=actor_id,
+    )
+    for line in invoice.lines:
+        draft.lines.append(
+            PurchaseInvoiceLine(
+                inventory_item_id=line.inventory_item_id,
+                supplier_item_mapping_id=line.supplier_item_mapping_id,
+                line_index=line.line_index,
+                description=line.description,
+                normalized_description=line.normalized_description,
+                purchase_unit=line.purchase_unit,
+                inventory_unit=line.inventory_unit,
+                conversion_factor=line.conversion_factor,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                line_total=line.line_total,
+                confidence=line.confidence,
+                needs_review=True,
+                previous_unit_price=line.previous_unit_price,
+                note=line.note,
+            )
+        )
+    db.session.add(draft)
+    return draft
+
+
+def _void_received_invoice(invoice_id: int, organization, location, reason: str, idempotency_key: str, create_draft: bool):
+    """Void a received invoice with append-only compensating movements, exactly once (#232).
+
+    Order matters: the invoice row is locked first (so a concurrent void sees the committed result),
+    then the item rows in id order (#248), then every line is validated *before* anything is written,
+    so a failure leaves no partial state. Returns a Flask ``(response, status)`` tuple.
+    """
+    invoice = (
+        PurchaseInvoice.query.execution_options(populate_existing=True)
+        .filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id)
+        .with_for_update()
+        .first()
+    )
+    if invoice is None:
+        db.session.rollback()
+        return json_error("Purchase invoice not found.", 404)
+    if invoice.status == VOIDED_INVOICE_STATUS:
+        replay = _find_void_replay(invoice, idempotency_key)
+        db.session.rollback()
+        if replay:
+            body = serialize_purchase_invoice(invoice)
+            body["replayed"] = True
+            return jsonify(body), 200
+        return json_error("This invoice has already been corrected.", 409)
+    if invoice.status != "Completed":
+        db.session.rollback()
+        return json_error("Only completed invoices can be corrected.", 409)
+
+    locked_items = lock_inventory_items(invoice.organization_id, invoice.location_id, [line.inventory_item_id for line in invoice.lines])
+    if InventoryMovement.query.filter_by(
+        organization_id=invoice.organization_id, location_id=invoice.location_id, source_type=INVOICE_VOID_SOURCE_TYPE, source_record_id=str(invoice.id)
+    ).first() is not None:
+        db.session.rollback()
+        return json_error("This invoice has already been corrected.", 409)
+
+    plans: list[tuple[PurchaseInvoiceLine, InventoryItem, InventoryMovement]] = []
+    for line in invoice.lines:
+        if line.inventory_item_id is None:
+            continue
+        item = locked_items.get(line.inventory_item_id)
+        receipt_movement = InventoryMovement.query.filter_by(
+            organization_id=invoice.organization_id,
+            location_id=invoice.location_id,
+            source_type="invoice receipt",
+            source_record_id=str(invoice.id),
+            source_line_id=str(line.id),
+        ).first()
+        if item is None or receipt_movement is None:
+            db.session.rollback()
+            return json_error("This invoice cannot be corrected because its receipt movements are missing.", 409)
+        if receipt_movement.unit != item.stock_unit:
+            db.session.rollback()
+            return json_error(
+                "This invoice cannot be corrected because an item's stock unit changed after it was received.",
+                409,
+                errors={"inventory": f"{item.name} was received in {receipt_movement.unit} but is now counted in {item.stock_unit}."},
+            )
+        plans.append((line, item, receipt_movement))
+
+    # Safety check per item across all of its lines: stock must still cover what this receipt added.
+    shortages: dict[str, str] = {}
+    totals: dict[int, Decimal] = {}
+    for _, item, receipt_movement in plans:
+        totals[item.id] = totals.get(item.id, Decimal("0")) + Decimal(receipt_movement.quantity_delta)
+    for item_id, received in totals.items():
+        item = locked_items[item_id]
+        on_hand = Decimal(item.current_on_hand)
+        if (on_hand - received).quantize(QTY) < 0:
+            shortages[f"inventory.{item.id}"] = (
+                f"{item.name}: this invoice added {received.normalize():f} {item.stock_unit} but only {on_hand.normalize():f} {item.stock_unit} is on hand now "
+                "(the stock was used or adjusted after the receipt). Resolve the stock first, then void again."
+            )
+    if shortages:
+        db.session.rollback()
+        return json_error("This invoice cannot be corrected because stock has already moved.", 409, errors=shortages)
+
+    now = _now()
+    affected_items: set[int] = set()
+    movement_ids: list[int] = []
+    for line, item, receipt_movement in plans:
+        correction_delta = (Decimal(receipt_movement.quantity_delta) * Decimal("-1")).quantize(QTY)
+        before = Decimal(item.current_on_hand)
+        after = (before + correction_delta).quantize(QTY)
+        movement = InventoryMovement(
+            organization_id=invoice.organization_id,
+            location_id=invoice.location_id,
+            inventory_item_id=item.id,
+            quantity_delta=correction_delta,
+            quantity_before=before,
+            quantity_after=after,
+            unit=item.stock_unit,
+            source_type=INVOICE_VOID_SOURCE_TYPE,
+            source_record_id=str(invoice.id),
+            source_line_id=str(line.id),
+            reason=f"Correction for invoice {invoice.invoice_number}: {reason}",
+            actor_user_id=current_user.id,
+        )
+        item.current_on_hand = after
+        item.average_unit_cost = reverse_weighted_average_inventory_cost(
+            before, item.average_unit_cost, Decimal(receipt_movement.quantity_delta), _receipt_stock_unit_cost(line)
+        )
+        item.updated_by_user_id = current_user.id
+        item.updated_at = now
+        affected_items.add(item.id)
+        db.session.add(movement)
+
+    invoice.status = VOIDED_INVOICE_STATUS
+    invoice.voided_at = now
+    invoice.voided_by_user_id = current_user.id
+    invoice.void_reason = reason
+    invoice.updated_by_user_id = current_user.id
+    invoice.posted_at = now
+    try:
+        db.session.flush()  # the unique movement source key is the database backstop for exactly-once
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This invoice has already been corrected.", 409)
+
+    for item_id in sorted(affected_items):
+        _refresh_inventory_snapshot_from_recent_receipt(
+            invoice.organization_id, invoice.location_id, locked_items[item_id], excluded_invoice_id=invoice.id, actor_id=current_user.id
+        )
+    draft = _create_correction_draft(invoice, current_user.id) if create_draft else None
+    if draft is not None:
+        db.session.flush()
+        db.session.expire(invoice, ["corrected_by_invoice_id"])  # loaded before the draft existed
+    record_audit_event(
+        event_type="purchases.invoice_corrected",
+        entity_type="purchase_invoice",
+        entity_id=invoice.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "invoiceNumber": invoice.invoice_number,
+            "reason": reason,
+            "affectedItemIds": sorted(affected_items),
+            "idempotencyKey": idempotency_key,
+            "correctionDraftInvoiceId": draft.id if draft is not None else None,
+        },
+    )
+    body = serialize_purchase_invoice(invoice)
+    body["replayed"] = False
+    return _commit_json(body)
+
+
+def _void_invoice_route(invoice_id: int):
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
@@ -931,114 +1145,31 @@ def correct_purchase_invoice(invoice_id: int):
     permission_error = _require_role(membership, "purchases.manage")
     if permission_error is not None:
         return permission_error
-    invoice = PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id).first()
-    if invoice is None:
-        return json_error("Purchase invoice not found.", 404)
-    if invoice.status == "Corrected":
-        return json_error("This invoice has already been corrected.", 409)
-    if invoice.status != "Completed":
-        return json_error("Only completed invoices can be corrected.", 409)
-
     payload = _json_body()
     reason = str(payload.get("reason") or "").strip()
     if not reason:
         return json_error("Validation failed.", 400, errors={"reason": "Enter a correction reason."})
-
-    # Lock first, then check for a prior correction, so a concurrent correction that committed while
-    # we waited is seen and a second compensating movement is never written (#248).
-    locked_items = lock_inventory_items(invoice.organization_id, invoice.location_id, [line.inventory_item_id for line in invoice.lines])
-    existing_correction = InventoryMovement.query.filter_by(
-        organization_id=invoice.organization_id,
-        location_id=invoice.location_id,
-        source_type="invoice correction",
-        source_record_id=str(invoice.id),
-    ).first()
-    if existing_correction is not None:
-        return json_error("This invoice has already been corrected.", 409)
-
-    now = _now()
-    affected_items: set[int] = set()
-
+    idempotency_key = _reversal_idempotency_key(payload)
+    create_draft = bool(payload.get("createCorrectionDraft", False))
     try:
-        for line in invoice.lines:
-            item = locked_items.get(line.inventory_item_id) if line.inventory_item_id else None
-            if item is None:
-                continue
-
-            receipt_movement = InventoryMovement.query.filter_by(
-                organization_id=invoice.organization_id,
-                location_id=invoice.location_id,
-                source_type="invoice receipt",
-                source_record_id=str(invoice.id),
-                source_line_id=str(line.id),
-            ).first()
-            if receipt_movement is None:
-                return json_error("This invoice cannot be corrected because its receipt movements are missing.", 409)
-
-            correction_delta = Decimal(receipt_movement.quantity_delta) * Decimal("-1")
-            before = Decimal(item.current_on_hand)
-            after = (before + correction_delta).quantize(QTY)
-            receipt_unit_cost = _receipt_stock_unit_cost(line)
-            if after < 0:
-                return json_error(
-                    "This invoice cannot be corrected because stock has already moved.",
-                    409,
-                    errors={"inventory": f"Correction would make {item.name} negative."},
-                )
-
-            movement = InventoryMovement(
-                organization_id=invoice.organization_id,
-                location_id=invoice.location_id,
-                inventory_item_id=item.id,
-                quantity_delta=correction_delta,
-                quantity_before=before,
-                quantity_after=after,
-                unit=item.stock_unit,
-                source_type="invoice correction",
-                source_record_id=str(invoice.id),
-                source_line_id=str(line.id),
-                reason=f"Correction for invoice {invoice.invoice_number}: {reason}",
-                actor_user_id=current_user.id,
-            )
-            item.current_on_hand = after
-            item.average_unit_cost = reverse_weighted_average_inventory_cost(before, item.average_unit_cost, Decimal(receipt_movement.quantity_delta), receipt_unit_cost)
-            affected_items.add(item.id)
-            db.session.add(movement)
-
-        invoice.status = "Corrected"
-        invoice.updated_by_user_id = current_user.id
-        invoice.posted_at = now
-
-        for item_id in sorted(affected_items):
-            item = locked_items.get(item_id)
-            if item is None:
-                continue
-            _refresh_inventory_snapshot_from_recent_receipt(
-                invoice.organization_id,
-                invoice.location_id,
-                item,
-                excluded_invoice_id=invoice.id,
-                actor_id=current_user.id,
-            )
-
-        record_audit_event(
-            event_type="purchases.invoice_corrected",
-            entity_type="purchase_invoice",
-            entity_id=invoice.id,
-            organization_id=organization.id,
-            location_id=location.id,
-            actor_user_id=current_user.id,
-            metadata={
-                "invoiceNumber": invoice.invoice_number,
-                "reason": reason,
-                "affectedItemIds": sorted(affected_items),
-            },
-        )
-        response_payload = serialize_purchase_invoice(invoice)
-        return _commit_json(response_payload)
+        return _void_received_invoice(invoice_id, organization, location, reason, idempotency_key, create_draft)
     except Exception:
         db.session.rollback()
         raise
+
+
+@bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/void")
+@login_required
+def void_purchase_invoice(invoice_id: int):
+    """Void a received invoice (compensating movements, once) and optionally open a linked corrected draft (#232)."""
+    return _void_invoice_route(invoice_id)
+
+
+@bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/correct")
+@login_required
+def correct_purchase_invoice(invoice_id: int):
+    """Backward-compatible alias of the void endpoint (same service, same guarantees)."""
+    return _void_invoice_route(invoice_id)
 
 
 @bp.get("/api/pilot/bootstrap")

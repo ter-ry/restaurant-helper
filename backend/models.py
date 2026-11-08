@@ -215,6 +215,13 @@ class PurchaseInvoice(TimestampMixin, db.Model):
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     posted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Void/correction lineage (#232). A received invoice is voided by compensating ledger movements
+    # (status "Corrected"); the optional corrected copy is a new Draft pointing back at the original.
+    # The unique constraint allows at most one corrected copy per voided invoice.
+    corrects_invoice_id = db.Column(db.Integer, db.ForeignKey("purchase_invoices.id", ondelete="SET NULL"), nullable=True, unique=True)
+    voided_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    voided_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    void_reason = db.Column(db.Text, nullable=False, default="")
 
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")
@@ -251,6 +258,14 @@ class PurchaseInvoiceLine(TimestampMixin, db.Model):
     invoice = db.relationship("PurchaseInvoice", back_populates="lines")
     inventory_item = db.relationship("InventoryItem")
     supplier_item_mapping = db.relationship("SupplierItemMapping")
+
+
+# id of the corrected draft that replaces this (voided) invoice, read inline with the invoice row so list
+# endpoints pay no extra query per invoice (#232).
+_corrected_copy = db.aliased(PurchaseInvoice)
+PurchaseInvoice.corrected_by_invoice_id = db.column_property(
+    db.select(_corrected_copy.id).where(_corrected_copy.corrects_invoice_id == PurchaseInvoice.id).correlate_except(_corrected_copy).scalar_subquery()
+)
 
 
 class InventoryMovement(TimestampMixin, db.Model):
