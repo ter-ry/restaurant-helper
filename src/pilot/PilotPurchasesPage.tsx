@@ -288,11 +288,17 @@ function VoidInvoicePanel({
 
 function PurchaseInvoiceDetailsModal({
   invoice,
+  refreshFailure,
+  refreshing,
+  onRefresh,
   onClose,
   onVoid,
   onOpenInvoice,
 }: {
   invoice: PilotPurchaseInvoice | null;
+  refreshFailure: string | null;
+  refreshing: boolean;
+  onRefresh: () => void;
   onClose: () => void;
   onVoid: (invoice: PilotPurchaseInvoice, request: { reason: string; createCorrectionDraft: boolean; idempotencyKey: string }) => Promise<void>;
   onOpenInvoice: (invoiceId: number) => void;
@@ -350,6 +356,13 @@ function PurchaseInvoiceDetailsModal({
                 </div>
               </div>
             </Card>
+
+            {refreshFailure ? (
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <span>{refreshFailure}</span>
+                <Button variant="secondary" type="button" disabled={refreshing} onClick={onRefresh}>{refreshing ? "Refreshing…" : "Refresh purchase status"}</Button>
+              </div>
+            ) : null}
 
             <VoidInvoicePanel key={`${invoice.id}-${invoice.status}`} invoice={invoice} onVoid={onVoid} onOpenInvoice={onOpenInvoice} />
 
@@ -424,6 +437,8 @@ export function PilotPurchasesPage() {
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
   const [receiveReconciliationInvoiceId, setReceiveReconciliationInvoiceId] = useState<number | null>(null);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
+  // Set when a void was confirmed by the server but the follow-up refresh failed; cleared once a refresh succeeds.
+  const [voidRefresh, setVoidRefresh] = useState<{ invoiceId: number; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -526,6 +541,8 @@ export function PilotPurchasesPage() {
   const closeDetailInvoice = () => {
     setDetailInvoice(null);
     navigate(location.pathname, { replace: true });
+    // The unrefreshed state stays visible on the page error banner, whose Retry re-runs the load.
+    setVoidRefresh(null);
   };
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
@@ -849,8 +866,18 @@ export function PilotPurchasesPage() {
     setDetailInvoice(voided);
     // Reconcile with the server: the invoice list, inventory and dashboard figures all changed.
     const reconciled = await load(voided.id);
-    if (!reconciled) {
-      setError(`Invoice ${voided.invoiceNumber} was voided, but the page could not refresh. Reload the page to see updated totals and stock.`);
+    if (reconciled) {
+      setVoidRefresh(null);
+    } else {
+      setVoidRefresh({ invoiceId: voided.id, message: `Invoice ${voided.invoiceNumber} was voided, but the page could not refresh. Use Refresh purchase status to see updated totals and stock.` });
+    }
+  };
+
+  const refreshAfterVoid = async () => {
+    if (!voidRefresh || loading) return;
+    const reconciled = await load(voidRefresh.invoiceId);
+    if (reconciled) {
+      setVoidRefresh(null);
     }
   };
 
@@ -1427,7 +1454,7 @@ export function PilotPurchasesPage() {
           </div>
         </Modal>
       ) : null}
-      <PurchaseInvoiceDetailsModal invoice={detailInvoice} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
+      <PurchaseInvoiceDetailsModal invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice?.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
     </div>
   );
 }

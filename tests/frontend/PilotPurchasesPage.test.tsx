@@ -848,5 +848,34 @@ describe("PilotPurchasesPage", () => {
       const [first, second] = mockApi.voidPilotPurchaseInvoice.mock.calls.map((call) => call[1].idempotencyKey);
       expect(second).toEqual(first);
     });
+
+    it("keeps the confirmed void when the refresh fails, removes stale void controls and reconciles through Refresh purchase status", async () => {
+      const reason = await openCompleted();
+      fireEvent.change(reason, { target: { value: "Supplier credit note" } });
+      fireEvent.click(screen.getByRole("button", { name: "Void receipt" }));
+      mockApi.fetchPilotPurchases.mockRejectedValueOnce(new Error("network down"));
+      fireEvent.click(await screen.findByRole("button", { name: "Yes, void this invoice" }));
+
+      expect(await screen.findByText(/was voided, but the page could not refresh/i)).toBeVisible();
+      expect(screen.getByText("This invoice was voided")).toBeVisible();
+      expect(screen.queryByLabelText("Void reason")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Yes, void this invoice" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Void receipt" })).not.toBeInTheDocument();
+      expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(1);
+
+      const loadsBefore = mockApi.fetchPilotPurchases.mock.calls.length;
+      // Authoritative server state after the void: invoice 1 is now Corrected.
+      mockApi.fetchPilotPurchases.mockImplementationOnce(async () => {
+        const response = createPurchasesResponse();
+        response.invoices = response.invoices.map((entry) => (entry.id === 1 ? { ...entry, status: "Corrected", voidReason: "Supplier credit note" } : entry));
+        return response;
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Refresh purchase status" }));
+      await waitFor(() => expect(mockApi.fetchPilotPurchases.mock.calls.length).toBeGreaterThan(loadsBefore));
+      await waitFor(() => expect(screen.queryByText(/could not refresh/i)).not.toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "Refresh purchase status" })).not.toBeInTheDocument();
+      expect(screen.getByText("This invoice was voided")).toBeVisible();
+      expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(1);
+    });
   });
 });
