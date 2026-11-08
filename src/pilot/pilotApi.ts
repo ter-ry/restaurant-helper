@@ -623,22 +623,39 @@ export interface PilotDashboardInsights {
 }
 
 export interface PilotReportResponse {
+  /** "clover" for Clover-only locations; absent for the Square-sourced report. */
+  provider?: "clover";
   scope: Record<string, unknown>;
   period: Record<string, unknown>;
   sales: {
-    grossItemSales: number;
-    totalCollected: number;
+    /** Clover reports only: a figure Flowtally cannot verify is null, never zero. */
+    source?: string;
+    status?: "available" | "partial" | "unavailable";
+    available?: boolean;
+    unavailableReason?: string | null;
+    includesToday?: boolean;
+    grossItemSales: number | null;
+    netItemSales?: number | null;
+    discounts?: number | null;
+    tax?: number | null;
+    tips?: number | null;
+    refunds?: number | null;
+    totalCollected: number | null;
     orderCount: number;
     unitsSold: number | null;
+    excludedOrderCount?: number;
+    refundOrderCount?: number;
+    verified?: { orderCount: number; netItemSales: number | null; tax: number | null; tips: number | null } | null;
+    byMenuItemUnavailableReason?: string | null;
     byMenuItem: Array<Record<string, any>>;
     unmappedLines: Array<Record<string, any>>;
   };
   purchasing: Record<string, unknown>;
   inventory: Record<string, unknown>;
-  costing: { estimatedFoodCostPercent: number | null; costCoveragePercent: number; costReadySalesAmount: number; totalMappedMenuSalesAmount: number };
+  costing: { estimatedFoodCostPercent: number | null; costCoveragePercent: number | null; costReadySalesAmount: number | null; totalMappedMenuSalesAmount: number | null; usageAvailable?: boolean; usageCost?: number | null; unavailableReason?: string | null };
   variance: Record<string, unknown>;
-  usageVariance: { valid: boolean; rows: Array<Record<string, any>> };
-  changes: { sales?: Record<string, any> | null; orders?: Record<string, any> | null; purchaseSpend?: Record<string, any> | null; menuMovers: Array<Record<string, any>> };
+  usageVariance: { valid: boolean; message?: string | null; rows: Array<Record<string, any>> };
+  changes: { sales?: Record<string, any> | null; orders?: Record<string, any> | null; purchaseSpend?: Record<string, any> | null; menuMovers: Array<Record<string, any>> } | null;
   exceptions: Array<Record<string, unknown>>;
   generatedAt: string;
 }

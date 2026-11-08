@@ -24,6 +24,13 @@ function displayDate(value: unknown) {
   return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" }).format(new Date(value + "T12:00:00Z"));
 }
 
+const UNAVAILABLE = "Unavailable";
+
+/** formatMoney() renders null as $0.00; a figure Flowtally could not verify must never look like zero. */
+function moneyOrUnavailable(value: number | null | undefined) {
+  return value == null ? UNAVAILABLE : formatMoney(value);
+}
+
 function Change({ value }: { value: Record<string, any> | null | undefined }) {
   if (!value) return <span className="text-muted">No comparison</span>;
   const positive = Number(value.delta) >= 0;
@@ -41,6 +48,10 @@ const EXCEPTION_LINKS: Record<string, [string, string]> = {
   purchase: ["/app/purchases", "Review invoices"],
   invoice: ["/app/purchases", "Review invoices"],
   purchase_review: ["/app/purchases", "Review invoices"],
+  clover_sales_unavailable: ["/app/square", "Review Clover"],
+  clover_sales_exceptions: ["/app/square", "Review Clover"],
+  clover_usage_unavailable: ["/app/square", "Review Clover"],
+  unmapped_clover_sales: ["/app/square", "Review mappings"],
   menu: ["/app/menu-costing", "Open Menu Costing"],
   recipe: ["/app/menu-costing", "Open Menu Costing"],
   menu_costing: ["/app/menu-costing", "Open Menu Costing"],
@@ -82,6 +93,8 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
         : await fetchPilotReport(view, dailyDate || undefined);
       setData(response);
     } catch (err) {
+      // Never keep showing the previous period's figures under an error banner.
+      setData(null);
       setError(err instanceof Error ? err.message : "Could not load the report.");
     } finally {
       setLoading(false);
@@ -94,11 +107,16 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
 
   const sales = data?.sales;
   const period = data?.period ?? {};
+  const isClover = data?.provider === "clover";
+  const salesStatus = sales?.status ?? (sales?.available === false ? "unavailable" : "available");
+  const salesAvailable = salesStatus === "available";
+  const verified = sales?.verified;
+  const ordersLabel = salesStatus === "unavailable" ? UNAVAILABLE : salesStatus === "partial" ? `${formatNumber(sales?.orderCount)} verified` : formatNumber(sales?.orderCount);
   const metrics = [
-    ["Orders", formatNumber(sales?.orderCount)],
+    ["Orders", ordersLabel],
     ["Units sold", sales?.unitsSold == null ? "Unavailable" : formatNumber(sales.unitsSold)],
-    ["Estimated food cost", data?.costing?.estimatedFoodCostPercent == null ? "Unavailable" : data.costing.estimatedFoodCostPercent.toFixed(1) + "%"],
-    ["Cost coverage", data ? data.costing.costCoveragePercent.toFixed(0) + "%" : "—"],
+    ["Estimated food cost", data?.costing?.estimatedFoodCostPercent == null ? UNAVAILABLE : data.costing.estimatedFoodCostPercent.toFixed(1) + "%"],
+    ["Cost coverage", data?.costing.costCoveragePercent == null ? "—" : data.costing.costCoveragePercent.toFixed(0) + "%"],
   ];
   const mostOrdered = [...(sales?.byMenuItem ?? [])].sort((left, right) => Number(right.quantity ?? 0) - Number(left.quantity ?? 0))[0];
   const actionableExceptions = (data?.exceptions ?? []).filter((entry) => String(entry.type ?? "").toLowerCase() !== "missing_count_evidence");
@@ -107,11 +125,12 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
     || String(left.name).localeCompare(String(right.name)),
   );
   const breakdown = [
-    ["Gross item sales", formatMoney(sales?.grossItemSales)],
-    ["Discounts", formatMoney((sales as any)?.discounts)],
-    ["Net item sales", formatMoney((sales as any)?.netItemSales)],
-    ["Tax", formatMoney((sales as any)?.tax)],
-    ["Tips", formatMoney((sales as any)?.tips)],
+    ["Gross item sales", moneyOrUnavailable(sales?.grossItemSales)],
+    ["Discounts", moneyOrUnavailable(sales?.discounts)],
+    ["Net item sales", moneyOrUnavailable(sales?.netItemSales)],
+    ["Tax", moneyOrUnavailable(sales?.tax)],
+    ["Tips", moneyOrUnavailable(sales?.tips)],
+    ...(isClover ? [["Refunds", sales?.refunds == null ? (sales?.refundOrderCount ? `${UNAVAILABLE} · ${sales.refundOrderCount} order(s)` : UNAVAILABLE) : formatMoney(sales.refunds)]] : []),
   ];
 
   return <div className="space-y-5">
@@ -126,27 +145,27 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
         </div>
       </div>
       {view === "weekly" && data ? <p className="mt-4 text-sm text-muted">Selected period: <strong className="text-ink">{displayDate(period.startDate)} – {displayDate(period.endDate)}</strong> · Compared with: <strong className="text-ink">{displayDate(period.priorStartDate)} – {displayDate(period.priorEndDate)}</strong></p> : null}
-      {error ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div> : null}
+      {error ? <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><span>{error}</span><Button type="button" variant="secondary" onClick={() => void load()}>Try again</Button></div> : null}
       {loading && !data ? <p className="mt-4 text-sm text-muted" aria-busy="true">Loading report...</p> : null}
     </Card>
-    {data ? <><Card className="border-brand-100 bg-brand-50/30 p-5 sm:p-6">
+    {data ? <>{!salesAvailable ? <div role="status" data-testid="sales-unavailable" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">{salesStatus === "partial" ? "Clover sales are only partly verified" : "Clover sales are unavailable"}</p><p className="mt-1">{sales?.unavailableReason ?? "Flowtally cannot verify sales for this period."}</p>{salesStatus === "partial" && verified ? <p className="mt-2 text-xs">Verified orders only ({verified.orderCount}): net item sales {moneyOrUnavailable(verified.netItemSales)}, tax {moneyOrUnavailable(verified.tax)}, tips {moneyOrUnavailable(verified.tips)}. Totals stay hidden until the excluded orders are resolved. <Link className="font-semibold underline" to="/app/daily-close">Use Daily Close</Link></p> : null}</div> : null}{isClover && sales?.includesToday && salesAvailable ? <p className="text-xs text-muted">This period includes today; only orders already fetched from Clover are counted.</p> : null}<Card className="border-brand-100 bg-brand-50/30 p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-5">
-        <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Total collected</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{formatMoney(sales?.totalCollected)}</p>{view === "weekly" ? <p className="mt-2 text-sm text-muted">{displayDate(period.startDate)} – {displayDate(period.endDate)}</p> : null}</div>
+        <div><p className="text-xs font-bold uppercase tracking-wide text-muted">Total collected</p><p className="mt-1 text-4xl font-bold tracking-tight text-ink">{moneyOrUnavailable(sales?.totalCollected)}</p>{view === "weekly" ? <p className="mt-2 text-sm text-muted">{displayDate(period.startDate)} – {displayDate(period.endDate)}</p> : null}</div>
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">{metrics.map(([label, value]) => <div key={label}><p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-lg font-bold text-ink">{value}</p></div>)}</div>
       </div>
     </Card>
-    <Card className="p-5"><SectionHeader title="Sales breakdown" /><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">{breakdown.map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-muted">{label}</p><p className="mt-1 font-semibold text-ink">{value}</p></div>)}</div></Card>
+    <Card className="p-5"><SectionHeader title="Sales breakdown" /><div className={`mt-4 grid grid-cols-2 gap-3 ${isClover ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-5"}`}>{breakdown.map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-muted">{label}</p><p className="mt-1 font-semibold text-ink">{value}</p></div>)}</div></Card>
     {view === "daily" ? <div className={`grid gap-5 ${mostOrdered && actionableExceptions.length ? "lg:grid-cols-2" : ""}`}>
       {mostOrdered ? <Card className="p-5"><SectionHeader title="Menu performance" /><div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted">Most ordered</p><p className="mt-1 text-lg font-bold text-ink">{mostOrdered.name}</p><p className="mt-1 text-sm text-muted">{formatNumber(mostOrdered.quantity)} units</p></div></Card> : null}
       {actionableExceptions.length ? <Card className="p-5"><SectionHeader title="Needs attention" /><div className="mt-3 space-y-2">{actionableExceptions.map((entry, index) => { const [to, label] = exceptionLink(entry.type); return <div key={String(entry.type) + index} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 p-3"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" /><div><p className="text-sm font-semibold text-ink">{entry.title as string}</p><p className="text-xs text-muted">{entry.detail as string}</p></div></div>{to ? <Link className="shrink-0 text-xs font-semibold text-brand-700" to={to}>{label}</Link> : null}</div>; })}</div></Card> : null}
     </div> : null}
     {view === "weekly" && data.changes ? <div className={`grid gap-5 ${data.changes.menuMovers?.length ? "lg:grid-cols-2" : ""}`}>
-      <Card className="p-5"><SectionHeader title="Period comparison" /><div className="mt-4 grid gap-3 sm:grid-cols-3"><div><p className="text-sm text-muted">Collected sales</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.sales?.current)}</p><Change value={data.changes.sales} /></div><div><p className="text-sm text-muted">Orders</p><p className="mt-1 text-xl font-bold text-ink">{formatNumber(data.changes.orders?.current)}</p><Change value={data.changes.orders} /></div><div><p className="text-sm text-muted">Purchase spend</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.purchaseSpend?.current)}</p><Change value={data.changes.purchaseSpend} /></div></div></Card>
-      {data.changes.menuMovers?.length ? <Card className="p-5"><SectionHeader title="Menu movers" /><div className="mt-4 grid gap-3 sm:grid-cols-2">{menuMovers.slice(0, 4).map((row) => <div key={row.menuItemId} className="flex items-center justify-between rounded-xl border border-line bg-slate-50 p-3"><div><p className="text-sm font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{formatNumber(row.currentQuantity)} units vs {formatNumber(row.priorQuantity)} prior</p></div><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></div>)}</div></Card> : null}
+      <Card className="p-5"><SectionHeader title="Period comparison" /><div className="mt-4 grid gap-3 sm:grid-cols-3"><div><p className="text-sm text-muted">Collected sales</p><p className="mt-1 text-xl font-bold text-ink">{moneyOrUnavailable(data.changes.sales?.current)}</p><Change value={data.changes.sales} /></div><div><p className="text-sm text-muted">Orders</p><p className="mt-1 text-xl font-bold text-ink">{salesAvailable ? formatNumber(data.changes.orders?.current) : UNAVAILABLE}</p><Change value={data.changes.orders} /></div><div><p className="text-sm text-muted">Purchase spend</p><p className="mt-1 text-xl font-bold text-ink">{formatMoney(data.changes.purchaseSpend?.current)}</p><Change value={data.changes.purchaseSpend} /></div></div></Card>
+      {data.changes.menuMovers?.length ? <Card className="p-5"><SectionHeader title="Menu movers" /><div className="mt-4 grid gap-3 sm:grid-cols-2">{menuMovers.slice(0, 4).map((row) => <div key={row.menuItemId ?? row.name} className="flex items-center justify-between rounded-xl border border-line bg-slate-50 p-3"><div><p className="text-sm font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{formatNumber(row.currentQuantity)} units vs {formatNumber(row.priorQuantity)} prior</p></div><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></div>)}</div></Card> : null}
     </div> : null}
     {view === "weekly" && actionableExceptions.length ? <Card className="p-5"><SectionHeader title="Needs attention" /><div className="mt-3 space-y-2">{actionableExceptions.map((entry, index) => { const [to, label] = exceptionLink(entry.type); return <div key={String(entry.type) + index} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 p-3"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" /><div><p className="text-sm font-semibold text-ink">{entry.title as string}</p><p className="text-xs text-muted">{entry.detail as string}</p></div></div>{to ? <Link className="shrink-0 text-xs font-semibold text-brand-700" to={to}>{label}</Link> : null}</div>; })}</div></Card> : null}
-    <Card className="p-5"><SectionHeader title="Usage variance" />{data.usageVariance.valid ? <div className="mt-3 space-y-2">{data.usageVariance.rows.slice(0, 4).map((row) => <div key={row.inventoryItemId} className="flex items-center justify-between border-b border-line py-2 text-sm"><span className="font-semibold text-ink">{row.itemName} <span className="text-xs text-muted">({row.unit})</span></span><Badge tone={Math.abs(row.variance) > 0 ? "warning" : "success"}>{row.variance >= 0 ? "+" : ""}{row.variance} · {row.variancePercent == null ? "—" : Number(row.variancePercent).toFixed(1) + "%"}</Badge></div>)}{data.usageVariance.rows.length > 4 ? <p className="mt-2 text-xs text-muted">Showing the first four rows.</p> : null}</div> : <p className="mt-2 text-sm text-muted">Physical variance not available for this full business day. Flowtally will calculate it when valid opening and closing counts bracket the period.</p>}</Card>
-    <details className="rounded-2xl border border-line bg-white p-5"><summary className="cursor-pointer font-semibold text-ink">Menu-item breakdown</summary><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr><th className="px-3 py-3">Item</th><th className="px-3 py-3 text-right">Units</th><th className="px-3 py-3 text-right">Gross item sales</th><th className="px-3 py-3 text-right">Net item sales</th><th className="px-3 py-3 text-right">Food cost</th><th className="px-3 py-3 text-right">Change</th></tr></thead><tbody>{data.sales.byMenuItem.map((row) => <tr key={row.menuItemId} className="border-b border-line"><td className="px-3 py-3"><p className="font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{row.category}{row.costAvailable ? "" : " · cost unavailable"}</p></td><td className="px-3 py-3 text-right">{formatNumber(row.quantity)}</td><td className="px-3 py-3 text-right">{formatMoney(row.grossAmount)}</td><td className="px-3 py-3 text-right">{formatMoney(row.netAmount)}</td><td className="px-3 py-3 text-right">{row.costAvailable && row.estimatedFoodCostPercent != null ? Number(row.estimatedFoodCostPercent).toFixed(1) + "%" : "—"}</td><td className="px-3 py-3 text-right"><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></td></tr>)}</tbody></table></div>{data.sales.unmappedLines.length ? <p className="mt-4 text-sm text-amber-800">{data.sales.unmappedLines.length} Square line(s) are not mapped to Flowtally menu items.</p> : null}</details>
+    <Card className="p-5"><SectionHeader title="Usage variance" />{data.usageVariance.valid ? <div className="mt-3 space-y-2">{data.usageVariance.rows.slice(0, 4).map((row) => <div key={row.inventoryItemId} className="flex items-center justify-between border-b border-line py-2 text-sm"><span className="font-semibold text-ink">{row.itemName} <span className="text-xs text-muted">({row.unit})</span></span><Badge tone={Math.abs(row.variance) > 0 ? "warning" : "success"}>{row.variance >= 0 ? "+" : ""}{row.variance} · {row.variancePercent == null ? "—" : Number(row.variancePercent).toFixed(1) + "%"}</Badge></div>)}{data.usageVariance.rows.length > 4 ? <p className="mt-2 text-xs text-muted">Showing the first four rows.</p> : null}</div> : isClover ? <p className="mt-2 text-sm text-muted">{data.usageVariance.message ?? "Physical usage variance is not available for Clover locations yet."}</p> : <p className="mt-2 text-sm text-muted">Physical variance not available for this full business day. Flowtally will calculate it when valid opening and closing counts bracket the period.</p>}</Card>
+    <details className="rounded-2xl border border-line bg-white p-5"><summary className="cursor-pointer font-semibold text-ink">Menu-item breakdown</summary><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr><th className="px-3 py-3">Item</th><th className="px-3 py-3 text-right">Units</th><th className="px-3 py-3 text-right">Gross item sales</th><th className="px-3 py-3 text-right">Net item sales</th><th className="px-3 py-3 text-right">Food cost</th><th className="px-3 py-3 text-right">Change</th></tr></thead><tbody>{data.sales.byMenuItem.map((row) => <tr key={row.menuItemId ?? row.name} className="border-b border-line"><td className="px-3 py-3"><p className="font-semibold text-ink">{row.name}</p><p className="text-xs text-muted">{[row.category, row.costAvailable ? "" : "cost unavailable"].filter(Boolean).join(" · ")}</p></td><td className="px-3 py-3 text-right">{formatNumber(row.quantity)}</td><td className="px-3 py-3 text-right">{moneyOrUnavailable(row.grossAmount)}</td><td className="px-3 py-3 text-right">{moneyOrUnavailable(row.netAmount)}</td><td className="px-3 py-3 text-right">{row.costAvailable && row.estimatedFoodCostPercent != null ? Number(row.estimatedFoodCostPercent).toFixed(1) + "%" : "—"}</td><td className="px-3 py-3 text-right"><Change value={{ delta: row.quantityDelta, percent: row.quantityDeltaPercent }} /></td></tr>)}</tbody></table></div>{data.sales.byMenuItemUnavailableReason ? <p className="mt-4 text-sm text-amber-800">{data.sales.byMenuItemUnavailableReason}</p> : null}{data.sales.unmappedLines.length ? <p className="mt-4 text-sm text-amber-800">{data.sales.unmappedLines.length} Square line(s) are not mapped to Flowtally menu items.</p> : null}</details>
     </> : null}
   </div>;
 }

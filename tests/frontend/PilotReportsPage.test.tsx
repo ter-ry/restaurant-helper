@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotReportsPage } from "../../src/pilot/PilotReportsPage";
@@ -90,4 +90,78 @@ it("ranks weekly menu movers by absolute quantity change", async () => {
     expect(screen.getByText("Period comparison").closest("div.grid")).not.toHaveClass("lg:grid-cols-2");
   });
 
+  describe("Clover locations", () => {
+    const cloverSales = { currency: "CAD", source: "clover_orders", provider: "clover", status: "available", available: true, unavailableReason: null, includesToday: false, grossItemSales: null, discounts: null, refunds: null, cancelledOrderCount: null, netItemSales: 36, tax: 4.68, tips: 1.5, totalCollected: 42.18, orderCount: 4, unitsSold: 2, excludedOrderCount: 0, refundOrderCount: 0, verified: { orderCount: 4, netItemSales: 36, tax: 4.68, tips: 1.5 }, byMenuItem: [{ menuItemId: null, name: "Chicken Plate", category: "", quantity: 2, grossAmount: null, discountAmount: null, netAmount: null, costAvailable: false, estimatedFoodCostPercent: null, quantityDelta: 2, quantityDeltaPercent: null }], byMenuItemUnavailableReason: null, unmappedLines: [] };
+    const cloverReport = {
+      ...report, provider: "clover", sales: cloverSales,
+      costing: { estimatedFoodCostPercent: 11.11, costCoveragePercent: null, costReadySalesAmount: null, totalMappedMenuSalesAmount: null, usageAvailable: true, usageCost: 4 },
+      usageVariance: { valid: false, message: "Physical usage variance is not available for Clover locations yet.", rows: [] }, exceptions: [],
+    };
+
+    it("shows verified Clover figures, honest unavailable fields and no dollar value for what Clover cannot supply", async () => {
+      mockFetch.mockResolvedValueOnce(cloverReport);
+      render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
+      await waitFor(() => expect(screen.getByText("$42.18")).toBeInTheDocument());
+      expect(screen.queryByTestId("sales-unavailable")).not.toBeInTheDocument();
+      expect(screen.getByText("$36.00")).toBeInTheDocument();
+      expect(screen.getByText("11.1%")).toBeInTheDocument();
+      // Gross, discounts and refunds are not derivable from Clover evidence: never rendered as $0.00.
+      for (const label of ["Gross item sales", "Discounts", "Refunds"]) {
+        expect(within(screen.getAllByText(label)[0].parentElement as HTMLElement).getByText(/Unavailable/)).toBeInTheDocument();
+      }
+      expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+      expect(screen.getByText("Physical usage variance is not available for Clover locations yet.")).toBeInTheDocument();
+      expect(screen.queryByText(/Flowtally will calculate it when valid opening/)).not.toBeInTheDocument();
+    });
+
+    it("never shows a confident $0 when Clover has nothing verified for the period", async () => {
+      mockFetch.mockResolvedValueOnce({ ...cloverReport, sales: { ...cloverSales, status: "unavailable", available: false, unavailableReason: "No verified paid Clover orders are stored for this period.", netItemSales: null, tax: null, tips: null, totalCollected: null, orderCount: 0, unitsSold: null, verified: { orderCount: 0, netItemSales: 0, tax: 0, tips: 0 }, byMenuItem: [] }, costing: { ...cloverReport.costing, estimatedFoodCostPercent: null, usageCost: null } });
+      render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
+      const notice = await screen.findByTestId("sales-unavailable");
+      expect(notice).toHaveAttribute("role", "status");
+      expect(notice).toHaveTextContent("Clover sales are unavailable");
+      expect(notice).toHaveTextContent("No verified paid Clover orders are stored for this period.");
+      expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+      expect(screen.getByText("Total collected").nextElementSibling).toHaveTextContent("Unavailable");
+      expect(screen.getByText("Orders").nextElementSibling).toHaveTextContent("Unavailable");
+    });
+
+    it("explains a partly verified period, keeps totals hidden and offers the verified subtotal and Daily Close", async () => {
+      mockFetch.mockResolvedValueOnce({ ...cloverReport, sales: { ...cloverSales, status: "partial", available: false, unavailableReason: "1 Clover order(s) in this period are excluded because they have a refund.", netItemSales: null, tax: null, tips: null, totalCollected: null, excludedOrderCount: 1, refundOrderCount: 1 }, costing: { ...cloverReport.costing, estimatedFoodCostPercent: null } });
+      render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
+      const notice = await screen.findByTestId("sales-unavailable");
+      expect(notice).toHaveTextContent("Clover sales are only partly verified");
+      expect(notice).toHaveTextContent("Verified orders only (4): net item sales $36.00, tax $4.68, tips $1.50");
+      expect(within(notice).getByRole("link", { name: "Use Daily Close" })).toHaveAttribute("href", "/app/daily-close");
+      expect(screen.getByText("Total collected").nextElementSibling).toHaveTextContent("Unavailable");
+      expect(screen.getByText("Orders").nextElementSibling).toHaveTextContent("4 verified");
+      expect(screen.getByText("Refunds").parentElement).toHaveTextContent("Unavailable · 1 order(s)");
+    });
+
+    it("renders weekly comparison and unavailable movers without inventing deltas", async () => {
+      mockFetch.mockResolvedValueOnce({ ...cloverReport, period: { ...cloverReport.period, view: "weekly", priorStartDate: "2026-08-29", priorEndDate: "2026-08-29" }, changes: { sales: null, orders: null, purchaseSpend: { current: 0, prior: 0, delta: 0, percent: null }, menuMovers: [] } });
+      render(<MemoryRouter><PilotReportsPage initialView="weekly" /></MemoryRouter>);
+      await waitFor(() => expect(screen.getByText("Period comparison")).toBeInTheDocument());
+      expect(screen.getAllByText("No comparison").length).toBe(2);
+      expect(screen.getByText("Collected sales").nextElementSibling).toHaveTextContent("Unavailable");
+    });
+
+    it("lists menu items without fake money columns and says why when item sales are unavailable", async () => {
+      mockFetch.mockResolvedValueOnce({ ...cloverReport, sales: { ...cloverSales, byMenuItem: [], byMenuItemUnavailableReason: "Item sales need verified sales and complete inventory usage for the whole period." } });
+      render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
+      await waitFor(() => expect(screen.getByText("Item sales need verified sales and complete inventory usage for the whole period.")).toBeInTheDocument());
+    });
+  });
+
+  it("shows an error with a retry, drops the stale report, and recovers on retry", async () => {
+    mockFetch.mockResolvedValueOnce(report).mockRejectedValueOnce(new Error("Report service unavailable"));
+    render(<MemoryRouter><PilotReportsPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("$181.80")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Report service unavailable");
+    expect(screen.queryByText("$181.80")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByText("$181.80")).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
