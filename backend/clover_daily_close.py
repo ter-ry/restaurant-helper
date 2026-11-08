@@ -58,7 +58,11 @@ def active_clover_connection(organization_id: int, location_id: int) -> CloverCo
 
 
 def _cash_reconciliation(sales: CloverDaySales) -> dict[str, Any]:
-    review_orders = {e["orderId"] for e in sales.exceptions if e["reason"] not in _CASH_NEUTRAL_REASONS}
+    review_orders = {
+        e["orderId"]
+        for e in sales.exceptions
+        if e.get("cashEvidence") or e["reason"] not in _CASH_NEUTRAL_REASONS
+    }
     reason = None
     expected_cents = sales.cash_expected_cents
     if review_orders:
