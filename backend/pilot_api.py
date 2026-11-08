@@ -612,6 +612,40 @@ def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[
     return invoice, supplier
 
 
+def _duplicate_invoice_response(duplicate: PurchaseInvoice):
+    return json_error(
+        "A purchase with this supplier and invoice number already exists.",
+        409,
+        errors={"duplicateInvoiceId": str(duplicate.id), "duplicateStatus": duplicate.status},
+    )
+
+
+def _find_duplicate_invoice(organization_id: int, location_id: int, payload: dict[str, Any], *, exclude_invoice_id: int) -> PurchaseInvoice | None:
+    """Pure read: another invoice with the target supplier + invoice number in this location (#259).
+
+    Never creates the supplier (``_get_supplier_by_name`` would) and never mutates the session, so a rejected
+    PATCH leaves both invoices exactly as they were.
+    """
+    invoice_number = str(payload.get("invoiceNumber") or "").strip()
+    supplier_name = str(payload.get("supplierName") or payload.get("supplier") or "")
+    if not invoice_number:
+        return None
+    supplier = Supplier.query.filter_by(organization_id=organization_id, normalized_name=_normalize_name(supplier_name)).first()
+    if supplier is None:
+        return None
+    return (
+        PurchaseInvoice.query.filter(
+            PurchaseInvoice.organization_id == organization_id,
+            PurchaseInvoice.location_id == location_id,
+            PurchaseInvoice.supplier_id == supplier.id,
+            PurchaseInvoice.invoice_number == invoice_number,
+            PurchaseInvoice.id != exclude_invoice_id,
+        )
+        .order_by(PurchaseInvoice.id.asc())
+        .first()
+    )
+
+
 def _replace_invoice_lines(invoice: PurchaseInvoice, organization_id: int, payload_lines: list[dict[str, Any]]):
     with db.session.no_autoflush:
         invoice.lines = []
@@ -1819,6 +1853,22 @@ def update_purchase_invoice(invoice_id: int):
         return json_error("Completed invoices are read-only.", 409)
     body = _json_body()
     payload = _validate_invoice_payload({**body, "supplierName": body.get("supplierName") or body.get("supplier")})
+    # Reject a supplier + invoice-number collision before anything is mutated or flushed (#259).
+    duplicate = _find_duplicate_invoice(organization.id, location.id, payload, exclude_invoice_id=invoice.id)
+    if duplicate is not None:
+        return _duplicate_invoice_response(duplicate)
+    try:
+        return _apply_invoice_update(organization, location, invoice, payload)
+    except IntegrityError:
+        # Lost a race with a concurrent create/PATCH that took the number after the check above: roll back everything.
+        db.session.rollback()
+        racing = _find_duplicate_invoice(organization.id, location.id, payload, exclude_invoice_id=invoice_id)
+        if racing is None:
+            raise
+        return _duplicate_invoice_response(racing)
+
+
+def _apply_invoice_update(organization, location, invoice: PurchaseInvoice, payload: dict[str, Any]):
     invoice, _ = _invoice_from_payload(organization.id, location.id, payload, existing=invoice)
     invoice.updated_by_user_id = current_user.id
     _replace_invoice_lines(invoice, organization.id, list(payload.get("lineItems") or []))
