@@ -1,0 +1,78 @@
+name: PR owner notification gate
+
+# Trusted base-branch code only. This workflow never checks out or executes
+# pull-request head code. Leave FLOWTALLY_OWNER_GATE_ENABLED unset/false until
+# the owner has completed the controlled GitHub Mobile delivery test.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number for a controlled dry run"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: flowtally-owner-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    if: ${{ (vars.FLOWTALLY_OWNER_GATE_ENABLED == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name != 'issue_comment' || github.event.issue.pull_request) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted base workflow code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect exact-head evidence without running PR code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          OWNER_LOGIN: ${{ vars.FLOWTALLY_OWNER_LOGIN }}
+          TRUSTED_REVIEWERS: ${{ vars.FLOWTALLY_TRUSTED_REVIEWERS }}
+          REQUIRED_CHECKS: ${{ vars.FLOWTALLY_REQUIRED_CHECKS || 'backend,frontend' }}
+          RELEASE_POLICY_CHECKS: ${{ vars.FLOWTALLY_RELEASE_POLICY_CHECKS }}
+          OWNER_GATE_WRITE: ${{ vars.FLOWTALLY_OWNER_GATE_WRITE || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            PR_NUMBERS=$(gh api "repos/$REPOSITORY/pulls?state=open&base=main&per_page=100" --jq '.[].number')
+          else
+            PR_NUMBERS='${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}'
+          fi
+          for EVENT_PR in $PR_NUMBERS; do
+            python scripts/pr_owner_gate_collect.py \
+              --repository "$REPOSITORY" --pr "$EVENT_PR" \
+              --required-checks "$REQUIRED_CHECKS" \
+              --release-policy-checks "$RELEASE_POLICY_CHECKS" \
+              --trusted-reviewers "$TRUSTED_REVIEWERS" \
+              --owner-login "$OWNER_LOGIN" --output /tmp/pr-owner-gate.json
+            if [ "$OWNER_GATE_WRITE" = "true" ]; then
+              python scripts/pr_owner_gate.py --snapshot /tmp/pr-owner-gate.json --write
+            else
+              python scripts/pr_owner_gate.py --snapshot /tmp/pr-owner-gate.json
+            fi
+          done
