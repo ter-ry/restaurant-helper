@@ -98,6 +98,20 @@ def uncertainty_reason(raw: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _has_successful_cash_payment(raw: Mapping[str, Any]) -> bool:
+    """Whether the safe payload contains explicit successful cash evidence.
+
+    This deliberately does not infer Clover's cancellation or settlement semantics. It only
+    identifies the provider evidence that makes an excluded order relevant to cash completeness.
+    """
+    return any(
+        isinstance(payment, Mapping)
+        and str(payment.get("result") or "").upper() in SUCCESS_RESULTS
+        and (not str(payment.get("tender") or "") or str(payment.get("tender")) == CASH_TENDER_KEY)
+        for payment in (raw.get("payments") or [])
+    )
+
+
 def order_financials(order_id: Any, raw: Mapping[str, Any]) -> OrderFinancials:
     """Extract per-order figures from the stored safe payload; ``None`` fields mean unavailable."""
     payments = [p for p in raw.get("payments") or [] if isinstance(p, Mapping)]
@@ -151,7 +165,10 @@ def summarize_orders(orders: Iterable[Any], window: tuple[datetime, datetime]) -
         seen.add(key)
         status = getattr(order, "normalized_status", "")
         if status != "paid" or getattr(order, "requires_review", True):
-            result.exceptions.append(_exception(order, {"refunded": "refunded_or_refund_unverified", "cancelled": "cancelled", "pending": "not_fully_paid"}.get(status, "needs_review")))
+            exception = _exception(order, {"refunded": "refunded_or_refund_unverified", "cancelled": "cancelled", "pending": "not_fully_paid"}.get(status, "needs_review"))
+            if status in {"cancelled", "pending"} and _has_successful_cash_payment(getattr(order, "raw_payload_json", None) or {}):
+                exception["cashEvidence"] = True
+            result.exceptions.append(exception)
             continue
         raw = getattr(order, "raw_payload_json", None) or {}
         reason = uncertainty_reason(raw)
