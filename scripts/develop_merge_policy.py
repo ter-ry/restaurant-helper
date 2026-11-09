@@ -261,6 +261,10 @@ def _check_reviews(s, head, author, trusted, blocked, unverified):
         if not isinstance(r.get("state"), str) or r["state"] not in _REVIEW_STATES:
             unverified.append("REVIEW_STATE_INVALID")
             continue
+        if r["state"] == "PENDING":
+            # An unsubmitted review is direct evidence that review is unfinished.
+            blocked.append("REVIEW_PENDING")
+            continue
         if r.get("state") == "CHANGES_REQUESTED":
             # Fail closed: any change request in the snapshot blocks, even if a
             # later approval exists; a fresh snapshot must show it cleared.
