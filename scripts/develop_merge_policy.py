@@ -25,6 +25,7 @@ ALLOWED_REPOSITORY = "ter-ry/restaurant-helper"
 ALLOWED_BASE = "develop"
 QUALIFYING_REVIEW_KIND = "independent_substantive"
 DANGEROUS_FLAGS = frozenset({"CLOVER_ORDER_INVENTORY_ENABLED", "FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED"})
+_REVIEW_STATES = frozenset({"APPROVED", "COMMENTED", "CHANGES_REQUESTED", "DISMISSED", "PENDING"})
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 # Tier 2: never unattended, regardless of labels.
@@ -248,6 +249,9 @@ def _check_reviews(s, head, author, trusted, blocked, unverified):
         login = r.get("reviewer")
         if not isinstance(login, str) or not login:
             unverified.append("REVIEW_MALFORMED")
+            continue
+        if r.get("state") not in _REVIEW_STATES:
+            unverified.append("REVIEW_STATE_INVALID")
             continue
         if r.get("state") == "CHANGES_REQUESTED":
             # Fail closed: any change request in the snapshot blocks, even if a

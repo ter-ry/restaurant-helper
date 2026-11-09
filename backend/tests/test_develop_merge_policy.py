@@ -223,6 +223,13 @@ def test_approval_followed_by_change_request_blocks():
         assert_decision(snap(reviews=order, threads=[]), pol.BLOCKED, "REVIEW_CHANGES_REQUESTED")
 
 
+@pytest.mark.parametrize("extra", [{"reviewer": "other"}, {"reviewer": "other", "state": "UNKNOWN"},
+                                   {"reviewer": "other", "state": None}, {"reviewer": "other", "state": 5}])
+def test_malformed_review_beside_valid_approval_fails_closed(extra):
+    s = snap(); s["reviews"].append(extra)
+    assert_decision(s, pol.UNVERIFIED, "REVIEW_STATE_INVALID")
+
+
 def test_unclassified_path_owner_controlled():
     assert_decision(snap(changed_files=["package.json"]), pol.OWNER_DECISION, "UNCLASSIFIED_PATH_OWNER_CONTROLLED")
 
