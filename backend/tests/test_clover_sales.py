@@ -64,8 +64,8 @@ def test_excluded_cash_order_is_marked_as_cash_evidence_but_cash_neutral_cancel_
     day = summarize_orders([cancelled_cash, partial_cash, cancelled_card, cancelled_missing, partial_empty], WINDOW)
 
     by_id = {exception["orderId"]: exception for exception in day.exceptions}
-    assert by_id[1] == {"orderId": 1, "cloverOrderId": "C1", "reason": "cancelled", "cashEvidence": True}
-    assert by_id[2] == {"orderId": 2, "cloverOrderId": "C2", "reason": "not_fully_paid", "cashEvidence": True}
+    assert by_id[1] == {"orderId": 1, "cloverOrderId": "C1", "reason": "cancelled", "hasRefund": False, "cashEvidence": True}
+    assert by_id[2] == {"orderId": 2, "cloverOrderId": "C2", "reason": "not_fully_paid", "hasRefund": False, "cashEvidence": True}
     assert "cashEvidence" not in by_id[3]
     assert by_id[4]["cashEvidence"] is True and by_id[5]["cashEvidence"] is True
 
@@ -164,3 +164,12 @@ def test_normalized_order_with_unverified_refunds_never_contributes():
     order = _order(1, [], status=n.normalized_status, review=n.requires_review, raw=n.raw)
     day = summarize_orders([order], WINDOW)
     assert day.order_count == 0 and day.net_sales_cents == 0 and day.exceptions
+
+
+def test_refund_is_flagged_even_when_incomplete_evidence_is_the_primary_reason():
+    refunded_incomplete = _order(1, [_pay(100)], status="paid", review=True, raw={"refunds": [{"id": "r", "amount": 100}], "incomplete": True})
+    plain_review = _order(2, [_pay(100)], status="paid", review=True)
+    day = summarize_orders([refunded_incomplete, plain_review], WINDOW)
+    by_id = {e["orderId"]: e for e in day.exceptions}
+    assert by_id[1]["reason"] == "needs_review" and by_id[1]["hasRefund"] is True
+    assert by_id[2]["hasRefund"] is False
