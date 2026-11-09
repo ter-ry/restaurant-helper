@@ -5,7 +5,7 @@ name: PR owner notification gate
 # the owner has completed the controlled GitHub Mobile delivery test.
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
   pull_request_review:
     types: [submitted, edited, dismissed]
   issue_comment:
@@ -28,9 +28,14 @@ permissions:
   pull-requests: read
   issues: write
 
+# One shared group for every entry point (PR, review, comment, CI, schedule and
+# manual runs) so no two reconciliations overlap and post duplicate owner
+# notifications. Runs queue rather than cancel. GitHub keeps only the newest
+# pending run per group, so every run reconciles ALL candidate PRs (not just the
+# one in its event); a superseded pending run therefore loses nothing.
 concurrency:
-  group: flowtally-owner-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: true
+  group: flowtally-owner-gate
+  cancel-in-progress: false
 
 jobs:
   gate:
@@ -60,14 +65,20 @@ jobs:
           OWNER_GATE_WRITE: ${{ vars.FLOWTALLY_OWNER_GATE_WRITE || 'false' }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            PR_NUMBERS=$(gh api "repos/$REPOSITORY/pulls?state=open&base=main&per_page=100" --jq '.[].number')
+          EVENT_PR_NUMBER='${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}'
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Controlled dry run: only the requested PR.
+            PR_NUMBERS="$EVENT_PR_NUMBER"
           else
-            PR_NUMBERS='${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}'
+            # Event PR + every open PR on main + closed PRs still carrying the
+            # owner label (closure whose event was missed or superseded).
+            OPEN_PRS=$(gh api "repos/$REPOSITORY/pulls?state=open&base=main&per_page=100" --jq '.[].number')
+            LABELLED_CLOSED=$(gh api "repos/$REPOSITORY/issues?state=closed&labels=owner-review-needed&per_page=100" --jq '.[]|select(.pull_request)|.number')
+            PR_NUMBERS=$(printf '%s\n' "$EVENT_PR_NUMBER" $OPEN_PRS $LABELLED_CLOSED | { grep -E '^[0-9]+$' || true; } | sort -un)
           fi
-          for EVENT_PR in $PR_NUMBERS; do
+          reconcile_pr() {
             python scripts/pr_owner_gate_collect.py \
-              --repository "$REPOSITORY" --pr "$EVENT_PR" \
+              --repository "$REPOSITORY" --pr "$1" \
               --required-checks "$REQUIRED_CHECKS" \
               --release-policy-checks "$RELEASE_POLICY_CHECKS" \
               --trusted-reviewers "$TRUSTED_REVIEWERS" \
@@ -77,4 +88,10 @@ jobs:
             else
               python scripts/pr_owner_gate.py --snapshot /tmp/pr-owner-gate.json
             fi
+          }
+          # One failing PR must not starve the others; the job still fails.
+          FAILED=0
+          for EVENT_PR in $PR_NUMBERS; do
+            reconcile_pr "$EVENT_PR" || { echo "::error::owner gate failed for PR #$EVENT_PR"; FAILED=1; }
           done
+          exit "$FAILED"

@@ -40,6 +40,23 @@ withdrawn whenever the current state differs, including ready A to ready B.
 Queued or running checks are "in progress", never failed. Configured check
 names are matched exactly (GitHub check names are case-sensitive).
 
+Check names are matched in full, including any ` / ` (for example
+`backend / unit`); a prefix never satisfies or collapses a requirement.
+
+All entry points share one non-cancelling concurrency group
+(`flowtally-owner-gate`), and every run reconciles the event PR, all open PRs
+on `main`, and closed PRs still labelled `owner-review-needed`, so a queued run
+that GitHub supersedes loses nothing. Before any write the script re-reads the
+PR comments, so a run holding an empty snapshot cannot post a second
+notification; if that re-read fails the run fails closed without writing.
+Closing a PR (merged or not) removes the label and withdraws the readiness
+comment.
+
+High-risk changes never need fewer approvals than `independent_reviews`: an
+unset or weaker `independent_reviews_high_risk` inherits the general value.
+The workflow does not yet export these thresholds, so live runs default to 1
+approval until the owner adds them (owner-only repository variable change).
+
 Offline regression tests (`scripts/tests/test_pr_owner_gate.py`) run in GitHub
 CI via `.github/workflows/pr-owner-gate-tests.yml`.
 

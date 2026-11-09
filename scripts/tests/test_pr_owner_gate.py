@@ -472,5 +472,238 @@ class CheckClassificationTests(unittest.TestCase):
         self.assertIn("REQUIRED_CHECKS_MISSING:backend", evaluate(snap)["outstanding_risks"])
 
 
+class FakeGitHub:
+    """Shared PR comment/label store so overlapping runs see each other's writes."""
+
+    def __init__(self, comments=None):
+        self.comments = list(comments or [])
+        self.labels = set()
+        self.calls = []
+        self.next_id = 100
+
+    def request(self, method, path, token, body=None):
+        self.calls.append((method, path.split("?")[0].rsplit("/", 1)[-1]))
+        if method == "GET":
+            return [dict(c) for c in self.comments]
+        if method == "POST" and path.endswith("/labels"):
+            self.labels.update(body["labels"]); return {}
+        if method == "POST" and path.endswith("/comments"):
+            self.next_id += 1
+            self.comments.append(gate_comment(self.next_id, body["body"])); return {}
+        if method == "PATCH":
+            for c in self.comments:
+                if str(c["id"]) == path.rsplit("/", 1)[-1]:
+                    c["body"] = body["body"]
+            return {}
+        if method == "DELETE":
+            if "owner-review-needed" not in self.labels:
+                raise http_error(404)
+            self.labels.discard("owner-review-needed"); return {}
+        raise AssertionError((method, path))
+
+    def posts(self):
+        return [c for c in self.calls if c == ("POST", "comments")]
+
+
+def run_with(fake, snap):
+    report = evaluate(snap)
+    with patch("pr_owner_gate.github_request", side_effect=fake.request):
+        return reconcile(snap, report, snap["config"], "token", True,
+                         lambda: pr_owner_gate.list_comments(REPO, 42, "token"))
+
+
+class CheckNameTests(unittest.TestCase):
+    def snap(self, required, checks):
+        snap = baseline(); snap["config"]["required_checks"] = required
+        snap["checks"] = [{"name": n, "head_sha": SHA, "status": "completed", "conclusion": c} for n, c in checks]
+        return snap
+
+    def test_slash_names_match_exactly(self):
+        report = evaluate(self.snap("backend / unit,frontend", [("backend / unit", "success"), ("frontend", "success")]))
+        self.assertEqual(report["state"], "VERIFIED FOR OWNER DECISION")
+        self.assertEqual(sorted(report["ci"]), ["backend / unit", "frontend"])
+
+    def test_prefix_does_not_satisfy_or_collapse(self):
+        report = evaluate(self.snap("backend,frontend", [("backend / unit", "success"), ("frontend", "success")]))
+        self.assertIn("REQUIRED_CHECKS_MISSING:backend", report["outstanding_risks"])
+        # A passing "backend / lint" must not mask a failing "backend / unit".
+        report = evaluate(self.snap("backend / unit,frontend", [("backend / lint", "success"), ("backend / unit", "failure"), ("frontend", "success")]))
+        self.assertEqual(report["state"], "BLOCKED")
+        self.assertIn("CI_FAILED:backend / unit", report["outstanding_risks"])
+
+    def test_slash_release_policy_names(self):
+        snap = baseline(); snap["config"]["release_policy_checks"] = "Release / policy"
+        self.assertIn("RELEASE_POLICY_CHECKS_MISSING:Release / policy", evaluate(snap)["outstanding_risks"])
+        snap["checks"].append({"name": "Release / policy", "head_sha": SHA, "status": "completed", "conclusion": "success"})
+        self.assertEqual(evaluate(snap)["state"], "VERIFIED FOR OWNER DECISION")
+        snap["checks"][-1]["conclusion"] = "failure"
+        self.assertEqual(evaluate(snap)["state"], "BLOCKED")
+
+    def test_slash_names_through_collector(self):
+        snap = collected_snapshot()
+        snap["config"]["required_checks"] = "backend / unit"
+        snap["checks"] = [{"name": "backend / unit", "head_sha": SHA, "status": "completed", "conclusion": "success"}]
+        self.assertEqual(evaluate(snap)["state"], "VERIFIED FOR OWNER DECISION")
+
+
+class SerializationTests(unittest.TestCase):
+    def test_overlapping_runs_with_empty_snapshots_post_once(self):
+        fake = FakeGitHub()
+        first, second = baseline(), baseline()          # both collected before any notification existed
+        self.assertEqual(first["comments"], []); self.assertEqual(second["comments"], [])
+        self.assertTrue(run_with(fake, first)["notified"])
+        result = run_with(fake, second)
+        self.assertFalse(result["notified"]); self.assertTrue(result["deduplicated"])
+        self.assertEqual(len(fake.posts()), 1)
+        self.assertEqual(len(fake.comments), 1)
+
+    def test_three_overlapping_runs_across_entry_points_post_once(self):
+        fake = FakeGitHub()
+        for _ in range(3):
+            run_with(fake, baseline())
+        self.assertEqual(len(fake.posts()), 1)
+
+    def test_refresh_failure_fails_closed_without_posting(self):
+        fake = FakeGitHub(); snap = baseline()
+        def broken(method, path, token, body=None):
+            if method == "GET":
+                raise http_error(502)
+            fake.request(method, path, token, body); return {}
+        with patch("pr_owner_gate.github_request", side_effect=broken):
+            with self.assertRaises(HTTPError):
+                reconcile(snap, evaluate(snap), snap["config"], "t", True, lambda: pr_owner_gate.list_comments(REPO, 42, "t"))
+        self.assertEqual(fake.calls, [])
+
+    def test_list_comments_paginates_and_caps(self):
+        pages = {1: [{"id": i} for i in range(100)], 2: [{"id": 999}]}
+        with patch("pr_owner_gate.github_request", side_effect=lambda m, path, t, b=None: pages[int(path.rsplit("&page=", 1)[1])]):
+            self.assertEqual(len(pr_owner_gate.list_comments(REPO, 42, "t")), 101)
+        with patch("pr_owner_gate.github_request", return_value=[{"id": 1}] * 100):
+            with self.assertRaises(ValueError):
+                pr_owner_gate.list_comments(REPO, 42, "t")
+
+    def test_main_write_mode_rereads_comments_before_posting(self):
+        fake = FakeGitHub(); stale = baseline()
+        run_with(fake, baseline())                       # another run already notified
+        path = ROOT / "scripts" / "tests" / "_snapshot_tmp2.json"
+        path.write_text(json.dumps(stale)); self.addCleanup(lambda: path.unlink(missing_ok=True))
+        with patch.dict("os.environ", {"GH_TOKEN": "t"}, clear=True), patch.object(sys, "argv", ["x", "--snapshot", str(path), "--write"]), \
+                patch("pr_owner_gate.github_request", side_effect=fake.request), patch("sys.stdout", new_callable=io.StringIO):
+            self.assertEqual(pr_owner_gate.main(), 0)
+        self.assertEqual(len(fake.posts()), 1)
+
+    def workflow(self):
+        return (ROOT / ".github/workflows/pr-owner-notification-gate.yml").read_text()
+
+    def test_workflow_uses_one_shared_non_cancelling_concurrency_group(self):
+        text = self.workflow()
+        block = re.search(r"(?m)^concurrency:\n((?:  .*\n)+)", text).group(1)
+        self.assertRegex(block, r"(?m)^  group: flowtally-owner-gate$")
+        self.assertRegex(block, r"(?m)^  cancel-in-progress: false$")
+        self.assertNotIn("${{", block)          # no per-event / per-run group keys
+        self.assertNotRegex(text, r"(?m)^    concurrency:")   # no job-level override
+
+    def test_every_run_reconciles_all_candidates_so_superseded_runs_lose_nothing(self):
+        text = self.workflow()
+        self.assertIn("pulls?state=open&base=main", text)
+        self.assertIn("labels=owner-review-needed", text)
+        self.assertRegex(text, r'(?s)workflow_dispatch" \].*?PR_NUMBERS="\$EVENT_PR_NUMBER"')
+
+    def test_one_failing_pr_does_not_starve_the_rest(self):
+        text = self.workflow()
+        self.assertIn("FAILED=1", text); self.assertIn('exit "$FAILED"', text)
+
+
+class ClosedPullRequestTests(unittest.TestCase):
+    def closed(self, merged=False):
+        snap = baseline(); snap["pr"]["state"] = "closed"; snap["pr"]["merged"] = merged
+        return snap
+
+    def ready_fake(self):
+        fake = FakeGitHub(); run_with(fake, baseline())
+        self.assertIn("owner-review-needed", fake.labels); self.assertEqual(len(fake.comments), 1)
+        fake.calls.clear(); return fake
+
+    def test_ready_then_closed_unmerged_withdraws_and_removes_label(self):
+        fake = self.ready_fake()
+        snap = self.closed()
+        self.assertEqual(evaluate(snap)["state"], "BLOCKED")
+        self.assertIn("PR_NOT_OPEN_READY_ON_MAIN", evaluate(snap)["outstanding_risks"])
+        result = run_with(fake, snap)
+        self.assertFalse(result["notified"])
+        self.assertNotIn("owner-review-needed", fake.labels)
+        body = fake.comments[0]["body"]
+        self.assertIn("WITHDRAWN", body); self.assertIn("closed without merging", body)
+        self.assertEqual(len(fake.posts()), 0)
+
+    def test_ready_then_merged_is_withdrawn_with_merged_note(self):
+        fake = self.ready_fake()
+        run_with(fake, self.closed(merged=True))
+        self.assertIn("merged", fake.comments[0]["body"]); self.assertNotIn("owner-review-needed", fake.labels)
+
+    def test_closing_is_idempotent_and_tolerates_absent_label(self):
+        fake = self.ready_fake()
+        run_with(fake, self.closed()); fake.calls.clear()
+        run_with(fake, self.closed())                       # repeat: label gone -> 404 tolerated, nothing to patch
+        self.assertNotIn("PATCH", [m for m, _ in fake.calls])
+        fresh = FakeGitHub()
+        run_with(fresh, self.closed())                      # never notified, never labelled
+        self.assertEqual(fresh.comments, [])
+
+    def test_closed_then_reopened_ready_notifies_again(self):
+        fake = self.ready_fake()
+        run_with(fake, self.closed())
+        result = run_with(fake, baseline())
+        self.assertTrue(result["notified"])
+        self.assertEqual(len([c for c in fake.comments if "WITHDRAWN" not in c["body"]]), 1)
+        self.assertIn("owner-review-needed", fake.labels)
+
+    def test_closed_pr_is_not_trusted_even_with_forged_ready_comment(self):
+        fake = FakeGitHub([gate_comment(5, notification(evaluate(baseline()), "@owner"), login="attacker")])
+        run_with(fake, self.closed())
+        self.assertNotIn("WITHDRAWN", fake.comments[0]["body"])
+
+    def test_workflow_triggers_on_closed(self):
+        text = (ROOT / ".github/workflows/pr-owner-notification-gate.yml").read_text()
+        self.assertRegex(text, r"pull_request_target:\n    types: \[[^\]]*\bclosed\b")
+
+
+class ReviewThresholdTests(unittest.TestCase):
+    def one_approval(self, path, **config):
+        snap = baseline(); snap["changed_files"] = [path]; snap["config"].update(config)
+        return evaluate(snap)
+
+    def test_unset_high_risk_override_inherits_general_threshold(self):
+        low = self.one_approval("docs/runbook.md", independent_reviews=2)
+        high = self.one_approval("backend/auth.py", independent_reviews=2)
+        self.assertEqual((low["review_evidence"]["required"], high["review_evidence"]["required"]), (2, 2))
+        self.assertEqual(high["state"], "REVIEW IN PROGRESS")
+        self.assertIn("INDEPENDENT_REVIEW_MISSING:1/2", high["outstanding_risks"])
+
+    def test_weaker_override_cannot_lower_the_general_threshold(self):
+        report = self.one_approval("backend/auth.py", independent_reviews=3, independent_reviews_high_risk=1)
+        self.assertEqual(report["review_evidence"]["required"], 3)
+        self.assertEqual(report["state"], "REVIEW IN PROGRESS")
+
+    def test_stronger_override_applies_only_to_high_risk(self):
+        self.assertEqual(self.one_approval("backend/auth.py", independent_reviews=1, independent_reviews_high_risk=2)["review_evidence"]["required"], 2)
+        self.assertEqual(self.one_approval("docs/runbook.md", independent_reviews=1, independent_reviews_high_risk=2)["review_evidence"]["required"], 1)
+
+    def test_defaults_and_string_config_values(self):
+        self.assertEqual(self.one_approval("backend/auth.py")["review_evidence"]["required"], 1)
+        self.assertEqual(self.one_approval("backend/auth.py", independent_reviews="2", independent_reviews_high_risk="")["review_evidence"]["required"], 2)
+        self.assertEqual(self.one_approval("backend/auth.py", independent_reviews=0, independent_reviews_high_risk=0)["review_evidence"]["required"], 1)
+
+    def test_invalid_threshold_fails_loudly(self):
+        with self.assertRaises(ValueError):
+            self.one_approval("backend/auth.py", independent_reviews="two")
+
+    def test_enough_approvals_still_reaches_owner_review_needed(self):
+        snap = baseline(); snap["changed_files"] = ["backend/auth.py"]; snap["config"]["independent_reviews"] = 2
+        snap["reviews"].append({"user": {"login": "reviewer2"}, "state": "APPROVED", "commit_id": SHA, "submitted_at": "2026-11-08T01:00:00Z"})
+        snap["config"]["trusted_reviewers"] = "reviewer,reviewer2"
+        self.assertEqual(evaluate(snap)["state"], "OWNER REVIEW NEEDED")
+
+
 if __name__ == "__main__":
     unittest.main()

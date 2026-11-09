@@ -76,10 +76,24 @@ def resolve_token(env=None) -> str:
 def _check_map(snapshot: dict, sha: str) -> dict[str, dict]:
     result = {}
     for check in snapshot.get("checks", []):
-        name = (check.get("name") or "").split(" / ")[0]
+        # Keep the complete name: configured names may contain " / " (for
+        # example reusable-workflow jobs) and distinct checks must not collapse.
+        name = check.get("name") or ""
         if check.get("head_sha") == sha:
             result[name] = check
     return result
+
+
+def required_reviews(config: dict, high_risk: bool) -> int:
+    """Approvals required; high-risk never falls below the general threshold.
+
+    An unset (or weaker) high-risk override inherits the general requirement.
+    Non-numeric values raise ValueError, which the CLI reports as a failure.
+    """
+    general = max(1, int(config.get("independent_reviews") or 1))
+    if not high_risk:
+        return general
+    return max(general, int(config.get("independent_reviews_high_risk") or general))
 
 
 def _check_state(check: dict | None) -> str:
@@ -173,7 +187,7 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
     if any(value == "REQUEST CHANGES" for value in reviews.values()):
         reasons.append("TRUSTED_CHANGES_REQUESTED")
     approvals = sum(value == "APPROVE" for value in reviews.values())
-    needed = int(config.get("independent_reviews_high_risk" if high_risk else "independent_reviews") or 1)
+    needed = required_reviews(config, high_risk)
     if approvals < needed:
         reasons.append(f"INDEPENDENT_REVIEW_MISSING:{approvals}/{needed}")
     if high_risk:
@@ -247,7 +261,31 @@ def is_active_notification(comment: dict, current_marker: str, authors: set[str]
     return is_gate_comment(comment, authors) and current_marker in body and "WITHDRAWN" not in body
 
 
-def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: bool) -> dict:
+def withdrawal_note(pr: dict) -> str:
+    if pr.get("state") == "closed":
+        how = "merged" if pr.get("merged") or pr.get("merged_at") else "closed without merging"
+        return f"**WITHDRAWN:** the PR was {how}; no owner decision is pending."
+    return "**WITHDRAWN:** the PR head or readiness state changed; reassess the current SHA."
+
+
+def list_comments(repository: str, number: int, token: str) -> list[dict]:
+    """Authoritative, paginated issue comments; fails closed past the page cap."""
+    result: list[dict] = []
+    for page in range(1, 11):
+        batch = github_request("GET", f"repos/{repository}/issues/{number}/comments?per_page=100&page={page}", token)
+        result.extend(batch)
+        if len(batch) < 100:
+            return result
+    raise ValueError("comment pagination limit exceeded")
+
+
+def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: bool, fetch_comments=None) -> dict:
+    """Apply label/comment changes for ``report``.
+
+    ``fetch_comments`` re-reads the PR comments immediately before any write so
+    that a run holding a stale (for example empty) snapshot cannot post a second
+    notification.  Workflow-level serialization covers the remaining window.
+    """
     mention = config.get("owner_mention", "@owner")
     if not write:
         return {"write": False, "would_notify": report["state"] in READY_STATES, "notification": notification(report, mention)}
@@ -255,7 +293,7 @@ def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: boo
     number = report["pr_number"]
     label = config.get("owner_label", "owner-review-needed")
     authors = csv(config.get("notification_authors")) or set(DEFAULT_NOTIFICATION_AUTHORS)
-    comments = snapshot.get("comments", [])
+    comments = fetch_comments() if fetch_comments else snapshot.get("comments", [])
     current_marker = f"sha={report['head_sha']} state={report['state']}"
     already = any(is_active_notification(comment, current_marker, authors) for comment in comments)
     eligible = report["state"] in READY_STATES
@@ -266,13 +304,14 @@ def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: boo
     else:
         remove_label(repository, number, label, token)
     # Withdraw every authentic ready notification that is not the current one,
-    # in both branches: ready A -> ready B must not leave A advertised as ready.
+    # in both branches: ready A -> ready B must not leave A advertised as ready,
+    # and a closed PR (state BLOCKED) withdraws all of them.
     # Ordinary CI progress or a still-known blocker adds no new comment.
     for comment in comments:
         body = comment.get("body") or ""
         is_ready = any(f"state={state} -->" in body.split("\n", 1)[0] for state in READY_STATES)
         if is_gate_comment(comment, authors) and is_ready and "WITHDRAWN" not in body and current_marker not in body.split("\n", 1)[0]:
-            github_request("PATCH", f"repos/{repository}/issues/comments/{comment['id']}", token, {"body": body + "\n\n**WITHDRAWN:** the PR head or readiness state changed; reassess the current SHA."})
+            github_request("PATCH", f"repos/{repository}/issues/comments/{comment['id']}", token, {"body": body + "\n\n" + withdrawal_note(snapshot.get("pr", {}))})
     return {"write": True, "notified": eligible and not already, "state": report["state"], "deduplicated": already}
 
 
@@ -289,7 +328,8 @@ def main() -> int:
         token = resolve_token()
         if args.write and not token:
             raise ValueError("write mode requires GITHUB_TOKEN or GH_TOKEN")
-        result = reconcile(snapshot, report, config, token, args.write)
+        result = reconcile(snapshot, report, config, token, args.write,
+                           lambda: list_comments(snapshot["repository"], report["pr_number"], token))
         print(json.dumps({"report": report, "reconcile": result}, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, HTTPError, URLError) as exc:
