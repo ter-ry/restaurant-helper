@@ -70,9 +70,11 @@ Repository permissions (least privilege; verify each against the current REST do
 | Pull requests | Read & write | Post formal reviews, read threads |
 | Contents | Read | Read diff/files at head |
 | Metadata | Read | Mandatory |
-| Checks / Commit statuses | Read | Read CI results |
+| Checks / Commit statuses | Read | Read CI results (reviewer App is read-only here; it must not be able to publish the verifier check) |
 | Issues | Read (write only if posting issue comments is required later) | Labels/claims |
 | Everything else (Actions, Administration, Workflows, Secrets, Deployments, Contents write) | **No access** | No path to merge/deploy/workflow edit |
+
+**Separate verifier App (recommended, to be provisioned by the owner).** The mandatory `trusted-review-verified` result must be published by a *different* App identity (for example `flowtally-review-verifier`) so that a compromised reviewer App cannot approve and also vouch for itself. The verifier App needs Checks: write (create check runs; per GitHub's "Create a check run" REST docs) on this repository only, plus Pull requests: read, Contents: read, Metadata: read, Checks/Statuses read for CI. It has no review-posting, contents-write, Actions, Administration or merge permission, its own private key held in the verifier environment (never the reviewer's), and its own App ID, which the ruleset binds as the only permitted source of the required check. The reviewer App never holds Checks/Statuses write. Alternative if the owner prefers one App: grant that App Checks write, and accept that reviewer and verifier then share one compromise domain (not recommended; record the decision as an `OWNER DECISION:`).
 
 Subscribe to no events in Phase 1 (dry-run is invoked manually by the owner). Installation scope: this single repository only; "only on this account". Disable user-to-server OAuth and device flow unless needed; no webhook secret needed until Phase 2.
 
@@ -119,7 +121,7 @@ Each case must yield no qualifying review and no merge eligibility: forged `ter-
 
 1. Decide signing scheme (recommended Ed25519) and where the reviewer environment runs.
 2. Generate/store the App private key in that environment only; do not share it with any Claude session.
-3. Set App permissions per section 6; confirm repository-only installation.
+3. Set App permissions per section 6 for the reviewer App, create and install the separate verifier App (Checks: write, repository-only) with its own key in its own environment, and note its App ID for the ruleset source binding; confirm repository-only installation for both.
 4. Create the `develop` ruleset per section 8 and run the live acceptance test.
 5. Create variable `FLOWTALLY_TRUSTED_REVIEW_ENABLED=false`; enable only for the Phase 1 test.
 6. Record outcomes on #275/#270. Phase 2 needs a separate explicit `OWNER DECISION:`.
