@@ -48,7 +48,9 @@ A review is qualifying only if all hold, evaluated by trusted code from `main`:
 1. A formal review (`APPROVE`) exists whose author is the App bot, with `commit_id == head_sha`.
 2. The review body contains a machine-readable block (JSON) and a detached signature or, for Phase 1, an HMAC computed with a secret held only in the reviewer environment (never in the repo). Fields: `repo_id`, `pr`, `head_sha`, `base_sha`, `changed_files_sha256`, `reviewer_session_id` (random per reviewer run), `author_session_ids` (those found on the PR), `nonce`, `issued_at`, `expires_at`, `evaluator_main_sha`.
 3. `reviewer_session_id` not in `author_session_ids`; reviewer environment differs from every coding worker environment (distinct runtime, distinct secrets).
-4. The verifier recomputes `changed_files_sha256` from the live API, checks the nonce is unused, checks expiry, then records the nonce.
+4. The verifier first checks the kill switch (section 9), then recomputes `changed_files_sha256` from the live API, checks the nonce is unused, checks expiry, then records the nonce. The kill switch is re-read immediately before every acceptance and before any actuator action, so an attestation issued before the switch was turned off is rejected.
+
+5. The verifier publishes its result as an **App-bound required status check** (for example `trusted-review-verified`, created only by the verifier identity, bound to the exact head SHA). GitHub rulesets enforce approvals and checks, not custom review-body content, so the verifier's check, not the bare approval, is the enforced prerequisite.
 
 Open design point for the owner: whether to prefer asymmetric signing (the reviewer signs, the verifier holds only a public key) over HMAC. Recommended default: asymmetric (Ed25519), so the verifier cannot forge attestations.
 
@@ -91,25 +93,27 @@ Authentication and token handling (per GitHub docs "Authenticating as a GitHub A
 
 Open question that **must be tested live**: whether a review by this App satisfies "Require approvals" in a ruleset for `develop`, and how "required reviewers/required review from specific actors" treat Apps. Do not presume it counts; Phase 1 includes a test that demonstrates the rule accepts or rejects it.
 
-Ruleset for `develop` (owner action): require PR; require `backend` and `frontend`; require conversation resolution; dismiss stale approvals on push; require last-push approval by someone other than the pusher; block force-push/deletion; no bypass for the App or any bot. `main` stays owner-controlled and is out of this design's scope.
+Because GitHub cannot validate review-body signatures, nonces or expiry, an App approval alone is never sufficient evidence. The ruleset must **also** require the verifier's status check (section 4, item 5), restricted to the verifier's App as its source. The approval satisfies the review count; the verifier check carries the attestation, replay, expiry, kill-switch and segregation results.
+
+Ruleset for `develop` (owner action): require PR; require the `trusted-review-verified` check from the verifier App; require `backend` and `frontend`; require conversation resolution; dismiss stale approvals on push; require last-push approval by someone other than the pusher; block force-push/deletion; no bypass for the App or any bot. `main` stays owner-controlled and is out of this design's scope.
 
 ## 9. Kill switch
 
-Repository variable `FLOWTALLY_TRUSTED_REVIEW_ENABLED` (default `false`) checked first by the reviewer; plus App suspension and key deletion as hard stops. Disabled state means no attestations, so every gate fails closed.
+Repository variable `FLOWTALLY_TRUSTED_REVIEW_ENABLED` (default `false`) checked first by the reviewer; plus App suspension and key deletion as hard stops. Disabled state means no attestations, so every gate fails closed. The switch is also checked by the verifier and the Phase 2 actuator at consumption time, so existing unexpired attestations stop qualifying the moment it is off.
 
 ## 10. Two-phase plan
 
 **Phase 1: dry run and standalone proof, owner-controlled.**
 1. Owner creates the reviewer environment and stores the key there (owner-only).
 2. Owner-run script posts one formal review from the App on a harmless Tier 0 test PR into `develop`, bound to the head SHA, with the attestation block.
-3. Observe and record: the review author shows as the App; `commit_id` correct; whether the ruleset counts it (accept) and rejects each case in section 11 (reject). Evidence is posted on #275/#270.
-4. Failure of step 3 (App review not accepted by the rules) means redesign (for example a required status check set by the verifier) before any Phase 2.
+3. Run the verifier with the App-bound required status check enabled (the check is mandatory in Phase 1, not a fallback). Observe and record: the review author shows as the App; `commit_id` correct; whether the ruleset counts the approval; and that the **verifier check** (not the ruleset's review count) rejects each negative case in section 11, including missing signature, replayed nonce, expired attestation and kill switch turned off after a valid approval exists. Evidence is posted on #275/#270.
+4. If the rules do not count the App approval, or the verifier check can be bypassed or set by another actor, redesign before any Phase 2.
 
 **Phase 2: only after Phase 1 passes and the owner explicitly authorizes.** Integrate with the separate, disabled-by-default #270 merge actuator, using `develop_merge_policy.evaluate` with `trusted_reviewers` and provenance fields populated by the verifier, never from PR content. The merge actuator uses a different identity with no review power; the reviewer uses no merge power.
 
 ## 11. Required fail-closed test matrix
 
-Each case must yield no qualifying review and no merge eligibility: forged `ter-ry` comment; untrusted PR text containing `APPROVE`; author self-review; stale head; stale base; missing attestation; expired attestation; spoofed actor name; non-allowlisted base or fork PR; PR editing the workflow/evaluator; changed code after review; failed or missing `backend`/`frontend`; unresolved (including outdated) thread; pending requested reviewer; replayed nonce; App token without merge power attempting merge (must be 403); kill switch on. Offline tests extend `backend/tests/test_develop_merge_policy.py` style (sockets blocked); live tests only in Phase 1 under owner control.
+Each case must yield no qualifying review and no merge eligibility: forged `ter-ry` comment; untrusted PR text containing `APPROVE`; author self-review; stale head; stale base; missing attestation; expired attestation; spoofed actor name; non-allowlisted base or fork PR; PR editing the workflow/evaluator; changed code after review; failed or missing `backend`/`frontend`; unresolved (including outdated) thread; pending requested reviewer; replayed nonce; App token without merge power attempting merge (must be 403); kill switch on; kill switch turned off after a valid unexpired approval already exists; approval with missing or invalid signature; verifier check set by a non-verifier actor. Offline tests extend `backend/tests/test_develop_merge_policy.py` style (sockets blocked); live tests only in Phase 1 under owner control.
 
 ## 12. Owner-only setup tasks (exact)
 
