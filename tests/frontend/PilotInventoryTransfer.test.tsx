@@ -73,6 +73,8 @@ describe("inventory transfer UI (#233)", () => {
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
     expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(onTransfer.mock.calls[0][0].idempotencyKey);
     expect(await screen.findByText(/Not enough stock to transfer. Only 3 kg on hand./)).toBeInTheDocument();
+    // A refused retry still says nothing certain about the first attempt: only an explicit discard starts over.
+    fireEvent.click(screen.getByRole("button", { name: "Discard attempt" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(3));
     expect(onTransfer.mock.calls[2][0].idempotencyKey).not.toBe(onTransfer.mock.calls[1][0].idempotencyKey);
@@ -156,5 +158,42 @@ describe("inventory transfer UI (#233)", () => {
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
     expect(onTransfer.mock.calls[1][0].idempotencyKey).not.toBe(key);
     expect(onTransfer.mock.calls[1][0].quantity).toBe(3);
+  });
+
+  it("keeps the original key when a retry is refused before the endpoint ran (401/CSRF), then replays it", async () => {
+    const onTransfer = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Network down"))
+      .mockRejectedValueOnce(new PilotApiError("CSRF token missing.", 400))
+      .mockResolvedValue("ok");
+    setup(onTransfer);
+    fill("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await screen.findByRole("alert");
+    const key = onTransfer.mock.calls[0][0].idempotencyKey;
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
+    expect(await screen.findByText(/CSRF token missing/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Quantity/)).toBeDisabled(); // still locked: the first attempt is still unresolved
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(3));
+    expect(onTransfer.mock.calls[2][0].idempotencyKey).toBe(key);
+    expect(await screen.findByRole("status")).toHaveTextContent("ok");
+  });
+
+  it("a first attempt refused by the server is a definite refusal: the next attempt gets a fresh key", async () => {
+    const onTransfer = vi
+      .fn()
+      .mockRejectedValueOnce(new PilotApiError("Not enough stock to transfer.", 409, { quantity: "Only 3 kg on hand." }))
+      .mockResolvedValue("ok");
+    setup(onTransfer);
+    fill("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    expect(await screen.findByText(/Not enough stock to transfer/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Quantity/)).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
+    expect(onTransfer.mock.calls[1][0].idempotencyKey).not.toBe(onTransfer.mock.calls[0][0].idempotencyKey);
   });
 });

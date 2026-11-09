@@ -56,6 +56,7 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    const isRetry = pending !== undefined;
     const attempt = pending ?? { itemId: item.id, key: newKey(item.id), destinationId, quantity, reason };
     pendingRef.current[item.id] = attempt;
     try {
@@ -67,14 +68,18 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
       setQuantity("");
       setReason("");
     } catch (err) {
-      if (err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
+      const detailText = err instanceof PilotApiError ? Object.values(err.errors ?? {}).join(" ") : "";
+      const message = err instanceof Error ? (detailText ? `${err.message} ${detailText}` : err.message) : "Could not transfer stock.";
+      if (!isRetry && err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
+        // A first attempt that the server refused: nothing was applied, so the next attempt is a new decision.
         delete pendingRef.current[item.id];
         setUnresolved(false);
-        const detail = Object.values(err.errors ?? {}).join(" ");
-        setError(detail ? `${err.message} ${detail}` : err.message);
+        setError(message);
       } else {
+        // Any failure of a retry (even a 401/CSRF 400 before the endpoint ran) says nothing about the original attempt,
+        // so the key is kept; only the explicit "Discard attempt" lets the user start over.
         setUnresolved(true);
-        setError(`${err instanceof Error ? err.message : "Could not transfer stock."} Check the movement history before trying again.`);
+        setError(`${message} Check the movement history before retrying or discarding.`);
       }
     } finally {
       inFlight.current = false;
