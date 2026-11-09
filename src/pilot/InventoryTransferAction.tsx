@@ -9,8 +9,8 @@ import type { PilotInventoryItem, PilotLocation } from "./pilotApi";
 export type PendingTransfer = { itemId: number; key: string; destinationId: string; quantity: string; reason: string };
 
 type Props = {
-  /** Holds the idempotency key of an attempt whose outcome is not known, so a retry replays instead of transferring twice. */
-  pendingRef: MutableRefObject<PendingTransfer | null>;
+  /** Holds, per item, the idempotency key of an attempt whose outcome is not known, so a retry replays instead of transferring twice. */
+  pendingRef: MutableRefObject<Record<number, PendingTransfer>>;
   item: PilotInventoryItem;
   currentLocationId: number | null | undefined;
   locations: PilotLocation[];
@@ -26,7 +26,7 @@ function newKey(itemId: number) {
 /** "Transfer to another location" (#233). Shows source stock, a confirmation step, progress, and server refusals. */
 export function InventoryTransferAction({ pendingRef, item, currentLocationId, locations, onTransfer, disabled = false }: Props) {
   const destinations = locations.filter((location) => location.id !== currentLocationId);
-  const restored = pendingRef.current?.itemId === item.id ? pendingRef.current : null;
+  const restored = pendingRef.current[item.id] ?? null;
   const [open, setOpen] = useState(restored !== null);
   const [destinationId, setDestinationId] = useState<string>(restored?.destinationId ?? "");
   const [quantity, setQuantity] = useState(restored?.quantity ?? "");
@@ -50,18 +50,18 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
     setBusy(true);
     setError(null);
     // One key per decision: kept after an unknown outcome so a retry cannot transfer twice, renewed after a definite refusal.
-    const key = pendingRef.current?.itemId === item.id ? pendingRef.current.key : newKey(item.id);
-    pendingRef.current = { itemId: item.id, key, destinationId, quantity, reason };
+    const key = pendingRef.current[item.id]?.key ?? newKey(item.id);
+    pendingRef.current[item.id] = { itemId: item.id, key, destinationId, quantity, reason };
     try {
       const summary = await onTransfer({ destinationLocationId: Number(destinationId), quantity: parsedQuantity, reason: reason.trim(), idempotencyKey: key });
-      pendingRef.current = null;
+      delete pendingRef.current[item.id];
       setNotice(summary);
       setOpen(false);
       setQuantity("");
       setReason("");
     } catch (err) {
       if (err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
-        pendingRef.current = null;
+        delete pendingRef.current[item.id];
         const detail = Object.values(err.errors ?? {}).join(" ");
         setError(detail ? `${err.message} ${detail}` : err.message);
       } else {

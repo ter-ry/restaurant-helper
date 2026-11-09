@@ -7,10 +7,10 @@ import { PilotApiError } from "../../src/pilot/pilotApi";
 const item: any = { id: 30, name: "Flour", stockUnit: "kg", currentOnHand: 10 };
 const locations: any[] = [{ id: 7, name: "Main" }, { id: 8, name: "Kiosk" }];
 
-let pendingRef: { current: PendingTransfer | null };
+let pendingRef: { current: Record<number, PendingTransfer> };
 
 function setup(onTransfer: any, props: Record<string, unknown> = {}) {
-  pendingRef = { current: null };
+  pendingRef = { current: {} };
   render(<InventoryTransferAction pendingRef={pendingRef} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} {...props} />);
   fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
 }
@@ -24,7 +24,7 @@ describe("inventory transfer UI (#233)", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders nothing when the organization has only one location", () => {
-    const { container } = render(<InventoryTransferAction pendingRef={{ current: null }} item={item} currentLocationId={7} locations={[locations[0]]} onTransfer={vi.fn()} />);
+    const { container } = render(<InventoryTransferAction pendingRef={{ current: {} }} item={item} currentLocationId={7} locations={[locations[0]]} onTransfer={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -80,7 +80,7 @@ describe("inventory transfer UI (#233)", () => {
 
   it("keeps the key of an unknown-outcome attempt when the panel is unmounted and reopened (tab switch)", async () => {
     const onTransfer = vi.fn().mockRejectedValueOnce(new Error("Network down")).mockResolvedValue("ok");
-    const first = render(<InventoryTransferAction pendingRef={(pendingRef = { current: null })} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    const first = render(<InventoryTransferAction pendingRef={(pendingRef = { current: {} })} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
     fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
     fill("4");
     fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
@@ -93,5 +93,33 @@ describe("inventory transfer UI (#233)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
     expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(firstKey);
+  });
+
+  it("keeps item A's unresolved key when item B is transferred in between", async () => {
+    const itemB: any = { id: 31, name: "Sugar", stockUnit: "kg", currentOnHand: 10 };
+    const onTransfer = vi.fn().mockRejectedValueOnce(new Error("Network down")).mockResolvedValue("ok");
+    pendingRef = { current: {} };
+    const ui = (shown: any) => <InventoryTransferAction pendingRef={pendingRef} item={shown} currentLocationId={7} locations={locations} onTransfer={onTransfer} />;
+    const a = render(ui(item));
+    fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
+    fill("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await screen.findByRole("alert");
+    const keyA = onTransfer.mock.calls[0][0].idempotencyKey;
+    a.unmount();
+
+    const b = render(ui(itemB));
+    fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
+    fill("2");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
+    await screen.findByRole("status");
+    expect(onTransfer.mock.calls[1][0].idempotencyKey).not.toBe(keyA);
+    b.unmount();
+
+    render(ui(item));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(3));
+    expect(onTransfer.mock.calls[2][0].idempotencyKey).toBe(keyA);
   });
 });

@@ -488,7 +488,7 @@ export function PilotInventoryPage() {
 
   // The workspace may be closed or switched to another item while a reversal is in flight; late responses for
   // an item that is no longer selected must not be installed into the new item's workspace.
-  const pendingTransferRef = useRef<PendingTransfer | null>(null);
+  const pendingTransferRef = useRef<Record<number, PendingTransfer>>({});
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
 
