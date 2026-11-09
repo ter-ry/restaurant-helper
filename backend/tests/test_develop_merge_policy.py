@@ -323,3 +323,8 @@ def test_unhashable_or_odd_values_in_any_field_do_not_raise(junk):
     s = snap(); s["checks"][0]["conclusion"] = junk; s["checks"][0]["name"] = junk
     d = run(s)
     assert "POLICY_INTERNAL_ERROR" not in d.reasons and d.decision != pol.ELIGIBLE_FOR_REVIEW
+
+
+def test_rename_from_tier2_path_blocks_when_previous_filename_listed():
+    # Evidence contract: changed_files must list both the new and previous_filename of a rename.
+    assert_decision(snap(changed_files=["docs/x.md", ".github/x.yml"]), pol.BLOCKED, "TIER2_PATH_CHANGED")

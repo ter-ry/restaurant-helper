@@ -12,6 +12,8 @@ Decisions, by precedence: `BLOCKED` > `UNVERIFIED` > `OWNER_DECISION` > `ELIGIBL
 
 `repository`, `base_ref`, `author`, `head_sha`/`expected_head_sha`, `base_sha`/`current_base_sha`, `draft`, `mergeable`, `api_errors` (non-empty means `UNVERIFIED`), `flags_changed`, `changed_files`, `checks` (`name, head_sha, base_sha, status, conclusion, app_slug`), `threads` (`resolved`; outdated unresolved threads still block), `pending_reviewers`, `reviews` (`reviewer, state, kind, commit_sha, identity_verified, same_account_as_author`), `issue` (`labels, dependencies_closed, file_claim_overlap, linked`).
 
+`changed_files` must include both the new path and the `previous_filename` of every renamed file; otherwise a rename out of a tier 2 path (for example `.github/x.yml` to `docs/x.md`) would classify as tier 0. A snapshot that omits previous names is not valid evidence.
+
 ## Evidence a trusted actor must fetch itself (not from the PR)
 
 - `trusted_reviewers`: from trusted configuration, never from the snapshot or PR text. Empty means no review qualifies.
