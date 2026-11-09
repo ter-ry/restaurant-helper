@@ -6,7 +6,7 @@ Status: **offline preparation only.** `scripts/develop_merge_policy.py` is a pur
 
 `evaluate(snapshot, trusted_reviewers=()) -> Decision(decision, reasons, tier, merge_authorized=False)`
 
-Decisions, by precedence: `BLOCKED` > `UNVERIFIED` > `OWNER_DECISION` > `ELIGIBLE_FOR_REVIEW` (candidate only). Reasons are stable codes in a deterministic order. Anything missing, mistyped, duplicated, or ambiguous fails closed (`UNVERIFIED` or `BLOCKED`), never eligible.
+Decisions, by precedence: `BLOCKED` > `UNVERIFIED` > `OWNER_DECISION` > `ELIGIBLE_FOR_REVIEW` (candidate only). Reasons are stable codes in a deterministic order. Any `CHANGES_REQUESTED` review in the snapshot blocks (`REVIEW_CHANGES_REQUESTED`). Anything missing, mistyped, duplicated, or ambiguous fails closed (`UNVERIFIED` or `BLOCKED`), never eligible.
 
 ## Snapshot fields (all required)
 
@@ -25,7 +25,7 @@ Decisions, by precedence: `BLOCKED` > `UNVERIFIED` > `OWNER_DECISION` > `ELIGIBL
 
 - Tier 2 (`BLOCKED`, `TIER2_PATH_CHANGED`): `.github/`, migrations/alembic, `AGENTS.md`, `CLAUDE.md`, `render*.yaml`, `Procfile`, env/secret/auth/deploy/release paths, and this policy, its tests, this doc and the runbook (no self-modification).
 - Tier 1 (`OWNER_DECISION`): `backend/**`, `scripts/**`. Owner-controlled in this slice.
-- Tier 0: `docs/`, `src/`, `tests/frontend/`, `public/`. Unclassified paths are owner-controlled. Invalid paths (`..`, absolute, backslash, non-normalized) are `UNVERIFIED`.
+- Tier 0: only `docs/**/*.md` (excluding agent instruction files). All other paths, including all of `src/`, are owner-controlled. Agent instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/`) are Tier 2 at any depth. Invalid paths (`..`, absolute, backslash, non-normalized) are `UNVERIFIED`.
 - Changing `CLOVER_ORDER_INVENTORY_ENABLED` or `FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED` is `BLOCKED`.
 
 ## Tests

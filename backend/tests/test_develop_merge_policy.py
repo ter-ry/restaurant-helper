@@ -25,7 +25,7 @@ def snap(**over):
         "repository": "ter-ry/restaurant-helper", "base_ref": "develop", "author": "ter-ry",
         "head_sha": HEAD, "expected_head_sha": HEAD, "base_sha": BASE, "current_base_sha": BASE,
         "draft": False, "mergeable": True, "api_errors": [], "flags_changed": [],
-        "changed_files": ["docs/notes.md", "src/pilot/Widget.tsx"],
+        "changed_files": ["docs/notes.md", "docs/guides/setup.md"],
         "checks": [
             {"name": n, "head_sha": HEAD, "base_sha": BASE, "status": "completed",
              "conclusion": "success", "app_slug": "github-actions"} for n in ("backend", "frontend")
@@ -202,6 +202,25 @@ def test_tier2_paths_block_regardless_of_labels(path):
 def test_tier1_paths_are_owner_controlled(path):
     d = assert_decision(snap(changed_files=[path]), pol.OWNER_DECISION, "TIER1_OWNER_CONTROLLED")
     assert d.tier == "tier1"
+
+
+@pytest.mark.parametrize("path", ["src/lib/customerAuth.ts", "src/pilot/PilotInventoryPage.tsx",
+                                  "src/pilot/pilotApi.ts", "tests/frontend/Foo.test.tsx", "docs/data.json"])
+def test_src_and_nonmarkdown_paths_are_owner_controlled(path):
+    assert_decision(snap(changed_files=[path]), pol.OWNER_DECISION, "UNCLASSIFIED_PATH_OWNER_CONTROLLED")
+
+
+@pytest.mark.parametrize("path", ["src/AGENTS.md", "docs/CLAUDE.md", "a/b/agents.md", ".claude/skills/x/SKILL.md",
+                                  "docs/Claude.md"])
+def test_nested_agent_instruction_files_block(path):
+    assert_decision(snap(changed_files=[path]), pol.BLOCKED, "TIER2_PATH_CHANGED")
+
+
+def test_approval_followed_by_change_request_blocks():
+    ok = snap()["reviews"][0]
+    cr = dict(ok, state="CHANGES_REQUESTED")
+    for order in ([ok, cr], [cr, ok]):
+        assert_decision(snap(reviews=order, threads=[]), pol.BLOCKED, "REVIEW_CHANGES_REQUESTED")
 
 
 def test_unclassified_path_owner_controlled():

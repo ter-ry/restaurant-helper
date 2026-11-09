@@ -34,10 +34,12 @@ _TIER2_PREFIXES = (
     "docs/develop_merge_policy", "docs/autonomous_integration_runbook",
 )
 _TIER2_EXACT = frozenset({
-    "agents.md", "claude.md", "procfile", "render.yaml", "render.pilot-staging.yaml",
+    "procfile", "render.yaml", "render.pilot-staging.yaml",
     "backend/.env.staging.example", "backend/auth.py", "backend/security.py",
 })
 _TIER2_PATTERNS = (
+    # Agent instruction files at any directory depth.
+    re.compile(r"(^|/)(agents|claude|gemini|codex)\.md$"), re.compile(r"(^|/)\.claude(/|$)"),
     re.compile(r"(^|/)\.env"), re.compile(r"(^|/)render[^/]*\.ya?ml$"),
     re.compile(r"(^|/)(secrets?|credentials?)[^/]*"), re.compile(r"(^|/)deploy[^/]*"),
     re.compile(r"(^|/)(auth|oauth|session)[^/]*\.py$"), re.compile(r"alembic"),
@@ -45,8 +47,10 @@ _TIER2_PATTERNS = (
 )
 # Tier 1: financial / inventory / POS / reporting / backend / RLS: owner-controlled.
 _TIER1_PREFIXES = ("backend/", "scripts/")
-# Tier 0 candidates: docs and frontend-only paths that are not otherwise classified.
-_TIER0_PREFIXES = ("docs/", "src/", "tests/frontend/", "public/")
+# Tier 0 candidates: narrow, demonstrably low-risk paths only. Everything else
+# (including all of src/, which holds auth, API clients and mutation code) stays
+# owner-controlled until a reviewed allowlist widens this.
+_TIER0_PATTERNS = (re.compile(r"^docs/[^/].*\.md$"),)
 
 
 @dataclass(frozen=True)
@@ -91,7 +95,7 @@ def classify_path(path: Any) -> str | None:
         return "tier2"
     if p.startswith(_TIER1_PREFIXES):
         return "tier1"
-    if p.startswith(_TIER0_PREFIXES):
+    if any(r.match(p) for r in _TIER0_PATTERNS):
         return "tier0"
     return "unclassified"
 
@@ -244,6 +248,11 @@ def _check_reviews(s, head, author, trusted, blocked, unverified):
         login = r.get("reviewer")
         if not isinstance(login, str) or not login:
             unverified.append("REVIEW_MALFORMED")
+            continue
+        if r.get("state") == "CHANGES_REQUESTED":
+            # Fail closed: any change request in the snapshot blocks, even if a
+            # later approval exists; a fresh snapshot must show it cleared.
+            blocked.append("REVIEW_CHANGES_REQUESTED")
             continue
         # Same-account / author / generic-bot / non-trusted reviews never qualify.
         if r.get("state") != "APPROVED" or r.get("kind") != QUALIFYING_REVIEW_KIND:
