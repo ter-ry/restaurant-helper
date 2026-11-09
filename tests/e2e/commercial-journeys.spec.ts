@@ -2918,3 +2918,93 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
 }
+
+async function cloverReportsWorld(page: Page, sales: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  const organization = makeOrganization({ id: 71, name: "Clover Cafe" });
+  const state: MockState = {
+    session: makeActiveOwnerSession({
+      currentOrganizationId: organization.id,
+      currentLocationId: 9,
+      enabledModuleKeys: ["INVENTORY", "REPORTING", "DAILY_CLOSE"],
+      organizations: [{ organization, membershipRole: "owner", selected: true }],
+    }),
+    csrfToken: "csrf-token",
+    currentOrganization: organization,
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+  const base = {
+    verified: { orderCount: 4, netItemSales: 36, tax: 4.68, tips: 1.5 }, grossItemSales: null, discounts: null, refunds: null, cancelledOrderCount: null, currency: "CAD",
+    source: "clover_orders", provider: "clover", orderCount: 4, unitsSold: 2, excludedOrderCount: 0, refundOrderCount: 0, byMenuItemUnavailableReason: null, unmappedLines: [],
+    byMenuItem: [{ menuItemId: null, name: "Chicken Plate", category: "", quantity: 2, grossAmount: null, netAmount: null, costAvailable: false, estimatedFoodCostPercent: null, quantityDelta: 2, quantityDeltaPercent: null }],
+  };
+  const report = {
+    provider: "clover", scope: { locationName: "Queen St Cafe" }, period: { view: "daily", startDate: "2026-08-30", endDate: "2026-08-30", priorStartDate: null, priorEndDate: null },
+    sales: { ...base, ...sales }, purchasing: {}, inventory: {}, variance: {}, changes: null, exceptions: [], generatedAt: "2026-08-31T10:00:00Z",
+    costing: { estimatedFoodCostPercent: 11.11, costCoveragePercent: null, costReadySalesAmount: null, totalMappedMenuSalesAmount: null },
+    usageVariance: { valid: false, message: "Physical usage variance is not available for Clover locations yet.", rows: [] }, ...extra,
+  };
+  await page.route("**/api/pilot/reports**", (route) => jsonResponse(route, report));
+  return report;
+}
+
+const noHorizontalScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`Clover Owner Report shows verified figures and unavailable fields at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await cloverReportsWorld(page, { status: "available", available: true, unavailableReason: null, netItemSales: 36, tax: 4.68, tips: 1.5, totalCollected: 42.18 });
+    await page.goto("/app/dashboard?view=daily", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("$42.18")).toBeVisible();
+    await expect(page.getByTestId("sales-unavailable")).toHaveCount(0);
+    await expect(page.getByText("Physical usage variance is not available for Clover locations yet.")).toBeVisible();
+    await expect(page.getByText("$0.00")).toHaveCount(0);
+    expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
+  });
+
+  test(`Clover Owner Report explains unavailable sales instead of showing $0 at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await cloverReportsWorld(page, { status: "unavailable", available: false, unavailableReason: "No verified paid Clover orders are stored for this period. Fetch recent orders in Clover settings if sales are expected.", netItemSales: null, tax: null, tips: null, totalCollected: null, orderCount: 0, unitsSold: null, byMenuItem: [] }, { costing: { estimatedFoodCostPercent: null, costCoveragePercent: null, costReadySalesAmount: null, totalMappedMenuSalesAmount: null } });
+    await page.goto("/app/dashboard?view=daily", { waitUntil: "domcontentloaded" });
+    const notice = page.getByTestId("sales-unavailable");
+    await expect(notice).toContainText("Clover sales are unavailable");
+    await expect(notice).toContainText("No verified paid Clover orders are stored");
+    await expect(page.getByText("$0.00")).toHaveCount(0);
+    expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
+  });
+
+  test(`Clover Owner Report partly verified period hides totals and offers Daily Close at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await cloverReportsWorld(page, { status: "partial", available: false, unavailableReason: "1 Clover order(s) in this period are excluded because they have a refund.", netItemSales: null, tax: null, tips: null, totalCollected: null, excludedOrderCount: 1, refundOrderCount: 1 });
+    await page.goto("/app/dashboard?view=daily", { waitUntil: "domcontentloaded" });
+    const notice = page.getByTestId("sales-unavailable");
+    await expect(notice).toContainText("only partly verified");
+    await expect(notice).toContainText("Verified orders only (4): net item sales $36.00");
+    await expect(notice.getByRole("link", { name: "Use Daily Close" })).toBeVisible();
+    expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
+  });
+
+  test(`Owner Report error state offers a retry and recovers at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await cloverReportsWorld(page, { status: "available", available: true, unavailableReason: null, netItemSales: 36, tax: 4.68, tips: 1.5, totalCollected: 42.18 });
+    let fail = true;
+    const working = async (route: any) => jsonResponse(route, { error: "Reports are temporarily unavailable." }, 503);
+    await page.route("**/api/pilot/reports**", async (route) => {
+      if (fail) return working(route);
+      return route.fallback();
+    });
+    await page.goto("/app/dashboard?view=daily", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("alert")).toContainText("Reports are temporarily unavailable.");
+    await expect(page.getByText("$42.18")).toHaveCount(0);
+    fail = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByText("$42.18")).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
+  });
+}
