@@ -69,7 +69,7 @@ describe("inventory transfer UI (#233)", () => {
     fill("4");
     fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Check the movement history");
-    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
     expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(onTransfer.mock.calls[0][0].idempotencyKey);
     expect(await screen.findByText(/Not enough stock to transfer. Only 3 kg on hand./)).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe("inventory transfer UI (#233)", () => {
     first.unmount(); // History tab unmounts the Overview tab
     render(<InventoryTransferAction pendingRef={pendingRef} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
     expect(screen.getByLabelText(/Quantity/)).toHaveValue("4");
-    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
     expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(firstKey);
   });
@@ -118,8 +118,43 @@ describe("inventory transfer UI (#233)", () => {
     b.unmount();
 
     render(ui(item));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(3));
     expect(onTransfer.mock.calls[2][0].idempotencyKey).toBe(keyA);
+  });
+
+  it("locks an unresolved attempt (no edited retry), replays it even when stock is now lower, and lets the user discard it", async () => {
+    const onTransfer = vi.fn().mockRejectedValueOnce(new Error("Network down")).mockResolvedValue("ok");
+    const { rerender } = render(<InventoryTransferAction pendingRef={(pendingRef = { current: {} })} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
+    fill("8");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await screen.findByRole("alert");
+    const key = onTransfer.mock.calls[0][0].idempotencyKey;
+
+    expect(screen.getByLabelText(/Quantity/)).toBeDisabled();
+    expect(screen.getByLabelText("Send to")).toBeDisabled();
+
+    // The first attempt did commit: refreshed stock (2) is now below the pending 8, yet the retry must reach the server.
+    rerender(<InventoryTransferAction pendingRef={pendingRef} item={{ ...item, currentOnHand: 2 }} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
+    expect(onTransfer.mock.calls[1][0]).toMatchObject({ idempotencyKey: key, quantity: 8, destinationLocationId: 8 });
+  });
+
+  it("discarding an unresolved attempt unlocks the form and starts a fresh key", async () => {
+    const onTransfer = vi.fn().mockRejectedValueOnce(new Error("Network down")).mockResolvedValue("ok");
+    setup(onTransfer);
+    fill("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await screen.findByRole("alert");
+    const key = onTransfer.mock.calls[0][0].idempotencyKey;
+    fireEvent.click(screen.getByRole("button", { name: "Discard attempt" }));
+    expect(screen.getByLabelText(/Quantity/)).toBeEnabled();
+    fill("3");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
+    expect(onTransfer.mock.calls[1][0].idempotencyKey).not.toBe(key);
+    expect(onTransfer.mock.calls[1][0].quantity).toBe(3);
   });
 });

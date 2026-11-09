@@ -32,8 +32,10 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
   const [quantity, setQuantity] = useState(restored?.quantity ?? "");
   const [reason, setReason] = useState(restored?.reason ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(restored ? "A previous transfer attempt may not have finished. Check the movement history, or confirm again to retry safely." : null);
+  const [error, setError] = useState<string | null>(restored ? "A previous transfer attempt may not have finished. Check the movement history, then retry the same transfer (safe: it cannot apply twice) or discard it." : null);
   const [notice, setNotice] = useState<string | null>(null);
+  // While an attempt's outcome is unknown the request is immutable: only the same request (same key) may be retried.
+  const [unresolved, setUnresolved] = useState(restored !== null);
   const inFlight = useRef(false);
 
   if (destinations.length === 0) return null;
@@ -43,18 +45,23 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
 
   const submit = async () => {
     if (inFlight.current) return;
-    if (!destinationId) return setError("Choose where to send the stock.");
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return setError("Enter a quantity greater than zero.");
-    if (parsedQuantity > onHand) return setError(`Only ${onHand} ${item.stockUnit} is on hand here. Stock cannot go below zero.`);
+    // Retrying an unresolved attempt replays exactly what was sent; availability is then the server's call, because a
+    // committed transfer replays regardless of the stock that is left.
+    const pending = pendingRef.current[item.id];
+    if (!pending) {
+      if (!destinationId) return setError("Choose where to send the stock.");
+      if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return setError("Enter a quantity greater than zero.");
+      if (parsedQuantity > onHand) return setError(`Only ${onHand} ${item.stockUnit} is on hand here. Stock cannot go below zero.`);
+    }
     inFlight.current = true;
     setBusy(true);
     setError(null);
-    // One key per decision: kept after an unknown outcome so a retry cannot transfer twice, renewed after a definite refusal.
-    const key = pendingRef.current[item.id]?.key ?? newKey(item.id);
-    pendingRef.current[item.id] = { itemId: item.id, key, destinationId, quantity, reason };
+    const attempt = pending ?? { itemId: item.id, key: newKey(item.id), destinationId, quantity, reason };
+    pendingRef.current[item.id] = attempt;
     try {
-      const summary = await onTransfer({ destinationLocationId: Number(destinationId), quantity: parsedQuantity, reason: reason.trim(), idempotencyKey: key });
+      const summary = await onTransfer({ destinationLocationId: Number(attempt.destinationId), quantity: Number(attempt.quantity), reason: attempt.reason.trim(), idempotencyKey: attempt.key });
       delete pendingRef.current[item.id];
+      setUnresolved(false);
       setNotice(summary);
       setOpen(false);
       setQuantity("");
@@ -62,9 +69,11 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
     } catch (err) {
       if (err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
         delete pendingRef.current[item.id];
+        setUnresolved(false);
         const detail = Object.values(err.errors ?? {}).join(" ");
         setError(detail ? `${err.message} ${detail}` : err.message);
       } else {
+        setUnresolved(true);
         setError(`${err instanceof Error ? err.message : "Could not transfer stock."} Check the movement history before trying again.`);
       }
     } finally {
@@ -88,22 +97,27 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
           <p className="text-sm text-muted">Available here: <span className="font-semibold text-ink">{onHand} {item.stockUnit}</span>. The matching item at the destination is found by name; its cost is blended with the cost of what you send.</p>
           <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`transfer-destination-${item.id}`}>
             Send to
-            <select id={`transfer-destination-${item.id}`} className="input" value={destinationId} disabled={busy} onChange={(event) => setDestinationId(event.target.value)}>
+            <select id={`transfer-destination-${item.id}`} className="input" value={destinationId} disabled={busy || unresolved} onChange={(event) => setDestinationId(event.target.value)}>
               <option value="">Choose a location</option>
               {destinations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`transfer-quantity-${item.id}`}>
             Quantity ({item.stockUnit})
-            <input id={`transfer-quantity-${item.id}`} className="input" inputMode="decimal" value={quantity} disabled={busy} onChange={(event) => setQuantity(event.target.value)} />
+            <input id={`transfer-quantity-${item.id}`} className="input" inputMode="decimal" value={quantity} disabled={busy || unresolved} onChange={(event) => setQuantity(event.target.value)} />
           </label>
           <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`transfer-reason-${item.id}`}>
             Note (optional)
-            <input id={`transfer-reason-${item.id}`} className="input" value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} />
+            <input id={`transfer-reason-${item.id}`} className="input" value={reason} disabled={busy || unresolved} onChange={(event) => setReason(event.target.value)} />
           </label>
           {error ? <p role="alert" className="text-sm font-semibold text-red-700">{error}</p> : null}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={busy || disabled} onClick={() => void submit()}>{busy ? "Transferring…" : "Confirm transfer"}</Button>
+            <Button type="button" disabled={busy || disabled} onClick={() => void submit()}>{busy ? "Transferring…" : unresolved ? "Retry same transfer" : "Confirm transfer"}</Button>
+            {unresolved ? (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { delete pendingRef.current[item.id]; setUnresolved(false); setError(null); }}>
+                Discard attempt
+              </Button>
+            ) : null}
             <Button type="button" variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
           </div>
         </Card>
