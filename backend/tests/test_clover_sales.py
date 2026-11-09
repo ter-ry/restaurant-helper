@@ -64,8 +64,8 @@ def test_excluded_cash_order_is_marked_as_cash_evidence_but_cash_neutral_cancel_
     day = summarize_orders([cancelled_cash, partial_cash, cancelled_card, cancelled_missing, partial_empty], WINDOW)
 
     by_id = {exception["orderId"]: exception for exception in day.exceptions}
-    assert by_id[1] == {"orderId": 1, "cloverOrderId": "C1", "reason": "cancelled", "cashEvidence": True}
-    assert by_id[2] == {"orderId": 2, "cloverOrderId": "C2", "reason": "not_fully_paid", "cashEvidence": True}
+    assert by_id[1] == {"orderId": 1, "cloverOrderId": "C1", "reason": "cancelled", "hasRefund": False, "cashEvidence": True}
+    assert by_id[2] == {"orderId": 2, "cloverOrderId": "C2", "reason": "not_fully_paid", "hasRefund": False, "cashEvidence": True}
     assert "cashEvidence" not in by_id[3]
     assert by_id[4]["cashEvidence"] is True and by_id[5]["cashEvidence"] is True
 
