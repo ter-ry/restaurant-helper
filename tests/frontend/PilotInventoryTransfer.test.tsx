@@ -1,14 +1,17 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { InventoryTransferAction } from "../../src/pilot/InventoryTransferAction";
+import { InventoryTransferAction, type PendingTransfer } from "../../src/pilot/InventoryTransferAction";
 import { PilotApiError } from "../../src/pilot/pilotApi";
 
 const item: any = { id: 30, name: "Flour", stockUnit: "kg", currentOnHand: 10 };
 const locations: any[] = [{ id: 7, name: "Main" }, { id: 8, name: "Kiosk" }];
 
+let pendingRef: { current: PendingTransfer | null };
+
 function setup(onTransfer: any, props: Record<string, unknown> = {}) {
-  render(<InventoryTransferAction item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} {...props} />);
+  pendingRef = { current: null };
+  render(<InventoryTransferAction pendingRef={pendingRef} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} {...props} />);
   fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
 }
 
@@ -21,7 +24,7 @@ describe("inventory transfer UI (#233)", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders nothing when the organization has only one location", () => {
-    const { container } = render(<InventoryTransferAction item={item} currentLocationId={7} locations={[locations[0]]} onTransfer={vi.fn()} />);
+    const { container } = render(<InventoryTransferAction pendingRef={{ current: null }} item={item} currentLocationId={7} locations={[locations[0]]} onTransfer={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -73,5 +76,22 @@ describe("inventory transfer UI (#233)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
     await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(3));
     expect(onTransfer.mock.calls[2][0].idempotencyKey).not.toBe(onTransfer.mock.calls[1][0].idempotencyKey);
+  });
+
+  it("keeps the key of an unknown-outcome attempt when the panel is unmounted and reopened (tab switch)", async () => {
+    const onTransfer = vi.fn().mockRejectedValueOnce(new Error("Network down")).mockResolvedValue("ok");
+    const first = render(<InventoryTransferAction pendingRef={(pendingRef = { current: null })} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
+    fill("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await screen.findByRole("alert");
+    const firstKey = onTransfer.mock.calls[0][0].idempotencyKey;
+
+    first.unmount(); // History tab unmounts the Overview tab
+    render(<InventoryTransferAction pendingRef={pendingRef} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    expect(screen.getByLabelText(/Quantity/)).toHaveValue("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
+    expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(firstKey);
   });
 });

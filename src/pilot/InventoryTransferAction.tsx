@@ -1,10 +1,16 @@
 import { useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { PilotApiError } from "./pilotApi";
 import type { PilotInventoryItem, PilotLocation } from "./pilotApi";
 
+/** An in-flight or unknown-outcome transfer attempt. Owned by the parent so it survives tab switches (unmounts). */
+export type PendingTransfer = { itemId: number; key: string; destinationId: string; quantity: string; reason: string };
+
 type Props = {
+  /** Holds the idempotency key of an attempt whose outcome is not known, so a retry replays instead of transferring twice. */
+  pendingRef: MutableRefObject<PendingTransfer | null>;
   item: PilotInventoryItem;
   currentLocationId: number | null | undefined;
   locations: PilotLocation[];
@@ -18,17 +24,16 @@ function newKey(itemId: number) {
 }
 
 /** "Transfer to another location" (#233). Shows source stock, a confirmation step, progress, and server refusals. */
-export function InventoryTransferAction({ item, currentLocationId, locations, onTransfer, disabled = false }: Props) {
+export function InventoryTransferAction({ pendingRef, item, currentLocationId, locations, onTransfer, disabled = false }: Props) {
   const destinations = locations.filter((location) => location.id !== currentLocationId);
-  const [open, setOpen] = useState(false);
-  const [destinationId, setDestinationId] = useState<string>("");
-  const [quantity, setQuantity] = useState("");
-  const [reason, setReason] = useState("");
+  const restored = pendingRef.current?.itemId === item.id ? pendingRef.current : null;
+  const [open, setOpen] = useState(restored !== null);
+  const [destinationId, setDestinationId] = useState<string>(restored?.destinationId ?? "");
+  const [quantity, setQuantity] = useState(restored?.quantity ?? "");
+  const [reason, setReason] = useState(restored?.reason ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(restored ? "A previous transfer attempt may not have finished. Check the movement history, or confirm again to retry safely." : null);
   const [notice, setNotice] = useState<string | null>(null);
-  // One key per decision: kept after an unknown outcome so a retry cannot transfer twice, renewed after a definite refusal.
-  const keyRef = useRef<string | null>(null);
   const inFlight = useRef(false);
 
   if (destinations.length === 0) return null;
@@ -44,17 +49,19 @@ export function InventoryTransferAction({ item, currentLocationId, locations, on
     inFlight.current = true;
     setBusy(true);
     setError(null);
-    keyRef.current ??= newKey(item.id);
+    // One key per decision: kept after an unknown outcome so a retry cannot transfer twice, renewed after a definite refusal.
+    const key = pendingRef.current?.itemId === item.id ? pendingRef.current.key : newKey(item.id);
+    pendingRef.current = { itemId: item.id, key, destinationId, quantity, reason };
     try {
-      const summary = await onTransfer({ destinationLocationId: Number(destinationId), quantity: parsedQuantity, reason: reason.trim(), idempotencyKey: keyRef.current });
-      keyRef.current = null;
+      const summary = await onTransfer({ destinationLocationId: Number(destinationId), quantity: parsedQuantity, reason: reason.trim(), idempotencyKey: key });
+      pendingRef.current = null;
       setNotice(summary);
       setOpen(false);
       setQuantity("");
       setReason("");
     } catch (err) {
       if (err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
-        keyRef.current = null;
+        pendingRef.current = null;
         const detail = Object.values(err.errors ?? {}).join(" ");
         setError(detail ? `${err.message} ${detail}` : err.message);
       } else {

@@ -39,7 +39,7 @@ import { subscribePilotCache } from "./pilotDataCache";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
-import { InventoryTransferAction } from "./InventoryTransferAction";
+import { InventoryTransferAction, type PendingTransfer } from "./InventoryTransferAction";
 
 interface InventoryDraft {
   id: number | null;
@@ -488,6 +488,7 @@ export function PilotInventoryPage() {
 
   // The workspace may be closed or switched to another item while a reversal is in flight; late responses for
   // an item that is no longer selected must not be installed into the new item's workspace.
+  const pendingTransferRef = useRef<PendingTransfer | null>(null);
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
 
@@ -1024,7 +1025,7 @@ export function PilotInventoryPage() {
               </div>
               {itemDetail?.item ? (
                 <div className="mt-3">
-                  <InventoryTransferAction item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
+                  <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}

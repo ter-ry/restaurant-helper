@@ -16,7 +16,7 @@ from flask_login import current_user, login_required
 
 from .audit import record_audit_event
 from .access import organization_has_enabled_module
-from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, weighted_average_inventory_cost
+from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, transfer_weighted_average_inventory_cost, weighted_average_inventory_cost
 from .extensions import db
 from .models import (
     AuditEvent,
@@ -2742,6 +2742,13 @@ def create_inventory_transfer():
             errors={"quantity": f"Only {source_before} {source.stock_unit} of {source.name} is on hand here. Stock cannot go below zero."},
         )
     unit_cost = Decimal(source.average_unit_cost or 0)
+    if unit_cost <= 0:
+        db.session.rollback()
+        return json_error(
+            "Source item has no cost.",
+            409,
+            errors={"sourceItemId": f"{source.name} has no average cost yet, so the value to carry to {destination.name} is unknown. Receive it on an invoice or set its cost first."},
+        )
     target_before = Decimal(target.current_on_hand)
     target_after = (target_before + quantity).quantize(QTY)
 
@@ -2798,7 +2805,7 @@ def create_inventory_transfer():
         )
     )
     # Source cost is unchanged by a send; the destination blends the carried cost into its own average (#197).
-    target.average_unit_cost = weighted_average_inventory_cost(target_before, target.average_unit_cost, quantity, unit_cost)
+    target.average_unit_cost = transfer_weighted_average_inventory_cost(target_before, target.average_unit_cost, quantity, unit_cost)
     source.current_on_hand = source_after
     target.current_on_hand = target_after
     for row in (source, target):

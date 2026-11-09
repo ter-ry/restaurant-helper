@@ -201,3 +201,22 @@ def test_failure_after_first_write_rolls_back_both_sides(app, client, world, mon
     response = _transfer(client, world)
     assert response.status_code == 500
     assert _state(app, world["flour_main"], world["flour_kiosk"]) == before
+
+
+def test_zero_cost_source_is_refused_and_zero_cost_destination_blends_by_value(app, client, world):
+    with app.app_context():
+        db.session.get(InventoryItem, world["flour_main"]).average_unit_cost = Decimal("0")
+        db.session.commit()
+    before = _state(app, world["flour_main"], world["flour_kiosk"])
+    refused = _transfer(client, world)
+    assert refused.status_code == 409 and "sourceItemId" in refused.get_json()["errors"]
+    assert _state(app, world["flour_main"], world["flour_kiosk"]) == before
+
+    with app.app_context():
+        db.session.get(InventoryItem, world["flour_main"]).average_unit_cost = Decimal("2.00")
+        db.session.get(InventoryItem, world["flour_kiosk"]).average_unit_cost = Decimal("0")
+        db.session.commit()
+    assert _transfer(client, world).status_code == 201
+    state, _, _ = _state(app, world["flour_kiosk"])
+    # value is conserved: (5 * 0 + 4 * 2.00) / 9 = 0.888889
+    assert state[0] == (Decimal("9"), Decimal("0.888889"))
