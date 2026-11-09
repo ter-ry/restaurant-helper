@@ -73,7 +73,7 @@ class OwnerGateTests(unittest.TestCase):
 
     def test_duplicate_notification_is_suppressed(self):
         snap = baseline(); report = evaluate(snap)
-        snap["comments"] = [{"id": 7, "body": notification(report, "@owner")}]
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"))]
         with patch("pr_owner_gate.github_request") as request:
             result = reconcile(snap, report, snap["config"], "token", True)
         self.assertTrue(result["deduplicated"])
@@ -84,13 +84,18 @@ class OwnerGateTests(unittest.TestCase):
         snap = baseline(); snap["pr"]["head"]["sha"] = "b" * 40
         for check in snap["checks"]: check["head_sha"] = "b" * 40
         snap["reviews"][0]["commit_id"] = "b" * 40; snap["unresolved_review_findings"] = [{"id": 9}]
-        snap["comments"] = [{"id": 7, "body": notification(old_report, "@owner")}]
+        snap["comments"] = [gate_comment(7, notification(old_report, "@owner"))]
         with patch("pr_owner_gate.github_request") as request:
             reconcile(snap, evaluate(snap), snap["config"], "token", True)
         self.assertTrue(any(call.args[0] == "PATCH" for call in request.call_args_list))
 
 
 REPO = "ter-ry/restaurant-helper"
+BOT = "github-actions[bot]"
+
+
+def gate_comment(comment_id, body, login=BOT):
+    return {"id": comment_id, "user": {"login": login}, "body": body}
 
 
 def thread(resolved=False, outdated=False):
@@ -218,7 +223,7 @@ class WriteModeTests(unittest.TestCase):
 
     def test_absent_label_delete_404_is_success_and_withdrawal_continues(self):
         snap = baseline(); snap["unresolved_review_findings"] = [{"id": 1}]
-        old = baseline(); snap["comments"] = [{"id": 7, "body": notification(evaluate(old), "@owner")}]
+        old = baseline(); snap["comments"] = [gate_comment(7, notification(evaluate(old), "@owner"))]
         calls = []
         def request(method, path, token, body=None):
             calls.append(method)
@@ -240,7 +245,7 @@ class WriteModeTests(unittest.TestCase):
     def test_withdrawn_notification_does_not_deduplicate(self):
         snap, report = self.ready()
         withdrawn = notification(report, "@owner") + "\n\n**WITHDRAWN:** the PR head or readiness state changed; reassess the current SHA."
-        snap["comments"] = [{"id": 7, "body": withdrawn}]
+        snap["comments"] = [gate_comment(7, withdrawn)]
         calls = []
         with patch("pr_owner_gate.github_request", side_effect=lambda *a, **k: calls.append(a[:2]) or {}):
             result = reconcile(snap, report, snap["config"], "token", True)
@@ -251,7 +256,7 @@ class WriteModeTests(unittest.TestCase):
 
     def test_ready_to_blocked_to_ready_same_sha_renotifies_once(self):
         snap, report = self.ready()
-        snap["comments"] = [{"id": 7, "body": notification(report, "@owner")}]
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"))]
         blocked = copy.deepcopy(snap); blocked["unresolved_review_findings"] = [{"id": 1}]
         patched = {}
         def request(method, path, token, body=None):
@@ -261,12 +266,12 @@ class WriteModeTests(unittest.TestCase):
         with patch("pr_owner_gate.github_request", side_effect=request):
             reconcile(blocked, evaluate(blocked), blocked["config"], "token", True)
         self.assertIn("WITHDRAWN", patched["body"])
-        snap["comments"] = [{"id": 7, "body": patched["body"]}]
+        snap["comments"] = [gate_comment(7, patched["body"])]
         with patch("pr_owner_gate.github_request") as again:
             self.assertTrue(reconcile(snap, report, snap["config"], "token", True)["notified"])
         self.assertEqual(again.call_count, 2)
         # The freshly posted active comment now deduplicates.
-        snap["comments"].append({"id": 8, "body": notification(report, "@owner")})
+        snap["comments"].append(gate_comment(8, notification(report, "@owner")))
         with patch("pr_owner_gate.github_request") as third:
             self.assertTrue(reconcile(snap, report, snap["config"], "token", True)["deduplicated"])
         self.assertEqual(third.call_count, 1)
@@ -313,6 +318,158 @@ class TokenPropagationTests(unittest.TestCase):
         self.assertIn("vars.FLOWTALLY_OWNER_GATE_WRITE || 'false'", text)
         self.assertIn("vars.FLOWTALLY_OWNER_GATE_ENABLED == 'true'", text)
         self.assertNotRegex(text, r"(?i)merge_method|gh pr merge|/merge")
+
+
+def ready_snapshot(sha):
+    snap = baseline(); snap["pr"]["head"]["sha"] = sha
+    for check in snap["checks"]:
+        check["head_sha"] = sha
+    snap["reviews"][0]["commit_id"] = sha
+    return snap
+
+
+class NotificationAuthenticationTests(unittest.TestCase):
+    def run_reconcile(self, snap):
+        calls = []
+        def request(method, path, token, body=None):
+            calls.append((method, path.rsplit("/", 1)[-1]))
+            return {}
+        with patch("pr_owner_gate.github_request", side_effect=request):
+            result = reconcile(snap, evaluate(snap), snap["config"], "token", True)
+        return result, calls
+
+    def test_marker_from_another_user_does_not_deduplicate(self):
+        snap = baseline(); report = evaluate(snap)
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"), login="attacker")]
+        result, calls = self.run_reconcile(snap)
+        self.assertTrue(result["notified"])
+        self.assertFalse(result["deduplicated"])
+        self.assertIn(("POST", "comments"), calls)
+
+    def test_marker_from_owner_account_does_not_deduplicate(self):
+        snap = baseline(); report = evaluate(snap)
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"), login="ter-ry")]
+        self.assertTrue(self.run_reconcile(snap)[0]["notified"])
+
+    def test_forged_ready_comment_is_never_patched(self):
+        snap = baseline(); snap["unresolved_review_findings"] = [{"id": 1}]
+        snap["comments"] = [gate_comment(7, notification(evaluate(baseline()), "@owner"), login="attacker")]
+        _, calls = self.run_reconcile(snap)
+        self.assertNotIn("PATCH", [method for method, _ in calls])
+
+    def test_marker_must_start_the_comment(self):
+        snap = baseline(); report = evaluate(snap)
+        quoted = "I quote the bot:\n" + notification(report, "@owner")
+        snap["comments"] = [gate_comment(7, quoted)]
+        self.assertTrue(self.run_reconcile(snap)[0]["notified"])
+
+    def test_authentic_comment_deduplicates_and_author_login_is_case_insensitive(self):
+        snap = baseline(); report = evaluate(snap)
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"), login="GitHub-Actions[bot]")]
+        result, calls = self.run_reconcile(snap)
+        self.assertTrue(result["deduplicated"])
+        self.assertEqual(calls, [("POST", "labels")])
+
+    def test_configured_notification_author_is_used(self):
+        snap = baseline(); report = evaluate(snap); snap["config"]["notification_authors"] = "gate-app[bot]"
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"), login=BOT)]
+        self.assertTrue(self.run_reconcile(snap)[0]["notified"])
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"), login="gate-app[bot]")]
+        self.assertTrue(self.run_reconcile(snap)[0]["deduplicated"])
+
+
+class ReadyToReadyTests(unittest.TestCase):
+    def test_ready_a_to_ready_b_notifies_b_and_withdraws_a(self):
+        a = "a" * 40; b = "b" * 40
+        old_report = evaluate(ready_snapshot(a))
+        snap = ready_snapshot(b)
+        snap["comments"] = [gate_comment(7, notification(old_report, "@owner"))]
+        calls = []
+        def request(method, path, token, body=None):
+            calls.append((method, path.rsplit("/", 1)[-1], body))
+            return {}
+        with patch("pr_owner_gate.github_request", side_effect=request):
+            result = reconcile(snap, evaluate(snap), snap["config"], "token", True)
+        self.assertTrue(result["notified"])
+        self.assertEqual([c[:2] for c in calls], [("POST", "labels"), ("POST", "comments"), ("PATCH", "7")])
+        self.assertIn(f"sha={b}", calls[1][2]["body"])
+        self.assertIn("WITHDRAWN", calls[2][2]["body"])
+        self.assertIn(f"sha={a}", calls[2][2]["body"])
+
+    def test_ready_state_change_at_same_sha_withdraws_previous_state(self):
+        sha = "a" * 40
+        old = evaluate(ready_snapshot(sha)); self.assertEqual(old["state"], "VERIFIED FOR OWNER DECISION")
+        snap = ready_snapshot(sha); snap["owner_decision_required"] = True
+        snap["comments"] = [gate_comment(7, notification(old, "@owner"))]
+        with patch("pr_owner_gate.github_request") as request:
+            reconcile(snap, evaluate(snap), snap["config"], "token", True)
+        self.assertEqual([c.args[0] for c in request.call_args_list], ["POST", "POST", "PATCH"])
+
+    def test_current_notification_is_not_withdrawn_when_still_ready(self):
+        snap = baseline(); report = evaluate(snap)
+        snap["comments"] = [gate_comment(7, notification(report, "@owner"))]
+        with patch("pr_owner_gate.github_request") as request:
+            reconcile(snap, report, snap["config"], "token", True)
+        self.assertEqual([c.args[0] for c in request.call_args_list], ["POST"])
+
+    def test_already_withdrawn_comments_are_not_patched_again(self):
+        a = "a" * 40
+        old = notification(evaluate(ready_snapshot(a)), "@owner") + "\n\n**WITHDRAWN:** earlier."
+        snap = ready_snapshot("b" * 40); snap["comments"] = [gate_comment(7, old)]
+        with patch("pr_owner_gate.github_request") as request:
+            reconcile(snap, evaluate(snap), snap["config"], "token", True)
+        self.assertNotIn("PATCH", [c.args[0] for c in request.call_args_list])
+
+
+class CheckClassificationTests(unittest.TestCase):
+    def test_pending_ci_is_in_progress_not_failed(self):
+        for status in ("queued", "in_progress", "waiting", "pending"):
+            snap = baseline(); snap["checks"][0].update(status=status); snap["checks"][0].pop("conclusion", None)
+            report = evaluate(snap)
+            self.assertEqual(report["state"], "REVIEW IN PROGRESS", status)
+            self.assertIn("CI_PENDING:backend", report["outstanding_risks"])
+            self.assertFalse(any(r.startswith("CI_FAILED") for r in report["outstanding_risks"]), status)
+            self.assertEqual(report["ci"]["backend"], "pending")
+
+    def test_pending_with_explicit_null_conclusion(self):
+        snap = baseline(); snap["checks"][0].update(status="in_progress", conclusion=None)
+        self.assertEqual(evaluate(snap)["state"], "REVIEW IN PROGRESS")
+
+    def test_completed_failure_still_blocks(self):
+        for conclusion in ("failure", "cancelled", "timed_out", "action_required", "skipped", None):
+            snap = baseline(); snap["checks"][0]["conclusion"] = conclusion
+            report = evaluate(snap)
+            self.assertEqual(report["state"], "BLOCKED", conclusion)
+            self.assertIn("CI_FAILED:backend", report["outstanding_risks"])
+
+    def test_pending_release_policy_check_is_in_progress(self):
+        snap = baseline(); snap["config"]["release_policy_checks"] = "release-policy"
+        snap["checks"].append({"name": "release-policy", "head_sha": SHA, "status": "in_progress", "conclusion": None})
+        report = evaluate(snap)
+        self.assertEqual(report["state"], "REVIEW IN PROGRESS")
+        self.assertIn("RELEASE_POLICY_PENDING:release-policy", report["outstanding_risks"])
+        snap["checks"][-1].update(status="completed", conclusion="failure")
+        self.assertEqual(evaluate(snap)["state"], "BLOCKED")
+
+    def test_configured_check_names_are_case_sensitive(self):
+        snap = baseline(); snap["config"]["release_policy_checks"] = "Release Policy"
+        snap["checks"].append({"name": "Release Policy", "head_sha": SHA, "status": "completed", "conclusion": "success"})
+        self.assertEqual(evaluate(snap)["state"], "VERIFIED FOR OWNER DECISION")
+        snap["config"]["release_policy_checks"] = "release policy"  # wrong case never matches
+        report = evaluate(snap)
+        self.assertEqual(report["state"], "REVIEW IN PROGRESS")
+        self.assertIn("RELEASE_POLICY_CHECKS_MISSING:release policy", report["outstanding_risks"])
+
+    def test_required_check_case_is_preserved_in_report(self):
+        snap = baseline(); snap["config"]["required_checks"] = "Backend,frontend"
+        for check in snap["checks"]:
+            if check["name"] == "backend":
+                check["name"] = "Backend"
+        report = evaluate(snap)
+        self.assertEqual(report["state"], "VERIFIED FOR OWNER DECISION")
+        self.assertEqual(sorted(report["ci"]), ["Backend", "frontend"])
+        snap["config"]["required_checks"] = "backend,frontend"  # GitHub reports "Backend"
+        self.assertIn("REQUIRED_CHECKS_MISSING:backend", evaluate(snap)["outstanding_risks"])
 
 
 if __name__ == "__main__":

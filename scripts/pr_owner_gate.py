@@ -22,12 +22,23 @@ from agent_handoff_audit import is_high_risk
 
 STATES = ("BLOCKED", "REVIEW IN PROGRESS", "OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION")
 MARKER = "<!-- flowtally-owner-gate"
+READY_STATES = frozenset({"OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION"})
 DEFAULT_CHECKS = ("backend", "frontend")
 HIGH_RISK = ("financial", "inventory", "pos", "security", "migration")
 
 
+# Comments posted with the workflow token are authored by this account.
+DEFAULT_NOTIFICATION_AUTHORS = frozenset({"github-actions[bot]"})
+
+
 def csv(value: str | None) -> set[str]:
+    """Case-insensitive names (logins, path patterns)."""
     return {item.strip().lower() for item in (value or "").split(",") if item.strip()}
+
+
+def check_names(value: str | None) -> set[str]:
+    """Configured CI check names; GitHub check names are case-sensitive."""
+    return {item.strip() for item in (value or "").split(",") if item.strip()}
 
 
 def matches_high_risk(paths: list[str], patterns: set[str]) -> bool:
@@ -71,6 +82,14 @@ def _check_map(snapshot: dict, sha: str) -> dict[str, dict]:
     return result
 
 
+def _check_state(check: dict | None) -> str:
+    if not check:
+        return "missing"
+    if check.get("status") != "completed":
+        return "pending"
+    return check.get("conclusion") or "unknown"
+
+
 def _review_provenance(snapshot: dict, sha: str, trusted: set[str], author: str) -> dict[str, str]:
     """Return the latest formal verdict per distinct GitHub account.
 
@@ -99,8 +118,8 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
     sha = pr["head"]["sha"]
     author = (pr.get("user", {}).get("login") or "").lower()
     trusted = csv(config.get("trusted_reviewers"))
-    required_checks = csv(config.get("required_checks")) or set(DEFAULT_CHECKS)
-    policy_checks = csv(config.get("release_policy_checks"))
+    required_checks = check_names(config.get("required_checks")) or set(DEFAULT_CHECKS)
+    policy_checks = check_names(config.get("release_policy_checks"))
     high_risk_patterns = csv(config.get("high_risk_patterns")) or set(HIGH_RISK)
     reasons: list[str] = []
     checks = _check_map(snapshot, sha)
@@ -119,8 +138,9 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
         reasons.append("MERGEABILITY_UNVERIFIED")
 
     missing = sorted(required_checks - checks.keys())
-    failed = sorted(name for name in required_checks if name in checks and checks[name].get("conclusion") not in {"success", "neutral"})
+    # A queued/in-progress check has no conclusion yet: it is pending, not failed.
     pending = sorted(name for name in required_checks if name in checks and checks[name].get("status") != "completed")
+    failed = sorted(name for name in required_checks if name in checks and checks[name].get("status") == "completed" and checks[name].get("conclusion") not in {"success", "neutral"})
     if missing:
         reasons.append("REQUIRED_CHECKS_MISSING:" + ",".join(missing))
     if failed:
@@ -130,9 +150,12 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
 
     policy = _check_map(snapshot, sha)
     missing_policy = sorted(policy_checks - policy.keys())
-    failed_policy = sorted(name for name in policy_checks if name in policy and policy[name].get("conclusion") != "success")
+    pending_policy = sorted(name for name in policy_checks if name in policy and policy[name].get("status") != "completed")
+    failed_policy = sorted(name for name in policy_checks if name in policy and policy[name].get("status") == "completed" and policy[name].get("conclusion") != "success")
     if missing_policy:
         reasons.append("RELEASE_POLICY_CHECKS_MISSING:" + ",".join(missing_policy))
+    if pending_policy:
+        reasons.append("RELEASE_POLICY_PENDING:" + ",".join(pending_policy))
     if failed_policy:
         reasons.append("RELEASE_POLICY_FAILED:" + ",".join(failed_policy))
 
@@ -159,7 +182,7 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
     blocking_prefixes = ("PR_", "UNSUPPORTED", "MERGEABILITY", "CI_FAILED", "RELEASE_POLICY_FAILED", "OPEN_REVIEW", "UNRESOLVED", "TRUSTED_", "REVIEW_", "REQUIRED_CHECKS_MISSING")
     if any(reason.startswith(prefix) for reason in reasons for prefix in blocking_prefixes):
         state = "BLOCKED"
-    elif any(reason.startswith(prefix) for reason in reasons for prefix in ("CI_PENDING", "RELEASE_POLICY_CHECKS_MISSING", "INDEPENDENT_REVIEW_MISSING")):
+    elif any(reason.startswith(prefix) for reason in reasons for prefix in ("CI_PENDING", "RELEASE_POLICY_PENDING", "RELEASE_POLICY_CHECKS_MISSING", "INDEPENDENT_REVIEW_MISSING")):
         state = "REVIEW IN PROGRESS"
     elif high_risk or snapshot.get("owner_decision_required"):
         state = "OWNER REVIEW NEEDED"
@@ -170,7 +193,7 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
         "pr_number": pr["number"],
         "head_sha": sha,
         "url": pr.get("html_url", ""),
-        "ci": {name: checks.get(name, {}).get("conclusion", "missing") for name in sorted(required_checks)},
+        "ci": {name: _check_state(checks.get(name)) for name in sorted(required_checks)},
         "review_evidence": {"formal_approvals": sorted(login for login, value in reviews.items() if value == "APPROVE"), "required": needed},
         "outstanding_risks": reasons,
         "high_risk": high_risk,
@@ -207,33 +230,49 @@ def remove_label(repository: str, number: int, label: str, token: str) -> None:
             raise
 
 
-def is_active_notification(body: str, current_marker: str) -> bool:
-    """A matching marker only deduplicates while the comment is not withdrawn."""
-    return MARKER in body and current_marker in body and "WITHDRAWN" not in body
+def is_gate_comment(comment: dict, authors: set[str]) -> bool:
+    """Only comments authored by the gate's own identity carry gate markers.
+
+    Anyone can paste the marker text into a comment; trusting it would let a
+    participant suppress the owner notification or have a forged comment edited.
+    """
+    login = ((comment.get("user") or {}).get("login") or "").lower()
+    body = (comment.get("body") or "").lstrip()
+    return login in authors and body.startswith(MARKER)
+
+
+def is_active_notification(comment: dict, current_marker: str, authors: set[str]) -> bool:
+    """A matching marker only deduplicates while the comment is authentic and not withdrawn."""
+    body = comment.get("body") or ""
+    return is_gate_comment(comment, authors) and current_marker in body and "WITHDRAWN" not in body
 
 
 def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: bool) -> dict:
+    mention = config.get("owner_mention", "@owner")
     if not write:
-        return {"write": False, "would_notify": report["state"] in {"OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION"}, "notification": notification(report, config.get("owner_mention", "@owner"))}
+        return {"write": False, "would_notify": report["state"] in READY_STATES, "notification": notification(report, mention)}
     repository = snapshot["repository"]
     number = report["pr_number"]
     label = config.get("owner_label", "owner-review-needed")
+    authors = csv(config.get("notification_authors")) or set(DEFAULT_NOTIFICATION_AUTHORS)
     comments = snapshot.get("comments", [])
     current_marker = f"sha={report['head_sha']} state={report['state']}"
-    already = any(is_active_notification(comment.get("body") or "", current_marker) for comment in comments)
-    eligible = report["state"] in {"OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION"}
+    already = any(is_active_notification(comment, current_marker, authors) for comment in comments)
+    eligible = report["state"] in READY_STATES
     if eligible:
         github_request("POST", f"repos/{repository}/issues/{number}/labels", token, {"labels": [label]})
         if not already:
-            github_request("POST", f"repos/{repository}/issues/{number}/comments", token, {"body": notification(report, config.get("owner_mention", "@owner"))})
+            github_request("POST", f"repos/{repository}/issues/{number}/comments", token, {"body": notification(report, mention)})
     else:
         remove_label(repository, number, label, token)
-        # Do not add noise for ordinary CI progress or a still-known blocker.
-        old_ready = [comment for comment in comments if MARKER in (comment.get("body") or "") and ("state=OWNER REVIEW NEEDED" in comment["body"] or "state=VERIFIED FOR OWNER DECISION" in comment["body"])]
-        for comment in old_ready:
-            body = comment.get("body", "")
-            if "WITHDRAWN" not in body:
-                github_request("PATCH", f"repos/{repository}/issues/comments/{comment['id']}", token, {"body": body + "\n\n**WITHDRAWN:** the PR head or readiness state changed; reassess the current SHA."})
+    # Withdraw every authentic ready notification that is not the current one,
+    # in both branches: ready A -> ready B must not leave A advertised as ready.
+    # Ordinary CI progress or a still-known blocker adds no new comment.
+    for comment in comments:
+        body = comment.get("body") or ""
+        is_ready = any(f"state={state} -->" in body.split("\n", 1)[0] for state in READY_STATES)
+        if is_gate_comment(comment, authors) and is_ready and "WITHDRAWN" not in body and current_marker not in body.split("\n", 1)[0]:
+            github_request("PATCH", f"repos/{repository}/issues/comments/{comment['id']}", token, {"body": body + "\n\n**WITHDRAWN:** the PR head or readiness state changed; reassess the current SHA."})
     return {"write": True, "notified": eligible and not already, "state": report["state"], "deduplicated": already}
 
 

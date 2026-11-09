@@ -104,12 +104,13 @@ def main():
     p.add_argument("--release-policy-checks", default="")
     p.add_argument("--trusted-reviewers", default="")
     p.add_argument("--owner-login", default="")
+    p.add_argument("--notification-authors", default="", help="comma-separated logins whose comments carry gate markers (default github-actions[bot])")
     p.add_argument("--output", required=True)
     a = p.parse_args()
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
         raise SystemExit("GH_TOKEN or GITHUB_TOKEN is required")
-    config = {"required_checks": a.required_checks, "release_policy_checks": a.release_policy_checks, "trusted_reviewers": a.trusted_reviewers, "owner_mention": "@" + a.owner_login if a.owner_login else "@owner"}
+    config = {"required_checks": a.required_checks, "release_policy_checks": a.release_policy_checks, "trusted_reviewers": a.trusted_reviewers, "owner_mention": "@" + a.owner_login if a.owner_login else "@owner", "notification_authors": a.notification_authors}
     snapshot = build_snapshot(a.repository, a.pr, token, config)
     with open(a.output, "w", encoding="utf-8") as handle:
         json.dump(snapshot, handle)

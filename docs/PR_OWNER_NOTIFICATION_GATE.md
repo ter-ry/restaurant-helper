@@ -32,6 +32,14 @@ malformed response or incomplete pagination reports
 no longer deduplicates, so a PR that becomes ready again at the same SHA is
 re-notified. Removing an already-absent label is treated as success.
 
+Notification comments are trusted only when authored by the gate's own
+identity (default `github-actions[bot]`, the workflow token's account) and when
+the marker starts the comment; a marker pasted by anyone else neither
+deduplicates nor is edited. Ready notifications for an older SHA or state are
+withdrawn whenever the current state differs, including ready A to ready B.
+Queued or running checks are "in progress", never failed. Configured check
+names are matched exactly (GitHub check names are case-sensitive).
+
 Offline regression tests (`scripts/tests/test_pr_owner_gate.py`) run in GitHub
 CI via `.github/workflows/pr-owner-gate-tests.yml`.
 
