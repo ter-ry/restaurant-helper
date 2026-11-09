@@ -37,6 +37,7 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.update_inventory_item": "INVENTORY",
     "pilot_api.create_inventory_adjustment": "INVENTORY",
     "pilot_api.reverse_inventory_adjustment": "INVENTORY",
+    "pilot_api.create_inventory_transfer": "INVENTORY",
     "pilot_api.list_count_sessions": "STOCK_COUNTS",
     "pilot_api.create_count_session": "STOCK_COUNTS",
     "pilot_api.get_count_session": "STOCK_COUNTS",

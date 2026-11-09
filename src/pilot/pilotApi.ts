@@ -1562,3 +1562,41 @@ export type PilotNegativeStock = { count: number; posCausedCount: number; items:
 export async function fetchPilotNegativeStock() {
   return requestJson<PilotNegativeStock>("/api/pilot/inventory/negative-stock");
 }
+
+export type PilotInventoryTransfer = {
+  id: number;
+  fromLocationId: number;
+  toLocationId: number;
+  fromItemId: number;
+  toItemId: number;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  reason: string;
+  idempotencyKey: string;
+  createdAt: string | null;
+  outMovement: PilotInventoryMovement | null;
+  inMovement: PilotInventoryMovement | null;
+  replayed: boolean;
+};
+
+/** Atomically moves stock to another location of the same organization (#233). The idempotency key is required. */
+export async function createPilotInventoryTransfer(payload: {
+  sourceItemId: number;
+  destinationLocationId: number;
+  quantity: number;
+  reason?: string;
+  idempotencyKey: string;
+}) {
+  try {
+    return await requestCsrfJson<PilotInventoryTransfer>("/api/pilot/inventory/transfers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    // A rejected transfer usually means stock changed under us; drop the cached lists so the caller re-reads them.
+    clearPilotDataCache();
+    throw error;
+  }
+}

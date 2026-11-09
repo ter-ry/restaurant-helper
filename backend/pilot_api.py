@@ -23,6 +23,7 @@ from .models import (
     DailyCloseSession,
     InventoryItem,
     InventoryMovement,
+    InventoryTransfer,
     InventoryWasteEvent,
     OrganizationModule,
     OrganizationMembership,
@@ -2577,6 +2578,259 @@ def reverse_inventory_adjustment(movement_id: int):
     body = serialize_inventory_movement(reversal)
     body["replayed"] = False
     return _commit_json(body, 201)
+
+
+TRANSFER_OUT_SOURCE_TYPE = "inventory transfer out"
+TRANSFER_IN_SOURCE_TYPE = "inventory transfer in"
+
+
+def _serialize_transfer(transfer: InventoryTransfer, out_movement: InventoryMovement | None = None, in_movement: InventoryMovement | None = None) -> dict[str, Any]:
+    return {
+        "id": transfer.id,
+        "fromLocationId": transfer.from_location_id,
+        "toLocationId": transfer.to_location_id,
+        "fromItemId": transfer.from_item_id,
+        "toItemId": transfer.to_item_id,
+        "quantity": decimal_to_float(transfer.quantity),
+        "unit": transfer.unit,
+        "unitCost": decimal_to_float(transfer.unit_cost),
+        "reason": transfer.reason,
+        "idempotencyKey": transfer.idempotency_key,
+        "createdAt": isoformat(transfer.created_at),
+        "outMovement": serialize_inventory_movement(out_movement) if out_movement else None,
+        "inMovement": serialize_inventory_movement(in_movement) if in_movement else None,
+    }
+
+
+def _transfer_response(transfer: InventoryTransfer, status_code: int, replayed: bool):
+    movements = {
+        movement.source_type: movement
+        for movement in InventoryMovement.query.filter(
+            InventoryMovement.organization_id == transfer.organization_id,
+            InventoryMovement.source_type.in_([TRANSFER_OUT_SOURCE_TYPE, TRANSFER_IN_SOURCE_TYPE]),
+            InventoryMovement.source_record_id == str(transfer.id),
+        ).all()
+    }
+    body = _serialize_transfer(transfer, movements.get(TRANSFER_OUT_SOURCE_TYPE), movements.get(TRANSFER_IN_SOURCE_TYPE))
+    body["replayed"] = replayed
+    return body, status_code
+
+
+def _transfer_replay_or_conflict(existing: InventoryTransfer, source_location_id: int, source_item_id: int, destination_location_id: int, destination_item_id: int | None, quantity: Decimal):
+    same = (
+        existing.from_location_id == source_location_id
+        and existing.from_item_id == source_item_id
+        and existing.to_location_id == destination_location_id
+        and (destination_item_id is None or existing.to_item_id == destination_item_id)
+        and Decimal(existing.quantity) == quantity
+    )
+    if not same:
+        db.session.rollback()
+        return json_error("Idempotency key already used.", 409, errors={"idempotencyKey": "This key was already used for a different transfer."})
+    body, status = _transfer_response(existing, 200, True)
+    db.session.rollback()
+    return jsonify(body), status
+
+
+@bp.post("/api/pilot/inventory/transfers")
+@login_required
+def create_inventory_transfer():
+    """Move stock between two locations of the same organization atomically (#233, owner decision #197 A).
+
+    One transaction writes a transfer row plus a paired ``inventory transfer out`` / ``inventory transfer in``
+    movement (keyed by the transfer id, so the unique movement source constraint backstops exactly-once), moves
+    both on-hand quantities and carries the *source* weighted-average cost to the destination. Both item rows are
+    locked in ascending id order (#248), so opposing transfers cannot deadlock. A send that would leave the source
+    below zero is refused (#199). ``idempotencyKey`` is required: the same key and payload replays, a different
+    payload under the same key is a 409.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, locations, location = context
+    permission_error = _require_role(membership, "inventory.manage")
+    if permission_error is not None:
+        return permission_error
+    payload = _json_body()
+    errors: dict[str, str] = {}
+    idempotency_key = _reversal_idempotency_key(payload)
+    if not idempotency_key:
+        errors["idempotencyKey"] = "An idempotency key is required."
+    reason = str(payload.get("reason") or "").strip()
+    try:
+        source_item_id = int(payload.get("sourceItemId"))
+    except (TypeError, ValueError):
+        source_item_id = None
+        errors["sourceItemId"] = "Choose the item to send."
+    try:
+        destination_location_id = int(payload.get("destinationLocationId"))
+    except (TypeError, ValueError):
+        destination_location_id = None
+        errors["destinationLocationId"] = "Choose a destination location."
+    destination_item_id = None
+    if payload.get("destinationItemId") not in (None, ""):
+        try:
+            destination_item_id = int(payload.get("destinationItemId"))
+        except (TypeError, ValueError):
+            errors["destinationItemId"] = "Choose a valid destination item."
+    try:
+        quantity = _to_quantity(payload.get("quantity"), field="quantity")
+    except RequestValidationError as exc:
+        quantity = Decimal("0")
+        errors.update(exc.errors or {"quantity": "Enter a valid quantity."})
+    if not errors and quantity <= 0:
+        errors["quantity"] = "Quantity must be greater than zero."
+    if not errors and destination_location_id == location.id:
+        errors["destinationLocationId"] = "Destination must be a different location."
+    if errors:
+        return json_error("Validation failed.", 400, errors=errors)
+    destination = _check_location_access(destination_location_id, locations)
+    if destination is None:
+        return json_error("Destination location not found.", 404)
+
+    existing = InventoryTransfer.query.filter_by(organization_id=organization.id, idempotency_key=idempotency_key).first()
+    if existing is not None:
+        return _transfer_replay_or_conflict(existing, location.id, source_item_id, destination.id, destination_item_id, quantity)
+
+    source_probe = InventoryItem.query.filter_by(id=source_item_id, organization_id=organization.id, location_id=location.id).first()
+    if source_probe is None:
+        return json_error("Inventory item not found.", 404)
+    if destination_item_id is not None:
+        destination_probe = InventoryItem.query.filter_by(id=destination_item_id, organization_id=organization.id, location_id=destination.id).first()
+    else:
+        destination_probe = InventoryItem.query.filter_by(
+            organization_id=organization.id, location_id=destination.id, normalized_name=source_probe.normalized_name
+        ).first()
+    if destination_probe is None:
+        return json_error(
+            "No matching item at the destination.",
+            404,
+            errors={"destinationItemId": f"{destination.name} has no item matching {source_probe.name}. Add it there first, or choose the destination item."},
+        )
+
+    # Lock both rows in ascending id order (each helper call is location-scoped, so order the calls by item id).
+    locked: dict[int, InventoryItem] = {}
+    for item_id, location_id in sorted([(source_probe.id, location.id), (destination_probe.id, destination.id)]):
+        locked.update(lock_inventory_items(organization.id, location_id, [item_id]))
+    source, target = locked.get(source_probe.id), locked.get(destination_probe.id)
+    if source is None or target is None:
+        db.session.rollback()
+        return json_error("Inventory item not found.", 404)
+
+    # Re-checked after the locks so a concurrent identical request that just committed is always visible.
+    existing = InventoryTransfer.query.filter_by(organization_id=organization.id, idempotency_key=idempotency_key).first()
+    if existing is not None:
+        return _transfer_replay_or_conflict(existing, location.id, source.id, destination.id, target.id, quantity)
+
+    if not source.active or not target.active:
+        db.session.rollback()
+        return json_error("Item is inactive.", 409, errors={"sourceItemId": "Both items must be active to transfer stock."})
+    if source.stock_unit != target.stock_unit:
+        db.session.rollback()
+        return json_error(
+            "Units do not match.",
+            400,
+            errors={"destinationItemId": f"{source.name} is counted in {source.stock_unit} but the destination item is counted in {target.stock_unit}."},
+        )
+    source_before = Decimal(source.current_on_hand)
+    source_after = (source_before - quantity).quantize(QTY)
+    if source_after < 0:
+        db.session.rollback()
+        return json_error(
+            "Not enough stock to transfer.",
+            409,
+            errors={"quantity": f"Only {source_before} {source.stock_unit} of {source.name} is on hand here. Stock cannot go below zero."},
+        )
+    unit_cost = Decimal(source.average_unit_cost or 0)
+    target_before = Decimal(target.current_on_hand)
+    target_after = (target_before + quantity).quantize(QTY)
+
+    transfer = InventoryTransfer(
+        organization_id=organization.id,
+        from_location_id=location.id,
+        to_location_id=destination.id,
+        from_item_id=source.id,
+        to_item_id=target.id,
+        quantity=quantity,
+        unit=source.stock_unit,
+        unit_cost=unit_cost,
+        idempotency_key=idempotency_key,
+        reason=reason,
+        created_by_user_id=current_user.id,
+    )
+    db.session.add(transfer)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This transfer was already submitted.", 409, errors={"idempotencyKey": "This key was already used."})
+    note = reason or f"Transfer {location.name} -> {destination.name}"
+    db.session.add(
+        InventoryMovement(
+            organization_id=organization.id,
+            location_id=location.id,
+            inventory_item_id=source.id,
+            quantity_delta=-quantity,
+            quantity_before=source_before,
+            quantity_after=source_after,
+            unit=source.stock_unit,
+            source_type=TRANSFER_OUT_SOURCE_TYPE,
+            source_record_id=str(transfer.id),
+            source_line_id="out",
+            reason=note,
+            actor_user_id=current_user.id,
+        )
+    )
+    db.session.add(
+        InventoryMovement(
+            organization_id=organization.id,
+            location_id=destination.id,
+            inventory_item_id=target.id,
+            quantity_delta=quantity,
+            quantity_before=target_before,
+            quantity_after=target_after,
+            unit=target.stock_unit,
+            source_type=TRANSFER_IN_SOURCE_TYPE,
+            source_record_id=str(transfer.id),
+            source_line_id="in",
+            reason=note,
+            actor_user_id=current_user.id,
+        )
+    )
+    # Source cost is unchanged by a send; the destination blends the carried cost into its own average (#197).
+    target.average_unit_cost = weighted_average_inventory_cost(target_before, target.average_unit_cost, quantity, unit_cost)
+    source.current_on_hand = source_after
+    target.current_on_hand = target_after
+    for row in (source, target):
+        row.updated_by_user_id = current_user.id
+        row.updated_at = _now()
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This transfer was already submitted.", 409, errors={"idempotencyKey": "This key was already used."})
+    record_audit_event(
+        event_type="inventory.transfer_created",
+        entity_type="inventory_transfer",
+        entity_id=transfer.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "fromLocationId": location.id,
+            "toLocationId": destination.id,
+            "fromItemId": source.id,
+            "toItemId": target.id,
+            "quantity": float(quantity),
+            "unitCost": float(unit_cost),
+            "sourceQuantityAfter": float(source_after),
+            "destinationQuantityAfter": float(target_after),
+            "reason": reason,
+            "idempotencyKey": idempotency_key,
+        },
+    )
+    body, status = _transfer_response(transfer, 201, False)
+    return _commit_json(body, status)
 
 
 WASTE_REASONS = {

@@ -11,6 +11,7 @@ import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotInventoryAdjustment,
   reversePilotInventoryAdjustment,
+  createPilotInventoryTransfer,
   createPilotInventoryWasteEvent,
   createPilotInventoryItem,
   createPilotSupplier,
@@ -38,6 +39,7 @@ import { subscribePilotCache } from "./pilotDataCache";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
+import { InventoryTransferAction } from "./InventoryTransferAction";
 
 interface InventoryDraft {
   id: number | null;
@@ -165,7 +167,7 @@ function formatLatestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchas
 
 export function PilotInventoryPage() {
   const navigate = useNavigate();
-  const { organization, currentLocation } = usePilotSession();
+  const { organization, currentLocation, locations } = usePilotSession();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -511,6 +513,21 @@ export function PilotInventoryPage() {
       if (selectedIdRef.current === movement.inventoryItemId) setReversalNotice(summary);
     } catch {
       if (selectedIdRef.current === movement.inventoryItemId) setReversalNotice(`${summary} Reload the page to see the latest history.`);
+    }
+  };
+
+  // Transfers (#233): the server applies both sides atomically; reconcile with authoritative state afterwards.
+  const transferStock = async (request: { destinationLocationId: number; quantity: number; reason: string; idempotencyKey: string }) => {
+    const source = itemDetail?.item;
+    if (!source) throw new Error("Open an item before transferring stock.");
+    const destination = (locations ?? []).find((entry) => entry.id === request.destinationLocationId);
+    const result = await createPilotInventoryTransfer({ sourceItemId: source.id, ...request });
+    const summary = `Transferred ${formatInventoryQuantity(result.quantity)} ${result.unit} of ${source.name} to ${destination?.name ?? "the other location"}. ${source.name} here is now ${formatInventoryQuantity(result.outMovement?.quantityAfter ?? 0)} ${result.unit}.`;
+    try {
+      await refreshItemAfterReversal(source.id);
+      return summary;
+    } catch {
+      return `${summary} Reload the page to see the latest history.`;
     }
   };
 
@@ -1005,6 +1022,11 @@ export function PilotInventoryPage() {
                   Stock counts →
                 </Button>
               </div>
+              {itemDetail?.item ? (
+                <div className="mt-3">
+                  <InventoryTransferAction item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
+                </div>
+              ) : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 
