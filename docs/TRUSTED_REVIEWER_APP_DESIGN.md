@@ -36,7 +36,7 @@ Trust boundaries: coder -> GitHub (data only); GitHub -> reviewer environment (e
 | T9 | Code changed after review | Attestation binds the tree/head SHA and the diff hash of the changed-file list; mismatch -> reject | `changed_code` |
 | T10 | Failed/missing CI | Require `backend` and `frontend` checks from `github-actions`, exact head and base | `failed_ci` |
 | T11 | Pending/unresolved threads (incl. outdated) | GraphQL/REST thread listing must show zero unresolved | `unresolved_threads` |
-| T12 | Replay of an old attestation on a new PR/head | Nonce plus (repo, PR number, head SHA, base SHA) binding, single use, stored in the reviewer environment | `replay` |
+| T12 | Replay of an old attestation on a new PR/head | Nonce plus (repo, PR number, head SHA, base SHA) binding, single use, nonce store owned and written by the verifier (replay protection never depends on the reviewer) | `replay` |
 | T13 | Privilege path from App to merge/deploy | App has no `contents: write`, no `actions`, no `administration`; merging is a different identity, off by default | `no_merge_privilege` |
 | T14 | Key theft/leak | Key only in reviewer environment secret store; rotation and revocation below; never in a PR, issue, workflow log or chat | `key_hygiene` (procedural) |
 | T15 | Denial/kill | Kill switch variable stops all review posting; absence of attestation is the safe state | `kill_switch` |
@@ -46,13 +46,13 @@ Trust boundaries: coder -> GitHub (data only); GitHub -> reviewer environment (e
 A review is qualifying only if all hold, evaluated by trusted code from `main`:
 
 1. A formal review (`APPROVE`) exists whose author is the App bot, with `commit_id == head_sha`.
-2. The review body contains a machine-readable block (JSON) and a detached signature or, for Phase 1, an HMAC computed with a secret held only in the reviewer environment (never in the repo). Fields: `repo_id`, `pr`, `head_sha`, `base_sha`, `changed_files_sha256`, `reviewer_session_id` (random per reviewer run), `author_session_ids` (those found on the PR), `nonce`, `issued_at`, `expires_at`, `evaluator_main_sha`.
+2. The review body contains a machine-readable block (JSON) and a detached **Ed25519 signature** (required in Phase 1, not an option): the reviewer environment holds the private key and the verifier environment holds only the public key, so the verifier can check but never mint a qualifying attestation. No shared-secret HMAC is permitted, because a verifier holding the secret could forge attestations and would defeat the reviewer/verifier split. The private key never appears in the repo. Fields: `repo_id`, `pr`, `head_sha`, `base_sha`, `changed_files_sha256`, `reviewer_session_id` (random per reviewer run), `author_session_ids` (those found on the PR), `nonce`, `issued_at`, `expires_at`, `evaluator_main_sha`.
 3. `reviewer_session_id` not in `author_session_ids`; reviewer environment differs from every coding worker environment (distinct runtime, distinct secrets).
 4. The verifier first checks the kill switch (section 9), then recomputes `changed_files_sha256` from the live API, checks the nonce is unused, checks expiry, then records the nonce. The kill switch is re-read immediately before every acceptance and before any actuator action, so an attestation issued before the switch was turned off is rejected.
 
 5. The verifier publishes its result as an **App-bound required status check** (for example `trusted-review-verified`, created only by the verifier identity, bound to the exact head SHA). GitHub rulesets enforce approvals and checks, not custom review-body content, so the verifier's check, not the bare approval, is the enforced prerequisite.
 
-Open design point for the owner: whether to prefer asymmetric signing (the reviewer signs, the verifier holds only a public key) over HMAC. Recommended default: asymmetric (Ed25519), so the verifier cannot forge attestations.
+Signing is asymmetric by requirement (see item 2). Test: a verifier environment without the signing key cannot produce an attestation that the verifier itself accepts (`verifier-cannot-mint`).
 
 ## 5. Reviewer/author segregation
 
@@ -98,7 +98,7 @@ Open question that **must be tested live**: whether a review by this App satisfi
 
 Because GitHub cannot validate review-body signatures, nonces or expiry, an App approval alone is never sufficient evidence. The ruleset must **also** require the verifier's status check (section 4, item 5), restricted to the verifier's App as its source. The approval satisfies the review count; the verifier check carries the attestation, replay, expiry, kill-switch and segregation results.
 
-Ruleset for `develop` (owner action): require PR; require the `trusted-review-verified` check from the verifier App; require `backend` and `frontend`; require conversation resolution; dismiss stale approvals on push; require last-push approval by someone other than the pusher; block force-push/deletion; no bypass for the App or any bot. `main` stays owner-controlled and is out of this design's scope.
+Ruleset for `develop` (owner action): require PR; require the `trusted-review-verified` check from the verifier App; require `backend` and `frontend`; enable **"Require branches to be up to date before merging"** (strict required status checks) so a `develop` tip that moves after `trusted-review-verified` passed invalidates the check and forces re-verification at the new base (the verifier also re-runs on base movement); require conversation resolution; dismiss stale approvals on push; require last-push approval by someone other than the pusher; block force-push/deletion; no bypass for the App or any bot. `main` stays owner-controlled and is out of this design's scope.
 
 ## 9. Kill switch
 
@@ -116,7 +116,7 @@ Repository variable `FLOWTALLY_TRUSTED_REVIEW_ENABLED` (default `false`) checked
 
 ## 11. Required fail-closed test matrix
 
-Each case must yield no qualifying review and no merge eligibility: forged `ter-ry` comment; review by a different user whose login resembles the bot (wrong `user.id`); untrusted PR text containing `APPROVE`; author self-review; stale head; stale base; missing attestation; expired attestation; spoofed actor name; non-allowlisted base or fork PR; PR editing the workflow/evaluator; changed code after review; failed or missing `backend`/`frontend`; unresolved (including outdated) thread; pending requested reviewer; replayed nonce; App token without merge power attempting merge (must be 403); kill switch on; kill switch turned off after a valid unexpired approval already exists; positive control with distinct head and base SHAs (an ordinary PR must pass the base check); App token lacking Variables read (must fail closed, proving the switch is actually readable when permissioned); approval with missing or invalid signature; verifier check set by a non-verifier actor. Offline tests extend `backend/tests/test_develop_merge_policy.py` style (sockets blocked); live tests only in Phase 1 under owner control.
+Each case must yield no qualifying review and no merge eligibility: forged `ter-ry` comment; review by a different user whose login resembles the bot (wrong `user.id`); untrusted PR text containing `APPROVE`; author self-review; stale head; stale base; missing attestation; expired attestation; spoofed actor name; non-allowlisted base or fork PR; PR editing the workflow/evaluator; changed code after review; failed or missing `backend`/`frontend`; unresolved (including outdated) thread; pending requested reviewer; replayed nonce; App token without merge power attempting merge (must be 403); kill switch on; kill switch turned off after a valid unexpired approval already exists; positive control with distinct head and base SHAs (an ordinary PR must pass the base check); App token lacking Variables read (must fail closed, proving the switch is actually readable when permissioned); approval with missing or invalid signature; verifier check set by a non-verifier actor; verifier environment without the signing key cannot mint a qualifying attestation (`verifier-cannot-mint`); base advances after a passing verifier check (merge must be blocked until re-verified at the new base). Offline tests extend `backend/tests/test_develop_merge_policy.py` style (sockets blocked); live tests only in Phase 1 under owner control.
 
 ## 12. Owner-only setup tasks (exact)
 
