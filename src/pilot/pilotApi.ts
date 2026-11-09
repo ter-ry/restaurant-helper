@@ -414,6 +414,13 @@ export interface PilotPurchaseInvoice {
   createdByUserId: number | null;
   updatedByUserId: number | null;
   postedAt: string | null;
+  /** Void/correction lineage (#232): a corrected copy points at the voided original and vice versa. */
+  correctsInvoiceId?: number | null;
+  correctedByInvoiceId?: number | null;
+  voidedAt?: string | null;
+  voidReason?: string;
+  /** Only present on the void response: true when the same idempotency key replayed an earlier void. */
+  replayed?: boolean;
   lineItems: PilotInvoiceLine[];
   createdAt: string | null;
   updatedAt: string | null;
@@ -1228,8 +1235,11 @@ export async function receivePilotPurchaseInvoice(invoiceId: number) {
   });
 }
 
-export async function correctPilotPurchaseInvoice(invoiceId: number, payload: Record<string, unknown>) {
-  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/correct`, {
+export async function voidPilotPurchaseInvoice(
+  invoiceId: number,
+  payload: { reason: string; createCorrectionDraft: boolean; idempotencyKey: string },
+) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/void`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

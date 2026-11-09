@@ -69,5 +69,7 @@ def reverse_weighted_average_inventory_cost(
 
     new_value = (quantity * average_unit_cost) - (removal_quantity * removal_unit_cost)
     if new_value <= 0:
-        return Decimal("0")
+        # Stock remains but the arithmetic would give it no value (later receipts/consumption moved the
+        # average). Do not invent a zero cost: keep the current average (#232).
+        return average_unit_cost.quantize(AVERAGE_COST_PRECISION)
     return (new_value / new_quantity).quantize(AVERAGE_COST_PRECISION)
