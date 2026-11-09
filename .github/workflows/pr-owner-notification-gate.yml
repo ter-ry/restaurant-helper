@@ -76,18 +76,23 @@ jobs:
             LABELLED_CLOSED=$(gh api "repos/$REPOSITORY/issues?state=closed&labels=owner-review-needed&per_page=100" --jq '.[]|select(.pull_request)|.number')
             PR_NUMBERS=$(printf '%s\n' "$EVENT_PR_NUMBER" $OPEN_PRS $LABELLED_CLOSED | { grep -E '^[0-9]+$' || true; } | sort -un)
           fi
+          # `reconcile_pr ... || ...` disables errexit inside the function, so each
+          # step must propagate failure explicitly: a failed collection must never
+          # fall through to evaluating a previous PR's snapshot.
           reconcile_pr() {
+            SNAPSHOT="$(mktemp)"
             python scripts/pr_owner_gate_collect.py \
               --repository "$REPOSITORY" --pr "$1" \
               --required-checks "$REQUIRED_CHECKS" \
               --release-policy-checks "$RELEASE_POLICY_CHECKS" \
               --trusted-reviewers "$TRUSTED_REVIEWERS" \
-              --owner-login "$OWNER_LOGIN" --output /tmp/pr-owner-gate.json
+              --owner-login "$OWNER_LOGIN" --output "$SNAPSHOT" || { rm -f "$SNAPSHOT"; return 1; }
             if [ "$OWNER_GATE_WRITE" = "true" ]; then
-              python scripts/pr_owner_gate.py --snapshot /tmp/pr-owner-gate.json --write
+              python scripts/pr_owner_gate.py --snapshot "$SNAPSHOT" --write || { rm -f "$SNAPSHOT"; return 1; }
             else
-              python scripts/pr_owner_gate.py --snapshot /tmp/pr-owner-gate.json
+              python scripts/pr_owner_gate.py --snapshot "$SNAPSHOT" || { rm -f "$SNAPSHOT"; return 1; }
             fi
+            rm -f "$SNAPSHOT"
           }
           # One failing PR must not starve the others; the job still fails.
           FAILED=0

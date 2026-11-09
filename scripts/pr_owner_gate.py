@@ -279,12 +279,22 @@ def list_comments(repository: str, number: int, token: str) -> list[dict]:
     raise ValueError("comment pagination limit exceeded")
 
 
-def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: bool, fetch_comments=None) -> dict:
+def snapshot_is_current(snapshot_pr: dict, live_pr: dict) -> bool:
+    """True when the live PR still matches what was evaluated (head, state, draft, base)."""
+    def key(pr: dict):
+        return (pr.get("head", {}).get("sha"), pr.get("state"), bool(pr.get("draft")), pr.get("base", {}).get("ref"))
+    return key(snapshot_pr) == key(live_pr) and key(live_pr)[0] is not None
+
+
+def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: bool, fetch_comments=None, fetch_pr=None) -> dict:
     """Apply label/comment changes for ``report``.
 
     ``fetch_comments`` re-reads the PR comments immediately before any write so
     that a run holding a stale (for example empty) snapshot cannot post a second
     notification.  Workflow-level serialization covers the remaining window.
+    ``fetch_pr`` re-reads the live PR before advertising readiness: if the head,
+    open state, draft flag or base changed since collection, nothing is written
+    (the change's own event or the schedule reconciles the new state).
     """
     mention = config.get("owner_mention", "@owner")
     if not write:
@@ -297,12 +307,12 @@ def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: boo
     current_marker = f"sha={report['head_sha']} state={report['state']}"
     already = any(is_active_notification(comment, current_marker, authors) for comment in comments)
     eligible = report["state"] in READY_STATES
+    if eligible and fetch_pr is not None and not snapshot_is_current(snapshot["pr"], fetch_pr()):
+        return {"write": False, "stale_snapshot": True, "state": report["state"], "notified": False, "deduplicated": already}
     if eligible:
         github_request("POST", f"repos/{repository}/issues/{number}/labels", token, {"labels": [label]})
         if not already:
             github_request("POST", f"repos/{repository}/issues/{number}/comments", token, {"body": notification(report, mention)})
-    else:
-        remove_label(repository, number, label, token)
     # Withdraw every authentic ready notification that is not the current one,
     # in both branches: ready A -> ready B must not leave A advertised as ready,
     # and a closed PR (state BLOCKED) withdraws all of them.
@@ -312,6 +322,10 @@ def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: boo
         is_ready = any(f"state={state} -->" in body.split("\n", 1)[0] for state in READY_STATES)
         if is_gate_comment(comment, authors) and is_ready and "WITHDRAWN" not in body and current_marker not in body.split("\n", 1)[0]:
             github_request("PATCH", f"repos/{repository}/issues/comments/{comment['id']}", token, {"body": body + "\n\n" + withdrawal_note(snapshot.get("pr", {}))})
+    if not eligible:
+        # Remove the label only after every withdrawal succeeded: for a closed
+        # PR the label is what lets later runs find and finish the cleanup.
+        remove_label(repository, number, label, token)
     return {"write": True, "notified": eligible and not already, "state": report["state"], "deduplicated": already}
 
 
@@ -329,7 +343,8 @@ def main() -> int:
         if args.write and not token:
             raise ValueError("write mode requires GITHUB_TOKEN or GH_TOKEN")
         result = reconcile(snapshot, report, config, token, args.write,
-                           lambda: list_comments(snapshot["repository"], report["pr_number"], token))
+                           lambda: list_comments(snapshot["repository"], report["pr_number"], token),
+                           lambda: github_request("GET", f"repos/{snapshot['repository']}/pulls/{report['pr_number']}", token))
         print(json.dumps({"report": report, "reconcile": result}, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, HTTPError, URLError) as exc:

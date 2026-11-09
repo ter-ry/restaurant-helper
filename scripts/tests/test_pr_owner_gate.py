@@ -232,7 +232,7 @@ class WriteModeTests(unittest.TestCase):
             return {}
         with patch("pr_owner_gate.github_request", side_effect=request):
             result = reconcile(snap, evaluate(snap), snap["config"], "token", True)
-        self.assertEqual(calls, ["DELETE", "PATCH"])
+        self.assertEqual(calls, ["PATCH", "DELETE"])   # withdraw first, label last
         self.assertEqual(result["state"], "BLOCKED")
 
     def test_other_label_delete_errors_propagate(self):
@@ -286,7 +286,7 @@ class TokenPropagationTests(unittest.TestCase):
         argv = ["pr_owner_gate.py", "--snapshot", str(path)] + (["--write"] if write else [])
         tokens = []
         with patch.dict("os.environ", env, clear=True), patch.object(sys, "argv", argv), \
-                patch("pr_owner_gate.github_request", side_effect=lambda m, p, t, b=None: tokens.append(t) or {}), \
+                patch("pr_owner_gate.github_request", side_effect=lambda m, p, t, b=None: tokens.append(t) or (snap["pr"] if p.endswith("/pulls/42") else [] if m == "GET" else {})), \
                 patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", new_callable=io.StringIO):
             code = pr_owner_gate.main()
         return code, tokens
@@ -480,9 +480,13 @@ class FakeGitHub:
         self.labels = set()
         self.calls = []
         self.next_id = 100
+        self.live_pr = baseline()["pr"]
+        self.fail_patch = 0
 
     def request(self, method, path, token, body=None):
         self.calls.append((method, path.split("?")[0].rsplit("/", 1)[-1]))
+        if method == "GET" and path.endswith("/pulls/42"):
+            return self.live_pr
         if method == "GET":
             return [dict(c) for c in self.comments]
         if method == "POST" and path.endswith("/labels"):
@@ -491,6 +495,9 @@ class FakeGitHub:
             self.next_id += 1
             self.comments.append(gate_comment(self.next_id, body["body"])); return {}
         if method == "PATCH":
+            if self.fail_patch:
+                self.fail_patch -= 1
+                raise http_error(503)
             for c in self.comments:
                 if str(c["id"]) == path.rsplit("/", 1)[-1]:
                     c["body"] = body["body"]
@@ -505,11 +512,14 @@ class FakeGitHub:
         return [c for c in self.calls if c == ("POST", "comments")]
 
 
-def run_with(fake, snap):
+def run_with(fake, snap, live_pr=None):
+    """Reconcile ``snap`` against the fake; the live PR defaults to the snapshot's own PR."""
     report = evaluate(snap)
+    fake.live_pr = live_pr if live_pr is not None else snap["pr"]
     with patch("pr_owner_gate.github_request", side_effect=fake.request):
         return reconcile(snap, report, snap["config"], "token", True,
-                         lambda: pr_owner_gate.list_comments(REPO, 42, "token"))
+                         lambda: pr_owner_gate.list_comments(REPO, 42, "token"),
+                         lambda: pr_owner_gate.github_request("GET", f"repos/{REPO}/pulls/42", "token"))
 
 
 class CheckNameTests(unittest.TestCase):
@@ -703,6 +713,137 @@ class ReviewThresholdTests(unittest.TestCase):
         snap["reviews"].append({"user": {"login": "reviewer2"}, "state": "APPROVED", "commit_id": SHA, "submitted_at": "2026-11-08T01:00:00Z"})
         snap["config"]["trusted_reviewers"] = "reviewer,reviewer2"
         self.assertEqual(evaluate(snap)["state"], "OWNER REVIEW NEEDED")
+
+
+class LivePullRequestRevalidationTests(unittest.TestCase):
+    def changed(self, **pr_changes):
+        live = copy.deepcopy(baseline()["pr"])
+        for key, value in pr_changes.items():
+            if key == "sha":
+                live["head"]["sha"] = value
+            elif key == "base":
+                live["base"]["ref"] = value
+            else:
+                live[key] = value
+        return live
+
+    def assert_nothing_written(self, fake, result):
+        self.assertTrue(result.get("stale_snapshot"))
+        self.assertFalse(result["notified"])
+        self.assertEqual([c for c in fake.calls if c[0] != "GET"], [])
+        self.assertEqual(fake.labels, set()); self.assertEqual(fake.comments, [])
+
+    def test_head_changed_between_collection_and_write_posts_nothing(self):
+        fake = FakeGitHub()
+        self.assert_nothing_written(fake, run_with(fake, baseline(), self.changed(sha="b" * 40)))
+
+    def test_closed_draft_or_retargeted_after_collection_posts_nothing(self):
+        for change in ({"state": "closed"}, {"draft": True}, {"base": "develop"}):
+            fake = FakeGitHub()
+            self.assert_nothing_written(fake, run_with(fake, baseline(), self.changed(**change)))
+
+    def test_unchanged_live_pr_proceeds_and_unreadable_live_pr_fails_closed(self):
+        fake = FakeGitHub()
+        self.assertTrue(run_with(fake, baseline())["notified"])
+        snap = baseline(); fake2 = FakeGitHub()
+        def broken(method, path, token, body=None):
+            if method == "GET" and path.endswith("/pulls/42"):
+                raise http_error(502)
+            return fake2.request(method, path, token, body)
+        with patch("pr_owner_gate.github_request", side_effect=broken):
+            with self.assertRaises(HTTPError):
+                reconcile(snap, evaluate(snap), snap["config"], "t", True, lambda: [], lambda: pr_owner_gate.github_request("GET", f"repos/{REPO}/pulls/42", "t"))
+        self.assertEqual(fake2.comments, [])
+        self.assertFalse(snapshot_is_current_missing_sha())
+
+    def test_stale_ready_head_a_does_not_overwrite_new_head_b(self):
+        fake = FakeGitHub(); a = "a" * 40; b = "b" * 40
+        run_with(fake, ready_snapshot(a))
+        fake.calls.clear()
+        stale = run_with(fake, ready_snapshot(a), self.changed(sha=b))   # head moved to B after A was evaluated
+        self.assertTrue(stale["stale_snapshot"])
+        self.assertEqual([c for c in fake.calls if c[0] != "GET"], [])
+
+
+def snapshot_is_current_missing_sha():
+    return pr_owner_gate.snapshot_is_current({"head": {}}, {"head": {}})
+
+
+class ClosedCleanupRetryTests(unittest.TestCase):
+    def test_withdrawal_failure_keeps_label_so_later_runs_can_finish(self):
+        fake = FakeGitHub(); run_with(fake, baseline())
+        closed = baseline(); closed["pr"]["state"] = "closed"
+        fake.fail_patch = 1
+        with self.assertRaises(HTTPError):
+            run_with(fake, closed)
+        self.assertIn("owner-review-needed", fake.labels)           # still discoverable by the labelled-closed query
+        self.assertNotIn("WITHDRAWN", fake.comments[0]["body"])
+        run_with(fake, closed)                                      # retry succeeds
+        self.assertIn("WITHDRAWN", fake.comments[0]["body"])
+        self.assertNotIn("owner-review-needed", fake.labels)
+
+    def test_withdrawal_precedes_label_removal(self):
+        fake = FakeGitHub(); run_with(fake, baseline()); fake.calls.clear()
+        closed = baseline(); closed["pr"]["state"] = "closed"; run_with(fake, closed)
+        verbs = [m for m, _ in fake.calls if m != "GET"]
+        self.assertEqual(verbs, ["PATCH", "DELETE"])
+
+    def test_blocked_open_pr_still_removes_label_without_comments(self):
+        fake = FakeGitHub(); run_with(fake, baseline()); fake.labels.add("owner-review-needed")
+        blocked = baseline(); blocked["unresolved_review_findings"] = [{"id": 1}]
+        run_with(fake, blocked)
+        self.assertNotIn("owner-review-needed", fake.labels)
+
+
+class WorkflowShellTests(unittest.TestCase):
+    """Run the workflow's real shell step against fake `gh`/`python` shims."""
+
+    def run_step(self, collector_fails_for):
+        import os, stat, subprocess, tempfile
+        text = (ROOT / ".github/workflows/pr-owner-notification-gate.yml").read_text()
+        step = text[text.index("        run: |\n", text.index("Collect exact-head evidence")) + len("        run: |\n"):]
+        script = re.sub(r"\$\{\{.*?\}\}", "", "\n".join(line[10:] for line in step.splitlines()))
+        tmp = Path(tempfile.mkdtemp(prefix="owner-gate-shell-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        log = tmp / "log.txt"; bindir = tmp / "bin"; bindir.mkdir()
+        (bindir / "gh").write_text('#!/bin/bash\ncase "$*" in *"pulls?state=open"*) printf "10\\n11\\n12\\n";; esac\n')
+        (bindir / "python").write_text(f"""#!/bin/bash
+script="$1"; shift
+case "$script" in
+  *collect.py)
+    while [ $# -gt 0 ]; do case "$1" in --pr) pr="$2";; --output) out="$2";; esac; shift; done
+    echo "collect $pr" >> "{log}"
+    case " {collector_fails_for} " in *" $pr "*) exit 1;; esac
+    echo "PR=$pr" > "$out";;
+  *pr_owner_gate.py)
+    while [ $# -gt 0 ]; do case "$1" in --snapshot) snap="$2";; esac; shift; done
+    echo "gate $(cat "$snap")" >> "{log}";;
+esac
+""")
+        for f in bindir.iterdir():
+            f.chmod(f.stat().st_mode | stat.S_IEXEC)
+        env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", REPOSITORY=REPO, EVENT_NAME="schedule",
+                   OWNER_GATE_WRITE="true", REQUIRED_CHECKS="backend,frontend", RELEASE_POLICY_CHECKS="",
+                   TRUSTED_REVIEWERS="", OWNER_LOGIN="")
+        proc = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, cwd=tmp)
+        return proc, log.read_text().splitlines()
+
+    def test_all_prs_succeed(self):
+        proc, log = self.run_step("")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual([l for l in log if l.startswith("gate")], ["gate PR=10", "gate PR=11", "gate PR=12"])
+
+    def test_collector_failure_on_second_pr_never_evaluates_stale_snapshot(self):
+        proc, log = self.run_step("11")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("owner gate failed for PR #11", proc.stdout + proc.stderr)
+        self.assertEqual([l for l in log if l.startswith("gate")], ["gate PR=10", "gate PR=12"])   # 11 skipped, 12 not starved
+        self.assertNotIn("gate PR=10", [l for l in log if l.startswith("gate")][1:])
+
+    def test_collector_failure_on_first_pr_still_fails_job(self):
+        proc, log = self.run_step("10 11 12")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual([l for l in log if l.startswith("gate")], [])
 
 
 if __name__ == "__main__":

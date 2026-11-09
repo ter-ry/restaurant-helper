@@ -52,6 +52,14 @@ notification; if that re-read fails the run fails closed without writing.
 Closing a PR (merged or not) removes the label and withdraws the readiness
 comment.
 
+Before advertising readiness the script re-reads the live PR; if its head,
+open state, draft flag or base changed since collection, nothing is written and
+the change's own event (or the schedule) reconciles the new state. On closure
+the readiness comments are withdrawn first and the label removed last, so a
+failed withdrawal leaves the label in place and later runs retry it. A failed
+snapshot collection for one PR fails that PR (and the job) without evaluating a
+stale snapshot or starving the other PRs.
+
 High-risk changes never need fewer approvals than `independent_reviews`: an
 unset or weaker `independent_reviews_high_risk` inherits the general value.
 The workflow does not yet export these thresholds, so live runs default to 1
