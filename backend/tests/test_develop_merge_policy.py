@@ -224,7 +224,8 @@ def test_approval_followed_by_change_request_blocks():
 
 
 @pytest.mark.parametrize("extra", [{"reviewer": "other"}, {"reviewer": "other", "state": "UNKNOWN"},
-                                   {"reviewer": "other", "state": None}, {"reviewer": "other", "state": 5}])
+                                   {"reviewer": "other", "state": None}, {"reviewer": "other", "state": 5}, {"reviewer": "other", "state": []},
+                                   {"reviewer": "other", "state": {}}, {"reviewer": "other", "state": ["APPROVED"]}])
 def test_malformed_review_beside_valid_approval_fails_closed(extra):
     s = snap(); s["reviews"].append(extra)
     assert_decision(s, pol.UNVERIFIED, "REVIEW_STATE_INVALID")
@@ -302,3 +303,23 @@ def test_module_has_no_io_imports():
         elif isinstance(n, ast.Call) and getattr(n.func, "id", "") in ("open", "exec", "eval", "__import__"):
             pytest.fail("I/O or dynamic call in policy module")
     assert imported <= {"__future__", "posixpath", "re", "dataclasses", "typing"}
+
+
+def test_unexpected_errors_never_raise(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(pol, "_check_checks", boom)
+    d = run(snap())
+    assert d.decision == pol.UNVERIFIED and d.reasons == ("POLICY_INTERNAL_ERROR",)
+
+
+@pytest.mark.parametrize("junk", [[], {}, ["x"], {"a": 1}, 1.5, True])
+def test_unhashable_or_odd_values_in_any_field_do_not_raise(junk):
+    for key in ("repository", "base_ref", "author", "head_sha", "base_sha", "draft", "checks", "threads",
+                "reviews", "issue", "changed_files", "flags_changed", "pending_reviewers", "api_errors"):
+        d = run(snap(**{key: junk}))
+        # Handled by explicit validation, not by the catch-all (empty lists can be valid).
+        assert "POLICY_INTERNAL_ERROR" not in d.reasons and d.merge_authorized is False
+    s = snap(); s["checks"][0]["conclusion"] = junk; s["checks"][0]["name"] = junk
+    d = run(s)
+    assert "POLICY_INTERNAL_ERROR" not in d.reasons and d.decision != pol.ELIGIBLE_FOR_REVIEW

@@ -112,6 +112,14 @@ def _get(snapshot: Mapping[str, Any], key: str, unverified: list[str], code: str
 
 
 def evaluate(snapshot: Any, trusted_reviewers: Iterable[str] = ()) -> Decision:
+    """Fail-closed wrapper: any unexpected error becomes UNVERIFIED, never an exception."""
+    try:
+        return _evaluate(snapshot, trusted_reviewers)
+    except Exception:  # noqa: BLE001 - deliberate fail-closed catch-all
+        return Decision(UNVERIFIED, ("POLICY_INTERNAL_ERROR",))
+
+
+def _evaluate(snapshot: Any, trusted_reviewers: Iterable[str] = ()) -> Decision:
     """Evaluate a static snapshot. Every unknown or malformed input fails closed.
 
     ``trusted_reviewers`` is supplied by the trusted caller (never read from the
@@ -250,7 +258,7 @@ def _check_reviews(s, head, author, trusted, blocked, unverified):
         if not isinstance(login, str) or not login:
             unverified.append("REVIEW_MALFORMED")
             continue
-        if r.get("state") not in _REVIEW_STATES:
+        if not isinstance(r.get("state"), str) or r["state"] not in _REVIEW_STATES:
             unverified.append("REVIEW_STATE_INVALID")
             continue
         if r.get("state") == "CHANGES_REQUESTED":
