@@ -48,7 +48,9 @@ jobs:
           python-version: "3.12"
       - name: Collect exact-head evidence without running PR code
         env:
+          # Both names: the collector and `gh` read GH_TOKEN, the evaluator reads GITHUB_TOKEN.
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           OWNER_LOGIN: ${{ vars.FLOWTALLY_OWNER_LOGIN }}

@@ -17,11 +17,23 @@ the controlled delivery test succeeds:
 `FLOWTALLY_RELEASE_POLICY_CHECKS` (optional), and
 `FLOWTALLY_OWNER_GATE_WRITE` (`true` only after verification).
 
-High-risk paths are detected by default for financial, inventory, POS,
-security and migration changes. Set `independent_reviews_high_risk` in a local
-snapshot/configuration if the repository requires more than one distinct
-trusted formal approval. A same-account Claude/Codex comment is never a second
-approval.
+High-risk changes are detected by explicit repository path coverage (the same
+classifier as `scripts/agent_handoff_audit.py`: `backend/`, workflows, render
+and Procfile, daily-close code, `AGENTS.md`), plus a keyword backstop for
+financial, inventory, POS, security and migration paths. Set
+`independent_reviews_high_risk` in a local snapshot/configuration if the
+repository requires more than one distinct trusted formal approval. A
+same-account Claude/Codex comment is never a second approval.
+
+Fail-closed evidence: unresolved review threads (including outdated ones) and
+outstanding user/team review requests block readiness; a GraphQL error,
+malformed response or incomplete pagination reports
+`UNRESOLVED_FINDINGS_UNVERIFIED` and never notifies. A withdrawn notification
+no longer deduplicates, so a PR that becomes ready again at the same SHA is
+re-notified. Removing an already-absent label is treated as success.
+
+Offline regression tests (`scripts/tests/test_pr_owner_gate.py`) run in GitHub
+CI via `.github/workflows/pr-owner-gate-tests.yml`.
 
 ## Controlled activation
 

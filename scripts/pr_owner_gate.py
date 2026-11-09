@@ -15,7 +15,10 @@ import re
 import sys
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+from agent_handoff_audit import is_high_risk
 
 STATES = ("BLOCKED", "REVIEW IN PROGRESS", "OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION")
 MARKER = "<!-- flowtally-owner-gate"
@@ -28,8 +31,35 @@ def csv(value: str | None) -> set[str]:
 
 
 def matches_high_risk(paths: list[str], patterns: set[str]) -> bool:
+    """High risk by explicit repository path coverage, plus keyword backstop.
+
+    ``is_high_risk`` (shared with the handoff audit) covers modules such as
+    ``backend/auth.py`` or ``backend/daily_close.py`` that contain no category
+    words; the keyword patterns only ever make the gate stricter.
+    """
+    if is_high_risk(list(paths)):
+        return True
     lowered = [path.lower() for path in paths]
     return any(any(pattern in path for pattern in patterns) for path in lowered)
+
+
+def pending_reviewers(snapshot: dict) -> set[str]:
+    """Outstanding review requests from the snapshot and the collected PR."""
+    pending = {str(name) for name in snapshot.get("pending_reviewers") or []}
+    pr = snapshot.get("pr", {})
+    for user in pr.get("requested_reviewers") or []:
+        if user.get("login"):
+            pending.add(user["login"])
+    for team in pr.get("requested_teams") or []:
+        if team.get("slug"):
+            pending.add("team:" + team["slug"])
+    return pending
+
+
+def resolve_token(env=None) -> str:
+    """The workflow exports GH_TOKEN; accept GITHUB_TOKEN as well."""
+    env = os.environ if env is None else env
+    return env.get("GITHUB_TOKEN") or env.get("GH_TOKEN") or ""
 
 
 def _check_map(snapshot: dict, sha: str) -> dict[str, dict]:
@@ -113,8 +143,9 @@ def evaluate(snapshot: dict, config: dict | None = None) -> dict:
         reasons.append("OPEN_REVIEW_FINDINGS:" + str(len(findings)))
     if snapshot.get("review_conflict"):
         reasons.append("REVIEW_OWNERSHIP_CONFLICT")
-    if snapshot.get("pending_reviewers"):
-        reasons.append("REVIEW_PENDING:" + ",".join(sorted(snapshot["pending_reviewers"])))
+    pending_review = pending_reviewers(snapshot)
+    if pending_review:
+        reasons.append("REVIEW_PENDING:" + ",".join(sorted(pending_review)))
 
     if any(value == "REQUEST CHANGES" for value in reviews.values()):
         reasons.append("TRUSTED_CHANGES_REQUESTED")
@@ -167,6 +198,20 @@ def github_request(method: str, path: str, token: str, body: dict | None = None)
         return json.load(response) if response.status != 204 else {}
 
 
+def remove_label(repository: str, number: int, label: str, token: str) -> None:
+    """DELETE the label; an already-absent label is a successful cleanup."""
+    try:
+        github_request("DELETE", f"repos/{repository}/issues/{number}/labels/{quote(label, safe='')}", token)
+    except HTTPError as exc:
+        if exc.code != 404:
+            raise
+
+
+def is_active_notification(body: str, current_marker: str) -> bool:
+    """A matching marker only deduplicates while the comment is not withdrawn."""
+    return MARKER in body and current_marker in body and "WITHDRAWN" not in body
+
+
 def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: bool) -> dict:
     if not write:
         return {"write": False, "would_notify": report["state"] in {"OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION"}, "notification": notification(report, config.get("owner_mention", "@owner"))}
@@ -175,14 +220,14 @@ def reconcile(snapshot: dict, report: dict, config: dict, token: str, write: boo
     label = config.get("owner_label", "owner-review-needed")
     comments = snapshot.get("comments", [])
     current_marker = f"sha={report['head_sha']} state={report['state']}"
-    already = any(MARKER in (comment.get("body") or "") and current_marker in (comment.get("body") or "") for comment in comments)
+    already = any(is_active_notification(comment.get("body") or "", current_marker) for comment in comments)
     eligible = report["state"] in {"OWNER REVIEW NEEDED", "VERIFIED FOR OWNER DECISION"}
     if eligible:
         github_request("POST", f"repos/{repository}/issues/{number}/labels", token, {"labels": [label]})
         if not already:
             github_request("POST", f"repos/{repository}/issues/{number}/comments", token, {"body": notification(report, config.get("owner_mention", "@owner"))})
     else:
-        github_request("DELETE", f"repos/{repository}/issues/{number}/labels/{label}", token)
+        remove_label(repository, number, label, token)
         # Do not add noise for ordinary CI progress or a still-known blocker.
         old_ready = [comment for comment in comments if MARKER in (comment.get("body") or "") and ("state=OWNER REVIEW NEEDED" in comment["body"] or "state=VERIFIED FOR OWNER DECISION" in comment["body"])]
         for comment in old_ready:
@@ -202,7 +247,10 @@ def main() -> int:
             snapshot = json.load(handle)
         config = snapshot.get("config", {})
         report = evaluate(snapshot, config)
-        result = reconcile(snapshot, report, config, os.getenv("GITHUB_TOKEN", ""), args.write)
+        token = resolve_token()
+        if args.write and not token:
+            raise ValueError("write mode requires GITHUB_TOKEN or GH_TOKEN")
+        result = reconcile(snapshot, report, config, token, args.write)
         print(json.dumps({"report": report, "reconcile": result}, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, HTTPError, URLError) as exc:
