@@ -53,14 +53,15 @@ class Result:
     status: str
     reasons: tuple[str, ...] = field(default_factory=tuple)
     attestation: Mapping[str, Any] | None = None
+    notes: tuple[str, ...] = field(default_factory=tuple)  # informational only, never a rejection reason
 
     @property
     def verified(self) -> bool:
         return self.status == VERIFIED and not self.reasons
 
 
-def _reject(*reasons: str) -> Result:
-    return Result(REJECTED, tuple(dict.fromkeys(reasons)))
+def _reject(*reasons: str, notes: tuple[str, ...] = ()) -> Result:
+    return Result(REJECTED, tuple(dict.fromkeys(reasons)), None, notes)
 
 
 # ---- canonical encoding, digests, signing (reviewer side) ----
@@ -226,10 +227,9 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
                    and r["user"].get("id") == cfg["bot_user_id"]]
     spoof = [r for r in reviews if isinstance(r, Mapping) and isinstance(r.get("user"), Mapping)
              and r["user"].get("id") != cfg["bot_user_id"] and str(r["user"].get("login", "")).lower().startswith(str(cfg["bot_login"]).lower().split("[")[0])]
-    if spoof:
-        reasons.append("spoofed_actor_ignored")  # recorded; spoofed review is never counted
+    notes = ("spoofed_actor_ignored",) if spoof else ()  # never counted, and never a veto either
     if not bot_reviews:
-        return _reject(*reasons, "missing_attestation")
+        return _reject(*reasons, "missing_attestation", notes=notes)
     bot_reviews.sort(key=lambda r: (str(r.get("submitted_at", "")), r.get("id") if isinstance(r.get("id"), int) else 0))
     last = bot_reviews[-1]
     user = last["user"]
@@ -310,7 +310,7 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
     if reasons:
         return _reject(*reasons)
     nonces.record(payload, sig)
-    return Result(VERIFIED, (), payload)
+    return Result(VERIFIED, (), payload, notes)
 
 
 def _ci_reasons(runs: Any, head: str, base: str) -> list[str]:
@@ -388,6 +388,14 @@ def plan_review_submission(evidence: Any, config: Any, payload: Mapping[str, Any
     if issued is None or expires is None or not (issued <= now < expires) or (expires - issued).total_seconds() > MAX_TTL_SECONDS:
         raise ValueError("payload_time_invalid")
     if payload["reviewer_session_id"] in set(evidence.get("author_session_ids") or []) or payload["reviewer_session_id"] in payload["author_session_ids"]:
+        raise PermissionError("author_self_review")
+    commit_authors = evidence.get("commit_authors")
+    if (not isinstance(commit_authors, list) or not commit_authors or not all(isinstance(a, str) and a for a in commit_authors)
+            or not (pr.get("user") or {}).get("login")):
+        raise PermissionError("author_identity_undetermined")
+    bot = str(config.get("bot_login", "")).lower()
+    names = {str(a).lower() for a in commit_authors} | {str(pr["user"]["login"]).lower()}
+    if not bot or bot in names or bot.removesuffix("[bot]") in names:
         raise PermissionError("author_self_review")
     return {"method": "POST", "path": f"/repos/{{owner}}/{{repo}}/pulls/{pr['number']}/reviews",
             "body": {"commit_id": head, "event": "APPROVE", "body": sign_attestation(private_key, payload)}}

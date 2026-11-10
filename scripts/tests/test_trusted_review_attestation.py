@@ -96,7 +96,16 @@ class Matrix(Offline):
         ev["reviews"][0]["user"]["id"] = 556
         r = run(ev)
         self.reject(r, "missing_attestation")
-        self.assertIn("spoofed_actor_ignored", r.reasons)
+        self.assertIn("spoofed_actor_ignored", r.notes)
+        self.assertNotIn("spoofed_actor_ignored", r.reasons)
+
+    def test_lookalike_review_does_not_veto_genuine_approval(self):
+        ev = evidence()
+        ev["reviews"].append({"id": 9, "user": {"id": 999, "login": "flowtally-independent-reviewer-x", "type": "User"},
+                              "state": "COMMENTED", "commit_id": HEAD, "submitted_at": "2026-11-10T11:59:00Z", "body": "hi"})
+        r = run(ev)
+        self.assertTrue(r.verified, r.reasons)
+        self.assertEqual(r.notes, ("spoofed_actor_ignored",))
 
     def test_bot_identity_type_mismatch(self):
         ev = evidence()
@@ -375,6 +384,20 @@ class Adapters(Offline):
             t.plan_review_submission(evidence(), config(), payload(changed_files_sha256="0" * 64), KEY, NOW)
         with self.assertRaises(ValueError):
             t.plan_review_submission(evidence(), config(), payload(), KEY, NOW + timedelta(hours=1))
+
+    def test_review_plan_refuses_identity_self_review_and_unknown_authors(self):
+        for authors in ([config()["bot_login"]], ["flowtally-independent-reviewer"]):
+            with self.assertRaises(PermissionError) as cm:
+                t.plan_review_submission(evidence(commit_authors=authors), config(), payload(), KEY, NOW)
+            self.assertEqual(str(cm.exception), "author_self_review")
+        ev = evidence()
+        ev["pr"]["user"]["login"] = config()["bot_login"]
+        with self.assertRaises(PermissionError):
+            t.plan_review_submission(ev, config(), payload(), KEY, NOW)
+        for bad in (None, [], [""]):
+            with self.assertRaises(PermissionError) as cm:
+                t.plan_review_submission(evidence(commit_authors=bad), config(), payload(), KEY, NOW)
+            self.assertEqual(str(cm.exception), "author_identity_undetermined")
 
     def test_no_merge_privilege(self):
         good = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read", "variables": "read"}
