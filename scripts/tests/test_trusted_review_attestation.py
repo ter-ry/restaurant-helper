@@ -51,7 +51,7 @@ def evidence(p=None, key=KEY, **over):
                        "state": "APPROVED", "commit_id": HEAD, "submitted_at": "2026-11-10T11:51:00Z",
                        "body": t.sign_attestation(key, p)}],
           "changed_files": list(FILES), "commit_authors": ["ter-ry"], "author_session_ids": ["CLAUDE-W1"],
-          "check_runs": [{"name": n, "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"slug": "github-actions"}} for n in t.REQUIRED_CHECKS],
+          "check_runs": [{"name": n, "head_sha": HEAD, "status": "completed", "conclusion": "success", "base_sha": BASE, "app": {"slug": "github-actions"}} for n in t.REQUIRED_CHECKS],
           "threads": [{"is_resolved": True, "is_outdated": True}], "requested_reviewers": [],
           "variables": {t.KILL_SWITCH_VARIABLE: "true"}}
     ev.update(over)
@@ -59,7 +59,7 @@ def evidence(p=None, key=KEY, **over):
 
 
 def run(ev=None, cfg=None, now=NOW, nonces=None):
-    return t.verify(ev if ev is not None else evidence(), cfg or config(), now, nonces)
+    return t.verify(ev if ev is not None else evidence(), cfg or config(), now, nonces if nonces is not None else t.NonceStore())
 
 
 class Offline(unittest.TestCase):
@@ -204,6 +204,32 @@ class Matrix(Offline):
         self.reject(r, "ci_missing:backend")
         self.reject(r, "ci_missing:frontend")
 
+    def test_ci_for_stale_base_rejected(self):
+        ev = evidence()
+        for c in ev["check_runs"]:
+            c["base_sha"] = "e" * 40
+        self.reject(run(ev), "ci_missing:backend")
+        ev = evidence()
+        del ev["check_runs"][0]["base_sha"]
+        self.reject(run(ev), "ci_missing:backend")
+
+    def test_verifier_and_its_tests_are_self_protected(self):
+        for path in ("scripts/trusted_review_attestation.py", "scripts/tests/test_trusted_review_attestation.py", "docs/TRUSTED_REVIEW_PHASE1_LIVE_ACCEPTANCE.md"):
+            files = FILES + [path]
+            ev = evidence(payload(changed_files_sha256=t.changed_files_digest(files)), changed_files=files)
+            self.reject(run(ev), "self_modifying_or_tier2_path")
+
+    def test_commit_authors_required(self):
+        for bad in (None, [], [""], "ter-ry"):
+            ev = evidence(commit_authors=bad)
+            self.reject(run(ev), "author_identity_undetermined")
+        ev = evidence()
+        del ev["commit_authors"]
+        self.reject(run(ev), "author_identity_undetermined")
+
+    def test_nonce_store_required(self):
+        self.reject(t.verify(evidence(), config(), NOW, None), "nonce_store_required")
+
     def test_unresolved_outdated_thread(self):
         ev = evidence()
         ev["threads"] = [{"is_resolved": False, "is_outdated": True}]
@@ -280,9 +306,9 @@ class Matrix(Offline):
 
     def test_bad_inputs_fail_closed(self):
         for ev in (None, [], "x", {}):
-            self.assertFalse(t.verify(ev, config(), NOW).verified)
-        self.assertFalse(t.verify(evidence(), config(), datetime(2026, 11, 10)).verified)  # naive datetime
-        self.assertFalse(t.verify(evidence(), {}, NOW).verified)
+            self.assertFalse(t.verify(ev, config(), NOW, t.NonceStore()).verified)
+        self.assertFalse(t.verify(evidence(), config(), datetime(2026, 11, 10), t.NonceStore()).verified)  # naive datetime
+        self.assertFalse(t.verify(evidence(), {}, NOW, t.NonceStore()).verified)
         bad = config(public_key=b"short")
         self.reject(run(cfg=bad), "invalid_signature")
 
@@ -311,6 +337,13 @@ class Adapters(Offline):
                   "conclusion": "success", "output": {"summary": first["output"]["summary"]}}
         self.assertEqual(t.verify_check_source(stored, HEAD, 777, NOW), [])
         self.assertIn("check_expired_or_unbound", t.verify_check_source(stored, HEAD, 777, later))
+
+    def test_check_head_must_match_verified_attestation(self):
+        with self.assertRaises(ValueError):
+            t.plan_verifier_check(run(), "d" * 40, 777)
+        # a failed result may be published for any head (always failure)
+        bad = t.plan_verifier_check(run(evidence(key=OTHER_KEY)), "d" * 40, 777)["body"]
+        self.assertEqual(bad["conclusion"], "failure")
 
     def test_check_set_by_non_verifier_actor_rejected(self):
         good = t.plan_verifier_check(run(), HEAD, 777)["body"]

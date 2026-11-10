@@ -41,6 +41,8 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _ATTEST_FIELDS = ("repo_id", "pr", "head_sha", "base_sha", "changed_files_sha256", "reviewer_session_id",
                   "author_session_ids", "nonce", "issued_at", "expires_at", "evaluator_main_sha")
+# The verifier, its tests and its docs gate themselves: changing them is never unattended.
+_SELF_PROTECTED = ("scripts/trusted_review", "scripts/tests/test_trusted_review", "docs/trusted_review")
 # Permissions that give a path to merge, deploy, workflow edit or self-vouching.
 _FORBIDDEN_REVIEWER_WRITE = frozenset({"contents", "actions", "administration", "workflows", "secrets",
                                        "deployments", "checks", "statuses", "variables"})
@@ -165,10 +167,12 @@ def _kill_switch(evidence: Mapping[str, Any]) -> str | None:
     return None if variables[KILL_SWITCH_VARIABLE] == "true" else "kill_switch_off"
 
 
-def verify(evidence: Any, config: Any, now: datetime, nonces: NonceStore | None = None) -> Result:
+def verify(evidence: Any, config: Any, now: datetime, nonces: NonceStore | None) -> Result:
     """Verify one PR head. Any exception, missing field or ambiguity yields REJECTED (fail closed)."""
+    if not isinstance(nonces, NonceStore):
+        return _reject("nonce_store_required")  # replay protection must never be silently disabled
     try:
-        return _verify(evidence, config, now, nonces if nonces is not None else NonceStore())
+        return _verify(evidence, config, now, nonces)
     except Exception as exc:  # noqa: BLE001 - fail closed on anything unexpected
         return _reject(f"verifier_error:{type(exc).__name__}")
 
@@ -210,7 +214,7 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
         reasons.append("changed_files_invalid_or_missing")
     else:
         for f in files:
-            if _policy.classify_path(f) == "tier2":
+            if _policy.classify_path(f) == "tier2" or str(f).lower().startswith(_SELF_PROTECTED):
                 reasons.append("self_modifying_or_tier2_path")
                 break
 
@@ -272,9 +276,12 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
 
     # T3 segregation: fail closed when authorship cannot be determined
     live_sessions = ev.get("author_session_ids")
-    authors = {str((pr.get("user") or {}).get("login", "")).lower(), *(str(a).lower() for a in ev.get("commit_authors") or [])}
+    commit_authors = ev.get("commit_authors")
+    authors = {str((pr.get("user") or {}).get("login", "")).lower(), *(str(a).lower() for a in commit_authors or [])}
     authors.discard("")
-    if not isinstance(live_sessions, list) or not live_sessions or not authors:
+    if (not isinstance(live_sessions, list) or not live_sessions or not authors
+            or not isinstance(commit_authors, list) or not commit_authors
+            or not all(isinstance(a, str) and a for a in commit_authors)):
         reasons.append("author_identity_undetermined")
     else:
         if set(live_sessions) != set(payload["author_session_ids"]):
@@ -285,7 +292,7 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
             reasons.append("author_self_review")
 
     # T10 CI, T11 threads, pending reviewers
-    reasons.extend(_ci_reasons(ev.get("check_runs"), head))
+    reasons.extend(_ci_reasons(ev.get("check_runs"), head, base_sha))
     threads = ev.get("threads")
     if not isinstance(threads, list):
         reasons.append("threads_missing")
@@ -306,13 +313,13 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
     return Result(VERIFIED, (), payload)
 
 
-def _ci_reasons(runs: Any, head: str) -> list[str]:
+def _ci_reasons(runs: Any, head: str, base: str) -> list[str]:
     if not isinstance(runs, list):
         return ["ci_missing"]
     out = []
     for name in REQUIRED_CHECKS:
         match = [r for r in runs if isinstance(r, Mapping) and r.get("name") == name and r.get("head_sha") == head
-                 and (r.get("app") or {}).get("slug") == TRUSTED_CHECK_APP]
+                 and r.get("base_sha") == base and (r.get("app") or {}).get("slug") == TRUSTED_CHECK_APP]
         if not match:
             out.append(f"ci_missing:{name}")
         elif any(r.get("status") != "completed" or r.get("conclusion") != "success" for r in match):
@@ -327,6 +334,8 @@ def plan_verifier_check(result: Result, head_sha: str, verifier_app_id: int) -> 
     if not (isinstance(head_sha, str) and _SHA.match(head_sha)):
         raise ValueError("head_sha must be a 40-hex SHA")
     ok = result.verified and result.attestation is not None
+    if ok and result.attestation["head_sha"] != head_sha:
+        raise ValueError("head_sha does not match the verified attestation")  # never vouch for an unreviewed commit
     summary = {"verifier_app_id": verifier_app_id, "reasons": list(result.reasons)}
     if ok:
         summary["expires_at"] = result.attestation["expires_at"]
