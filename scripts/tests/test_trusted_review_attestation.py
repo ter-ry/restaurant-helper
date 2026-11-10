@@ -133,6 +133,15 @@ class Matrix(Offline):
         ev["author_session_ids"] = []
         self.reject(run(ev), "author_identity_undetermined")
 
+    def test_missing_pr_author_fails_closed(self):
+        for bad in ({}, {"login": ""}, None):
+            ev = evidence()
+            if bad is None:
+                del ev["pr"]["user"]
+            else:
+                ev["pr"]["user"] = bad
+            self.reject(run(ev), "author_identity_undetermined")
+
     def test_author_sessions_must_match_attestation(self):
         ev = evidence()
         ev["author_session_ids"] = ["CLAUDE-W1", "CLAUDE-W2"]
@@ -398,6 +407,19 @@ class Adapters(Offline):
             with self.assertRaises(PermissionError) as cm:
                 t.plan_review_submission(evidence(commit_authors=bad), config(), payload(), KEY, NOW)
             self.assertEqual(str(cm.exception), "author_identity_undetermined")
+
+    def test_review_plan_requires_live_matching_author_sessions(self):
+        for bad in (None, [], [""]):
+            with self.assertRaises(PermissionError) as cm:
+                t.plan_review_submission(evidence(author_session_ids=bad), config(), payload(), KEY, NOW)
+            self.assertEqual(str(cm.exception), "author_identity_undetermined")
+        ev = evidence()
+        del ev["author_session_ids"]
+        with self.assertRaises(PermissionError):
+            t.plan_review_submission(ev, config(), payload(), KEY, NOW)
+        with self.assertRaises(PermissionError) as cm:
+            t.plan_review_submission(evidence(author_session_ids=["CLAUDE-W2"]), config(), payload(), KEY, NOW)
+        self.assertEqual(str(cm.exception), "author_sessions_mismatch")
 
     def test_no_merge_privilege(self):
         good = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read", "variables": "read"}

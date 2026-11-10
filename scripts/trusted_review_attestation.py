@@ -279,7 +279,9 @@ def _verify(ev: Any, cfg: Any, now: datetime, nonces: NonceStore) -> Result:
     commit_authors = ev.get("commit_authors")
     authors = {str((pr.get("user") or {}).get("login", "")).lower(), *(str(a).lower() for a in commit_authors or [])}
     authors.discard("")
+    pr_author = (pr.get("user") or {}).get("login")
     if (not isinstance(live_sessions, list) or not live_sessions or not authors
+            or not isinstance(pr_author, str) or not pr_author
             or not isinstance(commit_authors, list) or not commit_authors
             or not all(isinstance(a, str) and a for a in commit_authors)):
         reasons.append("author_identity_undetermined")
@@ -387,7 +389,12 @@ def plan_review_submission(evidence: Any, config: Any, payload: Mapping[str, Any
     issued, expires = _ts(payload["issued_at"]), _ts(payload["expires_at"])
     if issued is None or expires is None or not (issued <= now < expires) or (expires - issued).total_seconds() > MAX_TTL_SECONDS:
         raise ValueError("payload_time_invalid")
-    if payload["reviewer_session_id"] in set(evidence.get("author_session_ids") or []) or payload["reviewer_session_id"] in payload["author_session_ids"]:
+    live = evidence.get("author_session_ids")
+    if not isinstance(live, list) or not live or not all(isinstance(a, str) and a for a in live):
+        raise PermissionError("author_identity_undetermined")
+    if set(live) != set(payload["author_session_ids"]):
+        raise PermissionError("author_sessions_mismatch")
+    if payload["reviewer_session_id"] in live:
         raise PermissionError("author_self_review")
     commit_authors = evidence.get("commit_authors")
     if (not isinstance(commit_authors, list) or not commit_authors or not all(isinstance(a, str) and a for a in commit_authors)
