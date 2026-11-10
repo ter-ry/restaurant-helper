@@ -1,6 +1,6 @@
 # First pilot onboarding and support runbook (draft)
 
-Status: **draft for owner review** (#226, preparing for #174). Checked against `main` `c6cee28` on 2026-11-05.
+Status: **draft for owner review** (#226, #281, preparing for #174). Product capabilities checked against `main` `c6cee28` on 2026-11-05; commercial policy from the #174 owner decision of 2026-11-10.
 
 This runbook covers only what the current code supports. Anything marked **OWNER TO CONFIRM** is a commercial, legal or support decision under #174. It must not be invented, promised or filled in by an agent. Gaps that were found in the code are linked as issues, not described as working.
 
@@ -22,6 +22,25 @@ This runbook covers only what the current code supports. Anything marked **OWNER
 | In-app support access to customer data | **Not available** | Turned off in code (`SUPPORT_ACCESS_ENABLED = False` in `backend/access.py`). |
 | Billing/payment collection | **Not in the product** | Setup fee and subscription states are set by hand by setup staff. Nothing is charged. |
 
+## 0.1 Provisional first-pilot commercial policy (internal only)
+
+Source: [#174 owner decision, 2026-11-10](https://github.com/ter-ry/restaurant-helper/issues/174#issuecomment-6772652786). It builds on the 2026-11-07 provisional price note, which stays as history. **This is an internal provisional offer. It is not signed terms, not a public price and not a contract.** Do not publish it, quote it as final, take payment on it, or change the product, website or checkout because of it. The owner approves the customer-facing terms separately.
+
+| Item | Provisional policy | Still not decided (**OWNER TO CONFIRM**) |
+|---|---|---|
+| Subscription | CAD $129 per month **per restaurant location**, plus applicable sales taxes | Billing interval beyond monthly; how a multi-location customer is invoiced |
+| First pilot | 30 days free, then the normal monthly subscription **only if the customer chooses to continue** under clearly disclosed billing terms. No automatic paid enrollment without the customer's consent | How and when the customer opts in; what happens to their data if they do not continue |
+| Setup fee | CAD $299 is **waived for the first pilot customer only**. Whether it applies to later customers is still provisional | Standard setup fee for later customers |
+| Commitment | Month-to-month, no long-term minimum | Effective date of cancellation, notice period, refund and proration. None of these may be invented |
+| Support | Email is the default channel. Reply **as soon as practicable**. This is not a 24/7 service and not a fixed response-time guarantee. For the first customer only, WhatsApp is also allowed | The support email address, hours, who owns an incident. Never put a private phone number in the repository |
+| Taxes | Quote as "$129 + applicable taxes" | Tax registration and treatment, checked by the owner or accountant before any invoice |
+
+What this means in practice:
+- Say "provisional" and "plus applicable taxes" whenever you mention the price to anyone.
+- Flowtally does not collect payment. The trial start, the subscription and the fee status are set by hand in the setup console (see section 4). Do not tell a customer that billing is automatic.
+- Do not promise response times, uptime, 24/7 coverage, refunds, proration, notice periods or data-deletion timelines. None of these are decided.
+- Product limits in section 0 still apply. Clover is not offered, and there is no accounting export, payroll or in-app support access.
+
 ## 1. Before the customer is invited (Flowtally staff)
 
 1. Confirm that the target environment (production `app.flowtally.ca` / `api.flowtally.ca`) has been deployed and checked. Use `docs/production-deployment.md` and `docs/external-launch-checklist.md`. Record its deployed SHA and Alembic head (#165). Never onboard a pilot onto staging or the showcase/demo tenant.
@@ -33,7 +52,7 @@ This runbook covers only what the current code supports. Anything marked **OWNER
    - recipes and menu selling prices
    - the first invoices to receive
    - Square: whether they use it, and who can authorize the connection
-4. **OWNER TO CONFIRM:** the signed pilot terms, price and setup fee, privacy notice and data-handling wording, and the pilot cancellation and data-export/deletion terms. Do not start step 2 until they are agreed.
+4. **OWNER TO CONFIRM:** the signed pilot terms (based on section 0.1), privacy notice and data-handling wording, billing opt-in wording, tax treatment, and the pilot cancellation and data-export/deletion terms. Do not start step 2 until they are agreed.
 
 ## 2. Access setup and organization creation
 
@@ -59,7 +78,7 @@ Done at `/imports` by the owner or setup staff, in this order: **suppliers → i
 ## 4. Approval and activation
 
 1. Staff press **Request review** in `/platform/setup` and walk the customer owner through the setup. Once the owner agrees, staff press **Approve review**. That button needs `setup_admin`. Write down when and how the owner agreed.
-2. **OWNER TO CONFIRM:** that the setup fee and subscription were agreed and paid under the pilot terms. Staff then set `setupFeeStatus=confirmed` and the subscription to `ACTIVE` in the setup console. These are manual status fields; Flowtally does not take payment.
+2. **OWNER TO CONFIRM:** that the pilot terms were agreed under section 0.1. For the first customer the setup fee is waived and the first 30 days are free, so nothing is paid at this step. Staff then set `setupFeeStatus=confirmed` and the subscription to `ACTIVE` in the setup console, and write down that the fee was waived under the 2026-11-10 decision. These are manual status fields; Flowtally does not take payment. Moving to paid monthly billing after day 30 needs the customer's recorded consent and a separate owner action; it does not happen by default.
 3. Press **Activate**. Activation is refused until all of these are true: there is an owner and at least one location, the fee is confirmed, setup is complete, the subscription is active, the customer has approved, every import is approved or finished, there are no blockers, all required modules are enabled, and (if Square is enabled) Square is connected with at least one mapped location. Operational pages stay closed until activation.
 
 ## 5. Square connection (only if the customer uses Square)
@@ -121,7 +140,7 @@ Safe rollback:
 | Suspected data, security or cross-tenant problem | Stop the onboarding, do not change data, and escalate straight to the owner. |
 
 Escalation:
-- **OWNER TO CONFIRM:** support contact, channel, hours, response target, and who owns a pilot incident.
+- Support is by email, answered as soon as practicable (no fixed response time). WhatsApp is allowed for the first customer only. **OWNER TO CONFIRM:** the exact support email address, hours, WhatsApp number (share it outside the repository), and who owns a pilot incident.
 - Staff cannot see customer data through in-app support access, because support access is off. Diagnosis goes through the customer's screen share, the audit log (`/owner/audit`) and the setup console.
 - Production data fixes, deploys and console changes (Render, Aiven, Square, Google) need owner approval. Agents never touch live data.
 
@@ -136,14 +155,48 @@ Escalation:
 
 Keep this in the pilot record. **OWNER TO CONFIRM:** where the pilot record lives and how long it is kept. Never record credentials, tokens or customer financial exports in the repository.
 
+## 11. Onboarding checklist (staff)
+
+- [ ] Section 0.1 reviewed. The owner has approved the customer-facing terms for this customer.
+- [ ] Production environment checked and its deployed SHA and Alembic head recorded (#165).
+- [ ] Staff member has `setup_admin`.
+- [ ] Customer details collected (section 1, step 3).
+- [ ] Owner signed in and requested setup; locations and modules set; managers invited (section 2).
+- [ ] Imports approved or finished and spot-checked (section 3).
+- [ ] Review approved and the customer's agreement written down (section 4).
+- [ ] Fee status set (waived for the first customer) and subscription set to `ACTIVE` by hand, with the trial start date recorded.
+- [ ] Activated. Square connected and mapped, if used (section 5).
+- [ ] First receipt, opening count and first Daily Close walked through (sections 6 to 8).
+- [ ] Handoff check done and recorded (section 9).
+- [ ] Pilot record started (section 10).
+
+## 12. First-pilot consent and hand-off checklist
+
+Complete this with the customer owner, and record the date and how they agreed. Do not start the 30-day trial clock until all of it is done.
+
+- [ ] The customer has been shown the final owner-approved terms, not this internal draft.
+- [ ] They understand the price: CAD $129 per month per location, plus applicable taxes, with the setup fee waived.
+- [ ] They understand the first 30 days are free, and that a paid subscription starts after that only if they choose to continue. Their choice is recorded.
+- [ ] They understand it is month-to-month with no long-term minimum, and have been given the cancellation wording the owner approved.
+- [ ] They have the privacy and data-handling wording the owner approved.
+- [ ] They know support is by email, answered as soon as practicable, and have the exact support address. If WhatsApp is offered, they know it is for this pilot only and is not a guaranteed channel.
+- [ ] They know what Flowtally does not do yet: no Clover, no accounting export or payroll, no supplier ordering, no payment collection in the product (section 0).
+- [ ] They know that a finalized Daily Close and a finalized stock count cannot be edited (sections 7 and 8).
+- [ ] Owner and manager Google accounts confirmed. Invite links were sent to managers directly.
+- [ ] No credentials, tokens or customer financial exports were put in the repository.
+
 ## OWNER TO CONFIRM (tracked under #174)
 
-1. Pilot price, setup fee and any free period.
-2. Pilot terms, including length, cancellation, and data export and deletion when the pilot ends.
+Decided as provisional on 2026-11-10 (section 0.1): $129 per location per month plus taxes, a 30-day free first pilot, the first customer's setup fee waived, month-to-month, email-first support with WhatsApp for the first customer. Still open:
+
+1. Pilot terms in writing, including cancellation effective date, notice period, refund and proration, and data export and deletion when the pilot ends.
+2. How the customer opts in to paid billing after the free 30 days, and what happens to their data if they do not.
 3. Privacy notice and legal wording shown to the customer.
-4. Support contact, channel, hours and response target.
-5. Whether a Clover customer can be piloted, and when (needs #166/#167 evidence first).
-6. Where pilot evidence is stored and for how long.
+4. Exact support email address, hours, WhatsApp handling for the first customer, and who owns a pilot incident.
+5. Tax registration and treatment, confirmed by the owner or accountant before any invoice.
+6. Standard setup fee and billing rules for customers after the first, and whether and how multi-location customers are billed.
+7. Whether a Clover customer can be piloted, and when (needs #166/#167 evidence first).
+8. Where pilot evidence is stored and for how long.
 
 ## Related runbooks
 
