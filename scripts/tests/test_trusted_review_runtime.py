@@ -409,6 +409,128 @@ class Verifier(Offline):
         self.assertEqual((res["action"], fake.posts), ("skipped", []))
 
 
+class Seq:
+    """Collector stub returning successive evidence snapshots (the last one repeats)."""
+    def __init__(self, *evs):
+        self.evs, self.n = list(evs), 0
+
+    def collect(self, _):
+        e = self.evs[min(self.n, len(self.evs) - 1)]
+        self.n += 1
+        return copy.deepcopy(e)
+
+
+class FreshReads(Offline):
+    """Codex findings on 4e702df: the final read must drive the verdict, not the first one."""
+    def evs(self, world_fn, mutate):
+        first = collector_for(RW(world_fn())).collect(N)
+        later = copy.deepcopy(first)
+        mutate(later)
+        return first, later
+
+    def test_verifier_fresh_unresolved_thread_publishes_failure(self):
+        first, later = self.evs(verifier_world, lambda e: e["threads"].append({"is_resolved": False, "is_outdated": False}))
+        res, fake = do_verify(verifier_world(), collector=Seq(first, later))
+        self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+        self.assertIn("unresolved_threads", res["reasons_found"])
+
+    def test_verifier_fresh_switch_off_or_ci_failure_publishes_failure(self):
+        for mutate, reason in ((lambda e: e["variables"].update({att.KILL_SWITCH_VARIABLE: "false"}), "kill_switch_off"),
+                               (lambda e: e["check_runs"][0].update(conclusion="failure"), "failed_ci")):
+            first, later = self.evs(verifier_world, mutate)
+            res, fake = do_verify(verifier_world(), collector=Seq(first, later))
+            self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+            self.assertIn(reason, " ".join(res["reasons_found"]))
+
+    def test_verifier_fresh_base_moved_is_not_success(self):
+        first, later = self.evs(verifier_world, lambda e: e["pr"]["base"].update(sha="f" * 40))
+        res, fake = do_verify(verifier_world(), collector=Seq(first, later))
+        self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+
+    def test_reviewer_final_read_regates_threads_and_switch(self):
+        first, later = self.evs(reviewer_world, lambda e: e["threads"].append({"is_resolved": False, "is_outdated": False}))
+        res, fake = do_review(collector=Seq(first, later))
+        self.assertEqual((res["action"], fake.posts), ("blocked", []))
+        first, later = self.evs(reviewer_world, lambda e: e["check_runs"][0].update(conclusion="failure"))
+        res, fake = do_review(collector=Seq(first, later))
+        self.assertEqual((res["action"], fake.posts), ("blocked", []))
+
+
+def revoke(prior, post_response="ok", live=True, status=200):
+    w = reviewer_world()
+    fake = RW(w)
+    orig = fake.get
+
+    def get(path, params):
+        if path == CHECKS and params.get("check_name") == att.CHECK_NAME:
+            return ok({"total_count": 1 if prior else 0, "check_runs": [prior] if prior else []})
+        return orig(path, params)
+
+    fake.get = get
+    fake.post_response = ({"status": 201, "headers": {}, "body": {"app": {"id": VERIFIER_ID}, "head_sha": HEAD}}
+                          if post_response == "ok" else post_response)
+    return rt.revoke_pr(N, read=fake, post=fake.post if live else None, cfg=cfg()), fake
+
+
+SUCCESS_PRIOR = {"name": att.CHECK_NAME, "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": VERIFIER_ID},
+                 "output": {"summary": "{}"}, "completed_at": "2026-11-10T12:00:00Z", "id": 1}
+
+
+class Revocation(Offline):
+    def test_switch_off_turns_published_success_into_failure(self):
+        res, fake = revoke(SUCCESS_PRIOR)
+        self.assertEqual(res["action"], "posted", res)
+        (path, body), = fake.posts
+        self.assertEqual((body["conclusion"], body["head_sha"], body["name"]), ("failure", HEAD, att.CHECK_NAME))
+        self.assertIn("kill_switch_off", body["output"]["summary"])
+
+    def test_nothing_to_revoke_and_never_writes_success(self):
+        res, fake = revoke(None)
+        self.assertEqual((res["action"], fake.posts), ("skipped", []))
+        res, fake = revoke({**SUCCESS_PRIOR, "conclusion": "failure"})
+        self.assertEqual((res["action"], fake.posts), ("skipped", []))
+
+    def test_without_live_writes_blocked_and_unconfirmed_post_is_error(self):
+        res, fake = revoke(SUCCESS_PRIOR, live=False)
+        self.assertEqual((res["action"], fake.posts), ("blocked", []))
+        res, _ = revoke(SUCCESS_PRIOR, post_response={"status": 422, "headers": {}, "body": {}})
+        self.assertEqual(res["action"], "error")
+
+    def test_cli_revoke_only_when_live_enabled_with_verifier_key(self):
+        calls = []
+        orig = rt._common
+        base = {rt.LIVE_WRITES_VARIABLE: "true"}
+        try:
+            rt._common = lambda env, role, now: calls.append(role) or (_ for _ in ()).throw(rt.ConfigError("stop"))
+            self.assertEqual(rt.run(["verifier", "--pr", "7"], base, NOW), 0)  # no key: inert, no auth attempted
+            self.assertEqual(rt.run(["verifier", "--pr", "7"], {**base, "VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 1)  # attempted
+            self.assertEqual(rt.run(["reviewer", "--pr", "7"], {**base, "VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 0)  # reviewer never revokes
+            self.assertEqual(rt.run(["verifier", "--pr", "7"], {"VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 0)  # live writes never on
+        finally:
+            rt._common = orig
+        self.assertEqual(calls, ["verifier"])
+
+    def test_workflow_keeps_verifier_job_alive_but_reviewer_gated(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
+        rev, ver = text.split("  verifier:")
+        self.assertIn("vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED == 'true'", rev.split("  reviewer:")[1])
+        self.assertNotIn("FLOWTALLY_TRUSTED_REVIEW_ENABLED == 'true'", ver.split("steps:")[0].split("env:")[0])
+        self.assertNotIn("pull_request", text.split("\non:")[1].split("\npermissions:")[0])  # no PR-triggered privileged run
+
+    def test_tests_workflow_cannot_pass_on_failing_tests(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review-tests.yml").read_text()
+        self.assertIn("shell: bash", text)
+        self.assertIn("set -euo pipefail", text)
+        self.assertNotIn("| tee", text)
+        self.assertNotIn("paths:", text)  # a required check must report on every PR
+
+
+class Targets(Offline):
+    def test_all_open_prs_are_processed_not_a_fixed_prefix(self):
+        page = [{"number": i, "head": {"repo": {"id": RID}}} for i in range(1, 61)]
+        self.assertEqual(rt.list_target_prs(Fake({f"/repos/{REPO}/pulls": [ok(page)]}), REPO, RID), list(range(1, 61)))
+
+
 class Guards(Offline):
     def test_isolation_between_roles(self):
         rt.check_isolation({"REVIEWER_SIGNING_KEY": "x"}, "reviewer")

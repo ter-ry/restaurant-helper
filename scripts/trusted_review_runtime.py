@@ -50,7 +50,6 @@ API = "https://api.github.com"
 ENABLE_VARIABLE = att.KILL_SWITCH_VARIABLE
 LIVE_WRITES_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES"
 ATTESTATION_TTL_SECONDS = 1800  # well under att.MAX_TTL_SECONDS
-MAX_PRS_PER_RUN = 20
 PHASE1_BASES = ("develop",)
 ALLOWED_EVENTS = ("workflow_dispatch", "schedule")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -350,17 +349,20 @@ def review_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
         request = att.plan_review_submission(ev, verifier_config(cfg), payload, key, now)
     except (PermissionError, ValueError, KeyError) as exc:
         return _out(n, "blocked", f"plan_refused:{exc}")
+    again = collector.collect(n)  # re-fetch right before writing: the final gates run on THIS evidence
+    if again.get("incomplete") or _snapshot(again) != _snapshot(ev) or (again.get("variables") or {}).get(ENABLE_VARIABLE) != "true":
+        return _out(n, "blocked", "changed_during_review")
+    again_blockers = assess(again, comments, cfg)
+    if again_blockers:
+        return _out(n, "blocked", "changed_during_review", *again_blockers)
     # Run the real verifier over the review we are about to post, before posting anything.
-    pre = dict(ev)
-    pre["reviews"] = list(ev["reviews"]) + [{"id": 2 ** 31, "state": "APPROVED", "commit_id": payload["head_sha"],
+    pre = dict(again)
+    pre["reviews"] = list(again["reviews"]) + [{"id": 2 ** 31, "state": "APPROVED", "commit_id": payload["head_sha"],
                                              "submitted_at": _iso(now), "body": request["body"]["body"],
                                              "user": {"id": cfg["bot_user_id"], "login": cfg["bot_login"], "type": "Bot"}}]
     check = att.verify(pre, verifier_config(cfg), now, att.NonceStore())
     if not check.verified:
         return _out(n, "blocked", "preflight_verify_failed", *check.reasons)
-    again = collector.collect(n)  # re-fetch right before writing: base/head/files/state must not have moved
-    if again.get("incomplete") or _snapshot(again) != _snapshot(ev) or (again.get("variables") or {}).get(ENABLE_VARIABLE) != "true":
-        return _out(n, "blocked", "changed_during_review")
     if not live_writes_enabled(env) or post is None:
         return _out(n, "dry_run", head_sha=payload["head_sha"], request={"path": request["path"], "commit_id": request["body"]["commit_id"],
                                                                       "event": request["body"]["event"], "attestation": payload})
@@ -391,10 +393,14 @@ def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
     """Verify one PR head and publish ``trusted-review-verified`` (success or failure, never neutral)."""
     if not enabled(env):
         return _out(n, "skipped", "kill_switch_off")
-    ev = collector.collect(n)
-    head = ((ev.get("pr") or {}).get("head") or {}).get("sha")
+    first = collector.collect(n)
+    head = ((first.get("pr") or {}).get("head") or {}).get("sha")
     if not (isinstance(head, str) and _SHA.match(head)):
-        return _out(n, "blocked", "head_unknown", *ev.get("api_errors", []))
+        return _out(n, "blocked", "head_unknown", *first.get("api_errors", []))
+    # The verdict is derived from a FRESH read taken right before publishing, never from the first read.
+    ev = collector.collect(n)
+    if ((ev.get("pr") or {}).get("head") or {}).get("sha") != head:
+        return _out(n, "blocked", "changed_during_verification", head_sha=head)  # head moved: publish nothing
     result = att.verify(ev, verifier_config(cfg), now, att.NonceStore())
     request = att.plan_verifier_check(result, head, cfg["verifier_app_id"])
     verified = request["body"]["conclusion"] == "success"
@@ -404,14 +410,6 @@ def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
             (prior.get("conclusion") == "failure" and prior.get("output", {}).get("summary") == request["body"]["output"]["summary"])
         if same_state:
             return _out(n, "skipped", "check_already_published", head_sha=head, conclusion=request["body"]["conclusion"])
-    fresh = collector.collect(n)  # head or base moved while verifying: publish nothing rather than a stale verdict
-    fresh_head = ((fresh.get("pr") or {}).get("head") or {}).get("sha")
-    if verified:
-        moved = fresh.get("incomplete") or _snapshot(fresh) != _snapshot(ev)
-    else:
-        moved = fresh_head != head  # a failure verdict stays safe to publish for the same head even if reads are flaky
-    if moved:
-        return _out(n, "blocked", "changed_during_verification", head_sha=head)
     if not live_writes_enabled(env) or post is None:
         return _out(n, "dry_run", head_sha=head, conclusion=request["body"]["conclusion"], reasons_found=list(result.reasons))
     path = request["path"].replace("{owner}/{repo}", cfg["repository"])
@@ -421,6 +419,27 @@ def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
             or (body.get("app") or {}).get("id") != cfg["verifier_app_id"] or body.get("head_sha") != head:
         return _out(n, "error", "check_post_unconfirmed", head_sha=head)
     return _out(n, "posted", head_sha=head, conclusion=request["body"]["conclusion"], reasons_found=list(result.reasons))
+
+
+def revoke_pr(n: int, *, read: Any, post: Callable[[str, Any], Any] | None, cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Switch is off: turn any still-published verifier SUCCESS into a failure. Writes failures only, never a success."""
+    owner, name = cfg["repository"].split("/")
+    resp = read.get(f"/repos/{owner}/{name}/pulls/{n}", {})
+    head = ((resp.get("body") or {}).get("head") or {}).get("sha") if resp.get("status") == 200 else None
+    if not (isinstance(head, str) and _SHA.match(head)):
+        return _out(n, "blocked", "head_unknown")
+    prior = _existing_check(read, cfg, head)
+    if prior is None or prior.get("conclusion") != "success":
+        return _out(n, "skipped", "nothing_to_revoke", head_sha=head)
+    if post is None:
+        return _out(n, "blocked", "live_writes_off", head_sha=head)
+    request = att.plan_verifier_check(att.Result(att.REJECTED, ("kill_switch_off",)), head, cfg["verifier_app_id"])
+    resp = post(request["path"].replace("{owner}/{repo}", cfg["repository"]), request["body"])
+    body = resp.get("body") if isinstance(resp, Mapping) else None
+    if not isinstance(resp, Mapping) or resp.get("status") != 201 or not isinstance(body, Mapping) \
+            or (body.get("app") or {}).get("id") != cfg["verifier_app_id"] or body.get("head_sha") != head:
+        return _out(n, "error", "revoke_unconfirmed", head_sha=head)
+    return _out(n, "posted", "revoked_kill_switch_off", head_sha=head, conclusion="failure")
 
 
 # ---- PR enumeration and CLI ----
@@ -437,7 +456,7 @@ def list_target_prs(read: Any, repository: str, repo_id: int) -> list[int]:
             if isinstance(p.get("number"), int) and hr.get("id") == repo_id:  # forks never get reviewed
                 out.append(p["number"])
         if len(resp["body"]) < col.PER_PAGE:
-            return sorted(out)[:MAX_PRS_PER_RUN]
+            return sorted(out)
     raise ConfigError("pr_listing_truncated")
 
 
@@ -472,18 +491,27 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
     ap.add_argument("role", choices=("reviewer", "verifier"))
     ap.add_argument("--pr", type=int, default=0, help="explicit PR number; omit to reconcile all open develop PRs")
     args = ap.parse_args(argv)
+    revoke_only = False
     if not enabled(env):
-        print(json.dumps({"role": args.role, "action": "skipped", "reasons": ["kill_switch_off"]}))
-        return 0
+        # Only a verifier that has live credentials AND was live-enabled keeps a revocation path; otherwise inert.
+        if args.role == "verifier" and env.get(LIVE_WRITES_VARIABLE) == "true" and env.get("VERIFIER_APP_PRIVATE_KEY"):
+            revoke_only = True
+        else:
+            print(json.dumps({"role": args.role, "action": "skipped", "reasons": ["kill_switch_off"]}))
+            return 0
     now = now or datetime.now(timezone.utc)
     secrets_seen: list[str] = []
     try:
         cfg, (http, token, app_id) = _common(env, args.role, now)
         secrets_seen = [token]
         collector = col.Collector(http, repository=cfg["repository"], repo_id=cfg["repo_id"], allowed_bases=PHASE1_BASES)
-        poster = http.post if live_writes_enabled(env) else None
+        poster = http.post if (live_writes_enabled(env) or revoke_only) else None
         results = []
-        if args.role == "reviewer":
+        if revoke_only:
+            cfg.update(verifier_app_id=app_id)
+            for n in _targets(args, http, cfg["repository"], cfg["repo_id"]):
+                results.append(revoke_pr(n, read=http, post=poster, cfg=cfg))
+        elif args.role == "reviewer":
             cfg.update(codex_bot_id=_need_int(env, "CODEX_BOT_USER_ID"), codex_bot_login=env.get("CODEX_BOT_LOGIN", "chatgpt-codex-connector[bot]"),
                        public_key=bytes(load_signing_key(_need(env, "REVIEWER_SIGNING_KEY")).public_key().public_bytes(
                            serialization.Encoding.Raw, serialization.PublicFormat.Raw)), verifier_app_id=None)

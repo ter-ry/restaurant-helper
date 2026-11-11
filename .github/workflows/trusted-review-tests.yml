@@ -25,7 +25,11 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install "cryptography>=42.0,<44.0"
       - run: python -m py_compile scripts/trusted_review_attestation.py scripts/trusted_review_evidence_collector.py scripts/trusted_review_runtime.py scripts/develop_merge_policy.py
-      - name: Run every trusted-review test (fails if none are found)
+      - name: Run every trusted-review test (fails on any failure, or if none are found)
+        shell: bash
         run: |
-          python -m unittest discover -s scripts/tests -p 'test_trusted_review_*.py' -v 2>&1 | tee /tmp/tr.log
+          set -euo pipefail
+          python -m unittest discover -s scripts/tests -p 'test_trusted_review_*.py' -v > /tmp/tr.log 2>&1 || { cat /tmp/tr.log; exit 1; }
+          cat /tmp/tr.log
           grep -Eq '^Ran [1-9][0-9]* tests' /tmp/tr.log
+          tail -n 5 /tmp/tr.log | grep -Eq '^OK'

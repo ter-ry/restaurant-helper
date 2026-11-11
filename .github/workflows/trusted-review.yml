@@ -63,7 +63,9 @@ jobs:
   verifier:
     name: trusted-review-verifier
     needs: reviewer
-    if: ${{ always() && vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    # Runs even when the switch is off so a published success can be REVOKED (failure only); the runtime is inert
+    # unless live writes were enabled and this environment holds the verifier key.
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: trusted-review-verifier
