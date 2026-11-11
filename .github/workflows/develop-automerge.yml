@@ -1,0 +1,46 @@
+name: develop-automerge
+
+# DISABLED BY DEFAULT (issue #270). Runs only when the owner sets repository variable
+# FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED=true AND creates the `develop-automerge` environment
+# holding the merge credential. Merges only into `develop`, never `main`. Dry-run unless
+# FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES=true. See docs/DEVELOP_MERGE_POLICY.md.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: develop-automerge
+  cancel-in-progress: false
+
+jobs:
+  controller:
+    # Scheduled runs always execute the default-branch copy of this file and script.
+    if: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: develop-automerge
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install cryptography
+      - name: Run controller
+        env:
+          GITHUB_TOKEN: ${{ secrets.DEVELOP_AUTOMERGE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED }}
+          FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES }}
+          FLOWTALLY_REPO_ID: ${{ vars.FLOWTALLY_REPO_ID }}
+          FLOWTALLY_REVIEWER_APP_ID: ${{ vars.FLOWTALLY_REVIEWER_APP_ID }}
+          FLOWTALLY_REVIEWER_LOGIN: ${{ vars.FLOWTALLY_REVIEWER_LOGIN }}
+          FLOWTALLY_VERIFIER_APP_ID: ${{ vars.FLOWTALLY_VERIFIER_APP_ID }}
+          TRUSTED_COAUTHOR_EMAILS: ${{ vars.TRUSTED_COAUTHOR_EMAILS }}
+        run: python scripts/develop_automerge_controller.py
