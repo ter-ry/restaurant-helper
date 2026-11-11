@@ -59,8 +59,8 @@ REVIEWER_TOKEN_PERMISSIONS = {"pull_requests": "write", "contents": "read", "met
                               "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
 VERIFIER_TOKEN_PERMISSIONS = {"checks": "write", "pull_requests": "read", "contents": "read", "metadata": "read",
                               "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
-REVIEWER_ONLY_SECRETS = ("REVIEWER_APP_PRIVATE_KEY", "REVIEWER_SIGNING_KEY")
-VERIFIER_ONLY_SECRETS = ("VERIFIER_APP_PRIVATE_KEY",)
+REVIEWER_ONLY_SECRETS = ("FLOWTALLY_REVIEWER_APP_PRIVATE_KEY", "FLOWTALLY_REVIEWER_SIGNING_KEY")
+VERIFIER_ONLY_SECRETS = ("FLOWTALLY_VERIFIER_APP_PRIVATE_KEY",)
 
 
 class ConfigError(Exception):
@@ -487,11 +487,11 @@ def _targets(args: argparse.Namespace, read: Any, repository: str, repo_id: int)
 def _common(env: Mapping[str, str], role: str, now: datetime) -> tuple[dict[str, Any], Any]:
     check_isolation(env, role)
     repository, sha = check_trusted_context(env)
-    app_id = _need_int(env, f"{role.upper()}_APP_ID")
+    app_id = _need_int(env, f"FLOWTALLY_{role.upper()}_APP_ID")
     cfg: dict[str, Any] = {"repository": repository, "repo_id": _need_int(env, "FLOWTALLY_REPO_ID"),
-                           "evaluator_main_sha": sha, "bot_user_id": _need_int(env, "REVIEWER_BOT_USER_ID"),
-                           "bot_login": _need(env, "REVIEWER_BOT_LOGIN")}
-    jwt = mint_app_jwt(app_id, _need(env, f"{role.upper()}_APP_PRIVATE_KEY"), now)
+                           "evaluator_main_sha": sha, "bot_user_id": _need_int(env, "FLOWTALLY_REVIEWER_BOT_USER_ID"),
+                           "bot_login": _need(env, "FLOWTALLY_REVIEWER_LOGIN")}
+    jwt = mint_app_jwt(app_id, _need(env, f"FLOWTALLY_{role.upper()}_APP_PRIVATE_KEY"), now)
     token, granted = mint_installation_token(HttpTransport(jwt), repository, REVIEWER_TOKEN_PERMISSIONS if role == "reviewer" else VERIFIER_TOKEN_PERMISSIONS)
     problems = att.reviewer_permission_problems(granted) if role == "reviewer" else verifier_permission_problems(granted)
     if problems:
@@ -512,7 +512,7 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
     revoke_only = False
     if not enabled(env):
         # Only a verifier that has live credentials AND was live-enabled keeps a revocation path; otherwise inert.
-        if args.role == "verifier" and env.get(LIVE_WRITES_VARIABLE) == "true" and env.get("VERIFIER_APP_PRIVATE_KEY"):
+        if args.role == "verifier" and env.get(LIVE_WRITES_VARIABLE) == "true" and env.get("FLOWTALLY_VERIFIER_APP_PRIVATE_KEY"):
             revoke_only = True
         else:
             print(json.dumps({"role": args.role, "action": "skipped", "reasons": ["kill_switch_off"]}))
@@ -531,15 +531,15 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
             for n in _targets(args, http, cfg["repository"], cfg["repo_id"]):
                 results.append(revoke_pr(n, read=http, post=poster, cfg=cfg))
         elif args.role == "reviewer":
-            cfg.update(codex_bot_id=_need_int(env, "CODEX_BOT_USER_ID"), codex_bot_login=env.get("CODEX_BOT_LOGIN", "chatgpt-codex-connector[bot]"),
-                       public_key=bytes(load_signing_key(_need(env, "REVIEWER_SIGNING_KEY")).public_key().public_bytes(
+            cfg.update(codex_bot_id=_need_int(env, "FLOWTALLY_CODEX_BOT_USER_ID"), codex_bot_login=env.get("FLOWTALLY_CODEX_BOT_LOGIN", "chatgpt-codex-connector[bot]"),
+                       public_key=bytes(load_signing_key(_need(env, "FLOWTALLY_REVIEWER_SIGNING_KEY")).public_key().public_bytes(
                            serialization.Encoding.Raw, serialization.PublicFormat.Raw)), verifier_app_id=None)
-            key = load_signing_key(env["REVIEWER_SIGNING_KEY"])
+            key = load_signing_key(env["FLOWTALLY_REVIEWER_SIGNING_KEY"])
             session = f"trusted-review-runtime:{env.get('GITHUB_RUN_ID', '0')}:{env.get('GITHUB_RUN_ATTEMPT', '0')}"
             for n in _targets(args, http, cfg["repository"], cfg["repo_id"]):
                 results.append(review_pr(n, env=env, collector=collector, read=http, post=poster, cfg=cfg, key=key, now=clock, session_id=session))
         else:
-            cfg.update(public_key=load_public_key(_need(env, "REVIEWER_PUBLIC_KEY")), verifier_app_id=app_id)
+            cfg.update(public_key=load_public_key(_need(env, "FLOWTALLY_REVIEWER_PUBLIC_KEY")), verifier_app_id=app_id)
             for n in _targets(args, http, cfg["repository"], cfg["repo_id"]):
                 results.append(verify_pr(n, env=env, collector=collector, read=http, post=poster, cfg=cfg, now=clock))
     except ConfigError as exc:

@@ -503,9 +503,9 @@ class Revocation(Offline):
         try:
             rt._common = lambda env, role, now: calls.append(role) or (_ for _ in ()).throw(rt.ConfigError("stop"))
             self.assertEqual(rt.run(["verifier", "--pr", "7"], base, NOW), 0)  # no key: inert, no auth attempted
-            self.assertEqual(rt.run(["verifier", "--pr", "7"], {**base, "VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 1)  # attempted
-            self.assertEqual(rt.run(["reviewer", "--pr", "7"], {**base, "VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 0)  # reviewer never revokes
-            self.assertEqual(rt.run(["verifier", "--pr", "7"], {"VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 0)  # live writes never on
+            self.assertEqual(rt.run(["verifier", "--pr", "7"], {**base, "FLOWTALLY_VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 1)  # attempted
+            self.assertEqual(rt.run(["reviewer", "--pr", "7"], {**base, "FLOWTALLY_VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 0)  # reviewer never revokes
+            self.assertEqual(rt.run(["verifier", "--pr", "7"], {"FLOWTALLY_VERIFIER_APP_PRIVATE_KEY": "k"}, NOW), 0)  # live writes never on
         finally:
             rt._common = orig
         self.assertEqual(calls, ["verifier"])
@@ -575,12 +575,43 @@ class ClockAndCoauthors(Offline):
         self.assertEqual(att.parse_review_body(fake.posts[0][1]["body"])[0]["issued_at"], "2026-11-10T12:10:00Z")
 
 
+class Wiring(Offline):
+    """Owner reconciliation: names must match the owner's environments and the #270 controller's variables."""
+    TRUSTED = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_SHA": MAIN}
+
+    def test_workflow_uses_owner_environment_names_exactly(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
+        self.assertIn("environment: flowtally-trusted-reviewer\n", text)
+        self.assertIn("environment: flowtally-review-verifier\n", text)
+        self.assertNotIn("environment: trusted-review-", text)
+
+    def test_shared_variable_names_with_develop_controller(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
+        for name in ("FLOWTALLY_REVIEWER_APP_ID", "FLOWTALLY_REVIEWER_LOGIN", "FLOWTALLY_VERIFIER_APP_ID", "FLOWTALLY_REPO_ID",
+                     "FLOWTALLY_REVIEWER_BOT_USER_ID", "TRUSTED_COAUTHOR_EMAILS"):
+            self.assertIn(f"vars.{name}", text, name)
+
+    def test_every_workflow_env_name_is_read_by_the_runtime_or_documented(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
+        code = (Path(__file__).resolve().parents[1] / "trusted_review_runtime.py").read_text()
+        import re
+        for name in set(re.findall(r"^\s+((?:FLOWTALLY_|TRUSTED_|PR_)[A-Z_]+):", text, re.M)):
+            stem = re.sub(r"^FLOWTALLY_(REVIEWER|VERIFIER)_", "FLOWTALLY_{role.upper()}_", name) if "_APP_" in name else name
+            self.assertTrue(name in code or stem in code or name == "PR_NUMBER", f"{name} is set by the workflow but never read")
+
+    def test_missing_variable_fails_loudly_not_silently(self):
+        for role, missing in (("reviewer", "FLOWTALLY_REVIEWER_APP_ID"), ("verifier", "FLOWTALLY_VERIFIER_APP_ID")):
+            with self.assertRaises(rt.ConfigError) as cm:
+                rt._common({**self.TRUSTED, "FLOWTALLY_REPO_ID": "900"}, role, NOW)
+            self.assertEqual(str(cm.exception), f"missing:{missing}")
+
+
 class Guards(Offline):
     def test_isolation_between_roles(self):
-        rt.check_isolation({"REVIEWER_SIGNING_KEY": "x"}, "reviewer")
-        rt.check_isolation({"VERIFIER_APP_PRIVATE_KEY": "x"}, "verifier")
+        rt.check_isolation({"FLOWTALLY_REVIEWER_SIGNING_KEY": "x"}, "reviewer")
+        rt.check_isolation({"FLOWTALLY_VERIFIER_APP_PRIVATE_KEY": "x"}, "verifier")
         with self.assertRaises(rt.ConfigError):
-            rt.check_isolation({"VERIFIER_APP_PRIVATE_KEY": "x"}, "reviewer")
+            rt.check_isolation({"FLOWTALLY_VERIFIER_APP_PRIVATE_KEY": "x"}, "reviewer")
         for name in rt.REVIEWER_ONLY_SECRETS:
             with self.assertRaises(rt.ConfigError):
                 rt.check_isolation({name: "x"}, "verifier")
@@ -658,10 +689,10 @@ class Guards(Offline):
         base = {rt.ENABLE_VARIABLE: "true"}
         self.assertEqual(rt.run(["reviewer", "--pr", "1"], base, NOW), 1)  # untrusted context and no secrets
         mixed = {**base, "GITHUB_REPOSITORY": REPO, "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
-                 "GITHUB_SHA": MAIN, "VERIFIER_APP_PRIVATE_KEY": "x"}
+                 "GITHUB_SHA": MAIN, "FLOWTALLY_VERIFIER_APP_PRIVATE_KEY": "x"}
         self.assertEqual(rt.run(["reviewer", "--pr", "1"], mixed, NOW), 1)
         pr_event = {**mixed, "GITHUB_EVENT_NAME": "pull_request_target"}
-        self.assertEqual(rt.run(["verifier", "--pr", "1"], {k: v for k, v in pr_event.items() if k != "VERIFIER_APP_PRIVATE_KEY"}, NOW), 1)
+        self.assertEqual(rt.run(["verifier", "--pr", "1"], {k: v for k, v in pr_event.items() if k != "FLOWTALLY_VERIFIER_APP_PRIVATE_KEY"}, NOW), 1)
 
     def test_signing_key_must_be_ed25519(self):
         rsa_pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(

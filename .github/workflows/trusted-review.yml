@@ -34,7 +34,7 @@ jobs:
     if: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: trusted-review-reviewer
+    environment: flowtally-trusted-reviewer
     permissions:
       contents: read
     env:
@@ -43,12 +43,12 @@ jobs:
       FLOWTALLY_REPO_ID: ${{ vars.FLOWTALLY_REPO_ID }}
       PR_NUMBER: ${{ github.event.inputs.pr_number }}
       TRUSTED_COAUTHOR_EMAILS: ${{ vars.TRUSTED_COAUTHOR_EMAILS }}
-      REVIEWER_APP_ID: ${{ vars.REVIEWER_APP_ID }}
-      REVIEWER_BOT_USER_ID: ${{ vars.REVIEWER_BOT_USER_ID }}
-      REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
-      CODEX_BOT_USER_ID: ${{ vars.CODEX_BOT_USER_ID }}
-      REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
-      REVIEWER_SIGNING_KEY: ${{ secrets.REVIEWER_SIGNING_KEY }}
+      FLOWTALLY_REVIEWER_APP_ID: ${{ vars.FLOWTALLY_REVIEWER_APP_ID }}
+      FLOWTALLY_REVIEWER_BOT_USER_ID: ${{ vars.FLOWTALLY_REVIEWER_BOT_USER_ID }}
+      FLOWTALLY_REVIEWER_LOGIN: ${{ vars.FLOWTALLY_REVIEWER_LOGIN }}
+      FLOWTALLY_CODEX_BOT_USER_ID: ${{ vars.FLOWTALLY_CODEX_BOT_USER_ID }}
+      FLOWTALLY_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.FLOWTALLY_REVIEWER_APP_PRIVATE_KEY }}
+      FLOWTALLY_REVIEWER_SIGNING_KEY: ${{ secrets.FLOWTALLY_REVIEWER_SIGNING_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,7 +69,7 @@ jobs:
     if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: trusted-review-verifier
+    environment: flowtally-review-verifier
     permissions:
       contents: read
     env:
@@ -78,11 +78,11 @@ jobs:
       FLOWTALLY_REPO_ID: ${{ vars.FLOWTALLY_REPO_ID }}
       PR_NUMBER: ${{ github.event.inputs.pr_number }}
       TRUSTED_COAUTHOR_EMAILS: ${{ vars.TRUSTED_COAUTHOR_EMAILS }}
-      VERIFIER_APP_ID: ${{ vars.VERIFIER_APP_ID }}
-      REVIEWER_BOT_USER_ID: ${{ vars.REVIEWER_BOT_USER_ID }}
-      REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
-      REVIEWER_PUBLIC_KEY: ${{ vars.REVIEWER_PUBLIC_KEY }}
-      VERIFIER_APP_PRIVATE_KEY: ${{ secrets.VERIFIER_APP_PRIVATE_KEY }}
+      FLOWTALLY_VERIFIER_APP_ID: ${{ vars.FLOWTALLY_VERIFIER_APP_ID }}
+      FLOWTALLY_REVIEWER_BOT_USER_ID: ${{ vars.FLOWTALLY_REVIEWER_BOT_USER_ID }}
+      FLOWTALLY_REVIEWER_LOGIN: ${{ vars.FLOWTALLY_REVIEWER_LOGIN }}
+      FLOWTALLY_REVIEWER_PUBLIC_KEY: ${{ vars.FLOWTALLY_REVIEWER_PUBLIC_KEY }}
+      FLOWTALLY_VERIFIER_APP_PRIVATE_KEY: ${{ secrets.FLOWTALLY_VERIFIER_APP_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
