@@ -29,7 +29,8 @@ TRUSTED_CHECK_APP = "github-actions"
 KILL_SWITCH_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_ENABLED"
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _SESSION_TRAILER = re.compile(r"^Claude-Session:\s*(\S+)\s*$", re.I | re.M)
-_COAUTHOR_TRAILER = re.compile(r"^Co-authored-by:\s*([^<\r\n]+?)\s*(?:<[^>\r\n]*>)?\s*$", re.I | re.M)
+_COAUTHOR_TRAILER = re.compile(r"^Co-authored-by:\s*([^<\r\n]*?)\s*(?:<([^>\r\n]*)>)?\s*$", re.I | re.M)
+_NOREPLY = re.compile(r"^(?:\d+\+)?([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?)@users\.noreply\.github\.com$", re.I)
 
 THREADS_QUERY = (
     "query($owner:String!,$repo:String!,$pr:Int!,$after:String){repository(owner:$owner,name:$repo)"
@@ -47,7 +48,8 @@ def _is_sha(v: Any) -> bool:
 
 
 class Collector:
-    def __init__(self, transport: Any, *, repository: str, repo_id: int, allowed_bases: tuple[str, ...] | list[str]):
+    def __init__(self, transport: Any, *, repository: str, repo_id: int, allowed_bases: tuple[str, ...] | list[str],
+                 trusted_coauthor_emails: tuple[str, ...] | list[str] = ()):
         if not isinstance(repository, str) or repository.count("/") != 1:
             raise ValueError("repository must be 'owner/name'")
         self._t = transport
@@ -55,6 +57,8 @@ class Collector:
         self.owner, self.repo = repository.split("/")
         self.repo_id = repo_id
         self.allowed_bases = tuple(allowed_bases)
+        # Emails of non-account co-author labels (e.g. an AI assistant's noreply address) the owner has vetted.
+        self.trusted_coauthor_emails = frozenset(e.lower() for e in trusted_coauthor_emails)
 
     # ---- transport helpers ----
     def _check(self, resp: Any, what: str) -> Any:
@@ -172,13 +176,16 @@ class Collector:
 
         # Changed files, including rename sources (a rename out of a protected path must stay visible).
         files: list[str] = []
-        for f in self._pages(f"{root}/pulls/{n}/files", "files"):
+        records = self._pages(f"{root}/pulls/{n}/files", "files")
+        if isinstance(expected_files, bool) or not isinstance(expected_files, int) or expected_files != len(records):
+            raise Incomplete("files:count_mismatch_with_pr")
+        for f in records:
             if not isinstance(f, Mapping) or not isinstance(f.get("filename"), str) or not f["filename"]:
                 raise Incomplete("files:bad_shape")
             files.append(f["filename"])
             if f.get("previous_filename"):
                 files.append(f["previous_filename"])
-        if not files or len(files) >= GITHUB_FILES_CAP or (isinstance(expected_files, int) and expected_files > len(files) and expected_files >= GITHUB_FILES_CAP):
+        if not files or len(files) >= GITHUB_FILES_CAP:
             raise Incomplete("files:missing_or_capped")
         ev["changed_files"] = sorted(set(files))
 
@@ -189,7 +196,7 @@ class Collector:
         # Race recheck: head/base/state must be unchanged after every other read.
         again = self._pr_summary(self._get(f"{root}/pulls/{n}", None, "pr_recheck"))
         again.pop("_changed_files")
-        if again["head"]["sha"] != head or again["base"]["sha"] != base or again["state"] != pr["state"] or again["draft"] != pr["draft"]:
+        if again["head"]["sha"] != head or again["base"]["sha"] != base or again["base"]["ref"] != pr["base"]["ref"] or again["state"] != pr["state"] or again["draft"] != pr["draft"]:
             raise Incomplete("race:pr_changed_during_collection")
 
     def _commits(self, root: str, n: int, ev: dict[str, Any]) -> None:
@@ -208,7 +215,20 @@ class Collector:
                     authors.append(login)
                 elif who == "author":
                     errs.append("commits:author_not_linked_to_account")  # ambiguous: cannot prove who wrote it
-            authors.extend(m.strip() for m in _COAUTHOR_TRAILER.findall(msg))
+            for name, email in _COAUTHOR_TRAILER.findall(msg):
+                email = email.strip().lower()
+                m = _NOREPLY.match(email)
+                if m:
+                    authors.append(m.group(1))  # account identity from the noreply address, never the display name
+                    if name.strip():
+                        authors.append(name.strip())
+                elif email and email in self.trusted_coauthor_emails and name.strip():
+                    authors.append(name.strip())
+                else:
+                    # a display name alone is not an account identity: fail closed rather than trust it
+                    errs.append("commits:coauthor_identity_unresolved")
+                    if name.strip():
+                        authors.append(name.strip())
             found = [s.rstrip("/").rsplit("/", 1)[-1] for s in _SESSION_TRAILER.findall(msg)]
             if found:
                 sessions.extend(found)

@@ -111,6 +111,7 @@ class Happy(Base):
 
     def test_rename_source_is_listed(self):
         w = world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"] = 1
         w[f"{ROOT}/pulls/{N}/files"] = [ok([{"filename": "docs/a.md", "previous_filename": ".github/workflows/x.yml"}])]
         ev, _ = collect(w)
         self.assertIn(".github/workflows/x.yml", ev["changed_files"])
@@ -189,7 +190,42 @@ class FailClosed(Base):
         w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit("x\n\nCo-Authored-By: flowtally-independent-reviewer <a@b.c>\nClaude-Session: s1")])]
         ev, _ = collect(w)
         self.assertIn("flowtally-independent-reviewer", ev["commit_authors"])
+        self.assertIn("coauthor_identity_unresolved", " ".join(ev["api_errors"]))
+
+    def test_coauthor_display_name_cannot_hide_account(self):
+        trailer = "Co-authored-by: Independent Reviewer <555+flowtally-independent-reviewer[bot]@users.noreply.github.com>"
+        w = world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(f"x\n\n{trailer}\nClaude-Session: s1")])]
+        ev, _ = collect(w)
+        self.assertFalse(ev["incomplete"], ev["api_errors"])
+        self.assertIn("flowtally-independent-reviewer[bot]", ev["commit_authors"])
         self.assertIn("author_self_review", " ".join(verify(ev).reasons))
+
+    def test_unknown_email_unresolved_unless_owner_vetted(self):
+        msg = "x\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nClaude-Session: session_CLAUDE-W1"
+        w = world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(msg)])]
+        self.incomplete(w, "coauthor_identity_unresolved")
+        w = world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(msg)])]
+        ev = c.Collector(Fake(w), repository=REPO, repo_id=RID, allowed_bases=["develop"],
+                         trusted_coauthor_emails=["noreply@anthropic.com"]).collect(N)
+        self.assertFalse(ev["incomplete"], ev["api_errors"])
+
+    def test_files_count_must_match_pr(self):
+        w = world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"] = 3  # endpoint returned only 2
+        self.incomplete(w, "files:count_mismatch_with_pr")
+        w = world()
+        del w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"]
+        self.incomplete(w, "files:count_mismatch_with_pr")
+
+    def test_retarget_between_identical_tips_detected(self):
+        w = world()
+        moved = copy.deepcopy(w[f"{ROOT}/pulls/{N}"][0])
+        moved["body"]["base"]["ref"] = "main"  # same sha, different branch
+        w[f"{ROOT}/pulls/{N}"] = [w[f"{ROOT}/pulls/{N}"][0], moved]
+        self.incomplete(w, "race:pr_changed_during_collection")
 
     def test_malicious_pr_text_is_data(self):
         w = world()
@@ -301,10 +337,12 @@ class FailClosed(Base):
 
     def test_files_capped(self):
         w = world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"] = 50
         w[f"{ROOT}/pulls/{N}/files"] = [ok([{"filename": f"d/{i}.md"} for i in range(50)])]
         ev, _ = collect(w)
         self.assertFalse(ev["incomplete"])
         w = world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"] = 0
         w[f"{ROOT}/pulls/{N}/files"] = [ok([])]
         self.incomplete(w, "files:missing_or_capped")
 
