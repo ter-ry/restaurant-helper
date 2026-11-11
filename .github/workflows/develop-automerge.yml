@@ -2,7 +2,8 @@ name: develop-automerge
 
 # DISABLED BY DEFAULT (issue #270). Runs only when the owner sets repository variable
 # FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED=true AND creates the `develop-automerge` environment
-# holding the merge credential. Merges only into `develop`, never `main`. Dry-run unless
+# holding the merge credential. Variable contract is shared with #287: FLOWTALLY_REPO_ID,
+# REVIEWER_BOT_USER_ID, REVIEWER_BOT_LOGIN, VERIFIER_APP_ID, TRUSTED_COAUTHOR_EMAILS. Merges only into `develop`, never `main`. Dry-run unless
 # FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES=true. See docs/DEVELOP_MERGE_POLICY.md.
 on:
   schedule:
@@ -39,8 +40,8 @@ jobs:
           FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED }}
           FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES }}
           FLOWTALLY_REPO_ID: ${{ vars.FLOWTALLY_REPO_ID }}
-          FLOWTALLY_REVIEWER_APP_ID: ${{ vars.FLOWTALLY_REVIEWER_APP_ID }}
-          FLOWTALLY_REVIEWER_LOGIN: ${{ vars.FLOWTALLY_REVIEWER_LOGIN }}
-          FLOWTALLY_VERIFIER_APP_ID: ${{ vars.FLOWTALLY_VERIFIER_APP_ID }}
+          REVIEWER_BOT_USER_ID: ${{ vars.REVIEWER_BOT_USER_ID }}
+          REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
+          VERIFIER_APP_ID: ${{ vars.VERIFIER_APP_ID }}
           TRUSTED_COAUTHOR_EMAILS: ${{ vars.TRUSTED_COAUTHOR_EMAILS }}
         run: python scripts/develop_automerge_controller.py

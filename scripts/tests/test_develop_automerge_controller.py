@@ -13,7 +13,7 @@ import trusted_review_attestation as t
 from test_trusted_review_attestation import BASE, HEAD, NOW
 from test_trusted_review_evidence_collector import BOT, N, REPO, RID, ROOT, ok, world
 
-CFG = dc.Config(repository=REPO, repo_id=RID, reviewer_app_id=555, reviewer_login=BOT["login"],
+CFG = dc.Config(repository=REPO, repo_id=RID, reviewer_bot_user_id=555, reviewer_login=BOT["login"],
                 verifier_app_id=777, enabled=True, live_writes=True)
 PROTECTION = {
     "required_status_checks": {"strict": True, "contexts": ["backend", "frontend", "trusted-review-verified"]},
@@ -311,6 +311,26 @@ class Actuator(Base):
         self.assertEqual(len(f.puts), 1)
         self.assertFalse(rep.merged["merged_confirmed"])
         self.assertTrue(any(e.startswith("MERGE_NOT_CONFIRMED") for e in rep.errors))
+
+    def test_forbidden_or_unprocessable_put_is_not_retried(self):
+        for status in (403, 422, 409):
+            f = Fake()
+            f.put = lambda path, body, st=status, calls=[]: (calls.append(1), {"status": st, "headers": {}, "body": {}})[1]
+            rep = dc.run_once(f, CFG, clock)
+            self.assertFalse(rep.merged["merged_confirmed"])
+            self.assertEqual(rep.merged["put_status"], status)
+
+    def test_env_contract_matches_trusted_review_runtime(self):
+        import os, re
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/develop-automerge.yml").read_text()
+        for name in ("FLOWTALLY_REPO_ID", "REVIEWER_BOT_USER_ID", "REVIEWER_BOT_LOGIN", "VERIFIER_APP_ID", "TRUSTED_COAUTHOR_EMAILS",
+                     "FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED", "FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES"):
+            self.assertIn(f"{name}: ${{{{ vars.{name} }}}}", wf)
+        self.assertNotIn("FLOWTALLY_REVIEWER_", wf)
+
+    def test_approval_matched_by_user_id_not_app_id(self):
+        # an App id (e.g. 5684233) must never be accepted in place of the pinned bot user id
+        self.assertNoMerge(cfg=replace(CFG, reviewer_bot_user_id=5684233), reason="NO_FORMAL_APPROVAL_AT_HEAD")
 
     def test_put_exception_reconciles_with_server_state(self):
         f = Fake()

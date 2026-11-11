@@ -6,7 +6,7 @@ It combines, without relaxing any of them:
 * ``develop_merge_policy.evaluate`` (risk tiers, checks, threads, labels),
 * the read-only evidence collector (#284) incl. the live trusted-review kill switch,
 * the trusted verifier check (#280/#286): ``trusted-review-verified`` made by the pinned verifier App,
-  for this exact head, unexpired, plus a formal APPROVED review by the pinned reviewer App at this head,
+  for this exact head, unexpired, plus a formal APPROVED review by the pinned reviewer bot (by numeric user id and login) at this head,
 * live ``develop`` branch protection (strict checks, required review, conversation resolution,
   admins enforced, no force push/deletion).
 
@@ -52,7 +52,7 @@ _DEP_LINE = re.compile(r"(?im)^\s*(?:depends on|blocked by)\s*:\s*(.+)$")
 class Config:
     repository: str
     repo_id: int
-    reviewer_app_id: int
+    reviewer_bot_user_id: int  # numeric *user* id of the reviewer bot (REVIEWER_BOT_USER_ID), not the App id
     reviewer_login: str
     verifier_app_id: int
     enabled: bool = False
@@ -149,7 +149,7 @@ def build_snapshot(evidence: Mapping[str, Any], extras: Mapping[str, Any], cfg: 
     reviews = []
     for r in evidence.get("reviews") or []:
         u = r.get("user") or {}
-        pinned = u.get("id") == cfg.reviewer_app_id and u.get("type") == "Bot" and u.get("login") == cfg.reviewer_login
+        pinned = u.get("id") == cfg.reviewer_bot_user_id and u.get("type") == "Bot" and u.get("login") == cfg.reviewer_login
         reviews.append({
             "reviewer": u.get("login") or "", "state": r.get("state"),
             "kind": policy.QUALIFYING_REVIEW_KIND if pinned else "other",
@@ -217,7 +217,7 @@ def _plan(evidence: Any, extras: Any, cfg: Config, now: datetime) -> Plan:
     elif decision.tier != "tier0":
         reasons.append("TIER_NOT_ZERO")
     approvals = [r for r in evidence.get("reviews") or []
-                 if (r.get("user") or {}).get("id") == cfg.reviewer_app_id and r.get("state") == "APPROVED"
+                 if (r.get("user") or {}).get("id") == cfg.reviewer_bot_user_id and r.get("state") == "APPROVED"
                  and r.get("commit_id") == head]
     if not approvals:
         reasons.append("NO_FORMAL_APPROVAL_AT_HEAD")
@@ -416,8 +416,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = Config(
             repository=env["GITHUB_REPOSITORY"], repo_id=_int_env("FLOWTALLY_REPO_ID"),
-            reviewer_app_id=_int_env("FLOWTALLY_REVIEWER_APP_ID"), reviewer_login=env["FLOWTALLY_REVIEWER_LOGIN"],
-            verifier_app_id=_int_env("FLOWTALLY_VERIFIER_APP_ID"), enabled=True,
+            reviewer_bot_user_id=_int_env("REVIEWER_BOT_USER_ID"), reviewer_login=env["REVIEWER_BOT_LOGIN"],
+            verifier_app_id=_int_env("VERIFIER_APP_ID"), enabled=True,
             live_writes=env.get(LIVE_WRITES_VARIABLE) == "true",
             trusted_coauthor_emails=tuple(e for e in env.get("TRUSTED_COAUTHOR_EMAILS", "").split(",") if e))
         rep = run_once(UrllibTransport(env["GITHUB_TOKEN"]), cfg)
