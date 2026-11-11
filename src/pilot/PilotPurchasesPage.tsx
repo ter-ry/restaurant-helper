@@ -11,7 +11,6 @@ import {
   createPilotPurchaseInvoice,
   createPilotInventoryItem,
   createPilotSupplier,
-  correctPilotPurchaseInvoice,
   fetchPilotInventory,
   fetchPilotPurchases,
   fetchPilotPurchaseInvoice,
@@ -19,6 +18,7 @@ import {
   receivePilotPurchaseInvoice,
   uploadPilotInvoiceOcr,
   updatePilotPurchaseInvoice,
+  voidPilotPurchaseInvoice,
   PilotApiError,
   type PilotInventoryItem,
   type PilotPurchaseInvoice,
@@ -57,6 +57,9 @@ interface PurchaseDraft {
   sourceFileType: string;
   extractionStatus: string;
   extractedText: string;
+  correctsInvoiceId?: number | null;
+  correctedByInvoiceId?: number | null;
+  voidReason?: string;
   lineItems: DraftLine[];
 }
 
@@ -138,6 +141,9 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
     sourceFileType: invoice.sourceFileType,
     extractionStatus: invoice.extractionStatus,
     extractedText: invoice.extractedText,
+    correctsInvoiceId: invoice.correctsInvoiceId ?? null,
+    correctedByInvoiceId: invoice.correctedByInvoiceId ?? null,
+    voidReason: invoice.voidReason ?? "",
     lineItems: invoice.lineItems.length
       ? invoice.lineItems.map((line) => ({
           id: line.id,
@@ -173,12 +179,129 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function VoidInvoicePanel({
+  invoice,
+  onVoid,
+  onOpenInvoice,
+}: {
+  invoice: PilotPurchaseInvoice;
+  onVoid: (invoice: PilotPurchaseInvoice, request: { reason: string; createCorrectionDraft: boolean; idempotencyKey: string }) => Promise<void>;
+  onOpenInvoice: (invoiceId: number) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [createCorrectionDraft, setCreateCorrectionDraft] = useState(true);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  // One key per void decision: retrying after a lost response replays the same void instead of repeating it.
+  const keyRef = useRef<string | null>(null);
+
+  if (invoice.status === "Corrected") {
+    return (
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-ink">This invoice was voided</p>
+        <p className="mt-1 text-sm text-muted">
+          Its inventory movements were reversed with linked opposite movements; the original receipt stays in the history.
+          {invoice.voidReason ? ` Reason: ${invoice.voidReason}` : ""}
+        </p>
+        {invoice.correctedByInvoiceId ? (
+          <Button className="mt-3" variant="secondary" type="button" onClick={() => onOpenInvoice(invoice.correctedByInvoiceId as number)}>
+            Open corrected copy
+          </Button>
+        ) : null}
+      </Card>
+    );
+  }
+  if (invoice.status !== "Completed") {
+    return null;
+  }
+
+  const confirmVoid = async () => {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setFailure(null);
+    keyRef.current ??= `void-${invoice.id}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now())}`;
+    try {
+      await onVoid(invoice, { reason: reason.trim(), createCorrectionDraft, idempotencyKey: keyRef.current });
+      keyRef.current = null;
+    } catch (err) {
+      if (err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
+        // A definite refusal (for example stock already used): the next attempt is a new decision.
+        keyRef.current = null;
+        const detail = Object.values(err.errors ?? {}).join(" ");
+        setFailure(detail ? `${err.message} ${detail}` : err.message);
+      } else {
+        // Unknown outcome (network or server error): keep the key so confirming again cannot void twice.
+        setFailure(`${err instanceof Error ? err.message : "Could not void the invoice."} Check the purchase list before trying again.`);
+      }
+      setConfirmOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="border border-amber-200 bg-amber-50 p-5">
+      <p className="text-sm font-semibold text-ink">Need to void or correct this receipt?</p>
+      <p className="mt-1 text-sm text-muted">
+        Flowtally keeps the original and adds opposite stock movements. This only works while the stock you received is still on hand; if it was already used, you will see what changed.
+      </p>
+      <textarea
+        className="input mt-3"
+        rows={3}
+        value={reason}
+        disabled={busy}
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Why is this receipt being voided?"
+        aria-label="Void reason"
+      />
+      <label className="mt-3 flex items-start gap-2 text-sm text-ink">
+        <input type="checkbox" className="mt-1" checked={createCorrectionDraft} disabled={busy} onChange={(event) => setCreateCorrectionDraft(event.target.checked)} />
+        <span>Create a corrected draft copy to review and receive again</span>
+      </label>
+      {failure ? <p className="mt-3 text-sm font-medium text-red-700" role="alert">{failure}</p> : null}
+      {confirmOpen ? (
+        <div className="mt-3 rounded-xl border border-amber-300 bg-white p-3 text-sm" role="alertdialog" aria-label="Confirm void">
+          <p className="font-semibold text-ink">Void invoice {invoice.invoiceNumber}?</p>
+          <p className="mt-1 text-muted">The stock from this receipt is taken back out of inventory. A corrected copy can be received afterwards.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button disabled={busy} type="button" onClick={() => void confirmVoid()}>
+              {busy ? "Voiding..." : "Yes, void this invoice"}
+            </Button>
+            <Button disabled={busy} variant="secondary" type="button" onClick={() => setConfirmOpen(false)}>
+              Keep invoice
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <Button disabled={busy || !reason.trim()} variant="secondary" type="button" onClick={() => setConfirmOpen(true)}>
+            Void receipt
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function PurchaseInvoiceDetailsModal({
   invoice,
+  refreshFailure,
+  refreshing,
+  onRefresh,
   onClose,
+  onVoid,
+  onOpenInvoice,
 }: {
   invoice: PilotPurchaseInvoice | null;
+  refreshFailure: string | null;
+  refreshing: boolean;
+  onRefresh: () => void;
   onClose: () => void;
+  onVoid: (invoice: PilotPurchaseInvoice, request: { reason: string; createCorrectionDraft: boolean; idempotencyKey: string }) => Promise<void>;
+  onOpenInvoice: (invoiceId: number) => void;
 }) {
   if (!invoice) {
     return null;
@@ -203,7 +326,7 @@ function PurchaseInvoiceDetailsModal({
               <Badge tone={statusToneOverride}>{receivedLabel || "Read-only"}</Badge>
               <Badge tone="neutral">Read-only</Badge>
             </div>
-            <p className="mt-1 text-sm leading-6 text-muted">This completed purchase is locked for review only. Save and receive actions stay disabled here.</p>
+            <p className="mt-1 text-sm leading-6 text-muted">This purchase is locked for review. It can be voided below, which reverses its stock movements.</p>
           </div>
           <Button type="button" variant="ghost" onClick={onClose}>
             Close
@@ -233,6 +356,15 @@ function PurchaseInvoiceDetailsModal({
                 </div>
               </div>
             </Card>
+
+            {refreshFailure ? (
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <span>{refreshFailure}</span>
+                <Button variant="secondary" type="button" disabled={refreshing} onClick={onRefresh}>{refreshing ? "Refreshing…" : "Refresh purchase status"}</Button>
+              </div>
+            ) : null}
+
+            <VoidInvoicePanel key={`${invoice.id}-${invoice.status}`} invoice={invoice} onVoid={onVoid} onOpenInvoice={onOpenInvoice} />
 
             <Card className="p-5">
               <div className="mb-4">
@@ -305,7 +437,8 @@ export function PilotPurchasesPage() {
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
   const [receiveReconciliationInvoiceId, setReceiveReconciliationInvoiceId] = useState<number | null>(null);
   const [receiveMessage, setReceiveMessage] = useState<string | null>(null);
-  const [correctionNote, setCorrectionNote] = useState("");
+  // Set when a void was confirmed by the server but the follow-up refresh failed; cleared once a refresh succeeds.
+  const [voidRefresh, setVoidRefresh] = useState<{ invoiceId: number; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -349,7 +482,7 @@ export function PilotPurchasesPage() {
     return hints;
   }, [data?.purchaseLines]);
 
-  const load = async (preferredInvoiceId: number | null | undefined = requestedInvoiceId) => {
+  const load = async (preferredInvoiceId: number | null | undefined = requestedInvoiceId): Promise<boolean> => {
     setLoading(true);
     setError(null);
 
@@ -371,8 +504,10 @@ export function PilotPurchasesPage() {
         setShowReview(false);
       }
       setHasLoaded(true);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load purchases.");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -397,7 +532,6 @@ export function PilotPurchasesPage() {
   useEffect(() => {
     if (selectedInvoice) {
       setDraft(invoiceToDraft(selectedInvoice));
-      setCorrectionNote("");
       if (selectedInvoice.id) {
         void fetchPilotPurchasePreview(selectedInvoice.id).then(setPurchasePreview).catch(() => setPurchasePreview(null));
       }
@@ -407,6 +541,8 @@ export function PilotPurchasesPage() {
   const closeDetailInvoice = () => {
     setDetailInvoice(null);
     navigate(location.pathname, { replace: true });
+    // The unrefreshed state stays visible on the page error banner, whose Retry re-runs the load.
+    setVoidRefresh(null);
   };
 
   const invoiceRows = showAll ? data?.invoices ?? [] : (data?.invoices ?? []).slice(0, 5);
@@ -716,35 +852,38 @@ export function PilotPurchasesPage() {
     }
   };
 
-  const correctInvoice = async () => {
-    if (!draft.id || draft.status !== "Completed") {
-      return;
-    }
-    setSaving(true);
+  // Throws on failure so VoidInvoicePanel can show the reason and decide whether the idempotency key is reusable.
+  const voidInvoice = async (invoice: PilotPurchaseInvoice, request: { reason: string; createCorrectionDraft: boolean; idempotencyKey: string }) => {
     setReceiveMessage(null);
     setError(null);
+    const voided = await voidPilotPurchaseInvoice(invoice.id, request);
+    setReceiveMessage(
+      voided.correctedByInvoiceId
+        ? `Invoice ${voided.invoiceNumber} was voided and its inventory movements were reversed. A corrected draft is ready to review.`
+        : `Invoice ${voided.invoiceNumber} was voided and its inventory movements were reversed.`,
+    );
+    // Show the confirmed void immediately so the void controls cannot be reused if the refresh below fails.
+    setDetailInvoice(voided);
+    // Reconcile with the server: the invoice list, inventory and dashboard figures all changed.
+    const reconciled = await load(voided.id);
+    if (reconciled) {
+      setVoidRefresh(null);
+    } else {
+      setVoidRefresh({ invoiceId: voided.id, message: `Invoice ${voided.invoiceNumber} was voided, but the page could not refresh. Use Refresh purchase status to see updated totals and stock.` });
+    }
+  };
 
-    try {
-      const corrected = await correctPilotPurchaseInvoice(draft.id, {
-        reason: correctionNote.trim() || "Inventory correction",
-      });
-      setSelectedId(corrected.id);
-      setDraft(invoiceToDraft(corrected));
-      setCorrectionNote("");
-      setShowReview(false);
-      setReceiveMessage(`Invoice ${corrected.invoiceNumber} corrected and inventory movements were reversed.`);
-      await load(corrected.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not record the correction.");
-    } finally {
-      setSaving(false);
+  const refreshAfterVoid = async () => {
+    if (!voidRefresh || loading) return;
+    const reconciled = await load(voidRefresh.invoiceId);
+    if (reconciled) {
+      setVoidRefresh(null);
     }
   };
 
   const openInvoice = async (invoiceId: number) => {
     setReceiveMessage(null);
     setError(null);
-    setCorrectionNote("");
     const invoice = data?.invoices.find((entry) => entry.id === invoiceId) ?? (await fetchPilotPurchaseInvoice(invoiceId));
     if (invoice.status === "Completed" || invoice.status === "Corrected") {
       setSelectedId(null);
@@ -943,7 +1082,6 @@ export function PilotPurchasesPage() {
               onClick={() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
-                setCorrectionNote("");
                 setDraft(buildBlankDraft());
                 clearOcrReview();
                 setShowReview(false);
@@ -1227,23 +1365,13 @@ export function PilotPurchasesPage() {
                     </div>
                   </div>
 
-                  {draft.status === "Completed" ? (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                      <p className="text-sm font-semibold text-ink">Need to correct this receipt?</p>
-                      <p className="mt-1 text-sm text-muted">Enter a short reason and Flowtally will reverse the inventory movements, mark the purchase corrected, and keep the audit trail intact.</p>
-                      <textarea className="input mt-3" rows={3} value={correctionNote} onChange={(event) => setCorrectionNote(event.target.value)} placeholder="Why is this receipt being corrected?" />
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button disabled={saving || !correctionNote.trim()} variant="secondary" type="button" onClick={() => void correctInvoice()}>
-                          {saving ? "Saving..." : "Record correction"}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {draft.status === "Corrected" ? (
+                  {draft.correctsInvoiceId ? (
                     <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
-                      <p className="font-semibold text-ink">This invoice was corrected</p>
-                      <p className="mt-1">Inventory movements were reversed and the record is now view-only.</p>
+                      <p className="font-semibold text-ink">Corrected copy of a voided invoice</p>
+                      <p className="mt-1">Check the numbers against the supplier&apos;s corrected invoice, then receive it as a new purchase. The invoice number was suffixed so it can be saved; change it if the supplier issued a new one.</p>
+                      <Button className="mt-3" variant="secondary" type="button" onClick={() => void openInvoice(draft.correctsInvoiceId as number)}>
+                        Open voided original
+                      </Button>
                     </div>
                   ) : null}
 
@@ -1326,7 +1454,7 @@ export function PilotPurchasesPage() {
           </div>
         </Modal>
       ) : null}
-      <PurchaseInvoiceDetailsModal invoice={detailInvoice} onClose={closeDetailInvoice} />
+      <PurchaseInvoiceDetailsModal invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice?.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
     </div>
   );
 }

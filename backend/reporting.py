@@ -200,7 +200,7 @@ def _menu_sales(orders: list[SquareOrder], connection: SquareConnection | None, 
 
 
 def _purchasing(invoices: list[PurchaseInvoice], start: date, end: date) -> dict[str, Any]:
-    scoped = [invoice for invoice in invoices if start <= invoice.invoice_date <= end]
+    scoped = [invoice for invoice in invoices if start <= invoice.invoice_date <= end and invoice.status != "Corrected"]  # voided invoices are not spend (#232)
     completed = [invoice for invoice in scoped if invoice.status == "Completed"]
     supplier: dict[str, dict[str, Any]] = {}
     for invoice in completed:
@@ -256,6 +256,11 @@ def build_report(*, location: RestaurantLocation, view: str, start: date | None 
     from .pilot_api import _inventory_summary, _price_changes_for_location, _reorder_suggestion_for_item, _status_for_item
 
     start_date, end_date, prior_start, prior_end = _date_range(view, start, end, location)
+    from .clover_reporting import build_clover_report, location_uses_clover
+
+    if location_uses_clover(location):
+        # Clover-only location: never fall through to the Square-sourced figures (they would read as a confident $0).
+        return build_clover_report(location=location, view=view, start=start_date, end=end_date, prior_start=prior_start, prior_end=prior_end)
     organization_id = location.organization_id
     items = InventoryItem.query.filter_by(organization_id=organization_id, location_id=location.id, active=True).all()
     invoices = PurchaseInvoice.query.filter_by(organization_id=organization_id, location_id=location.id).all()
