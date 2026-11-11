@@ -284,6 +284,11 @@ def assess(ev: Mapping[str, Any], comments: Any, cfg: Mapping[str, Any]) -> list
     return out
 
 
+def _clock(now: Any) -> Callable[[], datetime]:
+    """``now`` may be a fixed datetime (tests) or a callable returning the current time (production)."""
+    return now if callable(now) else (lambda: now)
+
+
 def _iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -327,23 +332,25 @@ def _comments(read: Any, repository: str, n: int) -> Any:
 # ---- reviewer ----
 
 def review_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post: Callable[[str, Any], Any] | None,
-              cfg: Mapping[str, Any], key: Ed25519PrivateKey, now: datetime, session_id: str,
+              cfg: Mapping[str, Any], key: Ed25519PrivateKey, now: Any, session_id: str,
               nonce: str | None = None) -> dict[str, Any]:
     """Independently assess one PR and (only when live writes are on) post one signed formal APPROVE."""
     if not enabled(env):
         return _out(n, "skipped", "kill_switch_off")
+    clock = _clock(now)
     ev = collector.collect(n)
     if ev.get("incomplete"):
         return _out(n, "blocked", "incomplete_evidence", *ev.get("api_errors", []))
     if (ev.get("variables") or {}).get(ENABLE_VARIABLE) != "true":
         return _out(n, "skipped", "kill_switch_off")
-    already = att.verify(ev, verifier_config(cfg), now, att.NonceStore())
+    already = att.verify(ev, verifier_config(cfg), clock(), att.NonceStore())
     if already.verified:
         return _out(n, "skipped", "already_reviewed")  # idempotent: a valid unexpired approval exists for this head
     comments = _comments(read, cfg["repository"], n)
     blockers = assess(ev, comments, cfg)
     if blockers:
         return _out(n, "blocked", *blockers)
+    now = clock()  # re-read the clock: authentication and collection above can take real time
     payload = build_payload(ev, cfg, now, nonce or secrets.token_hex(16), session_id)
     try:
         request = att.plan_review_submission(ev, verifier_config(cfg), payload, key, now)
@@ -360,7 +367,7 @@ def review_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
     pre["reviews"] = list(again["reviews"]) + [{"id": 2 ** 31, "state": "APPROVED", "commit_id": payload["head_sha"],
                                              "submitted_at": _iso(now), "body": request["body"]["body"],
                                              "user": {"id": cfg["bot_user_id"], "login": cfg["bot_login"], "type": "Bot"}}]
-    check = att.verify(pre, verifier_config(cfg), now, att.NonceStore())
+    check = att.verify(pre, verifier_config(cfg), clock(), att.NonceStore())
     if not check.verified:
         return _out(n, "blocked", "preflight_verify_failed", *check.reasons)
     if not live_writes_enabled(env) or post is None:
@@ -389,7 +396,7 @@ def _existing_check(read: Any, cfg: Mapping[str, Any], head: str) -> Any:
 
 
 def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post: Callable[[str, Any], Any] | None,
-              cfg: Mapping[str, Any], now: datetime) -> dict[str, Any]:
+              cfg: Mapping[str, Any], now: Any) -> dict[str, Any]:
     """Verify one PR head and publish ``trusted-review-verified`` (success or failure, never neutral)."""
     if not enabled(env):
         return _out(n, "skipped", "kill_switch_off")
@@ -401,6 +408,7 @@ def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
     ev = collector.collect(n)
     if ((ev.get("pr") or {}).get("head") or {}).get("sha") != head:
         return _out(n, "blocked", "changed_during_verification", head_sha=head)  # head moved: publish nothing
+    now = _clock(now)()  # current time right after the fresh read, used for both verification and reuse checks
     result = att.verify(ev, verifier_config(cfg), now, att.NonceStore())
     request = att.plan_verifier_check(result, head, cfg["verifier_app_id"])
     verified = request["body"]["conclusion"] == "success"
@@ -460,6 +468,16 @@ def list_target_prs(read: Any, repository: str, repo_id: int) -> list[int]:
     raise ConfigError("pr_listing_truncated")
 
 
+def coauthor_allowlist(env: Mapping[str, str]) -> tuple[str, ...]:
+    """Owner-vetted non-account co-author emails (e.g. an AI assistant's noreply address), comma-separated."""
+    return tuple(e.strip().lower() for e in env.get("TRUSTED_COAUTHOR_EMAILS", "").split(",") if e.strip())
+
+
+def build_collector(http: Any, cfg: Mapping[str, Any], env: Mapping[str, str]) -> Any:
+    return col.Collector(http, repository=cfg["repository"], repo_id=cfg["repo_id"], allowed_bases=PHASE1_BASES,
+                         trusted_coauthor_emails=coauthor_allowlist(env))
+
+
 def _targets(args: argparse.Namespace, read: Any, repository: str, repo_id: int) -> list[int]:
     if args.pr:
         return [args.pr]
@@ -499,12 +517,13 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
         else:
             print(json.dumps({"role": args.role, "action": "skipped", "reasons": ["kill_switch_off"]}))
             return 0
-    now = now or datetime.now(timezone.utc)
+    clock = _clock(now) if now is not None else (lambda: datetime.now(timezone.utc))
+    now = clock()
     secrets_seen: list[str] = []
     try:
         cfg, (http, token, app_id) = _common(env, args.role, now)
         secrets_seen = [token]
-        collector = col.Collector(http, repository=cfg["repository"], repo_id=cfg["repo_id"], allowed_bases=PHASE1_BASES)
+        collector = build_collector(http, cfg, env)
         poster = http.post if (live_writes_enabled(env) or revoke_only) else None
         results = []
         if revoke_only:
@@ -518,11 +537,11 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
             key = load_signing_key(env["REVIEWER_SIGNING_KEY"])
             session = f"trusted-review-runtime:{env.get('GITHUB_RUN_ID', '0')}:{env.get('GITHUB_RUN_ATTEMPT', '0')}"
             for n in _targets(args, http, cfg["repository"], cfg["repo_id"]):
-                results.append(review_pr(n, env=env, collector=collector, read=http, post=poster, cfg=cfg, key=key, now=now, session_id=session))
+                results.append(review_pr(n, env=env, collector=collector, read=http, post=poster, cfg=cfg, key=key, now=clock, session_id=session))
         else:
             cfg.update(public_key=load_public_key(_need(env, "REVIEWER_PUBLIC_KEY")), verifier_app_id=app_id)
             for n in _targets(args, http, cfg["repository"], cfg["repo_id"]):
-                results.append(verify_pr(n, env=env, collector=collector, read=http, post=poster, cfg=cfg, now=now))
+                results.append(verify_pr(n, env=env, collector=collector, read=http, post=poster, cfg=cfg, now=clock))
     except ConfigError as exc:
         print(json.dumps({"role": args.role, "action": "error", "reasons": [str(exc)]}))
         return 1

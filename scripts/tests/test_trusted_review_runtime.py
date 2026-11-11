@@ -531,6 +531,50 @@ class Targets(Offline):
         self.assertEqual(rt.list_target_prs(Fake({f"/repos/{REPO}/pulls": [ok(page)]}), REPO, RID), list(range(1, 61)))
 
 
+class ClockAndCoauthors(Offline):
+    """Codex P2 findings on 7b955da."""
+    CLAUDE_MSG = ("work\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\n"
+                  "Claude-Session: https://claude.ai/code/session_CLAUDE-W1")
+
+    def coauthored_world(self):
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(msg=self.CLAUDE_MSG)])]
+        return w
+
+    def test_claude_coauthor_trailer_needs_owner_allowlist(self):
+        ev = collector_for(RW(self.coauthored_world())).collect(N)
+        self.assertIn("commits:coauthor_identity_unresolved", ev["api_errors"])  # default: fail closed
+        self.assertEqual(rt.coauthor_allowlist({}), ())
+        env = {"TRUSTED_COAUTHOR_EMAILS": " noreply@anthropic.com , "}
+        self.assertEqual(rt.coauthor_allowlist(env), ("noreply@anthropic.com",))
+        fake = RW(self.coauthored_world())
+        res = rt.review_pr(N, env=ENV, collector=rt.build_collector(fake, cfg(), env), read=fake, post=None, cfg=cfg(), key=KEY,
+                           now=NOW, session_id="trusted-review-runtime:1:1", nonce="n")
+        self.assertEqual(res["action"], "dry_run", res)
+
+    def test_other_unvetted_email_still_fails_closed(self):
+        w = self.coauthored_world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(msg=self.CLAUDE_MSG.replace("noreply@anthropic.com", "evil@example.com"))])]
+        ev = rt.build_collector(RW(w), cfg(), {"TRUSTED_COAUTHOR_EMAILS": "noreply@anthropic.com"}).collect(N)
+        self.assertTrue(ev["incomplete"])
+
+    def test_clock_is_reread_so_attestation_cannot_outlive_expiry(self):
+        res, fake = do_review()
+        prior = {"name": att.CHECK_NAME, "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": VERIFIER_ID},
+                 "output": do_verify(verifier_world())[1].posts[0][1]["output"], "completed_at": "2026-11-10T12:00:00Z", "id": 1}
+        res2, fake2 = do_verify(verifier_world(), prior=prior, now=lambda: NOW)
+        self.assertEqual((res2["action"], fake2.posts), ("skipped", []))  # still valid at the current time: reused
+        res3, fake3 = do_verify(verifier_world(), prior=prior, now=lambda: NOW + timedelta(hours=2))
+        # time passed during auth/collection: the expired prior success is not reused and nothing stale is published as success
+        self.assertEqual(fake3.posts[0][1]["conclusion"], "failure")
+
+    def test_reviewer_uses_current_time_for_attestation_window(self):
+        later = NOW + timedelta(minutes=10)
+        res, fake = do_review(now=lambda: later)
+        self.assertEqual(res["action"], "posted", res)
+        self.assertEqual(att.parse_review_body(fake.posts[0][1]["body"])[0]["issued_at"], "2026-11-10T12:10:00Z")
+
+
 class Guards(Offline):
     def test_isolation_between_roles(self):
         rt.check_isolation({"REVIEWER_SIGNING_KEY": "x"}, "reviewer")
