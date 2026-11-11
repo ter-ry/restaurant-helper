@@ -587,8 +587,8 @@ class Wiring(Offline):
 
     def test_shared_variable_names_with_develop_controller(self):
         text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
-        for name in ("FLOWTALLY_REVIEWER_APP_ID", "FLOWTALLY_REVIEWER_LOGIN", "FLOWTALLY_VERIFIER_APP_ID", "FLOWTALLY_REPO_ID",
-                     "FLOWTALLY_REVIEWER_BOT_USER_ID", "TRUSTED_COAUTHOR_EMAILS"):
+        for name in ("FLOWTALLY_REVIEWER_APP_ID", "REVIEWER_BOT_LOGIN", "VERIFIER_APP_ID", "FLOWTALLY_REPO_ID",
+                     "REVIEWER_BOT_USER_ID", "TRUSTED_COAUTHOR_EMAILS"):
             self.assertIn(f"vars.{name}", text, name)
 
     def test_every_workflow_env_name_is_read_by_the_runtime_or_documented(self):
@@ -596,11 +596,10 @@ class Wiring(Offline):
         code = (Path(__file__).resolve().parents[1] / "trusted_review_runtime.py").read_text()
         import re
         for name in set(re.findall(r"^\s+((?:FLOWTALLY_|TRUSTED_|PR_)[A-Z_]+):", text, re.M)):
-            stem = re.sub(r"^FLOWTALLY_(REVIEWER|VERIFIER)_", "FLOWTALLY_{role.upper()}_", name) if "_APP_" in name else name
-            self.assertTrue(name in code or stem in code or name == "PR_NUMBER", f"{name} is set by the workflow but never read")
+            self.assertTrue(name in code or name == "PR_NUMBER", f"{name} is set by the workflow but never read")
 
     def test_missing_variable_fails_loudly_not_silently(self):
-        for role, missing in (("reviewer", "FLOWTALLY_REVIEWER_APP_ID"), ("verifier", "FLOWTALLY_VERIFIER_APP_ID")):
+        for role, missing in (("reviewer", "FLOWTALLY_REVIEWER_APP_ID"), ("verifier", "VERIFIER_APP_ID")):
             with self.assertRaises(rt.ConfigError) as cm:
                 rt._common({**self.TRUSTED, "FLOWTALLY_REPO_ID": "900"}, role, NOW)
             self.assertEqual(str(cm.exception), f"missing:{missing}")

@@ -487,10 +487,10 @@ def _targets(args: argparse.Namespace, read: Any, repository: str, repo_id: int)
 def _common(env: Mapping[str, str], role: str, now: datetime) -> tuple[dict[str, Any], Any]:
     check_isolation(env, role)
     repository, sha = check_trusted_context(env)
-    app_id = _need_int(env, f"FLOWTALLY_{role.upper()}_APP_ID")
+    app_id = _need_int(env, "VERIFIER_APP_ID" if role == "verifier" else "FLOWTALLY_REVIEWER_APP_ID")
     cfg: dict[str, Any] = {"repository": repository, "repo_id": _need_int(env, "FLOWTALLY_REPO_ID"),
-                           "evaluator_main_sha": sha, "bot_user_id": _need_int(env, "FLOWTALLY_REVIEWER_BOT_USER_ID"),
-                           "bot_login": _need(env, "FLOWTALLY_REVIEWER_LOGIN")}
+                           "evaluator_main_sha": sha, "bot_user_id": _need_int(env, "REVIEWER_BOT_USER_ID"),
+                           "bot_login": _need(env, "REVIEWER_BOT_LOGIN")}
     jwt = mint_app_jwt(app_id, _need(env, f"FLOWTALLY_{role.upper()}_APP_PRIVATE_KEY"), now)
     token, granted = mint_installation_token(HttpTransport(jwt), repository, REVIEWER_TOKEN_PERMISSIONS if role == "reviewer" else VERIFIER_TOKEN_PERMISSIONS)
     problems = att.reviewer_permission_problems(granted) if role == "reviewer" else verifier_permission_problems(granted)
