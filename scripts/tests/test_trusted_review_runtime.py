@@ -1,0 +1,510 @@
+"""Secretless, offline tests for the trusted reviewer/verifier runtime (issue #286).
+
+No network (sockets are blocked), no real key, no GitHub write: every transport is a fake that
+records calls. The positive path runs the real merged collector over recorded-shape responses.
+"""
+import copy
+import json
+import socket
+import sys
+import unittest
+from datetime import timedelta
+from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import trusted_review_attestation as att
+import trusted_review_evidence_collector as col
+import trusted_review_runtime as rt
+from test_trusted_review_attestation import BASE, HEAD, KEY, MAIN, NOW, OTHER_KEY, raw_pub
+from test_trusted_review_evidence_collector import N, REPO, RID, ROOT, Fake, commit, ok, world
+
+CODEX_ID, VERIFIER_ID, BOT_ID = 777000, 777, 555
+ENV = {rt.ENABLE_VARIABLE: "true", rt.LIVE_WRITES_VARIABLE: "true"}
+DRY = {rt.ENABLE_VARIABLE: "true"}
+
+
+def cfg(**over):
+    c = {"repository": REPO, "repo_id": RID, "evaluator_main_sha": MAIN, "bot_user_id": BOT_ID,
+         "bot_login": "flowtally-independent-reviewer[bot]", "codex_bot_id": CODEX_ID,
+         "codex_bot_login": "chatgpt-codex-connector[bot]", "public_key": raw_pub(KEY), "verifier_app_id": VERIFIER_ID}
+    c.update(over)
+    return c
+
+
+def codex_comment(head=HEAD, status="completed", unresolved=False, uid=CODEX_ID, utype="Bot"):
+    state = {"code_review": {"commit_sha": head, "has_any_findings": False, "has_unresolved_findings": unresolved, "status": status}}
+    return {"user": {"id": uid, "type": utype, "login": "chatgpt-codex-connector[bot]"}, "updated_at": "2026-11-10T11:55:00Z",
+            "body": f"<!-- codex-review-state:v1 {json.dumps(state)} -->"}
+
+
+def reviewer_world(codex=None, **mods):
+    w = world()
+    w[f"{ROOT}/pulls/{N}/reviews"] = [ok([])]
+    w[f"{ROOT}/issues/{N}/comments"] = [ok([codex_comment()] if codex is None else codex)]
+    for k, v in mods.items():
+        w[k] = v
+    return w
+
+
+class RW(Fake):
+    """Read transport plus a recording write sink; reads are served by the merged-collector test world."""
+    def __init__(self, w):
+        super().__init__(w)
+        self.posts = []
+        self.post_response = None
+
+    def post(self, path, body):
+        self.posts.append((path, body))
+        return self.post_response
+
+
+def collector_for(fake):
+    return col.Collector(fake, repository=REPO, repo_id=RID, allowed_bases=["develop"])
+
+
+class Offline(unittest.TestCase):
+    def setUp(self):
+        self._orig = socket.socket.connect
+        socket.socket.connect = lambda *a, **k: (_ for _ in ()).throw(AssertionError("network blocked"))
+
+    def tearDown(self):
+        socket.socket.connect = self._orig
+
+
+def do_review(w=None, env=ENV, now=NOW, post_response="ok", config=None, session="trusted-review-runtime:1:1", collector=None):
+    fake = RW(w or reviewer_world())
+    fake.post_response = ({"status": 200, "headers": {}, "body": {"commit_id": HEAD, "state": "APPROVED", "user": {"id": BOT_ID}}}
+                          if post_response == "ok" else post_response)
+    res = rt.review_pr(N, env=env, collector=collector or collector_for(fake), read=fake, post=fake.post, cfg=config or cfg(),
+                       key=KEY, now=now, session_id=session, nonce="nonce-1")
+    return res, fake
+
+
+class ReviewerPositive(Offline):
+    def test_live_post_has_exact_request_shape_and_verifies(self):
+        res, fake = do_review()
+        self.assertEqual(res["action"], "posted", res)
+        (path, body), = fake.posts
+        self.assertEqual(path, f"/repos/{REPO}/pulls/{N}/reviews")
+        self.assertEqual((body["commit_id"], body["event"]), (HEAD, "APPROVE"))
+        self.assertEqual(set(body), {"commit_id", "event", "body"})
+        ev = collector_for(RW(reviewer_world())).collect(N)
+        ev["reviews"] = [{"id": 1, "user": {"id": BOT_ID, "login": "flowtally-independent-reviewer[bot]", "type": "Bot"}, "state": "APPROVED",
+                          "commit_id": HEAD, "submitted_at": "2026-11-10T12:00:00Z", "body": body["body"]}]
+        r = att.verify(ev, rt.verifier_config(cfg()), NOW, att.NonceStore())
+        self.assertTrue(r.verified, r.reasons)
+        p = r.attestation
+        self.assertEqual((p["base_sha"], p["evaluator_main_sha"], p["reviewer_session_id"]), (BASE, MAIN, "trusted-review-runtime:1:1"))
+        self.assertLessEqual((att._ts(p["expires_at"]) - att._ts(p["issued_at"])).total_seconds(), att.MAX_TTL_SECONDS)
+
+    def test_dry_run_when_live_writes_off_posts_nothing(self):
+        res, fake = do_review(env=DRY)
+        self.assertEqual(res["action"], "dry_run", res)
+        self.assertEqual(fake.posts, [])
+        self.assertNotIn("sig:", json.dumps(res))  # never print the signed body
+
+    def test_all_reads_are_get_or_query_only(self):
+        _, fake = do_review()
+        self.assertTrue(all(c[0] in ("GET", "GRAPHQL") for c in fake.calls))
+
+    def test_idempotent_when_valid_approval_exists(self):
+        res, fake = do_review()
+        body = fake.posts[0][1]["body"]
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/reviews"] = [ok([{"id": 1, "user": {"id": BOT_ID, "login": "flowtally-independent-reviewer[bot]", "type": "Bot"},
+                                              "state": "APPROVED", "commit_id": HEAD, "submitted_at": "2026-11-10T12:00:00Z", "body": body}])]
+        res2, fake2 = do_review(w)
+        self.assertEqual((res2["action"], res2["reasons"]), ("skipped", ["already_reviewed"]))
+        self.assertEqual(fake2.posts, [])
+
+    def test_expired_approval_is_reissued(self):
+        res, fake = do_review()
+        body = fake.posts[0][1]["body"]
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/reviews"] = [ok([{"id": 1, "user": {"id": BOT_ID, "login": "flowtally-independent-reviewer[bot]", "type": "Bot"},
+                                              "state": "APPROVED", "commit_id": HEAD, "submitted_at": "2026-11-10T12:00:00Z", "body": body}])]
+        later = NOW + timedelta(seconds=rt.ATTESTATION_TTL_SECONDS + 5)
+        res2, _ = do_review(w, now=later)
+        self.assertEqual(res2["action"], "posted", res2)
+
+
+class ReviewerBlocks(Offline):
+    def blocked(self, res, fake, reason):
+        self.assertEqual(res["action"], "blocked", res)
+        self.assertIn(reason, " ".join(res["reasons"]))
+        self.assertEqual(fake.posts, [])
+
+    def test_switch_off_makes_no_api_call(self):
+        res, fake = do_review(env={})
+        self.assertEqual((res["action"], fake.calls), ("skipped", []))
+        res, fake = do_review(env={rt.ENABLE_VARIABLE: "True"})
+        self.assertEqual((res["action"], fake.calls), ("skipped", []))
+
+    def test_live_writes_without_enable_never_post(self):
+        res, fake = do_review(env={rt.LIVE_WRITES_VARIABLE: "true"})
+        self.assertEqual((res["action"], fake.posts), ("skipped", []))
+
+    def test_switch_off_in_repository_variable(self):
+        w = reviewer_world()
+        w[f"{ROOT}/actions/variables/{col.KILL_SWITCH_VARIABLE}"] = [ok({"name": col.KILL_SWITCH_VARIABLE, "value": "false"})]
+        res, fake = do_review(w)
+        self.assertEqual((res["action"], fake.posts), ("skipped", []))
+
+    def test_no_codex_review_is_never_rubber_stamped(self):
+        res, fake = do_review(reviewer_world(codex=[]))
+        self.blocked(res, fake, "codex_review_missing")
+
+    def test_shared_owner_account_comment_is_not_review_evidence(self):
+        res, fake = do_review(reviewer_world(codex=[codex_comment(uid=131665773, utype="User")]))
+        self.blocked(res, fake, "codex_review_missing")
+
+    def test_lookalike_bot_with_other_id_ignored(self):
+        res, fake = do_review(reviewer_world(codex=[codex_comment(uid=CODEX_ID + 1)]))
+        self.blocked(res, fake, "codex_review_missing")
+
+    def test_codex_review_of_older_head_is_stale(self):
+        res, fake = do_review(reviewer_world(codex=[codex_comment(head="d" * 40)]))
+        self.blocked(res, fake, "codex_review_stale_head")
+
+    def test_codex_not_completed_or_unresolved(self):
+        res, fake = do_review(reviewer_world(codex=[codex_comment(status="in_progress")]))
+        self.blocked(res, fake, "codex_review_not_completed")
+        res, fake = do_review(reviewer_world(codex=[codex_comment(unresolved=True)]))
+        self.blocked(res, fake, "codex_unresolved_findings")
+
+    def test_codex_state_unreadable_and_comments_unavailable(self):
+        c = codex_comment()
+        c["body"] = "<!-- codex-review-state:v1 {not json} -->"
+        res, fake = do_review(reviewer_world(codex=[c]))
+        self.blocked(res, fake, "codex_review_unreadable")
+        w = reviewer_world()
+        w[f"{ROOT}/issues/{N}/comments"] = [{"status": 500, "headers": {}, "body": {}}]
+        res, fake = do_review(w)
+        self.blocked(res, fake, "codex_comments_missing")
+
+    def test_only_tier0_docs_may_be_approved(self):
+        for path in ("backend/x.py", ".github/workflows/ci.yml", "backend/migrations/0001.py", "src/App.tsx", "scripts/trusted_review_runtime.py", "AGENTS.md"):
+            w = reviewer_world()
+            w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"] = 2
+            w[f"{ROOT}/pulls/{N}/files"] = [ok([{"filename": "docs/a.md"}, {"filename": path}])]
+            res, fake = do_review(w)
+            self.blocked(res, fake, "not_tier0_only")
+
+    def test_unresolved_thread_pending_reviewer_and_base(self):
+        w = reviewer_world()
+        w["graphql"][0]["body"]["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["isResolved"] = False
+        self.blocked(*do_review(w), "unresolved_threads")
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/requested_reviewers"] = [ok({"users": [{"login": "x"}], "teams": []})]
+        self.blocked(*do_review(w), "pending_requested_reviewers")
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["base"]["ref"] = "main"
+        res, fake = do_review(w)
+        self.assertEqual(res["action"], "blocked")
+        self.assertEqual(fake.posts, [])
+
+    def test_failed_or_missing_ci_blocks_via_preflight(self):
+        w = reviewer_world()
+        w[f"{ROOT}/commits/{HEAD}/check-runs"][0]["body"]["check_runs"][0]["conclusion"] = "failure"
+        self.blocked(*do_review(w), "preflight_verify_failed")
+        w = reviewer_world()
+        w[f"{ROOT}/commits/{HEAD}/check-runs"] = [ok({"total_count": 0, "check_runs": []})]
+        self.blocked(*do_review(w), "preflight_verify_failed")
+
+    def test_base_sha_not_provable_blocks_instead_of_fabricating(self):
+        w = reviewer_world()
+        w[f"{ROOT}/actions/runs"] = [ok({"total_count": 0, "workflow_runs": []})]
+        res, fake = do_review(w)
+        self.assertEqual(res["action"], "blocked")
+        self.assertIn("base_sha_unproven", res["reasons"])
+        self.assertEqual(fake.posts, [])
+
+    def test_api_caps_and_failures_fail_closed(self):
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["commits"] = 251  # GitHub's 250-commit cap: count mismatch
+        self.blocked(*do_review(w), "incomplete_evidence")
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/reviews"] = [{"status": 403, "headers": {}, "body": {}}]
+        self.blocked(*do_review(w), "incomplete_evidence")
+
+    def test_cross_session_self_review_blocked(self):
+        res, fake = do_review(session="session_CLAUDE-W1")
+        self.blocked(res, fake, "author_self_review")
+
+    def test_engine_or_bot_as_author_blocked(self):
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(login="chatgpt-codex-connector[bot]")])]
+        self.blocked(*do_review(w), "review_engine_is_author")
+
+    def test_missing_author_sessions_blocked(self):
+        w = reviewer_world()
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit(msg="no trailer")])]
+        self.blocked(*do_review(w), "incomplete_evidence")
+
+    def test_head_moved_during_review_posts_nothing(self):
+        fake = RW(reviewer_world())
+        real = collector_for(fake)
+        evs = [real.collect(N)]
+        moved = copy.deepcopy(evs[0])
+        moved["pr"]["head"]["sha"] = "e" * 40
+
+        class Moving:
+            calls = 0
+
+            def collect(self, n):
+                Moving.calls += 1
+                return copy.deepcopy(evs[0]) if Moving.calls == 1 else copy.deepcopy(moved)
+
+        res, fake2 = do_review(collector=Moving())
+        self.blocked(res, fake2, "changed_during_review")
+
+    def test_files_changed_or_base_advanced_during_review(self):
+        base = collector_for(RW(reviewer_world())).collect(N)
+        for mutate in (lambda e: e.update(changed_files=["docs/a.md", "docs/zzz.md"]), lambda e: e["pr"]["base"].update(sha="f" * 40)):
+            other = copy.deepcopy(base)
+            mutate(other)
+
+            class Two:
+                n = 0
+
+                def collect(self, _):
+                    Two.n += 1
+                    return copy.deepcopy(base) if Two.n == 1 else copy.deepcopy(other)
+
+            res, fake = do_review(collector=Two())
+            self.blocked(res, fake, "changed_during_review")
+
+    def test_unconfirmed_post_is_an_error(self):
+        res, fake = do_review(post_response={"status": 422, "headers": {}, "body": {}})
+        self.assertEqual((res["action"], res["reasons"]), ("error", ["review_post_unconfirmed"]))
+        res, _ = do_review(post_response={"status": 200, "headers": {}, "body": {"commit_id": "9" * 40, "state": "APPROVED", "user": {"id": BOT_ID}}})
+        self.assertEqual(res["action"], "error")
+
+
+def verifier_world(approve=True, **mods):
+    w = reviewer_world()
+    if approve:
+        res, fake = do_review()
+        body = fake.posts[0][1]["body"]
+        w[f"{ROOT}/pulls/{N}/reviews"] = [ok([{"id": 1, "user": {"id": BOT_ID, "login": "flowtally-independent-reviewer[bot]", "type": "Bot"},
+                                              "state": "APPROVED", "commit_id": HEAD, "submitted_at": "2026-11-10T12:00:00Z", "body": body}])]
+    for k, v in mods.items():
+        w[k] = v
+    return w
+
+
+CHECKS = f"{ROOT}/commits/{HEAD}/check-runs"
+
+
+def do_verify(w, env=ENV, now=NOW, prior=None, post_response="ok", config=None, collector=None):
+    w = copy.deepcopy(w)
+    fake = RW(w)
+    runs = w[CHECKS][0]["body"]["check_runs"]
+    fake.get_orig = fake.get
+
+    def get(path, params):
+        if path == CHECKS and params.get("check_name") == att.CHECK_NAME:
+            return ok({"total_count": 1 if prior else 0, "check_runs": [prior] if prior else []})
+        return fake.get_orig(path, params)
+
+    fake.get = get
+    fake.post_response = ({"status": 201, "headers": {}, "body": {"app": {"id": VERIFIER_ID}, "head_sha": HEAD}}
+                          if post_response == "ok" else post_response)
+    res = rt.verify_pr(N, env=env, collector=collector or collector_for(fake), read=fake, post=fake.post, cfg=config or cfg(), now=now)
+    return res, fake
+
+
+class Verifier(Offline):
+    def test_valid_approval_publishes_success_check_from_verifier(self):
+        res, fake = do_verify(verifier_world())
+        self.assertEqual((res["action"], res["conclusion"]), ("posted", "success"), res)
+        (path, body), = fake.posts
+        self.assertEqual(path, f"/repos/{REPO}/check-runs")
+        self.assertEqual((body["name"], body["head_sha"], body["status"], body["conclusion"]), (att.CHECK_NAME, HEAD, "completed", "success"))
+        self.assertEqual(json.loads(body["output"]["summary"])["verifier_app_id"], VERIFIER_ID)
+
+    def test_dry_run_posts_nothing(self):
+        res, fake = do_verify(verifier_world(), env=DRY)
+        self.assertEqual((res["action"], fake.posts), ("dry_run", []))
+
+    def test_missing_forged_expired_and_wrong_key_are_failure_never_neutral(self):
+        cases = {"missing": (verifier_world(approve=False), NOW, cfg()),
+                 "expired": (verifier_world(), NOW + timedelta(hours=2), cfg()),
+                 "wrong_key": (verifier_world(), NOW, cfg(public_key=raw_pub(OTHER_KEY)))}
+        for name, (w, now, c) in cases.items():
+            res, fake = do_verify(w, now=now, config=c)
+            self.assertEqual((res["action"], res["conclusion"]), ("posted", "failure"), name)
+            self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+
+    def test_forged_comment_or_check_by_other_actor_does_not_satisfy(self):
+        w = verifier_world(approve=False)
+        w[f"{ROOT}/issues/{N}/comments"] = [ok([{"user": {"login": "ter-ry", "id": 1}, "body": f"APPROVE @ {HEAD}"}])]
+        res, _ = do_verify(w)
+        self.assertEqual(res["conclusion"], "failure")
+        forged = {"name": att.CHECK_NAME, "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": 1},
+                  "output": {"summary": json.dumps({"expires_at": "2099-01-01T00:00:00Z"})}}
+        res, fake = do_verify(verifier_world(approve=False), prior=forged)
+        self.assertEqual(res["action"], "posted")  # the verifier does not trust or reuse another actor's check
+        self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+
+    def test_kill_switch_off_after_valid_approval_is_failure(self):
+        w = verifier_world()
+        w[f"{ROOT}/actions/variables/{col.KILL_SWITCH_VARIABLE}"] = [ok({"name": col.KILL_SWITCH_VARIABLE, "value": "false"})]
+        res, fake = do_verify(w)
+        self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+        self.assertIn("kill_switch_off", json.loads(fake.posts[0][1]["output"]["summary"])["reasons"])
+
+    def test_unreadable_variable_or_api_error_is_failure(self):
+        w = verifier_world()
+        w[f"{ROOT}/pulls/{N}/requested_reviewers"] = [{"status": 500, "headers": {}, "body": {}}]
+        res, fake = do_verify(w)
+        self.assertEqual(res["action"] == "posted" and fake.posts[0][1]["conclusion"], "failure")
+
+    def test_idempotent_republish_skips_identical_valid_check(self):
+        res, fake = do_verify(verifier_world())
+        body = fake.posts[0][1]
+        prior = {"name": att.CHECK_NAME, "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": VERIFIER_ID},
+                 "output": body["output"], "completed_at": "2026-11-10T12:00:00Z", "id": 1}
+        res2, fake2 = do_verify(verifier_world(), prior=prior)
+        self.assertEqual((res2["action"], fake2.posts), ("skipped", []))
+
+    def test_expired_prior_success_is_republished_as_failure(self):
+        res, fake = do_verify(verifier_world())
+        prior = {"name": att.CHECK_NAME, "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": VERIFIER_ID},
+                 "output": fake.posts[0][1]["output"], "completed_at": "2026-11-10T12:00:00Z", "id": 1}
+        res2, fake2 = do_verify(verifier_world(), prior=prior, now=NOW + timedelta(hours=2))
+        self.assertEqual(fake2.posts[0][1]["conclusion"], "failure")
+
+    def test_head_moved_while_verifying_posts_nothing(self):
+        base = collector_for(RW(verifier_world())).collect(N)
+        moved = copy.deepcopy(base)
+        moved["pr"]["head"]["sha"] = "e" * 40
+
+        class Moving:
+            n = 0
+
+            def collect(self, _):
+                Moving.n += 1
+                return copy.deepcopy(base) if Moving.n == 1 else copy.deepcopy(moved)
+
+        res, fake = do_verify(verifier_world(), collector=Moving())
+        self.assertEqual((res["action"], fake.posts), ("blocked", []))
+
+    def test_unknown_head_publishes_nothing(self):
+        w = verifier_world()
+        w[f"{ROOT}/pulls/{N}"] = [{"status": 404, "headers": {}, "body": {}}]
+        res, fake = do_verify(w)
+        self.assertEqual((res["action"], res["reasons"][0], fake.posts), ("blocked", "head_unknown", []))
+
+    def test_check_post_from_wrong_app_is_error(self):
+        res, _ = do_verify(verifier_world(), post_response={"status": 201, "headers": {}, "body": {"app": {"id": 1}, "head_sha": HEAD}})
+        self.assertEqual(res["action"], "error")
+
+    def test_switch_off_makes_no_call(self):
+        res, fake = do_verify(verifier_world(), env={})
+        self.assertEqual((res["action"], fake.posts), ("skipped", []))
+
+
+class Guards(Offline):
+    def test_isolation_between_roles(self):
+        rt.check_isolation({"REVIEWER_SIGNING_KEY": "x"}, "reviewer")
+        rt.check_isolation({"VERIFIER_APP_PRIVATE_KEY": "x"}, "verifier")
+        with self.assertRaises(rt.ConfigError):
+            rt.check_isolation({"VERIFIER_APP_PRIVATE_KEY": "x"}, "reviewer")
+        for name in rt.REVIEWER_ONLY_SECRETS:
+            with self.assertRaises(rt.ConfigError):
+                rt.check_isolation({name: "x"}, "verifier")
+
+    def test_only_trusted_main_dispatch_or_schedule(self):
+        good = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_SHA": MAIN}
+        self.assertEqual(rt.check_trusted_context(good), (REPO, MAIN))
+        for k, v in (("GITHUB_EVENT_NAME", "pull_request_target"), ("GITHUB_EVENT_NAME", "pull_request"), ("GITHUB_REF", "refs/pull/7/merge"),
+                     ("GITHUB_REF", "refs/heads/develop"), ("GITHUB_REPOSITORY", "evil/restaurant-helper"), ("GITHUB_SHA", "xyz")):
+            with self.assertRaises(rt.ConfigError, msg=(k, v)):
+                rt.check_trusted_context({**good, k: v})
+
+    def test_runtime_sha_must_be_main_tip(self):
+        ok_tip = Fake({f"/repos/{REPO}/branches/main": [ok({"commit": {"sha": MAIN}})]})
+        rt.trusted_runtime_sha(ok_tip, REPO, MAIN)
+        with self.assertRaises(rt.ConfigError):
+            rt.trusted_runtime_sha(ok_tip, REPO, "9" * 40)
+
+    def test_permission_models(self):
+        self.assertEqual(rt.verifier_permission_problems({"checks": "write", "variables": "read", "pull_requests": "read"}), [])
+        self.assertIn("forbidden_write:pull_requests", rt.verifier_permission_problems({"checks": "write", "variables": "read", "pull_requests": "write"}))
+        self.assertIn("forbidden_write:contents", rt.verifier_permission_problems({"checks": "write", "variables": "read", "contents": "write"}))
+        self.assertIn("missing:checks_write", rt.verifier_permission_problems({"variables": "read"}))
+        self.assertIn("forbidden_write:checks", att.reviewer_permission_problems({"checks": "write", "pull_requests": "write", "variables": "read"}))
+        self.assertEqual(att.reviewer_permission_problems(rt.REVIEWER_TOKEN_PERMISSIONS), [])
+        self.assertEqual(rt.verifier_permission_problems(rt.VERIFIER_TOKEN_PERMISSIONS), [])
+
+    def test_app_jwt_is_rs256_and_short_lived(self):
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+        tok = rt.mint_app_jwt(123, pem, NOW)
+        h, b, s = tok.split(".")
+        pad = lambda x: x + "=" * (-len(x) % 4)  # noqa: E731
+        import base64
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+        key.public_key().verify(base64.urlsafe_b64decode(pad(s)), f"{h}.{b}".encode(), padding.PKCS1v15(), hashes.SHA256())
+        claims = json.loads(base64.urlsafe_b64decode(pad(b)))
+        self.assertEqual(claims["iss"], "123")
+        self.assertLessEqual(claims["exp"] - claims["iat"], 600)
+
+    def test_installation_token_must_be_single_repo(self):
+        class J:
+            def __init__(self, repos):
+                self.repos, self.posted = repos, None
+
+            def get(self, path, params=None):
+                return ok({"id": 9})
+
+            def post(self, path, body):
+                self.posted = body
+                return {"status": 201, "headers": {}, "body": {"token": "t", "permissions": {"checks": "write"}, "repositories": self.repos}}
+
+        j = J([{"full_name": REPO}])
+        self.assertEqual(rt.mint_installation_token(j, REPO, rt.VERIFIER_TOKEN_PERMISSIONS)[0], "t")
+        self.assertEqual(j.posted["repositories"], ["restaurant-helper"])
+        for repos in ([], [{"full_name": REPO}, {"full_name": "ter-ry/other"}], [{"full_name": "ter-ry/other"}]):
+            with self.assertRaises(rt.ConfigError):
+                rt.mint_installation_token(J(repos), REPO, rt.VERIFIER_TOKEN_PERMISSIONS)
+
+    def test_pr_listing_excludes_forks_and_fails_on_truncation(self):
+        page = [{"number": 1, "head": {"repo": {"id": RID}}}, {"number": 2, "head": {"repo": {"id": 5}}}, {"number": 3, "head": {"repo": None}}]
+        f = Fake({f"/repos/{REPO}/pulls": [ok(page)]})
+        self.assertEqual(rt.list_target_prs(f, REPO, RID), [1])
+        full = [{"number": i, "head": {"repo": {"id": RID}}} for i in range(1, 101)]
+        with self.assertRaises(rt.ConfigError):
+            rt.list_target_prs(Fake({f"/repos/{REPO}/pulls": [ok(full)]}), REPO, RID)
+
+    def test_cli_inactive_when_switch_not_true_and_never_touches_network(self):
+        for env in ({}, {rt.ENABLE_VARIABLE: "false"}, {rt.ENABLE_VARIABLE: "TRUE"}):
+            self.assertEqual(rt.run(["reviewer", "--pr", "1"], env, NOW), 0)
+            self.assertEqual(rt.run(["verifier"], env, NOW), 0)
+
+    def test_cli_fails_closed_on_bad_config_without_network(self):
+        base = {rt.ENABLE_VARIABLE: "true"}
+        self.assertEqual(rt.run(["reviewer", "--pr", "1"], base, NOW), 1)  # untrusted context and no secrets
+        mixed = {**base, "GITHUB_REPOSITORY": REPO, "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
+                 "GITHUB_SHA": MAIN, "VERIFIER_APP_PRIVATE_KEY": "x"}
+        self.assertEqual(rt.run(["reviewer", "--pr", "1"], mixed, NOW), 1)
+        pr_event = {**mixed, "GITHUB_EVENT_NAME": "pull_request_target"}
+        self.assertEqual(rt.run(["verifier", "--pr", "1"], {k: v for k, v in pr_event.items() if k != "VERIFIER_APP_PRIVATE_KEY"}, NOW), 1)
+
+    def test_signing_key_must_be_ed25519(self):
+        rsa_pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+        with self.assertRaises(rt.ConfigError):
+            rt.load_signing_key(rsa_pem)
+        with self.assertRaises(rt.ConfigError):
+            rt.load_public_key("AAAA")
+
+
+if __name__ == "__main__":
+    unittest.main()

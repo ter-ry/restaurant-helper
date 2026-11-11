@@ -1,0 +1,92 @@
+# Trusted reviewer + verifier (issue #286). DISABLED BY DEFAULT and inert until the owner
+# sets repository variable FLOWTALLY_TRUSTED_REVIEW_ENABLED to exactly `true`. Even then it
+# only DRY-RUNS (no review, no check) until FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES is `true`.
+#
+# Trust rules (docs/TRUSTED_REVIEW_RUNTIME_SETUP.md):
+#  * Triggers are workflow_dispatch and schedule ONLY, and only on refs/heads/main. There is no
+#    pull_request / pull_request_target trigger and no PR-head checkout, so untrusted PR code and
+#    untrusted artifacts never run next to an App key.
+#  * The reviewer and verifier are separate jobs in separate protected environments with separate
+#    App keys. The signing key exists only in the reviewer environment; only the public key is in
+#    the verifier environment. Each job fails if it can see the other's secrets.
+#  * Phase 1 scope: Tier 0 docs-only PRs into `develop`. Nothing here merges, deploys or edits settings.
+name: Trusted review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number (blank = reconcile all open develop PRs)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions: {}
+
+concurrency:
+  group: trusted-review
+  cancel-in-progress: false
+
+jobs:
+  reviewer:
+    name: trusted-review-reviewer
+    if: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: trusted-review-reviewer
+    permissions:
+      contents: read
+    env:
+      FLOWTALLY_TRUSTED_REVIEW_ENABLED: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED }}
+      FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES }}
+      FLOWTALLY_REPO_ID: ${{ vars.FLOWTALLY_REPO_ID }}
+      PR_NUMBER: ${{ github.event.inputs.pr_number }}
+      REVIEWER_APP_ID: ${{ vars.REVIEWER_APP_ID }}
+      REVIEWER_BOT_USER_ID: ${{ vars.REVIEWER_BOT_USER_ID }}
+      REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
+      CODEX_BOT_USER_ID: ${{ vars.CODEX_BOT_USER_ID }}
+      REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
+      REVIEWER_SIGNING_KEY: ${{ secrets.REVIEWER_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "cryptography==43.0.3"
+      - name: Run trusted reviewer
+        run: python scripts/trusted_review_runtime.py reviewer ${PR_NUMBER:+--pr "$PR_NUMBER"}
+
+  verifier:
+    name: trusted-review-verifier
+    needs: reviewer
+    if: ${{ always() && vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: trusted-review-verifier
+    permissions:
+      contents: read
+    env:
+      FLOWTALLY_TRUSTED_REVIEW_ENABLED: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_ENABLED }}
+      FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES }}
+      FLOWTALLY_REPO_ID: ${{ vars.FLOWTALLY_REPO_ID }}
+      PR_NUMBER: ${{ github.event.inputs.pr_number }}
+      VERIFIER_APP_ID: ${{ vars.VERIFIER_APP_ID }}
+      REVIEWER_BOT_USER_ID: ${{ vars.REVIEWER_BOT_USER_ID }}
+      REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
+      REVIEWER_PUBLIC_KEY: ${{ vars.REVIEWER_PUBLIC_KEY }}
+      VERIFIER_APP_PRIVATE_KEY: ${{ secrets.VERIFIER_APP_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "cryptography==43.0.3"
+      - name: Run trusted verifier
+        run: python scripts/trusted_review_runtime.py verifier ${PR_NUMBER:+--pr "$PR_NUMBER"}

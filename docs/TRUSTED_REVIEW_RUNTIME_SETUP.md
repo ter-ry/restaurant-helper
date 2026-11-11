@@ -1,0 +1,40 @@
+# Trusted review runtime: owner setup and acceptance (issue #286)
+
+Status: **code and workflows only. DISABLED, NOT ACTIVE, NOT live-verified.** Nothing here creates a key, sets a secret or variable, changes a ruleset, posts a review or check, or merges. Activation and the first live tests need your explicit approval after an independent exact-head review of the PR that adds this file.
+
+Code: `scripts/trusted_review_runtime.py` (uses the merged `trusted_review_attestation.py` #283 and `trusted_review_evidence_collector.py` #285). Workflows: `.github/workflows/trusted-review.yml` (privileged, main only) and `.github/workflows/trusted-review-tests.yml` (secretless CI, required result `trusted-review-security-tests`). Tests: `scripts/tests/test_trusted_review_runtime.py`.
+
+## What it does
+
+- **Reviewer job** (environment `trusted-review-reviewer`): for a PR into `develop`, collects evidence read-only, then approves only if every gate passes: Tier 0 docs-only paths; not draft, same repository; no unresolved or outdated threads; no pending reviewers; exact-head CI `backend`/`frontend` from `github-actions` with a provable base SHA; author, commit and `Claude-Session` separation; and a **separate review engine** result (below). It then builds the signed attestation, runs the real verifier over the review it is about to post, re-collects evidence to detect a moved head/base/file list, and only then posts one formal `APPROVE` with `commit_id` = exact head. A valid unexpired approval for the head is never re-posted.
+- **Verifier job** (environment `trusted-review-verifier`): verifies the latest formal approval from the pinned reviewer bot and publishes `trusted-review-verified` on the exact head from the verifier App only: `success` when valid, `failure` otherwise (missing, stale, expired, invalid, switch off, incomplete API evidence). Never neutral or skipped. If head/base moved while verifying, a success is not published.
+- **Independent engine.** The runtime does not rubber-stamp and does not call a model. It accepts the Codex GitHub App as the separate engine only through its pinned numeric bot id (`CODEX_BOT_USER_ID`): the Codex summary comment (`codex-review-state:v1`) must be authored by that bot, name the exact head SHA, be `completed`, and report no unresolved findings. Comments by the shared `ter-ry` account, lookalike bots or older heads count for nothing. If Codex has not reviewed the exact head, the reviewer blocks. **Limitation:** this trusts Codex's own receipt; the runtime cannot re-derive Codex's judgement. No extra model or provider credential is needed or used. Phase 1 scope stays Tier 0 for this reason; migrations, finance, POS, security, workflows and `scripts/` are never approvable here.
+- **Disabled by default.** Jobs do not run unless `FLOWTALLY_TRUSTED_REVIEW_ENABLED` is exactly `true`. Even then they dry-run (collect, assess, verify, print the plan without the signature) unless `FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES` is exactly `true`. Setting the switch to anything else stops new approvals and checks immediately; an already published success check lapses at attestation expiry (30 minutes) and the verifier publishes `failure` if it runs while the switch is read as off by a run already in progress. Consumers (the #270 controller) must also re-read the variable.
+- **Triggers:** `workflow_dispatch` (optional PR number) and a 15-minute schedule, `refs/heads/main` only. There is no `pull_request`/`pull_request_target` trigger and no PR-head checkout. Runs are serialized by a concurrency group. The runtime also requires the workflow SHA to equal the current tip of `main`, the pinned repository id, and refuses to start if it can see the other role's secrets.
+
+## Owner setup (all manual; do none of this until you approve activation)
+
+1. **Environments** `trusted-review-reviewer` and `trusted-review-verifier`: deployment branches `main` only, admin bypass off, no other secrets.
+2. **Repository variables:** `FLOWTALLY_TRUSTED_REVIEW_ENABLED=false`, `FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES=false`, `FLOWTALLY_REPO_ID` (numeric id of `ter-ry/restaurant-helper`: `gh api repos/ter-ry/restaurant-helper --jq .id`), `REVIEWER_BOT_LOGIN=flowtally-independent-reviewer[bot]`, `REVIEWER_BOT_USER_ID` (`gh api users/flowtally-independent-reviewer%5Bbot%5D --jq .id`; the App id 5684233 is a different number), `CODEX_BOT_USER_ID` (`gh api 'users/chatgpt-codex-connector%5Bbot%5D' --jq .id`; confirm it matches the actor on Codex's review comments), `REVIEWER_APP_ID` (5684233), `VERIFIER_APP_ID` (settings page of `flowtally-review-verifier`).
+3. **Signing key**, generated on a machine you control, never in Claude, CI or an issue:
+   `openssl genpkey -algorithm ed25519 -out reviewer-signing.pem`
+   Store the PEM only as environment secret `REVIEWER_SIGNING_KEY` in `trusted-review-reviewer`. Publish only the raw public key, base64, as variable `REVIEWER_PUBLIC_KEY` (verifier environment):
+   `openssl pkey -in reviewer-signing.pem -pubout -outform DER | tail -c 32 | base64`
+   Delete the local PEM after storing it.
+4. **App private keys:** reviewer App key only as `REVIEWER_APP_PRIVATE_KEY` (reviewer environment); verifier App key only as `VERIFIER_APP_PRIVATE_KEY` (verifier environment).
+5. **App permissions (least privilege), both Apps installed on this one repository.** Reviewer: Pull requests read/write; Contents, Metadata, Checks, Statuses, Issues, Actions, Variables read; nothing else. Verifier: Checks read/write; Pull requests, Contents, Metadata, Statuses, Issues, Actions, Variables read; nothing else. The runtime mints a single-repository token with exactly these and aborts if GitHub grants a forbidden write (reviewer: any contents/checks/statuses/actions/administration/workflows/secrets/deployments/variables write; verifier: any write except checks).
+6. **Ruleset on `develop`:** require `trusted-review-security-tests` and `trusted-review-verified`, restricting the `trusted-review-verified` source to the verifier App. Whether rulesets count an App approval or honor the source restriction is unproven and is part of acceptance below.
+
+## Controlled acceptance (needs your explicit go-ahead)
+
+1. Merge the reviewed PR, set `FLOWTALLY_TRUSTED_REVIEW_ENABLED=true` (live writes still `false`), run the workflow manually for a harmless docs-only PR into `develop`; read the dry-run output.
+2. Set `FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES=true`; run once. Confirm one formal `APPROVE` by the reviewer bot at the head and one `trusted-review-verified` success from the verifier App.
+3. Negative tests, each recorded on #280: a non-docs path, a `ter-ry` comment only, a newer push (stale), no Codex review, expiry with no push, replayed run (no duplicate review), switch back to `false` after a valid approval, a check posted by another actor, and a 403 on a merge attempt with the reviewer token.
+4. **Rollback:** set both variables to `false`; delete the environment secrets; uninstall or suspend the Apps. No Production system, Render, Aiven, migration or Clover flag is touched by any step.
+
+## Known limitations
+
+- Nonce replay protection is bounded by head, base, file-digest binding and the 30-minute expiry; durable nonce consumption belongs to the Phase 2 actuator (#270).
+- The 15-minute schedule means a new approval can take up to 15 minutes unless dispatched.
+- The 250-commit and 3000-file GitHub API caps make the collector report incomplete evidence, so such PRs are never approved.
+- Real response shapes (user ids, `commit_id`, Codex comment format, App check-run `app.id`) are modeled on documented and recorded shapes, not live output; step 1 and 2 above confirm them.
