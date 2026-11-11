@@ -24,7 +24,7 @@ def commit(msg="work\n\nClaude-Session: https://claude.ai/code/session_CLAUDE-W1
 
 
 def world():
-    pr = {"number": N, "state": "open", "draft": False, "user": {"login": "ter-ry"}, "changed_files": 2,
+    pr = {"number": N, "state": "open", "draft": False, "user": {"login": "ter-ry"}, "changed_files": 2, "commits": 1,
           "base": {"ref": "develop", "sha": BASE, "repo": {"full_name": REPO, "id": RID}},
           "head": {"sha": HEAD, "repo": {"full_name": REPO, "id": RID}}}
     run = {"id": 1, "event": "pull_request", "head_sha": HEAD, "check_suite_id": SUITE,
@@ -219,6 +219,15 @@ class FailClosed(Base):
         w = world()
         del w[f"{ROOT}/pulls/{N}"][0]["body"]["changed_files"]
         self.incomplete(w, "files:count_mismatch_with_pr")
+
+    def test_commit_list_truncated_at_250(self):
+        w = world()
+        w[f"{ROOT}/pulls/{N}"][0]["body"]["commits"] = 251
+        w[f"{ROOT}/pulls/{N}/commits"] = [ok([commit() for _ in range(100)]), ok([commit() for _ in range(100)]), ok([commit() for _ in range(50)])]
+        self.incomplete(w, "commits:count_mismatch_with_pr")
+        w = world()
+        del w[f"{ROOT}/pulls/{N}"][0]["body"]["commits"]
+        self.incomplete(w, "commits:count_mismatch_with_pr")
 
     def test_retarget_between_identical_tips_detected(self):
         w = world()

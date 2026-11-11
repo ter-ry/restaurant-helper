@@ -138,7 +138,7 @@ class Collector:
                 "user": {"login": (pr.get("user") or {}).get("login")},
                 "base": {"ref": base.get("ref"), "sha": base["sha"]},
                 "head": {"sha": head["sha"], "repo": ({"full_name": hr.get("full_name"), "id": hr.get("id")} if isinstance(hr, Mapping) else None)},
-                "_changed_files": pr.get("changed_files")}
+                "_changed_files": pr.get("changed_files"), "_commits": pr.get("commits")}
 
     def _collect(self, n: int, ev: dict[str, Any]) -> None:
         if isinstance(n, bool) or not isinstance(n, int) or n <= 0:
@@ -147,6 +147,7 @@ class Collector:
         pr = self._pr_summary(self._get(f"{root}/pulls/{n}", None, "pr"))
         head, base = pr["head"]["sha"], pr["base"]["sha"]
         expected_files = pr.pop("_changed_files")
+        expected_commits = pr.pop("_commits")
         ev["pr"] = pr
 
         var = self._get(f"{root}/actions/variables/{KILL_SWITCH_VARIABLE}", None, "variables")
@@ -189,21 +190,26 @@ class Collector:
             raise Incomplete("files:missing_or_capped")
         ev["changed_files"] = sorted(set(files))
 
-        self._commits(root, n, ev)
+        self._commits(root, n, ev, expected_commits)
         self._threads(n, ev)
         self._checks(root, n, head, base, ev)
 
         # Race recheck: head/base/state must be unchanged after every other read.
         again = self._pr_summary(self._get(f"{root}/pulls/{n}", None, "pr_recheck"))
         again.pop("_changed_files")
+        again.pop("_commits")
         if again["head"]["sha"] != head or again["base"]["sha"] != base or again["base"]["ref"] != pr["base"]["ref"] or again["state"] != pr["state"] or again["draft"] != pr["draft"]:
             raise Incomplete("race:pr_changed_during_collection")
 
-    def _commits(self, root: str, n: int, ev: dict[str, Any]) -> None:
+    def _commits(self, root: str, n: int, ev: dict[str, Any], expected: Any) -> None:
         authors: list[str] = []
         sessions: list[str] = []
         errs: list[str] = []
-        for c in self._pages(f"{root}/pulls/{n}/commits", "commits"):
+        records = self._pages(f"{root}/pulls/{n}/commits", "commits")
+        # the endpoint silently caps at 250 commits: any count mismatch means omitted authors
+        if isinstance(expected, bool) or not isinstance(expected, int) or expected != len(records):
+            raise Incomplete("commits:count_mismatch_with_pr")
+        for c in records:
             if not isinstance(c, Mapping) or not isinstance(c.get("commit"), Mapping):
                 raise Incomplete("commits:bad_shape")
             msg = c["commit"].get("message")
