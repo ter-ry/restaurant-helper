@@ -24,7 +24,7 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -67,6 +67,8 @@ class Plan:
     head_sha: str | None
     base_sha: str | None
     reasons: tuple[str, ...]
+
+    infra_errors: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {"action": self.action, "pr": self.pr, "head_sha": self.head_sha,
@@ -206,6 +208,10 @@ def _plan(evidence: Any, extras: Any, cfg: Config, now: datetime) -> Plan:
         reasons.append("PR_NOT_OPEN")
     if ((pr.get("head") or {}).get("repo") or {}).get("id") != cfg.repo_id:
         reasons.append("FORK_HEAD")  # a head outside the base repo (or unknown) is never auto-merged
+    fresh = extras.get("fresh_pr")
+    if not isinstance(fresh, Mapping) or (fresh.get("base_ref"), fresh.get("base_sha"), fresh.get("head_sha"), fresh.get("state")) \
+            != (ALLOWED_BASE, base, head, "open"):
+        reasons.append("LIVE_PR_IDENTITY_MISMATCH")  # retargeted, moved or closed since collection
     reasons += protection_problems(extras.get("protection"))
     if attest.verify_check_source(extras.get("verifier_check"), head or "", cfg.verifier_app_id, now):
         reasons.append("VERIFIER_PROOF_MISSING_OR_INVALID")
@@ -249,6 +255,8 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
     def live_pr():
         b = _body(t.get("%s/pulls/%s" % (root, n), {}), "pr")
         extras["current_base_sha"] = None
+        extras["fresh_pr"] = {"base_ref": (b.get("base") or {}).get("ref"), "base_sha": (b.get("base") or {}).get("sha"),
+                              "head_sha": (b.get("head") or {}).get("sha"), "state": b.get("state")}
         br = _body(t.get(f"{root}/branches/{ALLOWED_BASE}", {}), "base_branch")
         extras["current_base_sha"] = (br.get("commit") or {}).get("sha")
         # mergeable_state "clean" = up to date with base, checks satisfied, no conflicts (strict mode).
@@ -270,6 +278,21 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
     return extras
 
 
+def _has_merged_implementation(t: Any, cfg: Config, issue_number: int) -> bool:
+    """True only if a PR in this repository that references the issue is merged (timeline cross-reference)."""
+    events = _body(t.get(f"/repos/{cfg.repository}/issues/{issue_number}/timeline", {"per_page": 100}), "timeline")
+    if not isinstance(events, list) or len(events) >= 100:
+        return False  # cannot see the whole timeline: fail closed
+    for e in events:
+        if not isinstance(e, Mapping) or e.get("event") != "cross-referenced":
+            continue
+        src = (e.get("source") or {}).get("issue") or {}
+        pr = src.get("pull_request") or {}
+        if pr.get("merged_at") and (src.get("repository") or {}).get("full_name") == cfg.repository:
+            return True
+    return False
+
+
 def _issue_evidence(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str, Any]:
     root = f"/repos/{cfg.repository}"
     n = (evidence.get("pr") or {}).get("number")
@@ -286,11 +309,12 @@ def _issue_evidence(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[st
     for line in _DEP_LINE.findall(issue.get("body") or ""):
         for d in re.findall(r"#(\d+)", line):
             dep = _body(t.get(f"{root}/issues/{d}", {}), "dependency")
-            if dep.get("state") != "closed":
-                deps_ok = False
+            if dep.get("state") != "closed" or dep.get("state_reason") != "completed" \
+                    or not _has_merged_implementation(t, cfg, int(d)):
+                deps_ok = False  # closure alone is not completion: AGENTS.md also needs the merged PR
     overlap = False
     mine = set(evidence.get("changed_files") or [])
-    others = _body(t.get(f"{root}/pulls", {"state": "open", "base": ALLOWED_BASE, "per_page": 100}), "open_prs")
+    others = _body(t.get(f"{root}/pulls", {"state": "open", "per_page": 100}), "open_prs")  # every base, not only develop
     if not isinstance(others, list) or len(others) >= 100:
         overlap = True  # cannot enumerate every competing PR: fail closed
     else:
@@ -319,7 +343,21 @@ def _evaluate(t: Any, cfg: Config, number: int, now: datetime) -> Plan:
     col = Collector(_ReadOnly(t), repository=cfg.repository, repo_id=cfg.repo_id, allowed_bases=(ALLOWED_BASE,),
                     trusted_coauthor_emails=cfg.trusted_coauthor_emails)
     evidence = col.collect(number)
-    return plan(evidence, gather_extras(t, cfg, evidence), cfg, now)
+    extras = gather_extras(t, cfg, evidence)
+    result = plan(evidence, extras, cfg, now)
+    infra = _infra_errors(evidence, extras)
+    return replace(result, infra_errors=infra) if infra else result
+
+
+_INFRA_MARKERS = ("http_", "rate_limited", "transport_error", "unavailable", "truncated", "collector_error",
+                  "malformed_response", "bad_shape", "count_mismatch", "graphql_error", "race:")
+
+
+def _infra_errors(evidence: Mapping[str, Any], extras: Mapping[str, Any]) -> tuple[str, ...]:
+    """API/permission/transport failures (not ordinary eligibility blockers) must turn the run red."""
+    errs = [e for e in (evidence.get("api_errors") or []) if any(m in str(e) for m in _INFRA_MARKERS)]
+    errs += list(extras.get("errors") or [])
+    return tuple(dict.fromkeys(str(e) for e in errs))
 
 
 def run_once(t: Any, cfg: Config, clock=lambda: datetime.now(timezone.utc)) -> RunReport:
@@ -342,6 +380,7 @@ def run_once(t: Any, cfg: Config, clock=lambda: datetime.now(timezone.utc)) -> R
             continue
         p = _evaluate(t, cfg, n, clock())
         rep.plans.append(p.as_dict())
+        rep.errors.extend(f"INFRA_ERROR:{n}:{e}" for e in p.infra_errors)
         if p.action != "MERGE" or not rep.live_writes:
             continue
         # Fresh re-read immediately before the one write; any difference aborts.
@@ -356,6 +395,15 @@ def run_once(t: Any, cfg: Config, clock=lambda: datetime.now(timezone.utc)) -> R
 
 def _merge(t: Any, cfg: Config, p: Plan, rep: RunReport) -> dict[str, Any]:
     root = f"/repos/{cfg.repository}"
+    try:  # last identity check: retargeted/moved/closed PRs are never written to
+        cur = _body(t.get(f"{root}/pulls/{p.pr}", {}), "pre_merge")
+        ident = ((cur.get("base") or {}).get("ref"), (cur.get("base") or {}).get("sha"), (cur.get("head") or {}).get("sha"), cur.get("state"))
+        if ident != (ALLOWED_BASE, p.base_sha, p.head_sha, "open"):
+            rep.errors.append(f"PRE_MERGE_IDENTITY_MISMATCH:{p.pr}")
+            return {"pr": p.pr, "head_sha": p.head_sha, "put_status": None, "merged_confirmed": False, "aborted": True}
+    except Exception as exc:  # noqa: BLE001
+        rep.errors.append(f"PRE_MERGE_READ_FAILED:{exc}")
+        return {"pr": p.pr, "head_sha": p.head_sha, "put_status": None, "merged_confirmed": False, "aborted": True}
     try:
         resp = t.put(f"{root}/pulls/{p.pr}/merge", {"sha": p.head_sha, "merge_method": MERGE_METHOD})
     except Exception as exc:  # noqa: BLE001 - never retried: outcome is verified by re-reading instead

@@ -75,7 +75,9 @@ def build():
     w[f"{ROOT}/branches/develop/protection"] = [ok(copy.deepcopy(PROTECTION))]
     w["verifier"] = [ok({"total_count": 1, "check_runs": [copy.deepcopy(VERIFIER)]})]
     w[f"{ROOT}/issues/50"] = [ok({"state": "open", "body": "Depends on: #49", "labels": [{"name": "status:review-ready"}, {"name": "unattended-ok"}]})]
-    w[f"{ROOT}/issues/49"] = [ok({"state": "closed", "labels": []})]
+    w[f"{ROOT}/issues/49"] = [ok({"state": "closed", "state_reason": "completed", "labels": []})]
+    w[f"{ROOT}/issues/49/timeline"] = [ok([{"event": "cross-referenced", "source": {"issue": {
+        "pull_request": {"merged_at": "2026-11-01T00:00:00Z"}, "repository": {"full_name": REPO}}}}])]
     w[f"{ROOT}/pulls"] = [ok([{"number": N}])]
     # the collector's reviewer is user id 555 (BOT) and its body is not an attestation; the controller
     # relies on the verifier check + pinned formal approval, so that is enough here.
@@ -262,6 +264,61 @@ class IssueGates(Base):
         w[f"{ROOT}/pulls/99/files"] = [ok([{"filename": "docs/unrelated.md"}])]
         rep, f = self.run_(w)
         self.assertEqual(len(f.puts), 1, rep.as_dict())
+
+
+class ReviewFindings(Base):
+    def test_closed_not_planned_dependency_is_not_satisfied(self):
+        def m(w): w[f"{ROOT}/issues/49"][0]["body"]["state_reason"] = "not_planned"
+        self.assertNoMerge(mutate(m))
+
+    def test_closed_dependency_without_merged_pr_is_not_satisfied(self):
+        for tl in ([], [{"event": "cross-referenced", "source": {"issue": {"pull_request": {"merged_at": None}, "repository": {"full_name": REPO}}}}],
+                   [{"event": "cross-referenced", "source": {"issue": {"pull_request": {"merged_at": "2026-11-01T00:00:00Z"}, "repository": {"full_name": "evil/x"}}}}]):
+            self.assertNoMerge(mutate(lambda w, tl=tl: w.update({f"{ROOT}/issues/49/timeline": [ok(tl)]})))
+
+    def test_collection_failure_turns_run_red_not_silent(self):
+        w = mutate(lambda w: w.update({f"{ROOT}/pulls/{N}/reviews": [{"status": 403, "headers": {}, "body": {}}]}))
+        rep, f = self.run_(w)
+        self.assertEqual(f.puts, [])
+        self.assertTrue(any(e.startswith("INFRA_ERROR") for e in rep.errors), rep.as_dict())
+
+    def test_extras_failure_turns_run_red(self):
+        rep, f = self.run_(mutate(lambda w: w.update({f"{ROOT}/branches/develop/protection": [{"status": 403, "headers": {}, "body": None}]})))
+        self.assertTrue(any(e.startswith("INFRA_ERROR") for e in rep.errors), rep.as_dict())
+
+    def test_ordinary_blocker_is_not_an_error(self):
+        def m(w): PR["draft"] = True
+        rep, f = self.run_(mutate(m))
+        self.assertEqual(rep.errors, [])
+
+    def test_retargeted_after_replan_is_not_merged(self):
+        w = build()
+        moved = copy.deepcopy(PR)
+        moved["base"]["ref"] = "main"
+        w[f"{ROOT}/pulls/{N}"] = [ok(PR)] * 8 + [ok(moved)]  # 2 evaluations x4 reads, then the pre-PUT read
+        rep, f = self.run_(w)
+        self.assertEqual(f.puts, [])
+        self.assertTrue(any(e.startswith("PRE_MERGE_IDENTITY_MISMATCH") for e in rep.errors), rep.as_dict())
+
+    def test_plan_rejects_live_identity_mismatch(self):
+        for k, v in (("base_ref", "main"), ("head_sha", "e" * 40), ("base_sha", "e" * 40), ("state", "closed")):
+            f = Fake()
+            ev = dc.Collector(dc._ReadOnly(f), repository=REPO, repo_id=RID, allowed_bases=("develop",)).collect(N)
+            ex = dc.gather_extras(f, CFG, ev)
+            self.assertEqual(dc.plan(ev, ex, CFG, NOW).action, "MERGE")
+            ex["fresh_pr"][k] = v
+            p = dc.plan(ev, ex, CFG, NOW)
+            self.assertEqual(p.action, "NONE")
+            self.assertIn("LIVE_PR_IDENTITY_MISMATCH", p.reasons)
+
+    def test_overlap_checked_against_prs_targeting_any_base(self):
+        w = build()
+        w[f"{ROOT}/pulls"] = [ok([{"number": N}, {"number": 99}])]
+        w[f"{ROOT}/pulls/99/files"] = [ok([{"filename": "docs/notes.md"}])]
+        rep, f = self.run_(w)
+        self.assertEqual(f.puts, [])
+        listing_calls = [c for c in f.calls if c[1] == f"{ROOT}/pulls" and c[2].get("state") == "open"]
+        self.assertTrue(any("base" not in c[2] for c in listing_calls))  # overlap query is not base-filtered
 
 
 class Protection(Base):
