@@ -662,11 +662,11 @@ class Guards(Offline):
 
             def post(self, path, body):
                 self.posted = body
-                return {"status": 201, "headers": {}, "body": {"token": "t", "permissions": {"checks": "write"}, "repositories": self.repos}}
+                return {"status": 201, "headers": {}, "body": {"token": "t", "permissions": dict(rt.VERIFIER_TOKEN_PERMISSIONS), "repositories": self.repos}}
 
         j = J([{"full_name": REPO}])
         self.assertEqual(rt.mint_installation_token(j, REPO, rt.VERIFIER_TOKEN_PERMISSIONS)[0], "t")
-        self.assertEqual(j.posted["repositories"], ["restaurant-helper"])
+        self.assertEqual(j.posted, {"repositories": ["restaurant-helper"]})
         for repos in ([], [{"full_name": REPO}, {"full_name": "ter-ry/other"}], [{"full_name": "ter-ry/other"}]):
             with self.assertRaises(rt.ConfigError):
                 rt.mint_installation_token(J(repos), REPO, rt.VERIFIER_TOKEN_PERMISSIONS)
@@ -704,26 +704,37 @@ class Guards(Offline):
         for needle in ("SECRETJWT", "ghs_", "PRIVATE", "customer", "Bearer"):
             self.assertNotIn(needle, str(cm.exception))
 
-    def test_undocumented_permission_is_flagged_on_422_and_403_only(self):
-        for status, flagged in ((422, True), (403, True), (401, False), (404, False)):
-            with self.assertRaises(rt.ConfigError) as cm:
-                self._mint(status, {"message": "x"}, perms={**rt.VERIFIER_TOKEN_PERMISSIONS, "variables": "read"})
-            self.assertEqual("requested_undocumented_permission:variables" in str(cm.exception), flagged, status)
-
-    def test_requested_permissions_use_the_documented_actions_variables_key(self):
-        """Regression for the live 2026-11-12 422: "variables" is not a token-request key; the repository
-        Variables permission is "actions_variables". Kill-switch read stays required and read-only."""
+    def test_token_request_has_no_permissions_override_and_one_repo(self):
+        """Live 2026-11-12 422: GitHub's token request has no Variables key (neither "variables" nor
+        "actions_variables"). Send only the single repository; verify the granted map instead."""
         for perms in (rt.REVIEWER_TOKEN_PERMISSIONS, rt.VERIFIER_TOKEN_PERMISSIONS):
-            self.assertNotIn("variables", perms)
-            self.assertEqual(perms["actions_variables"], "read")
-        j, _ = self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}],
-                                "permissions": {"checks": "write", "actions_variables": "read", "pull_requests": "read"}})
-        self.assertEqual(j.sent["permissions"]["actions_variables"], "read")
-        self.assertNotIn("variables", j.sent["permissions"])
-        self.assertEqual(j.sent["repositories"], [REPO.split("/")[1]])
-        # A token without the variables grant is still refused (kill switch must be readable).
-        self.assertIn("missing:variables_read", rt.verifier_permission_problems({"checks": "write"}))
-        self.assertIn("missing:variables_read", att.reviewer_permission_problems({"pull_requests": "write", "variables": "read"}))
+            j, (tok, granted) = self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": dict(perms)}, perms)
+            self.assertEqual(j.sent, {"repositories": [REPO.split("/")[1]]})
+            self.assertEqual(granted, perms)
+
+    def test_granted_permissions_must_match_allowlist_exactly(self):
+        base = dict(rt.VERIFIER_TOKEN_PERMISSIONS)
+        bad = {"extra_write": {**base, "contents": "write"},
+               "extra_key": {**base, "administration": "read"},
+               "higher_level": {**base, "pull_requests": "write"},
+               "missing_checks": {k: v for k, v in base.items() if k != "checks"},
+               "missing_variables": {k: v for k, v in base.items() if k != "actions_variables"},
+               "variables_too_weak": {**base, "actions_variables": "none"}}
+        for name, granted in bad.items():
+            with self.assertRaises(rt.ConfigError, msg=name) as cm:
+                self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": granted})
+            self.assertTrue(str(cm.exception).startswith("installation_token_permissions_not_allowlisted:"), (name, str(cm.exception)))
+        with self.assertRaises(rt.ConfigError) as cm:  # hostile key text is never echoed
+            self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": {**base, "ghs_SECRET token": "read"}})
+        self.assertNotIn("ghs_", str(cm.exception))
+        self.assertIn("unexpected:invalid_key", str(cm.exception))
+
+    def test_variables_alias_in_granted_map_is_normalized(self):
+        granted = {k: v for k, v in rt.VERIFIER_TOKEN_PERMISSIONS.items() if k != "actions_variables"}
+        granted["variables"] = "read"
+        _, (_, out) = self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": granted})
+        self.assertEqual(out["actions_variables"], "read")
+        self.assertNotIn("variables", out)
 
     def test_incomplete_success_response_fails_closed(self):
         for body in (None, {}, {"token": 5}, {"permissions": {}}):
@@ -744,7 +755,7 @@ class Guards(Offline):
     def test_successful_token_is_single_repo_and_permissions_unchanged(self):
         for perms in (rt.REVIEWER_TOKEN_PERMISSIONS, rt.VERIFIER_TOKEN_PERMISSIONS):
             j, (tok, granted) = self._mint(201, {"token": "t", "permissions": dict(perms), "repositories": [{"full_name": REPO}]}, perms)
-            self.assertEqual((tok, j.sent["repositories"], j.sent["permissions"]), ("t", ["restaurant-helper"], perms))
+            self.assertEqual((tok, j.sent), ("t", {"repositories": ["restaurant-helper"]}))
         self.assertEqual(rt.VERIFIER_TOKEN_PERMISSIONS["checks"], "write")
         self.assertEqual(rt.REVIEWER_TOKEN_PERMISSIONS["pull_requests"], "write")
         self.assertEqual([k for k, v in rt.REVIEWER_TOKEN_PERMISSIONS.items() if v == "write"], ["pull_requests"])
