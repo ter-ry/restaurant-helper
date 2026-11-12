@@ -142,8 +142,10 @@ def _normalize_granted(granted: Mapping[str, Any]) -> dict[str, Any]:
     out = dict(granted)
     for alias in _VARIABLES_ALIASES:
         if alias != "actions_variables" and alias in out:
-            out.setdefault("actions_variables", out[alias])
-            del out[alias]
+            value = out.pop(alias)
+            if "actions_variables" in out and _LEVEL.get(value, 99) <= _LEVEL.get(out["actions_variables"], 99):
+                continue  # keep the higher (or unknown, i.e. stricter) of the two reported levels
+            out["actions_variables"] = value
     return out
 
 

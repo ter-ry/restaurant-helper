@@ -736,6 +736,14 @@ class Guards(Offline):
         self.assertEqual(out["actions_variables"], "read")
         self.assertNotIn("variables", out)
 
+    def test_conflicting_variables_aliases_keep_the_higher_level(self):
+        for first, second in (("actions_variables", "variables"), ("variables", "actions_variables")):
+            base = {k: v for k, v in rt.VERIFIER_TOKEN_PERMISSIONS.items() if k != "actions_variables"}
+            granted = {**base, first: "read", second: "write"}
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": granted})
+            self.assertTrue(str(cm.exception).startswith("installation_token_permissions_not_allowlisted:"), (first, str(cm.exception)))
+
     def test_incomplete_success_response_fails_closed(self):
         for body in (None, {}, {"token": 5}, {"permissions": {}}):
             with self.assertRaises(rt.ConfigError) as cm:
