@@ -56,9 +56,9 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _CODEX_STATE = re.compile(r"<!--\s*codex-review-state:v1\s+(\{.*?\})\s*-->", re.S)
 
 REVIEWER_TOKEN_PERMISSIONS = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read",
-                              "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
+                              "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
 VERIFIER_TOKEN_PERMISSIONS = {"checks": "write", "pull_requests": "read", "contents": "read", "metadata": "read",
-                              "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
+                              "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
 REVIEWER_ONLY_SECRETS = ("FLOWTALLY_REVIEWER_APP_PRIVATE_KEY", "FLOWTALLY_REVIEWER_SIGNING_KEY")
 VERIFIER_ONLY_SECRETS = ("FLOWTALLY_VERIFIER_APP_PRIVATE_KEY",)
 
@@ -128,9 +128,9 @@ class HttpTransport:
         return self._send("POST", "/graphql", None, {"query": query, "variables": variables})
 
 
-# Permission names in the token request that GitHub's REST reference for
-# POST /app/installations/{id}/access_tokens does not list (checked 2026-11-12). They are still
-# requested (the kill-switch variable read needs them); a refusal is annotated so the owner can tell.
+# Permission names that GitHub's token-request schema does not accept (the live 2026-11-12 dry run got
+# 422 for "variables"; the repository Actions-variables permission is named "actions_variables").
+# A refusal that includes one of these is annotated so the owner can tell.
 UNDOCUMENTED_TOKEN_PERMISSIONS = frozenset({"variables"})
 
 # Fixed vocabulary only. Provider text is matched, never echoed, so nothing untrusted reaches the log.
@@ -207,7 +207,7 @@ def verifier_permission_problems(permissions: Any) -> list[str]:
     out = [f"forbidden_write:{k}" for k, v in sorted(permissions.items()) if v in ("write", "admin") and k != "checks"]
     if permissions.get("checks") != "write":
         out.append("missing:checks_write")
-    if permissions.get("variables") != "read":
+    if permissions.get("actions_variables") != "read":
         out.append("missing:variables_read")
     return out
 

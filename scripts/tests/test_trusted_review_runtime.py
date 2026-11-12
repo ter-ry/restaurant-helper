@@ -630,11 +630,11 @@ class Guards(Offline):
             rt.trusted_runtime_sha(ok_tip, REPO, "9" * 40)
 
     def test_permission_models(self):
-        self.assertEqual(rt.verifier_permission_problems({"checks": "write", "variables": "read", "pull_requests": "read"}), [])
-        self.assertIn("forbidden_write:pull_requests", rt.verifier_permission_problems({"checks": "write", "variables": "read", "pull_requests": "write"}))
-        self.assertIn("forbidden_write:contents", rt.verifier_permission_problems({"checks": "write", "variables": "read", "contents": "write"}))
-        self.assertIn("missing:checks_write", rt.verifier_permission_problems({"variables": "read"}))
-        self.assertIn("forbidden_write:checks", att.reviewer_permission_problems({"checks": "write", "pull_requests": "write", "variables": "read"}))
+        self.assertEqual(rt.verifier_permission_problems({"checks": "write", "actions_variables": "read", "pull_requests": "read"}), [])
+        self.assertIn("forbidden_write:pull_requests", rt.verifier_permission_problems({"checks": "write", "actions_variables": "read", "pull_requests": "write"}))
+        self.assertIn("forbidden_write:contents", rt.verifier_permission_problems({"checks": "write", "actions_variables": "read", "contents": "write"}))
+        self.assertIn("missing:checks_write", rt.verifier_permission_problems({"actions_variables": "read"}))
+        self.assertIn("forbidden_write:checks", att.reviewer_permission_problems({"checks": "write", "pull_requests": "write", "actions_variables": "read"}))
         self.assertEqual(att.reviewer_permission_problems(rt.REVIEWER_TOKEN_PERMISSIONS), [])
         self.assertEqual(rt.verifier_permission_problems(rt.VERIFIER_TOKEN_PERMISSIONS), [])
 
@@ -707,8 +707,23 @@ class Guards(Offline):
     def test_undocumented_permission_is_flagged_on_422_and_403_only(self):
         for status, flagged in ((422, True), (403, True), (401, False), (404, False)):
             with self.assertRaises(rt.ConfigError) as cm:
-                self._mint(status, {"message": "x"})
+                self._mint(status, {"message": "x"}, perms={**rt.VERIFIER_TOKEN_PERMISSIONS, "variables": "read"})
             self.assertEqual("requested_undocumented_permission:variables" in str(cm.exception), flagged, status)
+
+    def test_requested_permissions_use_the_documented_actions_variables_key(self):
+        """Regression for the live 2026-11-12 422: "variables" is not a token-request key; the repository
+        Variables permission is "actions_variables". Kill-switch read stays required and read-only."""
+        for perms in (rt.REVIEWER_TOKEN_PERMISSIONS, rt.VERIFIER_TOKEN_PERMISSIONS):
+            self.assertNotIn("variables", perms)
+            self.assertEqual(perms["actions_variables"], "read")
+        j, _ = self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}],
+                                "permissions": {"checks": "write", "actions_variables": "read", "pull_requests": "read"}})
+        self.assertEqual(j.sent["permissions"]["actions_variables"], "read")
+        self.assertNotIn("variables", j.sent["permissions"])
+        self.assertEqual(j.sent["repositories"], [REPO.split("/")[1]])
+        # A token without the variables grant is still refused (kill switch must be readable).
+        self.assertIn("missing:variables_read", rt.verifier_permission_problems({"checks": "write"}))
+        self.assertIn("missing:variables_read", att.reviewer_permission_problems({"pull_requests": "write", "variables": "read"}))
 
     def test_incomplete_success_response_fails_closed(self):
         for body in (None, {}, {"token": 5}, {"permissions": {}}):
