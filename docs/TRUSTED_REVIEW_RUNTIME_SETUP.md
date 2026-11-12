@@ -46,3 +46,7 @@ Code: `scripts/trusted_review_runtime.py` (uses the merged `trusted_review_attes
 - The 15-minute schedule means a new approval can take up to 15 minutes unless dispatched.
 - The 250-commit and 3000-file GitHub API caps make the collector report incomplete evidence, so such PRs are never approved.
 - Real response shapes (user ids, `commit_id`, Codex comment format, App check-run `app.id`) are modeled on documented and recorded shapes, not live output; step 1 and 2 above confirm them.
+
+## Diagnosing `installation_token_refused` (issue #292)
+
+The runtime now prints `installation_token_refused:http_<status>:<category>`; the numeric status and a fixed category are the only provider-derived output (no JWT, token, headers or response text). Categories: `unauthorized_app_jwt` (401: wrong App id or private key), `installation_not_found` (404), `forbidden|unprocessable:installation_not_updated` (changed App permissions not yet approved on https://github.com/settings/installations), `:invalid_permissions`, `:repo_scope_mismatch`, `:unclassified`, `github_server_error`, `rate_limited`. On 403/422 the reason also carries `requested_undocumented_permission:variables`: GitHub's REST reference for `POST /app/installations/{id}/access_tokens` does not list a variables field (checked 2026-11-12), so if the status is 422 and the pending-approval check is clean, `variables` is the suspect. The request is intentionally unchanged (the kill-switch variable read and exact-repository scope stay; no broader token is minted) until the owner sees the real status.
