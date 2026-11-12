@@ -128,17 +128,69 @@ class HttpTransport:
         return self._send("POST", "/graphql", None, {"query": query, "variables": variables})
 
 
+# Permission names in the token request that GitHub's REST reference for
+# POST /app/installations/{id}/access_tokens does not list (checked 2026-11-12). They are still
+# requested (the kill-switch variable read needs them); a refusal is annotated so the owner can tell.
+UNDOCUMENTED_TOKEN_PERMISSIONS = frozenset({"variables"})
+
+# Fixed vocabulary only. Provider text is matched, never echoed, so nothing untrusted reaches the log.
+_REFUSAL_PATTERNS = (
+    ("jwt_invalid", ("jwt", "json web token", "could not be decoded", "expiration time", "issued at")),
+    ("installation_not_updated", ("not granted", "accept", "pending", "has not been approved", "new permissions")),
+    ("invalid_permissions", ("permission", "not a permitted key", "not permitted")),
+    ("repo_scope_mismatch", ("repositor", "not accessible", "does not have access")),
+)
+
+
+def categorize_token_refusal(status: Any, body: Any) -> str:
+    """Map an installation-token HTTP failure to a safe, allowlisted category (never provider text)."""
+    if status == 401:
+        return "unauthorized_app_jwt"
+    if status == 404:
+        return "installation_not_found"
+    if status == 403:
+        base = "forbidden"
+    elif status == 422:
+        base = "unprocessable"
+    elif isinstance(status, int) and 500 <= status < 600:
+        return "github_server_error"
+    elif status == 429:
+        return "rate_limited"
+    else:
+        return "unexpected_status"
+    message = body.get("message") if isinstance(body, Mapping) else None
+    text = message.lower() if isinstance(message, str) else ""
+    for category, needles in _REFUSAL_PATTERNS:
+        if any(n in text for n in needles):
+            return f"{base}:{category}"
+    return f"{base}:unclassified"
+
+
+def _status_code(resp: Any) -> str:
+    status = resp.get("status") if isinstance(resp, Mapping) else None
+    return f"http_{status}" if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599 else "http_unknown"
+
+
 def mint_installation_token(jwt_transport: Any, repository: str, permissions: Mapping[str, str]) -> tuple[str, dict]:
-    """Short-lived, single-repository, least-privilege token. Returns (token, granted_permissions)."""
+    """Short-lived, single-repository, least-privilege token. Returns (token, granted_permissions).
+
+    Failures raise ConfigError("<step>:http_<status>:<category>[:requested_undocumented_permission:<name>]")
+    built only from the numeric status and fixed strings; no JWT, token, header or response text.
+    """
     owner, name = repository.split("/")
     inst = jwt_transport.get(f"/repos/{owner}/{name}/installation")
     if inst.get("status") != 200 or not isinstance(inst.get("body"), Mapping) or not isinstance(inst["body"].get("id"), int):
-        raise ConfigError("app_installation_not_found")
+        raise ConfigError(f"app_installation_not_found:{_status_code(inst)}:{categorize_token_refusal(inst.get('status'), inst.get('body'))}")
     resp = jwt_transport.post(f"/app/installations/{inst['body']['id']}/access_tokens",
                               {"repositories": [name], "permissions": dict(permissions)})
     body = resp.get("body")
-    if resp.get("status") != 201 or not isinstance(body, Mapping) or not isinstance(body.get("token"), str):
-        raise ConfigError("installation_token_refused")
+    if resp.get("status") != 201:
+        reason = f"installation_token_refused:{_status_code(resp)}:{categorize_token_refusal(resp.get('status'), body)}"
+        if resp.get("status") in (403, 422):
+            reason += "".join(f":requested_undocumented_permission:{k}" for k in sorted(UNDOCUMENTED_TOKEN_PERMISSIONS & set(permissions)))
+        raise ConfigError(reason)
+    if not isinstance(body, Mapping) or not isinstance(body.get("token"), str):
+        raise ConfigError(f"installation_token_incomplete_response:{_status_code(resp)}")
     repos = body.get("repositories")
     if not isinstance(repos, list) or [r.get("full_name") for r in repos if isinstance(r, Mapping)] != [repository]:
         raise ConfigError("installation_token_not_single_repo")

@@ -671,6 +671,86 @@ class Guards(Offline):
             with self.assertRaises(rt.ConfigError):
                 rt.mint_installation_token(J(repos), REPO, rt.VERIFIER_TOKEN_PERMISSIONS)
 
+    def _mint(self, status, body, perms=None):
+        class J:
+            def get(self, path, params=None):
+                return ok({"id": 9})
+
+            def post(self, path, payload):
+                self.sent = payload
+                return {"status": status, "headers": {"Authorization": "Bearer SECRETJWT"}, "body": body}
+
+        j = J()
+        return j, rt.mint_installation_token(j, REPO, perms or rt.VERIFIER_TOKEN_PERMISSIONS)
+
+    def test_token_refusals_give_safe_status_and_category(self):
+        cases = [(401, {"message": "A JSON web token could not be decoded"}, "http_401:unauthorized_app_jwt"),
+                 (404, {"message": "Not Found"}, "http_404:installation_not_found"),
+                 (403, {"message": "Resource not accessible by integration"}, "http_403:forbidden:repo_scope_mismatch"),
+                 (403, {"message": "This installation has not been approved for the new permissions"}, "http_403:forbidden:installation_not_updated"),
+                 (422, {"message": "The permissions requested are not granted to this installation."}, "http_422:unprocessable:installation_not_updated"),
+                 (422, {"message": "Validation Failed", "errors": [{"field": "permissions", "code": "invalid"}]}, "http_422:unprocessable:unclassified"),
+                 (422, {"message": "variables is not a permitted key"}, "http_422:unprocessable:invalid_permissions"),
+                 (500, None, "http_500:github_server_error"), (418, "html", "http_418:unexpected_status")]
+        for status, body, expected in cases:
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(status, body)
+            self.assertTrue(str(cm.exception).startswith("installation_token_refused:" + expected), (status, str(cm.exception)))
+
+    def test_refusal_never_leaks_provider_text_or_secrets(self):
+        body = {"message": "SECRETJWT ghs_TOKEN -----BEGIN PRIVATE KEY----- permission customer@example.com"}
+        with self.assertRaises(rt.ConfigError) as cm:
+            self._mint(422, body)
+        for needle in ("SECRETJWT", "ghs_", "PRIVATE", "customer", "Bearer"):
+            self.assertNotIn(needle, str(cm.exception))
+
+    def test_undocumented_permission_is_flagged_on_422_and_403_only(self):
+        for status, flagged in ((422, True), (403, True), (401, False), (404, False)):
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(status, {"message": "x"})
+            self.assertEqual("requested_undocumented_permission:variables" in str(cm.exception), flagged, status)
+
+    def test_incomplete_success_response_fails_closed(self):
+        for body in (None, {}, {"token": 5}, {"permissions": {}}):
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(201, body)
+            self.assertTrue(str(cm.exception).startswith("installation_token_incomplete_response:http_201"))
+        with self.assertRaises(rt.ConfigError):
+            self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}]})  # permissions missing
+
+    def test_installation_lookup_failure_is_categorized(self):
+        class J:
+            def get(self, path, params=None):
+                return {"status": 404, "headers": {}, "body": {"message": "Not Found"}}
+        with self.assertRaises(rt.ConfigError) as cm:
+            rt.mint_installation_token(J(), REPO, rt.VERIFIER_TOKEN_PERMISSIONS)
+        self.assertEqual(str(cm.exception), "app_installation_not_found:http_404:installation_not_found")
+
+    def test_successful_token_is_single_repo_and_permissions_unchanged(self):
+        for perms in (rt.REVIEWER_TOKEN_PERMISSIONS, rt.VERIFIER_TOKEN_PERMISSIONS):
+            j, (tok, granted) = self._mint(201, {"token": "t", "permissions": dict(perms), "repositories": [{"full_name": REPO}]}, perms)
+            self.assertEqual((tok, j.sent["repositories"], j.sent["permissions"]), ("t", ["restaurant-helper"], perms))
+        self.assertEqual(rt.VERIFIER_TOKEN_PERMISSIONS["checks"], "write")
+        self.assertEqual(rt.REVIEWER_TOKEN_PERMISSIONS["pull_requests"], "write")
+        self.assertEqual([k for k, v in rt.REVIEWER_TOKEN_PERMISSIONS.items() if v == "write"], ["pull_requests"])
+        self.assertEqual([k for k, v in rt.VERIFIER_TOKEN_PERMISSIONS.items() if v == "write"], ["checks"])
+
+    def test_cli_reports_refusal_status_without_secrets(self):
+        env = dict(ENV, **{rt.LIVE_WRITES_VARIABLE: "false"})
+        orig = rt._common
+        def refuse(*a, **k):
+            raise rt.ConfigError("installation_token_refused:http_422:unprocessable:invalid_permissions")
+        rt._common = refuse
+        try:
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = rt.run(["reviewer"], env)
+        finally:
+            rt._common = orig
+        out = json.loads(buf.getvalue())
+        self.assertEqual((code, out["action"], out["reasons"]), (1, "error", ["installation_token_refused:http_422:unprocessable:invalid_permissions"]))
+
     def test_pr_listing_excludes_forks_and_fails_on_truncation(self):
         page = [{"number": 1, "head": {"repo": {"id": RID}}}, {"number": 2, "head": {"repo": {"id": 5}}}, {"number": 3, "head": {"repo": None}}]
         f = Fake({f"/repos/{REPO}/pulls": [ok(page)]})
