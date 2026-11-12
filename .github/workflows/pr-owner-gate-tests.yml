@@ -1,0 +1,31 @@
+# Offline unit tests for the PR owner-notification gate. Read-only: no tokens,
+# no network, no GitHub writes. Runs the PR's own test code on `pull_request`.
+name: PR owner gate tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/pr_owner_gate.py"
+      - "scripts/pr_owner_gate_collect.py"
+      - "scripts/agent_handoff_audit.py"
+      - "scripts/tests/test_pr_owner_gate.py"
+      - ".github/workflows/pr-owner-notification-gate.yml"
+      - ".github/workflows/pr-owner-gate-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  owner-gate-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m py_compile scripts/pr_owner_gate.py scripts/pr_owner_gate_collect.py
+      - run: python -m unittest discover -s scripts/tests -p 'test_pr_owner_gate.py' -v

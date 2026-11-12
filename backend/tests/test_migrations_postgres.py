@@ -492,7 +492,11 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
         # The Clover mapping migration is part of the current head.\n        
-        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
+        assert _current_revision() == "0027_purchase_invoice_void_lineage"
+        # #232: void/correction lineage columns exist, are nullable (history is not rewritten) and the reason defaults to "".
+        for column in ("corrects_invoice_id", "voided_at", "voided_by_user_id"):
+            assert _column_info("purchase_invoices", column)[1] is True, column
+        assert _column_info("purchase_invoices", "void_reason")[1] is False
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("suppliers")
         _assert_table_owned_by_migrator("recipes")
@@ -684,7 +688,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
+        assert _current_revision() == "0027_purchase_invoice_void_lineage"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -705,7 +709,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
+        assert _current_revision() == "0027_purchase_invoice_void_lineage"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -730,7 +734,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
+        assert _current_revision() == "0027_purchase_invoice_void_lineage"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -749,7 +753,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
+        assert _current_revision() == "0027_purchase_invoice_void_lineage"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -950,7 +954,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0026_clover_consumption_cost_snapshot"
+        assert _current_revision() == "0027_purchase_invoice_void_lineage"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
@@ -1115,7 +1119,7 @@ def test_postgres_clover_mapping_orm_round_trip_after_fresh_upgrade():
 def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
     """Rows present at 0022 remain addressable after the corrective migration."""
     from backend.models import CloverConnection, CloverLocationMapping, CloverMenuMapping, MenuItem, Organization, RestaurantLocation, User
-    from backend.seed import seed_pilot_data
+    from backend import seed as seed_module
 
     application = _create_app()
     _reset_public_schema(application)
@@ -1124,10 +1128,18 @@ def test_postgres_clover_mapping_rows_survive_upgrade_from_0022():
     with application.app_context():
         _set_setup_migration_context(db.session.connection())
         db.session().expire_on_commit = False
-        seeded = seed_pilot_data(reset=False)
-        organization_id = seeded.organization_id
-        location_id = seeded.location_id
-        owner_id = seeded.owner_id
+        # Only the organization, owner and location are needed at 0022. The full pilot seed also writes purchase
+        # invoices through the current ORM, which selects columns added after 0022 (for example #232 void lineage).
+        organization = seed_module._upsert_organization()
+        db.session.flush()
+        owner = seed_module._upsert_user(email=seed_module.LOCAL_OWNER_EMAIL, password=seed_module.LOCAL_OWNER_PASSWORD, is_active=True)
+        db.session.flush()
+        seed_module._upsert_membership(owner, organization, "owner")
+        location = seed_module._upsert_location(organization)
+        db.session.commit()
+        organization_id = organization.id
+        location_id = location.id
+        owner_id = owner.id
         _set_organization_migration_context(db.session.connection(), organization_id, owner_id)
         menu_item = MenuItem(
             organization_id=organization_id,

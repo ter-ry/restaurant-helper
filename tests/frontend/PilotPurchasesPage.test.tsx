@@ -14,7 +14,7 @@ const mockApi = vi.hoisted(() => ({
   createPilotSupplier: vi.fn(),
   updatePilotPurchaseInvoice: vi.fn(),
   receivePilotPurchaseInvoice: vi.fn(),
-  correctPilotPurchaseInvoice: vi.fn(),
+  voidPilotPurchaseInvoice: vi.fn(),
   uploadPilotInvoiceOcr: vi.fn(),
 }));
 
@@ -30,7 +30,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     createPilotSupplier: mockApi.createPilotSupplier,
     updatePilotPurchaseInvoice: mockApi.updatePilotPurchaseInvoice,
     receivePilotPurchaseInvoice: mockApi.receivePilotPurchaseInvoice,
-    correctPilotPurchaseInvoice: mockApi.correctPilotPurchaseInvoice,
+    voidPilotPurchaseInvoice: mockApi.voidPilotPurchaseInvoice,
     uploadPilotInvoiceOcr: mockApi.uploadPilotInvoiceOcr,
   };
 });
@@ -219,7 +219,7 @@ describe("PilotPurchasesPage", () => {
       ...payload,
       id: 2,
     }));
-    mockApi.correctPilotPurchaseInvoice.mockResolvedValue(createInvoice({ id: 1, invoiceNumber: "FD-1001", status: "Corrected", supplierName: "Heritage Dairy" }));
+    mockApi.voidPilotPurchaseInvoice.mockResolvedValue(createInvoice({ id: 1, invoiceNumber: "FD-1001", status: "Corrected", supplierName: "Heritage Dairy" }));
     mockApi.uploadPilotInvoiceOcr.mockResolvedValue({
       provider: "ocr.space",
       fileName: "fresh-foods.pdf",
@@ -788,5 +788,94 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByText(/status could not be confirmed/i)).toBeVisible();
     expect(screen.getByRole("button", { name: "Reconcile status first" })).toBeDisabled();
     expect(mockApi.receivePilotPurchaseInvoice).toHaveBeenCalled();
+  });
+
+  describe("void received invoice (#232)", () => {
+    beforeEach(() => {
+      mockApi.voidPilotPurchaseInvoice.mockClear();
+    });
+
+    const openCompleted = async () => {
+      renderPage("/app/purchases?invoiceId=1");
+      await screen.findByTestId("purchase-detail-modal");
+      return screen.findByLabelText("Void reason");
+    };
+
+    it("requires a reason and an explicit confirmation, then voids once and reloads the authoritative state", async () => {
+      const reason = await openCompleted();
+      const open = screen.getByRole("button", { name: "Void receipt" });
+      expect(open).toBeDisabled();
+      fireEvent.change(reason, { target: { value: "Supplier credit note" } });
+      fireEvent.click(open);
+      expect(mockApi.voidPilotPurchaseInvoice).not.toHaveBeenCalled(); // confirmation first
+      const loadsBefore = mockApi.fetchPilotPurchases.mock.calls.length;
+
+      const confirm = await screen.findByRole("button", { name: "Yes, void this invoice" });
+      fireEvent.click(confirm);
+      fireEvent.click(confirm); // a second click while in flight must not send a second request
+
+      await waitFor(() => expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(1));
+      expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledWith(1, expect.objectContaining({ reason: "Supplier credit note", createCorrectionDraft: true, idempotencyKey: expect.stringMatching(/^void-1-/) }));
+      await waitFor(() => expect(mockApi.fetchPilotPurchases.mock.calls.length).toBeGreaterThan(loadsBefore));
+    });
+
+    it("shows the server's explanation when stock has already moved and sends a fresh key on the next decision", async () => {
+      mockApi.voidPilotPurchaseInvoice.mockRejectedValueOnce(new PilotApiError("This invoice cannot be corrected because stock has already moved.", 409, { "inventory.5": "Flour: only 3 kg is on hand." }));
+      const reason = await openCompleted();
+      fireEvent.change(reason, { target: { value: "Wrong supplier" } });
+      fireEvent.click(screen.getByRole("button", { name: "Void receipt" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Yes, void this invoice" }));
+
+      expect(await screen.findByText(/stock has already moved\. Flour: only 3 kg is on hand\./)).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Void receipt" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Yes, void this invoice" }));
+      await waitFor(() => expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(2));
+      const [first, second] = mockApi.voidPilotPurchaseInvoice.mock.calls.map((call) => call[1].idempotencyKey);
+      expect(second).not.toEqual(first);
+    });
+
+    it("reuses the same key when the outcome is unknown (network error) so a retry cannot void twice", async () => {
+      mockApi.voidPilotPurchaseInvoice.mockRejectedValueOnce(new Error("Failed to fetch"));
+      const reason = await openCompleted();
+      fireEvent.change(reason, { target: { value: "Duplicate delivery" } });
+      fireEvent.click(screen.getByRole("button", { name: "Void receipt" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Yes, void this invoice" }));
+      expect(await screen.findByText(/Failed to fetch/)).toBeVisible();
+
+      fireEvent.click(screen.getByRole("button", { name: "Void receipt" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Yes, void this invoice" }));
+      await waitFor(() => expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(2));
+      const [first, second] = mockApi.voidPilotPurchaseInvoice.mock.calls.map((call) => call[1].idempotencyKey);
+      expect(second).toEqual(first);
+    });
+
+    it("keeps the confirmed void when the refresh fails, removes stale void controls and reconciles through Refresh purchase status", async () => {
+      const reason = await openCompleted();
+      fireEvent.change(reason, { target: { value: "Supplier credit note" } });
+      fireEvent.click(screen.getByRole("button", { name: "Void receipt" }));
+      mockApi.fetchPilotPurchases.mockRejectedValueOnce(new Error("network down"));
+      fireEvent.click(await screen.findByRole("button", { name: "Yes, void this invoice" }));
+
+      expect(await screen.findByText(/was voided, but the page could not refresh/i)).toBeVisible();
+      expect(screen.getByText("This invoice was voided")).toBeVisible();
+      expect(screen.queryByLabelText("Void reason")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Yes, void this invoice" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Void receipt" })).not.toBeInTheDocument();
+      expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(1);
+
+      const loadsBefore = mockApi.fetchPilotPurchases.mock.calls.length;
+      // Authoritative server state after the void: invoice 1 is now Corrected.
+      mockApi.fetchPilotPurchases.mockImplementationOnce(async () => {
+        const response = createPurchasesResponse();
+        response.invoices = response.invoices.map((entry) => (entry.id === 1 ? { ...entry, status: "Corrected", voidReason: "Supplier credit note" } : entry));
+        return response;
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Refresh purchase status" }));
+      await waitFor(() => expect(mockApi.fetchPilotPurchases.mock.calls.length).toBeGreaterThan(loadsBefore));
+      await waitFor(() => expect(screen.queryByText(/could not refresh/i)).not.toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "Refresh purchase status" })).not.toBeInTheDocument();
+      expect(screen.getByText("This invoice was voided")).toBeVisible();
+      expect(mockApi.voidPilotPurchaseInvoice).toHaveBeenCalledTimes(1);
+    });
   });
 });

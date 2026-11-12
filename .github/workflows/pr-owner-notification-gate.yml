@@ -1,0 +1,102 @@
+name: PR owner notification gate
+
+# Trusted base-branch code only. This workflow never checks out or executes
+# pull-request head code. Leave FLOWTALLY_OWNER_GATE_ENABLED unset/false until
+# the owner has completed the controlled GitHub Mobile delivery test.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number for a controlled dry run"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  issues: write
+
+# One shared group for every entry point (PR, review, comment, CI, schedule and
+# manual runs) so no two reconciliations overlap and post duplicate owner
+# notifications. Runs queue rather than cancel. GitHub keeps only the newest
+# pending run per group, so every run reconciles ALL candidate PRs (not just the
+# one in its event); a superseded pending run therefore loses nothing.
+concurrency:
+  group: flowtally-owner-gate
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: ${{ (vars.FLOWTALLY_OWNER_GATE_ENABLED == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name != 'issue_comment' || github.event.issue.pull_request) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted base workflow code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect exact-head evidence without running PR code
+        env:
+          # Both names: the collector and `gh` read GH_TOKEN, the evaluator reads GITHUB_TOKEN.
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          OWNER_LOGIN: ${{ vars.FLOWTALLY_OWNER_LOGIN }}
+          TRUSTED_REVIEWERS: ${{ vars.FLOWTALLY_TRUSTED_REVIEWERS }}
+          REQUIRED_CHECKS: ${{ vars.FLOWTALLY_REQUIRED_CHECKS || 'backend,frontend' }}
+          RELEASE_POLICY_CHECKS: ${{ vars.FLOWTALLY_RELEASE_POLICY_CHECKS }}
+          OWNER_GATE_WRITE: ${{ vars.FLOWTALLY_OWNER_GATE_WRITE || 'false' }}
+        run: |
+          set -euo pipefail
+          EVENT_PR_NUMBER='${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}'
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Controlled dry run: only the requested PR.
+            PR_NUMBERS="$EVENT_PR_NUMBER"
+          else
+            # Event PR + every open PR on main + closed PRs still carrying the
+            # owner label (closure whose event was missed or superseded).
+            OPEN_PRS=$(gh api "repos/$REPOSITORY/pulls?state=open&base=main&per_page=100" --jq '.[].number')
+            LABELLED_CLOSED=$(gh api "repos/$REPOSITORY/issues?state=closed&labels=owner-review-needed&per_page=100" --jq '.[]|select(.pull_request)|.number')
+            PR_NUMBERS=$(printf '%s\n' "$EVENT_PR_NUMBER" $OPEN_PRS $LABELLED_CLOSED | { grep -E '^[0-9]+$' || true; } | sort -un)
+          fi
+          # `reconcile_pr ... || ...` disables errexit inside the function, so each
+          # step must propagate failure explicitly: a failed collection must never
+          # fall through to evaluating a previous PR's snapshot.
+          reconcile_pr() {
+            SNAPSHOT="$(mktemp)"
+            python scripts/pr_owner_gate_collect.py \
+              --repository "$REPOSITORY" --pr "$1" \
+              --required-checks "$REQUIRED_CHECKS" \
+              --release-policy-checks "$RELEASE_POLICY_CHECKS" \
+              --trusted-reviewers "$TRUSTED_REVIEWERS" \
+              --owner-login "$OWNER_LOGIN" --output "$SNAPSHOT" || { rm -f "$SNAPSHOT"; return 1; }
+            if [ "$OWNER_GATE_WRITE" = "true" ]; then
+              python scripts/pr_owner_gate.py --snapshot "$SNAPSHOT" --write || { rm -f "$SNAPSHOT"; return 1; }
+            else
+              python scripts/pr_owner_gate.py --snapshot "$SNAPSHOT" || { rm -f "$SNAPSHOT"; return 1; }
+            fi
+            rm -f "$SNAPSHOT"
+          }
+          # One failing PR must not starve the others; the job still fails.
+          FAILED=0
+          for EVENT_PR in $PR_NUMBERS; do
+            reconcile_pr "$EVENT_PR" || { echo "::error::owner gate failed for PR #$EVENT_PR"; FAILED=1; }
+          done
+          exit "$FAILED"
