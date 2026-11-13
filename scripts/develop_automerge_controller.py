@@ -141,6 +141,89 @@ def protection_problems(p: Any) -> list[str]:
     return out
 
 
+def ruleset_problems(p: Any, verifier_app_id: Any = None) -> list[str]:
+    """Reasons the repository RULESETS that apply to `develop` are NOT strong enough. Empty = acceptable.
+
+    `p` is ``{"rules": <GET /rules/branches/develop>, "rulesets": {id: <GET /rulesets/{id}>}}``. The rules
+    endpoint lists only active rules for the branch; each contributing ruleset is read to prove it is
+    active and has NO bypass actors (a ruleset has no `enforce_admins`; an empty bypass list is the
+    equivalent). Anything missing, mistyped or ambiguous fails closed.
+    """
+    if not isinstance(p, Mapping) or not isinstance(p.get("rules"), list) or not isinstance(p.get("rulesets"), Mapping):
+        return ["RULESET_UNAVAILABLE"]
+    rules = [r for r in p["rules"] if isinstance(r, Mapping)]
+    if len(rules) != len(p["rules"]) or not rules:
+        return ["RULESET_UNAVAILABLE"]
+    out: list[str] = []
+    ids = {r.get("ruleset_id") for r in rules}
+    for rid in sorted(i for i in ids if isinstance(i, int)):
+        d = p["rulesets"].get(str(rid))
+        if not isinstance(d, Mapping):
+            out.append("RULESET_DETAIL_UNAVAILABLE")
+            continue
+        if d.get("enforcement") != "active":
+            out.append("RULESET_NOT_ACTIVE")
+        if d.get("bypass_actors") != []:
+            out.append("RULESET_BYPASS_ACTORS_PRESENT")  # missing/unknown is treated like present
+    if any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
+        out.append("RULESET_DETAIL_UNAVAILABLE")
+    by_type: dict[str, list[Mapping[str, Any]]] = {}
+    for r in rules:
+        by_type.setdefault(str(r.get("type")), []).append(r)
+    if "non_fast_forward" not in by_type:
+        out.append("RULESET_FORCE_PUSH_ALLOWED")
+    if "deletion" not in by_type:
+        out.append("RULESET_DELETION_ALLOWED")
+    prs = [r.get("parameters") for r in by_type.get("pull_request", [])]
+    if not prs or any(not isinstance(x, Mapping) for x in prs):
+        out.append("RULESET_NO_REQUIRED_REVIEW")
+    else:
+        count = max((x.get("required_approving_review_count") for x in prs
+                     if isinstance(x.get("required_approving_review_count"), int) and not isinstance(x.get("required_approving_review_count"), bool)), default=0)
+        if count < 1:
+            out.append("RULESET_REVIEW_COUNT_TOO_LOW")
+        if not any(x.get("dismiss_stale_reviews_on_push") is True for x in prs):
+            out.append("RULESET_STALE_REVIEWS_NOT_DISMISSED")
+        if not any(x.get("required_review_thread_resolution") is True for x in prs):
+            out.append("RULESET_CONVERSATIONS_NOT_REQUIRED")
+        for x in prs:  # every PR rule must still permit the one merge method this actuator uses
+            allowed = x.get("allowed_merge_methods")
+            if allowed is not None and MERGE_METHOD not in allowed:
+                out.append("RULESET_MERGE_METHOD_NOT_ALLOWED")
+    scs = [r.get("parameters") for r in by_type.get("required_status_checks", [])]
+    if not scs or any(not isinstance(x, Mapping) for x in scs):
+        out.append("RULESET_NO_REQUIRED_CHECKS")
+    else:
+        if not any(x.get("strict_required_status_checks_policy") is True for x in scs):
+            out.append("RULESET_NOT_STRICT")
+        names: set[str] = set()
+        verifier_sources: set[Any] = set()
+        for x in scs:
+            for c in x.get("required_status_checks") or []:
+                if isinstance(c, Mapping) and isinstance(c.get("context"), str):
+                    names.add(c["context"])
+                    if c["context"] == VERIFIER_CHECK:
+                        verifier_sources.add(c.get("integration_id"))
+        if not REQUIRED_CONTEXTS <= names:
+            out.append("RULESET_MISSING_REQUIRED_CONTEXTS")
+        elif verifier_sources != {verifier_app_id} or verifier_app_id is None:
+            out.append("RULESET_VERIFIER_SOURCE_NOT_PINNED")  # the check must come from the verifier App only
+    return list(dict.fromkeys(out))
+
+
+def merge_gate_problems(extras: Mapping[str, Any], verifier_app_id: Any) -> list[str]:
+    """Classic branch protection OR rulesets must each be sufficient on their own (both are additive)."""
+    classic = extras.get("protection")
+    ruleset = extras.get("ruleset_protection")
+    c = protection_problems(classic) if classic is not None else ["PROTECTION_UNAVAILABLE"]
+    if not c:
+        return []
+    if ruleset is None:
+        return c
+    r = ruleset_problems(ruleset, verifier_app_id)
+    return [] if not r else r + ([] if classic is None else c)
+
+
 # ---------------------------------------------------------------- planning (pure)
 def build_snapshot(evidence: Mapping[str, Any], extras: Mapping[str, Any], cfg: Config) -> dict[str, Any]:
     """Map collector evidence + controller-fetched extras onto the develop_merge_policy snapshot."""
@@ -212,7 +295,7 @@ def _plan(evidence: Any, extras: Any, cfg: Config, now: datetime) -> Plan:
     if not isinstance(fresh, Mapping) or (fresh.get("base_ref"), fresh.get("base_sha"), fresh.get("head_sha"), fresh.get("state")) \
             != (ALLOWED_BASE, base, head, "open"):
         reasons.append("LIVE_PR_IDENTITY_MISMATCH")  # retargeted, moved or closed since collection
-    reasons += protection_problems(extras.get("protection"))
+    reasons += merge_gate_problems(extras, cfg.verifier_app_id)
     if attest.verify_check_source(extras.get("verifier_check"), head or "", cfg.verifier_app_id, now):
         reasons.append("VERIFIER_PROOF_MISSING_OR_INVALID")
     snap_extras = {**extras, "verifier_ok": "VERIFIER_PROOF_MISSING_OR_INVALID" not in reasons}
@@ -264,7 +347,25 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
             None if b.get("mergeable") is None else False)
 
     safe("mergeable", "mergeable", live_pr)
-    safe("protection", "protection", lambda: _body(t.get(f"{root}/branches/{ALLOWED_BASE}/protection", {}), "protection"))
+    def protection():
+        # GitHub returns 404 "Branch not protected" for classic protection when only a ruleset guards the
+        # branch (verified live 2026-11-13), so a failed classic read falls through to the ruleset view.
+        classic = t.get(f"{root}/branches/{ALLOWED_BASE}/protection", {})
+        extras["protection"] = classic.get("body") if isinstance(classic, Mapping) and classic.get("status") == 200 else None
+        if extras["protection"] is not None and not protection_problems(extras["protection"]):
+            return True  # classic protection alone is sufficient; no need to read rulesets
+        rules = _body(t.get(f"{root}/rules/branches/{ALLOWED_BASE}", {"per_page": 100}), "rules")
+        details: dict[str, Any] = {}
+        for r in rules if isinstance(rules, list) else []:
+            rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
+            if isinstance(rid, int) and not isinstance(rid, bool) and str(rid) not in details:
+                details[str(rid)] = _body(t.get(f"{root}/rulesets/{rid}", {}), "ruleset")
+        extras["ruleset_protection"] = {"rules": rules, "rulesets": details}
+        if extras["protection"] is None and not rules:
+            raise RuntimeError("protection:unavailable")
+        return True
+
+    safe("protection_loaded", "protection", protection)
 
     def verifier():
         body = _body(t.get(f"{root}/commits/{head}/check-runs", {"check_name": VERIFIER_CHECK, "per_page": 100}), "verifier")

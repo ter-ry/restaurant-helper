@@ -320,6 +320,37 @@ class ReviewFindings(Base):
         listing_calls = [c for c in f.calls if c[1] == f"{ROOT}/pulls" and c[2].get("state") == "open"]
         self.assertTrue(any("base" not in c[2] for c in listing_calls))  # overlap query is not base-filtered
 
+# Shapes captured from GitHub's live REST API for this repository on 2026-11-13 (GET /rules/branches/develop
+# and GET /rulesets/{id}); `develop` is guarded by a RULESET and classic protection answers 404 "Branch not
+# protected". LIVE_* is the ruleset exactly as it stood then (it does not yet satisfy this actuator).
+_RS = 26858821
+LIVE_RULES = [
+    {"type": "deletion", "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "non_fast_forward", "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "required_linear_history", "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": False,
+     "required_reviewers": [], "require_code_owner_review": False, "require_last_push_approval": False,
+     "required_review_thread_resolution": True, "require_extra_approval_for_unattributed_changes": False,
+     "allowed_merge_methods": ["squash"]}, "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": True, "do_not_enforce_on_create": False,
+     "required_status_checks": [{"context": "frontend", "integration_id": 15368}, {"context": "backend", "integration_id": 15368}]},
+     "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+]
+LIVE_DETAIL = {"id": _RS, "name": "Protect Develop", "enforcement": "active", "bypass_actors": [], "current_user_can_bypass": "never",
+               "conditions": {"ref_name": {"exclude": [], "include": ["refs/heads/develop"]}}}
+LIVE_RULESET = {"rules": LIVE_RULES, "rulesets": {str(_RS): LIVE_DETAIL}}
+
+
+def hardened_ruleset():
+    p = copy.deepcopy(LIVE_RULESET)
+    for r in p["rules"]:
+        if r["type"] == "pull_request":
+            r["parameters"].update(required_approving_review_count=1, dismiss_stale_reviews_on_push=True)
+        if r["type"] == "required_status_checks":
+            r["parameters"]["required_status_checks"].append({"context": "trusted-review-verified", "integration_id": 777})
+            r["parameters"]["required_status_checks"].append({"context": "trusted-review-security-tests", "integration_id": 15368})
+    return p
+
 
 class Protection(Base):
     def test_good_protection_has_no_problems(self):
@@ -354,6 +385,78 @@ class Protection(Base):
         p = copy.deepcopy(PROTECTION)
         p["required_status_checks"] = {"strict": True, "checks": [{"context": c} for c in dc.REQUIRED_CONTEXTS]}
         self.assertEqual(dc.protection_problems(p), [])
+
+
+class Rulesets(Base):
+    def test_live_develop_ruleset_is_correctly_insufficient(self):
+        # Verified live: no approval required, stale reviews kept, and the verifier check is not required.
+        self.assertEqual(dc.ruleset_problems(LIVE_RULESET, 777), [
+            "RULESET_REVIEW_COUNT_TOO_LOW", "RULESET_STALE_REVIEWS_NOT_DISMISSED", "RULESET_MISSING_REQUIRED_CONTEXTS"])
+
+    def test_hardened_ruleset_has_no_problems(self):
+        self.assertEqual(dc.ruleset_problems(hardened_ruleset(), 777), [])
+
+    def test_each_ruleset_weakening_is_detected(self):
+        def rule(p, t):
+            return next(r for r in p["rules"] if r["type"] == t)
+        cases = {
+            "RULESET_UNAVAILABLE": lambda p: p.update(rules=[]),
+            "RULESET_FORCE_PUSH_ALLOWED": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "non_fast_forward"]),
+            "RULESET_DELETION_ALLOWED": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "deletion"]),
+            "RULESET_NO_REQUIRED_REVIEW": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "pull_request"]),
+            "RULESET_REVIEW_COUNT_TOO_LOW": lambda p: rule(p, "pull_request")["parameters"].update(required_approving_review_count=0),
+            "RULESET_STALE_REVIEWS_NOT_DISMISSED": lambda p: rule(p, "pull_request")["parameters"].update(dismiss_stale_reviews_on_push=False),
+            "RULESET_CONVERSATIONS_NOT_REQUIRED": lambda p: rule(p, "pull_request")["parameters"].update(required_review_thread_resolution=False),
+            "RULESET_MERGE_METHOD_NOT_ALLOWED": lambda p: rule(p, "pull_request")["parameters"].update(allowed_merge_methods=["merge", "rebase"]),
+            "RULESET_NO_REQUIRED_CHECKS": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "required_status_checks"]),
+            "RULESET_NOT_STRICT": lambda p: rule(p, "required_status_checks")["parameters"].update(strict_required_status_checks_policy=False),
+            "RULESET_MISSING_REQUIRED_CONTEXTS": lambda p: rule(p, "required_status_checks")["parameters"].update(
+                required_status_checks=[{"context": "backend", "integration_id": 15368}]),
+            "RULESET_VERIFIER_SOURCE_NOT_PINNED": lambda p: [c.update(integration_id=999) for c in rule(p, "required_status_checks")["parameters"]["required_status_checks"] if c["context"] == "trusted-review-verified"],
+            "RULESET_NOT_ACTIVE": lambda p: p["rulesets"][str(_RS)].update(enforcement="evaluate"),
+            "RULESET_BYPASS_ACTORS_PRESENT": lambda p: p["rulesets"][str(_RS)].update(bypass_actors=[{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]),
+            "RULESET_DETAIL_UNAVAILABLE": lambda p: p["rulesets"].clear(),
+        }
+        for reason, fn in cases.items():
+            p = hardened_ruleset()
+            fn(p)
+            self.assertIn(reason, dc.ruleset_problems(p, 777), reason)
+        p = hardened_ruleset()
+        p["rulesets"][str(_RS)].pop("bypass_actors")      # unknown bypass list is treated as present
+        self.assertIn("RULESET_BYPASS_ACTORS_PRESENT", dc.ruleset_problems(p, 777))
+        self.assertIn("RULESET_VERIFIER_SOURCE_NOT_PINNED", dc.ruleset_problems(hardened_ruleset(), None))
+        for junk in (None, [], "x", {"rules": "x", "rulesets": {}}, {"rules": [1], "rulesets": {}}):
+            self.assertEqual(dc.ruleset_problems(junk, 777), ["RULESET_UNAVAILABLE"])
+
+    def _ruleset_world(self, rs):
+        w = build()
+        w[f"{ROOT}/branches/develop/protection"] = [{"status": 404, "headers": {}, "body": {"message": "Branch not protected"}}]
+        w[f"{ROOT}/rules/branches/develop"] = [ok(rs["rules"])]
+        w[f"{ROOT}/rulesets/{_RS}"] = [ok(rs["rulesets"][str(_RS)])]
+        return w
+
+    def test_classic_404_falls_back_to_hardened_ruleset_and_merges(self):
+        rep, f = self.run_(self._ruleset_world(hardened_ruleset()))
+        self.assertEqual(rep.errors, [], rep.as_dict())
+        self.assertEqual(len(f.puts), 1)
+
+    def test_classic_404_with_the_live_ruleset_does_not_merge(self):
+        self.assertNoMerge(self._ruleset_world(LIVE_RULESET), reason="RULESET_REVIEW_COUNT_TOO_LOW")
+
+    def test_classic_404_and_rules_unreadable_fails_closed_and_red(self):
+        w = build()
+        w[f"{ROOT}/branches/develop/protection"] = [{"status": 404, "headers": {}, "body": {}}]
+        rep = self.assertNoMerge(w, reason="PROTECTION_UNAVAILABLE")
+        self.assertTrue(rep.errors)   # infra error: the run goes red, never silently green
+
+    def test_bypass_actor_on_ruleset_blocks_merge(self):
+        rs = hardened_ruleset()
+        rs["rulesets"][str(_RS)]["bypass_actors"] = [{"actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"}]
+        self.assertNoMerge(self._ruleset_world(rs), reason="RULESET_BYPASS_ACTORS_PRESENT")
+
+    def test_ruleset_is_not_read_when_classic_protection_is_sufficient(self):
+        _, f = self.run_()
+        self.assertFalse([c for c in f.calls if "/rules" in c[1]])
 
 
 class Actuator(Base):
