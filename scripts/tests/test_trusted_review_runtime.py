@@ -525,23 +525,122 @@ class Revocation(Offline):
         self.assertNotIn("paths:", text)  # a required check must report on every PR
 
 
-class LiveAcceptanceGuard(Offline):
-    """Initial live acceptance: live writes only for a manually dispatched run explicitly targeting PR #296."""
+class UnattendedTier0Policy(Offline):
+    """Live writes: run-level gate (switches + explicit dispatch or unattended variable), per-PR eligibility, write cap."""
     LIVE = {rt.ENABLE_VARIABLE: "true", rt.LIVE_WRITES_VARIABLE: "true", "GITHUB_EVENT_NAME": "workflow_dispatch"}
+    UNATT = {**LIVE, "GITHUB_EVENT_NAME": "schedule", rt.UNATTENDED_VARIABLE: "true"}
 
-    def test_allowlist_is_exactly_296(self):
-        self.assertEqual(rt.LIVE_ACCEPTANCE_PRS, (296,))
+    def test_hardcoded_pr_allowlist_is_gone(self):
+        self.assertFalse(hasattr(rt, "LIVE_ACCEPTANCE_PRS"))
+        self.assertEqual((rt.MAX_LIVE_WRITES_PER_RUN, rt.UNATTENDED_VARIABLE), (3, "FLOWTALLY_TRUSTED_REVIEW_UNATTENDED"))
 
-    def test_only_manual_dispatch_of_296_with_both_switches_is_live(self):
-        self.assertTrue(rt.live_target_allowed(self.LIVE, 296))
-        self.assertFalse(rt.live_target_allowed(self.LIVE, 0))        # blank input = reconcile all
-        self.assertFalse(rt.live_target_allowed(self.LIVE, 272))
-        self.assertFalse(rt.live_target_allowed(self.LIVE, 297))
-        self.assertFalse(rt.live_target_allowed(self.LIVE, True))
-        self.assertFalse(rt.live_target_allowed({**self.LIVE, "GITHUB_EVENT_NAME": "schedule"}, 296))
-        self.assertFalse(rt.live_target_allowed({k: v for k, v in self.LIVE.items() if k != "GITHUB_EVENT_NAME"}, 296))
-        self.assertFalse(rt.live_target_allowed({**self.LIVE, rt.LIVE_WRITES_VARIABLE: "false"}, 296))
-        self.assertFalse(rt.live_target_allowed({**self.LIVE, rt.ENABLE_VARIABLE: "false"}, 296))
+    def test_run_level_gate_matrix(self):
+        allow = rt.live_target_allowed
+        self.assertTrue(allow(self.LIVE, 296))
+        self.assertTrue(allow(self.LIVE, 272))                         # any explicit target; per-PR policy decides
+        self.assertFalse(allow(self.LIVE, 0))                          # blank dispatch = reconcile all: needs unattended
+        self.assertFalse(allow(self.LIVE, True))
+        self.assertFalse(allow(self.LIVE, -5))
+        self.assertFalse(allow({**self.LIVE, "GITHUB_EVENT_NAME": "schedule"}, 296))   # schedule without the variable
+        self.assertFalse(allow({k: v for k, v in self.LIVE.items() if k != "GITHUB_EVENT_NAME"}, 296))
+        self.assertFalse(allow({**self.LIVE, rt.LIVE_WRITES_VARIABLE: "false"}, 296))
+        self.assertFalse(allow({**self.LIVE, rt.ENABLE_VARIABLE: "false"}, 296))
+        self.assertTrue(allow(self.UNATT, 0))
+        self.assertTrue(allow({**self.UNATT, "GITHUB_EVENT_NAME": "workflow_dispatch"}, 0))
+        for bad in ("True", "1", "yes", "", " true"):
+            self.assertFalse(allow({**self.UNATT, rt.UNATTENDED_VARIABLE: bad}, 0), bad)
+        self.assertFalse(allow({**self.UNATT, rt.LIVE_WRITES_VARIABLE: "false"}, 0))
+        self.assertFalse(allow({**self.UNATT, rt.ENABLE_VARIABLE: "false"}, 0))
+        self.assertFalse(allow({**self.UNATT, "GITHUB_EVENT_NAME": "pull_request_target"}, 0))
+        self.assertFalse(allow({**self.UNATT, "GITHUB_EVENT_NAME": "push"}, 0))
+
+    def _ev(self):
+        return collector_for(RW(reviewer_world())).collect(N)
+
+    def test_eligible_tier0_same_repo_open_develop_pr(self):
+        self.assertEqual(rt.live_eligibility(self._ev(), cfg()), [])
+
+    def test_eligibility_blockers_fail_closed(self):
+        def mut(fn):
+            ev = self._ev()
+            fn(ev)
+            return rt.live_eligibility(ev, cfg())
+        self.assertIn("live_base_not_develop", mut(lambda e: e["pr"]["base"].update(ref="main")))
+        self.assertIn("live_not_open", mut(lambda e: e["pr"].update(state="closed")))
+        self.assertIn("live_draft_or_unknown", mut(lambda e: e["pr"].update(draft=True)))
+        self.assertIn("live_draft_or_unknown", mut(lambda e: e["pr"].pop("draft")))
+        self.assertIn("live_fork_or_unknown_head", mut(lambda e: e["pr"]["head"]["repo"].update(id=RID + 1)))
+        self.assertIn("live_fork_or_unknown_head", mut(lambda e: e["pr"]["head"].update(repo=None)))
+        self.assertIn("live_no_changed_files", mut(lambda e: e.update(changed_files=[])))
+        self.assertIn("live_no_changed_files", mut(lambda e: e.update(changed_files=None)))
+        for path in ("backend/app.py", "src/App.tsx", ".github/workflows/x.yml", "docs/x.png", "AGENTS.md", "scripts/x.py", "docs/../src/a.md"):
+            self.assertIn("live_not_tier0_only", mut(lambda e, p=path: e.update(changed_files=["docs/ok.md", p])), path)
+        self.assertIn("live_too_many_files", mut(lambda e: e.update(changed_files=[f"docs/{i}.md" for i in range(rt.MAX_LIVE_CHANGED_FILES + 1)])))
+        self.assertIn("live_no_pr", rt.live_eligibility({}, cfg()))
+
+    def test_review_posts_nothing_when_ineligible_even_with_all_switches(self):
+        orig = rt.live_eligibility
+        rt.live_eligibility = lambda ev, c: ["live_not_tier0_only"]
+        try:
+            res, fake = do_review()
+        finally:
+            rt.live_eligibility = orig
+        self.assertEqual((res["action"], fake.posts), ("dry_run", []))
+        self.assertIn("live_not_tier0_only", res["reasons"])
+
+    def test_verifier_success_needs_eligibility_but_failure_always_publishes(self):
+        w_ok, w_none = verifier_world(), verifier_world(approve=False)   # build worlds before patching
+        orig = rt.live_eligibility
+        rt.live_eligibility = lambda ev, c: ["live_draft_or_unknown"]
+        try:
+            res, fake = do_verify(w_ok)
+            self.assertEqual((res["action"], res["conclusion"], fake.posts), ("dry_run", "success", []))
+            res2, fake2 = do_verify(w_none)      # no approval => failure verdict
+        finally:
+            rt.live_eligibility = orig
+        self.assertEqual((res2["action"], res2["conclusion"]), ("posted", "failure"))
+
+    def test_capped_poster_caps_grants_only_never_revocations(self):
+        sent = []
+        cp = rt.CappedPoster(lambda p, b: sent.append(p) or {"status": 200}, limit=2)
+        g = {"event": "APPROVE"}
+        self.assertEqual([cp("/a", g)["status"], cp("/b", {"conclusion": "success"})["status"], cp("/c", g)["status"]], [200, 200, 429])
+        self.assertEqual([cp(f"/r{i}", {"conclusion": "failure"})["status"] for i in range(6)], [200] * 6)  # revocations uncapped
+        self.assertEqual((cp.count, len(sent)), (2, 8))
+        self.assertEqual(cp("/x", None)["status"], 200)  # non-grant shapes are not counted
+
+    def _real_world_review(self, **mods):
+        w = reviewer_world()
+        mods_fn = mods.pop("fn")
+        mods_fn(w[f"{ROOT}/pulls/{N}"][0]["body"], w)
+        return do_review(w)
+
+    def test_real_review_path_posts_nothing_for_draft_fork_or_non_tier0(self):
+        def draft(pr, w): pr["draft"] = True
+        def fork(pr, w): pr["head"]["repo"]["id"] = RID + 7
+        def src(pr, w): w[f"{ROOT}/pulls/{N}/files"] = [ok([{"filename": "src/App.tsx", "status": "modified"}])]
+        for name, fn in (("draft", draft), ("fork", fork), ("src", src)):
+            res, fake = self._real_world_review(fn=fn)
+            self.assertNotEqual(res["action"], "posted", (name, res))
+            self.assertEqual(fake.posts, [], name)
+
+    def test_cap_refusal_is_error_not_posted_through_review_and_verify(self):
+        cp = rt.CappedPoster(lambda p, b: {"status": 200, "body": {}}, limit=0)
+        fake = RW(reviewer_world())
+        res = rt.review_pr(N, env=ENV, collector=collector_for(fake), read=fake, post=cp, cfg=cfg(), key=KEY, now=NOW,
+                           session_id="s", nonce="n")
+        self.assertEqual((res["action"], res["reasons"]), ("error", ["review_post_unconfirmed"]))
+        w = verifier_world()
+        f2 = RW(copy.deepcopy(w)); orig = f2.get
+        f2.get = lambda path, params: ok({"total_count": 0, "check_runs": []}) if path == CHECKS and params.get("check_name") == att.CHECK_NAME else orig(path, params)
+        res2 = rt.verify_pr(N, env=ENV, collector=collector_for(f2), read=f2, post=cp, cfg=cfg(), now=NOW)
+        self.assertEqual((res2["action"], res2["reasons"]), ("error", ["check_post_unconfirmed"]))
+
+    def test_eligibility_requires_numeric_repo_id_in_cfg(self):
+        ev = self._ev()
+        ev["pr"]["head"]["repo"] = None
+        for bad in ({}, {"repo_id": None}, {"repo_id": True}):
+            self.assertIn("live_fork_or_unknown_head", rt.live_eligibility(ev, bad))
 
     def _run(self, role, argv, env):
         seen = {}
@@ -564,19 +663,26 @@ class LiveAcceptanceGuard(Offline):
             (rt._common, rt.build_collector, rt.review_pr, rt.verify_pr, rt.load_signing_key, rt.load_public_key, rt._need_int, rt.list_target_prs) = orig
         return code, seen.get("posts")
 
-    def test_run_passes_poster_only_for_allowlisted_manual_target(self):
+    def test_run_passes_poster_by_policy(self):
         for role in ("reviewer", "verifier"):
             code, posts = self._run(role, ["--pr", "296"], self.LIVE)
             self.assertEqual((code, [(n, p is not None) for n, p in posts]), (0, [(296, True)]), role)
-            for argv, env in ((["--pr", "272"], self.LIVE), ([], self.LIVE),
+            code, posts = self._run(role, ["--pr", "272"], self.LIVE)
+            self.assertEqual([(n, p is not None) for n, p in posts], [(272, True)], role)   # explicit owner dispatch
+            for argv, env in (([], self.LIVE), ([], {**self.LIVE, "GITHUB_EVENT_NAME": "schedule"}),
                               (["--pr", "296"], {**self.LIVE, "GITHUB_EVENT_NAME": "schedule"})):
                 code, posts = self._run(role, argv, env)
                 self.assertTrue(posts and all(p is None for _, p in posts), (role, argv, env))
+            code, posts = self._run(role, [], self.UNATT)                 # unattended schedule reconciles all, one shared capped poster
+            self.assertEqual([(n, isinstance(p, rt.CappedPoster)) for n, p in posts], [(272, True), (296, True)], role)
+            self.assertIs(posts[0][1], posts[1][1])
 
     def test_workflow_still_has_only_dispatch_and_schedule_and_runs_pass_pr_arg(self):
         text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
         self.assertEqual(text.count('${PR_NUMBER:+--pr "$PR_NUMBER"}'), 2)
         self.assertIn("github.event.inputs.pr_number", text)
+        self.assertEqual(text.count("FLOWTALLY_TRUSTED_REVIEW_UNATTENDED: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_UNATTENDED }}"), 2)
+        self.assertNotIn("pull_request", text.split("jobs:")[0].replace("# ", "").split("on:")[1])
 
 
 class Targets(Offline):

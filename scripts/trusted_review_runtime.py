@@ -52,10 +52,15 @@ LIVE_WRITES_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES"
 ATTESTATION_TTL_SECONDS = 1800  # well under att.MAX_TTL_SECONDS
 PHASE1_BASES = ("develop",)
 ALLOWED_EVENTS = ("workflow_dispatch", "schedule")
-# Controlled initial live acceptance (#270): live approval/check writes are limited to these explicitly
-# targeted PRs on a manual workflow_dispatch. Scheduled and untargeted runs stay dry-run even when the
-# live-writes variable is true. Widening this tuple is a reviewed code change, never a setting.
-LIVE_ACCEPTANCE_PRS = (296,)
+# Unattended Tier 0 policy (#270). Live approval/check writes need, in addition to the two switches:
+#  * a manual dispatch that explicitly targets one PR, OR (scheduled / reconcile-all runs) the separate
+#    owner variable FLOWTALLY_TRUSTED_REVIEW_UNATTENDED=true (default off, so schedules stay dry-run); and
+#  * a per-PR ``live_eligibility`` pass over fresh evidence (below); and
+#  * a hard per-run write cap.
+# The policy is code: widening it is a reviewed change, never a setting.
+UNATTENDED_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_UNATTENDED"
+MAX_LIVE_WRITES_PER_RUN = 3
+MAX_LIVE_CHANGED_FILES = 25
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _CODEX_STATE = re.compile(r"<!--\s*codex-review-state:v1\s+(\{.*?\})\s*-->", re.S)
 
@@ -82,9 +87,63 @@ def live_writes_enabled(env: Mapping[str, str]) -> bool:
 
 
 def live_target_allowed(env: Mapping[str, str], pr: int) -> bool:
-    """Live writes need the switches AND a manual dispatch explicitly targeting an allowlisted PR."""
-    return (live_writes_enabled(env) and env.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-            and isinstance(pr, int) and not isinstance(pr, bool) and pr in LIVE_ACCEPTANCE_PRS)
+    """Run-level gate: switches on, and either an explicit manual dispatch target or the unattended variable."""
+    if not live_writes_enabled(env):
+        return False
+    event = env.get("GITHUB_EVENT_NAME")
+    if event == "workflow_dispatch" and isinstance(pr, int) and not isinstance(pr, bool) and pr > 0:
+        return True
+    return event in ALLOWED_EVENTS and env.get(UNATTENDED_VARIABLE) == "true"
+
+
+def live_eligibility(ev: Mapping[str, Any], cfg: Mapping[str, Any]) -> list[str]:
+    """Per-PR fail-closed policy for live writes. Empty list = eligible. Any missing field blocks.
+
+    Stricter than ``assess`` on purpose: same-repo head only, not a draft, bounded size, develop base,
+    Tier 0 docs-only files, open. This never relaxes ``assess``; it is applied in addition to it.
+    """
+    pr = ev.get("pr")
+    if not isinstance(pr, Mapping):
+        return ["live_no_pr"]
+    out = []
+    if (pr.get("base") or {}).get("ref") not in PHASE1_BASES:
+        out.append("live_base_not_develop")
+    if pr.get("state") != "open":
+        out.append("live_not_open")
+    if pr.get("draft") is not False:
+        out.append("live_draft_or_unknown")
+    repo_id = cfg.get("repo_id")
+    if not isinstance(repo_id, int) or isinstance(repo_id, bool) or ((pr.get("head") or {}).get("repo") or {}).get("id") != repo_id:
+        out.append("live_fork_or_unknown_head")
+    files = ev.get("changed_files")
+    if not isinstance(files, list) or not files:
+        out.append("live_no_changed_files")
+    else:
+        if len(files) > MAX_LIVE_CHANGED_FILES:
+            out.append("live_too_many_files")
+        if any(not isinstance(f, str) or policy.classify_path(f) != "tier0" for f in files):
+            out.append("live_not_tier0_only")
+    return out
+
+
+def _grants_trust(body: Any) -> bool:
+    """True for a write that grants trust (reviewer APPROVE, verifier success). Revocations never count."""
+    return isinstance(body, Mapping) and (body.get("event") == "APPROVE" or body.get("conclusion") == "success")
+
+
+class CappedPoster:
+    """Wraps the write transport: at most ``limit`` trust-GRANTING writes per job, then refuses (never silently
+    drops). Writes that only withdraw trust (failure checks, revocations) are never capped."""
+
+    def __init__(self, post: Callable[[str, Any], Any], limit: int = MAX_LIVE_WRITES_PER_RUN):
+        self._post, self._limit, self.count = post, limit, 0
+
+    def __call__(self, path: str, body: Any) -> Any:
+        if _grants_trust(body):
+            if self.count >= self._limit:
+                return {"status": 429, "body": None}  # fixed refusal; callers report *_unconfirmed, never "posted"
+            self.count += 1
+        return self._post(path, body)
 
 
 # ---- GitHub App authentication (stdlib HTTP + cryptography RS256; no third-party action) ----
@@ -464,8 +523,9 @@ def review_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
     check = att.verify(pre, verifier_config(cfg), clock(), att.NonceStore())
     if not check.verified:
         return _out(n, "blocked", "preflight_verify_failed", *check.reasons)
-    if not live_writes_enabled(env) or post is None:
-        return _out(n, "dry_run", head_sha=payload["head_sha"], request={"path": request["path"], "commit_id": request["body"]["commit_id"],
+    ineligible = live_eligibility(again, cfg)
+    if not live_writes_enabled(env) or post is None or ineligible:
+        return _out(n, "dry_run", *ineligible, head_sha=payload["head_sha"], request={"path": request["path"], "commit_id": request["body"]["commit_id"],
                                                                       "event": request["body"]["event"], "attestation": payload})
     resp = post(request["path"].replace("{owner}/{repo}", cfg["repository"]), request["body"])
     body = resp.get("body") if isinstance(resp, Mapping) else None
@@ -512,8 +572,9 @@ def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
             (prior.get("conclusion") == "failure" and prior.get("output", {}).get("summary") == request["body"]["output"]["summary"])
         if same_state:
             return _out(n, "skipped", "check_already_published", head_sha=head, conclusion=request["body"]["conclusion"])
-    if not live_writes_enabled(env) or post is None:
-        return _out(n, "dry_run", head_sha=head, conclusion=request["body"]["conclusion"], reasons_found=list(result.reasons))
+    ineligible = live_eligibility(ev, cfg) if verified else []  # a failure verdict only revokes trust; always publishable
+    if not live_writes_enabled(env) or post is None or ineligible:
+        return _out(n, "dry_run", *ineligible, head_sha=head, conclusion=request["body"]["conclusion"], reasons_found=list(result.reasons))
     path = request["path"].replace("{owner}/{repo}", cfg["repository"])
     resp = post(path, request["body"])
     body = resp.get("body") if isinstance(resp, Mapping) else None
@@ -618,7 +679,8 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
         cfg, (http, token, app_id) = _common(env, args.role, now)
         secrets_seen = [token]
         collector = build_collector(http, cfg, env)
-        poster = http.post if (live_target_allowed(env, args.pr) or revoke_only) else None
+        raw_post = http.post if (live_target_allowed(env, args.pr) or revoke_only) else None
+        poster = CappedPoster(raw_post) if raw_post is not None else None
         results = []
         if revoke_only:
             cfg.update(verifier_app_id=app_id)
@@ -642,7 +704,7 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
     except Exception as exc:  # noqa: BLE001 - never leak a traceback that could include request data
         print(json.dumps({"role": args.role, "action": "error", "reasons": [f"runtime_error:{type(exc).__name__}"]}))
         return 1
-    text = json.dumps({"role": args.role, "live_writes": poster is not None, "results": results}, sort_keys=True)
+    text = json.dumps({"role": args.role, "live_writes": poster is not None, "live_write_count": getattr(poster, "count", 0), "results": results}, sort_keys=True)
     for s in secrets_seen:
         text = text.replace(s, "***")
     print(text)
