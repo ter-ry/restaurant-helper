@@ -188,7 +188,7 @@ def ruleset_problems(p: Any, verifier_app_id: Any = None) -> list[str]:
             out.append("RULESET_CONVERSATIONS_NOT_REQUIRED")
         for x in prs:  # every PR rule must still permit the one merge method this actuator uses
             allowed = x.get("allowed_merge_methods")
-            if allowed is not None and MERGE_METHOD not in allowed:
+            if allowed is not None and not (isinstance(allowed, list) and MERGE_METHOD in allowed):
                 out.append("RULESET_MERGE_METHOD_NOT_ALLOWED")
     scs = [r.get("parameters") for r in by_type.get("required_status_checks", [])]
     if not scs or any(not isinstance(x, Mapping) for x in scs):
@@ -355,6 +355,8 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
         if extras["protection"] is not None and not protection_problems(extras["protection"]):
             return True  # classic protection alone is sufficient; no need to read rulesets
         rules = _body(t.get(f"{root}/rules/branches/{ALLOWED_BASE}", {"per_page": 100}), "rules")
+        if isinstance(rules, list) and len(rules) >= 100:
+            raise RuntimeError("rules:truncated")
         details: dict[str, Any] = {}
         for r in rules if isinstance(rules, list) else []:
             rid = r.get("ruleset_id") if isinstance(r, Mapping) else None

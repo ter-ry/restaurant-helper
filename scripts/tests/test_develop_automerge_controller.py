@@ -425,6 +425,9 @@ class Rulesets(Base):
         p["rulesets"][str(_RS)].pop("bypass_actors")      # unknown bypass list is treated as present
         self.assertIn("RULESET_BYPASS_ACTORS_PRESENT", dc.ruleset_problems(p, 777))
         self.assertIn("RULESET_VERIFIER_SOURCE_NOT_PINNED", dc.ruleset_problems(hardened_ruleset(), None))
+        p = hardened_ruleset()
+        next(r for r in p["rules"] if r["type"] == "pull_request")["parameters"]["allowed_merge_methods"] = "squash_foo"
+        self.assertIn("RULESET_MERGE_METHOD_NOT_ALLOWED", dc.ruleset_problems(p, 777))
         for junk in (None, [], "x", {"rules": "x", "rulesets": {}}, {"rules": [1], "rulesets": {}}):
             self.assertEqual(dc.ruleset_problems(junk, 777), ["RULESET_UNAVAILABLE"])
 
@@ -448,6 +451,12 @@ class Rulesets(Base):
         w[f"{ROOT}/branches/develop/protection"] = [{"status": 404, "headers": {}, "body": {}}]
         rep = self.assertNoMerge(w, reason="PROTECTION_UNAVAILABLE")
         self.assertTrue(rep.errors)   # infra error: the run goes red, never silently green
+
+    def test_truncated_rules_listing_is_an_explicit_unavailable_error(self):
+        w = self._ruleset_world(hardened_ruleset())
+        w[f"{ROOT}/rules/branches/develop"] = [ok([dict(LIVE_RULES[0]) for _ in range(100)])]
+        rep = self.assertNoMerge(w, reason="PROTECTION_UNAVAILABLE")
+        self.assertIn("rules:truncated", json.dumps(rep.as_dict()))
 
     def test_bypass_actor_on_ruleset_blocks_merge(self):
         rs = hardened_ruleset()

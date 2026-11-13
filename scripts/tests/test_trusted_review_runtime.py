@@ -600,11 +600,47 @@ class UnattendedTier0Policy(Offline):
             rt.live_eligibility = orig
         self.assertEqual((res2["action"], res2["conclusion"]), ("posted", "failure"))
 
-    def test_capped_poster_refuses_after_limit_and_counts(self):
+    def test_capped_poster_caps_grants_only_never_revocations(self):
         sent = []
         cp = rt.CappedPoster(lambda p, b: sent.append(p) or {"status": 200}, limit=2)
-        self.assertEqual([cp("/a", {})["status"], cp("/b", {})["status"], cp("/c", {})["status"]], [200, 200, 429])
-        self.assertEqual((sent, cp.count), (["/a", "/b"], 2))
+        g = {"event": "APPROVE"}
+        self.assertEqual([cp("/a", g)["status"], cp("/b", {"conclusion": "success"})["status"], cp("/c", g)["status"]], [200, 200, 429])
+        self.assertEqual([cp(f"/r{i}", {"conclusion": "failure"})["status"] for i in range(6)], [200] * 6)  # revocations uncapped
+        self.assertEqual((cp.count, len(sent)), (2, 8))
+        self.assertEqual(cp("/x", None)["status"], 200)  # non-grant shapes are not counted
+
+    def _real_world_review(self, **mods):
+        w = reviewer_world()
+        mods_fn = mods.pop("fn")
+        mods_fn(w[f"{ROOT}/pulls/{N}"][0]["body"], w)
+        return do_review(w)
+
+    def test_real_review_path_posts_nothing_for_draft_fork_or_non_tier0(self):
+        def draft(pr, w): pr["draft"] = True
+        def fork(pr, w): pr["head"]["repo"]["id"] = RID + 7
+        def src(pr, w): w[f"{ROOT}/pulls/{N}/files"] = [ok([{"filename": "src/App.tsx", "status": "modified"}])]
+        for name, fn in (("draft", draft), ("fork", fork), ("src", src)):
+            res, fake = self._real_world_review(fn=fn)
+            self.assertNotEqual(res["action"], "posted", (name, res))
+            self.assertEqual(fake.posts, [], name)
+
+    def test_cap_refusal_is_error_not_posted_through_review_and_verify(self):
+        cp = rt.CappedPoster(lambda p, b: {"status": 200, "body": {}}, limit=0)
+        fake = RW(reviewer_world())
+        res = rt.review_pr(N, env=ENV, collector=collector_for(fake), read=fake, post=cp, cfg=cfg(), key=KEY, now=NOW,
+                           session_id="s", nonce="n")
+        self.assertEqual((res["action"], res["reasons"]), ("error", ["review_post_unconfirmed"]))
+        w = verifier_world()
+        f2 = RW(copy.deepcopy(w)); orig = f2.get
+        f2.get = lambda path, params: ok({"total_count": 0, "check_runs": []}) if path == CHECKS and params.get("check_name") == att.CHECK_NAME else orig(path, params)
+        res2 = rt.verify_pr(N, env=ENV, collector=collector_for(f2), read=f2, post=cp, cfg=cfg(), now=NOW)
+        self.assertEqual((res2["action"], res2["reasons"]), ("error", ["check_post_unconfirmed"]))
+
+    def test_eligibility_requires_numeric_repo_id_in_cfg(self):
+        ev = self._ev()
+        ev["pr"]["head"]["repo"] = None
+        for bad in ({}, {"repo_id": None}, {"repo_id": True}):
+            self.assertIn("live_fork_or_unknown_head", rt.live_eligibility(ev, bad))
 
     def _run(self, role, argv, env):
         seen = {}

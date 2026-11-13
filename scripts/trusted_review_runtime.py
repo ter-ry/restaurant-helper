@@ -112,7 +112,8 @@ def live_eligibility(ev: Mapping[str, Any], cfg: Mapping[str, Any]) -> list[str]
         out.append("live_not_open")
     if pr.get("draft") is not False:
         out.append("live_draft_or_unknown")
-    if ((pr.get("head") or {}).get("repo") or {}).get("id") != cfg.get("repo_id"):
+    repo_id = cfg.get("repo_id")
+    if not isinstance(repo_id, int) or isinstance(repo_id, bool) or ((pr.get("head") or {}).get("repo") or {}).get("id") != repo_id:
         out.append("live_fork_or_unknown_head")
     files = ev.get("changed_files")
     if not isinstance(files, list) or not files:
@@ -125,16 +126,23 @@ def live_eligibility(ev: Mapping[str, Any], cfg: Mapping[str, Any]) -> list[str]
     return out
 
 
+def _grants_trust(body: Any) -> bool:
+    """True for a write that grants trust (reviewer APPROVE, verifier success). Revocations never count."""
+    return isinstance(body, Mapping) and (body.get("event") == "APPROVE" or body.get("conclusion") == "success")
+
+
 class CappedPoster:
-    """Wraps the write transport: at most ``limit`` writes per run, then refuses (never silently drops)."""
+    """Wraps the write transport: at most ``limit`` trust-GRANTING writes per job, then refuses (never silently
+    drops). Writes that only withdraw trust (failure checks, revocations) are never capped."""
 
     def __init__(self, post: Callable[[str, Any], Any], limit: int = MAX_LIVE_WRITES_PER_RUN):
         self._post, self._limit, self.count = post, limit, 0
 
     def __call__(self, path: str, body: Any) -> Any:
-        if self.count >= self._limit:
-            return {"status": 429, "body": None}  # fixed refusal; callers report *_unconfirmed
-        self.count += 1
+        if _grants_trust(body):
+            if self.count >= self._limit:
+                return {"status": 429, "body": None}  # fixed refusal; callers report *_unconfirmed, never "posted"
+            self.count += 1
         return self._post(path, body)
 
 
