@@ -33,11 +33,13 @@ try:  # package-style and script-style imports both work
     from scripts import trusted_review_attestation as attest
     from scripts import trusted_review_runtime as app_auth
     from scripts.trusted_review_evidence_collector import Collector
+    from scripts.trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY
 except ImportError:  # pragma: no cover
     import develop_merge_policy as policy  # type: ignore
     import trusted_review_attestation as attest  # type: ignore
     import trusted_review_runtime as app_auth  # type: ignore
     from trusted_review_evidence_collector import Collector  # type: ignore
+    from trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY  # type: ignore
 
 ENABLE_VARIABLE = "FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED"
 LIVE_WRITES_VARIABLE = "FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES"
@@ -572,7 +574,7 @@ def main_guard_problems(p: Any) -> list[str]:
 class GuardedTransport:
     """The only write path the controller can reach with the merge token.
 
-    * Reads and GraphQL pass straight through.
+    * Reads pass straight through. GraphQL passes only the collector's constant read-only threads query.
     * The sole permitted write is ``PUT /repos/{repo}/pulls/{n}/merge`` with exactly ``sha`` and a squash
       ``merge_method``. Any other method, path or body is refused before it leaves the process.
     * Before the first write of a run, `main` is read and must pass `main_guard_problems`; otherwise the
@@ -588,6 +590,10 @@ class GuardedTransport:
         return self._t.get(path, params)
 
     def graphql(self, query: str, variables: dict) -> Any:
+        # Only the collector's constant, read-only review-thread query may pass; a GraphQL mutation
+        # (mergePullRequest, createRef, createCommitOnBranch, ...) must not leave the process.
+        if query != Collector_THREADS_QUERY:
+            raise PermissionError("WRITE_REFUSED:GRAPHQL_QUERY_NOT_ALLOWED")
         return self._t.graphql(query, variables)
 
     def _check_main(self) -> None:
@@ -608,7 +614,7 @@ class GuardedTransport:
         self._main_ok = True
 
     def put(self, path: str, body: Any) -> Any:
-        if not (isinstance(path, str) and self._merge_path.match(path)):
+        if not (isinstance(path, str) and self._merge_path.fullmatch(path)):
             raise PermissionError("WRITE_REFUSED:PATH_NOT_ALLOWED")
         if not (isinstance(body, Mapping) and set(body) == {"sha", "merge_method"} and body["merge_method"] == MERGE_METHOD
                 and isinstance(body["sha"], str) and re.fullmatch(r"[0-9a-f]{40}", body["sha"])):

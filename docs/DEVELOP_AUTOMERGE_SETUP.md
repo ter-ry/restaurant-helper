@@ -49,9 +49,16 @@ The workflow no longer uses any stored `DEVELOP_AUTOMERGE_TOKEN`. On each run, `
 Contents **write** and Pull requests **write** apply to the whole repository, including `main`. A token with them could in principle push to `main` or merge a PR into it if nothing else stopped it. The mitigations are layered and none of them is "the permission is scoped to develop":
 
 1. **Ruleset on `main` (the real control, owner-managed):** require a pull request, block force pushes and deletion, enforcement `active`, **empty bypass actors**. The merge App must not be a bypass actor.
-2. **Controller write guard (`GuardedTransport`):** the only write that can leave the process is `PUT /repos/ter-ry/restaurant-helper/pulls/{n}/merge` with exactly `sha` (40 hex) and `merge_method: squash`. Any other method, path, repository or body is refused before sending. Immediately before the first write of a run it also reads `/rules/branches/main` and the contributing rulesets and refuses to write unless they are active, have no bypass actors and include `pull_request`, `non_fast_forward` and `deletion` rules (`WRITE_REFUSED:MAIN_*`). A refused write shows up as `MERGE_NOT_CONFIRMED` and a red run.
+2. **Controller write guard (`GuardedTransport`):** the only write that can leave the process (GraphQL is limited to the constant read-only threads query; mutations are refused) is `PUT /repos/ter-ry/restaurant-helper/pulls/{n}/merge` with exactly `sha` (40 hex) and `merge_method: squash`. Any other method, path, repository or body is refused before sending. Immediately before the first write of a run it also reads `/rules/branches/main` and the contributing rulesets and refuses to write unless they are active, have no bypass actors and include `pull_request`, `non_fast_forward` and `deletion` rules (`WRITE_REFUSED:MAIN_*`). A refused write shows up as `MERGE_NOT_CONFIRMED` and a red run.
 3. **Planner:** the PR base must be `develop` at plan time and again immediately before the PUT; the PUT is pinned to the evaluated head SHA.
 4. **Environment:** `develop-automerge` allows only `main`, so the private key is never exposed to PR branches. Workflow edits are Tier 2 and owner-merge only.
+
+Limits of the guard, stated plainly:
+- It checks `main` rule **types** and empty bypass actors only; it does not inspect `pull_request` rule parameters (for example it does not require approvals on `main`).
+- It fails closed if `bypass_actors` is hidden from a token without Administration access, or for organization-level rulesets whose `GET /rulesets/{id}` is not readable. That would refuse every live write (`WRITE_REFUSED:MAIN_RULESET_BYPASS_ACTORS_PRESENT` or `MAIN_RULESET_UNAVAILABLE`). Whether the token can read these fields is **unproven until a live dry-run**; the owner should confirm it before setting `FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES=true`.
+- The write token is minted in dry-run too (the guard only runs before a write); the token can only be used through the guarded transport.
+- Repository-wide contents write also covers other branches and tags that no ruleset protects; only `main` and `develop` are checked.
+- That the `develop-automerge` environment allows only `main` is an owner-side setting this repository cannot verify.
 
 This does not protect against a compromised private key used outside this repository's workflow: such a key could act on `main` only as far as the `main` ruleset allows. Hence step 1 and the key rotation/rollback in step 8. Hardening that GitHub cannot express (a branch-scoped App token) is not claimed.
 

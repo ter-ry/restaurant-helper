@@ -734,6 +734,22 @@ class WriteGuard(unittest.TestCase):
                 g.put(path, body)
             self.assertEqual((inner.puts, inner.gets), ([], []), (path, body))
 
+    def test_graphql_mutations_and_arbitrary_queries_are_refused(self):
+        g, inner = self.guard()
+        for q in ("mutation { mergePullRequest(input:{pullRequestId:\"x\"}) { clientMutationId } }",
+                  "mutation{createRef(input:{}){clientMutationId}}", "query { viewer { login } }", ""):
+            with self.assertRaises(PermissionError):
+                g.graphql(q, {})
+        self.assertEqual(inner.gets, [])
+        self.assertEqual(g.graphql(dc.Collector_THREADS_QUERY, {})["status"], 200)
+
+    def test_merge_path_must_match_exactly(self):
+        for path in (self.PATH + "\n", self.PATH + "/", self.PATH + "?x=1", " " + self.PATH, self.PATH + "\r"):
+            g, inner = self.guard()
+            with self.assertRaises(PermissionError, msg=repr(path)):
+                g.put(path, self.BODY)
+            self.assertEqual((inner.puts, inner.gets), ([], []))
+
     def test_unprotected_or_bypassable_main_refuses_the_write(self):
         cases = {
             "no_rules": dict(rules=[]),
