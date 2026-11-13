@@ -52,6 +52,10 @@ LIVE_WRITES_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES"
 ATTESTATION_TTL_SECONDS = 1800  # well under att.MAX_TTL_SECONDS
 PHASE1_BASES = ("develop",)
 ALLOWED_EVENTS = ("workflow_dispatch", "schedule")
+# Controlled initial live acceptance (#270): live approval/check writes are limited to these explicitly
+# targeted PRs on a manual workflow_dispatch. Scheduled and untargeted runs stay dry-run even when the
+# live-writes variable is true. Widening this tuple is a reviewed code change, never a setting.
+LIVE_ACCEPTANCE_PRS = (296,)
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _CODEX_STATE = re.compile(r"<!--\s*codex-review-state:v1\s+(\{.*?\})\s*-->", re.S)
 
@@ -75,6 +79,12 @@ def enabled(env: Mapping[str, str]) -> bool:
 
 def live_writes_enabled(env: Mapping[str, str]) -> bool:
     return enabled(env) and env.get(LIVE_WRITES_VARIABLE) == "true"
+
+
+def live_target_allowed(env: Mapping[str, str], pr: int) -> bool:
+    """Live writes need the switches AND a manual dispatch explicitly targeting an allowlisted PR."""
+    return (live_writes_enabled(env) and env.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+            and isinstance(pr, int) and not isinstance(pr, bool) and pr in LIVE_ACCEPTANCE_PRS)
 
 
 # ---- GitHub App authentication (stdlib HTTP + cryptography RS256; no third-party action) ----
@@ -608,7 +618,7 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
         cfg, (http, token, app_id) = _common(env, args.role, now)
         secrets_seen = [token]
         collector = build_collector(http, cfg, env)
-        poster = http.post if (live_writes_enabled(env) or revoke_only) else None
+        poster = http.post if (live_target_allowed(env, args.pr) or revoke_only) else None
         results = []
         if revoke_only:
             cfg.update(verifier_app_id=app_id)
