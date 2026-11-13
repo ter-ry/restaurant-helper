@@ -525,6 +525,60 @@ class Revocation(Offline):
         self.assertNotIn("paths:", text)  # a required check must report on every PR
 
 
+class LiveAcceptanceGuard(Offline):
+    """Initial live acceptance: live writes only for a manually dispatched run explicitly targeting PR #296."""
+    LIVE = {rt.ENABLE_VARIABLE: "true", rt.LIVE_WRITES_VARIABLE: "true", "GITHUB_EVENT_NAME": "workflow_dispatch"}
+
+    def test_allowlist_is_exactly_296(self):
+        self.assertEqual(rt.LIVE_ACCEPTANCE_PRS, (296,))
+
+    def test_only_manual_dispatch_of_296_with_both_switches_is_live(self):
+        self.assertTrue(rt.live_target_allowed(self.LIVE, 296))
+        self.assertFalse(rt.live_target_allowed(self.LIVE, 0))        # blank input = reconcile all
+        self.assertFalse(rt.live_target_allowed(self.LIVE, 272))
+        self.assertFalse(rt.live_target_allowed(self.LIVE, 297))
+        self.assertFalse(rt.live_target_allowed(self.LIVE, True))
+        self.assertFalse(rt.live_target_allowed({**self.LIVE, "GITHUB_EVENT_NAME": "schedule"}, 296))
+        self.assertFalse(rt.live_target_allowed({k: v for k, v in self.LIVE.items() if k != "GITHUB_EVENT_NAME"}, 296))
+        self.assertFalse(rt.live_target_allowed({**self.LIVE, rt.LIVE_WRITES_VARIABLE: "false"}, 296))
+        self.assertFalse(rt.live_target_allowed({**self.LIVE, rt.ENABLE_VARIABLE: "false"}, 296))
+
+    def _run(self, role, argv, env):
+        seen = {}
+        class Http:
+            def post(self, *a):
+                raise AssertionError("no write expected in this test")
+        orig = (rt._common, rt.build_collector, rt.review_pr, rt.verify_pr, rt.load_signing_key, rt.load_public_key, rt._need_int, rt.list_target_prs)
+        def rv(n, **kw):
+            seen.setdefault("posts", []).append((n, kw["post"])); return {"action": "dry_run"}
+        try:
+            rt._common = lambda e, r, now: ({"repository": REPO, "repo_id": RID}, (Http(), "tok", 1))
+            rt.build_collector = lambda *a: None
+            rt.review_pr = rt.verify_pr = rv
+            rt.load_signing_key = lambda pem: type("K", (), {"public_key": lambda s: type("P", (), {"public_bytes": lambda s, *a: b"x" * 32})()})()
+            rt.load_public_key = lambda v: b"x" * 32
+            rt._need_int = lambda e, n: 1
+            rt.list_target_prs = lambda *a: [272, 296]
+            code = rt.run([role, *argv], {**env, "FLOWTALLY_REVIEWER_SIGNING_KEY": "k", "FLOWTALLY_REVIEWER_PUBLIC_KEY": "k"}, NOW)
+        finally:
+            (rt._common, rt.build_collector, rt.review_pr, rt.verify_pr, rt.load_signing_key, rt.load_public_key, rt._need_int, rt.list_target_prs) = orig
+        return code, seen.get("posts")
+
+    def test_run_passes_poster_only_for_allowlisted_manual_target(self):
+        for role in ("reviewer", "verifier"):
+            code, posts = self._run(role, ["--pr", "296"], self.LIVE)
+            self.assertEqual((code, [(n, p is not None) for n, p in posts]), (0, [(296, True)]), role)
+            for argv, env in ((["--pr", "272"], self.LIVE), ([], self.LIVE),
+                              (["--pr", "296"], {**self.LIVE, "GITHUB_EVENT_NAME": "schedule"})):
+                code, posts = self._run(role, argv, env)
+                self.assertTrue(posts and all(p is None for _, p in posts), (role, argv, env))
+
+    def test_workflow_still_has_only_dispatch_and_schedule_and_runs_pass_pr_arg(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
+        self.assertEqual(text.count('${PR_NUMBER:+--pr "$PR_NUMBER"}'), 2)
+        self.assertIn("github.event.inputs.pr_number", text)
+
+
 class Targets(Offline):
     def test_all_open_prs_are_processed_not_a_fixed_prefix(self):
         page = [{"number": i, "head": {"repo": {"id": RID}}} for i in range(1, 61)]
