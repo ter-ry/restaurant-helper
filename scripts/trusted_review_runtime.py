@@ -56,9 +56,9 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _CODEX_STATE = re.compile(r"<!--\s*codex-review-state:v1\s+(\{.*?\})\s*-->", re.S)
 
 REVIEWER_TOKEN_PERMISSIONS = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read",
-                              "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
+                              "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
 VERIFIER_TOKEN_PERMISSIONS = {"checks": "write", "pull_requests": "read", "contents": "read", "metadata": "read",
-                              "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
+                              "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
 REVIEWER_ONLY_SECRETS = ("FLOWTALLY_REVIEWER_APP_PRIVATE_KEY", "FLOWTALLY_REVIEWER_SIGNING_KEY")
 VERIFIER_ONLY_SECRETS = ("FLOWTALLY_VERIFIER_APP_PRIVATE_KEY",)
 
@@ -128,10 +128,38 @@ class HttpTransport:
         return self._send("POST", "/graphql", None, {"query": query, "variables": variables})
 
 
-# Permission names in the token request that GitHub's REST reference for
-# POST /app/installations/{id}/access_tokens does not list (checked 2026-11-12). They are still
-# requested (the kill-switch variable read needs them); a refusal is annotated so the owner can tell.
-UNDOCUMENTED_TOKEN_PERMISSIONS = frozenset({"variables"})
+# GitHub's POST /app/installations/{id}/access_tokens `permissions` field has no key for repository
+# Variables (live dry run 2026-11-12: 422 for "variables"; "actions_variables" is also unlisted), yet an
+# installation token can read variables when the App holds Variables:read. So the token request carries
+# NO permissions override (single repository only, inheriting the installed least-privilege App) and the
+# granted permission map is verified against an exact allowlist below; anything extra or missing fails closed.
+_LEVEL = {"read": 1, "write": 2, "admin": 3}
+_VARIABLES_ALIASES = ("actions_variables", "variables")
+_SAFE_KEY = re.compile(r"^[a-z_]{1,40}$")
+
+
+def _normalize_granted(granted: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(granted)
+    for alias in _VARIABLES_ALIASES:
+        if alias != "actions_variables" and alias in out:
+            value = out.pop(alias)
+            if "actions_variables" in out and _LEVEL.get(value, 99) <= _LEVEL.get(out["actions_variables"], 99):
+                continue  # keep the higher (or unknown, i.e. stricter) of the two reported levels
+            out["actions_variables"] = value
+    return out
+
+
+def granted_permission_problems(granted: Mapping[str, Any], expected: Mapping[str, str]) -> list[str]:
+    """Exact allowlist: no granted key outside `expected`, none above its level, none missing."""
+    problems = []
+    for key, level in sorted(granted.items()):
+        want = expected.get(key)
+        if want is None or _LEVEL.get(level, 99) > _LEVEL[want]:
+            problems.append("unexpected:" + (key if isinstance(key, str) and _SAFE_KEY.match(key) else "invalid_key"))
+    for key, want in sorted(expected.items()):
+        if _LEVEL.get(granted.get(key), 0) < _LEVEL[want]:
+            problems.append(f"missing:{key}")
+    return problems
 
 # Fixed vocabulary only. Provider text is matched, never echoed, so nothing untrusted reaches the log.
 _REFUSAL_PATTERNS = (
@@ -171,23 +199,23 @@ def _status_code(resp: Any) -> str:
     return f"http_{status}" if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599 else "http_unknown"
 
 
-def mint_installation_token(jwt_transport: Any, repository: str, permissions: Mapping[str, str]) -> tuple[str, dict]:
-    """Short-lived, single-repository, least-privilege token. Returns (token, granted_permissions).
+def mint_installation_token(jwt_transport: Any, repository: str, expected: Mapping[str, str]) -> tuple[str, dict]:
+    """Short-lived, single-repository token; returns (token, granted_permissions).
 
-    Failures raise ConfigError("<step>:http_<status>:<category>[:requested_undocumented_permission:<name>]")
-    built only from the numeric status and fixed strings; no JWT, token, header or response text.
+    No `permissions` override is sent (see the note above); the granted map must equal the `expected`
+    allowlist or the call fails closed. Failures raise ConfigError("<step>:http_<status>:<category>") or a
+    fixed-vocabulary reason built only from numeric status and fixed strings; never a JWT, token, header
+    or response text.
     """
     owner, name = repository.split("/")
     inst = jwt_transport.get(f"/repos/{owner}/{name}/installation")
     if inst.get("status") != 200 or not isinstance(inst.get("body"), Mapping) or not isinstance(inst["body"].get("id"), int):
         raise ConfigError(f"app_installation_not_found:{_status_code(inst)}:{categorize_token_refusal(inst.get('status'), inst.get('body'))}")
     resp = jwt_transport.post(f"/app/installations/{inst['body']['id']}/access_tokens",
-                              {"repositories": [name], "permissions": dict(permissions)})
+                              {"repositories": [name]})
     body = resp.get("body")
     if resp.get("status") != 201:
         reason = f"installation_token_refused:{_status_code(resp)}:{categorize_token_refusal(resp.get('status'), body)}"
-        if resp.get("status") in (403, 422):
-            reason += "".join(f":requested_undocumented_permission:{k}" for k in sorted(UNDOCUMENTED_TOKEN_PERMISSIONS & set(permissions)))
         raise ConfigError(reason)
     if not isinstance(body, Mapping) or not isinstance(body.get("token"), str):
         raise ConfigError(f"installation_token_incomplete_response:{_status_code(resp)}")
@@ -197,7 +225,11 @@ def mint_installation_token(jwt_transport: Any, repository: str, permissions: Ma
     granted = body.get("permissions")
     if not isinstance(granted, Mapping):
         raise ConfigError("installation_token_permissions_unknown")
-    return body["token"], dict(granted)
+    granted = _normalize_granted(granted)
+    bad = granted_permission_problems(granted, expected)
+    if bad:
+        raise ConfigError("installation_token_permissions_not_allowlisted:" + ",".join(bad))
+    return body["token"], granted
 
 
 def verifier_permission_problems(permissions: Any) -> list[str]:
@@ -207,7 +239,7 @@ def verifier_permission_problems(permissions: Any) -> list[str]:
     out = [f"forbidden_write:{k}" for k, v in sorted(permissions.items()) if v in ("write", "admin") and k != "checks"]
     if permissions.get("checks") != "write":
         out.append("missing:checks_write")
-    if permissions.get("variables") != "read":
+    if permissions.get("actions_variables") != "read":
         out.append("missing:variables_read")
     return out
 

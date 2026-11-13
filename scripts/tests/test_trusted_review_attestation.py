@@ -422,11 +422,11 @@ class Adapters(Offline):
         self.assertEqual(str(cm.exception), "author_sessions_mismatch")
 
     def test_no_merge_privilege(self):
-        good = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read", "variables": "read"}
+        good = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read", "actions_variables": "read"}
         self.assertEqual(t.reviewer_permission_problems(good), [])
         for k in ("contents", "actions", "administration", "checks", "statuses", "workflows"):
             self.assertIn(f"forbidden_write:{k}", t.reviewer_permission_problems({**good, k: "write"}))
-        self.assertIn("missing:variables_read", t.reviewer_permission_problems({k: v for k, v in good.items() if k != "variables"}))
+        self.assertIn("missing:variables_read", t.reviewer_permission_problems({k: v for k, v in good.items() if k != "actions_variables"}))
         self.assertEqual(t.reviewer_permission_problems(None), ["permissions_unknown"])
 
     def test_module_has_no_io_or_secret_access(self):
