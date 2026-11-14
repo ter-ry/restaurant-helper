@@ -384,10 +384,17 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
 
     def verifier():
         body = _body(t.get(f"{root}/commits/{head}/check-runs", {"check_name": VERIFIER_CHECK, "per_page": 100}), "verifier")
-        runs = [r for r in body.get("check_runs", []) if r.get("name") == VERIFIER_CHECK]
-        if len(runs) != 1:
-            raise RuntimeError("verifier_check_count_%d" % len(runs))
-        return runs[0]
+        # Zero checks (or multiple conflicting checks) is normal evidence that this PR is
+        # NOT eligible to merge. Only malformed, denied, or truncated API data is infra.
+        if not isinstance(body, Mapping):
+            raise RuntimeError("verifier:bad_shape")
+        entries, total = body.get("check_runs"), body.get("total_count")
+        if (not isinstance(entries, list) or not isinstance(total, int) or isinstance(total, bool)
+                or total != len(entries) or any(not isinstance(r, Mapping) for r in entries)):
+            raise RuntimeError("verifier:bad_shape_or_truncated")
+        if any(r.get("name") != VERIFIER_CHECK for r in entries):
+            raise RuntimeError("verifier:unexpected_check_name")
+        return entries[0] if len(entries) == 1 else None
 
     safe("verifier_check", "verifier", verifier)
     safe("issue", "issue", lambda: _issue_evidence(t, cfg, evidence))
