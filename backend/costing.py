@@ -73,3 +73,26 @@ def reverse_weighted_average_inventory_cost(
         # average). Do not invent a zero cost: keep the current average (#232).
         return average_unit_cost.quantize(AVERAGE_COST_PRECISION)
     return (new_value / new_quantity).quantize(AVERAGE_COST_PRECISION)
+
+
+def transfer_weighted_average_inventory_cost(
+    destination_quantity: Decimal | int | float | str | None,
+    destination_average_unit_cost: Decimal | int | float | str | None,
+    transferred_quantity: Decimal | int | float | str | None,
+    carried_unit_cost: Decimal | int | float | str | None,
+) -> Decimal:
+    """Value-conserving blend for an inter-location transfer (#233).
+
+    Unlike a purchase receipt, a zero cost on either side is a real input: the destination's total value
+    becomes exactly ``destination value + carried value``. With no positive destination stock the carried
+    cost is adopted as is (a POS-negative position has no value to blend with).
+    """
+    quantity = _decimal(destination_quantity)
+    average = _decimal(destination_average_unit_cost)
+    moved = _decimal(transferred_quantity)
+    carried = _decimal(carried_unit_cost)
+    if moved <= 0:
+        return average.quantize(AVERAGE_COST_PRECISION) if average > 0 else Decimal("0")
+    if quantity <= 0:
+        return carried.quantize(AVERAGE_COST_PRECISION)
+    return (((quantity * average) + (moved * carried)) / (quantity + moved)).quantize(AVERAGE_COST_PRECISION)

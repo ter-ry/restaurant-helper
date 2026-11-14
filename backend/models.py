@@ -294,6 +294,31 @@ class InventoryMovement(TimestampMixin, db.Model):
     actor = db.relationship("User")
 
 
+class InventoryTransfer(TimestampMixin, db.Model):
+    """One inter-location stock transfer (#233). Append-only: the paired out/in movements reference ``id``."""
+
+    __tablename__ = "inventory_transfers"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_inventory_transfer_idempotency"),
+        CheckConstraint("quantity > 0", name="ck_inventory_transfer_quantity_positive"),
+        CheckConstraint("from_location_id <> to_location_id", name="ck_inventory_transfer_distinct_locations"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    to_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    from_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    to_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    unit = db.Column(db.String(60), nullable=False, default="each")
+    # Source weighted-average cost per stock unit at the moment of transfer (carried to the destination).
+    unit_cost = db.Column(db.Numeric(14, 6), nullable=False, default=Decimal("0"))
+    idempotency_key = db.Column(db.String(120), nullable=False)
+    reason = db.Column(db.Text, nullable=False, default="")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class InventoryWasteEvent(TimestampMixin, db.Model):
     __tablename__ = "inventory_waste_events"
     __table_args__ = (UniqueConstraint("inventory_movement_id", name="uq_inventory_waste_event_movement"),)
