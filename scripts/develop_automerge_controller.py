@@ -31,11 +31,15 @@ from typing import Any, Mapping
 try:  # package-style and script-style imports both work
     from scripts import develop_merge_policy as policy
     from scripts import trusted_review_attestation as attest
+    from scripts import trusted_review_runtime as app_auth
     from scripts.trusted_review_evidence_collector import Collector
+    from scripts.trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY
 except ImportError:  # pragma: no cover
     import develop_merge_policy as policy  # type: ignore
     import trusted_review_attestation as attest  # type: ignore
+    import trusted_review_runtime as app_auth  # type: ignore
     from trusted_review_evidence_collector import Collector  # type: ignore
+    from trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY  # type: ignore
 
 ENABLE_VARIABLE = "FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED"
 LIVE_WRITES_VARIABLE = "FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES"
@@ -44,6 +48,15 @@ ALLOWED_BASE = policy.ALLOWED_BASE  # "develop"
 VERIFIER_CHECK = attest.CHECK_NAME
 REQUIRED_CONTEXTS = frozenset(policy.REQUIRED_CHECKS) | {VERIFIER_CHECK}
 MERGE_METHOD = "squash"
+# Merge identity (#270): a dedicated GitHub App, separate from the reviewer and verifier Apps. A fresh
+# single-repository installation token is minted in-process on every run; no token is ever stored.
+MERGE_APP_ID_VARIABLE = "FLOWTALLY_MERGE_APP_ID"
+MERGE_APP_KEY_SECRET = "FLOWTALLY_MERGE_APP_PRIVATE_KEY"
+# Exact allowlist of the granted permission map. `contents: write` is required by PUT /pulls/{n}/merge and
+# is repository-wide, NOT branch-specific; see GuardedTransport and docs/DEVELOP_AUTOMERGE_SETUP.md.
+MERGE_TOKEN_PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read", "checks": "read",
+                           "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
+FOREIGN_SECRETS = (*app_auth.REVIEWER_ONLY_SECRETS, *app_auth.VERIFIER_ONLY_SECRETS, "DEVELOP_AUTOMERGE_TOKEN")
 _ISSUE_REF = re.compile(r"(?im)^\s*(?:closes|fixes|resolves)\s+#(\d+)\s*$")
 _DEP_LINE = re.compile(r"(?im)^\s*(?:depends on|blocked by)\s*:\s*(.+)$")
 
@@ -524,6 +537,118 @@ def _merge(t: Any, cfg: Config, p: Plan, rep: RunReport) -> dict[str, Any]:
     return result
 
 
+# ---------------------------------------------------------------- write guard (defense in depth)
+def main_guard_problems(p: Any) -> list[str]:
+    """Reasons `main` is NOT protected well enough to hold a repository-wide contents:write token.
+
+    `p` is ``{"rules": <GET /rules/branches/main>, "rulesets": {id: <GET /rulesets/{id}>}}``. GitHub App
+    permissions are repository-wide, so the only thing stopping this token from pushing to `main` is a
+    ruleset that requires a pull request and has no bypass actors. Missing or ambiguous data fails closed.
+    """
+    if not isinstance(p, Mapping) or not isinstance(p.get("rules"), list) or not isinstance(p.get("rulesets"), Mapping):
+        return ["MAIN_RULESET_UNAVAILABLE"]
+    rules = [r for r in p["rules"] if isinstance(r, Mapping)]
+    if not rules or len(rules) != len(p["rules"]):
+        return ["MAIN_RULESET_UNAVAILABLE"]
+    out: list[str] = []
+    ids = {r.get("ruleset_id") for r in rules}
+    if any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
+        out.append("MAIN_RULESET_UNAVAILABLE")
+    for rid in sorted(i for i in ids if isinstance(i, int) and not isinstance(i, bool)):
+        d = p["rulesets"].get(str(rid))
+        if not isinstance(d, Mapping):
+            out.append("MAIN_RULESET_UNAVAILABLE")
+            continue
+        if d.get("enforcement") != "active":
+            out.append("MAIN_RULESET_NOT_ACTIVE")
+        if d.get("bypass_actors") != []:
+            out.append("MAIN_RULESET_BYPASS_ACTORS_PRESENT")
+    types = {str(r.get("type")) for r in rules}
+    for needed, code in (("pull_request", "MAIN_DIRECT_PUSH_ALLOWED"), ("non_fast_forward", "MAIN_FORCE_PUSH_ALLOWED"),
+                         ("deletion", "MAIN_DELETION_ALLOWED")):
+        if needed not in types:
+            out.append(code)
+    return list(dict.fromkeys(out))
+
+
+class GuardedTransport:
+    """The only write path the controller can reach with the merge token.
+
+    * Reads pass straight through. GraphQL passes only the collector's constant read-only threads query.
+    * The sole permitted write is ``PUT /repos/{repo}/pulls/{n}/merge`` with exactly ``sha`` and a squash
+      ``merge_method``. Any other method, path or body is refused before it leaves the process.
+    * Before the first write of a run, `main` is read and must pass `main_guard_problems`; otherwise the
+      write is refused. This does not make the App token branch-specific (it is not), it refuses to
+      operate while the ruleset that actually protects `main` is missing or bypassable.
+    """
+
+    def __init__(self, inner: Any, repository: str):
+        self._t, self._repo, self._main_ok = inner, repository, False
+        self._merge_path = re.compile(r"^/repos/" + re.escape(repository) + r"/pulls/[1-9][0-9]{0,8}/merge$")
+
+    def get(self, path: str, params: dict) -> Any:
+        return self._t.get(path, params)
+
+    def graphql(self, query: str, variables: dict) -> Any:
+        # Only the collector's constant, read-only review-thread query may pass; a GraphQL mutation
+        # (mergePullRequest, createRef, createCommitOnBranch, ...) must not leave the process.
+        if query != Collector_THREADS_QUERY:
+            raise PermissionError("WRITE_REFUSED:GRAPHQL_QUERY_NOT_ALLOWED")
+        return self._t.graphql(query, variables)
+
+    def _check_main(self) -> None:
+        root = f"/repos/{self._repo}"
+        resp = self._t.get(f"{root}/rules/branches/main", {"per_page": 100})
+        rules = resp.get("body") if isinstance(resp, Mapping) and resp.get("status") == 200 else None
+        if not isinstance(rules, list) or len(rules) >= 100:
+            raise PermissionError("WRITE_REFUSED:MAIN_RULESET_UNAVAILABLE")
+        details: dict[str, Any] = {}
+        for r in rules:
+            rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
+            if isinstance(rid, int) and not isinstance(rid, bool) and str(rid) not in details:
+                d = self._t.get(f"{root}/rulesets/{rid}", {})
+                details[str(rid)] = d.get("body") if isinstance(d, Mapping) and d.get("status") == 200 else None
+        problems = main_guard_problems({"rules": rules, "rulesets": details})
+        if problems:
+            raise PermissionError("WRITE_REFUSED:" + ",".join(problems))
+        self._main_ok = True
+
+    def put(self, path: str, body: Any) -> Any:
+        if not (isinstance(path, str) and self._merge_path.fullmatch(path)):
+            raise PermissionError("WRITE_REFUSED:PATH_NOT_ALLOWED")
+        if not (isinstance(body, Mapping) and set(body) == {"sha", "merge_method"} and body["merge_method"] == MERGE_METHOD
+                and isinstance(body["sha"], str) and re.fullmatch(r"[0-9a-f]{40}", body["sha"])):
+            raise PermissionError("WRITE_REFUSED:BODY_NOT_ALLOWED")
+        if not self._main_ok:
+            self._check_main()
+        return self._t.put(path, body)
+
+
+# ---------------------------------------------------------------- merge identity (fresh App token per run)
+def mint_merge_token(env: Mapping[str, str], repository: str, verifier_app_id: int, now: datetime,
+                     transport_factory: Any = None) -> str:
+    """Mint a fresh single-repository installation token for the merge App. Raises ConfigError (fixed text)."""
+    present = [n for n in FOREIGN_SECRETS if env.get(n)]
+    if present:  # a merge job must never hold reviewer/verifier keys or a stored merge token
+        raise app_auth.ConfigError("foreign_credentials_present:" + ",".join(present))
+    raw = env.get(MERGE_APP_ID_VARIABLE, "")
+    if not raw.isdigit() or int(raw) <= 0:
+        raise app_auth.ConfigError("merge_app_id_missing_or_invalid")
+    app_id = int(raw)
+    if app_id == verifier_app_id:
+        raise app_auth.ConfigError("merge_app_must_differ_from_verifier_app")
+    key = env.get(MERGE_APP_KEY_SECRET, "")
+    if not key.strip():
+        raise app_auth.ConfigError("merge_app_private_key_missing")
+    try:
+        jwt = app_auth.mint_app_jwt(app_id, key, now)
+    except Exception as exc:  # noqa: BLE001 - never echo key material
+        raise app_auth.ConfigError("merge_app_private_key_unusable") from exc
+    factory = transport_factory or app_auth.HttpTransport
+    token, _granted = app_auth.mint_installation_token(factory(jwt), repository, MERGE_TOKEN_PERMISSIONS)
+    return token
+
+
 # ---------------------------------------------------------------- CLI transport (stdlib only)
 class UrllibTransport:
     def __init__(self, token: str, api: str = "https://api.github.com"):
@@ -571,7 +696,11 @@ def main(argv: list[str] | None = None) -> int:
             verifier_app_id=_int_env("VERIFIER_APP_ID"), enabled=True,
             live_writes=env.get(LIVE_WRITES_VARIABLE) == "true",
             trusted_coauthor_emails=tuple(e for e in env.get("TRUSTED_COAUTHOR_EMAILS", "").split(",") if e))
-        rep = run_once(UrllibTransport(env["GITHUB_TOKEN"]), cfg)
+        token = mint_merge_token(env, cfg.repository, cfg.verifier_app_id, datetime.now(timezone.utc))
+        rep = run_once(GuardedTransport(UrllibTransport(token), cfg.repository), cfg)
+    except app_auth.ConfigError as exc:  # fixed-vocabulary reason only: no token, key or provider text
+        print(json.dumps({"status": "error", "error": "ConfigError", "reason": str(exc)}))
+        return 1
     except Exception as exc:  # noqa: BLE001
         print(json.dumps({"status": "error", "error": type(exc).__name__}))
         return 1
