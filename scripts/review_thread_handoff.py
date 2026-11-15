@@ -73,14 +73,20 @@ def _verdicts(comments, head, author):
 
 
 def _latest_check(runs):
-    """Latest run of a check at head; None if ordering is ambiguous (fail closed)."""
+    """Latest run of a check at head; None if ordering is ambiguous (fail closed).
+
+    With several runs, every run must carry both a started_at and an integer id;
+    mixed or missing metadata is incomparable and therefore not green.
+    """
     if len(runs) == 1:
         return runs[0]
-    keyed = [(r.get("started_at") or "", r.get("id") if isinstance(r.get("id"), int) else -1, r) for r in runs]
-    if any(not k[0] and k[1] < 0 for k in keyed):
-        return None
+    keyed = []
+    for r in runs:
+        if not r.get("started_at") or not isinstance(r.get("id"), int) or isinstance(r.get("id"), bool):
+            return None
+        keyed.append((r["started_at"], r["id"], r))
     keyed.sort(key=lambda k: (k[0], k[1]))
-    if len(keyed) > 1 and keyed[-1][:2] == keyed[-2][:2]:
+    if keyed[-1][:2] == keyed[-2][:2]:
         return None
     return keyed[-1][2]
 

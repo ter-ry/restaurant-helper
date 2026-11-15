@@ -117,6 +117,14 @@ class CodexFindingTests(unittest.TestCase):
         runs.append({"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"})
         self.assertEqual(h.classify(snap(checks=runs))["state"], h.CI_NOT_GREEN)
 
+    def test_mixed_ordering_metadata_fails_closed_both_orders(self):
+        ok = {"name": "backend", "head_sha": HEAD, "status": "completed", "conclusion": "success",
+              "id": 1, "started_at": "2026-11-15T10:00:00Z"}
+        rerun = {"name": "backend", "head_sha": HEAD, "status": "queued", "id": 9, "started_at": None}
+        fe = {"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"}
+        for runs in ([ok, rerun, fe], [rerun, ok, fe]):
+            self.assertEqual(h.classify(snap(checks=runs))["state"], h.CI_NOT_GREEN)
+
     def test_request_changes_superseded_by_later_approval(self):
         c = [{"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}", "created_at": "2026-11-15T10:00:00Z"},
              {"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}", "created_at": "2026-11-15T11:00:00Z"}]
