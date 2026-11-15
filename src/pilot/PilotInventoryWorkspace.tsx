@@ -40,7 +40,7 @@ import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
 import { InventoryTransferAction, type PendingTransfer } from "./InventoryTransferAction";
-import { VerifiedFreeEvidence } from "./VerifiedFreeEvidence";
+import { VerifiedFreeEvidence, type PendingEvidenceRequest } from "./VerifiedFreeEvidence";
 
 interface InventoryDraft {
   id: number | null;
@@ -479,6 +479,7 @@ export function PilotInventoryPage() {
       setAdjustmentNote("");
       setAdjustmentModalOpen(false);
       await load();
+      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record adjustment.");
@@ -490,8 +491,15 @@ export function PilotInventoryPage() {
   // The workspace may be closed or switched to another item while a reversal is in flight; late responses for
   // an item that is no longer selected must not be installed into the new item's workspace.
   const pendingTransferRef = useRef<Record<number, PendingTransfer>>({});
+  const pendingEvidenceRef = useRef<Record<number, PendingEvidenceRequest>>({});
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+
+  // Re-reads only the selected item's detail (history, cost, on-hand) after a change that already reloaded the list.
+  const refreshItemDetailOnly = async (itemId: number) => {
+    const detail = await fetchPilotInventoryItem(itemId);
+    if (selectedIdRef.current === itemId) setItemDetail(detail);
+  };
 
   const refreshItemAfterReversal = async (itemId: number) => {
     // Reconcile with authoritative server state: item detail (history + linkage) and the inventory list (on-hand).
@@ -556,6 +564,7 @@ export function PilotInventoryPage() {
       setWasteModalOpen(false);
       setMessage(`Waste recorded: ${formatInventoryQuantity(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
       await load();
+      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record waste.");
@@ -1029,7 +1038,7 @@ export function PilotInventoryPage() {
                   <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
-              {itemDetail?.item ? <VerifiedFreeEvidence item={itemDetail.item} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
+              {itemDetail?.item ? <VerifiedFreeEvidence pendingRef={pendingEvidenceRef} item={itemDetail.item} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 

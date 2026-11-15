@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import {
@@ -18,7 +19,20 @@ const TYPE_LABELS: Record<string, string> = {
   other_documented: "Other (documented below)",
 };
 
+/** A record/correct attempt whose outcome is unknown. Owned by the parent so it survives tab switches (unmounts). */
+export type PendingEvidenceRequest = {
+  itemId: number;
+  key: string;
+  kind: "record" | "correct";
+  rowId?: number;
+  evidenceType: string;
+  quantity: string;
+  note: string;
+  reason: string;
+};
+
 type Props = {
+  pendingRef: MutableRefObject<Record<number, PendingEvidenceRequest>>;
   item: PilotInventoryItem;
   /** Called after any successful change so the parent can re-read the item and inventory list. */
   onChanged?: () => Promise<void> | void;
@@ -43,19 +57,22 @@ function describeError(err: unknown, fallback: string) {
  * "Verified free stock" (#279). Zero-cost stock is treated as unknown-cost and cannot be transferred at $0 until
  * someone records written evidence that it was genuinely free. Evidence is append-only: revoke or correct, never delete.
  */
-export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Props) {
+export function VerifiedFreeEvidence({ pendingRef, item, onChanged, disabled = false }: Props) {
+  const restored = pendingRef.current[item.id] ?? null;
   const [rows, setRows] = useState<PilotCostVerification[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>({ kind: "closed" });
-  const [evidenceType, setEvidenceType] = useState<string>(COST_EVIDENCE_TYPES[0]);
-  const [quantity, setQuantity] = useState("");
-  const [note, setNote] = useState("");
-  const [reason, setReason] = useState("");
+  const [mode, setMode] = useState<Mode>(
+    restored ? (restored.kind === "record" ? { kind: "record" } : { kind: "correct", row: { id: restored.rowId ?? 0 } as PilotCostVerification }) : { kind: "closed" },
+  );
+  const [evidenceType, setEvidenceType] = useState<string>(restored?.evidenceType ?? COST_EVIDENCE_TYPES[0]);
+  const [quantity, setQuantity] = useState(restored?.quantity ?? "");
+  const [note, setNote] = useState(restored?.note ?? "");
+  const [reason, setReason] = useState(restored?.reason ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(restored ? "A previous attempt may not have finished. Check the list, then retry the same request (safe: it cannot apply twice) or discard it." : null);
+  // While an attempt's outcome is unknown the request is immutable: only the same request (same key) may be retried.
+  const [unresolved, setUnresolved] = useState(restored !== null);
   const [notice, setNotice] = useState<string | null>(null);
-  // One key per attempt; kept across retries of the same request so a retry can never record the evidence twice.
-  const keyRef = useRef<string | null>(null);
   const inFlight = useRef(false);
   const itemRef = useRef(item.id);
   itemRef.current = item.id;
@@ -73,11 +90,17 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
     }
   }, [item.id]);
 
+  const firstItemRun = useRef(true);
   useEffect(() => {
     setRows(null);
-    setMode({ kind: "closed" });
-    setNotice(null);
-    setError(null);
+    // The first run keeps a restored unresolved attempt; later runs mean another item was selected.
+    if (!firstItemRun.current) {
+      setMode({ kind: "closed" });
+      setNotice(null);
+      setError(null);
+      setUnresolved(pendingRef.current[item.id] !== undefined);
+    }
+    firstItemRun.current = false;
     void reload();
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -103,7 +126,6 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
   if (!hasCost && onHand <= 0 && (rows ?? []).length === 0) return null;
 
   const open = (next: Mode) => {
-    keyRef.current = null;
     setError(null);
     setNotice(null);
     setReason("");
@@ -121,30 +143,35 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
 
   const submit = async () => {
     if (inFlight.current || mode.kind === "closed") return;
-    const parsed = Number(quantity);
+    // A retry of an unresolved attempt replays exactly what was sent; availability is then the server's call.
+    const pending = pendingRef.current[item.id];
     if (mode.kind === "revoke") {
       if (!reason.trim()) return setError("Say why this evidence is being revoked.");
-    } else {
+    } else if (!pending) {
+      const parsed = Number(quantity);
       if (!Number.isFinite(parsed) || parsed <= 0) return setError("Enter a quantity greater than zero.");
       if (!note.trim()) return setError("Explain how you know this stock was free.");
       if (mode.kind === "correct" && !reason.trim()) return setError("Say why the evidence is being corrected.");
-      // An unresolved retry (key already issued) must reach the server so it can replay; availability is then the server's call.
-      if (mode.kind === "record" && keyRef.current === null && parsed > unverified) return setError(`Only ${unverified} ${item.stockUnit} is not yet verified.`);
+      if (mode.kind === "record" && parsed > unverified) return setError(`Only ${unverified} ${item.stockUnit} is not yet verified.`);
     }
     inFlight.current = true;
     setBusy(true);
     setError(null);
-    keyRef.current ??= newKey();
+    const isRetry = pending !== undefined && mode.kind !== "revoke";
+    const attempt: PendingEvidenceRequest | null =
+      mode.kind === "revoke" ? null : pending ?? { itemId: item.id, key: newKey(), kind: mode.kind, rowId: mode.kind === "correct" ? mode.row.id : undefined, evidenceType, quantity, note, reason };
+    if (attempt) pendingRef.current[item.id] = attempt;
     try {
-      if (mode.kind === "record") {
-        await createPilotCostVerification(item.id, { evidenceType, evidenceNote: note.trim(), quantity: parsed, idempotencyKey: keyRef.current });
-      } else if (mode.kind === "correct") {
-        await correctPilotCostVerification(mode.row.id, { evidenceType, evidenceNote: note.trim(), quantity: parsed, reason: reason.trim(), idempotencyKey: keyRef.current });
-      } else {
+      if (attempt?.kind === "record") {
+        await createPilotCostVerification(item.id, { evidenceType: attempt.evidenceType, evidenceNote: attempt.note.trim(), quantity: Number(attempt.quantity), idempotencyKey: attempt.key });
+      } else if (attempt?.kind === "correct") {
+        await correctPilotCostVerification(attempt.rowId ?? 0, { evidenceType: attempt.evidenceType, evidenceNote: attempt.note.trim(), quantity: Number(attempt.quantity), reason: attempt.reason.trim(), idempotencyKey: attempt.key });
+      } else if (mode.kind === "revoke") {
         await revokePilotCostVerification(mode.row.id, { reason: reason.trim() });
       }
       const done = mode.kind === "record" ? "Free stock recorded" : mode.kind === "correct" ? "Evidence corrected" : "Evidence revoked";
-      keyRef.current = null;
+      delete pendingRef.current[item.id];
+      setUnresolved(false);
       setMode({ kind: "closed" });
       setNotice(`${done}. The audit trail keeps every earlier entry.`);
       try {
@@ -153,9 +180,17 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
         setNotice(`${done}. Reload the page to see the latest stock.`);
       }
     } catch (err) {
-      // A 4xx means the server refused it, so the next try is a new decision; anything else keeps the key to replay safely.
-      if (err instanceof PilotApiError && err.status >= 400 && err.status < 500) keyRef.current = null;
-      setError(describeError(err, "Could not save. Check the list below, then try again."));
+      const message = describeError(err, "Could not save. Check the list below, then try again.");
+      if (attempt && !(!isRetry && err instanceof PilotApiError && err.status >= 400 && err.status < 500)) {
+        // Outcome unknown (or a retry failed): keep the key and lock the request so only the same request can be retried.
+        setUnresolved(true);
+        setError(`${message} Check the list below before retrying or discarding.`);
+      } else {
+        // The server refused a first attempt, so nothing was applied and the next attempt is a new decision.
+        if (attempt) delete pendingRef.current[item.id];
+        setUnresolved(false);
+        setError(message);
+      }
       void reload();
     } finally {
       inFlight.current = false;
@@ -197,8 +232,8 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
               </p>
               {!row.revokedAt ? (
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" disabled={busy || disabled} onClick={() => open({ kind: "correct", row })}>Correct</Button>
-                  {row.consumedQuantity === 0 ? <Button type="button" variant="secondary" disabled={busy || disabled} onClick={() => open({ kind: "revoke", row })}>Revoke</Button> : null}
+                  <Button type="button" variant="secondary" disabled={busy || disabled || unresolved} onClick={() => open({ kind: "correct", row })}>Correct</Button>
+                  {row.consumedQuantity === 0 ? <Button type="button" variant="secondary" disabled={busy || disabled || unresolved} onClick={() => open({ kind: "revoke", row })}>Revoke</Button> : null}
                 </div>
               ) : null}
             </li>
@@ -214,30 +249,34 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
             <>
               <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`free-type-${item.id}`}>
                 How was it free?
-                <select id={`free-type-${item.id}`} className="input" value={evidenceType} disabled={busy} onChange={(event) => setEvidenceType(event.target.value)}>
+                <select id={`free-type-${item.id}`} className="input" value={evidenceType} disabled={busy || unresolved} onChange={(event) => setEvidenceType(event.target.value)}>
                   {COST_EVIDENCE_TYPES.map((type) => <option key={type} value={type}>{TYPE_LABELS[type]}</option>)}
                 </select>
               </label>
               <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`free-qty-${item.id}`}>
                 Quantity ({item.stockUnit})
-                <input id={`free-qty-${item.id}`} className="input" inputMode="decimal" value={quantity} disabled={busy} onChange={(event) => setQuantity(event.target.value)} />
+                <input id={`free-qty-${item.id}`} className="input" inputMode="decimal" value={quantity} disabled={busy || unresolved} onChange={(event) => setQuantity(event.target.value)} />
               </label>
               <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`free-note-${item.id}`}>
                 Evidence note (required)
-                <textarea id={`free-note-${item.id}`} className="input" rows={2} value={note} disabled={busy} onChange={(event) => setNote(event.target.value)} placeholder="e.g. Supplier added 2 cases free, noted on invoice #1042" />
+                <textarea id={`free-note-${item.id}`} className="input" rows={2} value={note} disabled={busy || unresolved} onChange={(event) => setNote(event.target.value)} placeholder="e.g. Supplier added 2 cases free, noted on invoice #1042" />
               </label>
             </>
           ) : null}
           {mode.kind !== "record" ? (
             <label className="grid gap-1 text-sm font-semibold text-ink" htmlFor={`free-reason-${item.id}`}>
               Reason (required)
-              <input id={`free-reason-${item.id}`} className="input" value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} />
+              <input id={`free-reason-${item.id}`} className="input" value={reason} disabled={busy || unresolved} onChange={(event) => setReason(event.target.value)} />
             </label>
           ) : null}
           {error ? <p role="alert" className="text-sm font-semibold text-red-700">{error}</p> : null}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={busy || disabled} onClick={() => void submit()}>{busy ? "Saving…" : mode.kind === "record" ? "Confirm free stock" : mode.kind === "correct" ? "Save correction" : "Confirm revoke"}</Button>
-            <Button type="button" variant="secondary" disabled={busy} onClick={() => { keyRef.current = null; setError(null); setMode({ kind: "closed" }); }}>Cancel</Button>
+            <Button type="button" disabled={busy || disabled} onClick={() => void submit()}>{busy ? "Saving…" : unresolved ? "Retry same request" : mode.kind === "record" ? "Confirm free stock" : mode.kind === "correct" ? "Save correction" : "Confirm revoke"}</Button>
+            {unresolved ? (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { delete pendingRef.current[item.id]; setUnresolved(false); setError(null); setMode({ kind: "closed" }); }}>Discard attempt</Button>
+            ) : (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { setError(null); setMode({ kind: "closed" }); }}>Cancel</Button>
+            )}
           </div>
         </div>
       )}
