@@ -319,6 +319,50 @@ class InventoryTransfer(TimestampMixin, db.Model):
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
+class InventoryCostVerification(TimestampMixin, db.Model):
+    """Explicit evidence that a quantity of an item is genuinely free ($0), not merely missing a cost (#279 Phase A).
+
+    Persistence only: no endpoint writes this yet. ``average_unit_cost == 0`` alone never means "free";
+    see ``backend/verified_free_cost.py`` and ``docs/verified-free-inventory-design.md``.
+    """
+
+    __tablename__ = "inventory_cost_verifications"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_inventory_cost_verification_idempotency"),
+        CheckConstraint("quantity > 0", name="ck_inventory_cost_verification_quantity_positive"),
+        CheckConstraint("consumed_quantity >= 0 AND consumed_quantity <= quantity", name="ck_inventory_cost_verification_consumed_range"),
+        CheckConstraint(
+            "evidence_type IN ('supplier_free_goods', 'donation', 'promotional_sample', 'other_documented')",
+            name="ck_inventory_cost_verification_evidence_type",
+        ),
+        CheckConstraint("length(trim(evidence_note)) > 0", name="ck_inventory_cost_verification_evidence_note"),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoked_reason = '') OR (revoked_at IS NOT NULL AND length(trim(revoked_reason)) > 0)",
+            name="ck_inventory_cost_verification_revocation",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    consumed_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    unit = db.Column(db.String(60), nullable=False, default="each")
+    evidence_type = db.Column(db.String(40), nullable=False)
+    evidence_note = db.Column(db.Text, nullable=False)
+    source_type = db.Column(db.String(60), nullable=False, default="")
+    source_record_id = db.Column(db.String(120), nullable=False, default="")
+    source_line_id = db.Column(db.String(120), nullable=False, default="")
+    idempotency_key = db.Column(db.String(120), nullable=False)
+    correction_of_id = db.Column(db.Integer, db.ForeignKey("inventory_cost_verifications.id", ondelete="RESTRICT"), nullable=True, index=True)
+    verified_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    verified_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    revoked_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revoked_reason = db.Column(db.Text, nullable=False, default="")
+
+
 class InventoryWasteEvent(TimestampMixin, db.Model):
     __tablename__ = "inventory_waste_events"
     __table_args__ = (UniqueConstraint("inventory_movement_id", name="uq_inventory_waste_event_movement"),)
