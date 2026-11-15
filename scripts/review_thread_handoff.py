@@ -229,6 +229,8 @@ def fetch_rest_context(owner, repo, number, token, max_pages=10):
     for page in range(1, max_pages + 1):
         chunk = _rest(f"{base}/pulls/{number}/reviews?per_page=100&page={page}", token)
         for rv in chunk:
+            if rv.get("state") in ("DISMISSED", "PENDING"):
+                continue  # a dismissed or unsubmitted review carries no verdict, body included
             decision = {"CHANGES_REQUESTED": "REQUEST CHANGES", "APPROVED": "APPROVE"}.get(rv.get("state"))
             at_head = str(rv.get("commit_id", "")).lower() == head
             body = (f"{decision} @ {head}\n" if decision and at_head else "") + (rv.get("body") or "")

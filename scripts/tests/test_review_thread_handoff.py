@@ -230,6 +230,19 @@ class OnlineDedupTests(unittest.TestCase):
         s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
         self.assertEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
 
+    def test_dismissed_review_body_cannot_authorize_readiness(self):
+        from unittest import mock
+        rv = [{"user": {"login": "r2"}, "state": "DISMISSED", "commit_id": HEAD,
+               "body": f"APPROVE @ {HEAD}", "submitted_at": "2026-11-15T11:00:00Z"}]
+        fake = self._fake_rest(rv)
+        def no_comment_approval(url, token):
+            return [] if "/issues/" in url else fake(url, token)
+        with mock.patch.object(h, "_rest", no_comment_approval):
+            pr, comments, checks = h.fetch_rest_context("o", "r", 1, "t")
+        self.assertEqual(comments, [])
+        s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
     def test_thread_comment_overflow_fails_closed(self):
         import io, json
         from unittest import mock
