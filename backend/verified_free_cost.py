@@ -132,8 +132,9 @@ def validate_new_verification(
         raise VerificationError("exceeds_unverified_stock", "Cannot verify more stock than is on hand and not already verified.")
 
 
-def verification_fingerprint(*, item_id: int, quantity, evidence_type: str, source_type: str = "", source_record_id: str = "", source_line_id: str = "") -> tuple:
-    return (item_id, _dec(quantity).normalize(), evidence_type, source_type, source_record_id, source_line_id)
+def verification_fingerprint(*, item_id: int, quantity, evidence_type: str, evidence_note: str = "", source_type: str = "", source_record_id: str = "", source_line_id: str = "") -> tuple:
+    """Everything that defines the request, including the justification text (a changed note is a changed request)."""
+    return (item_id, _dec(quantity).normalize(), evidence_type, (evidence_note or "").strip(), source_type, source_record_id, source_line_id)
 
 
 def idempotent_outcome(existing_fingerprint: tuple | None, new_fingerprint: tuple) -> str:

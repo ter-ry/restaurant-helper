@@ -87,6 +87,9 @@ def test_idempotency_outcomes():
     assert idempotent_outcome(None, fp) == "create"
     assert idempotent_outcome(fp, verification_fingerprint(item_id=1, quantity="4", evidence_type="donation", source_record_id="r1")) == "replay"
     assert idempotent_outcome(fp, verification_fingerprint(item_id=1, quantity="5", evidence_type="donation", source_record_id="r1")) == "conflict"
+    noted = verification_fingerprint(item_id=1, quantity="4", evidence_type="donation", evidence_note="slip #12", source_record_id="r1")
+    assert idempotent_outcome(noted, verification_fingerprint(item_id=1, quantity="4", evidence_type="donation", evidence_note=" slip #12 ", source_record_id="r1")) == "replay"
+    assert idempotent_outcome(noted, verification_fingerprint(item_id=1, quantity="4", evidence_type="donation", evidence_note="different justification", source_record_id="r1")) == "conflict"
 
 
 def test_revocation_and_correction_rules():

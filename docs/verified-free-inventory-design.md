@@ -11,7 +11,7 @@ Status: **foundation only** (issue #302). No endpoint, receipt, transfer or UI u
 - **Batch granularity** (`quantity`, `consumed_quantity`) so mixed stock (some verified free, some unknown, some priced) is representable without a per-item boolean.
 - **Revocation / correction:** rows are never deleted. Revoke by setting `revoked_at` + non-empty `revoked_reason` (DB check). Correct by revoking and inserting a new row with `correction_of_id`; a correction cannot go below `consumed_quantity`.
 - **Tenant isolation:** forced RLS with `flowtally_has_org_access(organization_id)` (USING and WITH CHECK), same as `inventory_transfers`. A PostgreSQL trigger additionally rejects rows whose item is not in the same organization/location (or whose corrected row is in another organization/item). The trigger runs as the invoker, so a foreign tenant's item is also invisible to it.
-- **Pure logic** (`backend/verified_free_cost.py`, no DB): `classify_cost_basis`, `zero_cost_transfer_decision`, `validate_new_verification`, `verification_fingerprint`/`idempotent_outcome`, `validate_revocation`, `validate_correction`.
+- **Pure logic** (`backend/verified_free_cost.py`, no DB): `classify_cost_basis`, `zero_cost_transfer_decision`, `validate_new_verification`, `verification_fingerprint` (includes the evidence note)/`idempotent_outcome`, `validate_revocation`, `validate_correction`.
 
 ## Classification
 | on hand | average cost | active verified coverage | status |
