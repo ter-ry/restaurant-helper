@@ -91,6 +91,67 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(s, before)
 
 
+class CodexFindingTests(unittest.TestCase):
+    def _runs(self, order):
+        ok = {"name": "backend", "head_sha": HEAD, "status": "completed", "conclusion": "success",
+              "id": 1, "started_at": "2026-11-15T10:00:00Z"}
+        bad = dict(ok, conclusion="failure", id=2, started_at="2026-11-15T11:00:00Z")
+        runs = [ok, bad] if order else [bad, ok]
+        return runs + [{"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"}]
+
+    def test_older_success_newer_failure_both_orders_not_green(self):
+        for order in (True, False):
+            self.assertEqual(h.classify(snap(checks=self._runs(order)))["state"], h.CI_NOT_GREEN)
+
+    def test_newer_success_after_older_failure_is_green_both_orders(self):
+        for order in (True, False):
+            runs = self._runs(order)
+            runs[0 if order else 1]["conclusion"] = "failure"  # the older run
+            for r in runs:
+                if r["name"] == "backend":
+                    r["conclusion"] = "failure" if r["id"] == 1 else "success"
+            self.assertEqual(h.classify(snap(checks=runs))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_duplicate_runs_without_ordering_fail_closed(self):
+        runs = [{"name": "backend", "head_sha": HEAD, "status": "completed", "conclusion": c} for c in ("success", "failure")]
+        runs.append({"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"})
+        self.assertEqual(h.classify(snap(checks=runs))["state"], h.CI_NOT_GREEN)
+
+    def test_request_changes_superseded_by_later_approval(self):
+        c = [{"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}", "created_at": "2026-11-15T10:00:00Z"},
+             {"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}", "created_at": "2026-11-15T11:00:00Z"}]
+        self.assertEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+        self.assertEqual(h.classify(snap(comments=c[::-1]))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_later_request_changes_overrides_approval(self):
+        c = [{"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}", "created_at": "2026-11-15T10:00:00Z"},
+             {"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}", "created_at": "2026-11-15T11:00:00Z"}]
+        self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_other_reviewer_request_changes_still_blocks(self):
+        c = [{"user": {"login": "r1"}, "body": f"APPROVE @ {HEAD}"},
+             {"user": {"login": "r2"}, "body": f"REQUEST CHANGES @ {HEAD}"}]
+        self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_multiple_verdicts_without_timestamps_fail_closed(self):
+        c = [{"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}"},
+             {"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}"}]
+        self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_missing_author_identity_fails_closed(self):
+        s = snap()
+        s["pr"]["user"] = {}
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+        s["pr"].pop("user")
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_missing_commenter_identity_fails_closed(self):
+        for user in (None, {}, {"login": ""}):
+            c = [{"user": user, "body": f"APPROVE @ {HEAD}"},
+                 {"user": {"login": "reviewer"}, "body": f"APPROVE @ {HEAD}"}]
+            self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+
 class HandoffMessageTests(unittest.TestCase):
     def test_message_once_per_state_and_head(self):
         r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}")))

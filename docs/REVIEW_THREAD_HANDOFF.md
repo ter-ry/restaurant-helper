@@ -24,7 +24,7 @@ Problem: a PR can have green exact-head CI and an independent `APPROVE @ <sha>` 
 
 ## Running it
 
-Offline (preferred in cloud sessions where GraphQL is blocked): build a snapshot JSON (`pr`, `threads` with `isResolved`, `threads_verified`, `checks`, `comments`) from the GitHub MCP tools (`get_review_comments` returns thread resolved flags) and run `python scripts/review_thread_handoff.py --snapshot snap.json`.
+Offline (preferred in cloud sessions where GraphQL is blocked): build a snapshot JSON (`pr`, `threads` with `isResolved`, `threads_verified`, `checks` with `id`/`started_at`, `comments` with `user.login` and `created_at`) from the GitHub MCP tools (`get_review_comments` returns thread resolved flags) and run `python scripts/review_thread_handoff.py --snapshot snap.json`.
 
 Online: `GITHUB_TOKEN=<read-only token> python scripts/review_thread_handoff.py --pr N` reads thread state only (GraphQL, read scope). The online mode does not fetch checks or comments, so it can never report `OWNER_MERGE_PENDING`; use a snapshot for that. Any API error, missing token or more than 100 threads gives `BLOCKED_UNVERIFIED` (exit 2).
 
@@ -35,3 +35,9 @@ If thread state cannot be read: open the PR "Conversation" tab, confirm there is
 ## Handoff comment format
 
 The script's `message` field: PR, head SHA, state, thread ids, reasons, and the instruction to verify and resolve or request changes. It is not an approval and gives no merge authorization.
+
+## Fail-closed identity and ordering rules
+
+- Only the latest verdict per reviewer at the head counts (by `created_at`); several verdicts from one reviewer without timestamps are unverified.
+- A missing PR author login or a verdict comment with no commenter login blocks approval.
+- Several runs of one required check at the head: the latest by `started_at`/`id` counts; ambiguous ordering is treated as not green.

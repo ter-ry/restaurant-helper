@@ -38,15 +38,51 @@ def _is_sha(value) -> bool:
 
 
 def _verdicts(comments, head, author):
-    """Return (verdicts at head, verdicts at other SHAs) from non-author comments."""
-    at_head, other = [], []
-    for c in comments:
-        login = (c.get("user") or {}).get("login", "").lower()
+    """Latest verdict per reviewer at head. Returns (verdicts, other_sha_seen, ok).
+
+    ok is False when independence or ordering cannot be established (missing
+    author/commenter login, or one reviewer with several verdicts and no
+    created_at); the caller must then not accept any approval.
+    """
+    if not author:
+        return [], False, False
+    ok, other = True, False
+    per_reviewer: dict[str, list] = {}
+    for i, c in enumerate(comments):
+        found = VERDICT.findall(c.get("body") or "")
+        if not found:
+            continue
+        login = str((c.get("user") or {}).get("login", "")).lower()
+        if not login:
+            ok = False
+            continue
         if login == author:
             continue  # an agent never approves its own PR
-        for kind, sha in VERDICT.findall(c.get("body") or ""):
-            (at_head if sha.lower() == head else other).append(kind.upper())
-    return at_head, other
+        for kind, sha in found:
+            if sha.lower() != head:
+                other = True
+                continue
+            per_reviewer.setdefault(login, []).append((c.get("created_at"), i, kind.upper()))
+    latest = []
+    for entries in per_reviewer.values():
+        if len(entries) > 1 and any(not e[0] for e in entries):
+            ok = False
+            continue
+        latest.append(max(entries, key=lambda e: (e[0] or "", e[1]))[2])
+    return latest, other, ok
+
+
+def _latest_check(runs):
+    """Latest run of a check at head; None if ordering is ambiguous (fail closed)."""
+    if len(runs) == 1:
+        return runs[0]
+    keyed = [(r.get("started_at") or "", r.get("id") if isinstance(r.get("id"), int) else -1, r) for r in runs]
+    if any(not k[0] and k[1] < 0 for k in keyed):
+        return None
+    keyed.sort(key=lambda k: (k[0], k[1]))
+    if len(keyed) > 1 and keyed[-1][:2] == keyed[-2][:2]:
+        return None
+    return keyed[-1][2]
 
 
 def classify(snapshot: dict) -> dict:
@@ -67,13 +103,16 @@ def classify(snapshot: dict) -> dict:
         if not isinstance(t.get("isResolved"), bool):
             return _result(pr, BLOCKED_UNVERIFIED, ["THREAD_STATE_AMBIGUOUS:" + str(t.get("id"))], [])
 
-    checks = {c["name"]: c for c in snapshot.get("checks", [])
-              if c.get("head_sha") == head and c.get("name") in REQUIRED_CHECKS}
-    ci_green = all(n in checks and checks[n].get("status") == "completed"
+    by_name: dict[str, list] = {}
+    for c in snapshot.get("checks", []):
+        if c.get("head_sha") == head and c.get("name") in REQUIRED_CHECKS:
+            by_name.setdefault(c["name"], []).append(c)
+    checks = {n: _latest_check(r) for n, r in by_name.items()}
+    ci_green = all(checks.get(n) is not None and checks[n].get("status") == "completed"
                    and checks[n].get("conclusion") == "success" for n in REQUIRED_CHECKS)
-    approvals, other = _verdicts(snapshot.get("comments", []), head, author)
+    approvals, other, identities_ok = _verdicts(snapshot.get("comments", []), head, author)
     rejected = any(v in ("REQUEST CHANGES", "BLOCKED") for v in approvals)
-    approved = "APPROVE" in approvals and not rejected
+    approved = identities_ok and "APPROVE" in approvals and not rejected
 
     pending, open_ids = [], []
     for t in unresolved:
@@ -96,6 +135,8 @@ def classify(snapshot: dict) -> dict:
     elif not approved:
         state = APPROVAL_STALE if other else THREADS_RESOLVED_AWAITING_REVIEW
         reasons.append("NO_INDEPENDENT_APPROVE_AT_HEAD")
+        if not identities_ok:
+            reasons.append("IDENTITY_OR_ORDER_UNVERIFIED")
     else:
         state = OWNER_MERGE_PENDING
     return _result(pr, state, reasons, pending + open_ids)
