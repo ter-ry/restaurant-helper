@@ -160,6 +160,55 @@ class CodexFindingTests(unittest.TestCase):
             self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
 
 
+class VerdictParsingTests(unittest.TestCase):
+    def _state(self, body):
+        return h.classify(snap(comments=[{"user": {"login": "reviewer"}, "body": body}]))["state"]
+
+    def test_negative_mention_is_not_a_verdict(self):
+        self.assertNotEqual(self._state(f"I cannot APPROVE @ {HEAD}: failure case untested."), h.OWNER_MERGE_PENDING)
+
+    def test_quoted_prior_approval_is_not_a_verdict(self):
+        self.assertNotEqual(self._state(f"> APPROVE @ {HEAD}\nWithdrawn, see below."), h.OWNER_MERGE_PENDING)
+
+    def test_midline_reference_is_not_a_verdict(self):
+        self.assertNotEqual(self._state(f"Replaces my earlier APPROVE @ {HEAD}"), h.OWNER_MERGE_PENDING)
+
+    def test_real_reviewer_formats_still_count(self):
+        for body in (f"APPROVE @ {HEAD}", f"**CLAUDE-R1 independent review: APPROVE @ {HEAD}** (comment)",
+                     f"**CLAUDE-R1: APPROVE @ {HEAD}**\nFindings: none"):
+            self.assertEqual(self._state(body), h.OWNER_MERGE_PENDING, body)
+
+
+class OnlineDedupTests(unittest.TestCase):
+    def test_online_mode_loads_comments_so_existing_marker_suppresses_message(self):
+        import io, os, contextlib
+        from unittest import mock
+        r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}")))
+        marker_comment = {"user": {"login": "w"}, "body": h.handoff_message(r, []), "created_at": "x"}
+        pr = {"state": "open", "user": {"login": "ter-ry"}, "head_sha": HEAD}
+        threads = {"threads_verified": True, "threads": unresolved(f"Fixed @ {HEAD}"), "head_sha": HEAD}
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "t"}), \
+             mock.patch.object(h, "fetch_rest_context", return_value=(pr, [marker_comment], [])), \
+             mock.patch.object(h, "fetch_threads", return_value=threads), \
+             contextlib.redirect_stdout(out):
+            h.main(["--pr", "304"])
+        import json
+        data = json.loads(out.getvalue())
+        self.assertEqual(data["state"], h.FIX_PENDING_VERIFICATION)
+        self.assertIsNone(data["message"])
+
+    def test_rest_failure_fails_closed(self):
+        import io, os, contextlib
+        from unittest import mock
+        from urllib.error import URLError
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "t"}), \
+             mock.patch.object(h, "fetch_rest_context", side_effect=URLError("x")), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(h.main(["--pr", "1"]), 2)
+
+
 class HandoffMessageTests(unittest.TestCase):
     def test_message_once_per_state_and_head(self):
         r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}")))

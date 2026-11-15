@@ -18,7 +18,12 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 SHA_RE = r"[0-9a-f]{40}"
-VERDICT = re.compile(rf"\b(APPROVE|REQUEST CHANGES|BLOCKED)\s*@\s*({SHA_RE})\b", re.I)
+# An explicit declaration only: at the start of a line, optionally after markdown
+# emphasis and a short "CLAUDE-R1 independent review:" style label. Mentions mid-sentence
+# ("I cannot APPROVE @ ...") and quoted lines ("> APPROVE @ ...") do not match.
+VERDICT = re.compile(
+    rf"^[ \t]*[*_`]*(?:[A-Za-z0-9-]+(?: [A-Za-z0-9-]+){{0,4}}:[ \t]*[*_`]*)?"
+    rf"(APPROVE|REQUEST CHANGES|BLOCKED)[ \t]*@[ \t]*({SHA_RE})\b", re.M)
 FIXED = re.compile(rf"\bFixed\s*@\s*({SHA_RE})\b", re.I)
 MARKER = re.compile(r"<!--\s*thread-handoff:([0-9a-f]{16})\s*-->")
 REQUIRED_CHECKS = frozenset({"backend", "frontend"})
@@ -199,6 +204,35 @@ def fetch_threads(owner, repo, number, token):
         return {"threads_verified": False}
 
 
+def _rest(url, token):
+    req = Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
+    with urlopen(req, timeout=20) as resp:
+        return json.load(resp)
+
+
+def fetch_rest_context(owner, repo, number, token, max_pages=10):
+    """Read PR, issue comments and check runs via REST. Raises on any failure or overflow."""
+    base = f"https://api.github.com/repos/{owner}/{repo}"
+    pr = _rest(f"{base}/pulls/{number}", token)
+    comments = []
+    for page in range(1, max_pages + 1):
+        chunk = _rest(f"{base}/issues/{number}/comments?per_page=100&page={page}", token)
+        comments += [{"user": {"login": (c.get("user") or {}).get("login", "")},
+                      "body": c.get("body") or "", "created_at": c.get("created_at")} for c in chunk]
+        if len(chunk) < 100:
+            break
+    else:
+        raise ValueError("too many comments")
+    runs = _rest(f"{base}/commits/{pr['head']['sha']}/check-runs?per_page=100", token)
+    if runs.get("total_count", 0) > len(runs.get("check_runs", [])):
+        raise ValueError("too many check runs")
+    checks = [{"name": r["name"], "head_sha": pr["head"]["sha"], "status": r["status"],
+               "conclusion": r.get("conclusion"), "id": r["id"], "started_at": r.get("started_at")}
+              for r in runs["check_runs"]]
+    return {"state": pr["state"], "user": {"login": (pr.get("user") or {}).get("login", "")},
+            "head_sha": pr["head"]["sha"]}, comments, checks
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--snapshot", help="JSON snapshot file (offline); otherwise GraphQL is queried for thread state only")
@@ -214,9 +248,16 @@ def main(argv=None) -> int:
             print(json.dumps({"state": BLOCKED_UNVERIFIED, "reasons": ["NO_TOKEN_OR_PR; use --snapshot"]}))
             return 2
         owner, repo = args.repo.split("/", 1)
-        snap = {"pr": {"number": args.pr, "state": "open", "user": {}, "head_sha": ""},
-                **fetch_threads(owner, repo, args.pr, token), "checks": [], "comments": []}
-        snap["pr"]["head_sha"] = snap.pop("head_sha", "")
+        try:
+            pr, comments, checks = fetch_rest_context(owner, repo, args.pr, token)
+        except (HTTPError, URLError, KeyError, TypeError, ValueError, OSError):
+            print(json.dumps({"state": BLOCKED_UNVERIFIED, "reasons": ["REST_READ_FAILED"]}))
+            return 2
+        threads = fetch_threads(owner, repo, args.pr, token)
+        snap = {"pr": {"number": args.pr, **pr}, "checks": checks, "comments": comments,
+                **{k: v for k, v in threads.items() if k != "head_sha"}}
+        if threads.get("head_sha") and threads["head_sha"].lower() != pr["head_sha"].lower():
+            snap["threads_verified"] = False  # head moved between reads
     result = classify(snap)
     result["message"] = handoff_message(result, snap.get("comments", []))
     print(json.dumps(result, indent=2))
