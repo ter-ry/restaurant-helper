@@ -158,4 +158,22 @@ describe("VerifiedFreeEvidence", () => {
     expect(await screen.findByText("Neighbour cafe donation")).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(2);
   });
+  it("ignores an older evidence read that finishes after a newer one", async () => {
+    let resolveOld!: (value: { itemId: number; verifications: PilotCostVerification[] }) => void;
+    const list = vi.spyOn(api, "fetchPilotCostVerifications")
+      .mockReturnValueOnce(new Promise((r) => { resolveOld = r; }))
+      .mockResolvedValue({ itemId: 7, verifications: [row()] });
+    const create = vi.spyOn(api, "createPilotCostVerification").mockResolvedValue(row());
+    render(<VerifiedFreeEvidence pendingRef={{ current: {} }} item={item} />);
+    // The first (initial) read is still pending while the user records evidence; the post-success read is newer.
+    fireEvent.click(await screen.findByText("Record verified free stock"));
+    fireEvent.change(screen.getByLabelText(/Evidence note/), { target: { value: "Donated" } });
+    fireEvent.click(screen.getByText("Confirm free stock"));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Neighbour cafe donation")).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(2);
+    resolveOld({ itemId: 7, verifications: [] });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText("Neighbour cafe donation")).toBeInTheDocument();
+  });
 });

@@ -85,16 +85,21 @@ export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onCh
   const itemRef = useRef(item.id);
   itemRef.current = item.id;
 
+  // Every read gets a generation number; only the newest read may install its result, so an older read that finishes
+  // last can never overwrite the reconciled evidence that a later read already showed.
+  const readGeneration = useRef(0);
   const reload = useCallback(async () => {
     const itemId = item.id;
+    const generation = ++readGeneration.current;
+    const current = () => itemRef.current === itemId && readGeneration.current === generation;
     try {
       const result = await fetchPilotCostVerifications(itemId);
-      if (itemRef.current === itemId) {
+      if (current()) {
         setRows(result.verifications);
         setLoadError(null);
       }
     } catch (err) {
-      if (itemRef.current === itemId) setLoadError(describeError(err, "Could not load free-stock evidence."));
+      if (current()) setLoadError(describeError(err, "Could not load free-stock evidence."));
     }
   }, [item.id]);
 
