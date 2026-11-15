@@ -499,6 +499,12 @@ export function PilotInventoryPage() {
   selectedIdRef.current = selectedId;
 
   // Re-reads only the selected item's detail (history, cost, on-hand) after a change that already reloaded the list.
+  // The list is reloaded by Refresh and after mutations; prefer its on-hand and cost over the older item detail.
+  const reconciledItem = (detailItem: PilotInventoryItem) => {
+    const listed = data?.items.find((entry) => entry.id === detailItem.id);
+    return listed ? { ...detailItem, currentOnHand: listed.currentOnHand, averageUnitCost: listed.averageUnitCost } : detailItem;
+  };
+
   const refreshItemDetailOnly = async (itemId: number) => {
     const detail = await fetchPilotInventoryItem(itemId);
     if (selectedIdRef.current === itemId) setItemDetail(detail);
@@ -1041,7 +1047,7 @@ export function PilotInventoryPage() {
                   <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
-              {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={itemDetail.item} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
+              {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={reconciledItem(itemDetail.item)} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 

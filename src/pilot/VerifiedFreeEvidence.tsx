@@ -43,6 +43,9 @@ type Props = {
 
 type Mode = { kind: "closed" } | { kind: "record" } | { kind: "correct"; row: PilotCostVerification } | { kind: "revoke"; row: PilotCostVerification };
 
+/** The backend works in four-decimal quantities; do the arithmetic and comparisons at that precision. */
+const round4 = (value: number) => Math.round((value + Number.EPSILON) * 10000) / 10000;
+
 function newKey() {
   return `free-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 }
@@ -61,6 +64,9 @@ function describeError(err: unknown, fallback: string) {
  */
 export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onChanged, disabled = false }: Props) {
   const restored = pendingRef.current[item.id] ?? null;
+  // Local copy of a restored attempt: the original (unmounted) instance deletes the shared entry when it finishes, but
+  // this panel still has to retry with the same key so the server replays instead of recording again.
+  const restoredRef = useRef<PendingEvidenceRequest | null>(restored);
   const [rows, setRows] = useState<PilotCostVerification[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>(
@@ -119,13 +125,13 @@ export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onCh
   const onHand = Number(item.currentOnHand);
   const hasCost = Number(item.averageUnitCost ?? 0) > 0;
   const active = (rows ?? []).filter((row) => !row.revokedAt);
-  const verifiedRemaining = active.reduce((sum, row) => sum + row.remainingQuantity, 0);
-  const unverified = Math.max(0, onHand - verifiedRemaining);
+  const verifiedRemaining = round4(active.reduce((sum, row) => sum + row.remainingQuantity, 0));
+  const unverified = Math.max(0, round4(onHand - verifiedRemaining));
   const canRecord = !hasCost && onHand > 0 && unverified > 0;
 
-  // Nothing to show for priced stock that never had evidence, or when the list has not loaded and nothing is recorded.
-  if (hasCost && (rows ?? []).length === 0) return null;
-  if (!hasCost && onHand <= 0 && (rows ?? []).length === 0) return null;
+  // Priced or depleted stock with no evidence has nothing to show. Hide only after a successful response confirms an
+  // empty list (or while a first load is still pending); a failed load stays visible with its retry button.
+  if ((hasCost || onHand <= 0) && mode.kind === "closed" && ((rows !== null && rows.length === 0) || (rows === null && !loadError))) return null;
 
   const open = (next: Mode) => {
     setError(null);
@@ -146,7 +152,7 @@ export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onCh
   const submit = async () => {
     if (inFlight.current || mode.kind === "closed") return;
     // A retry of an unresolved attempt replays exactly what was sent; availability is then the server's call.
-    const pending = pendingRef.current[item.id];
+    const pending = pendingRef.current[item.id] ?? (unresolved && restoredRef.current?.itemId === item.id ? restoredRef.current : undefined);
     if (mode.kind === "revoke") {
       if (!reason.trim()) return setError("Say why this evidence is being revoked.");
     } else if (!pending) {
@@ -154,7 +160,7 @@ export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onCh
       if (!Number.isFinite(parsed) || parsed <= 0) return setError("Enter a quantity greater than zero.");
       if (!note.trim()) return setError("Explain how you know this stock was free.");
       if (mode.kind === "correct" && !reason.trim()) return setError("Say why the evidence is being corrected.");
-      if (mode.kind === "record" && parsed > unverified) return setError(`Only ${unverified} ${item.stockUnit} is not yet verified.`);
+      if (mode.kind === "record" && round4(parsed) > unverified) return setError(`Only ${unverified} ${item.stockUnit} is not yet verified.`);
     }
     inFlight.current = true;
     setBusy(true);
@@ -173,6 +179,7 @@ export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onCh
       }
       const done = mode.kind === "record" ? "Free stock recorded" : mode.kind === "correct" ? "Evidence corrected" : "Evidence revoked";
       delete pendingRef.current[item.id];
+      restoredRef.current = null;
       setUnresolved(false);
       setMode({ kind: "closed" });
       setNotice(`${done}. The audit trail keeps every earlier entry.`);
@@ -275,7 +282,7 @@ export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onCh
           <div className="flex flex-wrap gap-2">
             <Button type="button" disabled={busy || disabled} onClick={() => void submit()}>{busy ? "Saving…" : unresolved ? "Retry same request" : mode.kind === "record" ? "Confirm free stock" : mode.kind === "correct" ? "Save correction" : "Confirm revoke"}</Button>
             {unresolved ? (
-              <Button type="button" variant="secondary" disabled={busy} onClick={() => { delete pendingRef.current[item.id]; setUnresolved(false); setError(null); setMode({ kind: "closed" }); }}>Discard attempt</Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { delete pendingRef.current[item.id]; restoredRef.current = null; setUnresolved(false); setError(null); setMode({ kind: "closed" }); }}>Discard attempt</Button>
             ) : (
               <Button type="button" variant="secondary" disabled={busy} onClick={() => { setError(null); setMode({ kind: "closed" }); }}>Cancel</Button>
             )}

@@ -118,4 +118,44 @@ describe("VerifiedFreeEvidence", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Free stock recorded");
     expect(pendingRef.current).toEqual({});
   });
+  it("accepts the exact remaining fractional quantity (0.3 on hand, 0.1 verified, 0.2 left)", async () => {
+    vi.spyOn(api, "fetchPilotCostVerifications").mockResolvedValue({ itemId: 7, verifications: [row({ quantity: 0.1, remainingQuantity: 0.1 })] });
+    const create = vi.spyOn(api, "createPilotCostVerification").mockResolvedValue(row());
+    render(<VerifiedFreeEvidence pendingRef={{ current: {} }} item={{ ...item, currentOnHand: 0.3 }} />);
+    fireEvent.click(await screen.findByText("Record verified free stock"));
+    fireEvent.change(screen.getByLabelText(/Quantity/), { target: { value: "0.2" } });
+    fireEvent.change(screen.getByLabelText(/Evidence note/), { target: { value: "Donated" } });
+    fireEvent.click(screen.getByText("Confirm free stock"));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  });
+
+  it("retries with the original key when the original instance finished after a tab switch and cleared the shared entry", async () => {
+    const pendingRef = { current: {} };
+    vi.spyOn(api, "fetchPilotCostVerifications").mockResolvedValue({ itemId: 7, verifications: [] });
+    let resolveFirst!: (value: PilotCostVerification) => void;
+    const create = vi.spyOn(api, "createPilotCostVerification")
+      .mockReturnValueOnce(new Promise((r) => { resolveFirst = r; }))
+      .mockResolvedValue(row({ replayed: true }));
+    const first = render(<VerifiedFreeEvidence pendingRef={pendingRef} item={item} />);
+    fireEvent.click(await screen.findByText("Record verified free stock"));
+    fireEvent.change(screen.getByLabelText(/Evidence note/), { target: { value: "Donated" } });
+    fireEvent.click(screen.getByText("Confirm free stock"));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    first.unmount();
+    render(<VerifiedFreeEvidence pendingRef={pendingRef} item={item} />);
+    resolveFirst(row());
+    await waitFor(() => expect(pendingRef.current).toEqual({}));
+    fireEvent.click(await screen.findByText("Retry same request"));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(create.mock.calls[1][1].idempotencyKey).toBe(create.mock.calls[0][1].idempotencyKey);
+  });
+
+  it("keeps a failed evidence load visible, with Try again, for depleted stock", async () => {
+    const list = vi.spyOn(api, "fetchPilotCostVerifications").mockRejectedValueOnce(new Error("Server unavailable")).mockResolvedValue({ itemId: 7, verifications: [row()] });
+    render(<VerifiedFreeEvidence pendingRef={{ current: {} }} item={{ ...item, currentOnHand: 0 }} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Server unavailable");
+    fireEvent.click(screen.getByText("Try again"));
+    expect(await screen.findByText("Neighbour cafe donation")).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(2);
+  });
 });
