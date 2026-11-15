@@ -690,9 +690,116 @@ def _int_env(name: str) -> int:
     return int(os.environ[name])
 
 
+# ---------------------------------------------------------------- restricted-credential ruleset preflight (read-only)
+PREFLIGHT_BRANCHES = ("main", ALLOWED_BASE)
+
+
+class _ReadOnlyTransport:
+    """GET only. Any other method raises before leaving the process (the preflight can never write)."""
+
+    def __init__(self, inner: Any):
+        self._t = inner
+
+    def get(self, path: str, params: dict) -> Any:
+        return self._t.get(path, params)
+
+    def put(self, path: str, body: Any) -> Any:
+        raise PermissionError("PREFLIGHT_READ_ONLY")
+
+    def graphql(self, query: str, variables: dict) -> Any:
+        raise PermissionError("PREFLIGHT_READ_ONLY")
+
+
+def _http_reason(prefix: str, resp: Any) -> str | None:
+    """Fixed reason code for a non-200 or malformed response; None when the response is a 200."""
+    if not isinstance(resp, Mapping) or not isinstance(resp.get("status"), int) or isinstance(resp.get("status"), bool):
+        return f"{prefix}_BAD_RESPONSE"
+    st = resp["status"]
+    if st == 200:
+        return None
+    return f"{prefix}_HTTP_{st}" if st in (401, 403, 404, 429) else f"{prefix}_HTTP_OTHER"
+
+
+def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any) -> dict[str, Any]:
+    """Read one branch's rules and every referenced ruleset with the restricted token; never writes.
+
+    Returns ``{"branch", "status": "PASS"|"BLOCKED", "reasons": [fixed codes]}``. No response bodies,
+    tokens or ruleset contents are returned. A ruleset detail whose `bypass_actors` field is omitted is
+    reported as BYPASS_ACTORS_OMITTED (the restricted App cannot prove there is no bypass), distinct from
+    an explicitly non-empty list (BYPASS_ACTORS_NONEMPTY). Only an explicit empty list passes.
+    """
+    root = f"/repos/{repository}"
+    reasons: list[str] = []
+    resp = t.get(f"{root}/rules/branches/{branch}", {"per_page": 100})
+    bad = _http_reason("RULES", resp)
+    if bad:
+        return {"branch": branch, "status": "BLOCKED", "reasons": [bad]}
+    rules = resp.get("body")
+    if not isinstance(rules, list):
+        return {"branch": branch, "status": "BLOCKED", "reasons": ["RULES_BAD_SHAPE"]}
+    if len(rules) >= 100:
+        return {"branch": branch, "status": "BLOCKED", "reasons": ["RULES_TRUNCATED"]}
+    details: dict[str, Any] = {}
+    for r in rules:
+        rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
+        if not isinstance(rid, int) or isinstance(rid, bool) or str(rid) in details:
+            continue
+        d = t.get(f"{root}/rulesets/{rid}", {})
+        bad = _http_reason("RULESET_DETAIL", d)
+        if bad:
+            reasons.append(bad)
+            details[str(rid)] = None
+            continue
+        body = d.get("body")
+        details[str(rid)] = body
+        if not isinstance(body, Mapping):
+            reasons.append("RULESET_DETAIL_BAD_SHAPE")
+        elif "bypass_actors" not in body:
+            reasons.append("BYPASS_ACTORS_OMITTED")
+        elif not isinstance(body["bypass_actors"], list):
+            reasons.append("BYPASS_ACTORS_BAD_SHAPE")
+        elif body["bypass_actors"]:
+            reasons.append("BYPASS_ACTORS_NONEMPTY")
+    payload = {"rules": rules, "rulesets": details}
+    reasons += main_guard_problems(payload) if branch == "main" else ruleset_problems(payload, verifier_app_id)
+    reasons = list(dict.fromkeys(reasons))
+    return {"branch": branch, "status": "BLOCKED" if reasons else "PASS", "reasons": reasons}
+
+
+def run_preflight(t: Any, repository: str, verifier_app_id: Any) -> dict[str, Any]:
+    ro = _ReadOnlyTransport(t)
+    out = []
+    for b in PREFLIGHT_BRANCHES:
+        try:
+            out.append(preflight_branch(ro, repository, b, verifier_app_id))
+        except Exception as exc:  # noqa: BLE001 - class name only, never provider text
+            out.append({"branch": b, "status": "BLOCKED", "reasons": [f"PREFLIGHT_ERROR_{type(exc).__name__}"]})
+    return {"mode": "preflight", "read_only": True, "branches": out,
+            "status": "PASS" if all(x["status"] == "PASS" for x in out) else "BLOCKED"}
+
+
+def preflight_main(env: Mapping[str, str]) -> int:
+    """Read-only preflight CLI: needs only the merge App credentials and the pinned verifier App id."""
+    try:
+        verifier_app_id = _int_env("VERIFIER_APP_ID")
+        repository = env["GITHUB_REPOSITORY"]
+        token = mint_merge_token(env, repository, verifier_app_id, datetime.now(timezone.utc))
+        report = run_preflight(UrllibTransport(token), repository, verifier_app_id)
+    except app_auth.ConfigError as exc:
+        print(json.dumps({"mode": "preflight", "status": "error", "reason": str(exc)}))
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"mode": "preflight", "status": "error", "error": type(exc).__name__}))
+        return 1
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["status"] == "PASS" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit 0 only for a clean run (including a clean no-op/dry-run); nonzero on any error."""
     env = os.environ
+    if "--preflight-rulesets" in (sys.argv[1:] if argv is None else argv):
+        return preflight_main(env)
     if env.get(ENABLE_VARIABLE) != "true":
         print(json.dumps({"status": "disabled", "reason": f"{ENABLE_VARIABLE} is not 'true'"}))
         return 0
