@@ -2172,7 +2172,13 @@ def _inventory_item_has_history(item: InventoryItem, organization_id: int, locat
         location_id=location_id,
         inventory_item_id=item.id,
     ).first()
-    return has_movement_history is not None
+    if has_movement_history is not None:
+        return True
+    # Verified-free evidence is denominated in the item's stock unit, so it also pins the unit (#279).
+    return (
+        InventoryCostVerification.query.filter_by(organization_id=organization_id, location_id=location_id, inventory_item_id=item.id).first()
+        is not None
+    )
 
 
 @bp.get("/api/pilot/inventory/items/<int:item_id>")
@@ -3078,7 +3084,12 @@ def create_inventory_transfer():
     free_batches: list[InventoryCostVerification] = []
     if unit_cost <= 0:
         # A zero cost is unknown unless verified-free evidence covers the whole quantity (#279).
-        free_batches = [row for row in _verification_rows_for_item(organization.id, location.id, source.id, lock=True) if row.revoked_at is None]
+        # Evidence recorded in a different unit never covers the item's current stock unit.
+        free_batches = [
+            row
+            for row in _verification_rows_for_item(organization.id, location.id, source.id, lock=True)
+            if row.revoked_at is None and row.unit == source.stock_unit
+        ]
         decision = zero_cost_transfer_decision(source_before, unit_cost, quantity, [_verification_batch(row) for row in free_batches])
         if not decision.allowed:
             db.session.rollback()

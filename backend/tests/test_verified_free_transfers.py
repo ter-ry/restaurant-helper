@@ -140,3 +140,17 @@ def test_mixed_destination_stays_partially_unknown(app, client, world):  # noqa:
     with app.app_context():
         movements = InventoryMovement.query.filter(InventoryMovement.source_type.like("inventory transfer%")).count()
         assert movements == 2
+
+
+def test_verified_item_cannot_change_base_unit_and_foreign_unit_evidence_never_covers(app, client, world):  # noqa: F811
+    _zero(app, world["flour_main"])
+    assert _verify(client, world["flour_main"], 6).status_code == 201
+    patch = client.patch(f"/api/pilot/inventory/items/{world['flour_main']}", headers=csrf_headers(client), json={"stockUnit": "case"})
+    assert patch.status_code == 409 and "stockUnit" in patch.get_json()["errors"]
+    with app.app_context():
+        assert db.session.get(InventoryItem, world["flour_main"]).stock_unit == "kg"
+    # Defense in depth: evidence recorded in another unit (e.g. legacy data) does not cover a transfer.
+    with app.app_context():
+        InventoryCostVerification.query.filter_by(inventory_item_id=world["flour_main"]).update({"unit": "g"})
+        db.session.commit()
+    assert _transfer(client, world, quantity=2).status_code == 409
