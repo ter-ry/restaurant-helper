@@ -143,7 +143,35 @@ class Gates(Base):
         self.assertNoMerge(mutate(lambda w: w.update({f"{ROOT}/actions/variables/FLOWTALLY_TRUSTED_REVIEW_ENABLED": [ok({"name": "FLOWTALLY_TRUSTED_REVIEW_ENABLED", "value": "false"})]})), reason="TRUSTED_REVIEW_DISABLED")
 
     def test_missing_verifier_check(self):
-        self.assertNoMerge(mutate(lambda w: w.update({"verifier": [ok({"total_count": 0, "check_runs": []})]})), reason="VERIFIER_PROOF_MISSING_OR_INVALID")
+        rep = self.assertNoMerge(mutate(lambda w: w.update({"verifier": [ok({"total_count": 0, "check_runs": []})]})),
+                                 reason="VERIFIER_PROOF_MISSING_OR_INVALID")
+        self.assertEqual(rep.errors, [], rep.as_dict())  # Ordinary blocker must not turn the run red.
+
+    def test_kill_switch_off_with_no_verifier_check_is_a_clean_noop(self):
+        def m(w):
+            w[f"{ROOT}/actions/variables/FLOWTALLY_TRUSTED_REVIEW_ENABLED"] = [
+                ok({"name": "FLOWTALLY_TRUSTED_REVIEW_ENABLED", "value": "false"})]
+            w["verifier"] = [ok({"total_count": 0, "check_runs": []})]
+        rep = self.assertNoMerge(mutate(m), cfg=replace(CFG, live_writes=False),
+                                 reason="TRUSTED_REVIEW_DISABLED")
+        self.assertEqual(rep.errors, [], rep.as_dict())
+
+    def test_verifier_bad_shape_or_truncation_is_still_infra_error(self):
+        bad_responses = [
+            {"total_count": 1, "check_runs": []},  # Truncated response
+            {"total_count": 0, "check_runs": None},
+            {"total_count": True, "check_runs": []},
+            {"total_count": 1, "check_runs": ["not a check run"]},
+            {"total_count": 1, "check_runs": [{**VERIFIER, "name": "other-check"}]},
+        ]
+        for body in bad_responses:
+            rep = self.assertNoMerge(mutate(lambda w, body=body: w.update({"verifier": [ok(body)]})))
+            self.assertTrue(any(e.startswith("INFRA_ERROR") for e in rep.errors), rep.as_dict())
+
+    def test_verifier_api_denied_is_still_infra_error(self):
+        rep = self.assertNoMerge(mutate(lambda w: w.update({
+            "verifier": [{"status": 403, "headers": {}, "body": None}]})))
+        self.assertTrue(any(e.startswith("INFRA_ERROR") for e in rep.errors), rep.as_dict())
 
     def test_verifier_check_wrong_app(self):
         def m(w): w["verifier"][0]["body"]["check_runs"][0]["app"]["id"] = 1
@@ -158,8 +186,11 @@ class Gates(Base):
         self.assertNoMerge(mutate(m), reason="VERIFIER_PROOF_MISSING_OR_INVALID")
 
     def test_duplicate_verifier_checks_ambiguous(self):
-        def m(w): w["verifier"][0]["body"]["check_runs"].append(copy.deepcopy(VERIFIER))
-        self.assertNoMerge(mutate(m))
+        def m(w):
+            w["verifier"][0]["body"]["check_runs"].append(copy.deepcopy(VERIFIER))
+            w["verifier"][0]["body"]["total_count"] = 2
+        rep = self.assertNoMerge(mutate(m), reason="VERIFIER_PROOF_MISSING_OR_INVALID")
+        self.assertEqual(rep.errors, [], rep.as_dict())  # Ambiguous proof, not a GitHub API outage.
 
     def test_no_formal_approval_at_head(self):
         def m(w): w[f"{ROOT}/pulls/{N}/reviews"][0]["body"][0]["state"] = "COMMENTED"
