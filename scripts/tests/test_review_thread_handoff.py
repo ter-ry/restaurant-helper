@@ -198,6 +198,47 @@ class OnlineDedupTests(unittest.TestCase):
         self.assertEqual(data["state"], h.FIX_PENDING_VERIFICATION)
         self.assertIsNone(data["message"])
 
+    def _fake_rest(self, reviews):
+        head = HEAD
+        def fake(url, token):
+            if "/reviews" in url:
+                return reviews
+            if "/issues/" in url:
+                return [{"user": {"login": "reviewer"}, "body": f"APPROVE @ {head}", "created_at": "2026-11-15T10:00:00Z"}]
+            if "/check-runs" in url:
+                return {"total_count": 2, "check_runs": [
+                    {"name": n, "status": "completed", "conclusion": "success", "id": 1, "started_at": "t"}
+                    for n in ("backend", "frontend")]}
+            return {"state": "open", "user": {"login": "ter-ry"}, "head": {"sha": head}}
+        return fake
+
+    def test_formal_changes_requested_review_supersedes_comment_approval(self):
+        from unittest import mock
+        rv = [{"user": {"login": "reviewer"}, "state": "CHANGES_REQUESTED", "commit_id": HEAD,
+               "body": "", "submitted_at": "2026-11-15T11:00:00Z"}]
+        with mock.patch.object(h, "_rest", self._fake_rest(rv)):
+            pr, comments, checks = h.fetch_rest_context("o", "r", 1, "t")
+        s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_formal_review_at_old_commit_does_not_block_head_approval(self):
+        from unittest import mock
+        rv = [{"user": {"login": "reviewer"}, "state": "CHANGES_REQUESTED", "commit_id": OLD,
+               "body": "", "submitted_at": "2026-11-15T11:00:00Z"}]
+        with mock.patch.object(h, "_rest", self._fake_rest(rv)):
+            pr, comments, checks = h.fetch_rest_context("o", "r", 1, "t")
+        s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
+        self.assertEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_thread_comment_overflow_fails_closed(self):
+        import io, json
+        from unittest import mock
+        payload = {"data": {"repository": {"pullRequest": {"headRefOid": HEAD, "reviewThreads": {
+            "pageInfo": {"hasNextPage": False}, "nodes": [{"id": "T1", "isResolved": False, "viewerCanResolve": True,
+            "comments": {"pageInfo": {"hasNextPage": True}, "nodes": [{"body": "x"}]}}]}}}}}
+        with mock.patch.object(h, "urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            self.assertFalse(h.fetch_threads("o", "r", 1, "t")["threads_verified"])
+
     def test_rest_failure_fails_closed(self):
         import io, os, contextlib
         from unittest import mock

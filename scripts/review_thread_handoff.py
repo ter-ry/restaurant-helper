@@ -180,7 +180,7 @@ def handoff_message(result: dict, existing_comments) -> str | None:
 
 QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){
 state headRefOid author{login} reviewThreads(first:100){pageInfo{hasNextPage}nodes{id isResolved viewerCanResolve
-comments(first:50){nodes{body author{login}}}}}}}}"""
+comments(first:50){pageInfo{hasNextPage}nodes{body author{login}}}}}}}}"""
 
 
 def fetch_threads(owner, repo, number, token):
@@ -194,6 +194,8 @@ def fetch_threads(owner, repo, number, token):
         rt = pr["reviewThreads"]
         if rt["pageInfo"]["hasNextPage"]:
             return {"threads_verified": False}
+        if any(n["comments"]["pageInfo"]["hasNextPage"] for n in rt["nodes"]):
+            return {"threads_verified": False}  # a Fixed reply could sit beyond the first page
         threads = [{"id": n["id"], "isResolved": n["isResolved"],
                     "comments": [{"body": c["body"]} for c in n["comments"]["nodes"]]}
                    for n in rt["nodes"]]
@@ -211,7 +213,7 @@ def _rest(url, token):
 
 
 def fetch_rest_context(owner, repo, number, token, max_pages=10):
-    """Read PR, issue comments and check runs via REST. Raises on any failure or overflow."""
+    """Read PR, issue comments, formal reviews and check runs via REST. Raises on any failure or overflow."""
     base = f"https://api.github.com/repos/{owner}/{repo}"
     pr = _rest(f"{base}/pulls/{number}", token)
     comments = []
@@ -223,6 +225,20 @@ def fetch_rest_context(owner, repo, number, token, max_pages=10):
             break
     else:
         raise ValueError("too many comments")
+    head = pr["head"]["sha"].lower()
+    for page in range(1, max_pages + 1):
+        chunk = _rest(f"{base}/pulls/{number}/reviews?per_page=100&page={page}", token)
+        for rv in chunk:
+            decision = {"CHANGES_REQUESTED": "REQUEST CHANGES", "APPROVED": "APPROVE"}.get(rv.get("state"))
+            at_head = str(rv.get("commit_id", "")).lower() == head
+            body = (f"{decision} @ {head}\n" if decision and at_head else "") + (rv.get("body") or "")
+            if body.strip():
+                comments.append({"user": {"login": (rv.get("user") or {}).get("login", "")},
+                                 "body": body, "created_at": rv.get("submitted_at")})
+        if len(chunk) < 100:
+            break
+    else:
+        raise ValueError("too many reviews")
     runs = _rest(f"{base}/commits/{pr['head']['sha']}/check-runs?per_page=100", token)
     if runs.get("total_count", 0) > len(runs.get("check_runs", [])):
         raise ValueError("too many check runs")

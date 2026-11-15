@@ -26,7 +26,7 @@ Problem: a PR can have green exact-head CI and an independent `APPROVE @ <sha>` 
 
 Offline (preferred in cloud sessions where GraphQL is blocked): build a snapshot JSON (`pr`, `threads` with `isResolved`, `threads_verified`, `checks` with `id`/`started_at`, `comments` with `user.login` and `created_at`) from the GitHub MCP tools (`get_review_comments` returns thread resolved flags) and run `python scripts/review_thread_handoff.py --snapshot snap.json`.
 
-Online: `GITHUB_TOKEN=<read-only token> python scripts/review_thread_handoff.py --pr N` reads the PR, issue comments (so an existing handoff marker suppresses a repeat message), check runs and thread state (GraphQL), all read-only. Any API error, missing token, more than 100 threads, more than 1000 comments, or a head SHA that moved between reads gives `BLOCKED_UNVERIFIED` (exit 2).
+Online: `GITHUB_TOKEN=<read-only token> python scripts/review_thread_handoff.py --pr N` reads the PR, issue comments (so an existing handoff marker suppresses a repeat message), formal PR reviews (an exact-head `CHANGES_REQUESTED`/`APPROVED` counts as a verdict by that reviewer and time), check runs and thread state (GraphQL), all read-only. Any API error, missing token, more than 100 threads or more than 50 comments in a thread, more than 1000 comments, or a head SHA that moved between reads gives `BLOCKED_UNVERIFIED` (exit 2).
 
 ## Manual fallback
 
