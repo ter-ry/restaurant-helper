@@ -18,11 +18,23 @@ from .audit import record_audit_event
 from .access import organization_has_enabled_module
 from .costing import reverse_weighted_average_inventory_cost, stock_unit_cost_from_purchase, transfer_weighted_average_inventory_cost, weighted_average_inventory_cost
 from .extensions import db
+from .verified_free_cost import (
+    EVIDENCE_TYPES as VERIFIED_FREE_EVIDENCE_TYPES,
+    VerificationBatch,
+    VerificationError,
+    idempotent_outcome as verification_idempotent_outcome,
+    validate_correction as validate_verification_correction,
+    validate_new_verification,
+    validate_revocation as validate_verification_revocation,
+    verification_fingerprint,
+    zero_cost_transfer_decision,
+)
 from .models import (
     AuditEvent,
     DailyCloseSession,
     InventoryItem,
     InventoryMovement,
+    InventoryCostVerification,
     InventoryTransfer,
     InventoryWasteEvent,
     OrganizationModule,
@@ -2581,6 +2593,326 @@ def reverse_inventory_adjustment(movement_id: int):
     return _commit_json(body, 201)
 
 
+def _verification_batch(row: InventoryCostVerification) -> VerificationBatch:
+    return VerificationBatch(
+        id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.location_id,
+        item_id=row.inventory_item_id,
+        quantity=Decimal(row.quantity),
+        consumed_quantity=Decimal(row.consumed_quantity or 0),
+        revoked=row.revoked_at is not None,
+    )
+
+
+def _serialize_cost_verification(row: InventoryCostVerification) -> dict[str, Any]:
+    batch = _verification_batch(row)
+    return {
+        "id": row.id,
+        "locationId": row.location_id,
+        "itemId": row.inventory_item_id,
+        "quantity": decimal_to_float(row.quantity),
+        "consumedQuantity": decimal_to_float(row.consumed_quantity),
+        "remainingQuantity": decimal_to_float(batch.remaining),
+        "unit": row.unit,
+        "evidenceType": row.evidence_type,
+        "evidenceNote": row.evidence_note,
+        "sourceType": row.source_type,
+        "sourceRecordId": row.source_record_id,
+        "sourceLineId": row.source_line_id,
+        "idempotencyKey": row.idempotency_key,
+        "correctionOfId": row.correction_of_id,
+        "verifiedAt": isoformat(row.verified_at),
+        "revokedAt": isoformat(row.revoked_at),
+        "revokedReason": row.revoked_reason,
+    }
+
+
+def _verification_rows_for_item(organization_id: int, location_id: int, item_id: int, *, lock: bool = False) -> list[InventoryCostVerification]:
+    query = InventoryCostVerification.query.filter_by(organization_id=organization_id, location_id=location_id, inventory_item_id=item_id).order_by(InventoryCostVerification.id)
+    if lock:
+        query = query.populate_existing().with_for_update()
+    return query.all()
+
+
+def _verification_error_response(exc: VerificationError):
+    db.session.rollback()
+    return json_error("Verification rejected.", 409 if exc.code in {"exceeds_unverified_stock", "already_revoked", "below_consumed_quantity"} else 400, errors={"verification": str(exc), "code": exc.code})
+
+
+def _verification_fingerprint_of(row: InventoryCostVerification) -> tuple:
+    return verification_fingerprint(
+        item_id=row.inventory_item_id,
+        quantity=row.quantity,
+        evidence_type=row.evidence_type,
+        evidence_note=row.evidence_note,
+        source_type=row.source_type,
+        source_record_id=row.source_record_id,
+        source_line_id=row.source_line_id,
+    )
+
+
+def _parse_verification_request(payload: dict[str, Any]):
+    errors: dict[str, str] = {}
+    key = _reversal_idempotency_key(payload)
+    if not key:
+        errors["idempotencyKey"] = "An idempotency key is required."
+    evidence_type = str(payload.get("evidenceType") or "").strip()
+    if evidence_type not in VERIFIED_FREE_EVIDENCE_TYPES:
+        errors["evidenceType"] = "Choose one of: " + ", ".join(VERIFIED_FREE_EVIDENCE_TYPES) + "."
+    evidence_note = str(payload.get("evidenceNote") or "").strip()
+    if not evidence_note:
+        errors["evidenceNote"] = "Explain how you know this stock was free."
+    try:
+        quantity = _to_quantity(payload.get("quantity"), field="quantity")
+    except RequestValidationError as exc:
+        quantity = Decimal("0")
+        errors.update(exc.errors or {"quantity": "Enter a valid quantity."})
+    if "quantity" not in errors and quantity <= 0:
+        errors["quantity"] = "Quantity must be greater than zero."
+    return key, evidence_type, evidence_note, quantity, errors
+
+
+@bp.get("/api/pilot/inventory/items/<int:item_id>/cost-verifications")
+@login_required
+def list_item_cost_verifications(item_id: int):
+    """Verified-free evidence for one item, newest last, including revoked rows (#279). Read-only."""
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _locations, location = context
+    item = InventoryItem.query.filter_by(id=item_id, organization_id=organization.id, location_id=location.id).first()
+    if item is None:
+        return json_error("Inventory item not found.", 404)
+    rows = _verification_rows_for_item(organization.id, location.id, item.id)
+    return jsonify({"itemId": item.id, "verifications": [_serialize_cost_verification(row) for row in rows]})
+
+
+@bp.post("/api/pilot/inventory/items/<int:item_id>/cost-verifications")
+@login_required
+def create_item_cost_verification(item_id: int):
+    """Record that a quantity of an item was genuinely free ($0), not merely missing a price (#279).
+
+    Locks the item row, refuses to verify more than the on-hand stock not already verified, requires a written
+    evidence note and an idempotency key (same key + same request replays; a different request is a 409), and writes
+    an audit event. It changes no quantity and no cost: it only makes that quantity eligible to move at $0.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _locations, location = context
+    permission_error = _require_role(membership, "inventory.manage")
+    if permission_error is not None:
+        return permission_error
+    payload = _json_body()
+    key, evidence_type, evidence_note, quantity, errors = _parse_verification_request(payload)
+    if errors:
+        return json_error("Validation failed.", 400, errors=errors)
+    source_type = str(payload.get("sourceType") or "").strip()[:60]
+    source_record_id = str(payload.get("sourceRecordId") or "").strip()[:120]
+    source_line_id = str(payload.get("sourceLineId") or "").strip()[:120]
+
+    locked = lock_inventory_items(organization.id, location.id, [item_id])
+    item = locked.get(item_id)
+    if item is None:
+        db.session.rollback()
+        return json_error("Inventory item not found.", 404)
+    fingerprint = verification_fingerprint(
+        item_id=item.id, quantity=quantity, evidence_type=evidence_type, evidence_note=evidence_note,
+        source_type=source_type, source_record_id=source_record_id, source_line_id=source_line_id,
+    )
+    existing = InventoryCostVerification.query.filter_by(organization_id=organization.id, idempotency_key=key).first()
+    if existing is not None:
+        outcome = verification_idempotent_outcome(_verification_fingerprint_of(existing), fingerprint)
+        db.session.rollback()
+        if outcome == "conflict":
+            return json_error("Idempotency key already used.", 409, errors={"idempotencyKey": "This key was already used for a different verification."})
+        body = _serialize_cost_verification(existing)
+        body["replayed"] = True
+        return jsonify(body), 200
+    existing_rows = _verification_rows_for_item(organization.id, location.id, item.id, lock=True)
+    try:
+        validate_new_verification(
+            organization_id=organization.id, location_id=location.id,
+            item_organization_id=item.organization_id, item_location_id=item.location_id,
+            on_hand=item.current_on_hand, quantity=quantity, evidence_type=evidence_type, evidence_note=evidence_note,
+            existing_batches=[_verification_batch(row) for row in existing_rows],
+        )
+    except VerificationError as exc:
+        return _verification_error_response(exc)
+    if Decimal(item.average_unit_cost or 0) > 0:
+        db.session.rollback()
+        return json_error(
+            "Item already has a cost.",
+            409,
+            errors={"itemId": f"{item.name} already carries an average cost, so its stock is not zero-cost. Verified-free evidence applies to zero-cost stock only."},
+        )
+    row = InventoryCostVerification(
+        organization_id=organization.id, location_id=location.id, inventory_item_id=item.id,
+        quantity=quantity, consumed_quantity=Decimal("0"), unit=item.stock_unit,
+        evidence_type=evidence_type, evidence_note=evidence_note,
+        source_type=source_type, source_record_id=source_record_id, source_line_id=source_line_id,
+        idempotency_key=key, verified_by_user_id=current_user.id, verified_at=_now(),
+    )
+    db.session.add(row)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This verification was already submitted.", 409, errors={"idempotencyKey": "This key was already used."})
+    record_audit_event(
+        event_type="inventory.cost_verification_created", entity_type="inventory_cost_verification", entity_id=row.id,
+        organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id,
+        metadata={"itemId": item.id, "quantity": float(quantity), "evidenceType": evidence_type, "evidenceNote": evidence_note, "idempotencyKey": key},
+    )
+    body = _serialize_cost_verification(row)
+    body["replayed"] = False
+    return _commit_json(body, 201)
+
+
+def _load_verification_for_update(organization_id: int, location_id: int, verification_id: int):
+    row = (
+        InventoryCostVerification.query.populate_existing()
+        .filter_by(id=verification_id, organization_id=organization_id, location_id=location_id)
+        .with_for_update()
+        .first()
+    )
+    return row
+
+
+@bp.post("/api/pilot/inventory/cost-verifications/<int:verification_id>/revoke")
+@login_required
+def revoke_cost_verification(verification_id: int):
+    """Revoke unused verified-free evidence with a mandatory reason (#279). Rows are never deleted.
+
+    Evidence already consumed by a $0 transfer cannot be revoked (the stock has moved); use a correction instead.
+    Revoking an already-revoked row with the same reason replays 200; a different reason is a 409.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _locations, location = context
+    permission_error = _require_role(membership, "inventory.manage")
+    if permission_error is not None:
+        return permission_error
+    reason = str(_json_body().get("reason") or "").strip()
+    probe = InventoryCostVerification.query.filter_by(id=verification_id, organization_id=organization.id, location_id=location.id).first()
+    if probe is None:
+        return json_error("Verification not found.", 404)
+    lock_inventory_items(organization.id, location.id, [probe.inventory_item_id])
+    row = _load_verification_for_update(organization.id, location.id, verification_id)
+    if row is None:
+        db.session.rollback()
+        return json_error("Verification not found.", 404)
+    if row.revoked_at is not None and row.revoked_reason == reason:
+        body = _serialize_cost_verification(row)
+        body["replayed"] = True
+        db.session.rollback()
+        return jsonify(body), 200
+    try:
+        validate_verification_revocation(_verification_batch(row), reason)
+    except VerificationError as exc:
+        return _verification_error_response(exc)
+    if Decimal(row.consumed_quantity or 0) > 0:
+        db.session.rollback()
+        return json_error("Evidence already used.", 409, errors={"verification": "Part of this free stock has already been moved at $0. Correct the quantity instead of revoking it."})
+    row.revoked_at = _now()
+    row.revoked_by_user_id = current_user.id
+    row.revoked_reason = reason
+    db.session.flush()
+    record_audit_event(
+        event_type="inventory.cost_verification_revoked", entity_type="inventory_cost_verification", entity_id=row.id,
+        organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id,
+        metadata={"itemId": row.inventory_item_id, "quantity": float(row.quantity), "reason": reason},
+    )
+    body = _serialize_cost_verification(row)
+    body["replayed"] = False
+    return _commit_json(body, 200)
+
+
+@bp.post("/api/pilot/inventory/cost-verifications/<int:verification_id>/correct")
+@login_required
+def correct_cost_verification(verification_id: int):
+    """Correct a verification: revoke the original and record a new batch linked by ``correctionOfId`` (#279).
+
+    The corrected quantity cannot drop below what was already moved at $0; that consumed quantity carries over.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, membership, _locations, location = context
+    permission_error = _require_role(membership, "inventory.manage")
+    if permission_error is not None:
+        return permission_error
+    payload = _json_body()
+    key, evidence_type, evidence_note, quantity, errors = _parse_verification_request(payload)
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        errors["reason"] = "Explain why the verification is being corrected."
+    if errors:
+        return json_error("Validation failed.", 400, errors=errors)
+    probe = InventoryCostVerification.query.filter_by(id=verification_id, organization_id=organization.id, location_id=location.id).first()
+    if probe is None:
+        return json_error("Verification not found.", 404)
+    locked = lock_inventory_items(organization.id, location.id, [probe.inventory_item_id])
+    item = locked.get(probe.inventory_item_id)
+    original = _load_verification_for_update(organization.id, location.id, verification_id)
+    if item is None or original is None:
+        db.session.rollback()
+        return json_error("Verification not found.", 404)
+    existing = InventoryCostVerification.query.filter_by(organization_id=organization.id, idempotency_key=key).first()
+    if existing is not None:
+        same = existing.correction_of_id == original.id and _verification_fingerprint_of(existing) == verification_fingerprint(
+            item_id=item.id, quantity=quantity, evidence_type=evidence_type, evidence_note=evidence_note,
+            source_type=original.source_type, source_record_id=original.source_record_id, source_line_id=original.source_line_id,
+        )
+        db.session.rollback()
+        if not same:
+            return json_error("Idempotency key already used.", 409, errors={"idempotencyKey": "This key was already used for a different request."})
+        body = _serialize_cost_verification(existing)
+        body["replayed"] = True
+        return jsonify(body), 200
+    try:
+        validate_verification_correction(_verification_batch(original), quantity)
+    except VerificationError as exc:
+        return _verification_error_response(exc)
+    consumed = Decimal(original.consumed_quantity or 0)
+    others = [_verification_batch(r) for r in _verification_rows_for_item(organization.id, location.id, item.id, lock=True) if r.id != original.id]
+    try:
+        validate_new_verification(
+            organization_id=organization.id, location_id=location.id,
+            item_organization_id=item.organization_id, item_location_id=item.location_id,
+            on_hand=Decimal(item.current_on_hand) + consumed, quantity=quantity, evidence_type=evidence_type, evidence_note=evidence_note,
+            existing_batches=others,
+        )
+    except VerificationError as exc:
+        return _verification_error_response(exc)
+    original.revoked_at = _now()
+    original.revoked_by_user_id = current_user.id
+    original.revoked_reason = reason
+    replacement = InventoryCostVerification(
+        organization_id=organization.id, location_id=location.id, inventory_item_id=item.id,
+        quantity=quantity, consumed_quantity=consumed, unit=item.stock_unit,
+        evidence_type=evidence_type, evidence_note=evidence_note,
+        source_type=original.source_type, source_record_id=original.source_record_id, source_line_id=original.source_line_id,
+        idempotency_key=key, correction_of_id=original.id, verified_by_user_id=current_user.id, verified_at=_now(),
+    )
+    db.session.add(replacement)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This correction was already submitted.", 409, errors={"idempotencyKey": "This key was already used."})
+    record_audit_event(
+        event_type="inventory.cost_verification_corrected", entity_type="inventory_cost_verification", entity_id=replacement.id,
+        organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id,
+        metadata={"itemId": item.id, "correctionOfId": original.id, "oldQuantity": float(original.quantity), "newQuantity": float(quantity), "reason": reason},
+    )
+    body = _serialize_cost_verification(replacement)
+    body["replayed"] = False
+    return _commit_json(body, 201)
+
+
 TRANSFER_OUT_SOURCE_TYPE = "inventory transfer out"
 TRANSFER_IN_SOURCE_TYPE = "inventory transfer in"
 
@@ -2743,13 +3075,18 @@ def create_inventory_transfer():
             errors={"quantity": f"Only {source_before} {source.stock_unit} of {source.name} is on hand here. Stock cannot go below zero."},
         )
     unit_cost = Decimal(source.average_unit_cost or 0)
+    free_batches: list[InventoryCostVerification] = []
     if unit_cost <= 0:
-        db.session.rollback()
-        return json_error(
-            "Source item has no cost.",
-            409,
-            errors={"sourceItemId": f"{source.name} has no average cost yet, so the value to carry to {destination.name} is unknown. Receive it on an invoice or set its cost first."},
-        )
+        # A zero cost is unknown unless verified-free evidence covers the whole quantity (#279).
+        free_batches = [row for row in _verification_rows_for_item(organization.id, location.id, source.id, lock=True) if row.revoked_at is None]
+        decision = zero_cost_transfer_decision(source_before, unit_cost, quantity, [_verification_batch(row) for row in free_batches])
+        if not decision.allowed:
+            db.session.rollback()
+            return json_error(
+                "Source item has no cost.",
+                409,
+                errors={"sourceItemId": f"{source.name} has no average cost yet, so the value to carry to {destination.name} is unknown. Receive it on an invoice, set its cost first, or record verified-free evidence if it was genuinely free."},
+            )
     target_before = Decimal(target.current_on_hand)
     target_after = (target_before + quantity).quantize(QTY)
 
@@ -2805,6 +3142,27 @@ def create_inventory_transfer():
             actor_user_id=current_user.id,
         )
     )
+    if free_batches:
+        # Verified-free stock: consume the source evidence oldest first and re-create it at the destination (#279).
+        remaining = quantity
+        for batch_row in free_batches:
+            take = min(_verification_batch(batch_row).remaining, remaining)
+            if take <= 0:
+                continue
+            batch_row.consumed_quantity = Decimal(batch_row.consumed_quantity or 0) + take
+            db.session.add(
+                InventoryCostVerification(
+                    organization_id=organization.id, location_id=destination.id, inventory_item_id=target.id,
+                    quantity=take, consumed_quantity=Decimal("0"), unit=target.stock_unit,
+                    evidence_type=batch_row.evidence_type,
+                    evidence_note=f"Transferred from {location.name} (verification #{batch_row.id}): {batch_row.evidence_note}",
+                    source_type=TRANSFER_IN_SOURCE_TYPE, source_record_id=str(transfer.id), source_line_id=str(batch_row.id),
+                    idempotency_key=f"transfer-{transfer.id}-v{batch_row.id}", verified_by_user_id=current_user.id, verified_at=_now(),
+                )
+            )
+            remaining -= take
+            if remaining <= 0:
+                break
     # Source cost is unchanged by a send; the destination blends the carried cost into its own average (#197).
     target.average_unit_cost = transfer_weighted_average_inventory_cost(target_before, target.average_unit_cost, quantity, unit_cost)
     source.current_on_hand = source_after
@@ -2831,6 +3189,7 @@ def create_inventory_transfer():
             "toItemId": target.id,
             "quantity": float(quantity),
             "unitCost": float(unit_cost),
+            "verifiedFree": bool(free_batches),
             "sourceQuantityAfter": float(source_after),
             "destinationQuantityAfter": float(target_after),
             "reason": reason,

@@ -43,3 +43,8 @@ Coverage is capped at on-hand stock, excludes revoked batches and subtracts cons
 ## Compatibility
 - Migration 0029 only adds a table, indexes, a policy, a function and a trigger. Existing tables and migration 0028 are untouched. `backend/pilot_api.py`, `backend/costing.py` and the #252 receipt path are not modified.
 - **Release note:** merging adds migration 0029; Render Production auto-runs Alembic on main, so this needs explicit owner release authorization. No data is written.
+
+## Phase B endpoint integration (#279)
+- `GET/POST /api/pilot/inventory/items/<id>/cost-verifications`, `POST /api/pilot/inventory/cost-verifications/<id>/revoke` and `/correct` (all `inventory.manage`, audited, idempotent). Evidence is accepted only for zero-cost items (priced items are refused), never above unverified on-hand stock, and revocation is refused once any quantity has moved at $0 (use a correction, which cannot go below the consumed quantity).
+- `POST /api/pilot/inventory/transfers`: a zero-cost source transfers only when active evidence covers the whole quantity. Source batches are consumed oldest first under the item lock and equivalent destination batches are created in the same transaction; value blends by weighted average (`transfer_weighted_average_inventory_cost`). Replays do not consume evidence twice.
+- Known limits: POS consumption and waste do not decrement evidence batches (coverage is capped at on-hand stock); free receipts onto already-priced items and receipt-line-linked evidence UI are not included; no UI.
