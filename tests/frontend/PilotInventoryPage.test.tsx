@@ -18,6 +18,7 @@ const inventoryMocks = vi.hoisted(() => ({
   createPilotInventoryWasteEvent: vi.fn(),
   createPilotSupplier: vi.fn(),
   updatePilotSupplier: vi.fn(),
+  fetchPilotCostVerifications: vi.fn(),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -48,6 +49,7 @@ vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
     createPilotInventoryWasteEvent: inventoryMocks.createPilotInventoryWasteEvent,
     createPilotSupplier: inventoryMocks.createPilotSupplier,
     updatePilotSupplier: inventoryMocks.updatePilotSupplier,
+    fetchPilotCostVerifications: inventoryMocks.fetchPilotCostVerifications,
   };
 });
 
@@ -237,6 +239,7 @@ describe("PilotInventoryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     navigateMock.mockReset();
+    inventoryMocks.fetchPilotCostVerifications.mockResolvedValue({ itemId: 0, verifications: [] });
     inventoryMocks.fetchPilotInventory.mockResolvedValue(createInventoryResponse());
     inventoryMocks.fetchPilotSuppliers.mockResolvedValue({
       suppliers: [
