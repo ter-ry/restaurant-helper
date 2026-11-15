@@ -1304,3 +1304,6 @@ class CloverShadowOrderLine(TimestampMixin, db.Model):
     order = db.relationship("CloverShadowOrder", back_populates="lines")
     organization = db.relationship("Organization")
     restaurant_location = db.relationship("RestaurantLocation")
+
+
+from . import evidence_shrink  # noqa: E402,F401  (registers the before_flush evidence invariant, #311)

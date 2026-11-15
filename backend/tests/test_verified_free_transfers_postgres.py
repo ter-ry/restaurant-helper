@@ -133,3 +133,22 @@ def test_other_organization_cannot_read_write_revoke_or_correct_evidence(postgre
     assert other_client.get(f"/api/pilot/inventory/items/{sites.main_item}/cost-verifications", base_url=BASE).status_code == 404
     assert _evidence(sites, sites.main_item) == [(Decimal("6"), Decimal("0"), False)]
     assert _evidence(outsider, outsider.main_item) == []
+
+
+def test_waste_shrinks_evidence_so_later_unverified_stock_cannot_transfer_free(postgres_app):
+    """#311: a real stock-decreasing endpoint consumes evidence; stale evidence cannot cover later unverified $0 stock."""
+    sites = _free_sites(postgres_app)
+    client = sites.client()
+    assert _verify(sites, client, 6).status_code == 201  # on hand 10, 6 verified free
+    waste = _post(client, f"/api/pilot/inventory/items/{sites.main_item}/adjustments", {"quantityDelta": -8, "movementType": "waste", "reason": "spoiled flour"})
+    assert waste.status_code == 201, waste.get_data(as_text=True)
+    assert sites.read(sites.main_item)[0] == Decimal("2")
+    assert _evidence(sites, sites.main_item) == [(Decimal("6"), Decimal("4"), False)]  # remaining 2 <= on hand 2
+
+    refill = _post(client, f"/api/pilot/inventory/items/{sites.main_item}/adjustments", {"quantityDelta": 6, "movementType": "manual increase", "reason": "recount"})
+    assert refill.status_code == 201, refill.get_data(as_text=True)
+    assert _evidence(sites, sites.main_item) == [(Decimal("6"), Decimal("4"), False)]  # increase does not restore evidence
+    # 8 on hand but only 2 verified free: a 4-unit $0 transfer is refused and nothing moves.
+    assert sites.transfer(client, source=sites.main_item, to_location=sites.kiosk_id, quantity=4).status_code == 409
+    assert sites.read(sites.main_item)[0] == Decimal("8")
+    assert sites.transfer(client, source=sites.main_item, to_location=sites.kiosk_id, quantity=2).status_code == 201
