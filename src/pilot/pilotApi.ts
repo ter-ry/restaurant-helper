@@ -1600,3 +1600,48 @@ export async function createPilotInventoryTransfer(payload: {
     throw error;
   }
 }
+
+/** Verified-free ($0) inventory evidence for one item (#279). Rows are never deleted; revoked rows stay listed. */
+export type PilotCostVerification = {
+  id: number;
+  itemId: number;
+  quantity: number;
+  consumedQuantity: number;
+  remainingQuantity: number;
+  unit: string;
+  evidenceType: string;
+  evidenceNote: string;
+  correctionOfId: number | null;
+  verifiedAt: string | null;
+  revokedAt: string | null;
+  revokedReason: string;
+  replayed?: boolean;
+};
+
+export const COST_EVIDENCE_TYPES = ["supplier_free_goods", "donation", "promotional_sample", "other_documented"] as const;
+
+/** Always reads fresh from the server: this is the authoritative state shown after every mutation. */
+export async function fetchPilotCostVerifications(itemId: number) {
+  return requestJsonUncached<{ itemId: number; verifications: PilotCostVerification[] }>(`/api/pilot/inventory/items/${itemId}/cost-verifications`);
+}
+
+async function postVerification<T>(path: string, body: Record<string, unknown>) {
+  try {
+    return await requestCsrfJson<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  } finally {
+    // Evidence changes what can be transferred, so cached inventory lists are no longer trustworthy.
+    clearPilotDataCache();
+  }
+}
+
+export function createPilotCostVerification(itemId: number, payload: { evidenceType: string; evidenceNote: string; quantity: number; idempotencyKey: string }) {
+  return postVerification<PilotCostVerification>(`/api/pilot/inventory/items/${itemId}/cost-verifications`, payload);
+}
+
+export function revokePilotCostVerification(verificationId: number, payload: { reason: string }) {
+  return postVerification<PilotCostVerification>(`/api/pilot/inventory/cost-verifications/${verificationId}/revoke`, payload);
+}
+
+export function correctPilotCostVerification(verificationId: number, payload: { evidenceType: string; evidenceNote: string; quantity: number; reason: string; idempotencyKey: string }) {
+  return postVerification<PilotCostVerification>(`/api/pilot/inventory/cost-verifications/${verificationId}/correct`, payload);
+}

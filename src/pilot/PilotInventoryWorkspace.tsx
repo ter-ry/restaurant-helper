@@ -40,6 +40,7 @@ import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
 import { InventoryTransferAction, type PendingTransfer } from "./InventoryTransferAction";
+import { VerifiedFreeEvidence } from "./VerifiedFreeEvidence";
 
 interface InventoryDraft {
   id: number | null;
@@ -1028,6 +1029,7 @@ export function PilotInventoryPage() {
                   <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
+              {itemDetail?.item ? <VerifiedFreeEvidence item={itemDetail.item} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 
