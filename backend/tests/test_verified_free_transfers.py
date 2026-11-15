@@ -154,3 +154,23 @@ def test_verified_item_cannot_change_base_unit_and_foreign_unit_evidence_never_c
         InventoryCostVerification.query.filter_by(inventory_item_id=world["flour_main"]).update({"unit": "g"})
         db.session.commit()
     assert _transfer(client, world, quantity=2).status_code == 409
+
+
+def test_verification_endpoints_respect_the_inventory_module_gate(app, client, world):  # noqa: F811
+    from backend.models import OrganizationModule
+
+    _zero(app, world["flour_main"])
+    batch = _verify(client, world["flour_main"], 6).get_json()["id"]
+    with app.app_context():
+        OrganizationModule.query.filter_by(organization_id=world["org"], module_key="INVENTORY").one().status = "DISABLED"
+        db.session.commit()
+    headers = csrf_headers(client)
+    body = {"quantity": 2, "evidenceType": "donation", "evidenceNote": "x", "reason": "r", "idempotencyKey": uuid4().hex}
+    responses = [
+        client.get(f"/api/pilot/inventory/items/{world['flour_main']}/cost-verifications"),
+        _verify(client, world["flour_main"], 2),
+        client.post(f"/api/pilot/inventory/cost-verifications/{batch}/revoke", headers=headers, json={"reason": "r"}),
+        client.post(f"/api/pilot/inventory/cost-verifications/{batch}/correct", headers=headers, json=body),
+    ]
+    assert [r.status_code for r in responses] == [403, 403, 403, 403]
+    assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("0"), False)]
