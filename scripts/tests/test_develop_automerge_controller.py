@@ -704,7 +704,8 @@ class MergeIdentity(unittest.TestCase):
             self.assertNotIn(name, wf)
 
 
-MAIN_RULES = [{"type": "pull_request", "ruleset_id": 7}, {"type": "non_fast_forward", "ruleset_id": 7},
+MAIN_RULES = [{"type": "pull_request", "ruleset_id": 7, "parameters": {"required_approving_review_count": 1}},
+              {"type": "non_fast_forward", "ruleset_id": 7},
               {"type": "deletion", "ruleset_id": 7}]
 MAIN_SET = {"enforcement": "active", "bypass_actors": []}
 OK_SHA = "a" * 40
@@ -788,6 +789,11 @@ class WriteGuard(unittest.TestCase):
             "no_pr_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "pull_request"]),
             "no_force_push_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "non_fast_forward"]),
             "no_deletion_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "deletion"]),
+            "zero_approvals": dict(rules=[{"type": "pull_request", "ruleset_id": 7,
+                                           "parameters": {"required_approving_review_count": 0}}] + MAIN_RULES[1:]),
+            "approvals_missing": dict(rules=[{"type": "pull_request", "ruleset_id": 7}] + MAIN_RULES[1:]),
+            "approvals_bool": dict(rules=[{"type": "pull_request", "ruleset_id": 7,
+                                           "parameters": {"required_approving_review_count": True}}] + MAIN_RULES[1:]),
             "bypass_actor": dict(ruleset={"enforcement": "active", "bypass_actors": [{"actor_id": 1}]}),
             "bypass_missing": dict(ruleset={"enforcement": "active"}),
             "not_active": dict(ruleset={"enforcement": "evaluate", "bypass_actors": []}),
@@ -943,113 +949,24 @@ class RulesetPreflight(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", wf)
 
 
+class RedactedBypassStaysBlocked(unittest.TestCase):
+    """#307 security regression: an unchanged updated_at never substitutes for a visible empty bypass list."""
 
-class OwnerAttestedRulesetBypass(unittest.TestCase):
-    """Redacted bypass actors may be trusted ONLY for an exact audited ruleset revision."""
+    def test_omitted_bypass_with_pinned_looking_metadata_is_blocked(self):
+        detail = {"id": 7, "enforcement": "active", "source": REPO, "source_type": "Repository",
+                  "updated_at": "2026-11-02T20:36:36.327-05:00", "current_user_can_bypass": "never"}
+        p = {"rules": MAIN_RULES, "rulesets": {"7": detail}}
+        self.assertIn("MAIN_RULESET_BYPASS_ACTORS_PRESENT", dc.main_guard_problems(p))
+        self.assertFalse(hasattr(dc, "OWNER_ATTESTED_EMPTY_BYPASS"))
 
-    def fixture(self):
-        main_id, dev_id = 26415188, 26858821
-        main_rules = [dict(r, ruleset_id=main_id, ruleset_source=REPO,
-                           ruleset_source_type="Repository") for r in copy.deepcopy(MAIN_RULES)]
-        develop_rules = [dict(r, ruleset_id=dev_id, ruleset_source=REPO,
-                              ruleset_source_type="Repository") for r in hardened_ruleset()["rules"]]
-        main_detail = {
-            "id": main_id, "name": "Protect Main", "source": REPO,
-            "source_type": "Repository", "target": "branch", "enforcement": "active",
-            "updated_at": "2026-11-02T20:36:36.327-05:00",
-            "conditions": {"ref_name": {"exclude": [], "include": ["~DEFAULT_BRANCH"]}},
-            "current_user_can_bypass": "never",
-            # No bypass_actors: the restricted App intentionally has this field redacted.
-        }
-        dev_detail = {
-            "id": dev_id, "name": "Protect Develop", "source": REPO,
-            "source_type": "Repository", "target": "branch", "enforcement": "active",
-            "updated_at": "2026-11-13T17:30:32.692-05:00",
-            "conditions": {"ref_name": {"exclude": [], "include": ["refs/heads/develop"]}},
-            "current_user_can_bypass": "never",
-        }
-        return PfTransport(main=(200, main_rules), develop=(200, develop_rules),
-                           details={str(main_id): (200, main_detail), str(dev_id): (200, dev_detail)})
+    def test_main_guard_requires_approval_and_visible_empty_bypass(self):
+        ok = {"rules": MAIN_RULES, "rulesets": {"7": MAIN_SET}}
+        self.assertEqual(dc.main_guard_problems(ok), [])
+        zero = {"rules": [{"type": "pull_request", "ruleset_id": 7,
+                           "parameters": {"required_approving_review_count": 0}}] + MAIN_RULES[1:],
+                "rulesets": {"7": MAIN_SET}}
+        self.assertIn("MAIN_APPROVAL_NOT_REQUIRED", dc.main_guard_problems(zero))
 
-    def test_redacted_owner_attested_bypass_passes_both_branches_with_read_only_token(self):
-        t = self.fixture()
-        rep = dc.run_preflight(t, REPO, 777)
-        self.assertEqual(rep["status"], "PASS", rep)
-        self.assertTrue(rep["read_only"])
-        self.assertEqual(t.puts, [])
-        self.assertEqual(dc.main_guard_problems(
-            {"rules": t.table["main"][1], "rulesets": {"26415188": t.details["26415188"][1]}}), [])
-        self.assertEqual(dc.ruleset_problems(
-            {"rules": t.table["develop"][1], "rulesets": {"26858821": t.details["26858821"][1]}}, 777), [])
-
-    def test_no_explicit_bypass_or_unchanged_metadata_alone_is_insufficient(self):
-        t = self.fixture()
-        for mutate in (
-            lambda d: d.pop("updated_at"),
-            lambda d: d.update(updated_at="2026-11-15T11:00:00Z"),
-            lambda d: d.update(current_user_can_bypass="always"),
-            lambda d: d.pop("current_user_can_bypass"),
-            lambda d: d.update(source="other/repo"),
-            lambda d: d.update(source_type="Organization"),
-            lambda d: d.update(target="tag"),
-            lambda d: d.update(id=999),
-            lambda d: d.update(conditions={"ref_name": {"include": ["~ALL"], "exclude": []}}),
-            lambda d: d.update(enforcement="evaluate"),
-            lambda d: d.update(bypass_actors=[{"actor_id": 1}]),
-            lambda d: d.update(bypass_actors=None),
-        ):
-            for branch, rid in (("main", "26415188"), ("develop", "26858821")):
-                test = self.fixture()
-                mutate(test.details[rid][1])
-                rep = dc.run_preflight(test, REPO, 777)
-                part = next(b for b in rep["branches"] if b["branch"] == branch)
-                self.assertEqual(part["status"], "BLOCKED", (branch, rep))
-                self.assertEqual(test.puts, [])
-        self.assertEqual(t.puts, [])
-
-    def test_additional_ruleset_or_inherited_source_invalidates_owner_attestation(self):
-        for branch, rid in (("main", 26415188), ("develop", 26858821)):
-            test = self.fixture()
-            test.table[branch][1].append({
-                "type": "deletion", "ruleset_id": 999,
-                "ruleset_source_type": "Repository", "ruleset_source": REPO,
-            })
-            self.assertEqual(dc.run_preflight(test, REPO, 777)["status"], "BLOCKED")
-            test = self.fixture()
-            test.table[branch][1][0]["ruleset_source_type"] = "Organization"
-            self.assertEqual(dc.run_preflight(test, REPO, 777)["status"], "BLOCKED")
-            test = self.fixture()
-            test.table[branch][1][0]["ruleset_source"] = "another/repository"
-            self.assertEqual(dc.run_preflight(test, REPO, 777)["status"], "BLOCKED")
-
-    def test_write_guard_rechecks_main_attestation_before_merge(self):
-        t = self.fixture()
-        main, detail = t.table["main"][1], t.details["26415188"][1]
-        guard, underlying = dc.GuardedTransport(Inner(rules=main, ruleset=detail), REPO), None
-        guard.put(f"/repos/{REPO}/pulls/12/merge", {"sha": OK_SHA, "merge_method": "squash"})
-        test = self.fixture()
-        test.details["26415188"][1]["updated_at"] = "2026-11-16T00:00:00Z"
-        guard = dc.GuardedTransport(Inner(rules=test.table["main"][1],
-                                          ruleset=test.details["26415188"][1]), REPO)
-        with self.assertRaises(PermissionError):
-            guard.put(f"/repos/{REPO}/pulls/12/merge", {"sha": OK_SHA, "merge_method": "squash"})
-
-    def test_real_explicit_nonempty_bypass_never_overridden_by_attestation(self):
-        for branch, rid in (("main", "26415188"), ("develop", "26858821")):
-            t = self.fixture()
-            t.details[rid][1]["bypass_actors"] = [{"actor_id": 123, "actor_type": "Integration"}]
-            rep = dc.run_preflight(t, REPO, 777)
-            part = next(b for b in rep["branches"] if b["branch"] == branch)
-            self.assertIn("BYPASS_ACTORS_NONEMPTY", part["reasons"])
-
-    def test_owner_attestation_does_not_grant_a_non_target_repo_or_branch(self):
-        t = self.fixture()
-        self.assertFalse(dc._owner_attests_empty_bypass(
-            {"rules": t.table["main"][1], "rulesets": {"26415188": t.details["26415188"][1]}},
-            "unknown", 26415188))
-        self.assertFalse(dc._owner_attests_empty_bypass(
-            {"rules": t.table["main"][1], "rulesets": {"26415188": t.details["26415188"][1]}},
-            "develop", 26415188))
 
 if __name__ == "__main__":
     unittest.main()

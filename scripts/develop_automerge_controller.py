@@ -61,65 +61,6 @@ _ISSUE_REF = re.compile(r"(?im)^\s*(?:closes|fixes|resolves)\s+#(\d+)\s*$")
 _DEP_LINE = re.compile(r"(?im)^\s*(?:depends on|blocked by)\s*:\s*(.+)$")
 
 
-# Owner-verified, commit-reviewed ruleset evidence: 2026-11-15, issue #270.
-# The owner-authenticated rulesets API returned bypass_actors=[] for BOTH exact revisions.
-# GitHub intentionally omits this sensitive field for the least-privileged merge App.
-# Instead of granting it Administration(write), trust the owner snapshot ONLY while
-# GitHub's server-maintained updated_at, rule identity, source and scope are unchanged.
-# This is a limited attestation, not a live privileged read of the hidden field.
-# Updating rulesets must make this baseline stale until a fresh OWNER audit and PR review.
-OWNER_ATTESTED_EMPTY_BYPASS = {
-    "main": {26415188: "2026-11-02T20:36:36.327-05:00"},
-    "develop": {26858821: "2026-11-13T17:30:32.692-05:00"},
-}
-_ATTESTATION_REPO = "ter-ry/restaurant-helper"
-_ATTESTED_SCOPE = {
-    "main": {"ref_name": {"exclude": [], "include": ["~DEFAULT_BRANCH"]}},
-    "develop": {"ref_name": {"exclude": [], "include": ["refs/heads/develop"]}},
-}
-
-
-def _owner_attests_empty_bypass(p: Any, branch: str, rid: int) -> bool:
-    """Prove redacted bypass data matches a pinned, owner-verified ruleset version.
-
-    Never infer empty from an absent field alone. The ruleset ID set must match
-    exactly, so newly created/inherited rulesets cannot escape owner audit.
-    """
-    audited = OWNER_ATTESTED_EMPTY_BYPASS.get(branch)
-    if not audited or rid not in audited or not isinstance(p, Mapping):
-        return False
-    rules, details = p.get("rules"), p.get("rulesets")
-    if not isinstance(rules, list) or not rules or not isinstance(details, Mapping):
-        return False
-    if any(not isinstance(x, Mapping) or not isinstance(x.get("ruleset_id"), int)
-           or isinstance(x.get("ruleset_id"), bool)
-           or x.get("ruleset_source_type") != "Repository"
-           or x.get("ruleset_source") != _ATTESTATION_REPO for x in rules):
-        return False
-    if {x["ruleset_id"] for x in rules} != set(audited):
-        return False
-    d = details.get(str(rid))
-    if not isinstance(d, Mapping) or "bypass_actors" in d:
-        return False
-    return (d.get("id") == rid and not isinstance(d.get("id"), bool)
-            and d.get("updated_at") == audited[rid]
-            and d.get("source") == _ATTESTATION_REPO
-            and d.get("source_type") == "Repository"
-            and d.get("target") == "branch"
-            and d.get("enforcement") == "active"
-            and d.get("conditions") == _ATTESTED_SCOPE[branch]
-            and d.get("current_user_can_bypass") == "never")
-
-
-def _empty_bypass_is_proven(p: Any, branch: str, rid: int) -> bool:
-    d = p.get("rulesets", {}).get(str(rid)) if isinstance(p, Mapping) else None
-    if not isinstance(d, Mapping):
-        return False
-    if "bypass_actors" in d:
-        return d["bypass_actors"] == []  # Explicit nonempty, None or malformed NEVER passes.
-    return _owner_attests_empty_bypass(p, branch, rid)
-
-
 @dataclass(frozen=True)
 class Config:
     repository: str
@@ -235,8 +176,8 @@ def ruleset_problems(p: Any, verifier_app_id: Any = None) -> list[str]:
             continue
         if d.get("enforcement") != "active":
             out.append("RULESET_NOT_ACTIVE")
-        if not _empty_bypass_is_proven(p, "develop", rid):
-            out.append("RULESET_BYPASS_ACTORS_PRESENT")  # hidden data needs a current owner attestation
+        if d.get("bypass_actors") != []:
+            out.append("RULESET_BYPASS_ACTORS_PRESENT")  # missing/unknown is treated like present
     if any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
         out.append("RULESET_DETAIL_UNAVAILABLE")
     by_type: dict[str, list[Mapping[str, Any]]] = {}
@@ -627,8 +568,16 @@ def main_guard_problems(p: Any) -> list[str]:
             continue
         if d.get("enforcement") != "active":
             out.append("MAIN_RULESET_NOT_ACTIVE")
-        if not _empty_bypass_is_proven(p, "main", rid):
+        if d.get("bypass_actors") != []:
             out.append("MAIN_RULESET_BYPASS_ACTORS_PRESENT")
+    # A repository-wide contents:write token could otherwise merge its own PR to main: require a real
+    # non-author approval on every pull_request rule. Zero, missing or malformed counts fail closed.
+    pr_rules = [r for r in rules if r.get("type") == "pull_request"]
+    for r in pr_rules:
+        params = r.get("parameters")
+        count = params.get("required_approving_review_count") if isinstance(params, Mapping) else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            out.append("MAIN_APPROVAL_NOT_REQUIRED")
     types = {str(r.get("type")) for r in rules}
     for needed, code in (("pull_request", "MAIN_DIRECT_PUSH_ALLOWED"), ("non_fast_forward", "MAIN_FORCE_PUSH_ALLOWED"),
                          ("deletion", "MAIN_DELETION_ALLOWED")):
@@ -814,16 +763,12 @@ def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any)
         if not isinstance(body, Mapping):
             reasons.append("RULESET_DETAIL_BAD_SHAPE")
         elif "bypass_actors" not in body:
-            pass  # Evaluate the complete active ruleset set against owner evidence below.
+            reasons.append("BYPASS_ACTORS_OMITTED")
         elif not isinstance(body["bypass_actors"], list):
             reasons.append("BYPASS_ACTORS_BAD_SHAPE")
         elif body["bypass_actors"]:
             reasons.append("BYPASS_ACTORS_NONEMPTY")
     payload = {"rules": rules, "rulesets": details}
-    for rid, d in details.items():
-        if isinstance(d, Mapping) and "bypass_actors" not in d:
-            if not _owner_attests_empty_bypass(payload, branch, int(rid)):
-                reasons.append("BYPASS_ACTORS_OMITTED")
     reasons += main_guard_problems(payload) if branch == "main" else ruleset_problems(payload, verifier_app_id)
     reasons = list(dict.fromkeys(reasons))
     return {"branch": branch, "status": "BLOCKED" if reasons else "PASS", "reasons": reasons}
