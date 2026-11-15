@@ -79,7 +79,17 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
     setNotice(null);
     setError(null);
     void reload();
-  }, [reload]);
+  }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stock changes elsewhere (a $0 transfer, an adjustment, waste) change what is still covered: re-read the evidence.
+  const firstStockRun = useRef(true);
+  useEffect(() => {
+    if (firstStockRun.current) {
+      firstStockRun.current = false;
+      return;
+    }
+    void reload();
+  }, [item.currentOnHand, item.averageUnitCost, reload]);
 
   const onHand = Number(item.currentOnHand);
   const hasCost = Number(item.averageUnitCost ?? 0) > 0;
@@ -118,7 +128,8 @@ export function VerifiedFreeEvidence({ item, onChanged, disabled = false }: Prop
       if (!Number.isFinite(parsed) || parsed <= 0) return setError("Enter a quantity greater than zero.");
       if (!note.trim()) return setError("Explain how you know this stock was free.");
       if (mode.kind === "correct" && !reason.trim()) return setError("Say why the evidence is being corrected.");
-      if (mode.kind === "record" && parsed > unverified) return setError(`Only ${unverified} ${item.stockUnit} is not yet verified.`);
+      // An unresolved retry (key already issued) must reach the server so it can replay; availability is then the server's call.
+      if (mode.kind === "record" && keyRef.current === null && parsed > unverified) return setError(`Only ${unverified} ${item.stockUnit} is not yet verified.`);
     }
     inFlight.current = true;
     setBusy(true);

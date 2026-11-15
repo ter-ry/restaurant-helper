@@ -71,4 +71,32 @@ describe("VerifiedFreeEvidence", () => {
     fireEvent.click(screen.getByText("Confirm revoke"));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith(1, { reason: "Entered twice" }));
   });
+  it("re-reads evidence when on-hand stock changes elsewhere (e.g. a $0 transfer) and drops Revoke for consumed evidence", async () => {
+    const list = vi.spyOn(api, "fetchPilotCostVerifications")
+      .mockResolvedValueOnce({ itemId: 7, verifications: [row()] })
+      .mockResolvedValue({ itemId: 7, verifications: [row({ consumedQuantity: 4, remainingQuantity: 0 })] });
+    const { rerender } = render(<VerifiedFreeEvidence item={item} />);
+    expect(await screen.findByText(/verified free 4 · unverified 6/)).toBeInTheDocument();
+    expect(screen.getByText("Revoke")).toBeInTheDocument();
+    rerender(<VerifiedFreeEvidence item={{ ...item, currentOnHand: 6 }} />);
+    expect(await screen.findByText(/verified free 0 · unverified 6/)).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Revoke")).not.toBeInTheDocument();
+  });
+
+  it("lets an unresolved retry reach the server even after the committed evidence reduced the unverified quantity", async () => {
+    const list = vi.spyOn(api, "fetchPilotCostVerifications")
+      .mockResolvedValueOnce({ itemId: 7, verifications: [] })
+      .mockResolvedValue({ itemId: 7, verifications: [row({ quantity: 10, remainingQuantity: 10 })] });
+    const create = vi.spyOn(api, "createPilotCostVerification").mockRejectedValueOnce(new Error("Connection lost")).mockResolvedValue(row({ quantity: 10, replayed: true }));
+    render(<VerifiedFreeEvidence item={item} />);
+    fireEvent.click(await screen.findByText("Record verified free stock"));
+    fireEvent.change(screen.getByLabelText(/Evidence note/), { target: { value: "Donated" } });
+    fireEvent.click(screen.getByText("Confirm free stock"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Connection lost");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByText("Confirm free stock"));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(create.mock.calls[1][1].idempotencyKey).toBe(create.mock.calls[0][1].idempotencyKey);
+  });
 });
