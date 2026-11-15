@@ -33,6 +33,8 @@ export type PendingEvidenceRequest = {
 
 type Props = {
   pendingRef: MutableRefObject<Record<number, PendingEvidenceRequest>>;
+  /** Changes whenever the parent reloads its data (e.g. the Refresh button), so evidence changed elsewhere is re-read. */
+  refreshSignal?: number;
   item: PilotInventoryItem;
   /** Called after any successful change so the parent can re-read the item and inventory list. */
   onChanged?: () => Promise<void> | void;
@@ -57,7 +59,7 @@ function describeError(err: unknown, fallback: string) {
  * "Verified free stock" (#279). Zero-cost stock is treated as unknown-cost and cannot be transferred at $0 until
  * someone records written evidence that it was genuinely free. Evidence is append-only: revoke or correct, never delete.
  */
-export function VerifiedFreeEvidence({ pendingRef, item, onChanged, disabled = false }: Props) {
+export function VerifiedFreeEvidence({ pendingRef, refreshSignal = 0, item, onChanged, disabled = false }: Props) {
   const restored = pendingRef.current[item.id] ?? null;
   const [rows, setRows] = useState<PilotCostVerification[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -112,7 +114,7 @@ export function VerifiedFreeEvidence({ pendingRef, item, onChanged, disabled = f
       return;
     }
     void reload();
-  }, [item.currentOnHand, item.averageUnitCost, reload]);
+  }, [item.currentOnHand, item.averageUnitCost, refreshSignal, reload]);
 
   const onHand = Number(item.currentOnHand);
   const hasCost = Number(item.averageUnitCost ?? 0) > 0;

@@ -73,4 +73,12 @@ describe("verified-free panel in the inventory workspace (#312)", () => {
     expect(await screen.findByText(/On hand 6 kg · verified free 0 · unverified 6/)).toBeVisible();
     await waitFor(() => expect(mocks.fetchPilotCostVerifications.mock.calls.length).toBeGreaterThan(1));
   });
+  it("re-reads evidence when the workspace Refresh button is used (evidence changed by another session)", async () => {
+    render(<MemoryRouter initialEntries={["/app/inventory"]}><PilotInventoryPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("row", { name: /Chicken Breast/ }));
+    expect(await screen.findByText(/verified free 0 · unverified 10/)).toBeVisible();
+    mocks.fetchPilotCostVerifications.mockResolvedValue({ itemId: 30, verifications: [{ id: 1, itemId: 30, quantity: 4, consumedQuantity: 0, remainingQuantity: 4, unit: "kg", evidenceType: "donation", evidenceNote: "Added elsewhere", correctionOfId: null, verifiedAt: null, revokedAt: null, revokedReason: "" }] });
+    fireEvent.click(screen.getAllByRole("button", { name: /Refresh/ })[0]);
+    expect(await screen.findByText(/verified free 4 · unverified 6/)).toBeVisible();
+  });
 });

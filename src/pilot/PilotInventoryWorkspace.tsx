@@ -205,6 +205,8 @@ export function PilotInventoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
+  // Bumped after every successful list load so panels with their own server data (free-stock evidence) re-read it on Refresh.
+  const [loadCount, setLoadCount] = useState(0);
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -213,6 +215,7 @@ export function PilotInventoryPage() {
       const [response, supplierResponse, negativeResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers(), fetchPilotNegativeStock().catch(() => null)]);
       setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setData(response);
+      setLoadCount((count) => count + 1);
       setSuppliers(supplierResponse.suppliers);
       if (workspaceMode === "browse" && !selectedId && !response.items.length) {
         setDraft(blankDraft());
@@ -1038,7 +1041,7 @@ export function PilotInventoryPage() {
                   <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
-              {itemDetail?.item ? <VerifiedFreeEvidence pendingRef={pendingEvidenceRef} item={itemDetail.item} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
+              {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={itemDetail.item} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 
