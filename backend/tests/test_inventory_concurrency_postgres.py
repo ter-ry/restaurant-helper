@@ -27,7 +27,7 @@ from sqlalchemy.pool import NullPool
 
 from backend.app import create_app
 from backend.extensions import db
-from backend.models import InventoryItem, InventoryMovement, Organization, User
+from backend.models import InventoryCostVerification, InventoryItem, InventoryMovement, Organization, User
 from backend.seed import LOCAL_OWNER_EMAIL
 from backend.tests.conftest import make_operational_organization
 from backend.tests.test_postgres_rls import (  # noqa: F401  (postgres_app is a fixture)
@@ -62,7 +62,10 @@ class Gate:
     def __call__(self, session, flush_context, instances) -> None:  # SQLAlchemy before_flush signature
         if self.fired or threading.current_thread() is not self.thread:
             return
-        writes_stock = any(isinstance(obj, InventoryItem) for obj in session.dirty) or any(isinstance(obj, InventoryMovement) for obj in session.new)
+        writes_stock = (
+            any(isinstance(obj, InventoryItem) for obj in session.dirty)
+            or any(isinstance(obj, (InventoryMovement, InventoryCostVerification)) for obj in session.new)  # evidence writes hold the item lock too (#279)
+        )
         if not writes_stock:
             return
         self.fired = True
