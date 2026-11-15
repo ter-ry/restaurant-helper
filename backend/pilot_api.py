@@ -791,7 +791,8 @@ def _record_receipt(invoice: PurchaseInvoice, actor_id: int):
         receipt_unit_cost = _receipt_stock_unit_cost(line)
         before = Decimal(item.current_on_hand)
         after = (before + quantity_delta).quantize(QTY)
-        if after < 0:
+        # #249 Option A: a positive receipt may lift an existing POS-caused negative without reaching zero.
+        if after < 0 and quantity_delta < 0:
             raise RequestValidationError("Inventory receipt failed.", {"inventory": f"Receiving {line.description} would make {item.name} negative."})
 
         existing = InventoryMovement.query.filter_by(
@@ -2375,7 +2376,7 @@ def create_inventory_adjustment(item_id: int):
         delta = abs(delta)
     before = Decimal(item.current_on_hand)
     after = (before + delta).quantize(QTY)
-    if after < 0:
+    if after < 0 and delta < 0:
         return json_error("Adjustment would make inventory negative.", 400, errors={"quantityDelta": "Quantity cannot reduce stock below zero."})
     movement = InventoryMovement(
         organization_id=organization.id,
@@ -2525,7 +2526,7 @@ def reverse_inventory_adjustment(movement_id: int):
     delta = (-Decimal(original.quantity_delta)).quantize(QTY)
     before = Decimal(item.current_on_hand)
     after = (before + delta).quantize(QTY)
-    if after < 0:
+    if after < 0 and delta < 0:
         db.session.rollback()
         return json_error(
             "Reversal would make inventory negative.",
