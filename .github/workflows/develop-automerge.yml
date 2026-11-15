@@ -10,6 +10,11 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      preflight_rulesets:
+        description: "Read-only: check main/develop rulesets with the restricted merge App token (no merge, no writes)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,4 +51,4 @@ jobs:
           REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
           VERIFIER_APP_ID: ${{ vars.VERIFIER_APP_ID }}
           TRUSTED_COAUTHOR_EMAILS: ${{ vars.TRUSTED_COAUTHOR_EMAILS }}
-        run: python scripts/develop_automerge_controller.py
+        run: python scripts/develop_automerge_controller.py ${{ inputs.preflight_rulesets && '--preflight-rulesets' || '' }}

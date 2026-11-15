@@ -817,5 +817,131 @@ class WriteGuard(unittest.TestCase):
         self.assertTrue(any(e.startswith("MERGE_NOT_CONFIRMED") for e in rep.errors))
 
 
+DEV_RULES = [{"type": "pull_request", "ruleset_id": 8}, {"type": "required_status_checks", "ruleset_id": 8},
+             {"type": "non_fast_forward", "ruleset_id": 8}, {"type": "deletion", "ruleset_id": 8}]
+DEV_SET = {"enforcement": "active", "bypass_actors": []}
+
+
+class PfTransport:
+    """Branch-aware read double; records every call so tests can prove nothing else was used."""
+
+    def __init__(self, main=None, develop=None, details=None):
+        self.gets, self.puts = [], []
+        self.table = {"main": main or (200, MAIN_RULES), "develop": develop or (200, DEV_RULES)}
+        self.details = {"7": (200, MAIN_SET), "8": (200, DEV_SET)}
+        self.details.update(details or {})
+
+    def get(self, path, params):
+        self.gets.append(path)
+        for b, (st, body) in self.table.items():
+            if path.endswith(f"/rules/branches/{b}"):
+                return _resp(st, body)
+        rid = path.rsplit("/", 1)[-1]
+        st, body = self.details.get(rid, (404, None))
+        return _resp(st, body)
+
+    def put(self, path, body):  # pragma: no cover - must never be reached
+        self.puts.append(path)
+        raise AssertionError("write attempted")
+
+    def graphql(self, q, v):  # pragma: no cover
+        raise AssertionError("graphql attempted")
+
+
+class RulesetPreflight(unittest.TestCase):
+    def run_pf(self, **kw):
+        t = PfTransport(**kw)
+        return dc.run_preflight(t, REPO, 777), t
+
+    def reasons(self, rep, branch):
+        return next(b for b in rep["branches"] if b["branch"] == branch)["reasons"]
+
+    def test_main_valid_empty_bypass_passes_and_only_reads(self):
+        rep, t = self.run_pf(develop=(404, None))
+        main = next(b for b in rep["branches"] if b["branch"] == "main")
+        self.assertEqual(main, {"branch": "main", "status": "PASS", "reasons": []})
+        self.assertEqual(t.puts, [])
+        self.assertTrue(rep["read_only"])
+        self.assertTrue(all(p.startswith(f"/repos/{REPO}/rule") for p in t.gets))
+
+    def test_http_403_and_404_are_distinguished(self):
+        for code in (403, 404):
+            rep, _ = self.run_pf(main=(code, None))
+            self.assertEqual(self.reasons(rep, "main"), [f"RULES_HTTP_{code}"])
+            self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_omitted_bypass_actors_is_distinct_from_nonempty(self):
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active"})})
+        self.assertIn("BYPASS_ACTORS_OMITTED", self.reasons(rep, "main"))
+        self.assertNotIn("BYPASS_ACTORS_NONEMPTY", self.reasons(rep, "main"))
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "bypass_actors": [{"actor_id": 1}]})})
+        self.assertIn("BYPASS_ACTORS_NONEMPTY", self.reasons(rep, "main"))
+        self.assertNotIn("BYPASS_ACTORS_OMITTED", self.reasons(rep, "main"))
+        self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_bad_bypass_shape_and_detail_errors_block(self):
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "bypass_actors": None})})
+        self.assertIn("BYPASS_ACTORS_BAD_SHAPE", self.reasons(rep, "main"))
+        rep, _ = self.run_pf(details={"7": (403, None)})
+        self.assertIn("RULESET_DETAIL_HTTP_403", self.reasons(rep, "main"))
+        rep, _ = self.run_pf(details={"7": (200, ["x"])})
+        self.assertIn("RULESET_DETAIL_BAD_SHAPE", self.reasons(rep, "main"))
+
+    def test_truncated_and_malformed_rule_lists_block(self):
+        rep, _ = self.run_pf(main=(200, [{"type": "deletion", "ruleset_id": 7}] * 100))
+        self.assertEqual(self.reasons(rep, "main"), ["RULES_TRUNCATED"])
+        rep, _ = self.run_pf(main=(200, {"message": "x"}))
+        self.assertEqual(self.reasons(rep, "main"), ["RULES_BAD_SHAPE"])
+        rep, _ = self.run_pf(main=(200, []))
+        self.assertEqual(rep["branches"][0]["status"], "BLOCKED")
+
+    def test_missing_main_pr_rule_blocks(self):
+        rep, _ = self.run_pf(main=(200, [r for r in MAIN_RULES if r["type"] != "pull_request"]))
+        self.assertIn("MAIN_DIRECT_PUSH_ALLOWED", self.reasons(rep, "main"))
+
+    def test_develop_is_evaluated_with_ruleset_problems(self):
+        rep, _ = self.run_pf()
+        self.assertEqual(rep["status"], "BLOCKED")  # parameterless rules: fail closed
+        self.assertIn("RULESET_NO_REQUIRED_REVIEW", self.reasons(rep, "develop"))
+
+    def test_fully_valid_main_and_develop_pass(self):
+        full = [{"type": "pull_request", "ruleset_id": 8, "parameters": {
+                    "required_approving_review_count": 1, "dismiss_stale_reviews_on_push": True,
+                    "required_review_thread_resolution": True, "allowed_merge_methods": ["squash"]}},
+                {"type": "required_status_checks", "ruleset_id": 8, "parameters": {
+                    "strict_required_status_checks_policy": True, "required_status_checks": [
+                        {"context": c, "integration_id": 777 if c == dc.VERIFIER_CHECK else None}
+                        for c in sorted(dc.REQUIRED_CONTEXTS)]}},
+                {"type": "non_fast_forward", "ruleset_id": 8}, {"type": "deletion", "ruleset_id": 8}]
+        rep, t = self.run_pf(develop=(200, full))
+        self.assertEqual(rep["status"], "PASS", rep)
+        self.assertEqual(t.puts, [])
+
+    def test_report_never_contains_response_bodies(self):
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "secret_marker": "TOPSECRET"})})
+        self.assertNotIn("TOPSECRET", json.dumps(rep))
+
+    def test_read_only_transport_refuses_writes(self):
+        ro = dc._ReadOnlyTransport(PfTransport())
+        with self.assertRaises(PermissionError):
+            ro.put("/x", {})
+        with self.assertRaises(PermissionError):
+            ro.graphql("q", {})
+
+    def test_exception_is_reported_by_class_only(self):
+        class Boom(PfTransport):
+            def get(self, path, params):
+                raise RuntimeError("token ghs_SECRET")
+        rep = dc.run_preflight(Boom(), REPO, 777)
+        self.assertNotIn("ghs_SECRET", json.dumps(rep))
+        self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_workflow_exposes_manual_preflight_input_only(self):
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/develop-automerge.yml").read_text()
+        self.assertIn("preflight_rulesets", wf)
+        self.assertIn("--preflight-rulesets", wf)
+        self.assertIn("github.ref == 'refs/heads/main'", wf)
+
+
 if __name__ == "__main__":
     unittest.main()
