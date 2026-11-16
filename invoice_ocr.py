@@ -197,11 +197,18 @@ def parse_invoice_text(raw_text: str) -> dict[str, Any]:
         subtotal = FieldResult(round(float(total.value) - float(tax.value), 2), 0.45, True, "Subtotal was inferred from total minus tax.")
 
     warnings = build_warnings(supplier, invoice_date, invoice_number, subtotal, tax, total, line_items)
+    reconciliation = reconcile_line_items(line_items, subtotal, tax, total)
+    if reconciliation["status"] == "incomplete":
+        warnings.insert(0, reconciliation["message"])
     confidence_values = [field.confidence for field in [supplier, invoice_date, invoice_number, subtotal, tax, total] if field.value not in (None, "", 0)]
     if line_items:
         confidence_values.extend(item["confidence"] for item in line_items)
     overall_confidence = round(sum(confidence_values) / len(confidence_values), 2) if confidence_values else 0.0
-    needs_review = any(field.needs_review for field in [supplier, invoice_date, invoice_number, subtotal, tax, total]) or any(item["needsReview"] for item in line_items)
+    needs_review = (
+        any(field.needs_review for field in [supplier, invoice_date, invoice_number, subtotal, tax, total])
+        or any(item["needsReview"] for item in line_items)
+        or reconciliation["status"] == "incomplete"
+    )
 
     return {
         "rawText": raw_text,
@@ -214,10 +221,48 @@ def parse_invoice_text(raw_text: str) -> dict[str, Any]:
             "total": field_to_json(total),
         },
         "lineItems": line_items,
+        "reconciliation": reconciliation,
         "warnings": warnings,
         "overallConfidence": overall_confidence,
         "needsReview": needs_review,
     }
+
+
+def reconcile_line_items(
+    line_items: list[dict[str, Any]],
+    subtotal: FieldResult,
+    tax: FieldResult,
+    total: FieldResult,
+) -> dict[str, Any]:
+    """Compare extracted line totals with the printed subtotal/total.
+
+    Never invents lines: it only reports that the extracted rows cannot account
+    for the document amounts, so the invoice must not be received unreviewed.
+    """
+    line_sum = round(sum(float(item.get("lineTotal") or 0) for item in line_items), 2)
+    # Only trust a printed (not inferred) figure as the expected amount.
+    expected = None
+    basis = None
+    if subtotal.value and not subtotal.needs_review:
+        expected, basis = round(float(subtotal.value), 2), "subtotal"
+    elif total.value and not total.needs_review:
+        expected, basis = round(float(total.value) - float(tax.value or 0), 2), "total"
+    result: dict[str, Any] = {"status": "unverified", "lineTotalSum": line_sum, "expectedAmount": expected, "basis": basis, "difference": None, "message": ""}
+    if expected is None or expected <= 0:
+        return result
+    difference = round(expected - line_sum, 2)
+    result["difference"] = difference
+    if abs(difference) <= max(0.05, expected * 0.005):
+        result["status"] = "matched"
+        return result
+    result["status"] = "incomplete"
+    label = "subtotal" if basis == "subtotal" else "total (before tax)"
+    result["message"] = (
+        f"Possible missing or misread invoice lines: extracted lines add up to ${line_sum:.2f}, "
+        f"but the invoice {label} is ${expected:.2f} (difference ${abs(difference):.2f}). "
+        "Compare with the original invoice and add or correct lines before receiving."
+    )
+    return result
 
 
 def field_to_json(field: FieldResult) -> dict[str, Any]:
@@ -429,6 +474,11 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
     table_mode = bool(table_lines)
     items: list[dict[str, Any]] = []
 
+    if not table_mode:
+        stacked = extract_stacked_rows(lines)
+        if stacked:
+            return stacked
+
     index = 0
     while index < len(candidate_lines):
         line = candidate_lines[index]
@@ -466,6 +516,63 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
     # payable/inventory information; downstream review can still identify an
     # exact duplicate using the raw source line and amounts.
     return items
+
+
+_QTY_CELL = re.compile(r"^(?:[x×]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*[x×])$", re.I)
+_MONEY_CELL = re.compile(r"^\$?\s*(\d[\d,]*\.\d{2})$")
+
+
+def extract_stacked_rows(lines: list[str]) -> list[dict[str, Any]]:
+    """Rebuild rows where OCR stacked a description over its ×qty / unit price / amount cells.
+
+    A row is accepted only when quantity × unit price equals the printed amount;
+    anything that does not reconcile is left out for manual review.  Requires at
+    least two such rows so ordinary single-line invoices keep the normal parser.
+    """
+    items: list[dict[str, Any]] = []
+    index = 0
+    while index < len(lines):
+        description = lines[index]
+        if (
+            re.search(r"[A-Za-z]{2,}", description)
+            and not extract_all_amounts(description)
+            and not is_probable_non_item_line(description)
+            and not is_table_end_line(description)
+        ):
+            qty = None
+            money: list[float] = []
+            end = index + 1
+            while end < len(lines) and end <= index + 4:
+                cell = normalize_space(lines[end])
+                qty_match = _QTY_CELL.match(cell)
+                money_match = _MONEY_CELL.match(cell)
+                if qty_match and qty is None and not money:
+                    qty = float(qty_match.group(1) or qty_match.group(2))
+                elif money_match and len(money) < 2:
+                    money.append(parse_money(money_match.group(1)))
+                else:
+                    break
+                end += 1
+            if qty and len(money) == 2 and abs(qty * money[0] - money[1]) <= 0.02:
+                items.append({
+                    "originalDescription": description,
+                    "rawSourceLine": " | ".join(lines[index:end]),
+                    "comparisonKey": normalize_item_comparison_key(description),
+                    "packaging": "",
+                    "itemName": description,
+                    "quantity": qty,
+                    "unit": "each",
+                    "unitPrice": money[0],
+                    "lineTotal": money[1],
+                    "calculatedLineTotal": round(qty * money[0], 2),
+                    "lineTotalDifference": 0.0,
+                    "confidence": 0.84,
+                    "needsReview": False,
+                })
+                index = end
+                continue
+        index += 1
+    return items if len(items) >= 2 else []
 
 
 def is_numeric_table_fragment(line: str) -> bool:
