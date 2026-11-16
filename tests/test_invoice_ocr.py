@@ -406,3 +406,27 @@ Total 154.06
         parsed = parse_invoice_text(text)
         self.assertEqual(len(parsed["lineItems"]), 3)
         self.assertEqual(parsed["reconciliation"]["status"], "matched")
+
+
+class MixedLayoutTest(unittest.TestCase):
+    def test_inline_rows_are_kept_alongside_stacked_rows_in_source_order(self):
+        text = """Catering Invoice
+Invoice No: 1002
+Description
+Unit Price
+Amount
+Veggie Soup
+×3
+$5.00
+$15.00
+Chicken Dish
+×3
+$12.00
+$36.00
+Rich Salad 2 x 9.00 18.00
+Total $69.00
+"""
+        parsed = parse_invoice_text(text)
+        self.assertEqual([i["itemName"] for i in parsed["lineItems"]], ["Veggie Soup", "Chicken Dish", "Rich Salad"])
+        self.assertEqual(parsed["lineItems"][2]["quantity"], 2.0)
+        self.assertEqual(parsed["reconciliation"]["status"], "matched")

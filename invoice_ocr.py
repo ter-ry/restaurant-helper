@@ -472,15 +472,20 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
     table_lines = extract_item_table_lines(lines)
     candidate_lines = table_lines if table_lines else lines
     table_mode = bool(table_lines)
-    items: list[dict[str, Any]] = []
 
+    origin = list(range(len(candidate_lines)))
+    stacked_items: list[tuple[int, dict[str, Any]]] = []
     if not table_mode:
-        stacked = extract_stacked_rows(lines)
-        if stacked:
-            return stacked
+        stacked_items, consumed = extract_stacked_rows(lines)
+        if stacked_items:
+            # Keep inline rows that are not part of a reconstructed stacked row.
+            origin = [i for i in range(len(lines)) if i not in consumed]
+            candidate_lines = [lines[i] for i in origin]
 
+    positioned: list[tuple[int, dict[str, Any]]] = list(stacked_items)
     index = 0
     while index < len(candidate_lines):
+        row_origin = origin[index]
         line = candidate_lines[index]
         # Some OCR engines emit a table row as a description followed by
         # quantity/unit/price/amount cells on separate lines. Reconstruct only
@@ -508,28 +513,30 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
             continue
         item = parse_line_item(line, amounts, table_mode=table_mode)
         if item:
-            items.append(item)
+            positioned.append((row_origin, item))
 
     # Do not deduplicate solely by a normalized description.  Two legitimate
     # rows can have the same base product name but different package sizes,
     # quantities, prices, or invoice-line context.  Dropping one here loses
     # payable/inventory information; downstream review can still identify an
     # exact duplicate using the raw source line and amounts.
-    return items
+    positioned.sort(key=lambda entry: entry[0])
+    return [item for _, item in positioned]
 
 
 _QTY_CELL = re.compile(r"^(?:[x×]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*[x×])$", re.I)
 _MONEY_CELL = re.compile(r"^\$?\s*(\d[\d,]*\.\d{2})$")
 
 
-def extract_stacked_rows(lines: list[str]) -> list[dict[str, Any]]:
+def extract_stacked_rows(lines: list[str]) -> tuple[list[tuple[int, dict[str, Any]]], set[int]]:
     """Rebuild rows where OCR stacked a description over its ×qty / unit price / amount cells.
 
     A row is accepted only when quantity × unit price equals the printed amount;
     anything that does not reconcile is left out for manual review.  Requires at
     least two such rows so ordinary single-line invoices keep the normal parser.
     """
-    items: list[dict[str, Any]] = []
+    items: list[tuple[int, dict[str, Any]]] = []
+    consumed: set[int] = set()
     index = 0
     while index < len(lines):
         description = lines[index]
@@ -554,7 +561,8 @@ def extract_stacked_rows(lines: list[str]) -> list[dict[str, Any]]:
                     break
                 end += 1
             if qty and len(money) == 2 and abs(qty * money[0] - money[1]) <= 0.02:
-                items.append({
+                consumed.update(range(index, end))
+                items.append((index, {
                     "originalDescription": description,
                     "rawSourceLine": " | ".join(lines[index:end]),
                     "comparisonKey": normalize_item_comparison_key(description),
@@ -568,11 +576,11 @@ def extract_stacked_rows(lines: list[str]) -> list[dict[str, Any]]:
                     "lineTotalDifference": 0.0,
                     "confidence": 0.84,
                     "needsReview": False,
-                })
+                }))
                 index = end
                 continue
         index += 1
-    return items if len(items) >= 2 else []
+    return (items, consumed) if len(items) >= 2 else ([], set())
 
 
 def is_numeric_table_fragment(line: str) -> bool:
