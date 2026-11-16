@@ -2557,6 +2557,75 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });
 
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`purchase receive is single-submit, survives a failure and retries at ${viewport.width}px (#327)`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const organization = makeOrganization({ id: 8, name: "Receive Cafe" });
+    const state: MockState = {
+      session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 12, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+      csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+    };
+    const purchaseFlow = makeEmptyPurchaseFlowState();
+    purchaseFlow.suppliers.push({ id: 23, name: "North Bay Dairy", categoryFocus: "Dairy", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true });
+    purchaseFlow.inventoryItems.push({ id: 30, name: "2% Milk", stockUnit: "case" });
+    enableEmptyPurchaseWorkflow(state, purchaseFlow);
+    await installMockApi(page, state);
+
+    // Count receive POSTs; the first one fails with 503 (nothing applied), later ones fall through to the fake.
+    let receivePosts = 0;
+    await page.route("**/api/pilot/purchases/invoices/*/receive", async (route) => {
+      receivePosts += 1;
+      if (receivePosts === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporarily unavailable" }) });
+      }
+      return route.fallback();
+    });
+
+    // Authoritative re-read used by the page to reconcile after a failed receive (server state: saved, not received).
+    await page.route(/\/api\/pilot\/purchases\/invoices\/\d+$/, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const id = Number(route.request().url().split("/").at(-1));
+      const invoice = purchaseFlow.invoices.find((entry) => entry.id === id);
+      return route.fulfill({ status: invoice ? 200 : 404, contentType: "application/json", body: JSON.stringify(invoice ?? { error: "Not found" }) });
+    });
+
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "New purchase" }).click();
+    await page.getByLabel("Supplier").selectOption("North Bay Dairy");
+    await page.getByLabel("Invoice number").fill("NB-327");
+    await page.getByLabel("Description").fill("2% Milk");
+    await page.getByLabel("Inventory item").selectOption("30");
+    await page.locator('label:has-text("Purchase unit") input').first().fill("case");
+    await page.locator('label:has-text("Inventory unit") input').first().fill("case");
+    await page.locator('label:has-text("Conversion") input').first().fill("1");
+    await page.locator('label:has-text("Quantity") input').first().fill("2");
+    await page.locator('label:has-text("Unit price") input').first().fill("4.50");
+    const editorCard = page.getByTestId("purchase-editor-card");
+    await editorCard.getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "Save ready" }).click();
+    await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
+    await editorCard.getByRole("button", { name: "Review" }).click();
+    await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
+
+    await page.getByRole("button", { name: "Receive into inventory" }).click();
+    await page.getByRole("button", { name: "Confirm receive" }).dblclick();
+    await expect.poll(() => receivePosts).toBe(1);
+    // Failure is visible and the draft is still on screen (not silently lost).
+    await expect(page.getByText(/was saved but not received/)).toBeVisible({ timeout: 10000 });
+    await expect(editorCard).toBeVisible();
+
+    // Retry from the preserved server draft succeeds exactly once more.
+    await editorCard.getByRole("button", { name: "Review" }).click();
+    await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
+    await page.getByRole("button", { name: "Receive into inventory" }).click();
+    await page.getByRole("button", { name: "Confirm receive" }).click();
+    await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible({ timeout: 10000 });
+    expect(receivePosts).toBe(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
 test("purchase review exception blocks an unmapped line until it is resolved", async ({ page }) => {
   const organization = makeOrganization({ id: 6, name: "Exception Cafe" });
   const state: MockState = {
