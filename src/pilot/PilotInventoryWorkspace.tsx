@@ -40,6 +40,7 @@ import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
 import { InventoryTransferAction, type PendingTransfer } from "./InventoryTransferAction";
+import { VerifiedFreeEvidence, type PendingEvidenceRequest } from "./VerifiedFreeEvidence";
 
 interface InventoryDraft {
   id: number | null;
@@ -204,6 +205,8 @@ export function PilotInventoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
+  // Bumped after every successful list load so panels with their own server data (free-stock evidence) re-read it on Refresh.
+  const [loadCount, setLoadCount] = useState(0);
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -212,6 +215,7 @@ export function PilotInventoryPage() {
       const [response, supplierResponse, negativeResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers(), fetchPilotNegativeStock().catch(() => null)]);
       setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setData(response);
+      setLoadCount((count) => count + 1);
       setSuppliers(supplierResponse.suppliers);
       if (workspaceMode === "browse" && !selectedId && !response.items.length) {
         setDraft(blankDraft());
@@ -478,6 +482,7 @@ export function PilotInventoryPage() {
       setAdjustmentNote("");
       setAdjustmentModalOpen(false);
       await load();
+      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record adjustment.");
@@ -489,8 +494,21 @@ export function PilotInventoryPage() {
   // The workspace may be closed or switched to another item while a reversal is in flight; late responses for
   // an item that is no longer selected must not be installed into the new item's workspace.
   const pendingTransferRef = useRef<Record<number, PendingTransfer>>({});
+  const pendingEvidenceRef = useRef<Record<number, PendingEvidenceRequest>>({});
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+
+  // Re-reads only the selected item's detail (history, cost, on-hand) after a change that already reloaded the list.
+  // The list is reloaded by Refresh and after mutations; prefer its on-hand and cost over the older item detail.
+  const reconciledItem = (detailItem: PilotInventoryItem) => {
+    const listed = data?.items.find((entry) => entry.id === detailItem.id);
+    return listed ? { ...detailItem, currentOnHand: listed.currentOnHand, averageUnitCost: listed.averageUnitCost } : detailItem;
+  };
+
+  const refreshItemDetailOnly = async (itemId: number) => {
+    const detail = await fetchPilotInventoryItem(itemId);
+    if (selectedIdRef.current === itemId) setItemDetail(detail);
+  };
 
   const refreshItemAfterReversal = async (itemId: number) => {
     // Reconcile with authoritative server state: item detail (history + linkage) and the inventory list (on-hand).
@@ -555,6 +573,7 @@ export function PilotInventoryPage() {
       setWasteModalOpen(false);
       setMessage(`Waste recorded: ${formatInventoryQuantity(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
       await load();
+      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record waste.");
@@ -1028,6 +1047,7 @@ export function PilotInventoryPage() {
                   <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
+              {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={reconciledItem(itemDetail.item)} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 
