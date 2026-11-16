@@ -24,8 +24,14 @@ export interface OcrCheck {
 const cents = (value: number) => Math.round(value * 100) / 100;
 const money = (value: number) => `$${cents(Math.abs(value)).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function printedAmount(field: { value: string | number | null } | undefined): number | null {
-  const value = field?.value;
+/**
+ * Only an amount the backend actually read counts as printed evidence. The backend reports a missing amount as
+ * `{ value: 0, confidence: 0, needsReview: true }` and an inferred one with `needsReview: true`; neither is a printed
+ * figure, so both stay "unknown" instead of becoming a $0 target. A printed zero (e.g. "Tax 0.00") is kept.
+ */
+function printedAmount(field: { value: string | number | null; confidence?: number; needsReview?: boolean } | undefined): number | null {
+  if (!field || field.needsReview === true || (typeof field.confidence === "number" && field.confidence <= 0)) return null;
+  const value = field.value;
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;

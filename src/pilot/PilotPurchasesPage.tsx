@@ -566,6 +566,11 @@ export function PilotPurchasesPage() {
     () => (ocrEvidence && !draft.id && draft.extractionStatus === "ocr" ? checkOcrLines(ocrEvidence, draft.lineItems.map((line) => Number(line.lineTotal) || 0)) : null),
     [ocrEvidence, draft.id, draft.extractionStatus, draft.lineItems],
   );
+  // A confirmation covers one exact gap. Once an edit moves the gap, the confirmation is discarded for good, so
+  // returning to an earlier gap needs a fresh confirmation.
+  useEffect(() => {
+    if (ocrAckDifference !== null && ocrCheck?.difference !== ocrAckDifference) setOcrAckDifference(null);
+  }, [ocrAckDifference, ocrCheck]);
   const localReviewSummary = useMemo(() => {
     const blockers = draft.lineItems.flatMap((line) => [
       !line.inventoryItemId ? `Map ${line.description || "this item"} to inventory.` : null,
@@ -1018,8 +1023,8 @@ export function PilotPurchasesPage() {
     setOcrPreviewName("");
     setLastOcrFile(null);
     setOcrError(null);
-    setOcrEvidence(null);
-    setOcrAckDifference(null);
+    // Printed evidence is deliberately kept: "Continue manually" keeps the extracted draft, and the draft must stay
+    // checked against what the invoice printed. It is replaced by the next extraction and ignored for non-OCR drafts.
   };
 
   const setLineDescription = (index: number, description: string) => {

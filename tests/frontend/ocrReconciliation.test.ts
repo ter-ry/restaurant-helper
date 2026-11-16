@@ -54,6 +54,27 @@ describe("OCR reconciliation check", () => {
     expect(check.difference).toBeNull();
   });
 
+  it("treats the backend's missing-amount shape as unknown, not as a printed $0 (invoice_ocr.find_amount)", () => {
+    const missing = { value: 0, confidence: 0, needsReview: true };
+    const base = response({ total: 15 });
+    // A readable total with no subtotal/tax: compare with the total, not with a phantom $0 subtotal.
+    const evidence = buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, subtotal: missing, tax: missing } });
+    expect(evidence.printedSubtotal).toBeNull();
+    expect(evidence.printedTax).toBeNull();
+    expect(checkOcrLines(evidence, [15]).status).toBe("matched");
+    // Nothing readable at all stays unverified.
+    const none = buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, subtotal: missing, tax: missing, total: missing } });
+    expect(checkOcrLines(none, [15]).status).toBe("unverified");
+  });
+
+  it("does not trust an inferred total (needsReview) as printed evidence, but keeps a printed zero tax", () => {
+    const base = response({ subtotal: 100 });
+    const inferred = { value: 106.5, confidence: 0.42, needsReview: true };
+    expect(buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, total: inferred } }).printedTotal).toBeNull();
+    const zeroTax = { value: 0, confidence: 0.95, needsReview: false };
+    expect(buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, tax: zeroTax } }).printedTax).toBe(0);
+  });
+
   it("keeps backend warnings and the backend message, ignoring blanks", () => {
     const evidence = buildOcrPrintedEvidence(response({ total: 10 }, { warnings: ["Two rows could not be read.", " "], reconciliation: { status: "incomplete", message: "Two rows could not be read." } }));
     expect(evidence.warnings).toEqual(["Two rows could not be read."]);
