@@ -327,3 +327,106 @@ class InvoiceOcrTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+CATERING_STACKED_TEXT = """
+Catering Invoice
+Invoice No: 1001
+Invoice Date: 2019-05-01
+Order Details
+Description
+Unit Price
+Amount
+Veggie Soup
+×3
+$5.00
+$15.00
+Chicken Dish
+×3
+$12.00
+$36.00
+Rich Salad
+×2
+$9.00
+$18.00
+Beans
+×2
+$9.00
+$18.00
+Pudding
+×3
+$6.50
+$19.50
+Total $106.50
+"""
+
+
+class InvoiceReconciliationTest(unittest.TestCase):
+    def test_stacked_quantity_rows_are_fully_reconstructed(self):
+        parsed = parse_invoice_text(CATERING_STACKED_TEXT)
+        rows = [(i["itemName"], i["quantity"], i["unitPrice"], i["lineTotal"]) for i in parsed["lineItems"]]
+        self.assertEqual(rows, [
+            ("Veggie Soup", 3.0, 5.0, 15.0),
+            ("Chicken Dish", 3.0, 12.0, 36.0),
+            ("Rich Salad", 2.0, 9.0, 18.0),
+            ("Beans", 2.0, 9.0, 18.0),
+            ("Pudding", 3.0, 6.5, 19.5),
+        ])
+        self.assertEqual(parsed["reconciliation"]["status"], "matched")
+
+    def test_incomplete_extraction_is_flagged_not_fabricated(self):
+        # Provider only returned the first row: the parser must not invent the rest.
+        text = "Catering Invoice\nDescription\nUnit Price\nAmount\nVeggie Soup 3 x 5.00 15.00\nTotal $106.50\n"
+        parsed = parse_invoice_text(text)
+        self.assertEqual(len(parsed["lineItems"]), 1)
+        self.assertEqual(parsed["reconciliation"]["status"], "incomplete")
+        self.assertEqual(parsed["reconciliation"]["difference"], 91.5)
+        self.assertTrue(parsed["needsReview"])
+        self.assertIn("Possible missing or misread invoice lines", parsed["warnings"][0])
+
+    def test_unreconcilable_stacked_row_is_left_out(self):
+        text = CATERING_STACKED_TEXT.replace("$18.00\nBeans", "$99.00\nBeans")  # Rich Salad 2 x 9 != 99
+        parsed = parse_invoice_text(text)
+        names = [i["itemName"] for i in parsed["lineItems"]]
+        self.assertNotIn("Rich Salad", names)
+        self.assertEqual(parsed["reconciliation"]["status"], "incomplete")
+
+    def test_legitimate_three_row_invoice_still_matches(self):
+        text = """Bike Shop
+Invoice No: 77
+Invoice Date: 2026-01-05
+Qty Description Unit Price Amount
+1 Brake cables 100.00 100.00
+2 Pedal arms 15.00 30.00
+3 Labor 5.00 15.00
+Subtotal 145.00
+Sales Tax 9.06
+Total 154.06
+"""
+        parsed = parse_invoice_text(text)
+        self.assertEqual(len(parsed["lineItems"]), 3)
+        self.assertEqual(parsed["reconciliation"]["status"], "matched")
+
+
+class MixedLayoutTest(unittest.TestCase):
+    def test_inline_rows_are_kept_alongside_stacked_rows_in_source_order(self):
+        text = """Catering Invoice
+Invoice No: 1002
+Description
+Unit Price
+Amount
+Veggie Soup
+×3
+$5.00
+$15.00
+Chicken Dish
+×3
+$12.00
+$36.00
+Rich Salad 2 x 9.00 18.00
+Total $69.00
+"""
+        parsed = parse_invoice_text(text)
+        self.assertEqual([i["itemName"] for i in parsed["lineItems"]], ["Veggie Soup", "Chicken Dish", "Rich Salad"])
+        self.assertEqual(parsed["lineItems"][2]["quantity"], 2.0)
+        self.assertEqual(parsed["reconciliation"]["status"], "matched")
