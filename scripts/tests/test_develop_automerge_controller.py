@@ -865,7 +865,7 @@ class RulesetPreflight(unittest.TestCase):
     def test_main_valid_empty_bypass_passes_and_only_reads(self):
         rep, t = self.run_pf(develop=(404, None))
         main = next(b for b in rep["branches"] if b["branch"] == "main")
-        self.assertEqual(main, {"branch": "main", "status": "PASS", "reasons": []})
+        self.assertEqual(main, {"branch": "main", "status": "PASS", "reasons": [], "bypass_probe": {}})
         self.assertEqual(t.puts, [])
         self.assertTrue(rep["read_only"])
         self.assertTrue(all(p.startswith(f"/repos/{REPO}/rule") for p in t.gets))
@@ -884,6 +884,24 @@ class RulesetPreflight(unittest.TestCase):
         self.assertIn("BYPASS_ACTORS_NONEMPTY", self.reasons(rep, "main"))
         self.assertNotIn("BYPASS_ACTORS_OMITTED", self.reasons(rep, "main"))
         self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_probe_reports_caller_bypass_word_but_never_relaxes_the_block(self):
+        for value, shown in (("never", "never"), ("always", "always"), ("pull_requests_only", "pull_requests_only"),
+                             ("exempt", "exempt"), ("TOPSECRET", "absent"), (None, "absent")):
+            detail = {"enforcement": "active", "secret_marker": "TOPSECRET"}
+            if value is not None:
+                detail["current_user_can_bypass"] = value
+            rep, _ = self.run_pf(details={"7": (200, detail)})
+            main = next(b for b in rep["branches"] if b["branch"] == "main")
+            self.assertEqual(main["bypass_probe"], {"7": shown})
+            self.assertIn("BYPASS_ACTORS_OMITTED", main["reasons"])      # diagnostic only
+            self.assertIn("MAIN_RULESET_BYPASS_ACTORS_PRESENT", main["reasons"])
+            self.assertEqual(rep["status"], "BLOCKED")
+            self.assertNotIn("TOPSECRET", json.dumps(rep).replace('"absent"', ""))
+
+    def test_visible_bypass_list_is_not_probed(self):
+        rep, _ = self.run_pf()
+        self.assertEqual(next(b for b in rep["branches"] if b["branch"] == "main")["bypass_probe"], {})
 
     def test_bad_bypass_shape_and_detail_errors_block(self):
         rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "bypass_actors": None})})

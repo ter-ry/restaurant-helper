@@ -728,6 +728,9 @@ def _http_reason(prefix: str, resp: Any) -> str | None:
     return f"{prefix}_HTTP_{st}" if st in (401, 403, 404, 429) else f"{prefix}_HTTP_OTHER"
 
 
+CAN_BYPASS_VALUES = ("always", "pull_requests_only", "never", "exempt")  # GitHub enum; anything else is reported "absent"
+
+
 def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any) -> dict[str, Any]:
     """Read one branch's rules and every referenced ruleset with the restricted token; never writes.
 
@@ -748,6 +751,7 @@ def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any)
     if len(rules) >= 100:
         return {"branch": branch, "status": "BLOCKED", "reasons": ["RULES_TRUNCATED"]}
     details: dict[str, Any] = {}
+    probe: dict[str, str] = {}
     for r in rules:
         rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
         if not isinstance(rid, int) or isinstance(rid, bool) or str(rid) in details:
@@ -763,6 +767,9 @@ def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any)
         if not isinstance(body, Mapping):
             reasons.append("RULESET_DETAIL_BAD_SHAPE")
         elif "bypass_actors" not in body:
+            # Diagnostic only (#270): record, as a fixed enum word, what GitHub says about THIS caller. It never
+            # relaxes the block; accepting it needs live positive/negative controls and a reviewed change.
+            probe[str(rid)] = body.get("current_user_can_bypass") if body.get("current_user_can_bypass") in CAN_BYPASS_VALUES else "absent"
             reasons.append("BYPASS_ACTORS_OMITTED")
         elif not isinstance(body["bypass_actors"], list):
             reasons.append("BYPASS_ACTORS_BAD_SHAPE")
@@ -771,7 +778,7 @@ def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any)
     payload = {"rules": rules, "rulesets": details}
     reasons += main_guard_problems(payload) if branch == "main" else ruleset_problems(payload, verifier_app_id)
     reasons = list(dict.fromkeys(reasons))
-    return {"branch": branch, "status": "BLOCKED" if reasons else "PASS", "reasons": reasons}
+    return {"branch": branch, "status": "BLOCKED" if reasons else "PASS", "reasons": reasons, "bypass_probe": probe}
 
 
 def run_preflight(t: Any, repository: str, verifier_app_id: Any) -> dict[str, Any]:
