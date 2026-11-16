@@ -1,0 +1,17 @@
+Description	Unit Price	Amount
+Veggie Soup	$15.00
+$5.00
+× 3
+Chicken Dish
+$12.00	$36.00
+× 3
+Rich Salad
+$9.00	$18.00
+× 2
+Beans
+$9.00	$18.00
+× 2
+Pudding
+$6.50	$19.50
+× 3
+Total	$106.50
