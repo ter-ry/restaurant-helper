@@ -359,6 +359,21 @@ def _price_changes_for_location(
     return list(reversed(changes[-25:]))
 
 
+def _business_month_start(location: RestaurantLocation | None, now: datetime | None = None):
+    """First day of the current month in the location's business timezone (shared by Dashboard and Purchases)."""
+    now = now or _now()
+    try:
+        zone = ZoneInfo((location.timezone if location else None) or "America/Toronto")
+    except ZoneInfoNotFoundError:
+        zone = timezone.utc
+    return now.astimezone(zone).date().replace(day=1)
+
+
+def _is_month_to_date_spend(invoice, month_start) -> bool:
+    """Invoice spend counted for the current month: dated this month or later, not voided."""
+    return invoice.invoice_date >= month_start and invoice.status != VOIDED_INVOICE_STATUS
+
+
 def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None = None):
     location = location or RestaurantLocation.query.filter_by(id=location_id).first()
     if location is None:
@@ -452,6 +467,8 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     invoices = [invoice for invoice in invoices if invoice.status != VOIDED_INVOICE_STATUS]  # voided invoices are not spend (#232)
     week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
+    month_start = _business_month_start(location)
+    month_invoices = [invoice for invoice in invoices if _is_month_to_date_spend(invoice, month_start)]
     purchase_workflow = {
         "invoiceReviewQueueCount": len(draft_invoices),
         "inventoryReceiptCount": inventory_summary["inventoryReceiptCount"],
@@ -474,8 +491,8 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
         "summary": {
             "weeklyInvoiceCount": len(week_invoices),
             "weeklyInvoiceSpend": week_spend,
-            "monthlyInvoiceCount": len(invoices),
-            "monthlyInvoiceSpend": round(sum(float(invoice.total_amount) for invoice in invoices), 2),
+            "monthlyInvoiceCount": len(month_invoices),
+            "monthlyInvoiceSpend": round(sum(float(invoice.total_amount) for invoice in month_invoices), 2),
             "invoiceReviewQueueCount": len(draft_invoices),
             **inventory_summary,
             "inventoryItemsToReorderCount": recommendation_count,
@@ -1424,7 +1441,7 @@ def purchases():
     purchase_lines = [line for invoice in invoices for line in invoice.lines]
     price_changes = [change for change in _price_changes_for_location(location.id, invoices=invoices) if change["status"] in {"Increased", "Decreased"}]
     ready_for_csv = sum(1 for invoice in invoices if invoice.status == "Completed")
-    first_of_month = _now().date().replace(day=1)
+    first_of_month = _business_month_start(location)
     received_this_month = sum(1 for invoice in invoices if invoice.status == "Completed" and invoice.invoice_date >= first_of_month)
     needs_review = sum(1 for invoice in invoices if invoice.status == "Draft")
     needs_mapping = sum(1 for invoice in invoices if invoice.status == "Ready" and any(not line.inventory_item_id for line in invoice.lines))
@@ -1436,7 +1453,7 @@ def purchases():
                 "purchaseLines": [serialize_purchase_invoice_line(line) for line in purchase_lines],
                 "priceChanges": price_changes,
                 "summary": {
-                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if invoice.invoice_date >= first_of_month and invoice.status != VOIDED_INVOICE_STATUS), 2),
+                    "thisMonthSpend": round(sum(float(invoice.total_amount) for invoice in invoices if _is_month_to_date_spend(invoice, first_of_month)), 2),
                     "receivedThisMonth": received_this_month,
                     "uploadsNeedingReview": needs_review,
                     "priceChangesFlagged": len(price_changes),
