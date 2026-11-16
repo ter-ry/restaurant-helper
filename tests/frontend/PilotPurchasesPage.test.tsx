@@ -479,6 +479,10 @@ describe("PilotPurchasesPage", () => {
     fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "30" } });
     expect(screen.getByLabelText("Line total")).toHaveValue(90);
+    // The corrected lines (90) no longer add up to the printed subtotal (48), so receiving needs the owner's explicit
+    // confirmation against the original invoice. The confirmation must survive saving and reopening the same draft.
+    expect(screen.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    fireEvent.click(screen.getByLabelText(/I compared these lines with the original invoice/));
     fireEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]);
 
     await waitFor(() => expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledWith(expect.objectContaining({
