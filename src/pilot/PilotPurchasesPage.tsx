@@ -27,6 +27,7 @@ import {
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { lineBlockers, suggestInventoryItem } from "./purchaseMapping";
+import { buildOcrPrintedEvidence, checkOcrLines, type OcrPrintedEvidence } from "./ocrReconciliation";
 
 interface DraftLine {
   id?: number;
@@ -450,6 +451,9 @@ export function PilotPurchasesPage() {
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrEvidence, setOcrEvidence] = useState<OcrPrintedEvidence | null>(null);
+  // The exact gap the owner confirmed against the original document; any later line edit that changes the gap voids it.
+  const [ocrAckDifference, setOcrAckDifference] = useState<number | null>(null);
   const [lastOcrFile, setLastOcrFile] = useState<File | null>(null);
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [ocrPreviewType, setOcrPreviewType] = useState<"image" | "pdf" | null>(null);
@@ -558,6 +562,10 @@ export function PilotPurchasesPage() {
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
+  const ocrCheck = useMemo(
+    () => (ocrEvidence && !draft.id && draft.extractionStatus === "ocr" ? checkOcrLines(ocrEvidence, draft.lineItems.map((line) => Number(line.lineTotal) || 0)) : null),
+    [ocrEvidence, draft.id, draft.extractionStatus, draft.lineItems],
+  );
   const localReviewSummary = useMemo(() => {
     const blockers = draft.lineItems.flatMap((line) => [
       !line.inventoryItemId ? `Map ${line.description || "this item"} to inventory.` : null,
@@ -571,6 +579,9 @@ export function PilotPurchasesPage() {
     const lineSubtotal = draft.lineItems.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0);
     const subtotalDifference = lineSubtotal - Number(draft.subtotal || 0);
     const totalDifference = Number(draft.subtotal || 0) + Number(draft.tax || 0) - Number(draft.totalAmount || 0);
+    // Line edits recompute the draft subtotal from the lines, so the printed invoice amounts are checked separately:
+    // receiving stays blocked until the lines match them or the owner confirms the current gap against the document.
+    if (ocrCheck?.status === "incomplete" && ocrAckDifference !== ocrCheck.difference) blockers.push(`Extracted items do not match the printed invoice (difference ${formatMoney(Math.abs(ocrCheck.difference ?? 0))}). Correct the lines or confirm them against the original invoice.`);
     if (Math.abs(subtotalDifference) > 0.01) blockers.push(`Line items differ from invoice subtotal by ${formatMoney(Math.abs(subtotalDifference))}.`);
     if (Math.abs(totalDifference) > 0.01) blockers.push(`Subtotal plus tax differs from invoice total by ${formatMoney(Math.abs(totalDifference))}.`);
     return {
@@ -580,7 +591,7 @@ export function PilotPurchasesPage() {
       reconciliation: { lineSubtotal, subtotalDifference, totalDifference, status: blockers.length ? "mismatch" : "matched" },
       readyToReceive: blockers.length === 0 && readyToReceive,
     };
-  }, [draft, readyToReceive]);
+  }, [draft, readyToReceive, ocrCheck, ocrAckDifference]);
   // Always derive eligibility from the values currently in the editor. The
   // saved invoice summary may be stale after a quantity/mapping edit; the
   // backend revalidates the persisted payload before creating movements.
@@ -958,6 +969,8 @@ export function PilotPurchasesPage() {
       extractedText: result.rawText || "",
       lineItems: lineItems.length ? lineItems : [blankLine()],
     });
+    setOcrEvidence(buildOcrPrintedEvidence(result));
+    setOcrAckDifference(null);
     setShowReview(false);
     setReceiveMessage(result.needsReview ? "Invoice extracted. Review the highlighted fields before saving." : "Invoice extracted. Review the draft before saving.");
   };
@@ -1005,6 +1018,8 @@ export function PilotPurchasesPage() {
     setOcrPreviewName("");
     setLastOcrFile(null);
     setOcrError(null);
+    setOcrEvidence(null);
+    setOcrAckDifference(null);
   };
 
   const setLineDescription = (index: number, description: string) => {
@@ -1149,6 +1164,23 @@ export function PilotPurchasesPage() {
               </div>
             </div>
 
+            {ocrCheck && ocrEvidence ? (
+              <div data-testid="ocr-reconciliation-banner" data-status={ocrCheck.status} role={ocrCheck.status === "matched" ? "status" : "alert"} className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${ocrCheck.status === "matched" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : ocrCheck.status === "incomplete" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+                <p className="font-bold">{ocrCheck.status === "matched" ? "Extracted items match the invoice" : ocrCheck.status === "incomplete" ? "Extraction looks incomplete" : "Extraction is not verified"}</p>
+                <p className="mt-1 leading-6">{ocrCheck.message}</p>
+                {ocrCheck.status !== "matched" ? <p className="mt-1 text-xs leading-5">Nothing was added or adjusted for you. Correct a line or add the missing one; editing the totals fields does not clear this warning.</p> : null}
+                {ocrCheck.status !== "matched" && ocrEvidence.warnings.filter((warning) => warning !== ocrEvidence.serverMessage).length ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">{ocrEvidence.warnings.filter((warning) => warning !== ocrEvidence.serverMessage).map((warning) => <li key={warning}>{warning}</li>)}</ul>
+                ) : null}
+                {ocrCheck.status !== "matched" ? <div className="mt-3"><Button variant="secondary" type="button" onClick={addLine}>Add missing line</Button></div> : null}
+                {ocrCheck.status === "incomplete" ? (
+                  <label className="mt-3 flex items-start gap-2 text-xs leading-5">
+                    <input type="checkbox" className="mt-0.5 h-4 w-4" checked={ocrAckDifference === ocrCheck.difference} onChange={(event) => setOcrAckDifference(event.target.checked ? ocrCheck.difference : null)} />
+                    <span>I compared these lines with the original invoice and they are correct even though they do not add up to the printed amount.</span>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
             {receiveMessage ? <div aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
             {!showReview ? (

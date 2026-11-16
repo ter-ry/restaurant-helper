@@ -1171,6 +1171,16 @@ export interface PilotInvoiceOcrLine {
   lineTotalDifference?: number;
 }
 
+/** Backend check of extracted line totals against the printed subtotal/total. Optional: older responses omit it. */
+export interface PilotInvoiceOcrReconciliation {
+  status: "matched" | "incomplete" | "unverified";
+  lineTotalSum?: number | null;
+  expectedAmount?: number | null;
+  basis?: string | null;
+  difference?: number | null;
+  message?: string;
+}
+
 export interface PilotInvoiceOcrResponse {
   provider: string;
   fileName: string;
@@ -1188,6 +1198,7 @@ export interface PilotInvoiceOcrResponse {
   warnings: string[];
   overallConfidence: number;
   needsReview: boolean;
+  reconciliation?: PilotInvoiceOcrReconciliation;
 }
 
 export async function uploadPilotInvoiceOcr(file: File) {
