@@ -9,6 +9,8 @@ export interface OcrPrintedEvidence {
   warnings: string[];
   /** Message the backend attached to its own reconciliation, so it is not shown twice. */
   serverMessage: string;
+  /** Null while the extracted draft is unsaved; set to the saved invoice id once that draft is saved, so the check follows it. */
+  invoiceId: number | null;
 }
 
 export type OcrCheckStatus = "matched" | "incomplete" | "unverified";
@@ -44,6 +46,7 @@ export function buildOcrPrintedEvidence(result: PilotInvoiceOcrResponse): OcrPri
     printedTotal: printedAmount(result.fields.total),
     warnings: (result.warnings ?? []).filter((warning) => typeof warning === "string" && warning.trim()),
     serverMessage: result.reconciliation?.message ?? "",
+    invoiceId: null,
   };
 }
 

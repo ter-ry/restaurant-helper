@@ -563,9 +563,15 @@ export function PilotPurchasesPage() {
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
   const ocrCheck = useMemo(
-    () => (ocrEvidence && !draft.id && draft.extractionStatus === "ocr" ? checkOcrLines(ocrEvidence, draft.lineItems.map((line) => Number(line.lineTotal) || 0)) : null),
+    () => (ocrEvidence && draft.extractionStatus === "ocr" && (ocrEvidence.invoiceId === null ? !draft.id : ocrEvidence.invoiceId === draft.id) ? checkOcrLines(ocrEvidence, draft.lineItems.map((line) => Number(line.lineTotal) || 0)) : null),
     [ocrEvidence, draft.id, draft.extractionStatus, draft.lineItems],
   );
+  // Saving the extracted draft gives it an id; the printed-amount check follows that same purchase. Only the unsaved OCR
+  // draft being saved is bound, so opening some other saved invoice never inherits this evidence.
+  const bindOcrEvidence = (savedId: number) => {
+    if (draft.id || draft.extractionStatus !== "ocr") return;
+    setOcrEvidence((current) => (current && current.invoiceId === null ? { ...current, invoiceId: savedId } : current));
+  };
   // A confirmation covers one exact gap. Once an edit moves the gap, the confirmation is discarded for good, so
   // returning to an earlier gap needs a fresh confirmation.
   useEffect(() => {
@@ -669,6 +675,7 @@ export function PilotPurchasesPage() {
       }
       const payload = purchasePayload(status);
       const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
+      bindOcrEvidence(saved.id);
       setSelectedId(saved.id);
       setDraft(invoiceToDraft(saved));
       setReceiveMessage(`Invoice ${saved.invoiceNumber} saved successfully.`);
@@ -699,6 +706,7 @@ export function PilotPurchasesPage() {
       const payload = purchasePayload("Ready");
       const saved = draft.id ? await updatePilotPurchaseInvoice(draft.id, payload) : await createPilotPurchaseInvoice(payload);
       savedInvoiceId = saved.id;
+      bindOcrEvidence(saved.id);
       // Keep the server-saved draft available if the following receive call
       // times out or fails. It must never be recreated blindly.
       setSelectedId(saved.id);

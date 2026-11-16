@@ -2728,6 +2728,23 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     expect(writes).toEqual([]);
   });
 
+  test(`saving an incomplete OCR draft keeps the printed-invoice check and the receive blocker at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    // The edit recomputes the draft totals; saving then assigns the purchase an id.
+    await page.getByLabel("Unit price").first().fill("4");
+    await page.getByRole("button", { name: "Save draft" }).first().click();
+    await expect(page.getByText(/saved successfully/).first()).toBeVisible();
+    expect(writes.filter((entry) => entry.startsWith("POST"))).toHaveLength(1);
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    await expect(banner).toContainText("Difference: $86.50");
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
+    // Nothing was received: the only writes are the draft save.
+    expect(writes.some((entry) => entry.includes("/receive"))).toBe(false);
+  });
+
   test(`a readable total with no printed subtotal is compared with the total, not a phantom $0 subtotal at ${viewport.width}px`, async ({ page }) => {
     const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: null, tax: null, total: 15, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
     const banner = page.getByTestId("ocr-reconciliation-banner");
