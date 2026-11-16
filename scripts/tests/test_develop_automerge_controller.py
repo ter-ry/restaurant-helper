@@ -704,7 +704,8 @@ class MergeIdentity(unittest.TestCase):
             self.assertNotIn(name, wf)
 
 
-MAIN_RULES = [{"type": "pull_request", "ruleset_id": 7}, {"type": "non_fast_forward", "ruleset_id": 7},
+MAIN_RULES = [{"type": "pull_request", "ruleset_id": 7, "parameters": {"required_approving_review_count": 1}},
+              {"type": "non_fast_forward", "ruleset_id": 7},
               {"type": "deletion", "ruleset_id": 7}]
 MAIN_SET = {"enforcement": "active", "bypass_actors": []}
 OK_SHA = "a" * 40
@@ -788,6 +789,11 @@ class WriteGuard(unittest.TestCase):
             "no_pr_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "pull_request"]),
             "no_force_push_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "non_fast_forward"]),
             "no_deletion_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "deletion"]),
+            "zero_approvals": dict(rules=[{"type": "pull_request", "ruleset_id": 7,
+                                           "parameters": {"required_approving_review_count": 0}}] + MAIN_RULES[1:]),
+            "approvals_missing": dict(rules=[{"type": "pull_request", "ruleset_id": 7}] + MAIN_RULES[1:]),
+            "approvals_bool": dict(rules=[{"type": "pull_request", "ruleset_id": 7,
+                                           "parameters": {"required_approving_review_count": True}}] + MAIN_RULES[1:]),
             "bypass_actor": dict(ruleset={"enforcement": "active", "bypass_actors": [{"actor_id": 1}]}),
             "bypass_missing": dict(ruleset={"enforcement": "active"}),
             "not_active": dict(ruleset={"enforcement": "evaluate", "bypass_actors": []}),
@@ -941,6 +947,25 @@ class RulesetPreflight(unittest.TestCase):
         self.assertIn("preflight_rulesets", wf)
         self.assertIn("--preflight-rulesets", wf)
         self.assertIn("github.ref == 'refs/heads/main'", wf)
+
+
+class RedactedBypassStaysBlocked(unittest.TestCase):
+    """#307 security regression: an unchanged updated_at never substitutes for a visible empty bypass list."""
+
+    def test_omitted_bypass_with_pinned_looking_metadata_is_blocked(self):
+        detail = {"id": 7, "enforcement": "active", "source": REPO, "source_type": "Repository",
+                  "updated_at": "2026-11-02T20:36:36.327-05:00", "current_user_can_bypass": "never"}
+        p = {"rules": MAIN_RULES, "rulesets": {"7": detail}}
+        self.assertIn("MAIN_RULESET_BYPASS_ACTORS_PRESENT", dc.main_guard_problems(p))
+        self.assertFalse(hasattr(dc, "OWNER_ATTESTED_EMPTY_BYPASS"))
+
+    def test_main_guard_requires_approval_and_visible_empty_bypass(self):
+        ok = {"rules": MAIN_RULES, "rulesets": {"7": MAIN_SET}}
+        self.assertEqual(dc.main_guard_problems(ok), [])
+        zero = {"rules": [{"type": "pull_request", "ruleset_id": 7,
+                           "parameters": {"required_approving_review_count": 0}}] + MAIN_RULES[1:],
+                "rulesets": {"7": MAIN_SET}}
+        self.assertIn("MAIN_APPROVAL_NOT_REQUIRED", dc.main_guard_problems(zero))
 
 
 if __name__ == "__main__":

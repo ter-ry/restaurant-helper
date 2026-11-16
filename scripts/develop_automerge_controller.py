@@ -570,6 +570,14 @@ def main_guard_problems(p: Any) -> list[str]:
             out.append("MAIN_RULESET_NOT_ACTIVE")
         if d.get("bypass_actors") != []:
             out.append("MAIN_RULESET_BYPASS_ACTORS_PRESENT")
+    # A repository-wide contents:write token could otherwise merge its own PR to main: require a real
+    # non-author approval on every pull_request rule. Zero, missing or malformed counts fail closed.
+    pr_rules = [r for r in rules if r.get("type") == "pull_request"]
+    for r in pr_rules:
+        params = r.get("parameters")
+        count = params.get("required_approving_review_count") if isinstance(params, Mapping) else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            out.append("MAIN_APPROVAL_NOT_REQUIRED")
     types = {str(r.get("type")) for r in rules}
     for needed, code in (("pull_request", "MAIN_DIRECT_PUSH_ALLOWED"), ("non_fast_forward", "MAIN_FORCE_PUSH_ALLOWED"),
                          ("deletion", "MAIN_DELETION_ALLOWED")):
