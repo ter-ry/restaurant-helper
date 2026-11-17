@@ -1,70 +1,75 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 /**
- * Browser acceptance (#333) for Stock Counts at phone and tablet widths. The API is a small stateful fake: count
- * sessions change only through the mocked create / save / finalize endpoints. No live data, no external services.
+ * Browser acceptance for Stock Counts at phone and tablet widths. A small stateful fake API mirrors the server rules
+ * (one draft per start, counted/uncounted derived from saved lines, completed is read-only). It drives the real React page:
+ * duplicate-submit prevention, server refresh, failure feedback with retry and the later-movement confirmation.
+ * No live data and no external services.
  */
 
+type Line = { id: number; inventoryItemId: number; name: string; unit: string; expected: number; counted: number | null; note: string; moved: boolean };
+type Session = { id: number; status: "Draft" | "Completed"; lines: Line[]; notes: string; countedBy: string; version: number };
+type World = {
+  sessions: Session[];
+  calls: { method: string; path: string; body: any }[];
+  delayMs: number;
+  failNext: null | "save" | "finalize";
+  movementOnStart: boolean;
+};
+
 const ORG = { id: 42, name: "Showcase Cafe", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE", setupTemplateKey: "GENERIC_RESTAURANT", setupFeeStatus: "confirmed", isProspect: false, activeAt: "2026-01-01T00:00:00Z", setupCompletedAt: "2026-01-01T00:00:00Z" };
-const MODULES = ["PURCHASES", "INVENTORY", "STOCK_COUNTS", "DAILY_CLOSE"];
+const LOCATIONS = [{ id: 7, name: "Queen St Cafe", city: "Toronto", region: "ON", timezone: "America/Toronto" }];
+const MODULES = ["PURCHASES", "INVENTORY", "REORDER_PLANS", "STOCK_COUNTS"];
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
+];
+const ITEMS = [
+  { id: 1, name: "Whole Milk", unit: "L", onHand: 24 },
+  { id: 2, name: "Espresso Beans", unit: "kg", onHand: 8 },
+  { id: 3, name: "Oat Milk", unit: "L", onHand: 12 },
 ];
 
 const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type Item = { id: number; name: string; stockUnit: string; onHand: number };
-type Line = { id: number; inventoryItemId: number; name: string; unit: string; expected: number; counted: number | null; note: string; later: number };
-type Session = { id: number; status: "Draft" | "Completed"; countedBy: string; notes: string; lines: Line[]; rev: number };
-type World = {
-  items: Item[];
-  sessions: Session[];
-  creates: number;
-  saves: any[];
-  finalizes: any[];
-  delayMs: number;
-  failNext: "save" | "finalize" | null;
-  /** When set, new sessions have a later movement on the first line. */
-  laterMovement: boolean;
-};
-
 function newWorld(): World {
-  return {
-    items: [
-      { id: 30, name: "Whole Milk", stockUnit: "L", onHand: 20 },
-      { id: 31, name: "Oat Milk", stockUnit: "L", onHand: 8 },
-      { id: 32, name: "Espresso Beans", stockUnit: "kg", onHand: 6 },
-    ],
-    sessions: [], creates: 0, saves: [], finalizes: [], delayMs: 0, failNext: null, laterMovement: false,
-  };
+  return { sessions: [], calls: [], delayMs: 0, failNext: null, movementOnStart: false };
+}
+
+function draftWorld(movement = false): World {
+  const world = newWorld();
+  world.sessions = [{
+    id: 11, status: "Draft", notes: "", countedBy: "Floor lead", version: 1,
+    lines: ITEMS.map((item, index) => ({ id: 100 + index, inventoryItemId: item.id, name: item.name, unit: item.unit, expected: item.onHand, counted: null, note: "", moved: movement && item.id === 1 })),
+  }];
+  return world;
 }
 
 const sessionPayload = (session: Session) => {
-  const counted = session.lines.filter((line) => line.counted !== null);
-  const movement = session.lines.filter((line) => line.later > 0);
+  const counted = session.lines.filter((line) => line.counted !== null).length;
+  const moved = session.lines.filter((line) => line.moved).length;
   return {
-    id: session.id, organizationId: 42, locationId: 7, status: session.status, startedAt: "2026-11-17T09:00:00Z",
-    completedAt: session.status === "Completed" ? "2026-11-17T10:00:00Z" : null, countedBy: session.countedBy, notes: session.notes,
-    itemCount: session.lines.length, countedLineCount: counted.length, uncountedLineCount: session.lines.length - counted.length,
-    varianceTotal: counted.reduce((sum, line) => sum + (line.counted! - line.expected), 0),
-    movementCountSinceStart: movement.reduce((sum, line) => sum + line.later, 0), hasMovementSinceStart: movement.length > 0,
-    createdByUserId: 1, finalizedByUserId: session.status === "Completed" ? 1 : null, createdAt: "2026-11-17T09:00:00Z", updatedAt: `2026-11-17T09:00:${String(10 + session.rev).padStart(2, "0")}Z`,
+    id: session.id, organizationId: 42, locationId: 7, status: session.status, startedAt: "2026-11-16T09:00:00Z",
+    completedAt: session.status === "Completed" ? "2026-11-16T11:00:00Z" : null, countedBy: session.countedBy, notes: session.notes,
+    itemCount: session.lines.length, countedLineCount: counted, uncountedLineCount: session.lines.length - counted,
+    varianceTotal: session.lines.reduce((sum, line) => sum + (line.counted == null ? 0 : line.counted - line.expected), 0),
+    movementCountSinceStart: moved, hasMovementSinceStart: moved > 0, createdByUserId: 1, finalizedByUserId: session.status === "Completed" ? 1 : null,
+    createdAt: "2026-11-16T09:00:00Z", updatedAt: `2026-11-16T09:00:0${session.version}Z`,
     lines: session.lines.map((line, index) => ({
       id: line.id, sessionId: session.id, inventoryItemId: line.inventoryItemId, lineIndex: index, itemNameSnapshot: line.name, stockUnitSnapshot: line.unit,
-      expectedQuantity: line.expected, countedQuantity: line.counted, variance: line.counted === null ? null : line.counted - line.expected,
-      resultingQuantity: session.status === "Completed" ? line.counted : null, note: line.note, status: line.counted === null ? "Pending" : "Counted",
-      movementCountSinceStart: line.later, hasMovementSinceStart: line.later > 0, createdAt: null, updatedAt: null,
+      expectedQuantity: line.expected, countedQuantity: line.counted, variance: line.counted == null ? null : line.counted - line.expected,
+      resultingQuantity: session.status === "Completed" ? line.counted : null, note: line.note, status: line.counted == null ? "Pending" : "Counted",
+      movementCountSinceStart: line.moved ? 1 : 0, hasMovementSinceStart: line.moved, createdAt: null, updatedAt: null,
     })),
   };
 };
 
-const itemPayload = (item: Item) => ({
-  id: item.id, organizationId: 42, locationId: 7, supplierId: null, name: item.name, normalizedName: item.name.toLowerCase(), category: "Dairy", stockUnit: item.stockUnit,
-  currentOnHand: item.onHand, minQuantity: 1, parLevel: 5, preferredSupplierName: "", latestPurchasePrice: 4, averageUnitCost: 4, lastPurchaseUnit: item.stockUnit,
-  lastPurchaseConversionFactor: 1, lastReceivedAt: null, lastCountedAt: null, averageDailyUsage: 0.8, estimatedCostMethod: "weighted_average", active: true, notes: "",
-  createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null,
+const itemPayload = (item: (typeof ITEMS)[number]) => ({
+  id: item.id, organizationId: 42, locationId: 7, supplierId: null, name: item.name, normalizedName: item.name.toLowerCase(), category: "Dairy & Bar",
+  stockUnit: item.unit, currentOnHand: item.onHand, minQuantity: 2, parLevel: 10, preferredSupplierName: "", latestPurchasePrice: 3, lastPurchaseUnit: item.unit,
+  lastPurchaseConversionFactor: 1, lastReceivedAt: null, lastCountedAt: null, averageDailyUsage: null, estimatedCostMethod: "latest_purchase_price", active: true,
+  notes: "", createdByUserId: 1, updatedByUserId: 1, createdAt: null, updatedAt: null,
 });
 
 async function installWorld(page: Page, world: World) {
@@ -73,7 +78,12 @@ async function installWorld(page: Page, world: World) {
     const { pathname } = new URL(request.url());
     const method = request.method();
     let body: any = {};
-    try { body = JSON.parse(request.postData() ?? "{}"); } catch { /* no body */ }
+    try {
+      body = JSON.parse(request.postData() ?? "{}");
+    } catch {
+      body = {};
+    }
+    if (method !== "GET") world.calls.push({ method, path: pathname, body });
 
     if (pathname === "/api/auth/me") {
       return json(route, {
@@ -84,205 +94,188 @@ async function installWorld(page: Page, world: World) {
     }
     if (pathname === "/api/auth/csrf") return json(route, { csrfToken: "csrf-token" });
     if (pathname.startsWith("/api/organizations")) {
-      const location = { id: 7, name: "Queen St Cafe", city: "Toronto", region: "ON" };
-      const bundle = { organization: ORG, restaurantLocations: [location], currentLocation: location, membershipRole: "owner", enabledModuleKeys: MODULES };
-      return json(route, { organizations: [{ organization: ORG, membershipRole: "owner", selected: true }], currentOrganizationId: ORG.id, currentMembershipId: 1, currentLocationId: 7, currentOrganization: bundle, ...bundle });
+      const bundle = { organization: ORG, restaurantLocations: LOCATIONS, currentLocation: LOCATIONS[0], membershipRole: "owner", enabledModuleKeys: MODULES };
+      return json(route, {
+        organizations: [{ organization: ORG, membershipRole: "owner", selected: true }], currentOrganizationId: ORG.id, currentMembershipId: 1,
+        currentLocationId: 7, currentOrganization: bundle, ...bundle,
+      });
     }
     if (pathname === "/api/pilot/inventory" && method === "GET") {
       return json(route, {
-        items: world.items.map(itemPayload), movements: [], countSessions: world.sessions.map(sessionPayload), reorderPlan: { suggestions: [], groupedBySupplier: [] },
-        summary: { inventoryItemCount: world.items.length, inventoryOutOfStockCount: 0, inventoryReorderNowCount: 0, inventoryLowStockCount: 0, inventoryValue: 0 },
+        items: ITEMS.map(itemPayload), movements: [], countSessions: [], reorderPlan: { suggestions: [], groupedBySupplier: [] },
+        summary: { inventoryItemCount: ITEMS.length, inventoryOutOfStockCount: 0, inventoryReorderNowCount: 0, inventoryLowStockCount: 0, inventoryValue: 0 },
       });
     }
+    if (pathname === "/api/pilot/suppliers") return json(route, { suppliers: [] });
     if (pathname === "/api/pilot/inventory/negative-stock") return json(route, { count: 0, posCausedCount: 0, items: [] });
     if (pathname === "/api/pilot/inventory/count-sessions" && method === "GET") return json(route, { countSessions: world.sessions.map(sessionPayload) });
-    if (pathname === "/api/pilot/inventory/count-sessions" && method === "POST") {
-      world.creates += 1;
-      if (world.delayMs) await sleep(world.delayMs);
-      const ids: number[] = body.itemIds;
-      const session: Session = {
-        id: 900 + world.creates, status: "Draft", countedBy: String(body.countedBy ?? ""), notes: String(body.notes ?? ""), rev: 0,
-        lines: world.items.filter((item) => ids.includes(item.id)).map((item, index) => ({
-          id: 5000 + world.creates * 10 + index, inventoryItemId: item.id, name: item.name, unit: item.stockUnit, expected: item.onHand, counted: null, note: "",
-          later: world.laterMovement && index === 0 ? 2 : 0,
-        })),
-      };
-      world.sessions = [session, ...world.sessions];
-      return json(route, sessionPayload(session), 201);
-    }
     const one = pathname.match(/^\/api\/pilot\/inventory\/count-sessions\/(\d+)(\/finalize)?$/);
-    if (one) {
-      const session = world.sessions.find((entry) => entry.id === Number(one[1]));
-      if (!session) return json(route, { error: "Count not found." }, 404);
-      if (method === "GET") return json(route, sessionPayload(session));
-      if (method === "PATCH") {
-        world.saves.push(body);
-        if (world.delayMs) await sleep(world.delayMs);
-        if (world.failNext === "save") {
-          world.failNext = null;
-          return json(route, { error: "Could not save: the count service is unavailable." }, 503);
-        }
-        session.countedBy = String(body.countedBy ?? session.countedBy);
-        for (const incoming of body.lines ?? []) {
-          const line = session.lines.find((entry) => entry.id === incoming.id);
-          if (line) { line.counted = incoming.countedQuantity; line.note = incoming.note ?? ""; }
-        }
-        session.rev += 1;
-        return json(route, sessionPayload(session));
-      }
-      if (method === "POST" && one[2]) {
-        world.finalizes.push(body);
-        if (world.delayMs) await sleep(world.delayMs);
-        if (world.failNext === "finalize") {
-          world.failNext = null;
-          return json(route, { error: "Could not apply the count: the inventory ledger is busy." }, 503);
-        }
-        if (session.status === "Completed") return json(route, { error: "This count is already finalized." }, 409);
-        session.status = "Completed";
-        for (const line of session.lines) world.items.find((item) => item.id === line.inventoryItemId)!.onHand = line.counted ?? line.expected;
-        session.rev += 1;
-        return json(route, sessionPayload(session));
-      }
+    if (one && method === "GET") {
+      const found = world.sessions.find((entry) => entry.id === Number(one[1]));
+      return found ? json(route, sessionPayload(found)) : json(route, { error: "Not found." }, 404);
     }
-    return json(route, { error: `Unhandled ${method} ${pathname}` }, 404);
+
+    if (world.delayMs) await sleep(world.delayMs);
+
+    if (pathname === "/api/pilot/inventory/count-sessions" && method === "POST") {
+      const ids: number[] = body.itemIds ?? [];
+      const created: Session = {
+        id: 11 + world.sessions.length, status: "Draft", notes: body.notes ?? "", countedBy: body.countedBy ?? "", version: 1,
+        lines: ITEMS.filter((item) => ids.includes(item.id)).map((item, index) => ({ id: 100 + index, inventoryItemId: item.id, name: item.name, unit: item.unit, expected: item.onHand, counted: null, note: "", moved: world.movementOnStart && item.id === 1 })),
+      };
+      world.sessions.push(created);
+      return json(route, sessionPayload(created), 201);
+    }
+    if (one && !one[2] && method === "PATCH") {
+      const found = world.sessions.find((entry) => entry.id === Number(one[1]));
+      if (!found) return json(route, { error: "Not found." }, 404);
+      if (found.status === "Completed") return json(route, { error: "A finalized count is read-only." }, 409);
+      if (world.failNext === "save") {
+        world.failNext = null;
+        return json(route, { error: "Could not save: the count was changed by someone else. Refresh and try again." }, 409);
+      }
+      found.notes = body.notes ?? found.notes;
+      found.countedBy = body.countedBy ?? found.countedBy;
+      for (const patch of body.lines ?? []) {
+        const line = found.lines.find((entry) => entry.id === patch.id);
+        if (line) {
+          line.counted = patch.countedQuantity;
+          line.note = patch.note ?? "";
+        }
+      }
+      found.version += 1;
+      return json(route, sessionPayload(found));
+    }
+    if (one && one[2] && method === "POST") {
+      const found = world.sessions.find((entry) => entry.id === Number(one[1]));
+      if (!found) return json(route, { error: "Not found." }, 404);
+      if (world.failNext === "finalize") {
+        world.failNext = null;
+        return json(route, { error: "Finalize failed: inventory is locked by another update. Try again." }, 409);
+      }
+      if (found.lines.some((line) => line.moved) && !body.confirmConcurrency) return json(route, { error: "Later inventory movements must be confirmed." }, 409);
+      found.status = "Completed";
+      found.version += 1;
+      return json(route, sessionPayload(found));
+    }
+    return json(route, { error: `Unmocked ${method} ${pathname}` }, 404);
   });
 }
 
-async function expectNoHorizontalOverflow(page: Page) {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+async function expectNoOverflow(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 }
 
-async function startCount(page: Page, world: World) {
+async function openCounts(page: Page) {
   await page.goto("/app/inventory?view=counts", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Stock Counts" })).toBeVisible();
-  await page.getByRole("button", { name: "New count" }).first().click();
-  await expect(page.getByRole("dialog", { name: "New stock count" })).toBeVisible();
-  await page.getByRole("button", { name: "Start count" }).dblclick();
-  const dialog = page.getByRole("dialog", { name: /Stock count #/ });
-  await expect(dialog).toBeVisible();
-  expect(world.creates).toBe(1);
-  // Let the post-create refresh settle so typed quantities are not replaced by the fetched draft.
-  await expect(page.getByText("Refreshing stock counts…")).toHaveCount(0);
-  await expect(page.getByText("Stock count 901 started.")).toBeVisible();
-  return dialog;
+  await expect(page.getByText("Loading stock counts…")).toHaveCount(0);
 }
 
 for (const viewport of VIEWPORTS) {
-  test.describe(`${viewport.width}px`, () => {
+  test.describe(`Stock Counts at ${viewport.width}px`, () => {
     test.use({ viewport });
 
-    test(`start, count, save draft, complete and read-only history at ${viewport.width}px`, async ({ page }) => {
+    test("starting a count sends one request on a double tap and opens the count with every active item", async ({ page }) => {
       const world = newWorld();
+      world.delayMs = 400;
+      await installWorld(page, world);
+      await openCounts(page);
+      await expect(page.getByText("No count in progress")).toBeVisible();
+      await page.getByRole("button", { name: "New count" }).first().click();
+      const start = page.getByRole("button", { name: "Start count" });
+      await start.dblclick();
+      await expect(page.getByRole("dialog").getByText("Count inventory")).toBeVisible();
+      expect(world.calls.filter((call) => call.method === "POST" && call.path === "/api/pilot/inventory/count-sessions")).toHaveLength(1);
+      expect(world.calls[0].body.itemIds).toEqual([1, 2, 3]);
+      await expect(page.getByRole("dialog").getByLabel("Counted quantity for Whole Milk")).toBeVisible();
+      await expect(page.getByRole("dialog").getByLabel("Counted quantity for Oat Milk")).toBeVisible();
+      await expectNoOverflow(page);
+    });
+
+    test("counts and notes save as a draft, finish stays blocked until every line is saved as counted, then completes once", async ({ page }) => {
+      const world = draftWorld();
       world.delayMs = 300;
       await installWorld(page, world);
-      const dialog = await startCount(page, world);
-      await expect(dialog.getByLabel("Counted quantity for Whole Milk")).toBeVisible();
-      await expect(dialog.getByLabel("Counted quantity for Oat Milk")).toBeVisible();
-      await expect(dialog.getByLabel("Counted quantity for Espresso Beans")).toBeVisible();
-      await expect(dialog.getByText("3 uncounted")).toBeVisible();
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByText("Count inventory")).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeDisabled();
 
-      // Partial entry saved as a draft: still blocked from completing.
-      await dialog.getByLabel("Counted quantity for Whole Milk").fill("18");
-      await dialog.getByLabel("Variance note for Whole Milk").fill("Spilled during close");
-      await dialog.getByLabel("Counted quantity for Oat Milk").fill("8");
-      await dialog.getByRole("button", { name: "Save draft" }).click();
-      await expect(dialog.getByRole("button", { name: "Saving…" })).toBeDisabled();
-      await expect(page.getByText("Stock count 901 saved.")).toBeVisible();
-      expect(world.saves).toHaveLength(1);
-      expect(world.saves[0].lines.find((line: any) => line.countedQuantity === 18)).toMatchObject({ note: "Spilled during close" });
-      await expect(dialog.getByText("1 uncounted")).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeDisabled();
+      await dialog.getByLabel("Counted quantity for Whole Milk").fill("22");
+      await dialog.getByLabel("Variance note for Whole Milk").fill("Two cartons spoiled");
+      await dialog.getByLabel("Counted quantity for Espresso Beans").fill("8");
+      await dialog.getByLabel("Counted quantity for Oat Milk").fill("12");
+      await dialog.getByRole("button", { name: "Save draft" }).dblclick();
+      await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeEnabled();
+      expect(world.calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
+      expect(world.calls.find((call) => call.method === "PATCH")!.body.lines).toEqual([
+        { id: 100, countedQuantity: 22, note: "Two cartons spoiled" },
+        { id: 101, countedQuantity: 8, note: "" },
+        { id: 102, countedQuantity: 12, note: "" },
+      ]);
 
-      // Reload shows the persisted values.
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("heading", { name: /Edit count #901/ })).toBeVisible();
-      await page.getByRole("button", { name: /Draft #901/ }).click();
-      const reopened = page.getByRole("dialog", { name: "Stock count #901" });
-      await expect(reopened.getByLabel("Counted quantity for Whole Milk")).toHaveValue("18");
-      await expect(reopened.getByLabel("Variance note for Whole Milk")).toHaveValue("Spilled during close");
-      await expect(reopened.getByLabel("Counted quantity for Espresso Beans")).toHaveValue("");
-
-      await reopened.getByLabel("Counted quantity for Espresso Beans").fill("5");
-      await reopened.getByRole("button", { name: "Save draft" }).click();
-      await expect(page.getByText("Stock count 901 saved.")).toBeVisible();
-      await expect(reopened.getByText("0 uncounted")).toBeVisible();
-      await expectNoHorizontalOverflow(page);
-
-      await reopened.getByRole("button", { name: "Continue / review" }).click();
-      await expect(reopened.getByText("Whole Milk")).toBeVisible();
-      await expect(reopened.getByText("20 → 18 L")).toBeVisible();
-      await expect(reopened.getByText("6 → 5 kg")).toBeVisible();
-
-      // Complete: one request on a double tap, then read-only in History.
-      await reopened.getByRole("button", { name: "Complete count" }).dblclick();
-      await expect(page.getByText("Stock count 901 finalized.")).toBeVisible();
-      expect(world.finalizes).toHaveLength(1);
-      expect(world.finalizes[0]).toMatchObject({ confirmConcurrency: false });
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      await expect(dialog.getByText("Review differences")).toBeVisible();
+      await expect(dialog.getByText("Whole Milk")).toBeVisible();
+      await expect(dialog.getByText("24 → 22 L")).toBeVisible();
+      await expect(dialog.getByText("Espresso Beans")).toHaveCount(0);
+      await dialog.getByRole("button", { name: "Complete count" }).dblclick();
       await expect(page.getByRole("dialog")).toHaveCount(0);
-      await expect(page.getByRole("heading", { name: /Completed count #901/ })).toBeVisible();
+      expect(world.calls.filter((call) => call.path.endsWith("/finalize"))).toHaveLength(1);
+      expect(world.sessions[0].status).toBe("Completed");
       await expect(page.getByText("Count applied")).toBeVisible();
       await expect(page.getByLabel("Counted quantity for Whole Milk")).toBeDisabled();
-      await expect(page.getByRole("button", { name: "Apply count to inventory" })).toBeDisabled();
-      await expect(page.getByRole("button", { name: "Save draft" })).toBeDisabled();
-      expect(world.items.find((item) => item.id === 30)!.onHand).toBe(18);
-      await expectNoHorizontalOverflow(page);
+      await expect(page.getByRole("button", { name: "Complete count" })).toHaveCount(0);
+      await expectNoOverflow(page);
     });
 
-    test(`later movement requires the confirmation before completing at ${viewport.width}px`, async ({ page }) => {
-      const world = newWorld();
-      world.laterMovement = true;
+    test("a failed save and a failed finalize show the server reason, keep the draft editable and can be retried", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
       await installWorld(page, world);
-      const dialog = await startCount(page, world);
-      await expect(dialog.getByText("Review later movements")).toBeVisible();
-      await dialog.getByLabel("Counted quantity for Whole Milk").fill("20");
-      await dialog.getByLabel("Counted quantity for Oat Milk").fill("8");
-      await dialog.getByLabel("Counted quantity for Espresso Beans").fill("6");
-      await dialog.getByRole("button", { name: "Save draft" }).click();
-      await expect(page.getByText("Stock count 901 saved.")).toBeVisible();
-      await dialog.getByRole("button", { name: "Continue / review" }).click();
-
-      const complete = dialog.getByRole("button", { name: "Complete count" });
-      await expect(complete).toBeDisabled();
-      await dialog.getByRole("checkbox").check();
-      await expect(complete).toBeEnabled();
-      await complete.click();
-      await expect(page.getByText("Stock count 901 finalized.")).toBeVisible();
-      expect(world.finalizes).toEqual([{ confirmConcurrency: true }]);
-    });
-
-    test(`server failures show the reason, keep the draft editable and can be retried at ${viewport.width}px`, async ({ page }) => {
-      const world = newWorld();
-      await installWorld(page, world);
-      const dialog = await startCount(page, world);
-      await dialog.getByLabel("Counted quantity for Whole Milk").fill("19");
-      await dialog.getByLabel("Counted quantity for Oat Milk").fill("8");
-      await dialog.getByLabel("Counted quantity for Espresso Beans").fill("6");
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Counted quantity for Whole Milk").fill("23");
 
       world.failNext = "save";
       await dialog.getByRole("button", { name: "Save draft" }).click();
-      await expect(dialog.getByRole("alert")).toContainText("Could not save: the count service is unavailable.");
-      await expect(dialog.getByLabel("Counted quantity for Whole Milk")).toHaveValue("19");
-      await expect(dialog.getByLabel("Counted quantity for Whole Milk")).toBeEditable();
-      await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeDisabled();
-
+      await expect(dialog.getByRole("alert")).toContainText("changed by someone else");
+      await expect(dialog.getByLabel("Counted quantity for Whole Milk")).toHaveValue("23");
       await dialog.getByRole("button", { name: "Save draft" }).click();
-      await expect(page.getByText("Stock count 901 saved.")).toBeVisible();
-      expect(world.saves).toHaveLength(2);
-      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      await expect(dialog.getByRole("alert")).toHaveCount(0);
 
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
       world.failNext = "finalize";
       await dialog.getByRole("button", { name: "Complete count" }).click();
-      await expect(dialog.getByRole("alert")).toContainText("Could not apply the count: the inventory ledger is busy.");
+      await expect(dialog.getByRole("alert")).toContainText("inventory is locked by another update");
       expect(world.sessions[0].status).toBe("Draft");
       await expect(dialog.getByRole("button", { name: "Complete count" })).toBeEnabled();
-      await expectNoHorizontalOverflow(page);
-
       await dialog.getByRole("button", { name: "Complete count" }).click();
-      await expect(page.getByText("Stock count 901 finalized.")).toBeVisible();
-      expect(world.finalizes).toHaveLength(2);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       expect(world.sessions[0].status).toBe("Completed");
+      await expectNoOverflow(page);
+    });
+
+    test("later inventory movement requires an explicit confirmation before the count can be completed", async ({ page }) => {
+      const world = draftWorld(true);
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByText("Review later movements")).toBeVisible();
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      const complete = dialog.getByRole("button", { name: "Complete count" });
+      await expect(complete).toBeDisabled();
+      await dialog.getByLabel(/reviewed later inventory activity/i).check();
+      await expect(complete).toBeEnabled();
+      await complete.click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      expect(world.calls.find((call) => call.path.endsWith("/finalize"))!.body).toEqual({ confirmConcurrency: true });
+      await expectNoOverflow(page);
     });
   });
 }

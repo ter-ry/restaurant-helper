@@ -108,6 +108,13 @@ export function PilotStockCountsPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
+  // Keep every other query param (the inventory hub's `view=counts`) so choosing a count never drops the user to the Stock tab.
+  const selectSessionInUrl = (sessionId: number) => {
+    const params = new URLSearchParams(location.search);
+    params.set("sessionId", String(sessionId));
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  };
+
   const load = async (preferredSessionId: number | null = requestedSessionId) => {
     setLoading(true);
     setError(null);
@@ -157,6 +164,8 @@ export function PilotStockCountsPage() {
   };
 
   useEffect(() => {
+    // Our own selection/save navigation already holds this session: reloading would overwrite quantities the user is typing.
+    if (hasLoaded && requestedSessionId !== null && requestedSessionId === selectedId) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
@@ -250,19 +259,13 @@ export function PilotStockCountsPage() {
 
   const selectedItemCount = selectedItemIds.length;
   const activeItemCount = inventoryItems.filter((item) => item.active).length;
-  // Keep the other query params (notably `view=counts` on the inventory hub) so selecting a count never leaves this tab.
-  const navigateToSession = (sessionId: number) => {
-    const params = new URLSearchParams(location.search);
-    params.set("sessionId", String(sessionId));
-    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
-  };
   const openSession = (sessionId: number) => {
     setSelectedId(sessionId);
     setConfirmConcurrency(false);
     setShowConcurrencyDetails(false);
     setCountWorkspaceStage("count");
     setCountWorkspaceOpen(true);
-    navigateToSession(sessionId);
+    selectSessionInUrl(sessionId);
   };
 
   const createSession = async () => {
@@ -290,7 +293,7 @@ export function PilotStockCountsPage() {
       setShowNewCount(false);
       setCountWorkspaceStage("count");
       setCountWorkspaceOpen(true);
-      navigateToSession(created.id);
+      selectSessionInUrl(created.id);
       await load(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a stock count.");
@@ -322,7 +325,7 @@ export function PilotStockCountsPage() {
       setDraft(sessionToDraft(saved));
       setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
       setMessage(`Stock count ${saved.id} saved.`);
-      navigateToSession(saved.id);
+      selectSessionInUrl(saved.id);
       await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this stock count.");
@@ -351,7 +354,8 @@ export function PilotStockCountsPage() {
       setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
-      navigateToSession(finalized.id);
+      setCountWorkspaceOpen(false);
+      selectSessionInUrl(finalized.id);
       await load(finalized.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
@@ -493,7 +497,7 @@ export function PilotStockCountsPage() {
           </div>
         </Card>
 
-        <Card className={`workspace-card w-full p-4 ${countWorkspaceOpen && draft && draft.status !== "Completed" ? "hidden" : ""}`}>
+        <Card className={`workspace-card w-full p-4 ${countWorkspaceOpen && draft ? "hidden" : ""}`}>
           <SectionHeader
             title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}
