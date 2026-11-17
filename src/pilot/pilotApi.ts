@@ -391,6 +391,17 @@ export interface PilotPurchaseReviewSummary {
   };
 }
 
+export interface PilotOcrEvidence {
+  status: "matched" | "incomplete" | "unverified" | "overridden";
+  printedSubtotal: number | null;
+  printedTax: number | null;
+  printedTotal: number | null;
+  expectedAmount: number | null;
+  lineTotal: number;
+  difference: number | null;
+  override: { reason: string | null; acknowledgedLineTotal: number; byUserId: number | null; at: string | null; validForCurrentLines: boolean } | null;
+}
+
 export interface PilotPurchaseInvoice {
   id: number;
   organizationId: number;
@@ -409,6 +420,8 @@ export interface PilotPurchaseInvoice {
   sourceFileKey: string;
   extractedText: string;
   extractionStatus: string;
+  /** Server-stored printed OCR amounts and reconciliation verdict (#169). Null for manually entered invoices. */
+  ocrEvidence?: PilotOcrEvidence | null;
   receivedAt: string | null;
   receivedByUserId: number | null;
   createdByUserId: number | null;
@@ -1182,6 +1195,8 @@ export interface PilotInvoiceOcrReconciliation {
 }
 
 export interface PilotInvoiceOcrResponse {
+  /** Signed server record of the printed amounts; must be sent back when the extracted draft is first saved. */
+  evidenceToken?: string;
   provider: string;
   fileName: string;
   contentType: string;
@@ -1218,6 +1233,14 @@ export async function fetchPilotPurchaseInvoice(invoiceId: number) {
 
 export async function fetchPilotPurchasePreview(invoiceId: number) {
   return requestJson<PilotPurchasePreview>(`/api/pilot/purchases/invoices/${invoiceId}/preview`);
+}
+
+export async function overridePilotOcrDiscrepancy(invoiceId: number, payload: { reason: string; acknowledgedLineTotal: number }) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/ocr-override`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function createPilotPurchaseInvoice(payload: Record<string, unknown>) {

@@ -623,7 +623,7 @@ def test_pilot_operational_journey_persists_across_refetches(app, client):
             "status": "Draft",
             "sourceFileName": "journey-invoice.pdf",
             "sourceFileType": "application/pdf",
-            "extractionStatus": "ocr",
+            "extractionStatus": "manual",
             "extractedText": "Journey Cream 2 case $18.50",
             "lineItems": [
                 {
@@ -659,7 +659,7 @@ def test_pilot_operational_journey_persists_across_refetches(app, client):
             "status": "Ready",
             "sourceFileName": "journey-invoice.pdf",
             "sourceFileType": "application/pdf",
-            "extractionStatus": "ocr",
+            "extractionStatus": "manual",
             "extractedText": "Journey Cream 2 case $18.50",
             "lineItems": [
                 {

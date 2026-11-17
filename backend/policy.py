@@ -48,6 +48,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "pilot_api.create_purchase_invoice": "purchases.manage",
     "pilot_api.update_purchase_invoice": "purchases.manage",
     "pilot_api.receive_purchase_invoice": "purchases.manage",
+    "pilot_api.override_ocr_discrepancy": "purchases.manage",
     "pilot_api.inventory": "inventory.manage",
     "pilot_api.inventory_item_detail": "inventory.manage",
     "pilot_api.create_inventory_item": "inventory.manage",

@@ -39,7 +39,7 @@ def invoice_payload(*, supplier_name, invoice_number, inventory_item_id, invento
         "status": status,
         "sourceFileName": "pilot-correction.pdf",
         "sourceFileType": "application/pdf",
-        "extractionStatus": "ocr",
+        "extractionStatus": "manual",  # OCR drafts must carry a server evidence token; see the OCR-specific tests
         "extractedText": "OCR raw provenance",
         "lineItems": [{
             "description": "Chicken Breast",
@@ -126,7 +126,7 @@ def test_authenticated_ocr_correction_reopen_and_receive_once(app, client, monke
             quantity=2,
             unit_price=10,
             conversion_factor=1,
-        ) | {"sourceFileName": extracted["fileName"], "sourceFileType": extracted["contentType"]},
+        ) | {"sourceFileName": extracted["fileName"], "sourceFileType": extracted["contentType"], "extractionStatus": "ocr", "ocrEvidenceToken": extracted["evidenceToken"]},
     )
     assert created.status_code == 201
     invoice = created.get_json()
