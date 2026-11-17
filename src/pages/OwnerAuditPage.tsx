@@ -167,7 +167,7 @@ export function OwnerAuditPage() {
                 </div>
                 <p className="text-xs uppercase tracking-wide text-muted">{new Date(event.createdAt).toLocaleString()}</p>
               </div>
-              <p className="mt-3 text-sm leading-6 text-slate-700">{formatMetadata(event)}</p>
+              <p className="mt-3 break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]">{formatMetadata(event)}</p>
             </Card>
           ))}
         </div>

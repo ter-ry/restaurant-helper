@@ -853,9 +853,9 @@ export function PilotMenuCostingPage() {
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{menuItem.name}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-muted">{menuItem.category}</td>
                       <td className="whitespace-nowrap px-3 py-2">Price {formatMoney(menuItem.sellingPrice)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Cost {formatCost(menuItem.recipeCostPerYield)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{menuItem.recipeCostPerYield == null || !Number.isFinite(Number(menuItem.recipeCostPerYield)) ? formatCost(null) : `Cost ${formatCost(menuItem.recipeCostPerYield)}`}</td>
                       <td className="whitespace-nowrap px-3 py-2">Food cost {menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Contribution {formatCost(menuItem.grossProfit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{menuItem.grossProfit == null || !Number.isFinite(Number(menuItem.grossProfit)) ? "Contribution unavailable" : `Contribution ${formatCost(menuItem.grossProfit)}`}</td>
                       <td className="whitespace-nowrap px-3 py-2"><Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Cost available" : "Needs review"}</Badge></td>
                     </tr>
                   ))}

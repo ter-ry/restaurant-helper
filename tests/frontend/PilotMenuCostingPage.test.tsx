@@ -268,6 +268,7 @@ describe("PilotMenuCostingPage", () => {
     await screen.findByText("Menu costing");
     expect(screen.getAllByText(/Cost unavailable/).length).toBeGreaterThan(0);
     expect(screen.queryByText("Cost $0.00")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Cost Cost unavailable|Contribution Cost unavailable/)).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
     expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
     fireEvent.change(screen.getByLabelText("Scenario selling price"), { target: { value: "15" } });

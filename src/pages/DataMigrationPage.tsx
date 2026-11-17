@@ -324,7 +324,7 @@ export function DataMigrationPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Current organization</p>
-                <h1 className="mt-2 text-3xl font-bold text-ink">{currentOrganizationId ? `Organization #${currentOrganizationId}` : "No organization selected"}</h1>
+                <h1 className="mt-2 text-3xl font-bold text-ink">{currentOrganizationId ? (session?.organizations?.find((entry) => entry.selected)?.organization.name ?? "Current organization") : "No organization selected"}</h1>
                 <p className="mt-2 text-sm leading-6 text-muted">Use this workspace for CSV and XLSX setup files. Preview never touches live tables until you execute the import.</p>
               </div>
               {selectedJob ? (
