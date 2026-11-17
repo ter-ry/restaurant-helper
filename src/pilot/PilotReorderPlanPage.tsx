@@ -420,6 +420,7 @@ export function PilotReorderPlanPage() {
       setMessage(`Completed reorder plan ${completed.name}. It is now locked in history.`);
       setConfirmCompletion(false);
     } catch (err) {
+      setConfirmCompletion(false);
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
     } finally {
       setSaving(false);
