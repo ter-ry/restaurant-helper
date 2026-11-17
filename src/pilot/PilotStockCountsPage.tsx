@@ -108,6 +108,13 @@ export function PilotStockCountsPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [location.search]);
 
+  // Keep every other query param (the inventory hub's `view=counts`) so choosing a count never drops the user to the Stock tab.
+  const selectSessionInUrl = (sessionId: number) => {
+    const params = new URLSearchParams(location.search);
+    params.set("sessionId", String(sessionId));
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  };
+
   const load = async (preferredSessionId: number | null = requestedSessionId) => {
     setLoading(true);
     setError(null);
@@ -157,6 +164,8 @@ export function PilotStockCountsPage() {
   };
 
   useEffect(() => {
+    // Our own selection/save navigation already holds this session: reloading would overwrite quantities the user is typing.
+    if (hasLoaded && requestedSessionId !== null && requestedSessionId === selectedId) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
@@ -195,6 +204,8 @@ export function PilotStockCountsPage() {
   useEffect(() => {
     if (selectedSession) {
       setDraft(sessionToDraft(selectedSession));
+      // The displayed draft is the server copy, so it is also the unsaved-changes baseline (switching drafts must not look edited).
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(selectedSession)));
       setConfirmConcurrency(false);
     }
   }, [selectedSession]);
@@ -256,7 +267,7 @@ export function PilotStockCountsPage() {
     setShowConcurrencyDetails(false);
     setCountWorkspaceStage("count");
     setCountWorkspaceOpen(true);
-    navigate(`${location.pathname}?sessionId=${sessionId}`, { replace: true });
+    selectSessionInUrl(sessionId);
   };
 
   const createSession = async () => {
@@ -284,7 +295,7 @@ export function PilotStockCountsPage() {
       setShowNewCount(false);
       setCountWorkspaceStage("count");
       setCountWorkspaceOpen(true);
-      navigate(`${location.pathname}?sessionId=${created.id}`, { replace: true });
+      selectSessionInUrl(created.id);
       await load(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a stock count.");
@@ -316,7 +327,7 @@ export function PilotStockCountsPage() {
       setDraft(sessionToDraft(saved));
       setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
       setMessage(`Stock count ${saved.id} saved.`);
-      navigate(`${location.pathname}?sessionId=${saved.id}`, { replace: true });
+      selectSessionInUrl(saved.id);
       await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this stock count.");
@@ -345,7 +356,8 @@ export function PilotStockCountsPage() {
       setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
-      navigate(`${location.pathname}?sessionId=${finalized.id}`, { replace: true });
+      setCountWorkspaceOpen(false);
+      selectSessionInUrl(finalized.id);
       await load(finalized.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
