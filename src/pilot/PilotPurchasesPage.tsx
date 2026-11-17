@@ -542,9 +542,15 @@ export function PilotPurchasesPage() {
     [data?.invoices, selectedId],
   );
 
+  // Set when the cached invoice is replaced only to reconcile server evidence (an override); the editor then keeps
+  // its unsaved edits instead of being re-initialised from the cache.
+  const keepEditorForInvoiceId = useRef<number | null>(null);
+  const selectedIdRef = useRef<number | null>(null);
+  selectedIdRef.current = selectedId;
   useEffect(() => {
     if (selectedInvoice) {
-      setDraft(invoiceToDraft(selectedInvoice));
+      if (keepEditorForInvoiceId.current === selectedInvoice.id) keepEditorForInvoiceId.current = null;
+      else setDraft(invoiceToDraft(selectedInvoice));
       if (selectedInvoice.id) {
         void fetchPilotPurchasePreview(selectedInvoice.id).then(setPurchasePreview).catch(() => setPurchasePreview(null));
       }
@@ -685,6 +691,7 @@ export function PilotPurchasesPage() {
       // The user may have opened another purchase while this was in flight: only the invoice that asked gets the evidence.
       setDraft((current) => (current.id === saved.id ? { ...current, ocrServer: saved.ocrEvidence ?? null } : current));
       // openInvoice prefers the cached list entry, so keep it in step with the server record.
+      if (selectedIdRef.current === saved.id) keepEditorForInvoiceId.current = saved.id;
       setData((current) => (current ? { ...current, invoices: current.invoices.map((invoice) => (invoice.id === saved.id ? saved : invoice)) } : current));
       setOcrOverrideReason("");
     } catch (caught) {

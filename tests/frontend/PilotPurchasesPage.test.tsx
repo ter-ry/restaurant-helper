@@ -710,6 +710,34 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByRole("heading", { name: "Review FD-1002" })).toBeVisible();
   });
 
+  it("keeps unsaved edits made while an override request is pending", async () => {
+    const evidence = { status: "incomplete" as const, printedSubtotal: 500, printedTax: 0, printedTotal: 500, expectedAmount: 500, lineTotal: 48, difference: 452, override: null };
+    const response = createPurchasesResponse();
+    const ocrDraft = createInvoice({ id: 5, invoiceNumber: "OCR-A", status: "Draft", supplierName: "Fresh Dairy Toronto", extractionStatus: "ocr", ocrEvidence: evidence });
+    response.invoices = [ocrDraft, ...response.invoices];
+    mockApi.fetchPilotPurchases.mockResolvedValue(response);
+    mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => response.invoices.find((entry) => entry.id === invoiceId)!);
+    mockApi.overridePilotOcrDiscrepancy.mockClear();
+    let resolveOverride: (invoice: PilotPurchaseInvoice) => void = () => undefined;
+    mockApi.overridePilotOcrDiscrepancy.mockImplementationOnce(() => new Promise<PilotPurchaseInvoice>((resolve) => { resolveOverride = resolve; }));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /OCR-A/ }));
+    expect(await screen.findByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    fireEvent.change(screen.getByLabelText(/Reason these lines are correct/), { target: { value: "Supplier confirmed the order by phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record audited override" }));
+    await waitFor(() => expect(mockApi.overridePilotOcrDiscrepancy).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "7" } });
+    expect(screen.getByLabelText("Quantity")).toHaveValue(7);
+    await act(async () => {
+      resolveOverride({ ...ocrDraft, ocrEvidence: { ...evidence, status: "incomplete", override: { reason: "Supplier confirmed the order by phone", acknowledgedLineTotal: 48, byUserId: 1, at: "2026-08-20T10:00:00Z", validForCurrentLines: false } } });
+    });
+    // The unsaved quantity survives, and the server's override record is attached to the same purchase.
+    expect(screen.getByLabelText("Quantity")).toHaveValue(7);
+    expect(screen.getByRole("heading", { name: "Review OCR-A" })).toBeVisible();
+  });
+
   it("opens completed invoice history in a read-only detail modal", async () => {
     renderPage();
 
