@@ -19,7 +19,6 @@ const VIEWPORTS = [
 ];
 
 const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
-const refuse = (route: Route, message: string, errors: Record<string, string>, status = 409) => json(route, { error: message, errors }, status);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Item = { id: number; name: string; category: string; stockUnit: string; currentOnHand: number; minQuantity: number; parLevel: number; supplierId: number | null; active: boolean };
