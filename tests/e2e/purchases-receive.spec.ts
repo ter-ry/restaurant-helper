@@ -22,7 +22,7 @@ const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ s
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 
-type Invoice = { id: number; invoiceNumber: string; status: string; lineItems: any[]; subtotal: number; tax: number; totalAmount: number; invoiceDate: string };
+type Invoice = { notes?: string; id: number; invoiceNumber: string; status: string; lineItems: any[]; subtotal: number; tax: number; totalAmount: number; invoiceDate: string };
 type World = {
   invoices: Invoice[];
   onHand: number;
@@ -91,7 +91,7 @@ async function installWorld(page: Page, world: World) {
       return apply();
     };
     const toInvoice = (id: number, status: string): Invoice => ({
-      id, invoiceNumber: body.invoiceNumber, status, invoiceDate: body.invoiceDate, subtotal: body.subtotal, tax: body.tax, totalAmount: body.totalAmount,
+      id, notes: body.notes ?? "", invoiceNumber: body.invoiceNumber, status, invoiceDate: body.invoiceDate, subtotal: body.subtotal, tax: body.tax, totalAmount: body.totalAmount,
       lineItems: (body.lineItems ?? []).map((line: any, index: number) => ({ id: id * 10 + index, ...line })),
     });
     if (pathname === "/api/pilot/purchases/invoices" && method === "POST") {
@@ -203,7 +203,12 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole("dialog", { name: "Confirm receipt" }).getByRole("button", { name: "Confirm receive" }).click();
       const alert = editor.getByRole("alert").filter({ hasText: "Duplicate invoice." });
       await expect(alert).toContainText("already exists");
-      await expect(alert.getByRole("button", { name: "Open existing purchase" })).toBeVisible();
+      await alert.getByRole("button", { name: "Open existing purchase" }).click();
+      const detail = page.getByTestId("purchase-detail-modal");
+      await expect(detail).toBeVisible();
+      await expect(detail).toContainText("CM-2001");
+      await expect(detail).toContainText("Completed");
+      await expect(detail).toContainText("$113.00"); // the persisted purchase 501, not the unsaved draft ($100 subtotal)
       expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
       expect(world.onHand).toBe(12);
       await expectNoOverflow(page);
@@ -219,12 +224,21 @@ for (const viewport of VIEWPORTS) {
       expect(world.invoices).toHaveLength(1);
       expect(world.onHand).toBe(12);
 
+      // Edit the saved draft after the failure: the retry must persist this edit (PATCH) before it receives.
+      await editor.locator("textarea").first().fill("Edited after failed receive");
       await editor.getByRole("button", { name: "Save & receive" }).click();
       await page.getByRole("dialog", { name: "Confirm receipt" }).getByRole("button", { name: "Confirm receive" }).click();
       await expect(page.getByText("received into inventory").or(page.getByText("was received successfully"))).toBeVisible();
       expect(posts(world, "/purchases/invoices")).toHaveLength(1); // create happened once; the retry used PATCH
       expect(world.invoices).toHaveLength(1);
       expect(world.invoices[0].status).toBe("Completed");
+      expect(world.invoices[0].notes).toBe("Edited after failed receive"); // the fake server kept the edit
+      const sequence = world.posts.map((post) => `${post.method} ${post.path.replace(/\d+/g, "#")}`);
+      const lastPatch = sequence.lastIndexOf("PATCH /api/pilot/purchases/invoices/#");
+      const lastReceive = sequence.lastIndexOf("POST /api/pilot/purchases/invoices/#/receive");
+      expect(lastPatch).toBeGreaterThan(sequence.indexOf("POST /api/pilot/purchases/invoices/#/receive")); // after the failed receive
+      expect(lastPatch).toBeLessThan(lastReceive);
+      expect(world.posts[lastPatch].body.notes).toBe("Edited after failed receive");
       expect(world.onHand).toBe(14);
     });
   });
