@@ -392,6 +392,8 @@ export interface PilotPurchaseReviewSummary {
 }
 
 export interface PilotPurchaseInvoice {
+  /** Printed document amounts recorded server-side when the invoice came from OCR. */
+  ocrProvenance?: { recorded: boolean; printedSubtotal: number | null; printedTax: number | null; printedTotal: number | null };
   id: number;
   organizationId: number;
   locationId: number;

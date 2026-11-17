@@ -27,7 +27,7 @@ import {
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { lineBlockers, suggestInventoryItem } from "./purchaseMapping";
-import { buildOcrPrintedEvidence, checkOcrLines, type OcrPrintedEvidence } from "./ocrReconciliation";
+import { buildOcrPrintedEvidence, persistedOcrEvidence, checkOcrLines, type OcrPrintedEvidence } from "./ocrReconciliation";
 
 interface DraftLine {
   id?: number;
@@ -592,7 +592,7 @@ export function PilotPurchasesPage() {
     const totalDifference = Number(draft.subtotal || 0) + Number(draft.tax || 0) - Number(draft.totalAmount || 0);
     // Line edits recompute the draft subtotal from the lines, so the printed invoice amounts are checked separately:
     // receiving stays blocked until the lines match them or the owner confirms the current gap against the document.
-    if (ocrCheck?.status === "incomplete" && ocrAckDifference !== ocrCheck.difference) blockers.push(`Extracted items do not match the printed invoice (difference ${formatMoney(Math.abs(ocrCheck.difference ?? 0))}). Correct the lines or confirm them against the original invoice.`);
+    if (ocrCheck?.status === "incomplete" && (ocrEvidence?.invoiceId != null || ocrEvidence?.provenance || ocrAckDifference !== ocrCheck.difference)) blockers.push(`Extracted items do not match the printed invoice (difference ${formatMoney(Math.abs(ocrCheck.difference ?? 0))}). Correct the lines or confirm them against the original invoice.`);
     if (Math.abs(subtotalDifference) > 0.01) blockers.push(`Line items differ from invoice subtotal by ${formatMoney(Math.abs(subtotalDifference))}.`);
     if (Math.abs(totalDifference) > 0.01) blockers.push(`Subtotal plus tax differs from invoice total by ${formatMoney(Math.abs(totalDifference))}.`);
     return {
@@ -602,7 +602,7 @@ export function PilotPurchasesPage() {
       reconciliation: { lineSubtotal, subtotalDifference, totalDifference, status: blockers.length ? "mismatch" : "matched" },
       readyToReceive: blockers.length === 0 && readyToReceive,
     };
-  }, [draft, readyToReceive, ocrCheck, ocrAckDifference]);
+  }, [draft, readyToReceive, ocrCheck, ocrAckDifference, ocrEvidence]);
   // Always derive eligibility from the values currently in the editor. The
   // saved invoice summary may be stale after a quantity/mapping edit; the
   // backend revalidates the persisted payload before creating movements.
@@ -920,6 +920,7 @@ export function PilotPurchasesPage() {
     }
     setDetailInvoice(null);
     setSelectedId(invoice.id);
+    setOcrEvidence(persistedOcrEvidence(invoice));
     setDraft(invoiceToDraft(invoice));
     setShowReview(false);
     setEditorOpen(true);
@@ -1187,7 +1188,7 @@ export function PilotPurchasesPage() {
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">{ocrEvidence.warnings.filter((warning) => warning !== ocrEvidence.serverMessage).map((warning) => <li key={warning}>{warning}</li>)}</ul>
                 ) : null}
                 {ocrCheck.status !== "matched" ? <div className="mt-3"><Button variant="secondary" type="button" onClick={addLine}>Add missing line</Button></div> : null}
-                {ocrCheck.status === "incomplete" ? (
+                {ocrCheck.status === "incomplete" && !ocrEvidence.provenance && ocrEvidence.invoiceId === null ? (
                   <label className="mt-3 flex items-start gap-2 text-xs leading-5">
                     <input type="checkbox" className="mt-0.5 h-4 w-4" checked={ocrAckDifference === ocrCheck.difference} onChange={(event) => setOcrAckDifference(event.target.checked ? ocrCheck.difference : null)} />
                     <span>I compared these lines with the original invoice and they are correct even though they do not add up to the printed amount.</span>

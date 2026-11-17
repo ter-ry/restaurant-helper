@@ -642,7 +642,8 @@ def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[
     invoice.extracted_text = str(payload.get("extractedText") or "").strip()
     invoice.extraction_status = str(payload.get("extractionStatus") or "manual").strip()
     token = str(payload.get("ocrProvenance") or "").strip()
-    if token:
+    # Recorded provenance is immutable: an unrelated OCR token must not replace the original document's amounts.
+    if token and invoice.ocr_provenance_at is None:
         printed = verify_provenance(token, organization_id, location_id)
         if printed is None:
             raise RequestValidationError("Invalid OCR provenance.", {"ocrProvenance": "The OCR verification expired or is invalid. Upload the invoice again."})

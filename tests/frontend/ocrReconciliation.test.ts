@@ -57,11 +57,15 @@ describe("OCR reconciliation check", () => {
   it("treats the backend's missing-amount shape as unknown, not as a printed $0 (invoice_ocr.find_amount)", () => {
     const missing = { value: 0, confidence: 0, needsReview: true };
     const base = response({ total: 15 });
-    // A readable total with no subtotal/tax: compare with the total, not with a phantom $0 subtotal.
+    // A readable total with no subtotal and an unreadable tax cannot give a pre-tax target (unknown tax is not $0,
+    // matching the server guard); it stays unverified rather than comparing against a phantom $0 subtotal or tax.
     const evidence = buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, subtotal: missing, tax: missing } });
     expect(evidence.printedSubtotal).toBeNull();
     expect(evidence.printedTax).toBeNull();
-    expect(checkOcrLines(evidence, [15]).status).toBe("matched");
+    expect(checkOcrLines(evidence, [15]).status).toBe("unverified");
+    // A printed zero tax is known, so the total is the target.
+    const zeroTaxEvidence = buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, subtotal: missing, tax: { value: 0, confidence: 0.95, needsReview: false } } });
+    expect(checkOcrLines(zeroTaxEvidence, [15]).status).toBe("matched");
     // Nothing readable at all stays unverified.
     const none = buildOcrPrintedEvidence({ ...base, fields: { ...base.fields, subtotal: missing, tax: missing, total: missing } });
     expect(checkOcrLines(none, [15]).status).toBe("unverified");

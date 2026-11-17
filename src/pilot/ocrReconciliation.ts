@@ -41,6 +41,13 @@ function printedAmount(field: { value: string | number | null; confidence?: numb
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Rebuilds the evidence of a saved invoice from the amounts the server recorded (survives reload). */
+export function persistedOcrEvidence(invoice: { id: number; ocrProvenance?: { recorded: boolean; printedSubtotal: number | null; printedTax: number | null; printedTotal: number | null } }): OcrPrintedEvidence | null {
+  const recorded = invoice.ocrProvenance;
+  if (!recorded?.recorded) return null;
+  return { printedSubtotal: recorded.printedSubtotal, printedTax: recorded.printedTax, printedTotal: recorded.printedTotal, warnings: [], serverMessage: "", invoiceId: invoice.id, provenance: "" };
+}
+
 export function buildOcrPrintedEvidence(result: PilotInvoiceOcrResponse): OcrPrintedEvidence {
   return {
     printedSubtotal: printedAmount(result.fields.subtotal),
@@ -64,7 +71,7 @@ export function checkOcrLines(evidence: OcrPrintedEvidence, lineTotals: number[]
   if (evidence.printedSubtotal !== null) {
     expectedAmount = cents(evidence.printedSubtotal);
     label = "the invoice subtotal";
-  } else if (evidence.printedTotal !== null) {
+  } else if (evidence.printedTotal !== null && evidence.printedTax !== null) {
     expectedAmount = cents(evidence.printedTotal - (evidence.printedTax ?? 0));
     label = evidence.printedTax ? "the invoice total less tax" : "the invoice total";
   }

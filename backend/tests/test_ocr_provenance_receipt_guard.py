@@ -91,3 +91,25 @@ def test_manual_invoice_without_provenance_is_unaffected(client):
     created = client.post("/api/pilot/purchases/invoices", headers=headers, json=payload)
     assert created.status_code == 201
     assert client.post(f"/api/pilot/purchases/invoices/{created.get_json()['id']}/receive", headers=headers).status_code == 200
+
+
+def test_unrelated_token_cannot_replace_recorded_provenance(client, monkeypatch):
+    headers, _, payload = _setup(client, monkeypatch)
+    created = client.post("/api/pilot/purchases/invoices", headers=headers, json=payload)
+    assert created.status_code == 201
+    invoice_id = created.get_json()["id"]
+    other = _ocr(client, headers, monkeypatch, subtotal=15)  # another document that printed $15
+    patched = client.patch(f"/api/pilot/purchases/invoices/{invoice_id}", headers=headers, json={**payload, "ocrProvenance": other})
+    assert patched.status_code == 200
+    assert patched.get_json()["ocrProvenance"]["printedSubtotal"] == 106.5
+    assert client.post(f"/api/pilot/purchases/invoices/{invoice_id}/receive", headers=headers).status_code == 400
+
+
+def test_total_without_readable_tax_is_unverified_not_a_zero_tax_target():
+    from decimal import Decimal
+
+    from backend.ocr_provenance import expected_line_amount
+
+    assert expected_line_amount(None, None, Decimal("113.00")) is None
+    assert expected_line_amount(None, Decimal("13.00"), Decimal("113.00")) == Decimal("100.00")
+    assert expected_line_amount(None, Decimal("0.00"), Decimal("50.00")) == Decimal("50.00")

@@ -56,9 +56,12 @@ def verify_provenance(token: str, organization_id: int, location_id: int) -> dic
 
 
 def expected_line_amount(subtotal: Decimal | None, tax: Decimal | None, total: Decimal | None) -> Decimal | None:
-    """Amount the reviewed lines must add up to: printed subtotal, else printed total less printed tax."""
+    """Amount the reviewed lines must add up to: printed subtotal, else printed total less a *printed* tax.
+
+    An unreadable tax is unknown, not zero: without it a tax-inclusive total cannot be turned into a pre-tax target.
+    """
     if subtotal is not None and subtotal > 0:
         return subtotal
-    if total is not None and total > 0:
-        return total - (tax or Decimal("0"))
+    if total is not None and total > 0 and tax is not None:
+        return total - tax
     return None
