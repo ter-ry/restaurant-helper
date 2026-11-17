@@ -785,6 +785,8 @@ export function PilotPurchasesPage() {
           setError(`Invoice ${savedInvoiceId} was saved, but its receiving status could not be confirmed. Refresh before retrying.`);
         }
       } else {
+        // Nothing was saved, so close the confirmation: it would otherwise sit over this error and its recovery action.
+        setReceiveConfirmOpen(false);
         setError(purchaseErrorMessage(err));
       }
     } finally {
