@@ -118,6 +118,20 @@ describe("PilotCloverConnection tenant state", () => {
     expect(screen.queryByText("Connect Clover sandbox")).not.toBeInTheDocument();
   });
 
+  it("keeps the card, the success notice and a retry visible when the status refresh after disconnect fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockApi.disconnectPilotClover.mockResolvedValue({ connection: { status: "disconnected", environment: "sandbox", region: "north_america" } });
+    render(<MemoryRouter><PilotCloverConnection /></MemoryRouter>);
+    const disconnect = await screen.findByRole("button", { name: "Disconnect" });
+    mockApi.fetchPilotCloverStatus.mockRejectedValueOnce(new Error("status unavailable"));
+    fireEvent.click(disconnect);
+
+    expect(await screen.findByText("Clover disconnected.")).toBeInTheDocument();
+    expect(await screen.findByText(/latest status could not be reloaded/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Connect Clover sandbox/ })).toBeInTheDocument();
+  });
+
   it("does not disconnect when the owner cancels the confirmation", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<MemoryRouter><PilotCloverConnection /></MemoryRouter>);

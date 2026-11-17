@@ -115,10 +115,26 @@ export function PilotCloverConnection() {
     setError(null);
     setNotice(null);
     try {
-      await disconnectPilotClover(requestedOrganizationId);
+      const result = await disconnectPilotClover(requestedOrganizationId);
       if (activeOrganizationId.current !== requestedOrganizationId) return;
-      await load();
-      if (activeOrganizationId.current === requestedOrganizationId) setNotice("Clover disconnected.");
+      // Show the server's disconnect answer immediately so a failed follow-up read can never hide this card.
+      setConnectionOrganizationId(requestedOrganizationId);
+      setConnection(result.connection);
+      setShadowOrders([]);
+      setShadowRetrievedAt(null);
+      clearCatalog();
+      setNotice("Clover disconnected.");
+      try {
+        const status = await fetchPilotCloverStatus(requestedOrganizationId);
+        if (activeOrganizationId.current !== requestedOrganizationId) return;
+        setEnabled(status.enabled);
+        setCatalogEnabled(Boolean(status.catalogEnabled));
+        setMappingEnabled(Boolean(status.mappingEnabled));
+        setShadowOrdersEnabled(Boolean(status.shadowOrdersEnabled));
+        setConnection(status.connection);
+      } catch {
+        if (activeOrganizationId.current === requestedOrganizationId) setError("Clover was disconnected, but the latest status could not be reloaded. Use Refresh to retry.");
+      }
     } catch (err) {
       if (activeOrganizationId.current === requestedOrganizationId) setError(err instanceof Error ? err.message : "Could not disconnect Clover.");
     } finally {
