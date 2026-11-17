@@ -97,7 +97,7 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(0);
 }
 
-const CSV = { name: "suppliers.csv", mimeType: "text/csv", buffer: Buffer.from("name,phone\nFresh Co,416-555-0100\nBlue Bakery,416-555-0101\n") };
+const CSV = "tests/e2e/fixtures/suppliers.csv";
 
 for (const viewport of VIEWPORTS) {
   test.describe(`${viewport.width}px`, () => {
