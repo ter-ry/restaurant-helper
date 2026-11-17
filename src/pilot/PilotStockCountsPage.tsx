@@ -250,13 +250,19 @@ export function PilotStockCountsPage() {
 
   const selectedItemCount = selectedItemIds.length;
   const activeItemCount = inventoryItems.filter((item) => item.active).length;
+  // Keep the other query params (notably `view=counts` on the inventory hub) so selecting a count never leaves this tab.
+  const navigateToSession = (sessionId: number) => {
+    const params = new URLSearchParams(location.search);
+    params.set("sessionId", String(sessionId));
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  };
   const openSession = (sessionId: number) => {
     setSelectedId(sessionId);
     setConfirmConcurrency(false);
     setShowConcurrencyDetails(false);
     setCountWorkspaceStage("count");
     setCountWorkspaceOpen(true);
-    navigate(`${location.pathname}?sessionId=${sessionId}`, { replace: true });
+    navigateToSession(sessionId);
   };
 
   const createSession = async () => {
@@ -284,7 +290,7 @@ export function PilotStockCountsPage() {
       setShowNewCount(false);
       setCountWorkspaceStage("count");
       setCountWorkspaceOpen(true);
-      navigate(`${location.pathname}?sessionId=${created.id}`, { replace: true });
+      navigateToSession(created.id);
       await load(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a stock count.");
@@ -316,7 +322,7 @@ export function PilotStockCountsPage() {
       setDraft(sessionToDraft(saved));
       setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
       setMessage(`Stock count ${saved.id} saved.`);
-      navigate(`${location.pathname}?sessionId=${saved.id}`, { replace: true });
+      navigateToSession(saved.id);
       await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this stock count.");
@@ -345,7 +351,7 @@ export function PilotStockCountsPage() {
       setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
-      navigate(`${location.pathname}?sessionId=${finalized.id}`, { replace: true });
+      navigateToSession(finalized.id);
       await load(finalized.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
@@ -487,7 +493,7 @@ export function PilotStockCountsPage() {
           </div>
         </Card>
 
-        <Card className={`workspace-card w-full p-4 ${countWorkspaceOpen && draft ? "hidden" : ""}`}>
+        <Card className={`workspace-card w-full p-4 ${countWorkspaceOpen && draft && draft.status !== "Completed" ? "hidden" : ""}`}>
           <SectionHeader
             title={draft?.id ? `${isCompleted ? "Completed count" : "Edit count"} #${draft.id}` : workflowTab === "history" ? "Completed count" : "Start a count"}
             description={draft?.status === "Completed" ? "This count is finalized, locked, and kept as a read-only inventory snapshot." : "Fill in the counted quantities before finalizing."}
