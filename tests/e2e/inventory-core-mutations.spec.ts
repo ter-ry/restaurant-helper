@@ -145,6 +145,7 @@ for (const viewport of VIEWPORTS) {
       await installWorld(page, world);
       await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
       await page.getByText("Whole Milk").first().click();
+      const readsBefore = world.inventoryReads;
       await page.getByRole("button", { name: "Record waste" }).click();
       await expect(page.getByRole("heading", { name: "Record waste / loss" })).toBeVisible();
       await page.getByLabel("Quantity (L)").fill("3");
@@ -163,6 +164,9 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText(/Waste recorded: 3 L/)).toBeVisible();
       expect(posts(world, "/waste-events")).toHaveLength(2);
       expect(world.items[1].currentOnHand).toBe(17);
+      // The rendered on-hand comes from the re-read, not only from the optimistic client value.
+      expect(world.inventoryReads).toBeGreaterThan(readsBefore);
+      await expect(page.getByText("17 L", { exact: true }).first()).toBeVisible();
       await expect(page.getByRole("heading", { name: "Record waste / loss" })).toHaveCount(0);
       await expectNoOverflow(page);
     });
@@ -172,6 +176,7 @@ for (const viewport of VIEWPORTS) {
       await installWorld(page, world);
       await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
       await page.getByText("Oat Milk").first().click();
+      const readsBefore = world.inventoryReads;
       await page.getByRole("button", { name: "Adjust inventory" }).click();
       await page.getByLabel(/Quantity delta/).fill("-2");
 
@@ -186,6 +191,8 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText(/Inventory updated: 8 L → 6 L/)).toBeVisible();
       expect(posts(world, "/adjustments").filter((post) => post.path.includes("/32/"))).toHaveLength(2);
       expect(world.items[2].currentOnHand).toBe(6);
+      expect(world.inventoryReads).toBeGreaterThan(readsBefore);
+      await expect(page.getByText("6 L", { exact: true }).first()).toBeVisible();
       await expectNoOverflow(page);
     });
   });
