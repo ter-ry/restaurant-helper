@@ -118,11 +118,19 @@ describe("PilotCloverConnection tenant state", () => {
     expect(screen.queryByText("Connect Clover sandbox")).not.toBeInTheDocument();
   });
 
+  it("does not disconnect when the owner cancels the confirmation", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<MemoryRouter><PilotCloverConnection /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    expect(mockApi.disconnectPilotClover).not.toHaveBeenCalled();
+  });
+
   it("clears catalog state when disconnecting while a catalog request is pending", async () => {
     const catalogResponse = deferred<ReturnType<typeof catalog>>();
     const disconnectResponse = deferred<{ connection: { status: string } }>();
     mockApi.fetchPilotCloverCatalog.mockReturnValue(catalogResponse.promise);
     mockApi.disconnectPilotClover.mockReturnValue(disconnectResponse.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<MemoryRouter><PilotCloverConnection /></MemoryRouter>);
 
     fireEvent.click(await screen.findByRole("button", { name: "Preview catalog" }));
