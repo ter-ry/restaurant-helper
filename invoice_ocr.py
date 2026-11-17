@@ -525,42 +525,71 @@ def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
 
 
 _QTY_CELL = re.compile(r"^(?:[x×]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*[x×])$", re.I)
-_MONEY_CELL = re.compile(r"^\$?\s*(\d[\d,]*\.\d{2})$")
+_MONEY_TOKEN = r"\$?\s*\d[\d,]*\.\d{2}"
+_MONEY_CELL = re.compile(rf"^(?:{_MONEY_TOKEN})(?:\s+{_MONEY_TOKEN})?$")
+_DESCRIPTION_WITH_TRAILING_MONEY = re.compile(rf"^(?P<text>.*[A-Za-z]{{2}}.*?)\s+(?P<money>{_MONEY_TOKEN})$")
+
+
+def _split_stacked_description(line: str) -> tuple[str, list[float]] | None:
+    """Return (description, trailing amounts) for a row-label line, or None.
+
+    OCR.space sometimes glues the first amount to the label ("Veggie Soup $15.00"),
+    so at most one trailing amount is peeled off; everything else must be text.
+    """
+    normalized = normalize_space(line)
+    match = _DESCRIPTION_WITH_TRAILING_MONEY.match(normalized)
+    if match:
+        text, money = match.group("text").strip(), [parse_money(re.sub(r"[^\d.,]", "", match.group("money")))]
+    else:
+        text, money = normalized, []
+    if not re.search(r"[A-Za-z]{2,}", text) or extract_all_amounts(text):
+        return None
+    if is_probable_non_item_line(text) or is_table_end_line(text) or is_table_header_line(text):
+        return None
+    return text, money
 
 
 def extract_stacked_rows(lines: list[str]) -> tuple[list[tuple[int, dict[str, Any]]], set[int]]:
-    """Rebuild rows where OCR stacked a description over its ×qty / unit price / amount cells.
+    """Rebuild rows where OCR split one row over a label line and ×qty / money cells.
 
-    A row is accepted only when quantity × unit price equals the printed amount;
-    anything that does not reconcile is left out for manual review.  Requires at
-    least two such rows so ordinary single-line invoices keep the normal parser.
+    Handles both label -> qty -> unit price -> amount and the real OCR.space
+    reading orders label -> amount -> unit price -> qty and
+    label -> unit price + amount (one line) -> qty.  The two money values are
+    assigned to unit price and line total only when quantity × unit price equals
+    the line total in exactly that assignment; anything that does not reconcile
+    is left out for manual review and nothing is invented.  Requires at least
+    two such rows so ordinary single-line invoices keep the normal parser.
     """
     items: list[tuple[int, dict[str, Any]]] = []
     consumed: set[int] = set()
     index = 0
     while index < len(lines):
-        description = lines[index]
-        if (
-            re.search(r"[A-Za-z]{2,}", description)
-            and not extract_all_amounts(description)
-            and not is_probable_non_item_line(description)
-            and not is_table_end_line(description)
-        ):
+        split = _split_stacked_description(lines[index])
+        if split is not None:
+            description, money = split
             qty = None
-            money: list[float] = []
             end = index + 1
             while end < len(lines) and end <= index + 4:
                 cell = normalize_space(lines[end])
                 qty_match = _QTY_CELL.match(cell)
-                money_match = _MONEY_CELL.match(cell)
-                if qty_match and qty is None and not money:
+                if qty_match and qty is None:
                     qty = float(qty_match.group(1) or qty_match.group(2))
-                elif money_match and len(money) < 2:
-                    money.append(parse_money(money_match.group(1)))
+                elif _MONEY_CELL.match(cell) and len(money) < 2:
+                    cell_money = [parse_money(re.sub(r"[^\d.,]", "", token)) for token in re.findall(_MONEY_TOKEN, cell)]
+                    if len(money) + len(cell_money) > 2:
+                        break
+                    money.extend(cell_money)
                 else:
                     break
                 end += 1
-            if qty and len(money) == 2 and abs(qty * money[0] - money[1]) <= 0.02:
+            assignment = None
+            if qty and qty > 0 and len(money) == 2:
+                for unit_price, line_total in (tuple(money), tuple(reversed(money))):
+                    if abs(qty * unit_price - line_total) <= 0.02:
+                        assignment = (unit_price, line_total)
+                        break
+            if assignment:
+                unit_price, line_total = assignment
                 consumed.update(range(index, end))
                 items.append((index, {
                     "originalDescription": description,
@@ -570,9 +599,9 @@ def extract_stacked_rows(lines: list[str]) -> tuple[list[tuple[int, dict[str, An
                     "itemName": description,
                     "quantity": qty,
                     "unit": "each",
-                    "unitPrice": money[0],
-                    "lineTotal": money[1],
-                    "calculatedLineTotal": round(qty * money[0], 2),
+                    "unitPrice": unit_price,
+                    "lineTotal": line_total,
+                    "calculatedLineTotal": round(qty * unit_price, 2),
                     "lineTotalDifference": 0.0,
                     "confidence": 0.84,
                     "needsReview": False,

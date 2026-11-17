@@ -430,3 +430,40 @@ Total $69.00
         self.assertEqual([i["itemName"] for i in parsed["lineItems"]], ["Veggie Soup", "Chicken Dish", "Rich Salad"])
         self.assertEqual(parsed["lineItems"][2]["quantity"], 2.0)
         self.assertEqual(parsed["reconciliation"]["status"], "matched")
+
+
+class RealProviderReadingOrderTest(unittest.TestCase):
+    """Redacted real OCR.space ParsedText for the 5-row catering invoice (#169)."""
+
+    FIXTURE = Path(__file__).parent / "fixtures" / "ocr_catering_invoice_raw.txt"
+
+    def test_real_tab_newline_reading_order_yields_all_five_rows(self):
+        parsed = parse_invoice_text(self.FIXTURE.read_text(encoding="utf-8"))
+        rows = [(i["itemName"], i["quantity"], i["unitPrice"], i["lineTotal"]) for i in parsed["lineItems"]]
+        self.assertEqual(rows, [
+            ("Veggie Soup", 3.0, 5.0, 15.0),
+            ("Chicken Dish", 3.0, 12.0, 36.0),
+            ("Rich Salad", 2.0, 9.0, 18.0),
+            ("Beans", 2.0, 9.0, 18.0),
+            ("Pudding", 3.0, 6.5, 19.5),
+        ])
+        self.assertEqual(parsed["reconciliation"]["status"], "matched")
+        self.assertEqual(parsed["fields"]["total"]["value"], 106.5)
+
+    def test_row_whose_amounts_do_not_reconcile_with_quantity_is_not_guessed(self):
+        text = self.FIXTURE.read_text(encoding="utf-8").replace("× 2\nBeans", "× 5\nBeans")
+        parsed = parse_invoice_text(text)
+        self.assertNotIn("Rich Salad", [i["itemName"] for i in parsed["lineItems"]])
+        self.assertEqual(parsed["reconciliation"]["status"], "incomplete")
+        self.assertTrue(parsed["needsReview"])
+
+    def test_missing_quantity_cell_is_not_invented(self):
+        text = self.FIXTURE.read_text(encoding="utf-8").replace("$9.00\t$18.00\n× 2\nBeans", "$9.00\t$18.00\nBeans")
+        parsed = parse_invoice_text(text)
+        self.assertNotIn("Rich Salad", [i["itemName"] for i in parsed["lineItems"]])
+        self.assertEqual(parsed["reconciliation"]["status"], "incomplete")
+
+    def test_non_item_lines_are_not_turned_into_rows(self):
+        text = self.FIXTURE.read_text(encoding="utf-8").replace("Total\t$106.50", "Subtotal\t$106.50\nTax\t$0.00\nTotal\t$106.50")
+        parsed = parse_invoice_text(text)
+        self.assertEqual(len(parsed["lineItems"]), 5)
