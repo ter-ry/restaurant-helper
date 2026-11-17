@@ -1018,6 +1018,11 @@ def _create_correction_draft(invoice: PurchaseInvoice, actor_id: int) -> Purchas
         source_file_key=invoice.source_file_key,
         extracted_text=invoice.extracted_text,
         extraction_status=invoice.extraction_status,
+        # The correction is still the same printed document: carry the immutable printed amounts, never the override.
+        ocr_printed_subtotal=invoice.ocr_printed_subtotal,
+        ocr_printed_tax=invoice.ocr_printed_tax,
+        ocr_printed_total=invoice.ocr_printed_total,
+        ocr_evidence_captured_at=invoice.ocr_evidence_captured_at,
         corrects_invoice_id=invoice.id,
         created_by_user_id=actor_id,
         updated_by_user_id=actor_id,

@@ -231,3 +231,28 @@ def test_override_is_tenant_isolated_and_rejected_for_manual_or_received_invoice
     with client.session_transaction() as session:
         session["pilot_current_membership_id"] = original
     assert client.get(f"/api/pilot/purchases/invoices/{created['id']}").get_json()["ocrEvidence"]["status"] == "incomplete"
+
+
+def test_correction_draft_keeps_printed_evidence_but_not_the_override(app, client, monkeypatch):
+    _stub_ocr(monkeypatch)
+    login(client)
+    headers = csrf_headers(client)
+    extracted = _extract(client, headers)
+    created = client.post("/api/pilot/purchases/invoices", headers=headers, json=_payload(client, extracted, line_total=15)).get_json()
+    override = client.post(f"/api/pilot/purchases/invoices/{created['id']}/ocr-override", headers=headers, json={"reason": "Supplier confirmed only soup was delivered", "acknowledgedLineTotal": 15})
+    assert override.status_code == 200
+    assert client.post(f"/api/pilot/purchases/invoices/{created['id']}/receive", headers=headers).status_code == 200
+
+    voided = client.post(
+        f"/api/pilot/purchases/invoices/{created['id']}/void",
+        headers=headers,
+        json={"reason": "wrong delivery recorded", "createCorrectionDraft": True, "idempotencyKey": f"k-{uuid4().hex[:8]}"},
+    )
+    assert voided.status_code == 200, voided.get_json()
+    draft_id = voided.get_json()["correctedByInvoiceId"]
+    draft = client.get(f"/api/pilot/purchases/invoices/{draft_id}").get_json()
+    # Same printed document: still incomplete against $106.50, and the original override does not carry over.
+    assert draft["ocrEvidence"]["printedTotal"] == 106.5
+    assert draft["ocrEvidence"]["status"] == "incomplete"
+    assert draft["ocrEvidence"]["override"] is None
+    assert client.post(f"/api/pilot/purchases/invoices/{draft_id}/receive", headers=headers).status_code == 400
