@@ -30,9 +30,11 @@ type World = {
   delayMs: number;
   refuseCreate: { status: number; message: string; errors: Record<string, any> } | null;
   failReceiveOnce: boolean;
+  /** Purchase list reads answered by the fake server (proves the page re-fetched after a mutation). */
+  listReads: number;
   nextId: number;
 };
-const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, nextId: 600 });
+const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600 });
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
 const ITEM = {
   id: 30, organizationId: 42, locationId: 7, supplierId: null, name: "Chicken Breast", normalizedName: "chicken breast", category: "Poultry", stockUnit: "kg",
@@ -78,6 +80,7 @@ async function installWorld(page: Page, world: World) {
       });
     }
     if (pathname === "/api/pilot/purchases" && method === "GET") {
+      world.listReads += 1;
       return json(route, {
         invoices: world.invoices.map(invoiceJson), suppliers: [{ id: 3, name: "Cedar Meats" }], purchaseLines: [], priceChanges: [], summary: {},
         exportReadiness: { readyForCsv: 0, needsReview: 0, needsMapping: 0, quickBooksFutureOnly: true },
@@ -160,9 +163,12 @@ for (const viewport of VIEWPORTS) {
       world.delayMs = 500;
       const editor = await startPurchase(page, world);
       await expectNoOverflow(page);
+      const readsBefore = world.listReads;
       await editor.getByRole("button", { name: "Save draft" }).click();
       await expect(editor.getByRole("button", { name: "Saving..." })).toBeDisabled();
       await expect(page.getByText("Invoice CM-2001 saved successfully.")).toBeVisible();
+      // The list is re-read from the server after the save (the saved invoice exists only in the server's list response).
+      await expect.poll(() => world.listReads).toBeGreaterThan(readsBefore);
       expect(posts(world, "/purchases/invoices")).toHaveLength(1);
       expect(world.invoices[0].status).toBe("Draft");
       await expectNoOverflow(page);
