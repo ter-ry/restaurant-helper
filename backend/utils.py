@@ -255,6 +255,21 @@ def serialize_purchase_invoice_line(line: PurchaseInvoiceLine) -> dict[str, Any]
     return payload
 
 
+def _ocr_provenance_items(invoice: PurchaseInvoice) -> list[dict[str, Any]]:
+    """Receipt guard that survives save/reload/edit: OCR invoices are checked against the printed document amounts (#169)."""
+    from .ocr_provenance import expected_line_amount
+
+    if getattr(invoice, "ocr_provenance_at", None) is None:
+        return []
+    expected = expected_line_amount(invoice.ocr_printed_subtotal, invoice.ocr_printed_tax, invoice.ocr_printed_total)
+    if expected is None:
+        return [{"code": "ocr_unverified", "severity": "review", "message": "The original invoice totals could not be read, so the lines are not verified. Compare them with the document before receiving."}]
+    line_sum = sum((Decimal(line.line_total) for line in invoice.lines), Decimal("0"))
+    if abs(expected - line_sum) > Decimal("0.01"):
+        return [{"code": "ocr_printed_total_mismatch", "severity": "blocking", "message": f"Lines add up to ${line_sum:.2f} but the original invoice shows ${expected:.2f} before tax (difference ${abs(expected - line_sum):.2f}). Add or correct lines before receiving."}]
+    return []
+
+
 def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for line in invoice.lines:
@@ -285,6 +300,7 @@ def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
         items.append({"code": "line_subtotal_mismatch", "severity": "blocking", "message": f"Line items differ from invoice subtotal by ${abs(subtotal_difference):.2f}."})
     if abs(total_difference) > Decimal("0.01"):
         items.append({"code": "invoice_total_mismatch", "severity": "blocking", "message": f"Subtotal plus tax differs from invoice total by ${abs(total_difference):.2f}."})
+    items.extend(_ocr_provenance_items(invoice))
     blockers = [item for item in items if item["severity"] == "blocking"]
     warnings = [item for item in items if item["severity"] == "review"]
     state = "BLOCKING" if blockers else "REVIEW" if warnings or invoice.status == "Draft" else "READY"
@@ -338,6 +354,12 @@ def serialize_purchase_invoice(invoice: PurchaseInvoice) -> dict[str, Any]:
         "voidedAt": isoformat(invoice.voided_at),
         "voidedByUserId": invoice.voided_by_user_id,
         "voidReason": invoice.void_reason or "",
+        "ocrProvenance": {
+            "recorded": invoice.ocr_provenance_at is not None,
+            "printedSubtotal": decimal_to_float(invoice.ocr_printed_subtotal),
+            "printedTax": decimal_to_float(invoice.ocr_printed_tax),
+            "printedTotal": decimal_to_float(invoice.ocr_printed_total),
+        },
         "lineItems": [serialize_purchase_invoice_line(line) for line in invoice.lines],
         "reviewSummary": purchase_review_summary(invoice),
         "createdAt": isoformat(invoice.created_at),

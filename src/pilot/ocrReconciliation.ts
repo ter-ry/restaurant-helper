@@ -11,6 +11,8 @@ export interface OcrPrintedEvidence {
   serverMessage: string;
   /** Null while the extracted draft is unsaved; set to the saved invoice id once that draft is saved, so the check follows it. */
   invoiceId: number | null;
+  /** Server-signed provenance token from the OCR response; saved with the invoice so the server can guard receipt. */
+  provenance: string;
 }
 
 export type OcrCheckStatus = "matched" | "incomplete" | "unverified";
@@ -47,6 +49,7 @@ export function buildOcrPrintedEvidence(result: PilotInvoiceOcrResponse): OcrPri
     warnings: (result.warnings ?? []).filter((warning) => typeof warning === "string" && warning.trim()),
     serverMessage: result.reconciliation?.message ?? "",
     invoiceId: null,
+    provenance: result.provenance ?? "",
   };
 }
 

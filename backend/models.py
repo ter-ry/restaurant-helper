@@ -222,6 +222,11 @@ class PurchaseInvoice(TimestampMixin, db.Model):
     voided_at = db.Column(db.DateTime(timezone=True), nullable=True)
     voided_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.Text, nullable=False, default="")
+    # Amounts the original document printed, from the server-signed OCR token (#169). NULL = no OCR provenance.
+    ocr_printed_subtotal = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_printed_tax = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_printed_total = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_provenance_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")

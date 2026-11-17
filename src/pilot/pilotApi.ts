@@ -1199,6 +1199,8 @@ export interface PilotInvoiceOcrResponse {
   overallConfidence: number;
   needsReview: boolean;
   reconciliation?: PilotInvoiceOcrReconciliation;
+  /** Server-signed record of the amounts the document printed; send it back when saving the extracted invoice. */
+  provenance?: string;
 }
 
 export async function uploadPilotInvoiceOcr(file: File) {

@@ -85,6 +85,7 @@ from .utils import (
     purchase_review_summary,
 )
 from .validation import RequestValidationError
+from .ocr_provenance import sign_provenance, verify_provenance
 from invoice_ocr import InvoiceOCRFailure, InvoiceOCRTemporaryFailure, extract_invoice_document
 
 bp = Blueprint("pilot_api", __name__)
@@ -640,6 +641,18 @@ def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[
     invoice.source_file_key = str(payload.get("sourceFileKey") or "").strip()
     invoice.extracted_text = str(payload.get("extractedText") or "").strip()
     invoice.extraction_status = str(payload.get("extractionStatus") or "manual").strip()
+    token = str(payload.get("ocrProvenance") or "").strip()
+    if token:
+        printed = verify_provenance(token, organization_id, location_id)
+        if printed is None:
+            raise RequestValidationError("Invalid OCR provenance.", {"ocrProvenance": "The OCR verification expired or is invalid. Upload the invoice again."})
+        invoice.ocr_printed_subtotal = printed["subtotal"]
+        invoice.ocr_printed_tax = printed["tax"]
+        invoice.ocr_printed_total = printed["total"]
+        invoice.ocr_provenance_at = _now()
+    if invoice.ocr_provenance_at is not None:
+        # Recorded provenance can never be downgraded by a client-supplied status.
+        invoice.extraction_status = "ocr"
     return invoice, supplier
 
 
@@ -999,6 +1012,10 @@ def _create_correction_draft(invoice: PurchaseInvoice, actor_id: int) -> Purchas
         source_file_key=invoice.source_file_key,
         extracted_text=invoice.extracted_text,
         extraction_status=invoice.extraction_status,
+        ocr_printed_subtotal=invoice.ocr_printed_subtotal,
+        ocr_printed_tax=invoice.ocr_printed_tax,
+        ocr_printed_total=invoice.ocr_printed_total,
+        ocr_provenance_at=invoice.ocr_provenance_at,
         corrects_invoice_id=invoice.id,
         created_by_user_id=actor_id,
         updated_by_user_id=actor_id,
@@ -1397,7 +1414,7 @@ def purchases_ocr():
     context = _require_context()
     if context is None:
         return json_error("No pilot location is available for the current account.", 404)
-    _, membership, _, _ = context
+    ocr_org, membership, _, ocr_loc = context
     permission_error = _require_role(membership, "purchases.manage")
     if permission_error is not None:
         return permission_error
@@ -1415,6 +1432,7 @@ def purchases_ocr():
         return json_error(str(exc), 503)
     except (ValueError, InvoiceOCRFailure) as exc:
         return json_error(str(exc), 422)
+    parsed["provenance"] = sign_provenance(parsed, ocr_org.id, ocr_loc.id)
     return jsonify(parsed), 200
 
 

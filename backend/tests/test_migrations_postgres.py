@@ -492,7 +492,7 @@ def test_postgres_migrations_upgrade_from_fresh_database():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
         # The Clover mapping migration is part of the current head.\n        
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         # #232: void/correction lineage columns exist, are nullable (history is not rewritten) and the reason defaults to "".
         for column in ("corrects_invoice_id", "voided_at", "voided_by_user_id"):
             assert _column_info("purchase_invoices", column)[1] is True, column
@@ -697,7 +697,7 @@ def test_postgres_migrations_upgrade_existing_square_catalog_schema_to_bigint():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         data_type, nullable, precision, scale = _column_info("square_catalog_objects", "version")
         assert data_type == "bigint"
         assert nullable is False
@@ -718,7 +718,7 @@ def test_postgres_migrations_upgrade_from_secure_backend_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("audit_events")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -743,7 +743,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("square_location_mappings")
         _assert_table_owned_by_migrator("daily_close_sessions")
@@ -762,7 +762,7 @@ def test_postgres_migrations_upgrade_from_partial_commercial_head():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         _assert_function_exists("flowtally_current_user_id", 0)
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_square_location_mappings_tenant_access", "square_location_mappings")
@@ -963,7 +963,7 @@ def test_postgres_migrations_backfill_weighted_average_inventory_cost():
     with application.app_context():
         _assert_migration_identity(migration_config)
         _assert_runtime_connection()
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         _assert_table_owned_by_migrator("daily_close_sessions")
         _assert_policy_exists("flowtally_daily_close_sessions_tenant_access", "daily_close_sessions")
 
@@ -1246,5 +1246,23 @@ def test_postgres_migration_0029_downgrade_and_reupgrade():
         db.session.rollback()
     _upgrade_to(application, "head")
     with application.app_context():
-        assert _current_revision() == "0029_inventory_cost_verifications"
+        assert _current_revision() == "0030_invoice_ocr_provenance"
         _assert_rls_enabled_and_forced("inventory_cost_verifications")
+
+
+def test_postgres_migration_0030_downgrade_and_reupgrade():
+    application = _create_app()
+    _reset_public_schema(application)
+    _upgrade_to(application, "head")
+    _downgrade_to(application, "0029_inventory_cost_verifications")
+    with application.app_context():
+        assert _current_revision() == "0029_inventory_cost_verifications"
+        columns = {row[0] for row in db.session.execute(text("select column_name from information_schema.columns where table_name = 'purchase_invoices'"))}
+        assert "ocr_printed_total" not in columns and "ocr_provenance_at" not in columns
+        db.session.rollback()
+    _upgrade_to(application, "head")
+    with application.app_context():
+        assert _current_revision() == "0030_invoice_ocr_provenance"
+        columns = {row[0] for row in db.session.execute(text("select column_name from information_schema.columns where table_name = 'purchase_invoices'"))}
+        assert {"ocr_printed_subtotal", "ocr_printed_tax", "ocr_printed_total", "ocr_provenance_at"} <= columns
+        db.session.rollback()

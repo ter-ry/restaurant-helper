@@ -646,6 +646,7 @@ export function PilotPurchasesPage() {
     sourceFileType: draft.sourceFileType,
     extractionStatus: draft.extractionStatus,
     extractedText: draft.extractedText,
+    ...(ocrEvidence?.provenance && draft.extractionStatus === "ocr" && (ocrEvidence.invoiceId === null ? !draft.id : ocrEvidence.invoiceId === draft.id) ? { ocrProvenance: ocrEvidence.provenance } : {}),
     lineItems: draft.lineItems.map((line) => ({
       description: line.description,
       inventoryItemId: line.inventoryItemId,
