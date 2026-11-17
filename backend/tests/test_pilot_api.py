@@ -67,7 +67,7 @@ def test_pilot_dashboard_and_inventory_smoke(client):
     assert dashboard_body["summary"]["inventoryOutOfStockCount"] == 1
     assert dashboard_body["summary"]["inventoryLowStockCount"] == 5
     assert dashboard_body["recentPriceChanges"]
-    assert dashboard_body["operationalAttention"]["reorder"]["count"] == 10
+    assert dashboard_body["operationalAttention"]["reorder"]["count"] == 5  # urgent only (#351)
 
     purchases = client.get("/api/pilot/purchases")
     assert purchases.status_code == 200
