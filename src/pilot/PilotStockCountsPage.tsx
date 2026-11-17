@@ -204,6 +204,8 @@ export function PilotStockCountsPage() {
   useEffect(() => {
     if (selectedSession) {
       setDraft(sessionToDraft(selectedSession));
+      // The displayed draft is the server copy, so it is also the unsaved-changes baseline (switching drafts must not look edited).
+      setSavedDraftSignature(JSON.stringify(sessionToDraft(selectedSession)));
       setConfirmConcurrency(false);
     }
   }, [selectedSession]);

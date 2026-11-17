@@ -259,6 +259,24 @@ for (const viewport of VIEWPORTS) {
       await expectNoOverflow(page);
     });
 
+    test("switching between two saved drafts does not show unsaved changes until something is edited", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions.push({ ...world.sessions[0], id: 12, countedBy: "Closing lead", lines: world.sessions[0].lines.map((line) => ({ ...line, id: line.id + 100, counted: line.inventoryItemId === 2 ? 8 : null })) });
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByLabel("Counted quantity for Whole Milk")).toBeVisible();
+      await dialog.getByRole("button", { name: "Return to overview" }).click();
+      await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+
+      await page.getByRole("button", { name: /Draft #12/ }).click();
+      await expect(dialog.getByLabel("Counted quantity for Espresso Beans")).toHaveValue("8");
+      await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+      await dialog.getByLabel("Counted quantity for Whole Milk").fill("23");
+      await expect(page.getByText("Unsaved changes")).toBeVisible();
+    });
+
     test("later inventory movement requires an explicit confirmation before the count can be completed", async ({ page }) => {
       const world = draftWorld(true);
       world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
