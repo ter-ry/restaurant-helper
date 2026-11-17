@@ -682,7 +682,8 @@ export function PilotPurchasesPage() {
     setOcrOverrideError(null);
     try {
       const saved = await overridePilotOcrDiscrepancy(draft.id, { reason: ocrOverrideReason.trim(), acknowledgedLineTotal: ocrCheck.itemsTotal });
-      setDraft((current) => ({ ...current, ocrServer: saved.ocrEvidence ?? null }));
+      // The user may have opened another purchase while this was in flight: only the invoice that asked gets the evidence.
+      setDraft((current) => (current.id === saved.id ? { ...current, ocrServer: saved.ocrEvidence ?? null } : current));
       // openInvoice prefers the cached list entry, so keep it in step with the server record.
       setData((current) => (current ? { ...current, invoices: current.invoices.map((invoice) => (invoice.id === saved.id ? saved : invoice)) } : current));
       setOcrOverrideReason("");
