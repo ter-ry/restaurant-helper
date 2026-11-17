@@ -211,6 +211,8 @@ export function PilotSquarePage() {
     try {
       const result = await action();
       setConnection(result.connection);
+      // Re-fetch mappings and menu costing so dependent sections reflect server state without a manual reload.
+      await load();
       setMessage(`${label} completed.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update Square.");
@@ -245,7 +247,7 @@ export function PilotSquarePage() {
     }
 
     const menuItemId = readValue(`pilot-square-menu-item-${catalogObjectId}`, "");
-    await runAction(`catalog-${catalogObjectId}`, () =>
+    return runAction(`catalog-${catalogObjectId}`, () =>
       updatePilotSquareCatalogMapping({
         organizationId: currentOrganizationId,
         squareCatalogObjectId: catalogObjectId,
@@ -255,7 +257,6 @@ export function PilotSquarePage() {
         status: menuItemId ? "mapped" : "unmapped",
       }),
     );
-    await load();
   };
 
   const reviewMenuImport = async () => {

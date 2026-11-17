@@ -404,7 +404,7 @@ describe("PilotSquarePage", () => {
     await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mockApi.syncPilotSquareCatalog).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockApi.syncPilotSquareOrders).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(5)); // initial + one authoritative re-fetch after each of the 4 successful mutations
     expect(await screen.findByText("Square reconciliation completed.")).toBeVisible();
   });
 
