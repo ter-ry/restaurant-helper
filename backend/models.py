@@ -222,6 +222,18 @@ class PurchaseInvoice(TimestampMixin, db.Model):
     voided_at = db.Column(db.DateTime(timezone=True), nullable=True)
     voided_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.Text, nullable=False, default="")
+    # Printed amounts the OCR provider actually read (#169). Captured server-side from a signed extraction token,
+    # never from editable totals; NULL means "not read" (or a non-OCR invoice). Immutable after creation.
+    ocr_printed_subtotal = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_printed_tax = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_printed_total = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_evidence_captured_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Audited manual acknowledgement of a printed-amount discrepancy. Valid only for the exact line sum acknowledged.
+    ocr_override_reason = db.Column(db.Text, nullable=True)
+    ocr_override_line_total = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_override_expected_amount = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_override_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ocr_override_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")

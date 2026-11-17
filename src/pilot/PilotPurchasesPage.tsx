@@ -9,6 +9,8 @@ import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import {
   createPilotPurchaseInvoice,
+  overridePilotOcrDiscrepancy,
+  type PilotOcrEvidence,
   createPilotInventoryItem,
   createPilotSupplier,
   fetchPilotInventory,
@@ -58,6 +60,10 @@ interface PurchaseDraft {
   sourceFileType: string;
   extractionStatus: string;
   extractedText: string;
+  /** Signed token from the OCR response; sent once when the extracted draft is first saved (#169). */
+  ocrEvidenceToken?: string;
+  /** Server-stored printed amounts and verdict; the durable source once the draft is saved. */
+  ocrServer?: PilotOcrEvidence | null;
   correctsInvoiceId?: number | null;
   correctedByInvoiceId?: number | null;
   voidReason?: string;
@@ -142,6 +148,7 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
     sourceFileType: invoice.sourceFileType,
     extractionStatus: invoice.extractionStatus,
     extractedText: invoice.extractedText,
+    ocrServer: invoice.ocrEvidence ?? null,
     correctsInvoiceId: invoice.correctsInvoiceId ?? null,
     correctedByInvoiceId: invoice.correctedByInvoiceId ?? null,
     voidReason: invoice.voidReason ?? "",
@@ -453,7 +460,9 @@ export function PilotPurchasesPage() {
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrEvidence, setOcrEvidence] = useState<OcrPrintedEvidence | null>(null);
   // The exact gap the owner confirmed against the original document; any later line edit that changes the gap voids it.
-  const [ocrAckDifference, setOcrAckDifference] = useState<number | null>(null);
+  const [ocrOverrideReason, setOcrOverrideReason] = useState("");
+  const [ocrOverrideBusy, setOcrOverrideBusy] = useState(false);
+  const [ocrOverrideError, setOcrOverrideError] = useState<string | null>(null);
   const [lastOcrFile, setLastOcrFile] = useState<File | null>(null);
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [ocrPreviewType, setOcrPreviewType] = useState<"image" | "pdf" | null>(null);
@@ -562,21 +571,26 @@ export function PilotPurchasesPage() {
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
   const readyToReceive = !finalizedStatus && unresolvedLineCount === 0 && mappedLineCount > 0 && draft.lineItems.every((line) => line.conversionFactor > 0 && line.quantity > 0);
+  // Once saved, the server-stored printed amounts are the only evidence (they survive reload and reopen); the
+  // in-memory evidence only covers the not-yet-saved extraction.
+  const activeOcrEvidence = useMemo<OcrPrintedEvidence | null>(() => {
+    if (draft.id && draft.ocrServer) {
+      return { printedSubtotal: draft.ocrServer.printedSubtotal, printedTax: draft.ocrServer.printedTax, printedTotal: draft.ocrServer.printedTotal, warnings: [], serverMessage: "", invoiceId: draft.id };
+    }
+    return ocrEvidence && draft.extractionStatus === "ocr" && (ocrEvidence.invoiceId === null ? !draft.id : ocrEvidence.invoiceId === draft.id) ? ocrEvidence : null;
+  }, [draft.id, draft.ocrServer, draft.extractionStatus, ocrEvidence]);
   const ocrCheck = useMemo(
-    () => (ocrEvidence && draft.extractionStatus === "ocr" && (ocrEvidence.invoiceId === null ? !draft.id : ocrEvidence.invoiceId === draft.id) ? checkOcrLines(ocrEvidence, draft.lineItems.map((line) => Number(line.lineTotal) || 0)) : null),
-    [ocrEvidence, draft.id, draft.extractionStatus, draft.lineItems],
+    () => (activeOcrEvidence ? checkOcrLines(activeOcrEvidence, draft.lineItems.map((line) => Number(line.lineTotal) || 0)) : null),
+    [activeOcrEvidence, draft.lineItems],
   );
+  // An override is the server's audited record, valid only for the exact line total it acknowledged.
+  const ocrOverrideValid = Boolean(draft.ocrServer?.override && ocrCheck && Math.abs(draft.ocrServer.override.acknowledgedLineTotal - ocrCheck.itemsTotal) <= 0.01);
   // Saving the extracted draft gives it an id; the printed-amount check follows that same purchase. Only the unsaved OCR
   // draft being saved is bound, so opening some other saved invoice never inherits this evidence.
   const bindOcrEvidence = (savedId: number) => {
     if (draft.id || draft.extractionStatus !== "ocr") return;
     setOcrEvidence((current) => (current && current.invoiceId === null ? { ...current, invoiceId: savedId } : current));
   };
-  // A confirmation covers one exact gap. Once an edit moves the gap, the confirmation is discarded for good, so
-  // returning to an earlier gap needs a fresh confirmation.
-  useEffect(() => {
-    if (ocrAckDifference !== null && ocrCheck?.difference !== ocrAckDifference) setOcrAckDifference(null);
-  }, [ocrAckDifference, ocrCheck]);
   const localReviewSummary = useMemo(() => {
     const blockers = draft.lineItems.flatMap((line) => [
       !line.inventoryItemId ? `Map ${line.description || "this item"} to inventory.` : null,
@@ -592,7 +606,7 @@ export function PilotPurchasesPage() {
     const totalDifference = Number(draft.subtotal || 0) + Number(draft.tax || 0) - Number(draft.totalAmount || 0);
     // Line edits recompute the draft subtotal from the lines, so the printed invoice amounts are checked separately:
     // receiving stays blocked until the lines match them or the owner confirms the current gap against the document.
-    if (ocrCheck?.status === "incomplete" && ocrAckDifference !== ocrCheck.difference) blockers.push(`Extracted items do not match the printed invoice (difference ${formatMoney(Math.abs(ocrCheck.difference ?? 0))}). Correct the lines or confirm them against the original invoice.`);
+    if (ocrCheck?.status === "incomplete" && !ocrOverrideValid) blockers.push(`Extracted items do not match the printed invoice (difference ${formatMoney(Math.abs(ocrCheck.difference ?? 0))}). Correct the lines, or save the draft and record an audited override.`);
     if (Math.abs(subtotalDifference) > 0.01) blockers.push(`Line items differ from invoice subtotal by ${formatMoney(Math.abs(subtotalDifference))}.`);
     if (Math.abs(totalDifference) > 0.01) blockers.push(`Subtotal plus tax differs from invoice total by ${formatMoney(Math.abs(totalDifference))}.`);
     return {
@@ -602,7 +616,7 @@ export function PilotPurchasesPage() {
       reconciliation: { lineSubtotal, subtotalDifference, totalDifference, status: blockers.length ? "mismatch" : "matched" },
       readyToReceive: blockers.length === 0 && readyToReceive,
     };
-  }, [draft, readyToReceive, ocrCheck, ocrAckDifference]);
+  }, [draft, readyToReceive, ocrCheck, ocrOverrideValid]);
   // Always derive eligibility from the values currently in the editor. The
   // saved invoice summary may be stale after a quantity/mapping edit; the
   // backend revalidates the persisted payload before creating movements.
@@ -646,6 +660,7 @@ export function PilotPurchasesPage() {
     sourceFileType: draft.sourceFileType,
     extractionStatus: draft.extractionStatus,
     extractedText: draft.extractedText,
+    ...(draft.id ? {} : { ocrEvidenceToken: draft.ocrEvidenceToken }),
     lineItems: draft.lineItems.map((line) => ({
       description: line.description,
       inventoryItemId: line.inventoryItemId,
@@ -660,6 +675,21 @@ export function PilotPurchasesPage() {
       note: line.note,
     })),
   });
+
+  const recordOcrOverride = async () => {
+    if (!draft.id || !ocrCheck || ocrOverrideBusy) return;
+    setOcrOverrideBusy(true);
+    setOcrOverrideError(null);
+    try {
+      const saved = await overridePilotOcrDiscrepancy(draft.id, { reason: ocrOverrideReason.trim(), acknowledgedLineTotal: ocrCheck.itemsTotal });
+      setDraft((current) => ({ ...current, ocrServer: saved.ocrEvidence ?? null }));
+      setOcrOverrideReason("");
+    } catch (caught) {
+      setOcrOverrideError(caught instanceof Error ? caught.message : "The override could not be recorded.");
+    } finally {
+      setOcrOverrideBusy(false);
+    }
+  };
 
   const saveDraft = async (status: string) => {
     if (saving) return;
@@ -980,10 +1010,12 @@ export function PilotPurchasesPage() {
       sourceFileType: result.contentType || file.type,
       extractionStatus: "ocr",
       extractedText: result.rawText || "",
+      ocrEvidenceToken: result.evidenceToken,
       lineItems: lineItems.length ? lineItems : [blankLine()],
     });
     setOcrEvidence(buildOcrPrintedEvidence(result));
-    setOcrAckDifference(null);
+    setOcrOverrideReason("");
+    setOcrOverrideError(null);
     setShowReview(false);
     setReceiveMessage(result.needsReview ? "Invoice extracted. Review the highlighted fields before saving." : "Invoice extracted. Review the draft before saving.");
   };
@@ -1177,20 +1209,27 @@ export function PilotPurchasesPage() {
               </div>
             </div>
 
-            {ocrCheck && ocrEvidence ? (
+            {ocrCheck && activeOcrEvidence ? (
               <div data-testid="ocr-reconciliation-banner" data-status={ocrCheck.status} role={ocrCheck.status === "matched" ? "status" : "alert"} className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${ocrCheck.status === "matched" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : ocrCheck.status === "incomplete" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
                 <p className="font-bold">{ocrCheck.status === "matched" ? "Extracted items match the invoice" : ocrCheck.status === "incomplete" ? "Extraction looks incomplete" : "Extraction is not verified"}</p>
                 <p className="mt-1 leading-6">{ocrCheck.message}</p>
                 {ocrCheck.status !== "matched" ? <p className="mt-1 text-xs leading-5">Nothing was added or adjusted for you. Correct a line or add the missing one; editing the totals fields does not clear this warning.</p> : null}
-                {ocrCheck.status !== "matched" && ocrEvidence.warnings.filter((warning) => warning !== ocrEvidence.serverMessage).length ? (
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">{ocrEvidence.warnings.filter((warning) => warning !== ocrEvidence.serverMessage).map((warning) => <li key={warning}>{warning}</li>)}</ul>
+                {ocrCheck.status !== "matched" && activeOcrEvidence.warnings.filter((warning) => warning !== activeOcrEvidence.serverMessage).length ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">{activeOcrEvidence.warnings.filter((warning) => warning !== activeOcrEvidence.serverMessage).map((warning) => <li key={warning}>{warning}</li>)}</ul>
                 ) : null}
                 {ocrCheck.status !== "matched" ? <div className="mt-3"><Button variant="secondary" type="button" onClick={addLine}>Add missing line</Button></div> : null}
                 {ocrCheck.status === "incomplete" ? (
-                  <label className="mt-3 flex items-start gap-2 text-xs leading-5">
-                    <input type="checkbox" className="mt-0.5 h-4 w-4" checked={ocrAckDifference === ocrCheck.difference} onChange={(event) => setOcrAckDifference(event.target.checked ? ocrCheck.difference : null)} />
-                    <span>I compared these lines with the original invoice and they are correct even though they do not add up to the printed amount.</span>
-                  </label>
+                  ocrOverrideValid && draft.ocrServer?.override ? (
+                    <p className="mt-3 text-xs font-semibold leading-5" data-testid="ocr-override-recorded">Audited override recorded for these exact lines: {draft.ocrServer.override.reason}</p>
+                  ) : (
+                    <div className="mt-3 space-y-2 text-xs leading-5" data-testid="ocr-override-form">
+                      <label className="block font-semibold" htmlFor="ocr-override-reason">Reason these lines are correct even though they do not add up to the printed amount (recorded with your name)</label>
+                      <textarea id="ocr-override-reason" className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-ink" rows={2} value={ocrOverrideReason} onChange={(event) => setOcrOverrideReason(event.target.value)} disabled={!draft.id || ocrOverrideBusy} />
+                      {!draft.id ? <p>Save the draft first; the override is recorded against the saved purchase.</p> : null}
+                      {ocrOverrideError ? <p role="alert" className="font-semibold">{ocrOverrideError}</p> : null}
+                      <Button variant="secondary" type="button" disabled={!draft.id || ocrOverrideBusy || ocrOverrideReason.trim().length < 10} onClick={() => void recordOcrOverride()}>{ocrOverrideBusy ? "Recording..." : "Record audited override"}</Button>
+                    </div>
+                  )
                 ) : null}
               </div>
             ) : null}

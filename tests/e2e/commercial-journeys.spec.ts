@@ -2757,31 +2757,25 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await page.getByLabel("Unit price").first().fill("20");
     await expect(banner).toHaveAttribute("data-status", "incomplete");
     await expect(banner).toContainText("Difference: $6.50");
-    // A confirmation applies to one exact gap; editing a line that changes the gap voids it.
-    await page.getByLabel(/I compared these lines with the original invoice/).check();
-    await expect(page.getByLabel(/I compared these lines with the original invoice/)).toBeChecked();
+    // No client-side confirmation can clear the gap: an override is a server-side audited record on a saved draft.
+    await expect(page.getByRole("button", { name: "Record audited override" })).toBeDisabled();
+    await expect(page.getByTestId("ocr-override-form")).toContainText("Save the draft first");
     await page.getByLabel("Unit price").first().fill("4");
     await expect(banner).toContainText("Difference: $86.50");
-    await expect(page.getByLabel(/I compared these lines with the original invoice/)).not.toBeChecked();
-    // Returning to the gap that was confirmed earlier still needs a fresh confirmation.
-    await page.getByLabel("Unit price").first().fill("20");
-    await expect(banner).toContainText("Difference: $6.50");
-    await expect(page.getByLabel(/I compared these lines with the original invoice/)).not.toBeChecked();
-    await page.getByLabel("Unit price").first().fill("4");
     await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
     await noOverflow(page);
     expect(writes).toEqual([]);
   });
 
-  test(`owner confirmation clears the receive blocker but keeps the warning visible at ${viewport.width}px`, async ({ page }) => {
+  test(`an unsaved incomplete draft cannot be overridden, so the receive blocker stays at ${viewport.width}px`, async ({ page }) => {
     const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
     await page.getByRole("button", { name: "Review", exact: true }).click();
     const summary = page.getByTestId("purchase-review-summary");
     await expect(summary).toContainText("Extracted items do not match the printed invoice");
-    await page.getByLabel(/I compared these lines with the original invoice/).check();
-    await expect(summary).not.toContainText("Extracted items do not match the printed invoice");
-    await expect(page.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    await expect(page.getByLabel(/Reason these lines are correct/)).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Record audited override" })).toBeDisabled();
+    await expect(summary).toContainText("Extracted items do not match the printed invoice");
     expect(writes).toEqual([]);
   });
 

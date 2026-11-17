@@ -60,6 +60,7 @@ from .models import (
 )
 from .menu_costing import current_inventory_unit_cost, serialize_menu_item, serialize_recipe
 from .square_integration import ensure_square_orders_fresh
+from . import ocr_evidence
 from .ocr import ALLOWED_INVOICE_EXTENSIONS, validate_upload_content
 from .policy import require_permission
 from .utils import (
@@ -641,6 +642,24 @@ def _invoice_from_payload(organization_id: int, location_id: int, payload: dict[
     invoice.extracted_text = str(payload.get("extractedText") or "").strip()
     invoice.extraction_status = str(payload.get("extractionStatus") or "manual").strip()
     return invoice, supplier
+
+
+def _attach_ocr_evidence(invoice: PurchaseInvoice, payload: dict[str, Any], organization_id: int, location_id: int):
+    """Store the signed OCR printed amounts on a NEW invoice (#169). An "ocr" draft without valid evidence is refused."""
+    token = str(payload.get("ocrEvidenceToken") or "").strip()
+    if not token:
+        if invoice.extraction_status == "ocr":
+            return json_error("Invoice validation failed.", 400, errors={"ocrEvidenceToken": "OCR invoices must be saved with their extraction evidence. Upload the invoice again."})
+        return None
+    try:
+        amounts = ocr_evidence.verify_token(token, organization_id=organization_id, location_id=location_id, extracted_text=invoice.extracted_text)
+    except ocr_evidence.EvidenceTokenError as exc:
+        return json_error("Invoice validation failed.", 400, errors={"ocrEvidenceToken": str(exc)})
+    invoice.ocr_printed_subtotal = amounts["subtotal"]
+    invoice.ocr_printed_tax = amounts["tax"]
+    invoice.ocr_printed_total = amounts["total"]
+    invoice.ocr_evidence_captured_at = ocr_evidence.now()
+    return None
 
 
 def _duplicate_invoice_response(duplicate: PurchaseInvoice):
@@ -1415,6 +1434,9 @@ def purchases_ocr():
         return json_error(str(exc), 503)
     except (ValueError, InvoiceOCRFailure) as exc:
         return json_error(str(exc), 422)
+    # Signed, server-issued record of what the document printed; saving the draft stores it durably (#169).
+    organization, _, _, location = context
+    parsed["evidenceToken"] = ocr_evidence.issue_token(parsed, organization_id=organization.id, location_id=location.id, user_id=current_user.id)
     return jsonify(parsed), 200
 
 
@@ -1936,6 +1958,9 @@ def create_purchase_invoice():
     invoice.created_by_user_id = current_user.id
     invoice.updated_by_user_id = current_user.id
     invoice.extraction_status = str(payload.get("extractionStatus") or "manual")
+    evidence_error = _attach_ocr_evidence(invoice, payload, organization.id, location.id)
+    if evidence_error is not None:
+        return evidence_error
     _replace_invoice_lines(invoice, organization.id, list(payload.get("lineItems") or []))
     _sync_supplier_item_mappings(invoice, current_user.id)
     db.session.add(invoice)
@@ -2063,6 +2088,72 @@ def _apply_invoice_update(organization, location, invoice: PurchaseInvoice, payl
     )
     response_payload = serialize_purchase_invoice(invoice)
     return _commit_json(response_payload)
+
+
+@bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/ocr-override")
+@login_required
+def override_ocr_discrepancy(invoice_id: int):
+    """Audited manual acknowledgement that the saved lines legitimately differ from the printed invoice amount (#169).
+
+    Bound to the exact line total acknowledged: any later line edit invalidates it. The printed amounts are never changed.
+    """
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, _, _, location = context
+    permission_error = _require_role(get_current_membership(), "purchases.manage")
+    if permission_error is not None:
+        return permission_error
+    invoice = (
+        PurchaseInvoice.query.filter_by(id=invoice_id, organization_id=organization.id, location_id=location.id)
+        .with_for_update()
+        .first()
+    )
+    if invoice is None:
+        return json_error("Purchase invoice not found.", 404)
+    if invoice.status in {"Completed", "Corrected"}:
+        return json_error("Completed invoices are read-only.", 409)
+    if invoice.ocr_evidence_captured_at is None:
+        return json_error("This invoice has no OCR evidence to override.", 409)
+    body = _json_body()
+    reason = str(body.get("reason") or "").strip()
+    if len(reason) < 10:
+        return json_error("Override failed.", 400, errors={"reason": "Explain why the saved lines differ from the printed invoice (at least 10 characters)."})
+    verdict = ocr_evidence.evaluate(invoice)
+    if verdict["status"] == "matched":
+        return json_error("The saved lines already match the printed invoice amount.", 409)
+    if verdict["expectedAmount"] is None:
+        return json_error("The invoice amount could not be read, so there is nothing to override.", 409)
+    try:
+        acknowledged = _to_decimal(body.get("acknowledgedLineTotal"), field="acknowledgedLineTotal")
+    except RequestValidationError as exc:
+        return json_error(exc.message, 400, errors=exc.errors)
+    if abs(acknowledged - verdict["lineTotal"]) > ocr_evidence.TOLERANCE:
+        return json_error("The invoice lines changed. Review the current difference and confirm again.", 409, errors={"lineTotal": f"{verdict['lineTotal']:.2f}"})
+    if verdict["status"] == "overridden" and invoice.ocr_override_reason == reason:
+        return jsonify(serialize_purchase_invoice(invoice)), 200  # idempotent replay
+    invoice.ocr_override_reason = reason
+    invoice.ocr_override_line_total = verdict["lineTotal"]
+    invoice.ocr_override_expected_amount = verdict["expectedAmount"]
+    invoice.ocr_override_by_user_id = current_user.id
+    invoice.ocr_override_at = ocr_evidence.now()
+    invoice.updated_by_user_id = current_user.id
+    record_audit_event(
+        event_type="purchases.ocr_discrepancy_override",
+        entity_type="purchase_invoice",
+        entity_id=invoice.id,
+        organization_id=organization.id,
+        location_id=location.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "invoiceNumber": invoice.invoice_number,
+            "expectedAmount": f"{verdict['expectedAmount']:.2f}",
+            "lineTotal": f"{verdict['lineTotal']:.2f}",
+            "difference": f"{verdict['difference']:.2f}",
+            "reason": reason[:500],
+        },
+    )
+    return _commit_json(serialize_purchase_invoice(invoice))
 
 
 @bp.post("/api/pilot/purchases/invoices/<int:invoice_id>/receive")

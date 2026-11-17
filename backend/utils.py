@@ -8,6 +8,7 @@ from flask import Response, has_request_context, jsonify, request, session
 from flask_login import current_user
 from sqlalchemy import and_
 
+from . import ocr_evidence
 from .models import (
     AuditEvent,
     DailyCloseSession,
@@ -285,6 +286,13 @@ def purchase_review_summary(invoice: PurchaseInvoice) -> dict[str, Any]:
         items.append({"code": "line_subtotal_mismatch", "severity": "blocking", "message": f"Line items differ from invoice subtotal by ${abs(subtotal_difference):.2f}."})
     if abs(total_difference) > Decimal("0.01"):
         items.append({"code": "invoice_total_mismatch", "severity": "blocking", "message": f"Subtotal plus tax differs from invoice total by ${abs(total_difference):.2f}."})
+    ocr_verdict = ocr_evidence.evaluate(invoice)
+    if ocr_verdict is not None and ocr_verdict["status"] == "incomplete":
+        items.append({
+            "code": "ocr_lines_incomplete",
+            "severity": "blocking",
+            "message": f"Items add up to ${ocr_verdict['lineTotal']:.2f}, but the printed invoice amount is ${ocr_verdict['expectedAmount']:.2f} (difference ${abs(ocr_verdict['difference']):.2f}). Add or correct the missing items, or record an audited override, before receiving.",
+        })
     blockers = [item for item in items if item["severity"] == "blocking"]
     warnings = [item for item in items if item["severity"] == "review"]
     state = "BLOCKING" if blockers else "REVIEW" if warnings or invoice.status == "Draft" else "READY"
@@ -340,6 +348,7 @@ def serialize_purchase_invoice(invoice: PurchaseInvoice) -> dict[str, Any]:
         "voidReason": invoice.void_reason or "",
         "lineItems": [serialize_purchase_invoice_line(line) for line in invoice.lines],
         "reviewSummary": purchase_review_summary(invoice),
+        "ocrEvidence": ocr_evidence.serialize(invoice),
         "createdAt": isoformat(invoice.created_at),
         "updatedAt": isoformat(invoice.updated_at),
     }
