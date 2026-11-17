@@ -95,7 +95,10 @@ export function DataMigrationPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentOrganizationId, selectedJobId]);
+    // Initial load only. Selecting a job (click or mutation result) must not restart this effect: a failed
+    // follow-up read would replace the whole workspace with the load-error screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrganizationId]);
 
   async function refresh(preferredJobId?: number) {
     if (!currentOrganizationId) {

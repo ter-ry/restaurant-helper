@@ -17,10 +17,10 @@ const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ s
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Action = "upload" | "mapping" | "preview" | "approve" | "execute" | "rollback";
-type World = { job: any | null; calls: Record<Action, number>; reads: number; delayMs: number; failNext: Action | null };
+type World = { job: any | null; calls: Record<Action, number>; reads: number; failReads: boolean; delayMs: number; failNext: Action | null };
 
 function newWorld(): World {
-  return { job: null, calls: { upload: 0, mapping: 0, preview: 0, approve: 0, execute: 0, rollback: 0 }, reads: 0, delayMs: 0, failNext: null };
+  return { job: null, calls: { upload: 0, mapping: 0, preview: 0, approve: 0, execute: 0, rollback: 0 }, reads: 0, failReads: false, delayMs: 0, failNext: null };
 }
 
 function makeJob(status: string) {
@@ -58,6 +58,10 @@ async function installWorld(page: Page, world: World) {
     if (pathname.startsWith("/api/organizations") && method === "GET") {
       const bundle = { organization: ORG, restaurantLocations: [{ id: 7, name: "Queen St Cafe", city: "Toronto", region: "ON" }], currentLocation: null, membershipRole: "owner", enabledModuleKeys: MODULES };
       return json(route, { organizations: [{ organization: ORG, membershipRole: "owner", selected: true }], currentOrganizationId: ORG.id, currentMembershipId: 1, currentLocationId: 7, currentOrganization: bundle, ...bundle });
+    }
+    if (world.failReads && method === "GET" && pathname.startsWith("/api/imports/")) {
+      world.reads += 1;
+      return json(route, { error: "Import service is unreachable." }, 503);
     }
     if (pathname === "/api/imports/organizations/42/jobs" && method === "GET") {
       world.reads += 1;
@@ -132,6 +136,24 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole("status").filter({ hasText: "File uploaded." })).toBeVisible();
       await expect(page.getByRole("alert")).toHaveCount(0);
       expect(world.calls.upload).toBe(2);
+    });
+
+    test(`when the upload succeeds but the follow-up reads fail, the workspace and a retry control stay available at ${viewport.width}px`, async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/imports", { waitUntil: "domcontentloaded" });
+      await page.setInputFiles('input[name="import-file"]', CSV);
+      world.failReads = true;
+      await page.getByRole("button", { name: "Upload file" }).click();
+      await expect(page.getByRole("status").filter({ hasText: "File uploaded." })).toBeVisible();
+      await expect(page.getByRole("status").filter({ hasText: "could not be refreshed" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Load error" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Save mapping" })).toBeVisible();
+      world.failReads = false;
+      await page.getByRole("button", { name: "Refresh import jobs" }).click();
+      await expect(page.getByRole("button", { name: /suppliers\.csv/ })).toBeVisible();
+      expect(world.calls.upload).toBe(1);
+      await expectNoHorizontalOverflow(page);
     });
 
     test(`mapping, preview, approve, execute and rollback each show progress, block duplicates and re-fetch at ${viewport.width}px`, async ({ page }) => {
