@@ -965,7 +965,7 @@ export function PilotPurchasesPage() {
   const editorContent = (
     <div className={ocrPreviewUrl ? `grid gap-5 ${wideLayout ? "2xl:grid-cols-[minmax(16rem,0.7fr)_minmax(0,1.3fr)]" : "xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]"}` : ""}>
       {ocrPreviewUrl ? (
-        <aside className="self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 xl:sticky xl:top-0">
+        <aside className={`self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 ${wideLayout ? "2xl:sticky 2xl:top-0" : "xl:sticky xl:top-0"}`}>
           <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Original document</p>
           <p className="mt-1 text-sm text-muted">{ocrPreviewName} · Compare this source with the editable fields.</p>
           <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 underline" href={ocrPreviewUrl} target="_blank" rel="noreferrer">Open document in a new tab</a>

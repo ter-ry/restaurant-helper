@@ -595,3 +595,27 @@ test.describe("a stale refresh response at 1440px", () => {
     await expect(queue.getByTestId("purchase-review-card").getByRole("button", { name: /CM-800/ })).toHaveCount(0); // never back as a draft
   });
 });
+
+for (const width of [1280, 1366, 1440, 1600]) {
+  test.describe(`uploaded invoice preview at ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("the original-document preview only pins when it sits beside the form, so it never covers the fields", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "New purchase" }).click();
+      await page.getByLabel("Invoice file").setInputFiles("tests/e2e/fixtures/suppliers.csv");
+      await expect(page.getByTestId("purchase-editor-card").getByLabel("Invoice number")).toHaveValue("OCR-1");
+      const aside = page.locator("aside", { hasText: "Original document" });
+      await expect(aside).toBeVisible();
+      const position = await aside.evaluate((node) => getComputedStyle(node).position);
+      const sideBySide = await aside.evaluate((node) => {
+        const sibling = node.nextElementSibling as HTMLElement | null;
+        return !!sibling && Math.abs(sibling.getBoundingClientRect().top - node.getBoundingClientRect().top) < 8;
+      });
+      if (!sideBySide) expect(position).not.toBe("sticky");
+      await expectNoOverflow(page);
+    });
+  });
+}
