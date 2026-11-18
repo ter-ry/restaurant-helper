@@ -170,6 +170,20 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole("button", { name: "New purchase" })).toBeEnabled();
     });
 
+    test("Refresh cannot discard an open draft and the editor Close control stays reachable after scrolling", async ({ page }) => {
+      const world = newWorld();
+      const editor = await startPurchase(page, world);
+      await editor.getByLabel("Invoice number").scrollIntoViewIfNeeded();
+      await page.mouse.wheel(0, 600);
+      if (viewport.width >= 1536) {
+        await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeDisabled();
+        await page.getByRole("button", { name: "Close editor" }).click();
+      } else {
+        await page.getByRole("button", { name: "Close Purchase editor" }).click();
+      }
+      await expect(editor).toHaveCount(0);
+    });
+
     test("save draft shows progress then success and re-reads the list from the server", async ({ page }) => {
       const world = newWorld();
       world.delayMs = 500;
