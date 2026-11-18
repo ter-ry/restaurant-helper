@@ -172,10 +172,10 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
   };
 }
 
-// Wide screens show the purchase editor beside the list; narrower screens keep the full-screen dialog.
+// Wide screens (1536px+, so the pane fits the editor grids) show the purchase editor beside the list; narrower screens keep the full-screen dialog.
 // Without matchMedia (tests, old browsers) the dialog is used.
 function useWideLayout() {
-  const query = "(min-width: 1280px)";
+  const query = "(min-width: 1536px)";
   const read = () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false);
   const [wide, setWide] = useState(read);
   useEffect(() => {
@@ -905,7 +905,7 @@ export function PilotPurchasesPage() {
   const inlineEditor = editorOpen && wideLayout;
   const editorBody = (
     <>
-        <div className={ocrPreviewUrl ? "grid gap-5 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]" : ""}>
+        <div className={ocrPreviewUrl ? `grid gap-5 ${inlineEditor ? "" : "xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]"}` : ""}>
           {ocrPreviewUrl ? (
             <aside className="self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 xl:sticky xl:top-0">
               <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Original document</p>
@@ -1109,10 +1109,6 @@ export function PilotPurchasesPage() {
                                 {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} {line.inventoryUnit || "inventory units"}
                               </Badge>
                               <Badge tone="neutral">{line.confidence >= 0.9 ? "High confidence" : line.confidence >= 0.7 ? "Medium confidence" : "Low confidence"}</Badge>
-                              {(() => {
-                                const change = line.id ? purchasePreview?.lines?.find((entry) => entry.lineId === line.id)?.priceChangePercent : null;
-                                return change != null && Math.abs(change) >= 0.05 ? <Badge tone={change > 0 ? "warning" : "success"}>Price {change > 0 ? "+" : ""}{formatNumber(change)}% vs last purchase</Badge> : null;
-                              })()}
                               {line.inventoryItemId && mappingHints.has(`${normalizeLookup(draft.supplierName)}|${normalizeLookup(line.description)}`) ? <Badge tone="neutral">Matched from previous invoices</Badge> : null}
                             </div>
                             <div className="flex items-center justify-between gap-3 text-sm md:justify-end">
@@ -1240,6 +1236,7 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
+              disabled={saving || ocrLoading}
               onClick={() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
@@ -1277,7 +1274,7 @@ export function PilotPurchasesPage() {
         </div>
       </Modal> : null}
 
-      <div className={inlineEditor ? "grid items-start gap-4 xl:grid-cols-[minmax(22rem,26rem)_minmax(0,1fr)]" : ""} data-testid="purchase-workspace">
+      <div className={inlineEditor ? "grid items-start gap-4 grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]" : ""} data-testid="purchase-workspace">
       <div className={`pilot-purchases-layout grid gap-4 ${inlineEditor ? "" : "xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"}`}>
         <div className={`${inlineEditor ? "" : "xl:col-span-2 "}flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between`}>
           <input className="input max-w-xl" aria-label="Search purchases" placeholder="Search supplier or invoice number" value={purchaseSearch} onChange={(event) => setPurchaseSearch(event.target.value)} />
@@ -1287,7 +1284,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
             {filteredInvoices.filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
-              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} aria-current={selectedId === invoice.id ? "true" : undefined} className={`purchase-review-item w-full rounded-xl border px-3 py-2 text-left transition hover:shadow-soft ${selectedId === invoice.id ? "border-brand-400 bg-brand-50 ring-1 ring-brand-300" : "border-amber-200 bg-amber-50/50"}`}>
+              <button key={invoice.id} type="button" disabled={saving || ocrLoading} onClick={() => void openInvoice(invoice.id)} aria-current={selectedId === invoice.id ? "true" : undefined} className={`purchase-review-item w-full rounded-xl border px-3 py-2 text-left transition hover:shadow-soft ${selectedId === invoice.id ? "border-brand-400 bg-brand-50 ring-1 ring-brand-300" : "border-amber-200 bg-amber-50/50"}`}>
                 <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={invoice.reviewSummary?.state === "BLOCKING" ? "danger" : invoice.reviewSummary?.state === "READY" ? "success" : "warning"}>{invoice.reviewSummary?.state === "READY" ? "Ready to receive" : invoice.reviewSummary?.state === "BLOCKING" ? "Needs attention" : "Review"}</Badge></div>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                 {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1301,7 +1298,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Purchase history" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {filteredInvoices.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
-                <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+                <button key={invoice.id} type="button" disabled={saving || ocrLoading} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
@@ -1324,7 +1321,7 @@ export function PilotPurchasesPage() {
             ) : null}
           </Card>
         </div>
-      {inlineEditor ? <aside aria-label="Purchase editor" className="min-w-0 xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto rounded-2xl border border-line bg-white p-3" data-testid="purchase-editor-inline">{editorBody}</aside> : null}
+      {inlineEditor ? <aside aria-label="Purchase editor" className="min-w-0 sticky top-2 max-h-[calc(100vh-1rem)] overflow-y-auto rounded-2xl border border-line bg-white p-3" data-testid="purchase-editor-inline">{editorBody}</aside> : null}
       </div>
 
       {receiveConfirmOpen ? (

@@ -16,7 +16,7 @@ const MODULES = ["PURCHASES", "INVENTORY", "REORDER_PLANS", "DAILY_CLOSE", "STOC
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
-  { width: 1440, height: 900 },
+  { width: 1600, height: 900 },
 ];
 
 const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
@@ -158,6 +158,17 @@ for (const viewport of VIEWPORTS) {
       await numbers.nth(4).fill("50");
       return editor;
     }
+
+    test("the list and New purchase are locked while a save is in flight, so edits cannot be swapped out", async ({ page }) => {
+      const world = newWorld();
+      world.delayMs = 700;
+      const editor = await startPurchase(page, world);
+      await editor.getByRole("button", { name: "Save draft" }).click();
+      await expect(editor.getByRole("button", { name: "Saving..." })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "New purchase" })).toBeDisabled();
+      await expect(page.getByText("Invoice CM-2001 saved successfully.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "New purchase" })).toBeEnabled();
+    });
 
     test("save draft shows progress then success and re-reads the list from the server", async ({ page }) => {
       const world = newWorld();
