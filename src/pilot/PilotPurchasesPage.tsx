@@ -903,6 +903,8 @@ export function PilotPurchasesPage() {
 
   const editorTitle = ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor";
   const inlineEditor = editorOpen && wideLayout;
+  // Any in-flight request that writes into the open draft: switching invoices meanwhile would apply the result to the wrong one.
+  const editorBusy = saving || ocrLoading || supplierSaving || inventoryItemSaving;
   const editorBody = (
     <>
         <div className={ocrPreviewUrl ? `grid gap-5 ${inlineEditor ? "" : "xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]"}` : ""}>
@@ -1236,7 +1238,7 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
-              disabled={saving || ocrLoading}
+              disabled={editorBusy}
               onClick={() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
@@ -1284,7 +1286,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
             {filteredInvoices.filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
-              <button key={invoice.id} type="button" disabled={saving || ocrLoading} onClick={() => void openInvoice(invoice.id)} aria-current={selectedId === invoice.id ? "true" : undefined} className={`purchase-review-item w-full rounded-xl border px-3 py-2 text-left transition hover:shadow-soft ${selectedId === invoice.id ? "border-brand-400 bg-brand-50 ring-1 ring-brand-300" : "border-amber-200 bg-amber-50/50"}`}>
+              <button key={invoice.id} type="button" disabled={editorBusy} onClick={() => void openInvoice(invoice.id)} aria-current={selectedId === invoice.id ? "true" : undefined} className={`purchase-review-item w-full rounded-xl border px-3 py-2 text-left transition hover:shadow-soft ${selectedId === invoice.id ? "border-brand-400 bg-brand-50 ring-1 ring-brand-300" : "border-amber-200 bg-amber-50/50"}`}>
                 <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={invoice.reviewSummary?.state === "BLOCKING" ? "danger" : invoice.reviewSummary?.state === "READY" ? "success" : "warning"}>{invoice.reviewSummary?.state === "READY" ? "Ready to receive" : invoice.reviewSummary?.state === "BLOCKING" ? "Needs attention" : "Review"}</Badge></div>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                 {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1298,7 +1300,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Purchase history" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {filteredInvoices.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
-                <button key={invoice.id} type="button" disabled={saving || ocrLoading} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+                <button key={invoice.id} type="button" disabled={editorBusy} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
