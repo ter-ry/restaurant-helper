@@ -73,7 +73,7 @@ async function installWorld(page: Page, world: World) {
         currentLocationId: 7, currentOrganization: bundle, ...bundle,
       });
     }
-    if (pathname === "/api/pilot/suppliers") return json(route, { suppliers: SUPPLIERS });
+    if (pathname === "/api/pilot/suppliers" && method === "GET") return json(route, { suppliers: SUPPLIERS });
     if (pathname === "/api/pilot/inventory" && method === "GET") {
       return json(route, {
         items: [{ ...ITEM, currentOnHand: world.onHand }], movements: [], countSessions: [], reorderPlan: { suggestions: [], groupedBySupplier: [] },
@@ -114,6 +114,10 @@ async function installWorld(page: Page, world: World) {
         lineItems: [{ itemName: "Chicken breast", originalDescription: "Chicken breast", quantity: 1, unit: "kg", unitPrice: 4, lineTotal: 4, confidence: 0.95, needsReview: false, rawSourceLine: "" }],
         warnings: [], overallConfidence: 0.95, needsReview: false,
       });
+    }
+    if (pathname === "/api/pilot/suppliers" && method === "POST") {
+      await mutate(() => null);
+      return json(route, { id: 4, name: body.name, isActive: true }, 201);
     }
     const voidMatch = pathname.match(/^\/api\/pilot\/purchases\/invoices\/(\d+)\/void$/);
     if (voidMatch && method === "POST") {
@@ -411,5 +415,28 @@ test.describe("purchase queue while OCR extraction is pending at 1440px", () => 
     await expect(page.getByRole("button", { name: "New purchase" })).toBeDisabled();
     await expect(page.getByTestId("purchase-editor-card").getByLabel("Invoice number")).toHaveValue("OCR-1");
     await expect(queue.getByRole("button", { name: /CM-750/ })).toBeEnabled();
+  });
+});
+
+test.describe("purchase queue while a supplier is being added at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("other purchases cannot be opened until the new supplier is saved, so it cannot land on another purchase", async ({ page }) => {
+    const world = newWorld();
+    world.delayMs = 700;
+    world.invoices.push({ id: 760, invoiceNumber: "CM-760", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(760, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "New purchase" }).click();
+    const editor = page.getByTestId("purchase-editor-card");
+    await editor.getByRole("button", { name: "+ New supplier" }).click();
+    await editor.getByLabel("New supplier name").fill("Harbour Fish Co");
+    await editor.getByRole("button", { name: "Add", exact: true }).click();
+    const queue = page.getByTestId("purchase-queue");
+    await expect(queue.getByRole("button", { name: /CM-760/ })).toBeDisabled();
+    await expect(page.getByText("Harbour Fish Co added and selected.").first()).toBeVisible();
+    await expect(queue.getByRole("button", { name: /CM-760/ })).toBeEnabled();
+    await queue.getByRole("button", { name: /CM-760/ }).click();
+    await expect(editor.getByLabel("Supplier", { exact: true })).toHaveValue("Cedar Meats"); // B kept its own supplier
   });
 });

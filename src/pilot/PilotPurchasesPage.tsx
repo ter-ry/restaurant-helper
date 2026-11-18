@@ -335,8 +335,8 @@ export function PilotPurchasesPage() {
     return matchesQuery && matchesFilter;
   }), [data?.invoices, purchaseFilter, purchaseSearch]);
   const initialLoading = loading && !hasLoaded;
-  // Saves, voids and OCR extraction all replace the open purchase when they finish, so none may overlap a switch.
-  const navigationLocked = saving || voiding || ocrLoading;
+  // Saves, voids, OCR extraction and supplier/item creation all change the open purchase the open purchase when they finish, so none may overlap a switch.
+  const navigationLocked = saving || voiding || ocrLoading || supplierSaving || inventoryItemSaving;
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
