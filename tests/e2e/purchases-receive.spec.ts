@@ -105,6 +105,16 @@ async function installWorld(page: Page, world: World) {
       world.invoices.push(invoice);
       return json(route, invoiceJson(invoice), 201);
     }
+    if (pathname === "/api/pilot/purchases/ocr" && method === "POST") {
+      await mutate(() => null);
+      const field = (value: string | number) => ({ value, confidence: 0.95, needsReview: false });
+      return json(route, {
+        provider: "fake", fileName: "invoice.png", contentType: "image/png", rawText: "", evidenceToken: "token",
+        fields: { supplier: field("Cedar Meats"), invoiceDate: field("2026-11-10"), invoiceNumber: field("OCR-1"), subtotal: field(4), tax: field(0), total: field(4) },
+        lineItems: [{ itemName: "Chicken breast", originalDescription: "Chicken breast", quantity: 1, unit: "kg", unitPrice: 4, lineTotal: 4, confidence: 0.95, needsReview: false, rawSourceLine: "" }],
+        warnings: [], overallConfidence: 0.95, needsReview: false,
+      });
+    }
     const voidMatch = pathname.match(/^\/api\/pilot\/purchases\/invoices\/(\d+)\/void$/);
     if (voidMatch && method === "POST") {
       await mutate(() => null);
@@ -382,5 +392,24 @@ test.describe("purchase queue while a void is in flight at 1440px", () => {
     await expect(page.getByText(/was voided and its inventory movements were reversed/).first()).toBeVisible();
     await expect(queue.getByRole("button", { name: /CM-741/ })).toBeEnabled();
     expect(world.posts.filter((post) => post.path.endsWith("/void"))).toHaveLength(1);
+  });
+});
+
+test.describe("purchase queue while OCR extraction is pending at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("other purchases cannot be opened until extraction finishes, so the extracted draft is never lost", async ({ page }) => {
+    const world = newWorld();
+    world.delayMs = 700;
+    world.invoices.push({ id: 750, invoiceNumber: "CM-750", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(750, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "New purchase" }).click();
+    await page.getByLabel("Invoice file").setInputFiles({ name: "invoice.png", mimeType: "image/png", buffer: Buffer.from("fake") });
+    const queue = page.getByTestId("purchase-queue");
+    await expect(queue.getByRole("button", { name: /CM-750/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "New purchase" })).toBeDisabled();
+    await expect(page.getByTestId("purchase-editor-card").getByLabel("Invoice number")).toHaveValue("OCR-1");
+    await expect(queue.getByRole("button", { name: /CM-750/ })).toBeEnabled();
   });
 });

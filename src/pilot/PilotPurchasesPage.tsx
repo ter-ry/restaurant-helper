@@ -335,6 +335,8 @@ export function PilotPurchasesPage() {
     return matchesQuery && matchesFilter;
   }), [data?.invoices, purchaseFilter, purchaseSearch]);
   const initialLoading = loading && !hasLoaded;
+  // Saves, voids and OCR extraction all replace the open purchase when they finish, so none may overlap a switch.
+  const navigationLocked = saving || voiding || ocrLoading;
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
@@ -1243,7 +1245,7 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
-              disabled={saving || voiding}
+              disabled={navigationLocked}
               onClick={() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
@@ -1305,7 +1307,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = selectedId === invoice.id && editorOpen;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item disabled={saving || voiding} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={navigationLocked} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
                     <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={status.tone}>{status.label}</Badge></div>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                     {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1323,7 +1325,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = detailInvoice?.id === invoice.id;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item disabled={saving || voiding} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={navigationLocked} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
