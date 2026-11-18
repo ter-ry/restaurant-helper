@@ -358,9 +358,9 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    const actions = await screen.findAllByRole("button", { name: "Reorder list (3)" });
+    const actions = await screen.findAllByRole("button", { name: "Reorder list (3 urgent)" });
     expect(actions.length).toBeGreaterThanOrEqual(1);
-    expect(actions[0]).toHaveAttribute("title", "Includes out-of-stock and reorder-now items");
+    expect(actions[0]).toHaveAttribute("title", expect.stringContaining("Urgent: out of stock or at/below minimum"));
   });
 
   it("shows a background-revalidated inventory value without remounting", async () => {

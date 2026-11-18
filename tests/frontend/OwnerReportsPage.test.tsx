@@ -63,6 +63,9 @@ describe("OwnerReportsPage", () => {
       summary: {
         weeklyInvoiceSpend: 482.5,
         weeklyInvoiceCount: 4,
+        weeklyWindow: { label: "This week", startDate: "2026-11-16", endDate: "2026-11-22" },
+        inventoryUrgentReorderCount: 5,
+        inventoryRunningLowCount: 7,
         monthlyInvoiceCount: 8,
         monthlyInvoiceSpend: 1120.25,
         invoiceReviewQueueCount: 1,
