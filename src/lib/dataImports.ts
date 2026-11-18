@@ -47,6 +47,19 @@ export const DATA_IMPORT_FIELDS: Record<string, DataImportFieldSpec[]> = {
 
 export const DATA_IMPORT_ENTITY_SCOPES = Object.keys(DATA_IMPORT_FIELDS);
 
+const DATA_IMPORT_SCOPE_LABELS: Record<string, string> = {
+  supplier: "Suppliers",
+  inventory_item: "Inventory items",
+  supplier_item_mapping: "Supplier item mappings",
+  opening_inventory: "Opening inventory",
+};
+
+export function dataImportScopeLabel(scope: string): string {
+  if (DATA_IMPORT_SCOPE_LABELS[scope]) return DATA_IMPORT_SCOPE_LABELS[scope];
+  const text = scope.replace(/_/g, " ").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : scope;
+}
+
 export interface DataImportFileSummary {
   id: number;
   role: string;

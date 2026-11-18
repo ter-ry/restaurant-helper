@@ -2423,9 +2423,9 @@ test("owner audit history shows filtered organization activity", async ({ page }
 
   await page.goto("/owner/audit", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Owner audit history" })).toBeVisible();
-  await expect(page.getByText("invitation.created")).toBeVisible();
+  await expect(page.getByText("Invitation: created")).toBeVisible();
   await page.getByPlaceholder("Search event type, entity or metadata").fill("square");
-  await expect(page.getByText("square.connection.updated")).toBeVisible();
+  await expect(page.getByText("Square: connection updated")).toBeVisible();
 });
 
 test("owner reports and exports surface authenticated reporting data", async ({ page }) => {
