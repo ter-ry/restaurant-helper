@@ -440,3 +440,23 @@ test.describe("purchase queue while a supplier is being added at 1440px", () => 
     await expect(editor.getByLabel("Supplier", { exact: true })).toHaveValue("Cedar Meats"); // B kept its own supplier
   });
 });
+
+test.describe("refresh with a purchase open at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("Refresh re-reads the lists but keeps the open purchase and its unsaved edits", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push({ id: 770, invoiceNumber: "CM-770", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(770, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-770/ }).click();
+    const editor = page.getByTestId("purchase-editor-card");
+    await editor.getByLabel("Invoice number").fill("CM-770-EDITED");
+    const readsBefore = world.listReads;
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect.poll(() => world.listReads).toBeGreaterThan(readsBefore);
+    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(editor.getByLabel("Invoice number")).toHaveValue("CM-770-EDITED");
+    await expect(editor).toBeVisible();
+  });
+});

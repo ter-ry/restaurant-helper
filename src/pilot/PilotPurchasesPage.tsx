@@ -31,6 +31,7 @@ import { formatDate, formatMoney, formatNumber } from "./workspace/pilotWorkspac
 import { lineBlockers, suggestInventoryItem } from "./purchaseMapping";
 import { buildOcrPrintedEvidence, checkOcrLines, type OcrPrintedEvidence } from "./ocrReconciliation";
 import { PurchaseInvoiceDetailsModal } from "./purchases/PurchaseDetailPanel";
+import { clearPilotDataCache } from "./pilotDataCache";
 import { MATERIAL_PRICE_CHANGE_PERCENT, purchaseStatus } from "./purchases/purchaseStatus";
 import { useWideLayout } from "./purchases/useWideLayout";
 
@@ -288,6 +289,34 @@ export function PilotPurchasesPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedInvoiceId]);
+
+  // Refresh re-reads the lists from the server. With a purchase open (side panel) it must not reset that purchase,
+  // so unsaved edits survive; an open received-purchase detail is refreshed in place.
+  const refreshQueue = async () => {
+    // The pilot GET cache serves its last value first; an explicit Refresh must read the server.
+    clearPilotDataCache();
+    if (!editorOpen && !detailInvoice) {
+      void load();
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
+      // The cached copy of the open draft is replaced below; tell the editor-sync effect to keep the unsaved edits.
+      if (editorOpen && selectedId !== null && purchases.invoices.some((invoice) => invoice.id === selectedId)) keepEditorForInvoiceId.current = selectedId;
+      setData(purchases);
+      setInventoryItems(inventory.items);
+      if (!editorOpen && detailInvoice) {
+        const fresh = purchases.invoices.find((invoice) => invoice.id === detailInvoice.id);
+        if (fresh) setDetailInvoice(fresh);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh purchases.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => () => {
     if (ocrPreviewUrl) {
@@ -1257,7 +1286,7 @@ export function PilotPurchasesPage() {
             >
               New purchase
             </Button>
-            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
+            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void refreshQueue()} disabled={loading || navigationLocked}>
               Refresh
             </Button>
           </div>
