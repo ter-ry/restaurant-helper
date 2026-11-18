@@ -105,6 +105,14 @@ async function installWorld(page: Page, world: World) {
       world.invoices.push(invoice);
       return json(route, invoiceJson(invoice), 201);
     }
+    const voidMatch = pathname.match(/^\/api\/pilot\/purchases\/invoices\/(\d+)\/void$/);
+    if (voidMatch && method === "POST") {
+      await mutate(() => null);
+      const invoice = world.invoices.find((entry) => entry.id === Number(voidMatch[1]));
+      if (!invoice) return json(route, { error: "Not found." }, 404);
+      invoice.status = "Corrected";
+      return json(route, invoiceJson(invoice));
+    }
     const one = pathname.match(/^\/api\/pilot\/purchases\/invoices\/(\d+)(\/receive)?$/);
     if (one) {
       const invoice = world.invoices.find((entry) => entry.id === Number(one[1]));
@@ -348,5 +356,31 @@ test.describe("purchase queue while a save is in flight at 1440px", () => {
     await expect(queue.getByRole("button", { name: /CM-731/ })).toBeEnabled();
     await queue.getByRole("button", { name: /CM-731/ }).click();
     await expect(page.getByTestId("purchase-editor-card").getByLabel("Invoice number")).toHaveValue("CM-731");
+  });
+});
+
+test.describe("purchase queue while a void is in flight at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("other purchases cannot be opened until the void finishes", async ({ page }) => {
+    const world = newWorld();
+    world.delayMs = 600;
+    world.invoices.push(
+      { id: 740, invoiceNumber: "CM-740", status: "Completed", invoiceDate: "2026-11-09", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(740, 0)] },
+      { id: 741, invoiceNumber: "CM-741", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(741, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    const queue = page.getByTestId("purchase-queue");
+    await queue.getByRole("button", { name: /CM-740/ }).click();
+    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    await detail.getByLabel("Void reason").fill("Supplier sent the wrong goods");
+    await detail.getByRole("button", { name: "Void receipt" }).click();
+    await detail.getByRole("button", { name: "Yes, void this invoice" }).click();
+    await expect(queue.getByRole("button", { name: /CM-741/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "New purchase" })).toBeDisabled();
+    await expect(page.getByText(/was voided and its inventory movements were reversed/).first()).toBeVisible();
+    await expect(queue.getByRole("button", { name: /CM-741/ })).toBeEnabled();
+    expect(world.posts.filter((post) => post.path.endsWith("/void"))).toHaveLength(1);
   });
 });

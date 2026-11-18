@@ -196,6 +196,8 @@ export function PilotPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  // A void in flight also blocks switching purchases: its completion reloads the page state.
+  const [voiding, setVoiding] = useState(false);
   // Which action is in flight, so only that button announces progress ("Receiving..." must not show for a draft save).
   const [savingAction, setSavingAction] = useState<"draft" | "receive" | null>(null);
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
@@ -682,7 +684,14 @@ export function PilotPurchasesPage() {
   const voidInvoice = async (invoice: PilotPurchaseInvoice, request: { reason: string; createCorrectionDraft: boolean; idempotencyKey: string }) => {
     setReceiveMessage(null);
     setError(null);
-    const voided = await voidPilotPurchaseInvoice(invoice.id, request);
+    setVoiding(true);
+    let voided: PilotPurchaseInvoice;
+    try {
+      voided = await voidPilotPurchaseInvoice(invoice.id, request);
+    } catch (caught) {
+      setVoiding(false);
+      throw caught;
+    }
     setReceiveMessage(
       voided.correctedByInvoiceId
         ? `Invoice ${voided.invoiceNumber} was voided and its inventory movements were reversed. A corrected draft is ready to review.`
@@ -692,6 +701,7 @@ export function PilotPurchasesPage() {
     setDetailInvoice(voided);
     // Reconcile with the server: the invoice list, inventory and dashboard figures all changed.
     const reconciled = await load(voided.id);
+    setVoiding(false);
     if (reconciled) {
       setVoidRefresh(null);
     } else {
@@ -1233,7 +1243,7 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
-              disabled={saving}
+              disabled={saving || voiding}
               onClick={() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
@@ -1295,7 +1305,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = selectedId === invoice.id && editorOpen;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item disabled={saving} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={saving || voiding} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
                     <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={status.tone}>{status.label}</Badge></div>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                     {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1313,7 +1323,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = detailInvoice?.id === invoice.id;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item disabled={saving} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={saving || voiding} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
