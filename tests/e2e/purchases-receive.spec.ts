@@ -230,6 +230,9 @@ for (const viewport of VIEWPORTS) {
       const alert = editor.getByRole("alert").filter({ hasText: "Duplicate invoice." });
       await expect(alert).toContainText("already exists");
       await alert.getByRole("button", { name: "Open existing purchase" }).click();
+      // At desktop width the unsaved draft is protected: leaving it asks first.
+      const discard = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+      if (viewport.width >= 1280) await discard.getByRole("button", { name: "Discard changes" }).click();
       const detail = page.getByTestId("purchase-detail-modal");
       await expect(detail).toBeVisible();
       await expect(detail).toContainText("CM-2001");
@@ -440,6 +443,7 @@ test.describe("purchase queue while a supplier is being added at 1440px", () => 
     await expect(page.getByText("Harbour Fish Co added and selected.").first()).toBeVisible();
     await expect(queue.getByRole("button", { name: /CM-760/ })).toBeEnabled();
     await queue.getByRole("button", { name: /CM-760/ }).click();
+    await page.getByRole("dialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard changes" }).click(); // the new purchase had unsaved edits
     await expect(editor.getByLabel("Supplier", { exact: true })).toHaveValue("Cedar Meats"); // B kept its own supplier
   });
 });
@@ -488,6 +492,84 @@ test.describe("switching purchases while a refresh is in flight at 1440px", () =
   });
 });
 
+test.describe("unsaved edits in the side panel at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("leaving a purchase with unsaved edits asks first; a clean or saved purchase switches freely", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push(
+      { id: 790, invoiceNumber: "CM-790", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(790, 0)] },
+      { id: 791, invoiceNumber: "CM-791", status: "Draft", invoiceDate: "2026-11-12", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(791, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    const queue = page.getByTestId("purchase-queue");
+    const editor = page.getByTestId("purchase-editor-card");
+    const number = editor.getByLabel("Invoice number");
+
+    await queue.getByRole("button", { name: /CM-790/ }).click();
+    await queue.getByRole("button", { name: /CM-791/ }).click(); // clean: no prompt
+    await expect(number).toHaveValue("CM-791");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    await number.fill("CM-791-EDITED");
+    await queue.getByRole("button", { name: /CM-790/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Keep editing" }).click();
+    await expect(number).toHaveValue("CM-791-EDITED"); // nothing lost
+
+    await page.getByRole("button", { name: "New purchase" }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Keep editing" }).click();
+    await expect(number).toHaveValue("CM-791-EDITED");
+
+    await editor.getByTestId("purchase-action-bar").getByRole("button", { name: "Save draft" }).click(); // saved: baseline moves
+    await expect(page.getByText("Invoice CM-791-EDITED saved successfully.").first()).toBeVisible();
+    await queue.getByRole("button", { name: /CM-790/ }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(number).toHaveValue("CM-790");
+
+    await number.fill("CM-790-EDITED");
+    await queue.getByRole("button", { name: /CM-791/ }).click();
+    await dialog.getByRole("button", { name: "Discard changes" }).click();
+    await expect(number).toHaveValue("CM-791-EDITED");
+    expect(world.posts.filter((post) => post.method === "PATCH")).toHaveLength(1); // the discarded edit was never sent
+  });
+});
+
+for (const viewport of VIEWPORTS) {
+  test.describe(`realistic multi-line invoice at ${viewport.width}px`, () => {
+    test.use({ viewport });
+
+    test("12 lines with unmapped items and a cost warning: no overflow, mapping issues visible, actions pinned", async ({ page }) => {
+      const world = newWorld();
+      const lines = Array.from({ length: 12 }, (_, index) => ({
+        ...savedLine(900, index, index === 3 ? 4.6 : 4),
+        description: index === 5 || index === 9 ? `Specialty sauce ${index} 4L case` : `Chicken breast fresh boneless skinless 2kg tray ${index + 1}`,
+        inventoryItemId: index === 5 || index === 9 ? null : 30,
+      }));
+      world.invoices.push({ id: 900, invoiceNumber: "CM-900", status: "Draft", invoiceDate: "2026-11-12", subtotal: 48.6, tax: 0, totalAmount: 48.6, lineItems: lines });
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: /CM-900/ }).click();
+      const editor = page.getByTestId("purchase-editor-card");
+      await expect(editor.getByTestId("purchase-line-11")).toBeAttached();
+      await expect(editor.getByText("Cost up 15% vs average cost")).toBeVisible();
+      const bar = editor.getByTestId("purchase-action-bar");
+      await expect(bar).toContainText("Map 2 items to inventory before receiving");
+      await expect(editor.getByRole("button", { name: "Save & receive" })).toBeDisabled();
+      await expect(editor.getByText("Needs mapping")).toHaveCount(2);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(bar).toBeInViewport();
+      await expectNoOverflow(page);
+      await editor.getByTestId("purchase-line-11").scrollIntoViewIfNeeded();
+      await expect(bar).toBeInViewport();
+      await expectNoOverflow(page);
+    });
+  });
+}
+
 for (const width of [1280, 1366, 1440, 1600]) {
   test.describe(`uploaded invoice preview at ${width}px`, () => {
     test.use({ viewport: { width, height: 800 } });
@@ -498,8 +580,7 @@ for (const width of [1280, 1366, 1440, 1600]) {
       await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "New purchase" }).click();
       await page.getByLabel("Invoice file").setInputFiles("tests/e2e/fixtures/suppliers.csv");
-      const editor = page.getByTestId("purchase-editor-card");
-      await expect(editor.getByLabel("Invoice number")).toHaveValue("OCR-1");
+      await expect(page.getByTestId("purchase-editor-card").getByLabel("Invoice number")).toHaveValue("OCR-1");
       const aside = page.locator("aside", { hasText: "Original document" });
       await expect(aside).toBeVisible();
       const position = await aside.evaluate((node) => getComputedStyle(node).position);

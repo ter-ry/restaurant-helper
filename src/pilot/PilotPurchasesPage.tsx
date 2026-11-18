@@ -199,6 +199,8 @@ export function PilotPurchasesPage() {
   const [saving, setSaving] = useState(false);
   // A void in flight also blocks switching purchases: its completion reloads the page state.
   const [voiding, setVoiding] = useState(false);
+  // An action (open another purchase, start a new one, close the panel) waiting for the owner to confirm discarding unsaved edits.
+  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
   // A manual refresh in flight also blocks switching: it merges server data into whichever purchase is open.
   const [refreshing, setRefreshing] = useState(false);
   // Which action is in flight, so only that button announces progress ("Receiving..." must not show for a draft save).
@@ -370,6 +372,16 @@ export function PilotPurchasesPage() {
   const initialLoading = loading && !hasLoaded;
   // Saves, voids, OCR extraction and supplier/item creation all change the open purchase the open purchase when they finish, so none may overlap a switch.
   const navigationLocked = saving || voiding || ocrLoading || supplierSaving || inventoryItemSaving || refreshing;
+  // Side-panel layout only: the queue sits beside the editor, so leaving it must never silently drop unsaved edits.
+  const hasUnsavedEdits = () => {
+    if (!wideLayout || !editorOpen || finalizedStatus) return false;
+    if (!selectedInvoice) return draft.extractionStatus === "ocr" || JSON.stringify(draft) !== JSON.stringify(buildBlankDraft());
+    return JSON.stringify(draft) !== JSON.stringify(invoiceToDraft(selectedInvoice));
+  };
+  const guardUnsaved = (action: () => void) => {
+    if (hasUnsavedEdits()) setPendingDiscard(() => action);
+    else action();
+  };
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
@@ -936,7 +948,9 @@ export function PilotPurchasesPage() {
   };
 
   const editorStatus = purchaseStatus({ status: draft.status }, reviewSummary.state as "READY" | "REVIEW" | "BLOCKING");
-  const footerSummary = reviewSummary.blockers.length
+  const footerSummary = unresolvedLineCount > 0
+    ? `Map ${unresolvedLineCount} ${unresolvedLineCount === 1 ? "item" : "items"} to inventory before receiving`
+    : reviewSummary.blockers.length
     ? `${reviewSummary.blockers.length} ${reviewSummary.blockers.length === 1 ? "issue" : "issues"} to resolve before receiving`
     : reviewSummary.warnings.length
       ? "Check the highlighted items, then receive"
@@ -959,7 +973,7 @@ export function PilotPurchasesPage() {
       <Card className={`workspace-card w-full ${ocrLoading ? "pointer-events-none opacity-60" : ""}`} data-testid="purchase-editor-card" aria-busy={ocrLoading}>
         {ocrLoading ? <div role="status" className="mb-4 flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-900"><span className="h-4 w-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" />Reading invoice… Extracting supplier, totals, and line items.</div> : null}
         {!draft.id && !ocrPreviewUrl ? <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-ink">How would you like to add this purchase?</p><p className="mt-1 text-xs text-muted">Upload an invoice for OCR or enter the purchase details manually.</p></div><div className="flex flex-wrap gap-2"><input ref={ocrInputRef} className="sr-only" aria-label="Invoice file" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadInvoice(file); }} /><Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>{ocrLoading ? "Processing invoice…" : "Upload invoice"}</Button><Button variant="ghost" type="button" onClick={() => editorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Enter manually</Button></div></div> : null}
-        {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>{error}</p>{duplicateInvoiceId ? <Button variant="ghost" type="button" className="mt-2" onClick={() => void openInvoice(duplicateInvoiceId)}>Open existing purchase</Button> : null}</div> : null}
+        {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>{error}</p>{duplicateInvoiceId ? <Button variant="ghost" type="button" className="mt-2" onClick={() => guardUnsaved(() => void openInvoice(duplicateInvoiceId))}>Open existing purchase</Button> : null}</div> : null}
         <div className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-start sm:justify-between">
           <SectionHeader
             title={draft.id ? `Review ${draft.invoiceNumber}` : draft.extractionStatus === "ocr" ? (draft.invoiceNumber ? `Review ${draft.invoiceNumber}` : "Review invoice") : "New purchase"}
@@ -968,7 +982,7 @@ export function PilotPurchasesPage() {
           <div className="flex flex-wrap items-center gap-2 text-xs sm:justify-end">
             <Badge tone={editorStatus.tone}>{editorStatus.label}</Badge>
             <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{mappedLineCount} of {draft.lineItems.length} items mapped</Badge>
-            {wideLayout ? <Button variant="ghost" type="button" onClick={() => setEditorOpen(false)}>Close panel</Button> : null}
+            {wideLayout ? <Button variant="ghost" type="button" disabled={navigationLocked} onClick={() => guardUnsaved(() => setEditorOpen(false))}>Close panel</Button> : null}
           </div>
         </div>
 
@@ -1223,7 +1237,7 @@ export function PilotPurchasesPage() {
                 <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
                   <p className="font-semibold text-ink">Corrected copy of a voided invoice</p>
                   <p className="mt-1">Check the numbers against the supplier&apos;s corrected invoice, then receive it as a new purchase. The invoice number was suffixed so it can be saved; change it if the supplier issued a new one.</p>
-                  <Button className="mt-3" variant="secondary" type="button" onClick={() => void openInvoice(draft.correctsInvoiceId as number)}>
+                  <Button className="mt-3" variant="secondary" type="button" onClick={() => guardUnsaved(() => void openInvoice(draft.correctsInvoiceId as number))}>
                     Open voided original
                   </Button>
                 </div>
@@ -1279,14 +1293,14 @@ export function PilotPurchasesPage() {
               icon={<Plus className="h-4 w-4" />}
               type="button"
               disabled={navigationLocked}
-              onClick={() => {
+              onClick={() => guardUnsaved(() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
                 setDraft(buildBlankDraft());
                 clearOcrReview();
                 setShowReview(false);
                 setEditorOpen(true);
-              }}
+              })}
             >
               New purchase
             </Button>
@@ -1340,7 +1354,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = selectedId === invoice.id && editorOpen;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item disabled={navigationLocked} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={navigationLocked} aria-current={active ? "true" : undefined} onClick={() => guardUnsaved(() => void openInvoice(invoice.id))} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
                     <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={status.tone}>{status.label}</Badge></div>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                     {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1358,7 +1372,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = detailInvoice?.id === invoice.id;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item disabled={navigationLocked} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={navigationLocked} aria-current={active ? "true" : undefined} onClick={() => guardUnsaved(() => void openInvoice(invoice.id))} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
@@ -1396,6 +1410,15 @@ export function PilotPurchasesPage() {
         ) : null}
       </div>
 
+      {pendingDiscard ? (
+        <Modal title="Discard unsaved changes?" size="small" onClose={() => setPendingDiscard(null)}>
+          <p className="text-sm text-muted">This purchase has edits that are not saved. Save a draft first, or discard the edits and continue.</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="secondary" type="button" onClick={() => setPendingDiscard(null)}>Keep editing</Button>
+            <Button type="button" onClick={() => { const action = pendingDiscard; setPendingDiscard(null); action(); }}>Discard changes</Button>
+          </div>
+        </Modal>
+      ) : null}
       {receiveConfirmOpen ? (
         <Modal title="Confirm receipt" size="small" onClose={() => { if (!saving) setReceiveConfirmOpen(false); }}>
           <p className="text-sm text-muted">This will update inventory for {draft.lineItems.length} mapped invoice {draft.lineItems.length === 1 ? "line" : "lines"} and record the receipt. Confirm only after reviewing the quantities and costs.</p>
