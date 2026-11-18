@@ -33,6 +33,9 @@ describe("PilotDashboardPage", () => {
         invoiceReviewQueueCount: 3,
         inventoryCountNeededCount: 1,
         recentPriceChangeCount: 2,
+        inventoryUrgentReorderCount: 2,
+        inventoryRunningLowCount: 5,
+        weeklyWindow: { label: "This week", startDate: "2026-11-16", endDate: "2026-11-22" },
       },
       recentInvoices: [],
       recentMovements: [
@@ -155,12 +158,15 @@ describe("PilotDashboardPage", () => {
     expect(todayHeading).toHaveClass("text-2xl");
     expect(todayHeading.closest(".rounded-2xl")?.querySelector('[aria-label="Refresh dashboard"]')).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Operations" })).toBeVisible();
-    expect(screen.getByText("Reorder pressure")).toBeVisible();
+    expect(screen.getByText("Reorder now")).toBeVisible();
     expect(screen.getByText("Review reorder")).toBeVisible();
     expect(screen.getByText("Square sync needs attention")).toBeVisible();
     expect(screen.getByText("Square variations need mapping")).toBeVisible();
     expect(screen.getByText("Daily Close is outstanding")).toBeVisible();
-    expect(screen.getByText("2 item(s) need ordering now.")).toBeVisible();
+    expect(screen.getByText("2 item(s) are out of stock or below their minimum. 5 more running low.")).toBeVisible();
+    expect(screen.getByText("2 urgent")).toBeVisible();
+    expect(screen.getByText(/5 running low \(below PAR, above minimum\)/)).toBeVisible();
+    expect(screen.getByText(/4 invoices · Nov 16 – Nov 22/)).toBeVisible();
     expect(screen.queryByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).not.toBeInTheDocument();
     expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeVisible();

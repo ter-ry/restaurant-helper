@@ -18,14 +18,18 @@ export function PilotDashboardPage() {
   useEffect(() => { void load(); }, []);
 
   const summary = (data?.summary ?? {}) as Record<string, number>;
+  const weeklyWindow = (data?.summary as { weeklyWindow?: { startDate?: string; endDate?: string } } | undefined)?.weeklyWindow;
+  const weekRange = weeklyWindow?.startDate && weeklyWindow?.endDate ? `${formatDate(weeklyWindow.startDate)} – ${formatDate(weeklyWindow.endDate)}` : null;
+  const urgentReorderCount = summary.inventoryUrgentReorderCount ?? data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0;
+  const runningLowCount = summary.inventoryRunningLowCount;
   const attentionItems = useMemo(() => [
-    { key: "reorder", title: "Reorder pressure", detail: `${data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0} item(s) need ordering now.`, count: data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0, to: "/app/inventory?view=reorder", action: "Review reorder", tone: "warning" as const },
+    { key: "reorder", title: "Reorder now", detail: `${urgentReorderCount} item(s) are out of stock or below their minimum.${runningLowCount ? ` ${runningLowCount} more running low.` : ""}`, count: urgentReorderCount, to: "/app/inventory?view=reorder", action: "Review reorder", tone: "warning" as const },
     { key: "invoice", title: "Invoices need review", detail: `${data?.summary.invoiceReviewQueueCount ?? 0} invoice(s) are waiting for review.`, count: data?.summary.invoiceReviewQueueCount ?? 0, to: "/app/purchases", action: "Review invoices", tone: "warning" as const },
-    { key: "price", title: "Supplier price changes", detail: `${data?.summary.recentPriceChangeCount ?? 0} captured change(s) this week.`, count: data?.summary.recentPriceChangeCount ?? 0, to: "/app/purchases", action: "Review price changes", tone: "orange" as const },
+    { key: "price", title: "Supplier price changes", detail: `${data?.summary.recentPriceChangeCount ?? 0} captured change(s)${weekRange ? ` (${weekRange})` : " this week"}.`, count: data?.summary.recentPriceChangeCount ?? 0, to: "/app/purchases", action: "Review price changes", tone: "orange" as const },
     { key: "close", title: "Daily Close is outstanding", detail: "Today's close is still open or has not been started.", count: data?.operationalAttention?.dailyClose.count ?? 0, to: "/app/daily-close", action: "Complete close", tone: "warning" as const },
     { key: "square", title: "Square sync needs attention", detail: "The connected Square integration has an active sync issue.", count: data?.operationalAttention?.square.syncErrorCount ?? 0, to: "/app/square", action: "Review Square", tone: "danger" as const },
     { key: "mapping", title: "Square variations need mapping", detail: "Mapped variations are required before sales can drive recipe usage.", count: data?.operationalAttention?.square.unmappedVariationCount ?? 0, to: "/app/square", action: "Review mappings", tone: "warning" as const },
-  ].filter((item) => item.count > 0), [data?.operationalAttention, data?.summary, summary.inventoryItemsToReorderCount]);
+  ].filter((item) => item.count > 0), [data?.operationalAttention, data?.summary, urgentReorderCount, runningLowCount]);
 
   const resumeItems = useMemo(() => [
     ...(data?.pendingDraftInvoices ?? []).slice(0, 1).map((invoice) => ({ key: "purchase-" + invoice.id, label: "Purchase draft", detail: invoice.invoiceNumber ? "Invoice " + invoice.invoiceNumber : "Invoice awaiting review", to: "/app/purchases?invoiceId=" + invoice.id })),
@@ -36,7 +40,8 @@ export function PilotDashboardPage() {
 
   const topMetrics = [
     { label: "Inventory value", value: loading ? "—" : formatMoney(data?.summary.inventoryValue), helper: `${formatNumber(data?.summary.inventoryItemCount)} items tracked` },
-    { label: "Purchases this week", value: loading ? "—" : formatMoney(data?.summary.weeklyInvoiceSpend), helper: `${formatNumber(data?.summary.weeklyInvoiceCount)} invoices` },
+    { label: "Purchases this week", value: loading ? "—" : formatMoney(data?.summary.weeklyInvoiceSpend), helper: `${formatNumber(data?.summary.weeklyInvoiceCount)} invoices${weekRange ? ` · ${weekRange}` : ""}` },
+    { label: "Reorder status", value: loading ? "—" : `${formatNumber(urgentReorderCount)} urgent`, helper: runningLowCount == null ? "Out of stock or below minimum" : `${formatNumber(runningLowCount)} running low (below PAR, above minimum)` },
     { label: "Month-to-date spend", value: loading ? "—" : formatMoney(data?.summary.monthlyInvoiceSpend), helper: `${formatNumber(data?.summary.monthlyInvoiceCount)} invoices this month` },
   ];
 
@@ -66,7 +71,7 @@ export function PilotDashboardPage() {
 
     <Card className="pilot-dashboard-operations p-4">
       <SectionHeader title="Operations" />
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{topMetrics.map((metric) => <div key={metric.label} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</p><p className="mt-1 text-lg font-bold text-ink">{metric.value}</p><p className="mt-1 text-xs leading-5 text-muted">{metric.helper}</p></div>)}</div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{topMetrics.map((metric) => <div key={metric.label} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</p><p className="mt-1 text-lg font-bold text-ink">{metric.value}</p><p className="mt-1 text-xs leading-5 text-muted">{metric.helper}</p></div>)}</div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{[
         ["Inventory", data?.workflow.inventory ?? "Not ready", "/app/inventory", ShoppingCart],
         ["Reorder", data?.workflow.reorder ?? "Alert", "/app/inventory?view=reorder", PackageSearch],
