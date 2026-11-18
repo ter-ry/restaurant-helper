@@ -18,6 +18,7 @@ import {
   type DataImportJobDetail,
   type DataImportJobSummary,
   uploadImportJob,
+  dataImportScopeLabel,
 } from "../lib/dataImports";
 
 type LoadState = "loading" | "signedOut" | "permissionDenied" | "ready" | "error";
@@ -311,7 +312,7 @@ export function DataMigrationPage() {
               >
                 <p className="text-sm font-semibold text-ink">{job.sourceFileName || `Job ${job.id}`}</p>
                 <p className="mt-1 text-xs text-muted">
-                  {job.entityScope} · {job.status} · {job.rowCount} rows
+                  {dataImportScopeLabel(job.entityScope)} · {job.status} · {job.rowCount} rows
                 </p>
               </button>
             ))}
@@ -354,7 +355,7 @@ export function DataMigrationPage() {
                   <select name="entity-scope" className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-3 py-2 text-sm outline-none" value={entityScope} onChange={(event) => setEntityScope(event.target.value)}>
                     {DATA_IMPORT_ENTITY_SCOPES.map((scope) => (
                       <option key={scope} value={scope}>
-                        {scope}
+                        {dataImportScopeLabel(scope)}
                       </option>
                     ))}
                   </select>
@@ -374,7 +375,7 @@ export function DataMigrationPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-bold text-ink">Import state</h2>
-                {selectedJob ? <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">{selectedJob.entityScope}</span> : null}
+                {selectedJob ? <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">{dataImportScopeLabel(selectedJob.entityScope)}</span> : null}
               </div>
               {selectedJob ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
