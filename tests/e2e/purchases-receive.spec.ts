@@ -405,7 +405,7 @@ test.describe("purchase queue while OCR extraction is pending at 1440px", () => 
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "New purchase" }).click();
-    await page.getByLabel("Invoice file").setInputFiles({ name: "invoice.png", mimeType: "image/png", buffer: Buffer.from("fake") });
+    await page.getByLabel("Invoice file").setInputFiles("tests/e2e/fixtures/suppliers.csv");
     const queue = page.getByTestId("purchase-queue");
     await expect(queue.getByRole("button", { name: /CM-750/ })).toBeDisabled();
     await expect(page.getByRole("button", { name: "New purchase" })).toBeDisabled();
