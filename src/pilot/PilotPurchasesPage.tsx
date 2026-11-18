@@ -1021,8 +1021,11 @@ export function PilotPurchasesPage() {
                 </div>
                 <div className="mt-4 space-y-4">
                   {draft.lineItems.map((line, index) => {
-                    const previewLine = line.id ? purchasePreview?.lines?.find((entry) => entry.lineId === line.id) : undefined;
-                    const priceChange = previewLine?.priceChangePercent ?? null;
+                    // Compared live against the mapped item's average cost per stock unit, both already loaded on this page.
+                    const mappedItem = line.inventoryItemId ? inventoryItems.find((item) => item.id === line.inventoryItemId) : undefined;
+                    const baselineCost = Number(mappedItem?.averageUnitCost ?? 0);
+                    const lineUnitCost = Number(line.conversionFactor) > 0 ? Number(line.unitPrice) / Number(line.conversionFactor) : 0;
+                    const priceChange = baselineCost > 0 && lineUnitCost > 0 ? ((lineUnitCost - baselineCost) / baselineCost) * 100 : null;
                     const materialPriceChange = priceChange !== null && Math.abs(priceChange) >= MATERIAL_PRICE_CHANGE_PERCENT;
                     const inventoryQuantity = formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)));
                     const labelClass = "text-[11px] font-bold uppercase tracking-wide text-muted";
@@ -1060,7 +1063,7 @@ export function PilotPurchasesPage() {
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                           <Badge tone={line.inventoryItemId ? "success" : "warning"}>{line.inventoryItemId ? "Mapped" : "Needs mapping"}</Badge>
                           <Badge tone={line.needsReview ? "warning" : "success"}>{line.needsReview ? "Needs review" : "Confirmed"}</Badge>
-                          {materialPriceChange && priceChange !== null ? <Badge tone="warning">Price {priceChange > 0 ? "up" : "down"} {formatNumber(Math.abs(priceChange))}% vs last receipt</Badge> : null}
+                          {materialPriceChange && priceChange !== null ? <Badge tone="warning">Cost {priceChange > 0 ? "up" : "down"} {formatNumber(Math.round(Math.abs(priceChange) * 10) / 10)}% vs average cost</Badge> : null}
                           <Badge tone="neutral">{line.confidence >= 0.9 ? "High confidence" : line.confidence >= 0.7 ? "Medium confidence" : "Low confidence"}</Badge>
                           {line.inventoryItemId && mappingHints.has(`${normalizeLookup(draft.supplierName)}|${normalizeLookup(line.description)}`) ? <Badge tone="neutral">Matched from previous invoices</Badge> : null}
                           <span className="ml-auto flex items-center gap-3">
@@ -1230,6 +1233,7 @@ export function PilotPurchasesPage() {
             <Button
               icon={<Plus className="h-4 w-4" />}
               type="button"
+              disabled={saving}
               onClick={() => {
                 setSelectedId(null);
                 setReceiveMessage(null);
@@ -1291,7 +1295,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = selectedId === invoice.id && editorOpen;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={saving} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`purchase-review-item w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-amber-200 bg-amber-50/50"}`}>
                     <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={status.tone}>{status.label}</Badge></div>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                     {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1309,7 +1313,7 @@ export function PilotPurchasesPage() {
                 const status = purchaseStatus(invoice);
                 const active = detailInvoice?.id === invoice.id;
                 return (
-                  <button key={invoice.id} type="button" data-queue-item aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
+                  <button key={invoice.id} type="button" data-queue-item disabled={saving} aria-current={active ? "true" : undefined} onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-3 text-left transition hover:shadow-soft ${active || selectedInvoice?.id === invoice.id ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-slate-50"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>

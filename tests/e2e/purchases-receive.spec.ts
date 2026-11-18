@@ -34,10 +34,8 @@ type World = {
   /** Purchase list reads answered by the fake server (proves the page re-fetched after a mutation). */
   listReads: number;
   nextId: number;
-  /** Saved-draft preview answered per invoice id, so price-change warnings can be shown. */
-  previews: Record<number, { lineId: number; priceChangePercent: number | null }[]>;
 };
-const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600, previews: {} });
+const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600 });
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
 const ITEM = {
   id: 30, organizationId: 42, locationId: 7, supplierId: null, name: "Chicken Breast", normalizedName: "chicken breast", category: "Poultry", stockUnit: "kg",
@@ -73,14 +71,6 @@ async function installWorld(page: Page, world: World) {
       return json(route, {
         organizations: [{ organization: ORG, membershipRole: "owner", selected: true }], currentOrganizationId: ORG.id, currentMembershipId: 1,
         currentLocationId: 7, currentOrganization: bundle, ...bundle,
-      });
-    }
-    const preview = pathname.match(/^\/api\/pilot\/purchases\/invoices\/(\d+)\/preview$/);
-    if (preview && method === "GET") {
-      const lines = world.previews[Number(preview[1])] ?? [];
-      return json(route, {
-        invoiceId: Number(preview[1]), mutatesInventory: false, reviewSummary: {},
-        lines: lines.map((line) => ({ ...line, description: "Chicken breast", inventoryItemId: 30, inventoryItemName: "Chicken Breast", unit: "kg", quantityDelta: 1, currentOnHand: 12, afterOnHand: 13, averageUnitCostBefore: 4, averageUnitCostAfter: 4.1, receiptUnitCost: 5 })),
       });
     }
     if (pathname === "/api/pilot/suppliers") return json(route, { suppliers: SUPPLIERS });
@@ -255,9 +245,9 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
-const savedLine = (invoiceId: number, index: number) => ({
+const savedLine = (invoiceId: number, index: number, unitPrice = 4) => ({
   id: invoiceId * 10 + index, description: `Chicken breast ${index + 1}`, inventoryItemId: 30, purchaseUnit: "kg", inventoryUnit: "kg", conversionFactor: 1,
-  quantity: 1, unitPrice: 5, lineTotal: 5, confidence: 0.95, needsReview: false, note: "",
+  quantity: 1, unitPrice, lineTotal: unitPrice, confidence: 0.95, needsReview: false, note: "",
 });
 
 test.describe("purchases master/detail at 1440px", () => {
@@ -265,9 +255,9 @@ test.describe("purchases master/detail at 1440px", () => {
 
   test("a queue item opens in the right panel beside the queue, with pinned actions and a price-change warning", async ({ page }) => {
     const world = newWorld();
-    const lines = Array.from({ length: 8 }, (_, index) => savedLine(700, index));
-    world.invoices.push({ id: 700, invoiceNumber: "CM-700", status: "Draft", invoiceDate: "2026-11-10", subtotal: 40, tax: 0, totalAmount: 40, lineItems: lines });
-    world.previews[700] = [{ lineId: lines[0].id, priceChangePercent: 12.5 }, { lineId: lines[1].id, priceChangePercent: 1.2 }];
+    // The mapped item averages $4/kg: line 1 is +12.5%, line 2 is +1%, the rest are unchanged.
+    const lines = Array.from({ length: 8 }, (_, index) => savedLine(700, index, index === 0 ? 4.5 : index === 1 ? 4.04 : 4));
+    world.invoices.push({ id: 700, invoiceNumber: "CM-700", status: "Draft", invoiceDate: "2026-11-10", subtotal: 32.54, tax: 0, totalAmount: 32.54, lineItems: lines });
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
 
@@ -282,8 +272,8 @@ test.describe("purchases master/detail at 1440px", () => {
     const panelBox = await panel.boundingBox();
     expect(queueBox && panelBox && queueBox.x + queueBox.width <= panelBox.x + 1).toBe(true); // side by side, queue still visible
 
-    await expect(editor.getByText("Price up 12.5% vs last receipt")).toBeVisible(); // material change only
-    await expect(editor.getByText(/Price (up|down) 1\.2%/)).toHaveCount(0);
+    await expect(editor.getByText("Cost up 12.5% vs average cost")).toBeVisible(); // material change only
+    await expect(editor.getByText(/Cost (up|down) 1(\.\d)?%/)).toHaveCount(0);
     await expect(editor.getByTestId("purchase-line-7")).toBeAttached();
     await expect(page.getByRole("button", { name: /CM-700/ })).toHaveAttribute("aria-current", "true");
 
@@ -300,7 +290,7 @@ test.describe("purchases master/detail at 1440px", () => {
 
   test("Save & receive from the pinned bar still asks for confirmation and receives once", async ({ page }) => {
     const world = newWorld();
-    world.invoices.push({ id: 710, invoiceNumber: "CM-710", status: "Draft", invoiceDate: "2026-11-10", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(710, 0)] });
+    world.invoices.push({ id: 710, invoiceNumber: "CM-710", status: "Draft", invoiceDate: "2026-11-10", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(710, 0)] });
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-710/ }).click();
@@ -334,5 +324,29 @@ test.describe("purchases master/detail at 1440px", () => {
     await expect(detail).toContainText("Received");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(queue).toBeVisible();
+  });
+});
+
+test.describe("purchase queue while a save is in flight at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("other purchases cannot be opened until the save finishes, so edits never jump back", async ({ page }) => {
+    const world = newWorld();
+    world.delayMs = 600;
+    world.invoices.push(
+      { id: 730, invoiceNumber: "CM-730", status: "Draft", invoiceDate: "2026-11-10", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(730, 0)] },
+      { id: 731, invoiceNumber: "CM-731", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(731, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    const queue = page.getByTestId("purchase-queue");
+    await queue.getByRole("button", { name: /CM-730/ }).click();
+    await page.getByTestId("purchase-action-bar").getByRole("button", { name: "Save draft" }).click();
+    await expect(queue.getByRole("button", { name: /CM-731/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "New purchase" })).toBeDisabled();
+    await expect(page.getByText("Invoice CM-730 saved successfully.").first()).toBeVisible();
+    await expect(queue.getByRole("button", { name: /CM-731/ })).toBeEnabled();
+    await queue.getByRole("button", { name: /CM-731/ }).click();
+    await expect(page.getByTestId("purchase-editor-card").getByLabel("Invoice number")).toHaveValue("CM-731");
   });
 });
