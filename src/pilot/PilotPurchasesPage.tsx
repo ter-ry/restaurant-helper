@@ -199,6 +199,8 @@ export function PilotPurchasesPage() {
   const [saving, setSaving] = useState(false);
   // A void in flight also blocks switching purchases: its completion reloads the page state.
   const [voiding, setVoiding] = useState(false);
+  // A manual refresh in flight also blocks switching: it merges server data into whichever purchase is open.
+  const [refreshing, setRefreshing] = useState(false);
   // Which action is in flight, so only that button announces progress ("Receiving..." must not show for a draft save).
   const [savingAction, setSavingAction] = useState<"draft" | "receive" | null>(null);
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
@@ -300,6 +302,7 @@ export function PilotPurchasesPage() {
       return;
     }
     setLoading(true);
+    setRefreshing(true);
     setError(null);
     try {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
@@ -315,6 +318,7 @@ export function PilotPurchasesPage() {
       setError(err instanceof Error ? err.message : "Could not refresh purchases.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -365,7 +369,7 @@ export function PilotPurchasesPage() {
   }), [data?.invoices, purchaseFilter, purchaseSearch]);
   const initialLoading = loading && !hasLoaded;
   // Saves, voids, OCR extraction and supplier/item creation all change the open purchase the open purchase when they finish, so none may overlap a switch.
-  const navigationLocked = saving || voiding || ocrLoading || supplierSaving || inventoryItemSaving;
+  const navigationLocked = saving || voiding || ocrLoading || supplierSaving || inventoryItemSaving || refreshing;
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;

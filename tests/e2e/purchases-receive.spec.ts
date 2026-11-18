@@ -34,8 +34,10 @@ type World = {
   /** Purchase list reads answered by the fake server (proves the page re-fetched after a mutation). */
   listReads: number;
   nextId: number;
+  /** Extra delay on purchase list reads (applied only when > 0, e.g. after the first load). */
+  listDelayMs: number;
 };
-const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600 });
+const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600, listDelayMs: 0 });
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
 const ITEM = {
   id: 30, organizationId: 42, locationId: 7, supplierId: null, name: "Chicken Breast", normalizedName: "chicken breast", category: "Poultry", stockUnit: "kg",
@@ -82,6 +84,7 @@ async function installWorld(page: Page, world: World) {
     }
     if (pathname === "/api/pilot/purchases" && method === "GET") {
       world.listReads += 1;
+      if (world.listDelayMs) await sleep(world.listDelayMs);
       return json(route, {
         invoices: world.invoices.map(invoiceJson), suppliers: [{ id: 3, name: "Cedar Meats" }], purchaseLines: [], priceChanges: [], summary: {},
         exportReadiness: { readyForCsv: 0, needsReview: 0, needsMapping: 0, quickBooksFutureOnly: true },
@@ -458,5 +461,29 @@ test.describe("refresh with a purchase open at 1440px", () => {
     await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
     await expect(editor.getByLabel("Invoice number")).toHaveValue("CM-770-EDITED");
     await expect(editor).toBeVisible();
+  });
+});
+
+test.describe("switching purchases while a refresh is in flight at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the queue is locked until the refresh finishes, so the edits of the purchase open at the end are never replaced", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push(
+      { id: 780, invoiceNumber: "CM-780", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(780, 0)] },
+      { id: 781, invoiceNumber: "CM-781", status: "Draft", invoiceDate: "2026-11-12", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(781, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    const queue = page.getByTestId("purchase-queue");
+    await queue.getByRole("button", { name: /CM-780/ }).click();
+    world.listDelayMs = 800;
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(queue.getByRole("button", { name: /CM-781/ })).toBeDisabled();
+    await expect(queue.getByRole("button", { name: /CM-781/ })).toBeEnabled();
+    await queue.getByRole("button", { name: /CM-781/ }).click();
+    const editor = page.getByTestId("purchase-editor-card");
+    await editor.getByLabel("Invoice number").fill("CM-781-EDITED");
+    await expect(editor.getByLabel("Invoice number")).toHaveValue("CM-781-EDITED");
   });
 });
