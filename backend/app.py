@@ -332,7 +332,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                 db.session.add(InventoryItem(organization_id=organization.id, location_id=location.id, supplier_id=supplier.id if supplier else None, name=name, normalized_name=name.lower(), category=category, stock_unit=unit, current_on_hand=Decimal(str(par + 2)), min_quantity=Decimal(str(minimum)), par_level=Decimal(str(par)), preferred_supplier_name=supplier.name if supplier else "", latest_purchase_price=Decimal("4.50"), average_unit_cost=Decimal("4.50"), last_purchase_unit=unit, last_purchase_conversion_factor=Decimal("1"), average_daily_usage=Decimal("0.5")))
         recipe_names = ["Harbour Burger", "Chicken Rice Bowl", "Breakfast Hash", "House Salad", "Iced Latte", "Berry Parfait"]
         for name in recipe_names:
-            if not Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
+            same_name = [r for r in Recipe.query.filter_by(organization_id=organization.id, location_id=location.id).all() if " ".join(r.name.lower().split()) == name.lower()]
+            # Remove empty "Canonical demo recipe" placeholders left by earlier seeds when a real recipe exists.
+            real = [r for r in same_name if not (r.description == "Canonical demo recipe" and not r.ingredients and not r.menu_items)]
+            if real:
+                for placeholder in same_name:
+                    if placeholder not in real and not placeholder.ingredients and not placeholder.menu_items:
+                        db.session.delete(placeholder)
+                continue
+            if not same_name:
                 db.session.add(Recipe(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), description="Canonical demo recipe", yield_quantity=Decimal("1"), yield_unit="batch", created_by_user_id=result.owner_id, updated_by_user_id=result.owner_id))
         waste_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Chicken Breast").first()
         if waste_item and not InventoryWasteEvent.query.filter_by(organization_id=organization.id, location_id=location.id, reason="Demo spoilage").first():

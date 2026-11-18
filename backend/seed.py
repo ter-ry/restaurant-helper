@@ -335,7 +335,18 @@ def _upsert_location(organization: Organization) -> RestaurantLocation:
 
 
 def _normalize_name(value: str) -> str:
+    # Must match backend.pilot_api._normalize_name so seeded rows are found by app lookups.
+    return " ".join("".join(ch if ch.isalnum() else " " for ch in value.lower()).split())
+
+
+def _legacy_normalize_name(value: str) -> str:
+    # Earlier seeds stored a character-spaced form ("h a r b o u r"); still matched so
+    # already-seeded demo databases are reused instead of duplicated.
     return " ".join(" ".join(ch if ch.isalnum() else " " for ch in value.lower()).split())
+
+
+def _normalized_candidates(value: str) -> list[str]:
+    return list({_normalize_name(value), _legacy_normalize_name(value)})
 
 
 def _clear_seed_data() -> None:
@@ -382,7 +393,7 @@ def _clear_seed_data() -> None:
 
 def _get_or_create_supplier(organization: Organization, spec: dict[str, str]) -> Supplier:
     normalized = _normalize_name(spec["name"])
-    supplier = Supplier.query.filter_by(organization_id=organization.id, normalized_name=normalized).first()
+    supplier = Supplier.query.filter(Supplier.organization_id == organization.id, Supplier.normalized_name.in_(_normalized_candidates(spec["name"]))).first()
     if supplier is None:
         supplier = Supplier(
             organization_id=organization.id,
@@ -408,7 +419,7 @@ def _get_or_create_supplier(organization: Organization, spec: dict[str, str]) ->
 
 def _get_or_create_inventory_item(organization: Organization, location: RestaurantLocation, supplier_by_name: dict[str, Supplier], spec: dict[str, object]) -> InventoryItem:
     normalized = _normalize_name(str(spec["name"]))
-    item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+    item = InventoryItem.query.filter(InventoryItem.organization_id == organization.id, InventoryItem.location_id == location.id, InventoryItem.normalized_name.in_(_normalized_candidates(str(spec["name"])))).first()
     supplier = supplier_by_name.get(str(spec["preferred_supplier"]))
     if item is None:
         item = InventoryItem(
@@ -912,7 +923,7 @@ def seed_official_demo_data(
     recipe_by_name: dict[str, Recipe] = {}
     for name, ingredient_specs in recipes.items():
         normalized = _normalize_name(name)
-        recipe = Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+        recipe = Recipe.query.filter(Recipe.organization_id == organization.id, Recipe.location_id == location.id, Recipe.normalized_name.in_(_normalized_candidates(name))).first()
         if recipe is None:
             recipe = Recipe(
                 organization_id=organization.id,
