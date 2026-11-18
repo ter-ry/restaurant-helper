@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import os
+import re
 
 from flask import current_app
 
@@ -335,7 +336,37 @@ def _upsert_location(organization: Organization) -> RestaurantLocation:
 
 
 def _normalize_name(value: str) -> str:
+    # Must match backend.pilot_api._normalize_name so seeded rows behave like
+    # rows created through the application.
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.strip().lower())).strip()
+
+
+def _legacy_normalized_name(value: str) -> str:
+    """Normalization used by earlier seed versions (it spaced out every character).
+
+    Already-seeded demo databases still hold this form, so lookups accept both
+    and heal the stored value instead of creating duplicates on reseed.
+    """
     return " ".join(" ".join(ch if ch.isalnum() else " " for ch in value.lower()).split())
+
+
+def _match_normalized(query, column, value: str):
+    """Return the canonical row if present, else a legacy-normalized row healed to the canonical key.
+
+    Preferring the canonical row keeps the unique (org, [location,] normalized_name)
+    constraint safe when both forms already exist in a tenant.
+    """
+    current = _normalize_name(value)
+    row = query.filter(column == current).order_by(column.table.c.id.asc()).first()
+    if row is not None:
+        return row
+    legacy = _legacy_normalized_name(value)
+    if legacy == current:
+        return None
+    row = query.filter(column == legacy).order_by(column.table.c.id.asc()).first()
+    if row is not None:
+        row.normalized_name = current
+    return row
 
 
 def _clear_seed_data() -> None:
@@ -382,7 +413,7 @@ def _clear_seed_data() -> None:
 
 def _get_or_create_supplier(organization: Organization, spec: dict[str, str]) -> Supplier:
     normalized = _normalize_name(spec["name"])
-    supplier = Supplier.query.filter_by(organization_id=organization.id, normalized_name=normalized).first()
+    supplier = _match_normalized(Supplier.query.filter_by(organization_id=organization.id), Supplier.normalized_name, spec["name"])
     if supplier is None:
         supplier = Supplier(
             organization_id=organization.id,
@@ -408,7 +439,7 @@ def _get_or_create_supplier(organization: Organization, spec: dict[str, str]) ->
 
 def _get_or_create_inventory_item(organization: Organization, location: RestaurantLocation, supplier_by_name: dict[str, Supplier], spec: dict[str, object]) -> InventoryItem:
     normalized = _normalize_name(str(spec["name"]))
-    item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+    item = _match_normalized(InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id), InventoryItem.normalized_name, str(spec["name"]))
     supplier = supplier_by_name.get(str(spec["preferred_supplier"]))
     if item is None:
         item = InventoryItem(
@@ -594,8 +625,7 @@ def _apply_invoice_receipt(invoice: PurchaseInvoice, actor_id: int) -> None:
             organization_id=invoice.organization_id,
             supplier_id=invoice.supplier_id,
             inventory_item_id=item.id,
-            normalized_supplier_item_name=_normalize_name(line.description),
-        ).first()
+        ).filter(SupplierItemMapping.normalized_supplier_item_name.in_({_normalize_name(line.description), _legacy_normalized_name(line.description)})).first()
         if mapping is None:
             mapping = SupplierItemMapping(
                 organization_id=invoice.organization_id,
@@ -909,10 +939,18 @@ def seed_official_demo_data(
             db.session.flush()
             items[name] = item
 
+    # Earlier seed-demo versions added empty "Canonical demo recipe" placeholders
+    # that duplicated the real recipes below.  Remove only unused placeholders
+    # (no ingredients, no menu item) before matching, so reseeding converges.
+    for placeholder in Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, description="Canonical demo recipe").all():
+        if not placeholder.ingredients and not placeholder.menu_items:
+            db.session.delete(placeholder)
+    db.session.flush()
+
     recipe_by_name: dict[str, Recipe] = {}
     for name, ingredient_specs in recipes.items():
         normalized = _normalize_name(name)
-        recipe = Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=normalized).first()
+        recipe = _match_normalized(Recipe.query.filter_by(organization_id=organization.id, location_id=location.id), Recipe.normalized_name, name)
         if recipe is None:
             recipe = Recipe(
                 organization_id=organization.id,
@@ -956,7 +994,7 @@ def seed_official_demo_data(
     ]
     menu_by_name: dict[str, MenuItem] = {}
     for name, category, price, recipe_name in menu_specs:
-        menu = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=_normalize_name(name)).first()
+        menu = _match_normalized(MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id), MenuItem.normalized_name, name)
         if menu is None:
             menu = MenuItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=_normalize_name(name), created_by_user_id=owner_id)
             db.session.add(menu)
