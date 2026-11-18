@@ -172,6 +172,23 @@ function invoiceToDraft(invoice: PilotPurchaseInvoice): PurchaseDraft {
   };
 }
 
+// Wide screens show the purchase editor beside the list; narrower screens keep the full-screen dialog.
+// Without matchMedia (tests, old browsers) the dialog is used.
+function useWideLayout() {
+  const query = "(min-width: 1280px)";
+  const read = () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false);
+  const [wide, setWide] = useState(read);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const media = window.matchMedia(query);
+    const onChange = () => setWide(media.matches);
+    onChange();
+    media.addEventListener?.("change", onChange);
+    return () => media.removeEventListener?.("change", onChange);
+  }, []);
+  return wide;
+}
+
 type MappingHint = {
   inventoryItemId: number;
   purchaseUnit: string;
@@ -182,6 +199,7 @@ type MappingHint = {
 export function PilotPurchasesPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const wideLayout = useWideLayout();
   const editorPanelRef = useRef<HTMLDivElement | null>(null);
   const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
@@ -883,51 +901,10 @@ export function PilotPurchasesPage() {
     }
   };
 
-  return (
-    <div className="workspace-page">
-      <Card className="surface-panel workspace-card p-3 sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { label: "Needs review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
-              { label: "Material price changes", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
-              { label: "Received this month", value: hasLoaded ? formatNumber(data?.summary?.receivedThisMonth ?? 0) : "—" },
-              { label: "Spend this month", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
-            ].map((metric) => (
-              <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
-                <span className="text-sm font-bold text-ink">{metric.value}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button
-              icon={<Plus className="h-4 w-4" />}
-              type="button"
-              onClick={() => {
-                setSelectedId(null);
-                setReceiveMessage(null);
-                setDraft(buildBlankDraft());
-                clearOcrReview();
-                setShowReview(false);
-                setEditorOpen(true);
-              }}
-            >
-              New purchase
-            </Button>
-            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        {loading ? <div className="mt-5 text-sm text-muted">{initialLoading ? "Loading purchases…" : "Refreshing purchases…"}</div> : null}
-        {error && !editorOpen ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
-        {receiveMessage && !editorOpen ? <div aria-live="polite" className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
-
-      </Card>
-
-      {editorOpen ? <Modal title={ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor"} size="full" onClose={() => setEditorOpen(false)}>
+  const editorTitle = ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor";
+  const inlineEditor = editorOpen && wideLayout;
+  const editorBody = (
+    <>
         <div className={ocrPreviewUrl ? "grid gap-5 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]" : ""}>
           {ocrPreviewUrl ? (
             <aside className="self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 xl:sticky xl:top-0">
@@ -946,7 +923,7 @@ export function PilotPurchasesPage() {
             {ocrLoading ? <div role="status" className="mb-4 flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-900"><span className="h-4 w-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" />Reading invoice… Extracting supplier, totals, and line items.</div> : null}
             {!draft.id && !ocrPreviewUrl ? <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-ink">How would you like to add this purchase?</p><p className="mt-1 text-xs text-muted">Upload an invoice for OCR or enter the purchase details manually.</p></div><div className="flex flex-wrap gap-2"><input ref={ocrInputRef} className="sr-only" aria-label="Invoice file" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadInvoice(file); }} /><Button variant="secondary" icon={<FileText className="h-4 w-4" />} type="button" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading || saving}>{ocrLoading ? "Processing invoice…" : "Upload invoice"}</Button><Button variant="ghost" type="button" onClick={() => editorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Enter manually</Button></div></div> : null}
             {error ? <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>{error}</p>{duplicateInvoiceId ? <Button variant="ghost" type="button" className="mt-2" onClick={() => void openInvoice(duplicateInvoiceId)}>Open existing purchase</Button> : null}</div> : null}
-            <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="sticky top-0 z-10 -mx-1 flex flex-col gap-4 border-b border-line bg-white px-1 pb-5 pt-1 sm:flex-row sm:items-start sm:justify-between" data-testid="purchase-editor-header">
               <SectionHeader
                 title={draft.id ? `Review ${draft.invoiceNumber}` : draft.extractionStatus === "ocr" ? (draft.invoiceNumber ? `Review ${draft.invoiceNumber}` : "Review invoice") : "New purchase"}
                 description={draft.status === "Corrected" ? "This purchase has been corrected and is view-only." : draft.status === "Completed" ? "This purchase is completed and view-only for receiving." : "Enter supplier details and invoice lines together, then receive when the mapping is ready."}
@@ -969,8 +946,9 @@ export function PilotPurchasesPage() {
                     <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
                       Review
                     </Button>
+                    {inlineEditor ? <Button variant="ghost" disabled={saving} type="button" onClick={() => setEditorOpen(false)}>Close editor</Button> : null}
                   </div>
-                ) : null}
+                ) : inlineEditor ? <Button variant="ghost" type="button" onClick={() => setEditorOpen(false)}>Close editor</Button> : null}
               </div>
             </div>
 
@@ -1131,6 +1109,10 @@ export function PilotPurchasesPage() {
                                 {formatNumber(Number((line.quantity || 0) * (line.conversionFactor || 1)))} {line.inventoryUnit || "inventory units"}
                               </Badge>
                               <Badge tone="neutral">{line.confidence >= 0.9 ? "High confidence" : line.confidence >= 0.7 ? "Medium confidence" : "Low confidence"}</Badge>
+                              {(() => {
+                                const change = line.id ? purchasePreview?.lines?.find((entry) => entry.lineId === line.id)?.priceChangePercent : null;
+                                return change != null && Math.abs(change) >= 0.05 ? <Badge tone={change > 0 ? "warning" : "success"}>Price {change > 0 ? "+" : ""}{formatNumber(change)}% vs last purchase</Badge> : null;
+                              })()}
                               {line.inventoryItemId && mappingHints.has(`${normalizeLookup(draft.supplierName)}|${normalizeLookup(line.description)}`) ? <Badge tone="neutral">Matched from previous invoices</Badge> : null}
                             </div>
                             <div className="flex items-center justify-between gap-3 text-sm md:justify-end">
@@ -1234,6 +1216,55 @@ export function PilotPurchasesPage() {
           </Card>
           </div>
         </div>
+      </>
+  );
+
+  return (
+    <div className="workspace-page">
+      <Card className="surface-panel workspace-card p-3 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { label: "Needs review", value: hasLoaded ? formatNumber(data?.summary?.uploadsNeedingReview ?? 0) : "—" },
+              { label: "Material price changes", value: hasLoaded ? formatNumber(data?.summary?.priceChangesFlagged ?? 0) : "—" },
+              { label: "Received this month", value: hasLoaded ? formatNumber(data?.summary?.receivedThisMonth ?? 0) : "—" },
+              { label: "Spend this month", value: hasLoaded ? formatMoney(data?.summary?.thisMonthSpend ?? 0) : "—" },
+            ].map((metric) => (
+              <div key={metric.label} className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</span>
+                <span className="text-sm font-bold text-ink">{metric.value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              icon={<Plus className="h-4 w-4" />}
+              type="button"
+              onClick={() => {
+                setSelectedId(null);
+                setReceiveMessage(null);
+                setDraft(buildBlankDraft());
+                clearOcrReview();
+                setShowReview(false);
+                setEditorOpen(true);
+              }}
+            >
+              New purchase
+            </Button>
+            <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {loading ? <div className="mt-5 text-sm text-muted">{initialLoading ? "Loading purchases…" : "Refreshing purchases…"}</div> : null}
+        {error && !editorOpen ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+        {receiveMessage && !editorOpen ? <div aria-live="polite" className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
+
+      </Card>
+
+      {editorOpen && !wideLayout ? <Modal title={editorTitle} size="full" onClose={() => setEditorOpen(false)}>
+        {editorBody}
       </Modal> : null}
 
       {inventoryItemTargetIndex != null ? <Modal title="Create inventory item" size="small" onClose={() => setInventoryItemTargetIndex(null)}>
@@ -1246,8 +1277,9 @@ export function PilotPurchasesPage() {
         </div>
       </Modal> : null}
 
-      <div className="pilot-purchases-layout grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="xl:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className={inlineEditor ? "grid items-start gap-4 xl:grid-cols-[minmax(22rem,26rem)_minmax(0,1fr)]" : ""} data-testid="purchase-workspace">
+      <div className={`pilot-purchases-layout grid gap-4 ${inlineEditor ? "" : "xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"}`}>
+        <div className={`${inlineEditor ? "" : "xl:col-span-2 "}flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between`}>
           <input className="input max-w-xl" aria-label="Search purchases" placeholder="Search supplier or invoice number" value={purchaseSearch} onChange={(event) => setPurchaseSearch(event.target.value)} />
           <select className="input w-full sm:w-44" aria-label="Purchase filter" value={purchaseFilter} onChange={(event) => setPurchaseFilter(event.target.value as typeof purchaseFilter)}><option value="all">All purchases</option><option value="review">Needs review</option><option value="received">Received</option><option value="corrected">Corrected</option></select>
         </div>
@@ -1255,7 +1287,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Needs review" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
             {filteredInvoices.filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => (
-              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className="purchase-review-item w-full rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-3 text-left transition hover:shadow-soft">
+              <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} aria-current={selectedId === invoice.id ? "true" : undefined} className={`purchase-review-item w-full rounded-xl border px-3 py-2 text-left transition hover:shadow-soft ${selectedId === invoice.id ? "border-brand-400 bg-brand-50 ring-1 ring-brand-300" : "border-amber-200 bg-amber-50/50"}`}>
                 <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p><p className="text-sm text-muted">{invoice.invoiceNumber} • {formatDate(invoice.invoiceDate)}</p></div><Badge tone={invoice.reviewSummary?.state === "BLOCKING" ? "danger" : invoice.reviewSummary?.state === "READY" ? "success" : "warning"}>{invoice.reviewSummary?.state === "READY" ? "Ready to receive" : invoice.reviewSummary?.state === "BLOCKING" ? "Needs attention" : "Review"}</Badge></div>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted"><span>{formatMoney(invoice.totalAmount)}</span><span>{invoice.lineItems.length} lines · {invoice.reviewSummary?.mappedLineCount ?? 0}/{invoice.lineItems.length} matched</span></div>
                 {invoice.reviewSummary?.blockers?.[0] ? <p className="mt-2 text-xs text-danger">{invoice.reviewSummary.blockers[0]}</p> : invoice.reviewSummary?.warnings?.[0] ? <p className="mt-2 text-xs text-muted">{invoice.reviewSummary.warnings[0]}</p> : null}
@@ -1269,7 +1301,7 @@ export function PilotPurchasesPage() {
           <SectionHeader title="Purchase history" />
           <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {filteredInvoices.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => (
-                <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-2xl border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
+                <button key={invoice.id} type="button" onClick={() => void openInvoice(invoice.id)} className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:shadow-soft ${selectedInvoice?.id === invoice.id ? "border-brand-200 bg-brand-50" : "border-line bg-slate-50"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-ink">{invoice.supplier?.name ?? "Supplier"}</p>
@@ -1277,7 +1309,7 @@ export function PilotPurchasesPage() {
                     </div>
                     <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-sm text-muted">
+                  <div className="mt-1 flex items-center justify-between text-sm text-muted">
                     <span>{formatMoney(invoice.totalAmount)}</span>
                     <span>{invoice.lineItems.length} invoice items</span>
                   </div>
@@ -1292,6 +1324,8 @@ export function PilotPurchasesPage() {
             ) : null}
           </Card>
         </div>
+      {inlineEditor ? <aside aria-label="Purchase editor" className="min-w-0 xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto rounded-2xl border border-line bg-white p-3" data-testid="purchase-editor-inline">{editorBody}</aside> : null}
+      </div>
 
       {receiveConfirmOpen ? (
         <Modal title="Confirm receipt" size="small" onClose={() => { if (!saving) setReceiveConfirmOpen(false); }}>
