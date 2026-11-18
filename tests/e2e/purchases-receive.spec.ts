@@ -359,6 +359,28 @@ test.describe("purchases master/detail at 1440px", () => {
   });
 });
 
+test.describe("history then New purchase at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("New purchase drops the open received purchase, so narrowing the window never shows the old receipt over the new editor", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push(
+      { id: 770, invoiceNumber: "CM-770", status: "Completed", invoiceDate: "2026-11-09", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(770, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-770/ }).click();
+    await expect(page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal")).toContainText("CM-770");
+    await page.getByRole("button", { name: "New purchase" }).click();
+    await expect(page.getByTestId("purchase-side-panel")).not.toContainText("CM-770");
+    await page.getByRole("button", { name: "Close panel" }).click();
+    await expect(page.getByTestId("purchase-detail-modal")).toHaveCount(0);
+    await expect(page.getByTestId("purchase-side-panel")).toContainText("choose New purchase");
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(page.getByTestId("purchase-detail-modal")).toHaveCount(0);
+  });
+});
+
 test.describe("purchase queue while a save is in flight at 1440px", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

@@ -1302,6 +1302,7 @@ export function PilotPurchasesPage() {
               disabled={navigationLocked}
               onClick={() => guardUnsaved(() => {
                 setSelectedId(null);
+                setDetailInvoice(null);
                 setReceiveMessage(null);
                 setDraft(buildBlankDraft());
                 clearOcrReview();
