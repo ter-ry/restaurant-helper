@@ -514,15 +514,6 @@ export function PilotWorkspaceLayout() {
                 <button
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
                   type="button"
-                  onClick={() => setDesktopSidebarCollapsed((current) => !current)}
-                  title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                >
-                  {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-                  {desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                </button>
-                <button
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
-                  type="button"
                   onClick={() => void refreshSession()}
                 >
                   <RefreshCw className="h-4 w-4" />
