@@ -201,6 +201,11 @@ export function PilotPurchasesPage() {
   const [saving, setSaving] = useState(false);
   // A void in flight also blocks switching purchases: its completion reloads the page state.
   const [voiding, setVoiding] = useState(false);
+  // Keep the received-purchase detail on the same component while a void is in flight, so resizing across
+  // the breakpoint cannot remount the void form and reset its busy flag and idempotency key.
+  const detailWideRef = useRef(wideLayout);
+  if (!voiding) detailWideRef.current = wideLayout;
+  const detailWide = voiding ? detailWideRef.current : wideLayout;
   // An action (open another purchase, start a new one, close the panel) waiting for the owner to confirm discarding unsaved edits.
   const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
   // A manual refresh in flight also blocks switching: it merges server data into whichever purchase is open.
@@ -1404,7 +1409,7 @@ export function PilotPurchasesPage() {
             ) : null}
           </Card>
         </div>
-        {wideLayout ? (
+        {detailWide ? (
           <div className="min-w-0" data-testid="purchase-side-panel">
             {editorOpen ? editorContent : detailInvoice ? (
               <PurchaseInvoiceDetailsModal inline invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
@@ -1437,7 +1442,7 @@ export function PilotPurchasesPage() {
           </div>
         </Modal>
       ) : null}
-      {!wideLayout ? <PurchaseInvoiceDetailsModal invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice?.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} /> : null}
+      {!detailWide ? <PurchaseInvoiceDetailsModal invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice?.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} /> : null}
     </div>
   );
 }

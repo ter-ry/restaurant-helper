@@ -431,6 +431,29 @@ test.describe("purchase queue while a void is in flight at 1440px", () => {
   });
 });
 
+test.describe("resizing while a void is in flight at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the void form is not remounted across the breakpoint, so the in-flight void is not duplicated", async ({ page }) => {
+    const world = newWorld();
+    world.delayMs = 800;
+    world.invoices.push(
+      { id: 750, invoiceNumber: "CM-750", status: "Completed", invoiceDate: "2026-11-09", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(750, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-750/ }).click();
+    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    await detail.getByLabel("Void reason").fill("Supplier sent the wrong goods");
+    await detail.getByRole("button", { name: "Void receipt" }).click();
+    await detail.getByRole("button", { name: "Yes, void this invoice" }).click();
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal")).toBeVisible();
+    await expect(page.getByText(/was voided and its inventory movements were reversed/).first()).toBeVisible();
+    expect(world.posts.filter((post) => post.path.endsWith("/void"))).toHaveLength(1);
+  });
+});
+
 test.describe("purchase queue while OCR extraction is pending at 1440px", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
