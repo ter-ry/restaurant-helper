@@ -90,6 +90,27 @@ SUPPLIER_SEED = [
     {"name": "Harbour Dry Goods", "category_focus": "Rice, noodles, pasta, sugar, oil", "contact_name": "Lena Gomez", "contact_phone": "416-555-0119", "contact_email": "orders@harbourdrygoods.ca", "ordering_notes": "Use replacement items when stock is tight."},
 ]
 
+DEMO_CATEGORY_SUPPLIERS = {
+    "Protein": "Oak Valley Meat Co",
+    "Dairy": "Fresh Dairy Toronto",
+    "Produce": "Northern Produce Market",
+    "Beverage": "GTA Beverage Supply",
+    "Drink base": "GTA Beverage Supply",
+    "Packaging": "Metro Packaging Co",
+    "Prep": "Harbour Dry Goods",
+    "Dry goods": "Harbour Dry Goods",
+    "Bakery": "Harbour Dry Goods",
+}
+
+
+def demo_supplier_for_category(organization_id: int, category: str):
+    """Pick the realistic demo supplier for a category (fallback: first supplier)."""
+    name = DEMO_CATEGORY_SUPPLIERS.get(category)
+    query = Supplier.query.filter_by(organization_id=organization_id)
+    supplier = query.filter_by(name=name).first() if name else None
+    return supplier or query.order_by(Supplier.id.asc()).first()
+
+
 INVENTORY_SEED = [
     {"name": "Chicken Breast", "category": "Protein", "stock_unit": "kg", "current_on_hand": 1.5, "min_quantity": 4, "par_level": 8, "preferred_supplier": "Oak Valley Meat Co", "latest_purchase_price": 7.80, "average_daily_usage": 1.2},
     {"name": "Rice", "category": "Dry goods", "stock_unit": "kg", "current_on_hand": 9, "min_quantity": 8, "par_level": 20, "preferred_supplier": "Harbour Dry Goods", "latest_purchase_price": 3.20, "average_daily_usage": 0.95},
@@ -865,7 +886,7 @@ def seed_official_demo_data(
         ("Butter", "Dairy", "kg", "8.75"),
     ]:
         if name not in items:
-            supplier = Supplier.query.filter_by(organization_id=organization.id).order_by(Supplier.id.asc()).first()
+            supplier = demo_supplier_for_category(organization.id, category)
             item = InventoryItem(
                 organization_id=organization.id,
                 location_id=location.id,
