@@ -50,3 +50,17 @@ def test_reseed_keeps_inventory_items_unique(app):
     with app.app_context():
         names = [i.name for i in InventoryItem.query.all()]
         assert len(names) == len(set(names))
+
+
+def test_reseed_prefers_canonical_menu_item_when_legacy_row_also_exists(app):
+    _seed(app)
+    with app.app_context():
+        legacy = MenuItem.query.filter_by(name="Iced Latte").one()
+        legacy.normalized_name = "i c e d l a t t e"
+        db.session.add(MenuItem(organization_id=legacy.organization_id, location_id=legacy.location_id, name="Iced Latte", normalized_name="iced latte", category="Coffee", selling_price=Decimal("5.50")))
+        db.session.commit()
+    _seed(app)  # must not hit the unique constraint
+    with app.app_context():
+        rows = MenuItem.query.filter_by(name="Iced Latte").all()
+        assert len(rows) == 2
+        assert sorted(r.normalized_name for r in rows) == ["i c e d l a t t e", "iced latte"]

@@ -351,10 +351,21 @@ def _legacy_normalized_name(value: str) -> str:
 
 
 def _match_normalized(query, column, value: str):
-    """Return the oldest row matching the current or legacy normalized form, healed to the current form."""
-    row = query.filter(column.in_({_normalize_name(value), _legacy_normalized_name(value)})).order_by(column.table.c.id.asc()).first()
-    if row is not None and row.normalized_name != _normalize_name(value):
-        row.normalized_name = _normalize_name(value)
+    """Return the canonical row if present, else a legacy-normalized row healed to the canonical key.
+
+    Preferring the canonical row keeps the unique (org, [location,] normalized_name)
+    constraint safe when both forms already exist in a tenant.
+    """
+    current = _normalize_name(value)
+    row = query.filter(column == current).order_by(column.table.c.id.asc()).first()
+    if row is not None:
+        return row
+    legacy = _legacy_normalized_name(value)
+    if legacy == current:
+        return None
+    row = query.filter(column == legacy).order_by(column.table.c.id.asc()).first()
+    if row is not None:
+        row.normalized_name = current
     return row
 
 
