@@ -967,7 +967,7 @@ def seed_official_demo_data(
     ]
     menu_by_name: dict[str, MenuItem] = {}
     for name, category, price, recipe_name in menu_specs:
-        menu = MenuItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=_normalize_name(name)).first()
+        menu = MenuItem.query.filter(MenuItem.organization_id == organization.id, MenuItem.location_id == location.id, MenuItem.normalized_name.in_(_normalized_candidates(name))).first()
         if menu is None:
             menu = MenuItem(organization_id=organization.id, location_id=location.id, name=name, normalized_name=_normalize_name(name), created_by_user_id=owner_id)
             db.session.add(menu)

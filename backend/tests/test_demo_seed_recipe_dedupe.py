@@ -33,3 +33,21 @@ def test_seed_demo_reseed_is_idempotent_and_removes_legacy_placeholders(app):
     assert len(rows) == before - 1
     assert Counter(n for n, _, _ in rows)["Berry Parfait"] == 1
     assert all(n > 0 for _, _, n in rows)
+
+
+def test_seed_demo_reseed_reuses_legacy_normalized_menu_items(app):
+    from backend.models import MenuItem
+    runner = app.test_cli_runner()
+    assert runner.invoke(args=["seed-demo"]).exit_code == 0
+    with app.app_context():
+        from backend.app import db
+        from backend.seed import _legacy_normalize_name
+        menus = MenuItem.query.all()
+        assert menus
+        for m in menus:
+            m.normalized_name = _legacy_normalize_name(m.name)
+        db.session.commit()
+        before = len(menus)
+    assert runner.invoke(args=["seed-demo"]).exit_code == 0
+    with app.app_context():
+        assert MenuItem.query.count() == before
