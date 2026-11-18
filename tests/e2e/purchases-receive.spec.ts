@@ -16,6 +16,7 @@ const MODULES = ["PURCHASES", "INVENTORY", "REORDER_PLANS", "DAILY_CLOSE", "STOC
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
+  { width: 1440, height: 900 },
 ];
 
 const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
@@ -33,8 +34,10 @@ type World = {
   /** Purchase list reads answered by the fake server (proves the page re-fetched after a mutation). */
   listReads: number;
   nextId: number;
+  /** Saved-draft preview answered per invoice id, so price-change warnings can be shown. */
+  previews: Record<number, { lineId: number; priceChangePercent: number | null }[]>;
 };
-const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600 });
+const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600, previews: {} });
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
 const ITEM = {
   id: 30, organizationId: 42, locationId: 7, supplierId: null, name: "Chicken Breast", normalizedName: "chicken breast", category: "Poultry", stockUnit: "kg",
@@ -70,6 +73,14 @@ async function installWorld(page: Page, world: World) {
       return json(route, {
         organizations: [{ organization: ORG, membershipRole: "owner", selected: true }], currentOrganizationId: ORG.id, currentMembershipId: 1,
         currentLocationId: 7, currentOrganization: bundle, ...bundle,
+      });
+    }
+    const preview = pathname.match(/^\/api\/pilot\/purchases\/invoices\/(\d+)\/preview$/);
+    if (preview && method === "GET") {
+      const lines = world.previews[Number(preview[1])] ?? [];
+      return json(route, {
+        invoiceId: Number(preview[1]), mutatesInventory: false, reviewSummary: {},
+        lines: lines.map((line) => ({ ...line, description: "Chicken breast", inventoryItemId: 30, inventoryItemName: "Chicken Breast", unit: "kg", quantityDelta: 1, currentOnHand: 12, afterOnHand: 13, averageUnitCostBefore: 4, averageUnitCostAfter: 4.1, receiptUnitCost: 5 })),
       });
     }
     if (pathname === "/api/pilot/suppliers") return json(route, { suppliers: SUPPLIERS });
@@ -207,7 +218,7 @@ for (const viewport of VIEWPORTS) {
       const detail = page.getByTestId("purchase-detail-modal");
       await expect(detail).toBeVisible();
       await expect(detail).toContainText("CM-2001");
-      await expect(detail).toContainText("Completed");
+      await expect(detail).toContainText("Received");
       await expect(detail).toContainText("$113.00"); // the persisted purchase 501, not the unsaved draft ($100 subtotal)
       expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
       expect(world.onHand).toBe(12);
@@ -243,3 +254,85 @@ for (const viewport of VIEWPORTS) {
     });
   });
 }
+
+const savedLine = (invoiceId: number, index: number) => ({
+  id: invoiceId * 10 + index, description: `Chicken breast ${index + 1}`, inventoryItemId: 30, purchaseUnit: "kg", inventoryUnit: "kg", conversionFactor: 1,
+  quantity: 1, unitPrice: 5, lineTotal: 5, confidence: 0.95, needsReview: false, note: "",
+});
+
+test.describe("purchases master/detail at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("a queue item opens in the right panel beside the queue, with pinned actions and a price-change warning", async ({ page }) => {
+    const world = newWorld();
+    const lines = Array.from({ length: 8 }, (_, index) => savedLine(700, index));
+    world.invoices.push({ id: 700, invoiceNumber: "CM-700", status: "Draft", invoiceDate: "2026-11-10", subtotal: 40, tax: 0, totalAmount: 40, lineItems: lines });
+    world.previews[700] = [{ lineId: lines[0].id, priceChangePercent: 12.5 }, { lineId: lines[1].id, priceChangePercent: 1.2 }];
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+
+    const panel = page.getByTestId("purchase-side-panel");
+    await expect(panel).toContainText("Select a purchase to review it here");
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-700/ }).click();
+
+    const editor = panel.getByTestId("purchase-editor-card");
+    await expect(editor).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0); // a panel, not a modal
+    const queueBox = await page.getByTestId("purchase-queue").boundingBox();
+    const panelBox = await panel.boundingBox();
+    expect(queueBox && panelBox && queueBox.x + queueBox.width <= panelBox.x + 1).toBe(true); // side by side, queue still visible
+
+    await expect(editor.getByText("Price up 12.5% vs last receipt")).toBeVisible(); // material change only
+    await expect(editor.getByText(/Price (up|down) 1\.2%/)).toHaveCount(0);
+    await expect(editor.getByTestId("purchase-line-7")).toBeAttached();
+    await expect(page.getByRole("button", { name: /CM-700/ })).toHaveAttribute("aria-current", "true");
+
+    // Pinned: the action bar stays in view while the long line list scrolls, and acts on the saved draft.
+    const bar = editor.getByTestId("purchase-action-bar");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(bar).toBeInViewport();
+    await editor.getByLabel("Invoice number").fill("CM-700A");
+    await bar.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Invoice CM-700A saved successfully.").first()).toBeVisible();
+    expect(world.posts.filter((post) => post.method === "PATCH")).toHaveLength(1);
+    await expectNoOverflow(page);
+  });
+
+  test("Save & receive from the pinned bar still asks for confirmation and receives once", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push({ id: 710, invoiceNumber: "CM-710", status: "Draft", invoiceDate: "2026-11-10", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(710, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-710/ }).click();
+    await page.getByTestId("purchase-action-bar").getByRole("button", { name: "Save & receive" }).click();
+    await page.getByRole("dialog", { name: "Confirm receipt" }).getByRole("button", { name: "Confirm receive" }).click();
+    await expect(page.getByText(/received into inventory/).first()).toBeVisible();
+    expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(1);
+    expect(world.invoices[0].status).toBe("Completed");
+    await expect(page.getByTestId("purchase-side-panel").getByTestId("purchase-editor-card")).toHaveCount(0);
+  });
+
+  test("arrow keys move between queue items and a completed purchase opens inline with one status vocabulary", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push(
+      { id: 720, invoiceNumber: "CM-720", status: "Draft", invoiceDate: "2026-11-10", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(720, 0)] },
+      { id: 721, invoiceNumber: "CM-721", status: "Draft", invoiceDate: "2026-11-11", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(721, 0)] },
+      { id: 722, invoiceNumber: "CM-722", status: "Completed", invoiceDate: "2026-11-09", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(722, 0)] },
+    );
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    const queue = page.getByTestId("purchase-queue");
+    await queue.getByRole("button", { name: /CM-720/ }).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(queue.getByRole("button", { name: /CM-721/ })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(queue.getByRole("button", { name: /CM-722/ })).toBeFocused();
+    await expect(queue.getByRole("button", { name: /CM-722/ })).toContainText("Received");
+    await page.keyboard.press("Enter");
+    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    await expect(detail).toContainText("CM-722");
+    await expect(detail).toContainText("Received");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(queue).toBeVisible();
+  });
+});
