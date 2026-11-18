@@ -84,9 +84,13 @@ async function installWorld(page: Page, world: World) {
     }
     if (pathname === "/api/pilot/purchases" && method === "GET") {
       world.listReads += 1;
-      if (world.listDelayMs) await sleep(world.listDelayMs);
+      // The response reflects the server at request time, even when it is delivered late (a stale snapshot).
+      const snapshot = world.invoices.map(invoiceJson);
+      const lateBy = world.listDelayMs;
+      world.listDelayMs = 0; // only the next read is delayed
+      if (lateBy) await sleep(lateBy);
       return json(route, {
-        invoices: world.invoices.map(invoiceJson), suppliers: [{ id: 3, name: "Cedar Meats" }], purchaseLines: [], priceChanges: [], summary: {},
+        invoices: snapshot, suppliers: [{ id: 3, name: "Cedar Meats" }], purchaseLines: [], priceChanges: [], summary: {},
         exportReadiness: { readyForCsv: 0, needsReview: 0, needsMapping: 0, quickBooksFutureOnly: true },
       });
     }
@@ -569,3 +573,25 @@ for (const viewport of VIEWPORTS) {
     });
   });
 }
+
+test.describe("a stale refresh response at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("does not overwrite the queue after a purchase was received in the meantime", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push({ id: 800, invoiceNumber: "CM-800", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(800, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    const queue = page.getByTestId("purchase-queue");
+    await queue.getByRole("button", { name: /CM-800/ }).click();
+    world.listDelayMs = 1500; // the refresh read is answered late with the pre-receive snapshot
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByTestId("purchase-action-bar").getByRole("button", { name: "Save & receive" }).click();
+    await page.getByRole("dialog", { name: "Confirm receipt" }).getByRole("button", { name: "Confirm receive" }).click();
+    await expect(page.getByText(/received into inventory/).first()).toBeVisible();
+    expect(world.invoices[0].status).toBe("Completed");
+    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled({ timeout: 10000 }); // the late refresh has finished
+    await expect(queue.getByTestId("purchase-history-card").getByRole("button", { name: /CM-800/ })).toContainText("Received");
+    await expect(queue.getByTestId("purchase-review-card").getByRole("button", { name: /CM-800/ })).toHaveCount(0); // never back as a draft
+  });
+});

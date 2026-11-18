@@ -186,6 +186,8 @@ export function PilotPurchasesPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const editorPanelRef = useRef<HTMLDivElement | null>(null);
+  // Bumped whenever a load or refresh starts; a manual refresh that was overtaken (e.g. by a save/receive reload) is discarded.
+  const dataEpoch = useRef(0);
   const wideLayout = useWideLayout();
   const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
@@ -259,6 +261,7 @@ export function PilotPurchasesPage() {
   }, [data?.purchaseLines]);
 
   const load = async (preferredInvoiceId: number | null | undefined = requestedInvoiceId): Promise<boolean> => {
+    dataEpoch.current += 1;
     setLoading(true);
     setError(null);
 
@@ -303,11 +306,14 @@ export function PilotPurchasesPage() {
       void load();
       return;
     }
+    const epoch = ++dataEpoch.current;
     setLoading(true);
     setRefreshing(true);
     setError(null);
     try {
       const [purchases, inventory] = await Promise.all([fetchPilotPurchases(), fetchPilotInventory()]);
+      // A save, receive, void or newer load started while this read was in flight: its result is newer than this snapshot.
+      if (epoch !== dataEpoch.current) return;
       // The cached copy of the open draft is replaced below; tell the editor-sync effect to keep the unsaved edits.
       if (editorOpen && selectedId !== null && purchases.invoices.some((invoice) => invoice.id === selectedId)) keepEditorForInvoiceId.current = selectedId;
       setData(purchases);
@@ -317,9 +323,10 @@ export function PilotPurchasesPage() {
         if (fresh) setDetailInvoice(fresh);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not refresh purchases.");
+      if (epoch === dataEpoch.current) setError(err instanceof Error ? err.message : "Could not refresh purchases.");
     } finally {
-      setLoading(false);
+      // An overtaking load clears its own loading state.
+      if (epoch === dataEpoch.current) setLoading(false);
       setRefreshing(false);
     }
   };
