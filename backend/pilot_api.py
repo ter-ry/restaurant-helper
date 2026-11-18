@@ -110,10 +110,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _start_of_week(now: datetime | None = None) -> datetime:
-    current = now or _now()
-    start = current - timedelta(days=current.weekday())
-    return datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+def _business_week_window(location: RestaurantLocation | None, now: datetime | None = None):
+    """Current calendar week (Monday-Sunday) in the location's business timezone, as (monday, sunday) dates (#351)."""
+    now = now or _now()
+    try:
+        zone = ZoneInfo((location.timezone if location else None) or "America/Toronto")
+    except ZoneInfoNotFoundError:
+        zone = timezone.utc
+    today = now.astimezone(zone).date()
+    monday = today - timedelta(days=today.weekday())
+    return monday, monday + timedelta(days=6)
 
 
 def _aware_datetime(value: datetime | None) -> datetime | None:
@@ -406,7 +412,7 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
         end_at=today_start + timedelta(days=1),
         restaurant_location_id=location.id,
     )
-    start = _start_of_week()
+    week_start, week_end = _business_week_window(location)
     invoices = (
         PurchaseInvoice.query.filter_by(location_id=location_id)
         .options(
@@ -466,7 +472,7 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     if "DAILY_CLOSE" in enabled_modules and square_connection and has_square_sales and (today_daily_close is None or today_daily_close.status == "DRAFT"):
         daily_close_attention = 1
     invoices = [invoice for invoice in invoices if invoice.status != VOIDED_INVOICE_STATUS]  # voided invoices are not spend (#232)
-    week_invoices = [invoice for invoice in invoices if invoice.invoice_date >= start.date()]
+    week_invoices = [invoice for invoice in invoices if week_start <= invoice.invoice_date <= week_end]
     week_spend = round(sum(float(invoice.total_amount) for invoice in week_invoices), 2)
     month_start = _business_month_start(location)
     month_invoices = [invoice for invoice in invoices if _is_month_to_date_spend(invoice, month_start)]
@@ -488,16 +494,21 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
     top_reorder = [entry for entry in top_reorder if entry is not None]
     top_reorder.sort(key=lambda entry: (entry["stockStatus"] != "Out of stock", entry["stockStatus"] != "Reorder now", entry["suggestedQuantity"]), reverse=False)
     recommendation_count = len(top_reorder)
+    urgent_reorder_count = inventory_summary["inventoryReorderNowCount"] + inventory_summary["inventoryOutOfStockCount"]
     return {
         "summary": {
             "weeklyInvoiceCount": len(week_invoices),
             "weeklyInvoiceSpend": week_spend,
+            "weeklyWindow": {"label": "This week", "startDate": week_start.isoformat(), "endDate": week_end.isoformat()},
             "monthlyInvoiceCount": len(month_invoices),
             "monthlyInvoiceSpend": round(sum(float(invoice.total_amount) for invoice in month_invoices), 2),
             "invoiceReviewQueueCount": len(draft_invoices),
             **inventory_summary,
             "inventoryItemsToReorderCount": recommendation_count,
             "inventoryRecommendationCount": recommendation_count,
+            # Non-overlapping reorder categories (#351): urgent = out of stock or at/below minimum; running low = above minimum but below PAR.
+            "inventoryUrgentReorderCount": inventory_summary["inventoryReorderNowCount"] + inventory_summary["inventoryOutOfStockCount"],
+            "inventoryRunningLowCount": inventory_summary["inventoryLowStockCount"],
             "recentPriceChangeCount": len(recent_price_changes),
         },
         "recentInvoices": [serialize_purchase_invoice(invoice) for invoice in recent_invoices],
@@ -518,7 +529,7 @@ def _dashboard_snapshot(location_id: int, *, location: RestaurantLocation | None
             "export": "Not ready",
         },
             "operationalAttention": {
-                "reorder": {"count": recommendation_count, "severity": "urgent" if recommendation_count else "none"},
+                "reorder": {"count": urgent_reorder_count, "severity": "urgent" if urgent_reorder_count else "none"},
             "square": {**square_attention, "severity": "urgent" if square_attention["syncErrorCount"] else "attention" if square_attention["unmappedVariationCount"] else "none"},
             "dailyClose": {"count": daily_close_attention, "severity": "attention" if daily_close_attention else "none"},
         },
