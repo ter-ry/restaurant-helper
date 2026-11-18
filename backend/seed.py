@@ -1015,7 +1015,9 @@ def seed_official_demo_data(
     connection.square_merchant_id = "demo-harbour-kitchen"
     connection.status = "connected"
     connection.sync_status = "demo"
-    connection.sync_error = "Demo-only simulated Square catalog and order history; no merchant account is connected."
+    # Leave sync_error empty: any value is rendered as "Temporarily unavailable".
+    # The UI explains the simulated connection from environment == "demo".
+    connection.sync_error = ""
     connection.access_token_ciphertext = ""
     connection.refresh_token_ciphertext = ""
 
