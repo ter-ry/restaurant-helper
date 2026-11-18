@@ -85,6 +85,8 @@ export function OwnerReportsPage() {
   const latestInvoice = data?.purchases.invoices[0] ?? null;
   const latestPriceChange = (data?.dashboard.recentPriceChanges[0] as DashboardPriceChangeRow | undefined) ?? null;
 
+  const weeklyWindow = (data?.dashboard.summary as Record<string, unknown> | undefined)?.weeklyWindow as { startDate?: string; endDate?: string } | undefined;
+  const weekRange = weeklyWindow?.startDate && weeklyWindow?.endDate ? `${formatDate(weeklyWindow.startDate)} – ${formatDate(weeklyWindow.endDate)}` : null;
   const downloadPrefix = safeFilenamePart(activeOrganization?.name ?? "organization");
   const summaryReady = summaryRows.some((row) => row.section === "Monthly owner report" && row.status === "Ready");
 
@@ -204,9 +206,9 @@ export function OwnerReportsPage() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Weekly invoice spend</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice spend, this week</p>
           <p className="mt-3 text-2xl font-bold text-ink">{formatCurrency(data?.dashboard.summary.weeklyInvoiceSpend ?? 0)}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.weeklyInvoiceCount ?? 0} invoices this week</p>
+          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.weeklyInvoiceCount ?? 0} invoices{weekRange ? ` · ${weekRange}` : ""}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoices ready for CSV</p>
@@ -214,9 +216,9 @@ export function OwnerReportsPage() {
           <p className="mt-2 text-sm leading-6 text-muted">{data?.purchases.exportReadiness.needsReview ?? 0} still need review</p>
         </Card>
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory items to reorder</p>
-          <p className="mt-3 text-2xl font-bold text-ink">{data?.dashboard.summary.inventoryItemsToReorderCount ?? 0}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.inventoryLowStockCount ?? 0} low stock / {data?.dashboard.summary.inventoryOutOfStockCount ?? 0} out of stock</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Urgent reorder items</p>
+          <p className="mt-3 text-2xl font-bold text-ink">{data?.dashboard.summary.inventoryUrgentReorderCount ?? data?.dashboard.summary.inventoryItemsToReorderCount ?? 0}</p>
+          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.inventoryUrgentReorderCount != null ? `Out of stock or at/below minimum · ${data?.dashboard.summary.inventoryRunningLowCount ?? 0} more running low (below PAR)` : `${data?.dashboard.summary.inventoryLowStockCount ?? 0} low stock / ${data?.dashboard.summary.inventoryOutOfStockCount ?? 0} out of stock`}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit events</p>

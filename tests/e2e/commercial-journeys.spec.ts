@@ -2447,7 +2447,7 @@ test("owner reports and exports surface authenticated reporting data", async ({ 
   await page.goto("/owner/reports", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
   await expect(page.getByText("Demo Bistro", { exact: true })).toBeVisible();
-  await expect(page.getByText("Weekly invoice spend")).toBeVisible();
+  await expect(page.getByText("Invoice spend, this week")).toBeVisible();
   await expect(page.getByRole("button", { name: "Download purchase CSV" })).toBeVisible();
   await expect(page.getByText("Dairy Co leads spending this period.")).toBeVisible();
 
