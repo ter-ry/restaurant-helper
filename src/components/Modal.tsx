@@ -1,5 +1,9 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+// Open modals, oldest first. Only the topmost one reacts to the keyboard, so Escape in a confirmation dialog
+// closes just that dialog and never the editor underneath it.
+const openModals: symbol[] = [];
+
 export function Modal({ title, children, onClose, labelledBy, size = "large" }: { title: string; children: ReactNode; onClose: () => void; labelledBy?: string; size?: "small" | "large" | "full" | "fullscreen" }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -7,8 +11,11 @@ export function Modal({ title, children, onClose, labelledBy, size = "large" }: 
   onCloseRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    const token = Symbol("modal");
+    openModals.push(token);
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      if (openModals[openModals.length - 1] !== token) return;
       if (event.key === "Escape") { onCloseRef.current(); return; }
       if (event.key !== "Tab") return;
       const dialog = closeRef.current?.closest("section");
@@ -20,7 +27,13 @@ export function Modal({ title, children, onClose, labelledBy, size = "large" }: 
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
-    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", onKeyDown); previous?.focus(); };
+    return () => {
+      const index = openModals.indexOf(token);
+      if (index >= 0) openModals.splice(index, 1);
+      if (openModals.length === 0) document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
   }, []);
   const width = size === "small" ? "max-w-lg" : size === "full" ? "max-w-[98vw]" : size === "fullscreen" ? "max-w-none" : "max-w-5xl";
   const shell = size === "fullscreen" ? "h-full max-h-none rounded-none" : "max-h-[calc(100vh-1rem)] rounded-t-3xl sm:rounded-3xl";
