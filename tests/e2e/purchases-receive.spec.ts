@@ -599,7 +599,6 @@ for (const width of [1440, 1280, 768, 390]) {
       const barBox = await editor.getByTestId("purchase-action-bar").boundingBox();
       expect(lastLine && barBox && barBox.y >= lastLine.y + lastLine.height - 1).toBe(true);
       await expectNoOverflow(page);
-      if (process.env.PURCHASE_SHOTS) await page.screenshot({ path: `${process.env.PURCHASE_SHOTS}/ocr-five-lines-${width}.png` });
     });
   });
 }
