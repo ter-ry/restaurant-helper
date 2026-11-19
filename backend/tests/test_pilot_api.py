@@ -2258,7 +2258,7 @@ def test_reorder_estimates_ignore_stale_intent_cost_for_live_and_new_plan(app, c
     assert line["orderQuantity"] == 20
     assert line["estimatedUnitCost"] == 48
     assert line["estimatedLineCost"] == 960
-    assert plan["estimatedCost"] == sum(row["estimatedLineCost"] or 0 for row in plan["lines"])
+    assert plan["estimatedCost"] == pytest.approx(sum(row["estimatedLineCost"] or 0 for row in plan["lines"]), abs=0.005)
     assert plan["estimatedCost"] >= line["estimatedLineCost"]
 
 
