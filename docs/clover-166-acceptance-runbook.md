@@ -116,6 +116,24 @@ $OrderTypeId = Read-Host "Order type id chosen from the table"; Save-State order
 ```
 **Stop if** the item is hidden, deleted or absent, or no order type is returned.
 
+### Stage 0E. Reuse probe: can an existing token reach Ecommerce? (two GETs; no Clover write; run before creating any key pair)
+Official basis: Clover's Ecommerce flow gets the public key with `GET https://scl-sandbox.dev.clover.com/pakms/apikey` and an OAuth `access_token` as Bearer (https://docs.clover.com/dev/docs/generate-ecommerce-api-key-or-pakms-key, https://docs.clover.com/dev/docs/ecommerce-api-payments-flow), and every Ecommerce endpoint needs an OAuth-generated token with specific permissions. Pay for an order needs Read customers, Read inventory, Read merchant, Read orders, Read payments and Online payments; Get orders needs Read orders and Read payments (https://docs.clover.com/docs/ecommerce-app-permissions). The docs do not say whether a merchant-specific **test API token** (the kind used for the GET evidence) is accepted by these Ecommerce endpoints. This probe finds out safely.
+```powershell
+# (shared header first)
+$t = Read-Secret "Token to probe (Platform test API token first)"
+function Probe($path){ try { $r = Invoke-RestMethod -Method Get -Uri "$Ecom$path" -Headers @{Authorization="Bearer $t";Accept="application/json"} -TimeoutSec 30; [pscustomobject]@{ok=$true;r=$r} }
+  catch { $c = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { "none" }; [pscustomobject]@{ok=$false;code=$c} } }
+try {
+  $k = Probe "/pakms/apikey"
+  if ($k.ok) { $key = "$($k.r.apiAccessKey)"; "PAKMS: HTTP 200 active=$($k.r.active) merchantUuid=$($k.r.merchantUuid) key=$($key.Substring(0,4))...$($key.Substring($key.Length-4)) (len $($key.Length))"
+               if ($k.r.merchantUuid -ne $Mid) { Write-Host "STOP: key belongs to another merchant" } else { $global:CloverPublicKey = $key } }
+  else { "PAKMS: HTTP $($k.code)" }
+  $o = Probe "/v1/orders?limit=1"
+  if ($o.ok) { "Ecommerce GET /v1/orders: HTTP 200 (Read orders + Read payments are effective for this token)" } else { "Ecommerce GET /v1/orders: HTTP $($o.code)" }
+} finally { Remove-Variable t,k,o,key -ErrorAction SilentlyContinue }
+```
+Read the result: **PAKMS 200 and merchantUuid equals `V7SXJVSGY5051`**: the public key is in this window's memory only (`$global:CloverPublicKey`; stage 3 uses it automatically). **/v1/orders 200**: this token is Ecommerce-capable for reading. A token that passes both is the first candidate to try as the stage 4 Bearer, because the Clover flow page names the OAuth access token for the charge Bearer. Whether it also carries Online payments is only learned by the pay call itself; there is no safe read-only probe for that permission, so stage 4 remains gated. **401**: the token type is not accepted by Ecommerce (expected for a plain test API token if Clover restricts it to OAuth tokens). **403**: the token is accepted but the app or token lacks permissions; the names above are what to enable under Requested Permissions in the Global Developer Dashboard, and the merchant must then reinstall or re-consent so a new token carries them. 404 on `/v1/orders` is not a failure of the key; report it. Do not generate anything new yet.
+
 ### Stage 1. AUTHORIZATION GATE G0a: checkout preview (POST; creates nothing)
 ```powershell
 # (shared header first)
@@ -149,7 +167,7 @@ Expected: HTTP 200 on create, id starting `ORD`, GET shows `paymentState` of `OP
 ### Stage 3. AUTHORIZATION GATE G0c: tokenize the Sandbox test card (POST; no charge)
 ```powershell
 # (shared header first)
-$pub = Read-Secret "Ecommerce PUBLIC key"
+$pub = if ($global:CloverPublicKey) { $global:CloverPublicKey } else { Read-Secret "Ecommerce PUBLIC key" }
 try {
   $card = @{ card = @{ number="4242424242424242"; exp_month="12"; exp_year="2035"; cvv="123"; first6="424242"; last4="4242"; brand="VISA" } }
   $t = Invoke-RestMethod -Method Post -Uri "$Tok/v1/tokens" -ContentType "application/json" -Headers @{ apikey=$pub; Accept="application/json" } -Body ($card | ConvertTo-Json -Compress) -TimeoutSec 30
