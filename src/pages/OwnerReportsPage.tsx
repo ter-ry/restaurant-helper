@@ -206,14 +206,14 @@ export function OwnerReportsPage() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice spend, this week</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice spend, this week{weekRange ? "" : " (dates unavailable)"}</p>
           <p className="mt-3 text-2xl font-bold text-ink">{formatCurrency(data?.dashboard.summary.weeklyInvoiceSpend ?? 0)}</p>
           <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.weeklyInvoiceCount ?? 0} invoices{weekRange ? ` · ${weekRange}` : ""}</p>
         </Card>
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoices ready for CSV</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Received invoices ready for CSV</p>
           <p className="mt-3 text-2xl font-bold text-ink">{data?.purchases.exportReadiness.readyForCsv ?? 0}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{data?.purchases.exportReadiness.needsReview ?? 0} still need review</p>
+          <p className="mt-2 text-sm leading-6 text-muted">All dates, received only · {data?.purchases.exportReadiness.needsReview ?? 0} draft invoices still need review</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">Urgent reorder items</p>
@@ -253,7 +253,7 @@ export function OwnerReportsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-ink">{supplier.supplier}</p>
-                    <p className="mt-1 text-sm leading-6 text-muted">{supplier.invoiceCount} invoices in the current period</p>
+                    <p className="mt-1 text-sm leading-6 text-muted">{supplier.invoiceCount} invoices, all dates (not voided)</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-ink">{formatCurrency(supplier.spend)}</p>

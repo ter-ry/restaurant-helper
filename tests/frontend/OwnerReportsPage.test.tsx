@@ -194,6 +194,8 @@ describe("OwnerReportsPage", () => {
     expect(screen.getByText("Demo Bistro")).toBeVisible();
     expect(screen.getByText("Purchase CSV")).toBeVisible();
     expect(screen.getByText("Dairy Co leads spending this period.")).toBeVisible();
+    expect(screen.getByText("Received invoices ready for CSV")).toBeVisible();
+    expect(screen.getAllByText(/invoices, all dates/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Download summary CSV" }));
     expect(mocks.downloadCsvFile).toHaveBeenCalledWith(
