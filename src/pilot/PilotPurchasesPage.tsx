@@ -207,7 +207,6 @@ export function PilotPurchasesPage() {
   if (!voiding) detailWideRef.current = wideLayout;
   const detailWide = voiding ? detailWideRef.current : wideLayout;
   // An action (open another purchase, start a new one, close the panel) waiting for the owner to confirm discarding unsaved edits.
-  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
   // A manual refresh in flight also blocks switching: it merges server data into whichever purchase is open.
   const [refreshing, setRefreshing] = useState(false);
   // Which action is in flight, so only that button announces progress ("Receiving..." must not show for a draft save).
@@ -362,11 +361,6 @@ export function PilotPurchasesPage() {
     }
   }, [selectedInvoice]);
 
-  // In the side-panel layout the editor appears next to the queue: move keyboard focus into it when it opens or changes.
-  useEffect(() => {
-    if (wideLayout && editorOpen) editorPanelRef.current?.focus();
-  }, [wideLayout, editorOpen, selectedId]);
-
   const closeDetailInvoice = () => {
     setDetailInvoice(null);
     navigate(location.pathname, { replace: true });
@@ -384,16 +378,8 @@ export function PilotPurchasesPage() {
   const initialLoading = loading && !hasLoaded;
   // Saves, voids, OCR extraction and supplier/item creation all change the open purchase the open purchase when they finish, so none may overlap a switch.
   const navigationLocked = saving || voiding || ocrLoading || supplierSaving || inventoryItemSaving || refreshing;
-  // Side-panel layout only: the queue sits beside the editor, so leaving it must never silently drop unsaved edits.
-  const hasUnsavedEdits = () => {
-    if (!wideLayout || !editorOpen || finalizedStatus) return false;
-    if (!selectedInvoice) return draft.extractionStatus === "ocr" || JSON.stringify(draft) !== JSON.stringify(buildBlankDraft());
-    return JSON.stringify(draft) !== JSON.stringify(invoiceToDraft(selectedInvoice));
-  };
-  const guardUnsaved = (action: () => void) => {
-    if (hasUnsavedEdits()) setPendingDiscard(() => action);
-    else action();
-  };
+  // The editor is a dedicated overlay, so the queue cannot be used while it is open and no switch-away guard is needed.
+  const guardUnsaved = (action: () => void) => action();
   const finalizedStatus = draft.status === "Completed" || draft.status === "Corrected";
   const mappedLineCount = draft.lineItems.filter((line) => line.inventoryItemId).length;
   const unresolvedLineCount = draft.lineItems.filter((line) => !line.inventoryItemId).length;
@@ -968,9 +954,9 @@ export function PilotPurchasesPage() {
       ? "Check the highlighted items, then receive"
       : "Everything reconciles";
   const editorContent = (
-    <div className={ocrPreviewUrl ? `grid gap-5 ${wideLayout ? "2xl:grid-cols-[minmax(16rem,0.7fr)_minmax(0,1.3fr)]" : "xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]"}` : ""}>
+    <div className={ocrPreviewUrl ? "grid gap-5 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]" : ""}>
       {ocrPreviewUrl ? (
-        <aside className={`self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 ${wideLayout ? "2xl:sticky 2xl:top-0" : "xl:sticky xl:top-0"}`}>
+        <aside className="self-start rounded-2xl border border-brand-100 bg-brand-50 p-4 xl:sticky xl:top-0">
           <p className="text-xs font-bold uppercase tracking-wide text-brand-800">Original document</p>
           <p className="mt-1 text-sm text-muted">{ocrPreviewName} · Compare this source with the editable fields.</p>
           <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 underline" href={ocrPreviewUrl} target="_blank" rel="noreferrer">Open document in a new tab</a>
@@ -994,7 +980,6 @@ export function PilotPurchasesPage() {
           <div className="flex flex-wrap items-center gap-2 text-xs sm:justify-end">
             <Badge tone={editorStatus.tone}>{editorStatus.label}</Badge>
             <Badge tone={unresolvedLineCount > 0 ? "warning" : "success"}>{mappedLineCount} of {draft.lineItems.length} items mapped</Badge>
-            {wideLayout ? <Button variant="ghost" type="button" disabled={navigationLocked} onClick={() => guardUnsaved(() => setEditorOpen(false))}>Close panel</Button> : null}
           </div>
         </div>
 
@@ -1102,7 +1087,7 @@ export function PilotPurchasesPage() {
                     const labelClass = "text-[11px] font-bold uppercase tracking-wide text-muted";
                     return (
                       <div key={line.id ?? index} data-testid={`purchase-line-${index}`} className={`rounded-xl border bg-white p-3 ${materialPriceChange ? "border-amber-300" : line.inventoryItemId ? "border-line" : "border-amber-200"}`}>
-                        <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(15rem,auto)]">
+                        <div className="grid gap-2 sm:grid-cols-2">
                           <label className="block">
                             <span className={labelClass}>Description</span>
                             <input className="input mt-1" value={line.description} onChange={(event) => setLineDescription(index, event.target.value)} disabled={finalizedStatus} />
@@ -1116,7 +1101,7 @@ export function PilotPurchasesPage() {
                               ))}
                             </select><Button variant="secondary" type="button" disabled={finalizedStatus || ocrLoading} onClick={() => openInventoryItemCreator(index, line)}>+ Create</Button></div>
                           </label>
-                          <div className="grid grid-cols-3 gap-2 sm:col-span-2 2xl:col-span-1">
+                          <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:grid-cols-3">
                             <label className="block">
                               <span className={labelClass}>Quantity</span>
                               <input className="input mt-1 w-full" type="number" step="1" value={line.quantity} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, quantity: Number(event.target.value), lineTotal: Number(event.target.value) * Number(current.unitPrice || 0) }))} disabled={finalizedStatus} />
@@ -1125,7 +1110,7 @@ export function PilotPurchasesPage() {
                               <span className={labelClass}>Unit price</span>
                               <input className="input mt-1 w-full" type="number" step="1" value={line.unitPrice} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, unitPrice: Number(event.target.value), lineTotal: Number(current.quantity || 0) * Number(event.target.value) }))} disabled={finalizedStatus} />
                             </label>
-                            <label className="block">
+                            <label className="col-span-2 block sm:col-span-1">
                               <span className={labelClass}>Line total</span>
                               <input className="input mt-1 w-full font-semibold" type="number" step="1" value={line.lineTotal} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, lineTotal: Number(event.target.value) }))} disabled={finalizedStatus} />
                             </label>
@@ -1163,7 +1148,7 @@ export function PilotPurchasesPage() {
                           </p>
                         ) : null}
                         <div className="mt-2 border-t border-dashed border-line pt-2" role="group" aria-label={`Line ${index + 1} units and conversion`}>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                             <label className="block">
                               <span className={labelClass}>Purchase unit</span>
                               <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
@@ -1182,7 +1167,7 @@ export function PilotPurchasesPage() {
                                 ))}
                               </datalist>
                             </label>
-                            <label className="block">
+                            <label className="col-span-2 block sm:col-span-1">
                               <span className={labelClass}>Conversion</span>
                               <input className="input mt-1" type="number" step="1" value={line.conversionFactor} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
                             </label>
@@ -1263,7 +1248,7 @@ export function PilotPurchasesPage() {
           ) : null}
         </div>
         {!finalizedStatus ? (
-          <div data-testid="purchase-action-bar" className={`sticky z-10 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] ${wideLayout ? "bottom-0" : "-bottom-4"}`}>
+          <div data-testid="purchase-action-bar" className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
             <p className={`min-w-0 text-sm font-semibold ${reviewSummary.blockers.length ? "text-danger" : "text-muted"}`}>{footerSummary}</p>
             <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
               <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
@@ -1329,7 +1314,7 @@ export function PilotPurchasesPage() {
 
       </Card>
 
-      {editorOpen && !wideLayout ? <Modal title={ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor"} size="full" onClose={() => setEditorOpen(false)}>
+      {editorOpen ? <Modal title={ocrPreviewUrl ? "Review uploaded invoice" : "Purchase editor"} size="full" onClose={() => setEditorOpen(false)}>
         {editorContent}
       </Modal> : null}
 
@@ -1411,7 +1396,7 @@ export function PilotPurchasesPage() {
         </div>
         {detailWide ? (
           <div className="min-w-0" data-testid="purchase-side-panel">
-            {editorOpen ? editorContent : detailInvoice ? (
+            {detailInvoice && !editorOpen ? (
               <PurchaseInvoiceDetailsModal inline invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
             ) : (
               <Card className="p-8 text-center">
@@ -1423,15 +1408,6 @@ export function PilotPurchasesPage() {
         ) : null}
       </div>
 
-      {pendingDiscard ? (
-        <Modal title="Discard unsaved changes?" size="small" onClose={() => setPendingDiscard(null)}>
-          <p className="text-sm text-muted">This purchase has edits that are not saved. Save a draft first, or discard the edits and continue.</p>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={() => setPendingDiscard(null)}>Keep editing</Button>
-            <Button type="button" onClick={() => { const action = pendingDiscard; setPendingDiscard(null); action(); }}>Discard changes</Button>
-          </div>
-        </Modal>
-      ) : null}
       {receiveConfirmOpen ? (
         <Modal title="Confirm receipt" size="small" onClose={() => { if (!saving) setReceiveConfirmOpen(false); }}>
           <p className="text-sm text-muted">This will update inventory for {draft.lineItems.length} mapped invoice {draft.lineItems.length === 1 ? "line" : "lines"} and record the receipt. Confirm only after reviewing the quantities and costs.</p>
