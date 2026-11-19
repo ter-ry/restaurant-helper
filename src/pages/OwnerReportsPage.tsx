@@ -246,7 +246,7 @@ export function OwnerReportsPage() {
 
       <section className="mt-8 grid gap-6 xl:grid-cols-2">
         <div>
-          <SectionHeader title="Supplier spend" description="The biggest vendor buckets that feed owner reporting." />
+          <SectionHeader title="Supplier spend (all recorded invoices)" description="Top three suppliers by total of all non-voided invoices, not limited to this week." />
           <div className="space-y-3">
             {((data?.dashboard.supplierSpend as DashboardSupplierSpendRow[] | undefined) ?? []).slice(0, 5).map((supplier) => (
               <Card key={supplier.supplier} className="p-4">
