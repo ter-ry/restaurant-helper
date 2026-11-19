@@ -602,3 +602,34 @@ for (const width of [1440, 1280, 768, 390]) {
     });
   });
 }
+
+test.describe("closing a confirmation over the editor at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("Escape in Confirm receipt and in Create inventory item leaves the editor and its unsaved values in place", async ({ page }) => {
+    const world = newWorld();
+    world.invoices.push({ id: 820, invoiceNumber: "CM-820", status: "Draft", invoiceDate: "2026-11-11", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(820, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-820/ }).click();
+    const editor = page.getByRole("dialog", { name: "Purchase editor" });
+    await editor.getByLabel("Invoice number").fill("CM-820-EDITED");
+
+    await editor.getByRole("button", { name: "Save & receive" }).click();
+    const confirm = page.getByRole("dialog", { name: "Confirm receipt" });
+    await expect(confirm).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(editor).toBeVisible();
+    await expect(editor.getByLabel("Invoice number")).toHaveValue("CM-820-EDITED");
+
+    await editor.getByRole("button", { name: "+ Create" }).first().click();
+    const create = page.getByRole("dialog", { name: "Create inventory item" });
+    await expect(create).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(create).toHaveCount(0);
+    await expect(editor).toBeVisible();
+    await expect(editor.getByLabel("Invoice number")).toHaveValue("CM-820-EDITED");
+    expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
+  });
+});
