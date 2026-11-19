@@ -253,7 +253,7 @@ export function OwnerReportsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-ink">{supplier.supplier}</p>
-                    <p className="mt-1 text-sm leading-6 text-muted">{supplier.invoiceCount} invoices this month to date</p>
+                    <p className="mt-1 text-sm leading-6 text-muted">{supplier.invoiceCount} invoices, all dates (not voided)</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-ink">{formatCurrency(supplier.spend)}</p>
