@@ -1,9 +1,10 @@
 import { useRef, useState, type MouseEvent } from "react";
+import { purchaseStatus } from "./purchaseStatus";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { PilotApiError, type PilotPurchaseInvoice } from "../pilotApi";
-import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "../workspace/pilotWorkspaceUtils";
+import { formatDate, formatDateTime, formatMoney, formatNumber } from "../workspace/pilotWorkspaceUtils";
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
@@ -129,7 +130,9 @@ export function PurchaseInvoiceDetailsModal({
   onClose,
   onVoid,
   onOpenInvoice,
+  inline = false,
 }: {
+  inline?: boolean;
   invoice: PilotPurchaseInvoice | null;
   refreshFailure: string | null;
   refreshing: boolean;
@@ -147,12 +150,15 @@ export function PurchaseInvoiceDetailsModal({
       onClose();
     }
   };
-  const receivedLabel = invoice.status === "Completed" ? "Received" : invoice.status;
-  const statusToneOverride = invoice.status === "Completed" ? "success" : invoice.status === "Corrected" ? "warning" : statusTone(invoice.status);
+  const { label: receivedLabel, tone: statusToneOverride } = purchaseStatus(invoice);
+  // One root element either way, so the void form below keeps its state when the layout switches.
+  const rootProps = inline
+    ? { role: "region", "aria-label": "Purchase detail" }
+    : { className: "fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4", onMouseDown: closeOnBackdrop, role: "dialog", "aria-modal": true };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 sm:p-4" onMouseDown={closeOnBackdrop} role="dialog" aria-modal="true" data-testid="purchase-detail-modal">
-      <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+    <div {...rootProps} data-testid="purchase-detail-modal">
+      <div className={inline ? "flex w-full flex-col overflow-hidden rounded-2xl border border-line bg-slate-50" : "mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl"}>
         <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-4 sm:p-5">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Purchase history</p>
@@ -176,7 +182,7 @@ export function PurchaseInvoiceDetailsModal({
                   <SummaryRow label="Supplier" value={invoice.supplier?.name || "Unknown supplier"} />
                   <SummaryRow label="Invoice number" value={invoice.invoiceNumber || "Not saved"} />
                   <SummaryRow label="Invoice date" value={invoice.invoiceDate ? formatDate(invoice.invoiceDate) : "Not saved"} />
-                  <SummaryRow label="Status" value={invoice.status} />
+                  <SummaryRow label="Status" value={receivedLabel} />
                   <SummaryRow label="Subtotal" value={formatMoney(invoice.subtotal)} />
                   <SummaryRow label="Tax" value={formatMoney(invoice.tax)} />
                   <SummaryRow label="Total" value={formatMoney(invoice.totalAmount)} />
