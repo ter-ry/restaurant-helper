@@ -55,9 +55,9 @@ Recommendation, smallest safe set first; each is its own independently reviewed 
 
 | Batch | Content | Pre-freeze? | Risk |
 |---|---|---|---|
-| A | Single token definition (`:root` + `data-theme`), Tailwind colour aliases, theme set on `<html>` with `prefers-color-scheme` default and persisted choice. Light values equal today's so light looks unchanged; dark moves from black to slate | **Yes** | Medium: every dark screen changes at once; mitigated by screenshots and keeping the old overrides until batch C |
+| A | Single token definition (`:root` + `data-theme`), Tailwind colour aliases, theme set on `<html>` with `prefers-color-scheme` default and persisted choice. Light values are the proposed section 2 tokens, which differ slightly from today's `tailwind.config.ts` (muted `#5B6778` vs `#64748B`, line `#E3E7ED` vs `#E2E8F0`, page `#F6F7F9` vs slate-50), so light shifts subtly; if the owner wants zero light change in A, A keeps today's values. Dark moves from black to slate. Routes outside the workspace shell (owner pages with `PageLayout`, `bg-slate-50`, hard-coded `bg-white`) stay forced light in A and only get dark once C or D lands, so a dark-OS user never sees half-dark pages with white patches | **Yes** | Medium: every dark screen changes at once; mitigated by screenshots and keeping the old overrides until batch C |
 | B | Shared components (`Card`, `Button`, `Badge`, `PageLayout`, `SectionHeader`, `StatCard`, `DataTable`, inputs, tabs) on tokens | **Yes** | Medium: used on every page; visual only |
-| C | Codemod `bg-white`/`text-slate-*` to token classes, then delete the 118 `!important` overrides | Yes if A and B are clean | Medium-high: mechanical but wide (52 files) |
+| C | Codemod `bg-white`/`text-slate-*` to token classes, then delete the 118 `!important` overrides | Yes if A and B are clean | Medium-high: mechanical but wide (52 files); treat as post-freeze unless A and B ship with clean 1440/768/390 light and dark screenshots |
 | D | Move owner pages (`/owner/reports`, team, audit, imports) into the workspace shell | Owner decision needed (routing/gating, #351 P1-1) | Medium |
 | E | Page polish: Dashboard, Inventory, Menu Costing, Square/Clover, Daily Close, Purchases list | **Post-freeze by default**; owner may pull any forward | Low each, large in total |
 
@@ -69,7 +69,8 @@ Not changed by any batch: business logic, financial controls, audit evidence, ro
 2. Primary buttons teal accent (proposed) or keep near-black in light mode?
 3. Approve batches A and B before the freeze, and C only if A and B land cleanly?
 4. Approve moving owner pages into the shell (D) before or after the freeze?
+5. First-load theme: follow the OS `prefers-color-scheme` (changes first-load appearance for existing users) or default to light until the user chooses?
 
 ## 6. Acceptance for every batch
 
-Before/after screenshots in both themes at 1440, 768 and 390; computed contrast for any new colour pair; no horizontal overflow; keyboard focus visible; full unit and e2e suites green at the exact head; R1 review of the rendered result; owner merges.
+Before/after screenshots in both themes at 1440, 768 and 390; computed contrast for any new colour pair; no horizontal overflow; keyboard focus visible; control boundaries (input borders) and focus rings meet 3:1 against their surface (WCAG 1.4.11; today's `--line-strong` is only 1.42:1 light / 1.68:1 dark, so inputs need a stronger border token or a 3:1 focus ring); full unit and e2e suites green at the exact head; R1 review of the rendered result; owner merges.
