@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../src/lib/customerAuth", () => ({
+  CustomerApiError: class CustomerApiError extends Error {
+    status = 0;
+  },
   fetchCustomerSession: mocks.fetchCustomerSession,
   startGoogleLogin: mocks.startGoogleLogin,
 }));
@@ -262,5 +265,35 @@ describe("OwnerReportsPage", () => {
     await screen.findByRole("heading", { name: "You do not have owner access to reporting" });
     expect(mocks.fetchPilotDashboard).not.toHaveBeenCalled();
     expect(mocks.fetchPilotPurchases).not.toHaveBeenCalled();
+  });
+
+  it("offers Try again after a load error and recovers without a browser reload", async () => {
+    const session = {
+      user: { id: 1, email: "owner@example.com", isActive: true, createdAt: null, updatedAt: null },
+      membershipRole: "owner",
+      currentOrganizationId: 42,
+      currentLocationId: 7,
+      organizations: [{ organization: { id: 42, name: "Demo Bistro", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE" }, membershipRole: "owner", selected: true }],
+      csrfToken: "csrf-token",
+    };
+    mocks.fetchCustomerSession.mockResolvedValue(session);
+    mocks.fetchPilotDashboard
+      .mockRejectedValueOnce(new Error("Reports are temporarily unavailable."))
+      .mockResolvedValueOnce({
+        summary: { weeklyWindow: { startDate: "2026-11-16", endDate: "2026-11-22" } },
+        recentInvoices: [], recentMovements: [], recentPriceChanges: [], pendingDraftInvoices: [], pendingDraftCountSessions: [],
+        pendingDraftReorderPlans: [], supplierSpend: [], reorderSuggestions: [], workflow: {},
+      });
+    mocks.fetchPilotPurchases.mockResolvedValue({ invoices: [], exportReadiness: { readyForCsv: 0, needsReview: 0, needsMapping: 0 } });
+    mocks.fetchCustomerAuditEvents.mockResolvedValue({ events: [] });
+
+    renderPage();
+
+    await screen.findByText("Reports are temporarily unavailable.");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await screen.findByRole("heading", { name: "Reports & exports" });
+    expect(screen.queryByText("Reports are temporarily unavailable.")).toBeNull();
+    expect(mocks.fetchPilotDashboard).toHaveBeenCalledTimes(2);
   });
 });

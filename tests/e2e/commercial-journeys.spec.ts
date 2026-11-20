@@ -2486,6 +2486,37 @@ test("owner reports and exports surface authenticated reporting data", async ({ 
   expect(await download.path()).not.toBeNull();
 });
 
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`owner reports error state offers Try again and recovers at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const state: MockState = {
+      session: makeActiveOwnerSession(),
+      csrfToken: "csrf-token",
+      currentOrganization: makeOrganization(),
+      invitations: [],
+      auditEvents: [],
+      supportGrants: [],
+      squareConnection: null,
+      importJobs: [],
+      importJob: null,
+    };
+    await installMockApi(page, state);
+    let fail = true;
+    await page.route("**/api/pilot/audit-events**", (route) => (fail ? jsonResponse(route, { error: "Audit trail is temporarily unavailable." }, 503) : route.fallback()));
+
+    await page.goto("/owner/reports", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("Audit trail is temporarily unavailable.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download summary CSV" })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+    fail = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("button", { name: "Download summary CSV" })).toBeVisible();
+    await expect(page.getByText("Audit trail is temporarily unavailable.")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+}
+
 test("empty purchases workspace supports supplier, inventory item, and first receipt setup", async ({ page }) => {
   const organization = makeOrganization({ id: 5, name: "Starter Cafe" });
   const state: MockState = {
