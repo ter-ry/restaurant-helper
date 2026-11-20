@@ -10,6 +10,7 @@ const mockSession = vi.hoisted(() => ({
   currentLocation: { id: 7, name: "Line Kitchen" },
   locations: [{ id: 7, name: "Line Kitchen" }],
   enabledModuleKeys: ["MENU_COSTING", "SQUARE_INTEGRATION", "DAILY_CLOSE"],
+  membershipRole: "owner" as string | null,
   user: { email: "pilot@example.com" },
   error: null,
   signOut: vi.fn(),
@@ -49,6 +50,7 @@ function renderLayout(initialPath = "/app/dashboard") {
 describe("PilotWorkspaceLayout", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    mockSession.membershipRole = "owner";
     mockAttention.fetchPilotAttention.mockReset();
     mockAttention.fetchPilotAttention.mockResolvedValue({ reorder: { count: 1 } });
     mockSession.signOut.mockReset();
@@ -67,7 +69,6 @@ describe("PilotWorkspaceLayout", () => {
 
   it("keeps secondary workflows inside their parent workspaces", () => {
     renderLayout();
-    expect(screen.queryByRole("link", { name: "Reports" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Stock Counts" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Reorder Plan" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Usage / Variance" })).not.toBeInTheDocument();
@@ -121,5 +122,29 @@ describe("PilotWorkspaceLayout", () => {
     fireEvent.click(screen.getByRole("button", { name: "Go inventory" }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mockAttention.fetchPilotAttention).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Reports for owners, pointing at the existing owner reports route", () => {
+    renderLayout();
+    expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/owner/reports");
+    expect(screen.getByText("Sales & Close")).toBeVisible();
+  });
+
+  it.each(["manager", "staff", null])("hides Reports for role %s", (role) => {
+    mockSession.membershipRole = role;
+    renderLayout();
+    expect(screen.queryByRole("link", { name: "Reports" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Purchases" })).toBeVisible();
+  });
+
+  it("includes Reports in the mobile navigation drawer for owners only", () => {
+    const view = renderLayout();
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(screen.getAllByRole("link", { name: "Reports" }).length).toBeGreaterThan(0);
+    view.unmount();
+    mockSession.membershipRole = "manager";
+    renderLayout();
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(screen.queryByRole("link", { name: "Reports" })).not.toBeInTheDocument();
   });
 });
