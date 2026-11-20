@@ -66,3 +66,40 @@ def clover_request(method: str, path: str, *, token: str | None = None, payload:
         raise CloverRequestError("Clover request was rejected.", status_code=exc.code, code=error_code) from exc
     except (URLError, TimeoutError, ValueError) as exc:
         raise CloverRequestError("Clover request could not be completed.", code="clover_unavailable") from exc
+
+
+CLOVER_SANDBOX_PAKMS_URL = "https://scl-sandbox.dev.clover.com/pakms/apikey"
+
+
+def clover_sandbox_pakms_probe(token: str, *, opener=urlopen) -> dict:
+    """Read-only PAKMS authorization probe against the fixed Sandbox host.
+
+    Returns only the HTTP status and the non-secret fields of the response;
+    the ``apiAccessKey`` value is never read into the result. Always a GET to
+    a hard-coded Sandbox URL, so it cannot reach production or mutate state.
+    """
+    request = Request(
+        CLOVER_SANDBOX_PAKMS_URL,
+        method="GET",
+        headers={"Accept": "application/json", "User-Agent": "Flowtally/1.0", "Authorization": f"Bearer {token}"},
+    )
+    try:
+        with opener(request, timeout=15) as response:
+            status = int(getattr(response, "status", 200) or 200)
+            raw = response.read().decode("utf-8")
+    except HTTPError as exc:
+        return {"httpStatus": exc.code, "active": None, "merchantUuid": None, "developerAppUuidPresent": False}
+    except (URLError, TimeoutError, ValueError) as exc:
+        raise CloverRequestError("Clover PAKMS request could not be completed.", code="clover_unavailable") from exc
+    try:
+        body = json.loads(raw) if raw else {}
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    return {
+        "httpStatus": status,
+        "active": body.get("active") if isinstance(body.get("active"), bool) else None,
+        "merchantUuid": str(body.get("merchantUuid") or "") or None,
+        "developerAppUuidPresent": bool(body.get("developerAppUuid")),
+    }
