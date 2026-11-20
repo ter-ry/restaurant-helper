@@ -141,6 +141,30 @@ describe("PilotDailyClosePage", () => {
     await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
   });
 
+  it("offers Try again after a failed first load and blocks Start close until it succeeds", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockRejectedValueOnce(new Error("Service unavailable"));
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      session: null,
+      snapshot: { healthStatus: "Open", inventoryValue: 0, sales: {}, usage: { totals: {}, ingredientUsage: [] }, variance: { quantity: null, percent: null, value: 0 }, square: {}, readyToFinalize: true },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-09-01",
+      square: {},
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Service unavailable")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Start close" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByText("Service unavailable")).toBeNull());
+    expect(pilotApiMocks.fetchPilotDailyClose).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start close" })).toBeEnabled();
+  });
+
   it("renders date-only business dates without a timezone shift", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: null,
