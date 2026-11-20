@@ -2428,6 +2428,34 @@ test("owner audit history shows filtered organization activity", async ({ page }
   await expect(page.getByText("Square: connection updated")).toBeVisible();
 });
 
+test("owner reaches Reports from the app navigation on desktop and mobile", async ({ page }) => {
+  const state: MockState = {
+    session: makeActiveOwnerSession(),
+    csrfToken: "csrf-token",
+    currentOrganization: makeOrganization(),
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await expect(page).toHaveURL(/\/owner\/reports$/);
+  await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await expect(page).toHaveURL(/\/owner\/reports$/);
+  await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
+});
+
 test("owner reports and exports surface authenticated reporting data", async ({ page }) => {
   const state: MockState = {
     session: makeActiveOwnerSession(),

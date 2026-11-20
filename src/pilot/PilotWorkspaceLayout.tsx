@@ -15,9 +15,10 @@ const navItems = [
   { to: "/app/menu-costing", label: "Menu Costing", group: "Menu & Cost", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
   { to: "/app/square", label: "Square", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
   { to: "/app/daily-close", label: "Daily Close", group: "Sales & Close", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
+  { to: "/owner/reports", label: "Reports", group: "Reports", icon: BarChart3, ownerOnly: true },
 ];
 
-const navigationGroups = ["Overview", "Operations", "Menu & Cost", "Sales & Close"] as const;
+const navigationGroups = ["Overview", "Operations", "Menu & Cost", "Sales & Close", "Reports"] as const;
 
 function AnalyticsTracker() {
   const location = useLocation();
@@ -72,7 +73,7 @@ function NavItem({
 }
 
 export function PilotWorkspaceLayout() {
-  const { error, user, organization, enabledModuleKeys, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
+  const { error, user, organization, enabledModuleKeys, membershipRole, organizations, currentLocation, locations, signOut, switchLocation, switchOrganization, refreshSession } = usePilotSession();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -95,8 +96,8 @@ export function PilotWorkspaceLayout() {
   const activeLocationId = currentLocation?.id ?? "";
   const enabledModuleKeySet = useMemo(() => new Set(enabledModuleKeys), [enabledModuleKeys]);
   const visibleNavItems = useMemo(
-    () => navItems.filter((item) => !item.moduleKey || enabledModuleKeySet.has(item.moduleKey)),
-    [enabledModuleKeySet],
+    () => navItems.filter((item) => (!item.moduleKey || enabledModuleKeySet.has(item.moduleKey)) && (!("ownerOnly" in item) || membershipRole === "owner")),
+    [enabledModuleKeySet, membershipRole],
   );
   const visibleNavigationGroups = useMemo(
     () => navigationGroups.map((label) => ({ label, items: visibleNavItems.filter((item) => item.group === label) })).filter((group) => group.items.length > 0),
