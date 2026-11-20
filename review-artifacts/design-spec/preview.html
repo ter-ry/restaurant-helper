@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flowtally design tokens preview</title>
+<style>
+:root{--bg:#F6F7F9;--surface:#fff;--surface-2:#F1F3F6;--raised:#fff;--line:#E3E7ED;--line-strong:#D3D9E1;--text:#0F172A;--muted:#5B6778;--accent:#0F766E;--on-accent:#fff;--accent-soft:rgba(15,118,110,.10);--danger:#B42318;--warning:#8A4B08;--success:#047857;--shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06)}
+[data-theme=dark]{--bg:#0F141B;--surface:#161C25;--surface-2:#19212B;--raised:#1D2530;--line:#2A3441;--line-strong:#364252;--text:#E8EDF3;--muted:#98A4B3;--accent:#2DD4BF;--on-accent:#06201C;--accent-soft:rgba(45,212,191,.12);--danger:#F87171;--warning:#FBBF24;--success:#34D399;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.28)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Inter,system-ui,sans-serif}
+.page{max-width:1100px;margin:0 auto;padding:28px 20px}.eyebrow{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:30px;line-height:1.15;margin:6px 0 4px;letter-spacing:-.01em}.sub{color:var(--muted);max-width:60ch;margin:0 0 22px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.stat{padding:20px}.stat b{display:block;font-size:26px;margin-top:10px}.stat span{color:var(--muted);font-size:13px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{min-height:44px;padding:0 18px;border-radius:14px;font-weight:600;font-size:14px;border:1px solid var(--line-strong);background:var(--surface);color:var(--text)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn.g{border-color:transparent;background:transparent;color:var(--muted)}
+.badge{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted)}
+.badge.s{color:var(--success)}.badge.w{color:var(--warning)}.badge.d{color:var(--danger)}
+table{width:100%;border-collapse:collapse;font-size:14px}th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:12px 18px;background:var(--surface-2);border-bottom:1px solid var(--line)}td{padding:14px 18px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums}
+input,select{min-height:44px;width:100%;border-radius:12px;border:1px solid var(--line-strong);background:var(--surface);color:var(--text);padding:0 12px;font:inherit}label{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}.tab{padding:10px 14px;color:var(--muted);font-weight:600;border-bottom:2px solid transparent}.tab.on{color:var(--text);border-color:var(--accent)}
+.dlg{background:var(--raised);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 64px rgba(0,0,0,.28);padding:20px;max-width:420px}
+section{margin-top:26px}h2{font-size:17px;margin:0 0 12px}.two{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+</style></head><body><div class="page">
+<div class="eyebrow">Showcase Cafe · Reports &amp; exports</div><h1>Reporting that stays tied to the live organization</h1><p class="sub">Reference composition for the shared tokens: page, stat cards, table, form, tabs, buttons, badges, dialog.</p>
+<div class="row" style="margin-bottom:18px"><button class="btn p">Download summary CSV</button><button class="btn">Download purchase CSV</button><button class="btn g">Refresh</button></div>
+<div class="grid"><div class="card stat"><span class="eyebrow">Invoice spend, this week</span><b>$302.61</b><span>3 invoices · Nov 16 – Nov 22</span></div><div class="card stat"><span class="eyebrow">Urgent reorder</span><b>5</b><span>7 more running low</span></div><div class="card stat"><span class="eyebrow">Received invoices</span><b>7</b><span>2 drafts need review</span></div></div>
+<section><div class="tabs"><div class="tab on">Queue</div><div class="tab">Received</div><div class="tab">Voided</div></div></section>
+<section class="card" style="overflow:hidden;margin-top:16px"><table><thead><tr><th>Supplier</th><th>Invoice</th><th>Status</th><th class="num">Total</th></tr></thead><tbody>
+<tr><td>Cedar Meats</td><td>CM-2001</td><td><span class="badge s">Received</span></td><td class="num">$113.00</td></tr>
+<tr><td>Harbour Fish Co</td><td>HF-0412</td><td><span class="badge w">Needs review</span></td><td class="num">$96.40</td></tr>
+<tr><td>Oak Valley Dairy</td><td>OV-7781</td><td><span class="badge d">Total mismatch</span></td><td class="num">$93.21</td></tr></tbody></table></section>
+<section class="two"><div class="card" style="padding:20px"><h2>Form</h2><div style="display:grid;gap:12px"><div><label>Supplier</label><select><option>Cedar Meats</option></select></div><div><label>Invoice number</label><input value="CM-2002"></div></div></div>
+<div class="dlg"><h2>Confirm receipt</h2><p class="sub" style="margin:0 0 16px">Receiving adds stock to inventory once.</p><div class="row" style="justify-content:flex-end"><button class="btn">Cancel</button><button class="btn p">Confirm receive</button></div></div></section>
+</div></body></html>
