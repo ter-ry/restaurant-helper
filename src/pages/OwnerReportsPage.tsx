@@ -33,6 +33,7 @@ export function OwnerReportsPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [data, setData] = useState<OwnerReportsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +75,14 @@ export function OwnerReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  function retryLoad() {
+    setError(null);
+    setData(null);
+    setState("loading");
+    setReloadKey((key) => key + 1);
+  }
 
   const activeOrganization = data?.session.organizations?.find((entry) => entry.selected)?.organization ?? null;
   const summaryRows = useMemo(() => (data ? buildSummaryRows(data) : []), [data]);
@@ -147,6 +155,7 @@ export function OwnerReportsPage() {
           </div>
           <h1 className="mt-3 text-2xl font-bold text-ink">We couldn’t load reports and exports</h1>
           <p className="mt-3 text-sm leading-6 text-muted">{error ?? "Try again in a moment."}</p>
+          <Button type="button" variant="secondary" className="mt-4" onClick={retryLoad}>Try again</Button>
         </Card>
       </PageLayout>
     );
