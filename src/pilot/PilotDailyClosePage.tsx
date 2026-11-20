@@ -307,7 +307,7 @@ export function PilotDailyClosePage() {
               </button>
             </>
           ) : !currentSession ? (
-            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null || loadFailed} onClick={() => void openClose()}>
+            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null || loadFailed || loading} onClick={() => void openClose()}>
               <RefreshCw className="h-4 w-4" />
               Start close
             </button>
