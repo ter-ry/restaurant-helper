@@ -47,8 +47,9 @@ export function PilotDashboardPage() {
 
   return <div className="workspace-page">
     <div className="flex items-center justify-between"><h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Dashboard</h1></div>
-    {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+    {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{data ? `${error} Showing the last loaded figures.` : error}</span><button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50" type="button" onClick={() => void load()} disabled={loading}><RefreshCcw className="h-4 w-4" />{loading ? "Trying…" : "Try again"}</button></div> : null}
     {loading && !data ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading dashboard data...</div> : null}
+    {!data ? null : <>
 
     {data?.insights ? <Card className="pilot-dashboard-today border-brand-100 bg-brand-50/30 p-4 sm:p-5">
       <div className="section-header mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h2 className="text-2xl font-bold tracking-tight text-ink">Today</h2><button aria-label="Refresh dashboard" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button></div>
@@ -88,5 +89,6 @@ export function PilotDashboardPage() {
         <div><h2 className="text-sm font-bold text-ink">Inventory activity</h2><div className="mt-3 space-y-2">{(data?.recentMovements ?? []).slice(0, 5).map((movement) => <div key={movement.id} className="flex items-center justify-between rounded-xl bg-slate-50 p-3"><div><p className="font-semibold text-ink">{movement.inventoryItemName}</p><p className="text-sm text-muted">{movement.reason}</p></div><span className="text-sm font-semibold text-ink">{movement.quantityDelta > 0 ? "+" : ""}{formatNumber(movement.quantityDelta)} {movement.unit}<br /><span className="text-xs text-muted">{formatDateTime(movement.createdAt)}</span></span></div>)}</div></div>
       </div>
     </details>
+    </>}
   </div>;
 }
