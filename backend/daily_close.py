@@ -496,6 +496,10 @@ def _build_daily_close_snapshot(organization, location: RestaurantLocation, busi
     )
     summary = _sales_summary_for_day(connection, location, business_date)
     summary["freshness"] = freshness
+    if summary.get("salesStatus") == "available" and str((freshness or {}).get("state")) != "current":
+        # Order-sync evidence is required: a location/catalog sync alone, or an in-progress/failed order import, is not verified sales data.
+        summary["salesStatus"] = "unavailable"
+        summary["salesUnavailableReason"] = "Square orders have not been verified as up to date yet (" + str((freshness or {}).get("state") or "unknown") + "), so sales cannot be confirmed."
     usage = _daily_close_usage(organization, location, business_date, connection)
     period_start, period_end = _business_date_bounds(location, business_date)
     period_matches = _physical_usage_matches_period(usage, period_start, period_end)

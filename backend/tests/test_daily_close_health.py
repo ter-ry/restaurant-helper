@@ -448,3 +448,24 @@ def test_sales_summary_unavailable_when_unmapped_or_unsynced_and_available_when_
         connection.status = "disconnected"
         assert _sales_summary_for_day(connection, location, day)["salesStatus"] == "unavailable"
         db.session.rollback()
+
+
+def test_in_progress_or_failed_order_import_makes_sales_unavailable(app, monkeypatch):
+    from datetime import date
+    import backend.daily_close as dc
+    with app.app_context():
+        organization, location = _sales_org("Sales Fresh")
+        owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+        connection = SquareConnection(organization_id=organization.id, environment="sandbox", square_merchant_id="m-fresh", status="connected", sync_status="idle", last_sync_at=datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc))
+        db.session.add(connection)
+        db.session.flush()
+        sq = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-F", name="K", status="ACTIVE", raw_payload_json={})
+        db.session.add(sq)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=sq.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
+        db.session.flush()
+        for state, expected in (("refreshing", "unavailable"), ("temporarily_unavailable", "unavailable"), ("current", "available")):
+            monkeypatch.setattr(dc, "ensure_square_orders_fresh", lambda *a, _s=state, **k: {"state": _s, "refreshed": False})
+            snapshot, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 30))
+            assert snapshot["sales"]["salesStatus"] == expected, state
+        db.session.rollback()

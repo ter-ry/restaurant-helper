@@ -69,7 +69,7 @@ def _setup(app, client, monkeypatch, *, environment="sandbox", square_location_i
     selected = client.post("/api/organizations/select", headers={"X-CSRFToken": _csrf(client)}, json={"organizationId": organization.id})
     assert selected.status_code == 200
     # No network: order freshness is a Square API call and is outside what these tests assert.
-    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "fresh"})
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
     return organization.id, location.id, connection.id
 
 
