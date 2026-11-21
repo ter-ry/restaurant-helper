@@ -11,7 +11,7 @@ from flask_login import current_user, login_required
 
 from .access import organization_has_enabled_module, organization_is_operational
 from .extensions import db
-from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping
+from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareSyncJob
 from .square_integration import (
     _build_square_usage_report,
     _connection_token,
@@ -153,6 +153,34 @@ def _sales_summary_for_day(connection: SquareConnection | None, location: Restau
         "cancelledOrders": cancelled_orders,
         **_sales_availability(connection, location_mapped),
     }
+
+
+def _order_import_covers_day(connection: SquareConnection | None, location: RestaurantLocation, start_at: datetime, end_at: datetime) -> bool:
+    """True only when a completed order import recorded a window covering the whole business day for this location's Square locations."""
+    if connection is None:
+        return False
+    mapped = {str(v) for v in _square_location_ids_for_location(connection, location) if v}
+    jobs = (
+        SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="orders", status="completed")
+        .order_by(SquareSyncJob.completed_at.desc(), SquareSyncJob.id.desc()).limit(200).all()
+    )
+
+    def parse(value: Any) -> datetime | None:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    for job in jobs:
+        cursor = job.cursor_json or {}
+        job_start, job_end = parse(cursor.get("startAt")), parse(cursor.get("endAt"))
+        if job_start is None or job_end is None or job_start > start_at or job_end < end_at:
+            continue
+        if mapped and not mapped.issubset({str(v) for v in cursor.get("locationIds", [])}):
+            continue
+        return True
+    return False
 
 
 def _sales_availability(connection: SquareConnection, location_mapped: bool) -> dict[str, Any]:
@@ -496,6 +524,9 @@ def _build_daily_close_snapshot(organization, location: RestaurantLocation, busi
     )
     summary = _sales_summary_for_day(connection, location, business_date)
     summary["freshness"] = freshness
+    if summary.get("salesStatus") == "available" and str((freshness or {}).get("state")) == "current" and not _order_import_covers_day(connection, location, start_at, end_at):
+        summary["salesStatus"] = "unavailable"
+        summary["salesUnavailableReason"] = "Orders for this business date have not been imported from Square yet, so sales cannot be confirmed."
     if summary.get("salesStatus") == "available" and str((freshness or {}).get("state")) != "current":
         # Order-sync evidence is required: a location/catalog sync alone, or an in-progress/failed order import, is not verified sales data.
         summary["salesStatus"] = "unavailable"

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from backend.extensions import db
-from backend.models import RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, User
+from backend.models import RestaurantLocation, SquareConnection, SquareLocation, SquareLocationMapping, SquareSyncJob, User
 from backend.seed import LOCAL_OWNER_EMAIL, LOCAL_OWNER_PASSWORD
 from backend.tests.conftest import make_operational_organization
 
@@ -464,8 +464,17 @@ def test_in_progress_or_failed_order_import_makes_sales_unavailable(app, monkeyp
         db.session.flush()
         db.session.add(SquareLocationMapping(square_location_id=sq.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
         db.session.flush()
+        job = SquareSyncJob(square_connection_id=connection.id, job_type="orders", status="completed", completed_at=datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc),
+                            cursor_json={"startAt": "2026-08-30T04:00:00Z", "endAt": "2026-08-31T04:00:00Z", "locationIds": ["LOC-F"]})
+        db.session.add(job)
+        db.session.flush()
         for state, expected in (("refreshing", "unavailable"), ("temporarily_unavailable", "unavailable"), ("current", "available")):
             monkeypatch.setattr(dc, "ensure_square_orders_fresh", lambda *a, _s=state, **k: {"state": _s, "refreshed": False})
             snapshot, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 30))
             assert snapshot["sales"]["salesStatus"] == expected, state
+        # Recently-synced day does not prove a different, never-imported business date.
+        monkeypatch.setattr(dc, "ensure_square_orders_fresh", lambda *a, **k: {"state": "current", "refreshed": False})
+        other, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 20))
+        assert other["sales"]["salesStatus"] == "unavailable"
+        assert "imported" in other["sales"]["salesUnavailableReason"]
         db.session.rollback()
