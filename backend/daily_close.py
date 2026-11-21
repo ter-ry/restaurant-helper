@@ -110,6 +110,8 @@ def _sales_summary_for_day(connection: SquareConnection | None, location: Restau
             "netSales": 0,
             "orders": 0,
             "cancelledOrders": 0,
+            "salesStatus": "unavailable",
+            "salesUnavailableReason": "Square is not connected, so sales cannot be verified. The zeros shown are not real sales.",
         }
 
     square_location_ids = _square_location_ids_for_location(connection, location)
@@ -149,7 +151,22 @@ def _sales_summary_for_day(connection: SquareConnection | None, location: Restau
         "netSales": float(net),
         "orders": orders,
         "cancelledOrders": cancelled_orders,
+        **_sales_availability(connection, location_mapped),
     }
+
+
+def _sales_availability(connection: SquareConnection, location_mapped: bool) -> dict[str, Any]:
+    """Additive contract: distinguish "no data can be verified" from a legitimate zero-sales day."""
+    reason = None
+    if connection.status != "connected":
+        reason = "Square is not connected, so sales cannot be verified."
+    elif not location_mapped:
+        reason = "Map this location to a Square location before sales can be verified."
+    elif not connection.last_sync_at:
+        reason = "Square has not synced yet, so sales cannot be verified."
+    if reason:
+        return {"salesStatus": "unavailable", "salesUnavailableReason": reason}
+    return {"salesStatus": "available", "salesUnavailableReason": None}
 
 
 

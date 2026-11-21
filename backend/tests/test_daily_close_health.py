@@ -402,3 +402,49 @@ def test_daily_close_other_adjustments_exclude_pos_sale_movements(app, monkeypat
         # Only the manual adjustment is an unexplained "other" adjustment. Square
         # and Clover sale consumption/correction are explained by recipe usage.
         assert snapshot["reconciliation"]["otherAdjustmentQuantity"] == -8.0
+
+
+def _sales_org(app_ctx_name: str):
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(
+        owner, name=f"{app_ctx_name} {uuid4().hex[:8]}", location_name="Toronto Kitchen",
+        enabled_modules=("PURCHASES", "INVENTORY", "SQUARE_INTEGRATION", "DAILY_CLOSE"),
+    )
+    return organization, RestaurantLocation.query.filter_by(organization_id=organization.id).first()
+
+
+def test_sales_summary_unavailable_without_square_connection_is_not_a_zero_day(app):
+    from datetime import date
+    from backend.daily_close import _sales_summary_for_day
+    with app.app_context():
+        _, location = _sales_org("Sales NoConn")
+        summary = _sales_summary_for_day(None, location, date(2026, 8, 30))
+        assert summary["salesStatus"] == "unavailable"
+        assert summary["salesUnavailableReason"]
+
+
+def test_sales_summary_unavailable_when_unmapped_or_unsynced_and_available_when_verified_zero(app):
+    from datetime import date
+    from backend.daily_close import _sales_summary_for_day
+    with app.app_context():
+        organization, location = _sales_org("Sales Zero")
+        connection = SquareConnection(organization_id=organization.id, environment="sandbox", square_merchant_id="m-zero", status="connected", sync_status="idle", last_sync_at=None)
+        db.session.add(connection)
+        db.session.flush()
+        sq = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-Z", name="K", status="ACTIVE", raw_payload_json={})
+        db.session.add(sq)
+        db.session.flush()
+        day = date(2026, 8, 30)
+        assert _sales_summary_for_day(connection, location, day)["salesStatus"] == "unavailable"  # unmapped
+        db.session.add(SquareLocationMapping(square_location_id=sq.id, restaurant_location_id=location.id, mapped_by_user_id=User.query.filter_by(email=LOCAL_OWNER_EMAIL).first().id))
+        db.session.flush()
+        unsynced = _sales_summary_for_day(connection, location, day)
+        assert unsynced["salesStatus"] == "unavailable" and "synced" in unsynced["salesUnavailableReason"]
+        connection.last_sync_at = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
+        db.session.flush()
+        ok = _sales_summary_for_day(connection, location, day)
+        assert ok["salesStatus"] == "available" and ok["salesUnavailableReason"] is None
+        assert ok["netSales"] == 0 and ok["orders"] == 0  # a verified zero day stays available
+        connection.status = "disconnected"
+        assert _sales_summary_for_day(connection, location, day)["salesStatus"] == "unavailable"
+        db.session.rollback()

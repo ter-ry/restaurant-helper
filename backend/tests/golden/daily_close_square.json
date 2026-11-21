@@ -108,6 +108,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -132,6 +134,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -281,6 +285,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -305,6 +311,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -489,6 +497,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -513,6 +523,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -662,6 +674,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -686,6 +700,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -858,6 +874,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -882,6 +900,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -939,6 +959,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
@@ -1178,6 +1200,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1202,6 +1226,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1351,6 +1377,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1375,6 +1403,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1559,6 +1589,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1583,6 +1615,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1732,6 +1766,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1756,6 +1792,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1928,6 +1966,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -1952,6 +1992,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -2009,6 +2051,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
@@ -2145,6 +2189,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2169,6 +2215,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2303,6 +2351,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2327,6 +2377,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2496,6 +2548,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2520,6 +2574,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2654,6 +2710,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2678,6 +2736,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2835,6 +2895,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -2859,6 +2921,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -2916,6 +2980,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
@@ -3067,6 +3133,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3091,6 +3159,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3240,6 +3310,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3264,6 +3336,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3448,6 +3522,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3472,6 +3548,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3621,6 +3699,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3645,6 +3725,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3817,6 +3899,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -3841,6 +3925,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -3898,6 +3984,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
