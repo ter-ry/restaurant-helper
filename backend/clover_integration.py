@@ -1035,9 +1035,19 @@ def clover_shadow_orders_fetch():
 @bp.get("/api/integrations/clover/pakms-check")
 @login_required
 def clover_pakms_check():
-    """Owner-only, Sandbox-only, read-only check that the installed-app OAuth grant may call PAKMS.
+    """Owner-only, Sandbox-only check that the installed-app OAuth grant may call PAKMS.
 
-    Never returns the token or the PAKMS key; reports only status metadata.
+    The provider call is a GET that changes no Clover business data (no payment,
+    order, inventory or settings change). Flowtally-side it is NOT side-effect
+    free: it may rotate the single-use OAuth refresh token and rewrite the stored
+    token ciphertexts (stale token, or a PAKMS 401 triggers one forced refresh),
+    may mark the connection ``reauthorization_required`` when a refresh fails, and
+    writes a ``clover.pakms.checked`` audit row. Failed attempts (409/503) are
+    also audited as ``clover.pakms.check_failed`` with only an error code, so an
+    owner can see repeated failures; 403/404 denials are not audited because no
+    owner-authorized action took place.
+
+    Never returns the token, ciphertext or the PAKMS key; reports only status metadata.
     """
     try:
         org_id = int(request.args.get("organizationId", ""))
@@ -1049,6 +1059,7 @@ def clover_pakms_check():
         return denied
     assert organization is not None
     connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
+    connection_id = connection.id if connection is not None else None
     if connection is None or connection.status != "connected" or connection.environment != "sandbox" or clover_environment() != "sandbox":
         return json_error("Clover sandbox authorization is required.", 409, code="clover_authorization_required")
     try:
@@ -1065,6 +1076,9 @@ def clover_pakms_check():
     except SquareSecurityError:
         return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
     except CloverRequestError as exc:
+        db.session.rollback()
+        record_audit_event(event_type="clover.pakms.check_failed", entity_type="clover_connection", entity_id=connection_id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"errorCode": exc.code, "verified": False})
+        db.session.commit()
         if exc.status_code == 409:
             return json_error("Clover authorization must be renewed.", 409, code=exc.code)
         return json_error("Clover PAKMS check could not be completed.", 503, code=exc.code)
@@ -1073,7 +1087,8 @@ def clover_pakms_check():
     record_audit_event(event_type="clover.pakms.checked", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"httpStatus": http_status, "verified": verified})
     db.session.commit()
     return jsonify({
-        "readOnly": True,
+        "providerReadOnly": True,
+        "flowtallyWrites": "May refresh OAuth credentials and writes an audit row; no Clover business-data change.",
         "endpoint": "GET /pakms/apikey (sandbox)",
         "httpStatus": http_status,
         "active": result["active"],

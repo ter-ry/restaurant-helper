@@ -72,7 +72,7 @@ CLOVER_SANDBOX_PAKMS_URL = "https://scl-sandbox.dev.clover.com/pakms/apikey"
 
 
 def clover_sandbox_pakms_probe(token: str, *, opener=urlopen) -> dict:
-    """Read-only PAKMS authorization probe against the fixed Sandbox host.
+    """PAKMS authorization probe against the fixed Sandbox host (provider-side read-only GET).
 
     Returns only the HTTP status and the non-secret fields of the response;
     the ``apiAccessKey`` value is never read into the result. Always a GET to
