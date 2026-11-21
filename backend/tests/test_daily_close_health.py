@@ -477,4 +477,12 @@ def test_in_progress_or_failed_order_import_makes_sales_unavailable(app, monkeyp
         other, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 20))
         assert other["sales"]["salesStatus"] == "unavailable"
         assert "imported" in other["sales"]["salesUnavailableReason"]
+
+        # A covering import must stay valid after many newer, unrelated imports (no row cap).
+        for i in range(205):
+            db.session.add(SquareSyncJob(square_connection_id=connection.id, job_type="orders", status="completed", completed_at=datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc) + timedelta(minutes=i),
+                                         cursor_json={"startAt": "2026-09-01T04:00:00Z", "endAt": "2026-09-02T04:00:00Z", "locationIds": ["LOC-F"]}))
+        db.session.flush()
+        covered, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 30))
+        assert covered["sales"]["salesStatus"] == "available"
         db.session.rollback()

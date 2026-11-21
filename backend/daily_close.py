@@ -160,9 +160,10 @@ def _order_import_covers_day(connection: SquareConnection | None, location: Rest
     if connection is None:
         return False
     mapped = {str(v) for v in _square_location_ids_for_location(connection, location) if v}
+    # Newest first, no row cap: a covering import must not lose its evidence just because many later imports exist.
     jobs = (
         SquareSyncJob.query.filter_by(square_connection_id=connection.id, job_type="orders", status="completed")
-        .order_by(SquareSyncJob.completed_at.desc(), SquareSyncJob.id.desc()).limit(200).all()
+        .order_by(SquareSyncJob.completed_at.desc(), SquareSyncJob.id.desc()).yield_per(200)
     )
 
     def parse(value: Any) -> datetime | None:
