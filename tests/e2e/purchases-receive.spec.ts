@@ -38,8 +38,10 @@ type World = {
   listDelayMs: number;
   /** Number of line items the fake OCR endpoint extracts (default 1). */
   ocrLineCount: number;
+  /** When set, the fake OCR reads these printed amounts and the fake server stores/recomputes the verdict from the saved lines. */
+  ocrPrinted: { subtotal: number; tax: number; total: number } | null;
 };
-const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600, listDelayMs: 0, ocrLineCount: 1 });
+const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600, listDelayMs: 0, ocrLineCount: 1, ocrPrinted: null });
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
 const ITEM = {
   id: 30, organizationId: 42, locationId: 7, supplierId: null, name: "Chicken Breast", normalizedName: "chicken breast", category: "Poultry", stockUnit: "kg",
@@ -104,13 +106,24 @@ async function installWorld(page: Page, world: World) {
       id, notes: body.notes ?? "", invoiceNumber: body.invoiceNumber, status, invoiceDate: body.invoiceDate, subtotal: body.subtotal, tax: body.tax, totalAmount: body.totalAmount,
       lineItems: (body.lineItems ?? []).map((line: any, index: number) => ({ id: id * 10 + index, ...line })),
     });
+    const withEvidence = (invoice: Invoice): Invoice => {
+      const printed = world.ocrPrinted;
+      if (!printed) return invoice;
+      const lineTotal = Math.round(invoice.lineItems.reduce((sum, line) => sum + Number(line.lineTotal), 0) * 100) / 100;
+      const matched = Math.abs(printed.subtotal - lineTotal) <= 0.01;
+      (invoice as any).ocrEvidence = {
+        status: matched ? "matched" : "incomplete", printedSubtotal: printed.subtotal, printedTax: printed.tax, printedTotal: printed.total,
+        expectedAmount: printed.subtotal, lineTotal, difference: Math.round((printed.subtotal - lineTotal) * 100) / 100, override: null,
+      };
+      return invoice;
+    };
     if (pathname === "/api/pilot/purchases/invoices" && method === "POST") {
       await mutate(() => null);
       if (world.refuseCreate) {
         const refusal = world.refuseCreate;
         return json(route, { error: refusal.message, errors: refusal.errors }, refusal.status);
       }
-      const invoice = toInvoice(world.nextId++, body.status);
+      const invoice = withEvidence(toInvoice(world.nextId++, body.status));
       world.invoices.push(invoice);
       return json(route, invoiceJson(invoice), 201);
     }
@@ -119,7 +132,7 @@ async function installWorld(page: Page, world: World) {
       const field = (value: string | number) => ({ value, confidence: 0.95, needsReview: false });
       return json(route, {
         provider: "fake", fileName: "invoice.png", contentType: "image/png", rawText: "", evidenceToken: "token",
-        fields: { supplier: field("Cedar Meats"), invoiceDate: field("2026-11-10"), invoiceNumber: field("OCR-1"), subtotal: field(4), tax: field(0), total: field(4) },
+        fields: { supplier: field("Cedar Meats"), invoiceDate: field("2026-11-10"), invoiceNumber: field("OCR-1"), subtotal: field(world.ocrPrinted?.subtotal ?? 4), tax: field(world.ocrPrinted?.tax ?? 0), total: field(world.ocrPrinted?.total ?? 4) },
         lineItems: Array.from({ length: world.ocrLineCount }, (_, index) => ({ itemName: world.ocrLineCount > 1 ? `Chicken breast fresh boneless skinless 2kg tray ${index + 1}` : "Chicken breast", originalDescription: "Chicken breast", quantity: 1, unit: "kg", unitPrice: 4, lineTotal: 4, confidence: 0.95, needsReview: false, rawSourceLine: "" })),
         warnings: [], overallConfidence: 0.95, needsReview: false,
       });
@@ -144,6 +157,7 @@ async function installWorld(page: Page, world: World) {
       if (method === "PATCH") {
         await mutate(() => null);
         Object.assign(invoice, toInvoice(invoice.id, body.status));
+        withEvidence(invoice);
         return json(route, invoiceJson(invoice));
       }
       if (one[2] && method === "POST") {
@@ -633,3 +647,49 @@ test.describe("closing a confirmation over the editor at 1440px", () => {
     expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
   });
 });
+
+for (const viewport of VIEWPORTS) {
+  test.describe(`printed-total mismatch journey at ${viewport.width}px`, () => {
+    test.use({ viewport });
+
+    test("extract, save draft, reopen from the server: the mismatch persists, receiving stays blocked, correcting the line clears it", async ({ page }) => {
+      const world = newWorld();
+      world.ocrPrinted = { subtotal: 48, tax: 6.24, total: 54.24 };
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "New purchase" }).click();
+      await page.getByLabel("Invoice file").setInputFiles("tests/e2e/fixtures/suppliers.csv");
+      const editor = page.getByTestId("purchase-editor-card");
+      await expect(editor.getByLabel("Invoice number")).toHaveValue("OCR-1");
+      const banner = page.getByTestId("ocr-reconciliation-banner");
+      await expect(banner).toHaveAttribute("data-status", "incomplete");
+      await expect(banner).toHaveAttribute("role", "alert");
+      await editor.locator("select").filter({ hasText: "Unmapped" }).selectOption({ label: "Chicken Breast" });
+
+      // Fully mapped but the lines ($4.00) do not add up to the printed subtotal ($48.00): receiving is refused, nothing is posted.
+      await expect(editor.getByRole("button", { name: "Save & receive" })).toBeDisabled();
+      expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
+      expect(posts(world, "/purchases/invoices")).toHaveLength(0);
+
+      // The draft can be saved; the verdict then comes from the server-stored printed amounts.
+      await editor.getByRole("button", { name: "Save draft" }).click();
+      await expect(page.getByText("Invoice OCR-1 saved successfully.")).toBeVisible();
+      expect(posts(world, "/purchases/invoices")).toHaveLength(1);
+      expect(world.invoices[0].status).toBe("Draft");
+
+      // Reload: only server state remains. Reopen the draft; the mismatch and the block are still there.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByTestId("purchase-queue").getByRole("button", { name: /OCR-1/ }).first().click();
+      const reopened = page.getByTestId("purchase-editor-card");
+      await expect(page.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+      await expect(reopened.getByRole("button", { name: "Save & receive" })).toBeDisabled();
+      expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+      // Correcting the line so the lines add up clears the warning and receiving works exactly once.
+      await reopened.getByLabel("Unit price").fill("48");
+      await expect(page.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "matched");
+      await expect(reopened.getByRole("button", { name: "Save & receive" })).toBeEnabled();
+    });
+  });
+}
