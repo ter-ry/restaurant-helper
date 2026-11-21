@@ -183,6 +183,7 @@ export function PilotDailyClosePage() {
   const squareFreshness = snapshot?.square?.freshness as { state?: string } | undefined;
   // Clover locations return provider "clover" and no Square block; Square snapshots never carry a provider key.
   const isClover = snapshot?.provider === "clover";
+  const salesUnavailable = !isClover && sales.salesStatus === "unavailable";
   const cloverStatus = isClover ? String(sales.cloverStatus ?? "Not connected") : "";
   const cloverConnected = cloverStatus.toLowerCase() === "connected";
   const providerMapped = isClover ? Boolean(sales.locationMapped) : locationMapped;
@@ -398,6 +399,13 @@ export function PilotDailyClosePage() {
                       {!foodCost?.available && foodCost?.unavailableReason ? <p className="text-xs text-muted" data-testid="clover-food-cost-reason">{foodCost.unavailableReason}</p> : null}
                     </dl>
                   ) : (
+                  salesUnavailable ? (
+                  <div className="mt-3 space-y-2 text-sm" data-testid="square-sales-unavailable" role="status">
+                    <p className="font-semibold text-ink">Sales unavailable</p>
+                    <p className="text-muted" data-testid="square-sales-unavailable-reason">{String(sales.salesUnavailableReason || "Sales cannot be verified for this business date yet.")}</p>
+                    <p className="text-xs text-muted">This is not a $0 day. Fetch Square sales again once the connection is healthy.</p>
+                  </div>
+                  ) : (
                   <dl className="mt-3 space-y-2 text-sm">
                     <div className="flex items-center justify-between gap-3">
                       <dt className="text-muted">Net sales</dt>
@@ -416,6 +424,7 @@ export function PilotDailyClosePage() {
                       <dd className="font-semibold text-ink">{formatNumber(Number(sales.cancelledOrders ?? 0))}</dd>
                     </div>
                   </dl>
+                  )
                   )}
                 </div>
 
