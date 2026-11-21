@@ -115,6 +115,10 @@ export function PilotSquarePage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const setActionError = (value: string | null) => {
+    setLoadFailed(false);
+    setError(value);
+  };
   const [rangeStartAt, setRangeStartAt] = useState(dateRangeDefaults().startAt);
   const [rangeEndAt, setRangeEndAt] = useState(dateRangeDefaults().endAt);
   const [message, setMessage] = useState<string | null>(null);
@@ -132,7 +136,7 @@ export function PilotSquarePage() {
       square_authorization_denied: "Square authorization was cancelled.",
     };
     if (code && messages[code]) {
-      setError(messages[code]);
+      setActionError(messages[code]);
     }
   }, [location.search]);
 
@@ -211,7 +215,7 @@ export function PilotSquarePage() {
     }
 
     setSaving(label);
-    setError(null);
+    setActionError(null);
     setMessage(null);
     try {
       const result = await action();
@@ -220,7 +224,7 @@ export function PilotSquarePage() {
       await load();
       setMessage(`${label} completed.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update Square.");
+      setActionError(err instanceof Error ? err.message : "Could not update Square.");
     } finally {
       setSaving(null);
     }
@@ -233,7 +237,7 @@ export function PilotSquarePage() {
 
     const restaurantLocationId = Number(readValue(`pilot-square-location-${squareLocationId}`, ""));
     if (!Number.isFinite(restaurantLocationId) || restaurantLocationId <= 0) {
-      setError("Choose a Flowtally location before saving the mapping.");
+      setActionError("Choose a Flowtally location before saving the mapping.");
       return;
     }
 
@@ -267,11 +271,11 @@ export function PilotSquarePage() {
   const reviewMenuImport = async () => {
     if (!currentOrganizationId || !currentLocation?.id || !connectionReady) return;
     setMenuImportLoading(true);
-    setError(null);
+    setActionError(null);
     try {
       setMenuImport(await previewPilotSquareMenuImport(currentOrganizationId, currentLocation.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not review the Square menu import.");
+      setActionError(err instanceof Error ? err.message : "Could not review the Square menu import.");
     } finally {
       setMenuImportLoading(false);
     }
@@ -280,13 +284,13 @@ export function PilotSquarePage() {
   const runMenuImport = async () => {
     if (!currentOrganizationId || !currentLocation?.id || !connectionReady) return;
     setMenuImportLoading(true);
-    setError(null);
+    setActionError(null);
     try {
       setMenuImport(await importPilotSquareMenu(currentOrganizationId, currentLocation.id));
       await load();
       setMessage("Square menu import completed.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not import the Square menu.");
+      setActionError(err instanceof Error ? err.message : "Could not import the Square menu.");
     } finally {
       setMenuImportLoading(false);
     }
@@ -316,7 +320,7 @@ export function PilotSquarePage() {
     }
 
     setSaving("sync-now");
-    setError(null);
+    setActionError(null);
     setMessage(null);
     try {
       await syncPilotSquareLocations(currentOrganizationId);
@@ -329,7 +333,7 @@ export function PilotSquarePage() {
       await load();
       setMessage("Square reconciliation completed.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not sync Square.");
+      setActionError(err instanceof Error ? err.message : "Could not sync Square.");
     } finally {
       setSaving(null);
     }

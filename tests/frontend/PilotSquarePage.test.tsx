@@ -303,6 +303,22 @@ describe("PilotSquarePage", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
+  it("does not show Retry for a sync failure that follows a partial load failure", async () => {
+    mockApi.fetchPilotMenuCosting.mockRejectedValueOnce(new Error("Menu costing unavailable"));
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
+    mockApi.syncPilotSquareOrders.mockRejectedValueOnce(new Error("Sync exploded"));
+    render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Menu costing unavailable")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: "Reconcile Square data" }));
+    expect(await screen.findByText("Sync exploded")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
   it("hides unavailable Clover controls while preserving Square controls", async () => {
     mockApi.fetchPilotCloverStatus.mockResolvedValue({ enabled: false, connection: null });
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
