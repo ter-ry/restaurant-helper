@@ -114,6 +114,7 @@ export function PilotSquarePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [rangeStartAt, setRangeStartAt] = useState(dateRangeDefaults().startAt);
   const [rangeEndAt, setRangeEndAt] = useState(dateRangeDefaults().endAt);
   const [message, setMessage] = useState<string | null>(null);
@@ -144,6 +145,7 @@ export function PilotSquarePage() {
 
     setLoading(true);
     setError(null);
+    setLoadFailed(false);
     const generation = ++loadGeneration.current;
     const isCurrent = () => generation === loadGeneration.current;
     const failures: string[] = [];
@@ -165,7 +167,10 @@ export function PilotSquarePage() {
         setMappingCoverage(mappingResponse.mappingCoverage);
       }),
     ]);
-    if (isCurrent() && failures.length) setError(failures.join(" "));
+    if (isCurrent() && failures.length) {
+      setError(failures.join(" "));
+      setLoadFailed(true);
+    }
     if (isCurrent()) setLoading(false);
   };
 
@@ -391,6 +396,7 @@ export function PilotSquarePage() {
               Problem
             </div>
             <p className="mt-1">{error}</p>
+            {loadFailed ? <Button className="mt-3" variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button> : null}
           </div>
         ) : null}
         {initialLoading ? (

@@ -289,6 +289,20 @@ describe("PilotSquarePage", () => {
     expect(screen.getByRole("button", { name: "Connect Clover sandbox" })).toBeVisible();
   });
 
+  it("offers Retry after the Square load fails and recovers on success", async () => {
+    mockApi.fetchPilotSquareStatus.mockRejectedValueOnce(new Error("Square status unavailable"));
+    render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Square status unavailable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "Connection and health" })).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("Square status unavailable")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
   it("hides unavailable Clover controls while preserving Square controls", async () => {
     mockApi.fetchPilotCloverStatus.mockResolvedValue({ enabled: false, connection: null });
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
