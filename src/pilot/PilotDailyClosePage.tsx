@@ -63,6 +63,7 @@ export function PilotDailyClosePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"open" | "notes" | "finalize" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [countedCash, setCountedCash] = useState("");
 
@@ -84,6 +85,7 @@ export function PilotDailyClosePage() {
     }
     setLoading(true);
     setError(null);
+    setLoadFailed(false);
     setMessage(null);
     try {
       const response = await fetchPilotDailyClose(locationId, businessDate || null);
@@ -94,6 +96,7 @@ export function PilotDailyClosePage() {
       setCountedCash(savedCash == null ? "" : String(savedCash));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load daily close.");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -304,7 +307,7 @@ export function PilotDailyClosePage() {
               </button>
             </>
           ) : !currentSession ? (
-            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null} onClick={() => void openClose()}>
+            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={!selectedLocationId || saving !== null || loadFailed || loading} onClick={() => void openClose()}>
               <RefreshCw className="h-4 w-4" />
               Start close
             </button>
@@ -313,7 +316,17 @@ export function PilotDailyClosePage() {
         </div>
       </Card>
 
-      {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">{error}</div> : null}
+      {error ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900" role="alert">
+          <span>{error}</span>
+          {loadFailed && !loading ? (
+            <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-900" type="button" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
+              Try again
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">{message}</div> : null}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-muted" aria-busy="true">Loading daily close…</div> : null}
 
