@@ -173,14 +173,17 @@ def _order_import_covers_day(connection: SquareConnection | None, location: Rest
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
+    covered: set[str] = set()
     for job in jobs:
         cursor = job.cursor_json or {}
         job_start, job_end = parse(cursor.get("startAt")), parse(cursor.get("endAt"))
         if job_start is None or job_end is None or job_start > start_at or job_end < end_at:
             continue
-        if mapped and not mapped.issubset({str(v) for v in cursor.get("locationIds", [])}):
-            continue
-        return True
+        if not mapped:
+            return True
+        covered |= mapped & {str(v) for v in cursor.get("locationIds", [])}
+        if covered == mapped:  # separate per-location imports of the full day combine
+            return True
     return False
 
 

@@ -485,4 +485,18 @@ def test_in_progress_or_failed_order_import_makes_sales_unavailable(app, monkeyp
         db.session.flush()
         covered, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 30))
         assert covered["sales"]["salesStatus"] == "available"
+
+        # Two Square locations mapped to one restaurant location, each imported separately for the full day.
+        sq2 = SquareLocation(square_connection_id=connection.id, square_location_id="LOC-F2", name="K2", status="ACTIVE", raw_payload_json={})
+        db.session.add(sq2)
+        db.session.flush()
+        db.session.add(SquareLocationMapping(square_location_id=sq2.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
+        db.session.flush()
+        window = {"startAt": "2026-08-29T04:00:00Z", "endAt": "2026-08-30T04:00:00Z"}
+        db.session.add(SquareSyncJob(square_connection_id=connection.id, job_type="orders", status="completed", completed_at=datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc), cursor_json={**window, "locationIds": ["LOC-F"]}))
+        partial, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 29))
+        assert partial["sales"]["salesStatus"] == "unavailable"  # LOC-F2 not imported for that day yet
+        db.session.add(SquareSyncJob(square_connection_id=connection.id, job_type="orders", status="completed", completed_at=datetime(2026, 9, 3, 12, 5, tzinfo=timezone.utc), cursor_json={**window, "locationIds": ["LOC-F2"]}))
+        combined, *_ = dc._build_daily_close_snapshot(organization, location, date(2026, 8, 29))
+        assert combined["sales"]["salesStatus"] == "available"
         db.session.rollback()
