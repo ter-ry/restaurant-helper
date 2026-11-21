@@ -54,6 +54,17 @@ describe("PilotCloverMappingPanel", () => {
     api.savePilotCloverMenuMapping.mockResolvedValue({ mapping: { id: 2, cloverItemId: "clover-item-1", flowtallyMenuItemId: 10, flowtallyMenuItemName: "Harbour Burger", hasRecipe: false } });
   });
 
+  it("offers Retry after a failed initial load and hides the false unmapped state", async () => {
+    api.fetchPilotCloverMappings.mockRejectedValueOnce(new Error("Clover unreachable"));
+    render(<PilotCloverMappingPanel organizationId={1} catalog={catalog} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Clover unreachable");
+    expect(screen.queryByRole("combobox", { name: "Map Test Burger" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("combobox", { name: "Map Test Burger" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
   it("requires explicit Save mapping confirmation before writing a dropdown change", async () => {
     render(<PilotCloverMappingPanel organizationId={1} catalog={catalog} />);
     const select = await screen.findByRole("combobox", { name: "Map Test Burger" });

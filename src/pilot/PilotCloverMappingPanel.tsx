@@ -26,6 +26,7 @@ export function PilotCloverMappingPanel({ organizationId, catalog }: { organizat
   const busyRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshFailed, setRefreshFailed] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const basicItems = useMemo(
@@ -53,9 +54,10 @@ export function PilotCloverMappingPanel({ organizationId, catalog }: { organizat
     setError(null);
     setNotice(null);
     setRefreshFailed(false);
+    setLoadFailed(false);
     setPendingSelections({});
     loadMappings()
-      .catch((err) => { if (active) setError(err instanceof Error ? err.message : "Could not load Clover mappings."); })
+      .catch((err) => { if (active) { setLoadFailed(true); setError(err instanceof Error ? err.message : "Could not load Clover mappings."); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [loadMappings]);
@@ -99,6 +101,8 @@ export function PilotCloverMappingPanel({ organizationId, catalog }: { organizat
     try {
       await loadMappings();
       setRefreshFailed(false);
+      setLoadFailed(false);
+      setError(null);
       setNotice("Mapping state refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not refresh Clover mappings.");
@@ -152,7 +156,8 @@ export function PilotCloverMappingPanel({ organizationId, catalog }: { organizat
       {busy ? <p role="status" className="mt-3 text-sm text-muted">{busy}</p> : null}
       {notice && !busy ? <p role="status" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{notice}</p> : null}
       {refreshFailed && !busy ? <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-amber-900"><span>Saved, but the latest state could not be reloaded.</span><Button type="button" variant="secondary" onClick={() => void refresh()}>Refresh</Button></div> : null}
-      {loading ? <p className="mt-3 text-sm text-muted">Loading mapping state…</p> : <>
+      {loadFailed && !loading && !busy ? <div className="mt-3"><Button type="button" variant="secondary" onClick={() => void refresh()}>Retry</Button></div> : null}
+      {loading ? <p className="mt-3 text-sm text-muted">Loading mapping state…</p> : loadFailed ? null : <>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span className="font-semibold text-ink">Merchant:</span><span className="text-muted">{catalog.merchantName}</span><span className="text-muted">·</span><span className="font-semibold text-ink">Location:</span><span className="text-muted">{catalog.location?.name ?? "Merchant-level (Clover supplied no location ID)"}</span>{locationMapping ? <span className="text-emerald-700">Confirmed</span> : <Button type="button" disabled={Boolean(busy)} onClick={() => void confirmLocation()}>Confirm location</Button>}{locationMapping ? <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => void removeLocation()}>Remove</Button> : null}</div>
         <div className="mt-4 space-y-2">{basicItems.map((item) => {
           const existing = mappings.find((mapping) => mapping.cloverItemId === item.id);

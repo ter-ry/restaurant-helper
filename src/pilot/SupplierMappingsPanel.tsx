@@ -34,6 +34,7 @@ export function SupplierMappingsPanel({ supplierId, inventoryItems, onChanged }:
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -41,19 +42,25 @@ export function SupplierMappingsPanel({ supplierId, inventoryItems, onChanged }:
     setMappings(response.mappings);
   }, [supplierId]);
 
+  const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
+    setLoadFailed(false);
     setDraft(null);
     fetchPilotSupplierItemMappings(supplierId)
       .then((response) => active && setMappings(response.mappings))
-      .catch((err) => active && setError(err instanceof Error ? err.message : "Could not load mappings."))
+      .catch((err) => {
+        if (!active) return;
+        setLoadFailed(true);
+        setError(err instanceof Error ? err.message : "Could not load mappings.");
+      })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [supplierId]);
+  }, [supplierId, loadAttempt]);
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     if (saving) return;
@@ -110,15 +117,16 @@ export function SupplierMappingsPanel({ supplierId, inventoryItems, onChanged }:
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-bold uppercase tracking-wide text-muted">Supplier item mappings</p>
         {!demoReadOnly ? (
-          <Button type="button" variant="secondary" disabled={saving} onClick={() => { setNotice(null); setError(null); setDraft(blank()); }}>
+          <Button type="button" variant="secondary" disabled={saving || loading || loadFailed} onClick={() => { setNotice(null); setError(null); setDraft(blank()); }}>
             Add mapping
           </Button>
         ) : null}
       </div>
       {error ? <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
       {notice ? <p role="status" className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p> : null}
+      {loadFailed && !loading ? <div className="mt-3"><Button type="button" variant="secondary" onClick={() => setLoadAttempt((n) => n + 1)}>Retry</Button></div> : null}
       {loading ? <p className="mt-3 text-sm text-muted">Loading mappings…</p> : null}
-      {!loading && !mappings.length ? <p className="mt-3 rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No mappings yet. Add one so invoice lines from this supplier land on the right inventory item.</p> : null}
+      {!loading && !loadFailed && !mappings.length ? <p className="mt-3 rounded-2xl border border-dashed border-line px-3 py-4 text-sm text-muted">No mappings yet. Add one so invoice lines from this supplier land on the right inventory item.</p> : null}
       <div className="mt-3 space-y-2">
         {mappings.map((mapping) => (
           <div key={mapping.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-slate-50 px-3 py-3 text-sm">

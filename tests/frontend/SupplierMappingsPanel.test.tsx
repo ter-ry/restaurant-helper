@@ -38,6 +38,19 @@ describe("SupplierMappingsPanel", () => {
     Object.values(api).forEach((fn) => fn.mockReset());
   });
 
+  it("offers Retry after a failed load instead of a false empty state", async () => {
+    api.fetchPilotSupplierItemMappings.mockRejectedValueOnce(new Error("Network down")).mockResolvedValueOnce({ mappings: [row()] });
+    render(<SupplierMappingsPanel supplierId={5} inventoryItems={[{ id: 7, name: "Flour" }]} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Network down");
+    expect(screen.queryByText(/No mappings yet/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Add mapping" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Flour 20kg")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(api.fetchPilotSupplierItemMappings).toHaveBeenCalledTimes(2);
+  });
+
   it("lists, adds with refetch and shows success without reload", async () => {
     api.fetchPilotSupplierItemMappings.mockResolvedValueOnce({ mappings: [row()] }).mockResolvedValueOnce({ mappings: [row(), row({ id: 2, supplierItemName: "Sugar 10kg", inventoryItemName: "Sugar" })] });
     api.createPilotSupplierItemMapping.mockResolvedValue(row({ id: 2 }));
