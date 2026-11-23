@@ -32,12 +32,14 @@ try:  # package-style and script-style imports both work
     from scripts import develop_merge_policy as policy
     from scripts import trusted_review_attestation as attest
     from scripts import trusted_review_runtime as app_auth
+    from scripts import ruleset_attestation as ruleset_attest
     from scripts.trusted_review_evidence_collector import Collector
     from scripts.trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY
 except ImportError:  # pragma: no cover
     import develop_merge_policy as policy  # type: ignore
     import trusted_review_attestation as attest  # type: ignore
     import trusted_review_runtime as app_auth  # type: ignore
+    import ruleset_attestation as ruleset_attest  # type: ignore
     from trusted_review_evidence_collector import Collector  # type: ignore
     from trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY  # type: ignore
 
@@ -71,6 +73,7 @@ class Config:
     enabled: bool = False
     live_writes: bool = False
     trusted_coauthor_emails: tuple[str, ...] = ()
+    ruleset_attestation: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -361,6 +364,10 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
 
     safe("mergeable", "mergeable", live_pr)
     def protection():
+        if cfg.ruleset_attestation is not None:
+            branches = cfg.ruleset_attestation.get("payload", {}).get("branches", {})
+            extras["ruleset_protection"] = branches.get(ALLOWED_BASE)
+            return True
         # GitHub returns 404 "Branch not protected" for classic protection when only a ruleset guards the
         # branch (verified live 2026-11-13), so a failed classic read falls through to the ruleset view.
         classic = t.get(f"{root}/branches/{ALLOWED_BASE}/protection", {})
@@ -597,8 +604,9 @@ class GuardedTransport:
       operate while the ruleset that actually protects `main` is missing or bypassable.
     """
 
-    def __init__(self, inner: Any, repository: str):
+    def __init__(self, inner: Any, repository: str, ruleset_attestation: Mapping[str, Any] | None = None):
         self._t, self._repo, self._main_ok = inner, repository, False
+        self._ruleset_attestation = ruleset_attestation
         self._merge_path = re.compile(r"^/repos/" + re.escape(repository) + r"/pulls/[1-9][0-9]{0,8}/merge$")
 
     def get(self, path: str, params: dict) -> Any:
@@ -613,6 +621,13 @@ class GuardedTransport:
 
     def _check_main(self) -> None:
         root = f"/repos/{self._repo}"
+        if self._ruleset_attestation is not None:
+            branches = self._ruleset_attestation.get("payload", {}).get("branches", {})
+            problems = main_guard_problems(branches.get("main"))
+            if problems:
+                raise PermissionError("WRITE_REFUSED:" + ",".join(problems))
+            self._main_ok = True
+            return
         resp = self._t.get(f"{root}/rules/branches/main", {"per_page": 100})
         rules = resp.get("body") if isinstance(resp, Mapping) and resp.get("status") == 200 else None
         if not isinstance(rules, list) or len(rules) >= 100:
@@ -803,6 +818,31 @@ def preflight_main(env: Mapping[str, str]) -> int:
     return 0 if report["status"] == "PASS" else 1
 
 
+def load_ruleset_attestation(env: Mapping[str, str]) -> Mapping[str, Any]:
+    """Verify the observer artifact before the merge transport is created."""
+    path = env.get("FLOWTALLY_RULESET_ATTESTATION_PATH", "")
+    public = env.get("FLOWTALLY_RULESET_ATTESTATION_PUBLIC_KEY", "")
+    try:
+        if not path or not public or not env.get("FLOWTALLY_RULESET_OBSERVER_APP_ID", "").isdigit():
+            raise ValueError
+        with open(path, encoding="utf-8") as handle:
+            document = json.load(handle)
+        import base64
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        raw = base64.urlsafe_b64decode(public + "=" * (-len(public) % 4))
+        key = Ed25519PublicKey.from_public_bytes(raw)
+        ok, reason = ruleset_attest.verify(document, public_key=key, repository=env["GITHUB_REPOSITORY"],
+                                            observer_app_id=int(env["FLOWTALLY_RULESET_OBSERVER_APP_ID"]),
+                                            now=datetime.now(timezone.utc))
+        if not ok:
+            raise app_auth.ConfigError("ruleset_attestation_invalid:" + reason)
+        return document
+    except app_auth.ConfigError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - never expose artifact contents
+        raise app_auth.ConfigError("ruleset_attestation_unusable") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit 0 only for a clean run (including a clean no-op/dry-run); nonzero on any error."""
     env = os.environ
@@ -819,7 +859,9 @@ def main(argv: list[str] | None = None) -> int:
             live_writes=env.get(LIVE_WRITES_VARIABLE) == "true",
             trusted_coauthor_emails=tuple(e for e in env.get("TRUSTED_COAUTHOR_EMAILS", "").split(",") if e))
         token = mint_merge_token(env, cfg.repository, cfg.verifier_app_id, datetime.now(timezone.utc))
-        rep = run_once(GuardedTransport(UrllibTransport(token), cfg.repository), cfg)
+        attestation = load_ruleset_attestation(env)
+        cfg = replace(cfg, ruleset_attestation=attestation)
+        rep = run_once(GuardedTransport(UrllibTransport(token), cfg.repository, attestation), cfg)
     except app_auth.ConfigError as exc:  # fixed-vocabulary reason only: no token, key or provider text
         print(json.dumps({"status": "error", "error": "ConfigError", "reason": str(exc)}))
         return 1
