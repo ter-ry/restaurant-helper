@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ruleset_attestation as a
 import ruleset_observer as observer
+import develop_automerge_controller as controller
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 NOW = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
@@ -82,6 +83,24 @@ class AttestationTests(unittest.TestCase):
     def test_expiry_is_rechecked_for_the_final_write_gate(self):
         self.assertTrue(a.is_unexpired(self.doc, NOW))
         self.assertFalse(a.is_unexpired(self.doc, NOW + timedelta(seconds=901)))
+
+    def test_guarded_transport_refuses_expired_attestation_before_put(self):
+        expired = a.sign(repository="ter-ry/restaurant-helper", observer_app_id=99, branches=BRANCHES,
+                          now=NOW - timedelta(seconds=1000), private_key=self.private)
+
+        class Inner:
+            def __init__(self):
+                self.puts = []
+
+            def put(self, path, body):
+                self.puts.append((path, body))
+
+        inner = Inner()
+        transport = controller.GuardedTransport(inner, "ter-ry/restaurant-helper", expired)
+        with self.assertRaisesRegex(PermissionError, "RULESET_ATTESTATION_EXPIRED"):
+            transport.put("/repos/ter-ry/restaurant-helper/pulls/1/merge",
+                          {"sha": "a" * 40, "merge_method": "squash"})
+        self.assertEqual(inner.puts, [])
 
 
 if __name__ == "__main__":
