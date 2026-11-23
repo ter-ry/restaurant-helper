@@ -260,8 +260,8 @@ export function PilotInventoryPage() {
       setError(null);
     });
     const unsubscribeSuppliers = subscribePilotCache<{ suppliers: PilotSupplierSummary[] }>("/api/pilot/suppliers", (response) => {
+      // Supplier data arriving says nothing about whether the inventory list loaded, so it must not clear a load error.
       setSuppliers(response.suppliers);
-      setError(null);
     });
     return () => {
       unsubscribeInventory();
@@ -1044,7 +1044,7 @@ export function PilotInventoryPage() {
               </div>
               {itemDetail?.item ? (
                 <div className="mt-3">
-                  <InventoryTransferAction pendingRef={pendingTransferRef} item={itemDetail.item} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
+                  <InventoryTransferAction pendingRef={pendingTransferRef} item={reconciledItem(itemDetail.item)} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
                 </div>
               ) : null}
               {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={reconciledItem(itemDetail.item)} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
