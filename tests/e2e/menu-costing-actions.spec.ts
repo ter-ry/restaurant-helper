@@ -88,7 +88,7 @@ async function installWorld(page: Page, world: World) {
       }
       // costUnavailable models a recipe whose ingredient costs are not known: the API reports null figures, never 0.
       const unavailable = (item: MenuItem) => ({ ...menuItemPayload(item), recipeCostPerYield: null, grossProfit: null, foodCostPercent: null, grossMarginPercent: null, costAvailable: false, warnings: ["Ingredient cost unavailable"] });
-      return json(route, { organizationId: 42, locationId: 7, recipes: [recipePayload()], menuItems: world.menuItems.map(world.costUnavailable ? unavailable : menuItemPayload) });
+      return json(route, { organizationId: 42, locationId: 7, recipes: [recipePayload()], menuItems: world.menuItems.map((item) => (world.costUnavailable ? unavailable(item) : menuItemPayload(item))) });
     }
     if (pathname === "/api/pilot/menu-costing/menu-items" && method === "POST") {
       world.posts.push(body);
