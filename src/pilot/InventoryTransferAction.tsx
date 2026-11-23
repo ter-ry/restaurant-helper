@@ -27,6 +27,9 @@ function newKey(itemId: number) {
 export function InventoryTransferAction({ pendingRef, item, currentLocationId, locations, onTransfer, disabled = false }: Props) {
   const destinations = locations.filter((location) => location.id !== currentLocationId);
   const restored = pendingRef.current[item.id] ?? null;
+  // Keep a local copy too: the original component can finish after this instance remounts and
+  // removes the shared entry. The retry must still replay the original idempotency key.
+  const restoredRef = useRef<PendingTransfer | null>(restored);
   const [open, setOpen] = useState(restored !== null);
   const [destinationId, setDestinationId] = useState<string>(restored?.destinationId ?? "");
   const [quantity, setQuantity] = useState(restored?.quantity ?? "");
@@ -47,7 +50,7 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
     if (inFlight.current) return;
     // Retrying an unresolved attempt replays exactly what was sent; availability is then the server's call, because a
     // committed transfer replays regardless of the stock that is left.
-    const pending = pendingRef.current[item.id];
+    const pending = pendingRef.current[item.id] ?? (unresolved && restoredRef.current?.itemId === item.id ? restoredRef.current : undefined);
     if (!pending) {
       if (!destinationId) return setError("Choose where to send the stock.");
       if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return setError("Enter a quantity greater than zero.");
@@ -59,9 +62,11 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
     const isRetry = pending !== undefined;
     const attempt = pending ?? { itemId: item.id, key: newKey(item.id), destinationId, quantity, reason };
     pendingRef.current[item.id] = attempt;
+    restoredRef.current = attempt;
     try {
       const summary = await onTransfer({ destinationLocationId: Number(attempt.destinationId), quantity: Number(attempt.quantity), reason: attempt.reason.trim(), idempotencyKey: attempt.key });
-      delete pendingRef.current[item.id];
+      if (pendingRef.current[item.id]?.key === attempt.key) delete pendingRef.current[item.id];
+      restoredRef.current = null;
       setUnresolved(false);
       setNotice(summary);
       setOpen(false);
@@ -72,7 +77,8 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
       const message = err instanceof Error ? (detailText ? `${err.message} ${detailText}` : err.message) : "Could not transfer stock.";
       if (!isRetry && err instanceof PilotApiError && err.status >= 400 && err.status < 500) {
         // A first attempt that the server refused: nothing was applied, so the next attempt is a new decision.
-        delete pendingRef.current[item.id];
+        if (pendingRef.current[item.id]?.key === attempt.key) delete pendingRef.current[item.id];
+        restoredRef.current = null;
         setUnresolved(false);
         setError(message);
       } else {
@@ -119,7 +125,7 @@ export function InventoryTransferAction({ pendingRef, item, currentLocationId, l
           <div className="flex flex-wrap gap-2">
             <Button type="button" disabled={busy || disabled} onClick={() => void submit()}>{busy ? "Transferring…" : unresolved ? "Retry same transfer" : "Confirm transfer"}</Button>
             {unresolved ? (
-              <Button type="button" variant="secondary" disabled={busy} onClick={() => { delete pendingRef.current[item.id]; setUnresolved(false); setError(null); }}>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { if (pendingRef.current[item.id]?.key === restoredRef.current?.key) delete pendingRef.current[item.id]; restoredRef.current = null; setUnresolved(false); setError(null); }}>
                 Discard attempt
               </Button>
             ) : null}
