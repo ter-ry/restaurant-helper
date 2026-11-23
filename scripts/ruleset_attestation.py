@@ -100,3 +100,9 @@ def verify(document: Any, *, public_key: Ed25519PublicKey, repository: str, obse
             if detail["bypass_actors"]:
                 return False, "ATTESTATION_BYPASS_ACTORS_NONEMPTY"
     return True, "OK"
+
+
+def is_unexpired(document: Any, now: datetime) -> bool:
+    payload = document.get("payload") if isinstance(document, Mapping) else None
+    expires = _time(payload.get("expires_at")) if isinstance(payload, Mapping) else None
+    return expires is not None and expires > now.astimezone(timezone.utc)

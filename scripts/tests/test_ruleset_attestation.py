@@ -61,13 +61,27 @@ class AttestationTests(unittest.TestCase):
                      "/repos/ter-ry/restaurant-helper/rulesets/2": copy.deepcopy(DETAIL)}
         calls = []
         original = observer._get
-        observer._get = lambda token, path: (calls.append(path) or responses[path])
+        observer._get = lambda token, path: (calls.append(path) or responses[path.split("?", 1)[0]])
         try:
             result = observer.collect("ter-ry/restaurant-helper", "token")
         finally:
             observer._get = original
         self.assertEqual(len([p for p in calls if p.endswith("/rulesets/1")]), 1)
         self.assertEqual(result["main"]["rulesets"], {"1": DETAIL})
+
+    def test_observer_rejects_a_truncated_full_page(self):
+        full_page = [{"ruleset_id": i} for i in range(100)]
+        original = observer._get
+        observer._get = lambda token, path: full_page
+        try:
+            with self.assertRaisesRegex(RuntimeError, "observer_rules_truncated"):
+                observer.collect("ter-ry/restaurant-helper", "token")
+        finally:
+            observer._get = original
+
+    def test_expiry_is_rechecked_for_the_final_write_gate(self):
+        self.assertTrue(a.is_unexpired(self.doc, NOW))
+        self.assertFalse(a.is_unexpired(self.doc, NOW + timedelta(seconds=901)))
 
 
 if __name__ == "__main__":

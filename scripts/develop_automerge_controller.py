@@ -649,6 +649,9 @@ class GuardedTransport:
         if not (isinstance(body, Mapping) and set(body) == {"sha", "merge_method"} and body["merge_method"] == MERGE_METHOD
                 and isinstance(body["sha"], str) and re.fullmatch(r"[0-9a-f]{40}", body["sha"])):
             raise PermissionError("WRITE_REFUSED:BODY_NOT_ALLOWED")
+        if self._ruleset_attestation is not None and not ruleset_attest.is_unexpired(
+                self._ruleset_attestation, datetime.now(timezone.utc)):
+            raise PermissionError("WRITE_REFUSED:RULESET_ATTESTATION_EXPIRED")
         if not self._main_ok:
             self._check_main()
         return self._t.put(path, body)

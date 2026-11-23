@@ -30,8 +30,17 @@ def _get(token: str, path: str):
 def collect(repository: str, token: str) -> dict[str, object]:
     root, result = "/repos/" + repository, {}
     for branch in ("main", "develop"):
-        rules = _get(token, f"{root}/rules/branches/{branch}")
-        if not isinstance(rules, list) or not rules or len(rules) >= 100:
+        rules = []
+        for page in range(1, 11):
+            page_rules = _get(token, f"{root}/rules/branches/{branch}?per_page=100&page={page}")
+            if not isinstance(page_rules, list) or len(page_rules) > 100:
+                raise RuntimeError("observer_rules_invalid")
+            rules.extend(page_rules)
+            if len(page_rules) < 100:
+                break
+        else:
+            raise RuntimeError("observer_rules_truncated")
+        if not rules:
             raise RuntimeError("observer_rules_invalid")
         details = {}
         for rule in rules:
