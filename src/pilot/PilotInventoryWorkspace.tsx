@@ -28,6 +28,7 @@ import {
   type PilotSupplierSummary,
   updatePilotInventoryItem,
   updatePilotSupplier,
+  PilotApiError,
 } from "./pilotApi";
 import { NegativeStockNote, negativeStockByItem } from "./NegativeStockNote";
 import { formatDateTime, formatInventoryQuantity, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
@@ -203,6 +204,8 @@ export function PilotInventoryPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [reversalNotice, setReversalNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A 403 on load means this role cannot use Inventory; retrying cannot help, so the banner explains instead of offering Retry.
+  const [loadDenied, setLoadDenied] = useState(false);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
   // Bumped after every successful list load so panels with their own server data (free-stock evidence) re-read it on Refresh.
@@ -210,6 +213,7 @@ export function PilotInventoryPage() {
   const load = async () => {
     setLoading(true);
     setError(null);
+    setLoadDenied(false);
 
     try {
       const [response, supplierResponse, negativeResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers(), fetchPilotNegativeStock().catch(() => null)]);
@@ -239,6 +243,7 @@ export function PilotInventoryPage() {
       }
       setHasLoaded(true);
     } catch (err) {
+      setLoadDenied(err instanceof PilotApiError && err.status === 403);
       setError(err instanceof Error ? err.message : "Could not load inventory.");
     } finally {
       setLoading(false);
@@ -1363,7 +1368,7 @@ export function PilotInventoryPage() {
 
   return (
     <div className="workspace-page">
-      {error && !anyDialogOpen ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+      {error && !anyDialogOpen ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}{loadDenied ? " Ask an owner or manager for access to Inventory." : ""}</span>{loadDenied ? null : <Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button>}</div> : null}
       {workspaceMode === "browse" ? (
         <>
           <div className="inventory-toolbar pilot-inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">

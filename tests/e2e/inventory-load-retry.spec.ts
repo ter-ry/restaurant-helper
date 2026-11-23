@@ -25,7 +25,7 @@ const ITEMS: Item[] = [
   { id: 31, name: "Whole Milk", category: "Dairy", stockUnit: "L", currentOnHand: 20, minQuantity: 4, parLevel: 10, supplierId: null, active: true },
 ];
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
-type World = { failInventory: boolean; inventoryReads: number };
+type World = { failInventory: boolean; inventoryReads: number; forbidden?: boolean };
 
 const itemPayload = (item: Item) => ({
   id: item.id, organizationId: 42, locationId: 7, supplierId: item.supplierId, name: item.name, normalizedName: item.name.toLowerCase(), category: item.category,
@@ -58,6 +58,7 @@ async function installWorld(page: Page, world: World) {
     if (pathname === "/api/pilot/inventory") {
       world.inventoryReads += 1;
       if (world.failInventory) {
+        if (world.forbidden) return json(route, { error: "You do not have permission to do that.", errors: { permission: "Access is restricted for this action." } }, 403);
         return json(route, { error: "Inventory service is temporarily unavailable." }, 503);
       }
       return json(route, {
@@ -110,6 +111,18 @@ for (const viewport of VIEWPORTS) {
       world.failInventory = false;
       await alert.getByRole("button", { name: "Retry" }).click();
       await expect(page.getByText("Chicken Breast").first()).toBeVisible();
+    });
+
+    test("a 403 explains the missing access, offers no useless Retry and shows no false totals", async ({ page }) => {
+      const world: World = { failInventory: true, forbidden: true, inventoryReads: 0 };
+      await installWorld(page, world);
+      await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+      const alert = page.getByRole("alert").filter({ hasText: "You do not have permission to do that." });
+      await expect(alert).toBeVisible();
+      await expect(alert).toContainText("Ask an owner or manager");
+      await expect(alert.getByRole("button", { name: "Retry" })).toHaveCount(0);
+      await expect(page.getByText("Chicken Breast")).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     });
   });
 }
