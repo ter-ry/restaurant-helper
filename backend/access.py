@@ -31,6 +31,7 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.create_purchase_invoice": "PURCHASES",
     "pilot_api.update_purchase_invoice": "PURCHASES",
     "pilot_api.receive_purchase_invoice": "PURCHASES",
+    "pilot_api.override_ocr_discrepancy": "PURCHASES",
     "pilot_api.inventory": "INVENTORY",
     "pilot_api.inventory_item_detail": "INVENTORY",
     "pilot_api.create_inventory_item": "INVENTORY",

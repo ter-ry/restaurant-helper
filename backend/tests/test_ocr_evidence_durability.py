@@ -256,3 +256,27 @@ def test_correction_draft_keeps_printed_evidence_but_not_the_override(app, clien
     assert draft["ocrEvidence"]["status"] == "incomplete"
     assert draft["ocrEvidence"]["override"] is None
     assert client.post(f"/api/pilot/purchases/invoices/{draft_id}/receive", headers=headers).status_code == 400
+
+
+def test_ocr_override_respects_the_purchases_module_gate(app, client, monkeypatch):
+    from backend.extensions import db
+    from backend.models import OrganizationModule
+
+    _stub_ocr(monkeypatch)
+    login(client)
+    headers = csrf_headers(client)
+    extracted = _extract(client, headers)
+    created = client.post("/api/pilot/purchases/invoices", headers=headers, json=_payload(client, extracted, line_total=15)).get_json()
+    with app.app_context():
+        invoice = PurchaseInvoice.query.filter_by(id=created["id"]).one()
+        OrganizationModule.query.filter_by(organization_id=invoice.organization_id, module_key="PURCHASES").one().status = "DISABLED"
+        db.session.commit()
+    response = client.post(
+        f"/api/pilot/purchases/invoices/{created['id']}/ocr-override",
+        headers=headers,
+        json={"reason": "Supplier confirmed only soup was delivered", "acknowledgedLineTotal": 15},
+    )
+    assert response.status_code == 403
+    with app.app_context():
+        assert AuditEvent.query.filter_by(event_type="purchases.ocr_discrepancy_override").count() == 0
+        assert PurchaseInvoice.query.filter_by(id=created["id"]).one().ocr_override_by_user_id is None

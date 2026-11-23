@@ -174,3 +174,22 @@ def test_verification_endpoints_respect_the_inventory_module_gate(app, client, w
     ]
     assert [r.status_code for r in responses] == [403, 403, 403, 403]
     assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("0"), False)]
+
+
+def test_transfer_into_negative_destination_only_creates_evidence_for_units_that_remain(app, client, world):  # noqa: F811
+    _zero(app, world["flour_main"])
+    assert _verify(client, world["flour_main"], 6).status_code == 201
+    with app.app_context():
+        db.session.get(InventoryItem, world["flour_kiosk"]).current_on_hand = Decimal("-3")
+        db.session.commit()
+    assert _transfer(client, world, quantity=4).status_code == 201
+    # Source evidence is fully consumed for 4; 3 units only cover the deficit, so 1 verified unit arrives.
+    assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("4"), False)]
+    assert _rows(app, world["flour_kiosk"]) == [(Decimal("1"), Decimal("0"), False)]
+    # A transfer that only covers the deficit creates no destination evidence.
+    with app.app_context():
+        db.session.get(InventoryItem, world["flour_kiosk"]).current_on_hand = Decimal("-5")
+        db.session.commit()
+    assert _transfer(client, world, quantity=2).status_code == 201
+    assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("6"), False)]
+    assert len(_rows(app, world["flour_kiosk"])) == 1  # no new destination evidence row

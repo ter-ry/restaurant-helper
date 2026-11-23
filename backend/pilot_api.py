@@ -3279,12 +3279,21 @@ def create_inventory_transfer():
     )
     if free_batches:
         # Verified-free stock: consume the source evidence oldest first and re-create it at the destination (#279).
+        # Units that only cover a negative destination balance are consumed on arrival, so they get no evidence.
         remaining = quantity
+        dest_evidence_left = max(Decimal("0"), quantity - max(Decimal("0"), -target_before))
         for batch_row in free_batches:
             take = min(_verification_batch(batch_row).remaining, remaining)
             if take <= 0:
                 continue
             batch_row.consumed_quantity = Decimal(batch_row.consumed_quantity or 0) + take
+            remaining -= take
+            take = min(take, dest_evidence_left)
+            dest_evidence_left -= take
+            if take <= 0:
+                if remaining <= 0:
+                    break
+                continue
             db.session.add(
                 InventoryCostVerification(
                     organization_id=organization.id, location_id=destination.id, inventory_item_id=target.id,
@@ -3295,7 +3304,6 @@ def create_inventory_transfer():
                     idempotency_key=f"transfer-{transfer.id}-v{batch_row.id}", verified_by_user_id=current_user.id, verified_at=_now(),
                 )
             )
-            remaining -= take
             if remaining <= 0:
                 break
     # Source cost is unchanged by a send; the destination blends the carried cost into its own average (#197).
