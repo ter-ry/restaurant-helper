@@ -174,3 +174,28 @@ def test_verification_endpoints_respect_the_inventory_module_gate(app, client, w
     ]
     assert [r.status_code for r in responses] == [403, 403, 403, 403]
     assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("0"), False)]
+
+
+def test_transfer_into_negative_destination_does_not_create_evidence_for_deficit_units(app, client, world):  # noqa: F811
+    """Units that only cover a POS-oversold deficit must not become unconsumed verified-free stock (W1 handoff)."""
+    _zero(app, world["flour_main"])
+    _verify(client, world["flour_main"], 6)
+    with app.app_context():
+        kiosk = db.session.get(InventoryItem, world["flour_kiosk"])
+        kiosk.current_on_hand = Decimal("-3")
+        db.session.commit()
+    response = _transfer(client, world, quantity=4)
+    assert response.status_code == 201, response.get_data(as_text=True)
+    with app.app_context():
+        assert Decimal(db.session.get(InventoryItem, world["flour_kiosk"]).current_on_hand) == Decimal("1")
+    # All 4 source units are consumed; only the 1 unit that ends up on the shelf carries evidence at the destination.
+    assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("4"), False)]
+    assert _rows(app, world["flour_kiosk"]) == [(Decimal("1"), Decimal("0"), False)]
+    # A transfer that only covers the deficit creates no destination evidence at all.
+    with app.app_context():
+        kiosk = db.session.get(InventoryItem, world["flour_kiosk"])
+        kiosk.current_on_hand = Decimal("-5")
+        db.session.commit()
+    assert _transfer(client, world, quantity=2).status_code == 201
+    assert _rows(app, world["flour_main"]) == [(Decimal("6"), Decimal("6"), False)]
+    assert len(_rows(app, world["flour_kiosk"])) == 1  # no new destination evidence row was created
