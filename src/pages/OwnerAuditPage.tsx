@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { CustomerApiError, fetchCustomerSession, startGoogleLogin, type CustomerSessionResponse } from "../lib/customerAuth";
+import { formatAuditEventType, formatAuditMetadataKey } from "../lib/auditLabels";
 import { fetchCustomerAuditEvents, type CustomerAuditEvent } from "../lib/audit";
 
 type LoadState = "loading" | "signedOut" | "permissionDenied" | "ready" | "error";
@@ -13,7 +14,7 @@ function formatMetadata(event: CustomerAuditEvent) {
     return "No extra metadata.";
   }
   return Object.entries(event.metadata)
-    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .map(([key, value]) => `${formatAuditMetadataKey(key)}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
     .join(" · ");
 }
 
@@ -61,7 +62,7 @@ export function OwnerAuditPage() {
       return events;
     }
     return events.filter((event) => {
-      const haystack = [event.eventType, event.entityType, String(event.entityId ?? ""), event.createdAt, formatMetadata(event)].join(" ").toLowerCase();
+      const haystack = [event.eventType, formatAuditEventType(event.eventType), event.entityType, String(event.entityId ?? ""), event.createdAt, formatMetadata(event)].join(" ").toLowerCase();
       return haystack.includes(query);
     });
   }, [events, search]);
@@ -133,15 +134,15 @@ export function OwnerAuditPage() {
 
   return (
     <PageLayout title="Owner audit history" eyebrow="Flowtally commercial access" description="Search the latest activity recorded for this organization.">
-      <div className="mb-5 flex items-center justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm text-muted">
           Organization: {session?.organizations?.find((entry) => entry.selected)?.organization.name ?? "Current organization"}
         </div>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
           <Link className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" to="/owner/reports">
             Reports &amp; exports
           </Link>
-          <label className="flex min-w-64 flex-1 max-w-lg items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3">
+          <label className="flex min-w-0 basis-64 flex-1 max-w-lg items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3">
             <Activity className="h-4 w-4 text-brand-700" />
             <input className="w-full border-0 bg-transparent text-sm outline-none" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search event type, entity or metadata" />
           </label>
@@ -158,7 +159,7 @@ export function OwnerAuditPage() {
             <Card key={event.id} className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-ink">{event.eventType}</p>
+                  <p className="text-sm font-semibold text-ink" title={event.eventType}>{formatAuditEventType(event.eventType)}</p>
                   <p className="mt-1 text-sm text-muted">
                     {event.entityType}
                     {event.entityId !== null ? ` #${event.entityId}` : ""}
@@ -167,7 +168,7 @@ export function OwnerAuditPage() {
                 </div>
                 <p className="text-xs uppercase tracking-wide text-muted">{new Date(event.createdAt).toLocaleString()}</p>
               </div>
-              <p className="mt-3 text-sm leading-6 text-slate-700">{formatMetadata(event)}</p>
+              <p className="mt-3 break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]">{formatMetadata(event)}</p>
             </Card>
           ))}
         </div>

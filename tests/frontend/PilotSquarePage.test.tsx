@@ -289,6 +289,36 @@ describe("PilotSquarePage", () => {
     expect(screen.getByRole("button", { name: "Connect Clover sandbox" })).toBeVisible();
   });
 
+  it("offers Retry after the Square load fails and recovers on success", async () => {
+    mockApi.fetchPilotSquareStatus.mockRejectedValueOnce(new Error("Square status unavailable"));
+    render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Square status unavailable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "Connection and health" })).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("Square status unavailable")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("does not show Retry for a sync failure that follows a partial load failure", async () => {
+    mockApi.fetchPilotMenuCosting.mockRejectedValueOnce(new Error("Menu costing unavailable"));
+    mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
+    mockApi.syncPilotSquareOrders.mockRejectedValueOnce(new Error("Sync exploded"));
+    render(
+      <MemoryRouter>
+        <PilotSquarePage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Menu costing unavailable")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: "Reconcile Square data" }));
+    expect(await screen.findByText("Sync exploded")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
   it("hides unavailable Clover controls while preserving Square controls", async () => {
     mockApi.fetchPilotCloverStatus.mockResolvedValue({ enabled: false, connection: null });
     render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
@@ -404,7 +434,7 @@ describe("PilotSquarePage", () => {
     await waitFor(() => expect(mockApi.syncPilotSquareLocations).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mockApi.syncPilotSquareCatalog).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockApi.syncPilotSquareOrders).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mockApi.fetchPilotSquareStatus).toHaveBeenCalledTimes(5)); // initial + one authoritative re-fetch after each of the 4 successful mutations
     expect(await screen.findByText("Square reconciliation completed.")).toBeVisible();
   });
 

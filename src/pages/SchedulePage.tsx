@@ -228,9 +228,9 @@ export function SchedulePage() {
           <SectionHeader title="Mobile-friendly summary" description="No payroll, no compliance logic, just a clear weekly plan." />
           <ul className="mt-4 grid gap-3 text-sm leading-6 text-slate-700 md:grid-cols-2">
             <li className="rounded-lg border border-line bg-slate-50 p-4">Availability and preferences</li>
-            <li className="rounded-lg border border-line bg-slate-50 p-4">Generated weekly schedule</li>
+            <li className="rounded-lg border border-line bg-slate-50 p-4">Weekly schedule preview</li>
             <li className="rounded-lg border border-line bg-slate-50 p-4">Conflict warnings</li>
-            <li className="rounded-lg border border-line bg-slate-50 p-4">Manual edits and export/share</li>
+            <li className="rounded-lg border border-line bg-slate-50 p-4">Manual assignment edits (export/share not in demo)</li>
           </ul>
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-line bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted">
             <CheckCircle2 className="h-3.5 w-3.5" />

@@ -37,6 +37,8 @@ export function TeamManagementPage() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("manager");
   const [submitting, setSubmitting] = useState(false);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [recentInvitationUrl, setRecentInvitationUrl] = useState<string | null>(null);
 
@@ -83,9 +85,11 @@ export function TeamManagementPage() {
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     setCopyMessage(null);
+    setCancelMessage(null);
     try {
       const response = await createCustomerInvitation(email, role);
       setEmail("");
@@ -99,11 +103,18 @@ export function TeamManagementPage() {
   }
 
   async function handleCancel(invitationId: number) {
+    if (cancellingId !== null) return;
+    setCancellingId(invitationId);
+    setError(null);
+    setCancelMessage(null);
     try {
       await cancelCustomerInvitation(invitationId);
       await refreshInvitations();
+      setCancelMessage("Invitation cancelled.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not cancel the invitation.");
+    } finally {
+      setCancellingId(null);
     }
   }
 
@@ -233,6 +244,7 @@ export function TeamManagementPage() {
             </div>
           ) : null}
 
+          {cancelMessage ? <p role="status" className="mt-4 rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-slate-700">{cancelMessage}</p> : null}
           {copyMessage ? <p className="mt-4 rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-slate-700">{copyMessage}</p> : null}
         </Card>
 
@@ -264,9 +276,9 @@ export function TeamManagementPage() {
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {invitation.status === "pending" ? (
-                      <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50" type="button" onClick={() => void handleCancel(invitation.id)}>
+                      <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-60" type="button" disabled={cancellingId !== null} onClick={() => void handleCancel(invitation.id)}>
                         <Trash2 className="h-4 w-4" />
-                        Cancel
+                        {cancellingId === invitation.id ? "Cancelling..." : "Cancel"}
                       </button>
                     ) : null}
                   </div>

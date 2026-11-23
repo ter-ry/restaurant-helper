@@ -52,13 +52,22 @@ LIVE_WRITES_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_LIVE_WRITES"
 ATTESTATION_TTL_SECONDS = 1800  # well under att.MAX_TTL_SECONDS
 PHASE1_BASES = ("develop",)
 ALLOWED_EVENTS = ("workflow_dispatch", "schedule")
+# Unattended Tier 0 policy (#270). Live approval/check writes need, in addition to the two switches:
+#  * a manual dispatch that explicitly targets one PR, OR (scheduled / reconcile-all runs) the separate
+#    owner variable FLOWTALLY_TRUSTED_REVIEW_UNATTENDED=true (default off, so schedules stay dry-run); and
+#  * a per-PR ``live_eligibility`` pass over fresh evidence (below); and
+#  * a hard per-run write cap.
+# The policy is code: widening it is a reviewed change, never a setting.
+UNATTENDED_VARIABLE = "FLOWTALLY_TRUSTED_REVIEW_UNATTENDED"
+MAX_LIVE_WRITES_PER_RUN = 3
+MAX_LIVE_CHANGED_FILES = 25
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _CODEX_STATE = re.compile(r"<!--\s*codex-review-state:v1\s+(\{.*?\})\s*-->", re.S)
 
 REVIEWER_TOKEN_PERMISSIONS = {"pull_requests": "write", "contents": "read", "metadata": "read", "checks": "read",
-                              "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
+                              "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
 VERIFIER_TOKEN_PERMISSIONS = {"checks": "write", "pull_requests": "read", "contents": "read", "metadata": "read",
-                              "statuses": "read", "issues": "read", "variables": "read", "actions": "read"}
+                              "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
 REVIEWER_ONLY_SECRETS = ("FLOWTALLY_REVIEWER_APP_PRIVATE_KEY", "FLOWTALLY_REVIEWER_SIGNING_KEY")
 VERIFIER_ONLY_SECRETS = ("FLOWTALLY_VERIFIER_APP_PRIVATE_KEY",)
 
@@ -75,6 +84,66 @@ def enabled(env: Mapping[str, str]) -> bool:
 
 def live_writes_enabled(env: Mapping[str, str]) -> bool:
     return enabled(env) and env.get(LIVE_WRITES_VARIABLE) == "true"
+
+
+def live_target_allowed(env: Mapping[str, str], pr: int) -> bool:
+    """Run-level gate: switches on, and either an explicit manual dispatch target or the unattended variable."""
+    if not live_writes_enabled(env):
+        return False
+    event = env.get("GITHUB_EVENT_NAME")
+    if event == "workflow_dispatch" and isinstance(pr, int) and not isinstance(pr, bool) and pr > 0:
+        return True
+    return event in ALLOWED_EVENTS and env.get(UNATTENDED_VARIABLE) == "true"
+
+
+def live_eligibility(ev: Mapping[str, Any], cfg: Mapping[str, Any]) -> list[str]:
+    """Per-PR fail-closed policy for live writes. Empty list = eligible. Any missing field blocks.
+
+    Stricter than ``assess`` on purpose: same-repo head only, not a draft, bounded size, develop base,
+    Tier 0 docs-only files, open. This never relaxes ``assess``; it is applied in addition to it.
+    """
+    pr = ev.get("pr")
+    if not isinstance(pr, Mapping):
+        return ["live_no_pr"]
+    out = []
+    if (pr.get("base") or {}).get("ref") not in PHASE1_BASES:
+        out.append("live_base_not_develop")
+    if pr.get("state") != "open":
+        out.append("live_not_open")
+    if pr.get("draft") is not False:
+        out.append("live_draft_or_unknown")
+    repo_id = cfg.get("repo_id")
+    if not isinstance(repo_id, int) or isinstance(repo_id, bool) or ((pr.get("head") or {}).get("repo") or {}).get("id") != repo_id:
+        out.append("live_fork_or_unknown_head")
+    files = ev.get("changed_files")
+    if not isinstance(files, list) or not files:
+        out.append("live_no_changed_files")
+    else:
+        if len(files) > MAX_LIVE_CHANGED_FILES:
+            out.append("live_too_many_files")
+        if any(not isinstance(f, str) or policy.classify_path(f) != "tier0" for f in files):
+            out.append("live_not_tier0_only")
+    return out
+
+
+def _grants_trust(body: Any) -> bool:
+    """True for a write that grants trust (reviewer APPROVE, verifier success). Revocations never count."""
+    return isinstance(body, Mapping) and (body.get("event") == "APPROVE" or body.get("conclusion") == "success")
+
+
+class CappedPoster:
+    """Wraps the write transport: at most ``limit`` trust-GRANTING writes per job, then refuses (never silently
+    drops). Writes that only withdraw trust (failure checks, revocations) are never capped."""
+
+    def __init__(self, post: Callable[[str, Any], Any], limit: int = MAX_LIVE_WRITES_PER_RUN):
+        self._post, self._limit, self.count = post, limit, 0
+
+    def __call__(self, path: str, body: Any) -> Any:
+        if _grants_trust(body):
+            if self.count >= self._limit:
+                return {"status": 429, "body": None}  # fixed refusal; callers report *_unconfirmed, never "posted"
+            self.count += 1
+        return self._post(path, body)
 
 
 # ---- GitHub App authentication (stdlib HTTP + cryptography RS256; no third-party action) ----
@@ -128,24 +197,108 @@ class HttpTransport:
         return self._send("POST", "/graphql", None, {"query": query, "variables": variables})
 
 
-def mint_installation_token(jwt_transport: Any, repository: str, permissions: Mapping[str, str]) -> tuple[str, dict]:
-    """Short-lived, single-repository, least-privilege token. Returns (token, granted_permissions)."""
+# GitHub's POST /app/installations/{id}/access_tokens `permissions` field has no key for repository
+# Variables (live dry run 2026-11-12: 422 for "variables"; "actions_variables" is also unlisted), yet an
+# installation token can read variables when the App holds Variables:read. So the token request carries
+# NO permissions override (single repository only, inheriting the installed least-privilege App) and the
+# granted permission map is verified against an exact allowlist below; anything extra or missing fails closed.
+_LEVEL = {"read": 1, "write": 2, "admin": 3}
+_VARIABLES_ALIASES = ("actions_variables", "variables")
+_SAFE_KEY = re.compile(r"^[a-z_]{1,40}$")
+
+
+def _normalize_granted(granted: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(granted)
+    for alias in _VARIABLES_ALIASES:
+        if alias != "actions_variables" and alias in out:
+            value = out.pop(alias)
+            if "actions_variables" in out and _LEVEL.get(value, 99) <= _LEVEL.get(out["actions_variables"], 99):
+                continue  # keep the higher (or unknown, i.e. stricter) of the two reported levels
+            out["actions_variables"] = value
+    return out
+
+
+def granted_permission_problems(granted: Mapping[str, Any], expected: Mapping[str, str]) -> list[str]:
+    """Exact allowlist: no granted key outside `expected`, none above its level, none missing."""
+    problems = []
+    for key, level in sorted(granted.items()):
+        want = expected.get(key)
+        if want is None or _LEVEL.get(level, 99) > _LEVEL[want]:
+            problems.append("unexpected:" + (key if isinstance(key, str) and _SAFE_KEY.match(key) else "invalid_key"))
+    for key, want in sorted(expected.items()):
+        if _LEVEL.get(granted.get(key), 0) < _LEVEL[want]:
+            problems.append(f"missing:{key}")
+    return problems
+
+# Fixed vocabulary only. Provider text is matched, never echoed, so nothing untrusted reaches the log.
+_REFUSAL_PATTERNS = (
+    ("jwt_invalid", ("jwt", "json web token", "could not be decoded", "expiration time", "issued at")),
+    ("installation_not_updated", ("not granted", "accept", "pending", "has not been approved", "new permissions")),
+    ("invalid_permissions", ("permission", "not a permitted key", "not permitted")),
+    ("repo_scope_mismatch", ("repositor", "not accessible", "does not have access")),
+)
+
+
+def categorize_token_refusal(status: Any, body: Any) -> str:
+    """Map an installation-token HTTP failure to a safe, allowlisted category (never provider text)."""
+    if status == 401:
+        return "unauthorized_app_jwt"
+    if status == 404:
+        return "installation_not_found"
+    if status == 403:
+        base = "forbidden"
+    elif status == 422:
+        base = "unprocessable"
+    elif isinstance(status, int) and 500 <= status < 600:
+        return "github_server_error"
+    elif status == 429:
+        return "rate_limited"
+    else:
+        return "unexpected_status"
+    message = body.get("message") if isinstance(body, Mapping) else None
+    text = message.lower() if isinstance(message, str) else ""
+    for category, needles in _REFUSAL_PATTERNS:
+        if any(n in text for n in needles):
+            return f"{base}:{category}"
+    return f"{base}:unclassified"
+
+
+def _status_code(resp: Any) -> str:
+    status = resp.get("status") if isinstance(resp, Mapping) else None
+    return f"http_{status}" if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599 else "http_unknown"
+
+
+def mint_installation_token(jwt_transport: Any, repository: str, expected: Mapping[str, str]) -> tuple[str, dict]:
+    """Short-lived, single-repository token; returns (token, granted_permissions).
+
+    No `permissions` override is sent (see the note above); the granted map must equal the `expected`
+    allowlist or the call fails closed. Failures raise ConfigError("<step>:http_<status>:<category>") or a
+    fixed-vocabulary reason built only from numeric status and fixed strings; never a JWT, token, header
+    or response text.
+    """
     owner, name = repository.split("/")
     inst = jwt_transport.get(f"/repos/{owner}/{name}/installation")
     if inst.get("status") != 200 or not isinstance(inst.get("body"), Mapping) or not isinstance(inst["body"].get("id"), int):
-        raise ConfigError("app_installation_not_found")
+        raise ConfigError(f"app_installation_not_found:{_status_code(inst)}:{categorize_token_refusal(inst.get('status'), inst.get('body'))}")
     resp = jwt_transport.post(f"/app/installations/{inst['body']['id']}/access_tokens",
-                              {"repositories": [name], "permissions": dict(permissions)})
+                              {"repositories": [name]})
     body = resp.get("body")
-    if resp.get("status") != 201 or not isinstance(body, Mapping) or not isinstance(body.get("token"), str):
-        raise ConfigError("installation_token_refused")
+    if resp.get("status") != 201:
+        reason = f"installation_token_refused:{_status_code(resp)}:{categorize_token_refusal(resp.get('status'), body)}"
+        raise ConfigError(reason)
+    if not isinstance(body, Mapping) or not isinstance(body.get("token"), str):
+        raise ConfigError(f"installation_token_incomplete_response:{_status_code(resp)}")
     repos = body.get("repositories")
     if not isinstance(repos, list) or [r.get("full_name") for r in repos if isinstance(r, Mapping)] != [repository]:
         raise ConfigError("installation_token_not_single_repo")
     granted = body.get("permissions")
     if not isinstance(granted, Mapping):
         raise ConfigError("installation_token_permissions_unknown")
-    return body["token"], dict(granted)
+    granted = _normalize_granted(granted)
+    bad = granted_permission_problems(granted, expected)
+    if bad:
+        raise ConfigError("installation_token_permissions_not_allowlisted:" + ",".join(bad))
+    return body["token"], granted
 
 
 def verifier_permission_problems(permissions: Any) -> list[str]:
@@ -155,7 +308,7 @@ def verifier_permission_problems(permissions: Any) -> list[str]:
     out = [f"forbidden_write:{k}" for k, v in sorted(permissions.items()) if v in ("write", "admin") and k != "checks"]
     if permissions.get("checks") != "write":
         out.append("missing:checks_write")
-    if permissions.get("variables") != "read":
+    if permissions.get("actions_variables") != "read":
         out.append("missing:variables_read")
     return out
 
@@ -370,8 +523,9 @@ def review_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
     check = att.verify(pre, verifier_config(cfg), clock(), att.NonceStore())
     if not check.verified:
         return _out(n, "blocked", "preflight_verify_failed", *check.reasons)
-    if not live_writes_enabled(env) or post is None:
-        return _out(n, "dry_run", head_sha=payload["head_sha"], request={"path": request["path"], "commit_id": request["body"]["commit_id"],
+    ineligible = live_eligibility(again, cfg)
+    if not live_writes_enabled(env) or post is None or ineligible:
+        return _out(n, "dry_run", *ineligible, head_sha=payload["head_sha"], request={"path": request["path"], "commit_id": request["body"]["commit_id"],
                                                                       "event": request["body"]["event"], "attestation": payload})
     resp = post(request["path"].replace("{owner}/{repo}", cfg["repository"]), request["body"])
     body = resp.get("body") if isinstance(resp, Mapping) else None
@@ -418,8 +572,9 @@ def verify_pr(n: int, *, env: Mapping[str, str], collector: Any, read: Any, post
             (prior.get("conclusion") == "failure" and prior.get("output", {}).get("summary") == request["body"]["output"]["summary"])
         if same_state:
             return _out(n, "skipped", "check_already_published", head_sha=head, conclusion=request["body"]["conclusion"])
-    if not live_writes_enabled(env) or post is None:
-        return _out(n, "dry_run", head_sha=head, conclusion=request["body"]["conclusion"], reasons_found=list(result.reasons))
+    ineligible = live_eligibility(ev, cfg) if verified else []  # a failure verdict only revokes trust; always publishable
+    if not live_writes_enabled(env) or post is None or ineligible:
+        return _out(n, "dry_run", *ineligible, head_sha=head, conclusion=request["body"]["conclusion"], reasons_found=list(result.reasons))
     path = request["path"].replace("{owner}/{repo}", cfg["repository"])
     resp = post(path, request["body"])
     body = resp.get("body") if isinstance(resp, Mapping) else None
@@ -524,7 +679,8 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
         cfg, (http, token, app_id) = _common(env, args.role, now)
         secrets_seen = [token]
         collector = build_collector(http, cfg, env)
-        poster = http.post if (live_writes_enabled(env) or revoke_only) else None
+        raw_post = http.post if (live_target_allowed(env, args.pr) or revoke_only) else None
+        poster = CappedPoster(raw_post) if raw_post is not None else None
         results = []
         if revoke_only:
             cfg.update(verifier_app_id=app_id)
@@ -548,7 +704,7 @@ def run(argv: list[str], env: Mapping[str, str], now: datetime | None = None) ->
     except Exception as exc:  # noqa: BLE001 - never leak a traceback that could include request data
         print(json.dumps({"role": args.role, "action": "error", "reasons": [f"runtime_error:{type(exc).__name__}"]}))
         return 1
-    text = json.dumps({"role": args.role, "live_writes": poster is not None, "results": results}, sort_keys=True)
+    text = json.dumps({"role": args.role, "live_writes": poster is not None, "live_write_count": getattr(poster, "count", 0), "results": results}, sort_keys=True)
     for s in secrets_seen:
         text = text.replace(s, "***")
     print(text)

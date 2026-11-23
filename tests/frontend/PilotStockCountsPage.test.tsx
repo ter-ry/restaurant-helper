@@ -183,6 +183,19 @@ describe("PilotStockCountsPage", () => {
     expect(screen.getByText("Count applied")).toBeVisible();
   });
 
+  it("announces a failed load as an alert and recovers through Retry", async () => {
+    mockApi.fetchPilotCountSessions.mockRejectedValueOnce(new Error("Server unavailable"));
+    renderPage();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Server unavailable");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("Draft #7")).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
   it("cycles count-sheet expected quantities through ascending, descending, and default", async () => {
     renderPage();
     await screen.findByRole("heading", { name: "Stock Counts" });

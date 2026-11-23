@@ -156,7 +156,7 @@ export function PilotSquareUsagePage() {
         <div className="mt-4 flex justify-end"><button className="inline-flex min-h-10 items-center rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white" type="button" onClick={applyRange}>Apply</button></div>
       </Card>
 
-      {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert"><div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Usage data unavailable</div><p className="mt-2">{error}</p></div> : null}
+      {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert"><div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Usage data unavailable</div><p className="mt-2">{error}</p><button className="mt-3 inline-flex min-h-10 items-center rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-900 disabled:opacity-60" type="button" onClick={() => void load()} disabled={loading}>Retry</button></div> : null}
       {loading ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading usage data…</div> : null}
 
       {usage ? <Card className="pilot-usage-results p-4">

@@ -33,6 +33,7 @@ export function OwnerReportsPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [data, setData] = useState<OwnerReportsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +75,14 @@ export function OwnerReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  function retryLoad() {
+    setError(null);
+    setData(null);
+    setState("loading");
+    setReloadKey((key) => key + 1);
+  }
 
   const activeOrganization = data?.session.organizations?.find((entry) => entry.selected)?.organization ?? null;
   const summaryRows = useMemo(() => (data ? buildSummaryRows(data) : []), [data]);
@@ -85,6 +93,8 @@ export function OwnerReportsPage() {
   const latestInvoice = data?.purchases.invoices[0] ?? null;
   const latestPriceChange = (data?.dashboard.recentPriceChanges[0] as DashboardPriceChangeRow | undefined) ?? null;
 
+  const weeklyWindow = (data?.dashboard.summary as Record<string, unknown> | undefined)?.weeklyWindow as { startDate?: string; endDate?: string } | undefined;
+  const weekRange = weeklyWindow?.startDate && weeklyWindow?.endDate ? `${formatDate(weeklyWindow.startDate)} – ${formatDate(weeklyWindow.endDate)}` : null;
   const downloadPrefix = safeFilenamePart(activeOrganization?.name ?? "organization");
   const summaryReady = summaryRows.some((row) => row.section === "Monthly owner report" && row.status === "Ready");
 
@@ -145,6 +155,7 @@ export function OwnerReportsPage() {
           </div>
           <h1 className="mt-3 text-2xl font-bold text-ink">We couldn’t load reports and exports</h1>
           <p className="mt-3 text-sm leading-6 text-muted">{error ?? "Try again in a moment."}</p>
+          <Button type="button" variant="secondary" className="mt-4" onClick={retryLoad}>Try again</Button>
         </Card>
       </PageLayout>
     );
@@ -204,19 +215,19 @@ export function OwnerReportsPage() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Weekly invoice spend</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoice spend, this week{weekRange ? "" : " (dates unavailable)"}</p>
           <p className="mt-3 text-2xl font-bold text-ink">{formatCurrency(data?.dashboard.summary.weeklyInvoiceSpend ?? 0)}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.weeklyInvoiceCount ?? 0} invoices this week</p>
+          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.weeklyInvoiceCount ?? 0} invoices{weekRange ? ` · ${weekRange}` : ""}</p>
         </Card>
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Invoices ready for CSV</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Received invoices ready for CSV</p>
           <p className="mt-3 text-2xl font-bold text-ink">{data?.purchases.exportReadiness.readyForCsv ?? 0}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{data?.purchases.exportReadiness.needsReview ?? 0} still need review</p>
+          <p className="mt-2 text-sm leading-6 text-muted">All dates, received only · {data?.purchases.exportReadiness.needsReview ?? 0} draft invoices still need review</p>
         </Card>
         <Card className="p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted">Inventory items to reorder</p>
-          <p className="mt-3 text-2xl font-bold text-ink">{data?.dashboard.summary.inventoryItemsToReorderCount ?? 0}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.inventoryLowStockCount ?? 0} low stock / {data?.dashboard.summary.inventoryOutOfStockCount ?? 0} out of stock</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Urgent reorder items</p>
+          <p className="mt-3 text-2xl font-bold text-ink">{data?.dashboard.summary.inventoryUrgentReorderCount ?? data?.dashboard.summary.inventoryItemsToReorderCount ?? 0}</p>
+          <p className="mt-2 text-sm leading-6 text-muted">{data?.dashboard.summary.inventoryUrgentReorderCount != null ? `Out of stock or at/below minimum · ${data?.dashboard.summary.inventoryRunningLowCount ?? 0} more running low (below PAR)` : `${data?.dashboard.summary.inventoryLowStockCount ?? 0} low stock / ${data?.dashboard.summary.inventoryOutOfStockCount ?? 0} out of stock`}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit events</p>
@@ -251,7 +262,7 @@ export function OwnerReportsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-ink">{supplier.supplier}</p>
-                    <p className="mt-1 text-sm leading-6 text-muted">{supplier.invoiceCount} invoices in the current period</p>
+                    <p className="mt-1 text-sm leading-6 text-muted">{supplier.invoiceCount} invoices, all dates (not voided)</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-ink">{formatCurrency(supplier.spend)}</p>
