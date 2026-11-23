@@ -97,6 +97,28 @@ describe("inventory transfer UI (#233)", () => {
     expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(firstKey);
   });
 
+  it("replays the restored key when the original request resolves after remount", async () => {
+    let resolveOriginal!: (value: string) => void;
+    const onTransfer = vi.fn()
+      .mockReturnValueOnce(new Promise<string>((resolve) => { resolveOriginal = resolve; }))
+      .mockResolvedValue("replayed");
+    const first = render(<InventoryTransferAction pendingRef={(pendingRef = { current: {} })} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    fireEvent.click(screen.getByRole("button", { name: "Transfer to another location" }));
+    fill("4");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(1));
+    const firstKey = onTransfer.mock.calls[0][0].idempotencyKey;
+
+    first.unmount();
+    render(<InventoryTransferAction pendingRef={pendingRef} item={item} currentLocationId={7} locations={locations} onTransfer={onTransfer} />);
+    resolveOriginal("original completed");
+    await waitFor(() => expect(pendingRef.current).toEqual({}));
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry same transfer" }));
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledTimes(2));
+    expect(onTransfer.mock.calls[1][0].idempotencyKey).toBe(firstKey);
+  });
+
   it("keeps item A's unresolved key when item B is transferred in between", async () => {
     const itemB: any = { id: 31, name: "Sugar", stockUnit: "kg", currentOnHand: 10 };
     const onTransfer = vi.fn().mockRejectedValueOnce(new Error("Network down")).mockResolvedValue("ok");
