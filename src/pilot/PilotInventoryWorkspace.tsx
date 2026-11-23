@@ -260,8 +260,8 @@ export function PilotInventoryPage() {
       setError(null);
     });
     const unsubscribeSuppliers = subscribePilotCache<{ suppliers: PilotSupplierSummary[] }>("/api/pilot/suppliers", (response) => {
+      // Supplier data arriving says nothing about whether the inventory list loaded, so it must not clear a load error.
       setSuppliers(response.suppliers);
-      setError(null);
     });
     return () => {
       unsubscribeInventory();
