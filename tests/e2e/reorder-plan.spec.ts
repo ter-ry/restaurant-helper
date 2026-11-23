@@ -102,6 +102,10 @@ async function installWorld(page: Page, world: World) {
     if (pathname === "/api/pilot/inventory/negative-stock") return json(route, { count: 0, posCausedCount: 0, items: [] });
 
     if (pathname === "/api/pilot/reorder-plan") {
+      if (world.failNext["GET suggestions"]) {
+        world.failNext["GET suggestions"] -= 1;
+        return json(route, { error: "The server could not process this request. Try again." }, 503);
+      }
       const inDraft = new Set(world.plans.filter((plan) => plan.status !== "Completed").flatMap((plan) => plan.lines.map((line) => line.inventoryItemId)));
       const open = world.plans.some((plan) => plan.status === "Completed") ? SUGGESTIONS.filter((s) => !inDraft.has(s.inventoryItemId) && !world.plans.some((p) => p.status === "Completed" && p.lines.some((l) => l.inventoryItemId === s.inventoryItemId))) : SUGGESTIONS;
       return json(route, {
@@ -209,6 +213,22 @@ for (const viewport of VIEWPORTS) {
       expect(world.plans[0].lines[0].orderQuantity).toBe(5);
       await expect(page.getByRole("spinbutton").first()).toHaveValue("5");
       await expectNoOverflow(page);
+    });
+
+    test("a failed initial load shows an alert and Retry, never false zero metrics, and Retry recovers", async ({ page }) => {
+      const world = newWorld();
+      world.failNext["GET suggestions"] = 1;
+      await installWorld(page, world);
+      await page.goto("/app/inventory?view=reorder", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("alert")).toContainText("could not process");
+      await expect(page.getByText("Chicken Breast")).toHaveCount(0);
+      await expect(page.getByText("0 urgent")).toHaveCount(0);
+      await expectNoOverflow(page);
+
+      await page.getByRole("button", { name: "Retry" }).click();
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(page.getByText("Chicken Breast").first()).toBeVisible();
+      await expect(page.getByText("Whole Milk 4L").first()).toBeVisible();
     });
 
     test("double-tap on Add to draft and Save draft sends one request each", async ({ page }) => {
