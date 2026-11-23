@@ -195,5 +195,21 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText("6 L", { exact: true }).first()).toBeVisible();
       await expectNoOverflow(page);
     });
+
+    test("permission refusal (403): waste and adjustment say nothing was saved, keep the entry and change no stock", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+      await page.getByText("Whole Milk").first().click();
+      await page.getByRole("button", { name: "Record waste" }).click();
+      await page.getByLabel("Quantity (L)").fill("2");
+      world.refuseNext = { status: 403, message: "You do not have permission to record waste.", errors: {} };
+      await page.getByRole("button", { name: "Record waste", exact: true }).last().click();
+      await expect(page.getByRole("alert").filter({ hasText: "You do not have permission to record waste." })).toBeVisible();
+      await expect(page.getByLabel("Quantity (L)")).toHaveValue("2");
+      await expect(page.getByText(/Waste recorded/)).toHaveCount(0);
+      expect(world.items[1].currentOnHand).toBe(20);
+      await expectNoOverflow(page);
+    });
   });
 }
