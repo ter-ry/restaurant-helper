@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ruleset_attestation as a
+import ruleset_observer as observer
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 NOW = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
@@ -45,6 +46,28 @@ class AttestationTests(unittest.TestCase):
         altered = copy.deepcopy(BRANCHES); altered["main"]["rulesets"]["2"] = copy.deepcopy(DETAIL)
         doc = a.sign(repository="ter-ry/restaurant-helper", observer_app_id=99, branches=altered, now=NOW, private_key=self.private)
         self.assertEqual(self.check(doc), (False, "ATTESTATION_RULESET_SET_INVALID"))
+
+    def test_multiple_rules_may_reference_one_ruleset(self):
+        altered = copy.deepcopy(BRANCHES)
+        altered["main"]["rules"].append({"type": "deletion", "ruleset_id": 1})
+        doc = a.sign(repository="ter-ry/restaurant-helper", observer_app_id=99, branches=altered, now=NOW, private_key=self.private)
+        self.assertEqual(self.check(doc), (True, "OK"))
+
+    def test_observer_deduplicates_repeated_ruleset_detail_reads(self):
+        rules = [{"type": "pull_request", "ruleset_id": 1}, {"type": "deletion", "ruleset_id": 1}]
+        responses = {"/repos/ter-ry/restaurant-helper/rules/branches/main": rules,
+                     "/repos/ter-ry/restaurant-helper/rulesets/1": copy.deepcopy(DETAIL),
+                     "/repos/ter-ry/restaurant-helper/rules/branches/develop": [{"ruleset_id": 2}],
+                     "/repos/ter-ry/restaurant-helper/rulesets/2": copy.deepcopy(DETAIL)}
+        calls = []
+        original = observer._get
+        observer._get = lambda token, path: (calls.append(path) or responses[path])
+        try:
+            result = observer.collect("ter-ry/restaurant-helper", "token")
+        finally:
+            observer._get = original
+        self.assertEqual(len([p for p in calls if p.endswith("/rulesets/1")]), 1)
+        self.assertEqual(result["main"]["rulesets"], {"1": DETAIL})
 
 
 if __name__ == "__main__":

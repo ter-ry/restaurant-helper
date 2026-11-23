@@ -86,8 +86,10 @@ def verify(document: Any, *, public_key: Ed25519PublicKey, repository: str, obse
         if not isinstance(evidence, Mapping) or not isinstance(evidence.get("rules"), list) \
                 or not isinstance(evidence.get("rulesets"), Mapping) or not evidence["rules"]:
             return False, "ATTESTATION_RULES_INVALID"
-        ids = {r.get("ruleset_id") for r in evidence["rules"] if isinstance(r, Mapping)}
-        if len(ids) != len(evidence["rules"]) or any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
+        if any(not isinstance(r, Mapping) for r in evidence["rules"]):
+            return False, "ATTESTATION_RULES_INVALID"
+        ids = {r.get("ruleset_id") for r in evidence["rules"]}
+        if any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
             return False, "ATTESTATION_RULES_INVALID"
         if set(evidence["rulesets"]) != {str(i) for i in ids}:
             return False, "ATTESTATION_RULESET_SET_INVALID"

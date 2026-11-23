@@ -36,8 +36,10 @@ def collect(repository: str, token: str) -> dict[str, object]:
         details = {}
         for rule in rules:
             rid = rule.get("ruleset_id") if isinstance(rule, dict) else None
-            if not isinstance(rid, int) or isinstance(rid, bool) or str(rid) in details:
+            if not isinstance(rid, int) or isinstance(rid, bool):
                 raise RuntimeError("observer_rules_invalid")
+            if str(rid) in details:
+                continue
             detail = _get(token, f"{root}/rulesets/{rid}")
             if not isinstance(detail, dict) or detail.get("enforcement") != "active" \
                     or not isinstance(detail.get("bypass_actors"), list) or detail["bypass_actors"]:
