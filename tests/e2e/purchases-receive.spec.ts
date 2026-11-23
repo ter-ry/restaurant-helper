@@ -31,6 +31,8 @@ type World = {
   delayMs: number;
   refuseCreate: { status: number; message: string; errors: Record<string, any> } | null;
   failReceiveOnce: boolean;
+  /** When set, the next void is refused with a 409 (for example the received stock was already used). */
+  refuseVoidOnce: string | null;
   /** Purchase list reads answered by the fake server (proves the page re-fetched after a mutation). */
   listReads: number;
   nextId: number;
@@ -41,7 +43,7 @@ type World = {
   /** When set, the fake OCR reads these printed amounts and the fake server stores/recomputes the verdict from the saved lines. */
   ocrPrinted: { subtotal: number; tax: number; total: number } | null;
 };
-const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, listReads: 0, nextId: 600, listDelayMs: 0, ocrLineCount: 1, ocrPrinted: null });
+const newWorld = (): World => ({ invoices: [], onHand: 12, posts: [], delayMs: 0, refuseCreate: null, failReceiveOnce: false, refuseVoidOnce: null, listReads: 0, nextId: 600, listDelayMs: 0, ocrLineCount: 1, ocrPrinted: null });
 const SUPPLIERS = [{ id: 3, name: "Cedar Meats", isActive: true }];
 const ITEM = {
   id: 30, organizationId: 42, locationId: 7, supplierId: null, name: "Chicken Breast", normalizedName: "chicken breast", category: "Poultry", stockUnit: "kg",
@@ -146,6 +148,11 @@ async function installWorld(page: Page, world: World) {
       await mutate(() => null);
       const invoice = world.invoices.find((entry) => entry.id === Number(voidMatch[1]));
       if (!invoice) return json(route, { error: "Not found." }, 404);
+      if (world.refuseVoidOnce) {
+        const message = world.refuseVoidOnce;
+        world.refuseVoidOnce = null;
+        return json(route, { error: message, errors: {} }, 409);
+      }
       invoice.status = "Corrected";
       return json(route, invoiceJson(invoice));
     }
@@ -444,6 +451,44 @@ test.describe("purchase queue while a void is in flight at 1440px", () => {
     await expect(page.getByText(/was voided and its inventory movements were reversed/).first()).toBeVisible();
     await expect(queue.getByRole("button", { name: /CM-741/ })).toBeEnabled();
     expect(world.posts.filter((post) => post.path.endsWith("/void"))).toHaveLength(1);
+  });
+});
+
+test.describe("void receipt confirmation, refusal and retry at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("a reason is required, Keep invoice sends nothing, a refusal leaves the receipt intact and a retry voids it once", async ({ page }) => {
+    const world = newWorld();
+    world.refuseVoidOnce = "The stock from this receipt has already been used.";
+    world.invoices.push({ id: 750, invoiceNumber: "CM-750", status: "Completed", invoiceDate: "2026-11-09", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(750, 0)] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-750/ }).click();
+    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    const voidButton = detail.getByRole("button", { name: "Void receipt" });
+
+    await expect(voidButton).toBeDisabled();
+    await detail.getByLabel("Void reason").fill("Supplier sent the wrong goods");
+    await expect(voidButton).toBeEnabled();
+
+    await voidButton.click();
+    await expect(detail.getByRole("alertdialog", { name: "Confirm void" })).toBeVisible();
+    await detail.getByRole("button", { name: "Keep invoice" }).click();
+    await expect(detail.getByRole("alertdialog", { name: "Confirm void" })).toHaveCount(0);
+    expect(posts(world, "/void")).toHaveLength(0);
+
+    await voidButton.click();
+    await detail.getByRole("button", { name: "Yes, void this invoice" }).click();
+    await expect(detail.getByRole("alert").filter({ hasText: "already been used" })).toBeVisible();
+    await expect(detail.getByRole("alertdialog", { name: "Confirm void" })).toHaveCount(0);
+    expect(world.invoices[0].status).toBe("Completed");
+    expect(posts(world, "/void")).toHaveLength(1);
+
+    await voidButton.click();
+    await detail.getByRole("button", { name: "Yes, void this invoice" }).click();
+    await expect(page.getByText(/was voided and its inventory movements were reversed/).first()).toBeVisible();
+    expect(posts(world, "/void")).toHaveLength(2);
+    expect(world.invoices[0].status).toBe("Corrected");
   });
 });
 
