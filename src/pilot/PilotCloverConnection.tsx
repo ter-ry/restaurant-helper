@@ -245,11 +245,11 @@ export function PilotCloverConnection() {
                   {order.lineItemsIncomplete ? <p className="mt-2 text-xs text-amber-800">Warning: Clover line-item data was incomplete; review this ingredient preview.</p> : null}
                   {order.financialIncomplete ? <p className="mt-2 text-xs text-amber-800">Warning: payment/refund verification is unavailable; financial status requires review.</p> : null}
                   {order.refundsUnverified ? <p className="mt-1 text-xs text-amber-800">Refund status is unverified.</p> : null}
-                  {order.paymentStateConflict ? <p className="mt-1 text-xs text-amber-800">Warning: provider order status conflicts with verified payment evidence; review required.</p> : null}
+                  {order.paymentStateConflict ? <p className="mt-1 text-xs text-amber-800">Warning: Clover still reports this order as open, but it has a payment record that covers the total. It is not treated as paid and inventory is unchanged; review required.</p> : null}
                   <div className="mt-2 space-y-2">{order.lines.map((line) => <div key={line.id} className="rounded-md border border-line px-2 py-2 text-xs text-muted">
                     <p><span className="font-semibold text-ink">{line.name}</span> × {line.quantity}{line.unitPriceCents == null ? "" : ` · ${(line.unitPriceCents / 100).toFixed(2)}`}</p>
                     <p className="mt-1">Clover item: {line.cloverItemId || "Unknown"} · Flowtally: {line.recipePreview.flowtallyMenuItemName || (line.mappingStatus === "unmapped" ? "Unmapped" : "Not available")}</p>
-                    {line.mappingStatus === "mapped" ? <p className="mt-1 font-semibold text-ink">Recipe: {line.recipePreview.recipeName || "Ready"}</p> : null}
+                    {line.mappingStatus === "mapped" ? <p className="mt-1 font-semibold text-ink">Recipe: {line.recipePreview.recipeName || "Preview available"}</p> : null}
                     {line.mappingStatus === "mapped" && line.recipePreview.ingredients?.length ? <ul className="mt-1 list-disc pl-4">{line.recipePreview.ingredients.map((ingredient) => <li key={ingredient.inventoryItemId}>{ingredient.name}: {ingredient.quantity} {ingredient.unit}</li>)}</ul> : null}
                     {line.mappingStatus === "missing_recipe" ? <p className="mt-1 text-amber-800">Warning: no active recipe is available.</p> : null}
                     {line.mappingStatus === "review_required" ? <p className="mt-1 text-amber-800">Warning: {line.recipePreview.reason || "Review required before using this preview."}</p> : null}
