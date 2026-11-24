@@ -3280,22 +3280,32 @@ def create_inventory_transfer():
     if free_batches:
         # Verified-free stock: consume the source evidence oldest first and re-create it at the destination (#279).
         remaining = quantity
+        # Incoming units first cover any negative (POS-oversold) destination balance; that covered part is consumed
+        # evidence and must not be re-created as unconsumed verified-free stock at the destination.
+        deficit_left = max(-target_before, Decimal("0"))
         for batch_row in free_batches:
             take = min(_verification_batch(batch_row).remaining, remaining)
             if take <= 0:
                 continue
             batch_row.consumed_quantity = Decimal(batch_row.consumed_quantity or 0) + take
+            covered = min(take, deficit_left)
+            deficit_left -= covered
+            dest_take = take - covered
+            remaining -= take
+            if dest_take <= 0:
+                if remaining <= 0:
+                    break
+                continue
             db.session.add(
                 InventoryCostVerification(
                     organization_id=organization.id, location_id=destination.id, inventory_item_id=target.id,
-                    quantity=take, consumed_quantity=Decimal("0"), unit=target.stock_unit,
+                    quantity=dest_take, consumed_quantity=Decimal("0"), unit=target.stock_unit,
                     evidence_type=batch_row.evidence_type,
                     evidence_note=f"Transferred from {location.name} (verification #{batch_row.id}): {batch_row.evidence_note}",
                     source_type=TRANSFER_IN_SOURCE_TYPE, source_record_id=str(transfer.id), source_line_id=str(batch_row.id),
                     idempotency_key=f"transfer-{transfer.id}-v{batch_row.id}", verified_by_user_id=current_user.id, verified_at=_now(),
                 )
             )
-            remaining -= take
             if remaining <= 0:
                 break
     # Source cost is unchanged by a send; the destination blends the carried cost into its own average (#197).
