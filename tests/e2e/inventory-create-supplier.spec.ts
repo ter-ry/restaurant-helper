@@ -16,6 +16,7 @@ const MODULES = ["PURCHASES", "INVENTORY", "REORDER_PLANS", "DAILY_CLOSE", "STOC
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
 ];
 
 const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });

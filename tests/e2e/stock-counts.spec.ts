@@ -23,6 +23,7 @@ const MODULES = ["PURCHASES", "INVENTORY", "REORDER_PLANS", "STOCK_COUNTS"];
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
 ];
 const ITEMS = [
   { id: 1, name: "Whole Milk", unit: "L", onHand: 24 },

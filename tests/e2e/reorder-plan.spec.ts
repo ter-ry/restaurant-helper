@@ -31,6 +31,7 @@ const MODULES = ["PURCHASES", "INVENTORY", "REORDER_PLANS", "DAILY_CLOSE"];
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
 ];
 
 const SUGGESTIONS = [
