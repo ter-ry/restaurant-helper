@@ -77,14 +77,14 @@ Open one recipe (e.g. Harbour Burger: price $18, cost $2.37 → food cost 13.2%)
 Open a business date with known Square data. Record net sales, orders, tips, tax, food cost %, cash/expected cash, variance.
 
 - PASS: when expected cash cannot be verified, variance shows **Variance unavailable** with a reason (not `$0`); sales that Square cannot supply show **Unavailable**.
-- Cross-check: net sales equals the same date on Dashboard and the dated Daily report (§7).
+- Cross-check: net sales equals the same date in the dated Daily report (§7a); include the Dashboard "Today" figure only when the selected date is today (it has no date selector).
 - STOP: variance or sales `$0` while the source is unavailable; totals differ between pages for the same date.
 
 ## 7. Dated sales reporting and Owner Reports
 
 **7a. Dated sales (`/app/dashboard?view=daily`, the Daily report).** Select the same business date as §6. Record net sales, orders and food-cost figures.
 
-- PASS: figures match Daily Close (§6) and the Dashboard for that date; unavailable data shows **Unavailable**, not `$0`.
+- PASS: figures match Daily Close (§6) for that date (and the Dashboard only if that date is today); unavailable data shows **Unavailable**, not `$0`.
 - STOP: totals differ between pages for the same date; unlabeled date range.
 
 **7b. Owner Reports (`/owner/reports`, owner only).** This page shows weekly invoice spend, export readiness and audit summaries, not dated sales. Record the purchases total and date-range label, then export once and open the file.
