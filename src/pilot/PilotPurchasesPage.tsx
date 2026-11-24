@@ -33,7 +33,6 @@ import { buildOcrPrintedEvidence, checkOcrLines, type OcrPrintedEvidence } from 
 import { PurchaseInvoiceDetailsModal } from "./purchases/PurchaseDetailPanel";
 import { clearPilotDataCache } from "./pilotDataCache";
 import { MATERIAL_PRICE_CHANGE_PERCENT, purchaseStatus } from "./purchases/purchaseStatus";
-import { useWideLayout } from "./purchases/useWideLayout";
 
 interface DraftLine {
   id?: number;
@@ -188,7 +187,6 @@ export function PilotPurchasesPage() {
   const editorPanelRef = useRef<HTMLDivElement | null>(null);
   // Bumped whenever a load or refresh starts; a manual refresh that was overtaken (e.g. by a save/receive reload) is discarded.
   const dataEpoch = useRef(0);
-  const wideLayout = useWideLayout();
   const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const [data, setData] = useState<PilotPurchasesResponse | null>(null);
   const [inventoryItems, setInventoryItems] = useState<PilotInventoryItem[]>([]);
@@ -201,11 +199,6 @@ export function PilotPurchasesPage() {
   const [saving, setSaving] = useState(false);
   // A void in flight also blocks switching purchases: its completion reloads the page state.
   const [voiding, setVoiding] = useState(false);
-  // Keep the received-purchase detail on the same component while a void is in flight, so resizing across
-  // the breakpoint cannot remount the void form and reset its busy flag and idempotency key.
-  const detailWideRef = useRef(wideLayout);
-  if (!voiding) detailWideRef.current = wideLayout;
-  const detailWide = voiding ? detailWideRef.current : wideLayout;
   // An action (open another purchase, start a new one, close the panel) waiting for the owner to confirm discarding unsaved edits.
   // A manual refresh in flight also blocks switching: it merges server data into whichever purchase is open.
   const [refreshing, setRefreshing] = useState(false);
@@ -1328,26 +1321,25 @@ export function PilotPurchasesPage() {
         </div>
       </Modal> : null}
 
-      <div className="pilot-purchases-layout grid gap-4 xl:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)] xl:items-start">
-        <div
-          className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
-          data-testid="purchase-queue"
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-queue-item]"));
-            const at = items.indexOf(document.activeElement as HTMLButtonElement);
-            if (at === -1) return;
-            event.preventDefault();
-            items[Math.min(items.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
-          }}
-        >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center xl:flex-col xl:items-stretch">
-            <input className="input sm:max-w-xl xl:max-w-none" aria-label="Search purchases" placeholder="Search supplier or invoice number" value={purchaseSearch} onChange={(event) => setPurchaseSearch(event.target.value)} />
-            <select className="input w-full sm:w-44 xl:w-full" aria-label="Purchase filter" value={purchaseFilter} onChange={(event) => setPurchaseFilter(event.target.value as typeof purchaseFilter)}><option value="all">All purchases</option><option value="review">Needs review</option><option value="received">Received</option><option value="corrected">Voided</option></select>
+      <div
+        className="pilot-purchases-layout grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start"
+        data-testid="purchase-queue"
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-queue-item]"));
+          const at = items.indexOf(document.activeElement as HTMLButtonElement);
+          if (at === -1) return;
+          event.preventDefault();
+          items[Math.min(items.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
+        }}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between xl:col-span-2">
+            <input className="input sm:max-w-xl" aria-label="Search purchases" placeholder="Search supplier or invoice number" value={purchaseSearch} onChange={(event) => setPurchaseSearch(event.target.value)} />
+            <select className="input w-full sm:w-44" aria-label="Purchase filter" value={purchaseFilter} onChange={(event) => setPurchaseFilter(event.target.value as typeof purchaseFilter)}><option value="all">All purchases</option><option value="review">Needs review</option><option value="received">Received</option><option value="corrected">Voided</option></select>
           </div>
           <Card className="w-full p-4" data-testid="purchase-review-card">
             <SectionHeader title="Needs review" />
-            <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1 xl:max-h-none">
+            <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {filteredInvoices.filter((invoice) => invoice.status !== "Completed" && invoice.status !== "Corrected").map((invoice) => {
                 const status = purchaseStatus(invoice);
                 const active = selectedId === invoice.id && editorOpen;
@@ -1365,7 +1357,7 @@ export function PilotPurchasesPage() {
           </Card>
           <Card className="w-full p-4" data-testid="purchase-history-card">
             <SectionHeader title="Purchase history" />
-            <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1 xl:max-h-none">
+            <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {filteredInvoices.filter((invoice) => invoice.status === "Completed" || invoice.status === "Corrected").map((invoice) => {
                 const status = purchaseStatus(invoice);
                 const active = detailInvoice?.id === invoice.id;
@@ -1393,19 +1385,6 @@ export function PilotPurchasesPage() {
               </button>
             ) : null}
           </Card>
-        </div>
-        {detailWide ? (
-          <div className="min-w-0" data-testid="purchase-side-panel">
-            {detailInvoice && !editorOpen ? (
-              <PurchaseInvoiceDetailsModal inline invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
-            ) : (
-              <Card className="p-8 text-center">
-                <p className="font-semibold text-ink">Select a purchase to review it here</p>
-                <p className="mt-1 text-sm text-muted">Pick an invoice from the queue, or choose New purchase to upload an invoice or enter one by hand.</p>
-              </Card>
-            )}
-          </div>
-        ) : null}
       </div>
 
       {receiveConfirmOpen ? (
@@ -1418,7 +1397,7 @@ export function PilotPurchasesPage() {
           </div>
         </Modal>
       ) : null}
-      {!detailWide ? <PurchaseInvoiceDetailsModal invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice?.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} /> : null}
+      <PurchaseInvoiceDetailsModal invoice={detailInvoice} refreshFailure={voidRefresh && voidRefresh.invoiceId === detailInvoice?.id ? voidRefresh.message : null} refreshing={loading} onRefresh={() => void refreshAfterVoid()} onClose={closeDetailInvoice} onVoid={voidInvoice} onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)} />
     </div>
   );
 }

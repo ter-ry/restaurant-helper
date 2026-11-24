@@ -313,7 +313,15 @@ test.describe("purchases master/detail at 1440px", () => {
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByTestId("purchase-side-panel")).toContainText("Select a purchase to review it here");
+    // Overview: Needs review (left, wider) and Purchase history (right) are both visible side by side, with no empty detail pane.
+    const reviewBox = await page.getByTestId("purchase-review-card").boundingBox();
+    const historyBox = await page.getByTestId("purchase-history-card").boundingBox();
+    expect(reviewBox && historyBox && historyBox.x >= reviewBox.x + reviewBox.width - 1).toBe(true);
+    expect(reviewBox && historyBox && reviewBox.width).toBeGreaterThan(historyBox!.width);
+    expect(Math.abs(reviewBox!.y - historyBox!.y)).toBeLessThan(2);
+    await expect(page.getByText("Select a purchase to review it here")).toHaveCount(0);
+    await expect(page.getByTestId("purchase-side-panel")).toHaveCount(0);
+    await expectNoOverflow(page);
     await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-700/ }).click();
 
     const dialog = page.getByRole("dialog", { name: "Purchase editor" });
@@ -353,7 +361,7 @@ test.describe("purchases master/detail at 1440px", () => {
     await expect(page.getByTestId("purchase-editor-card")).toHaveCount(0);
   });
 
-  test("arrow keys move between queue items and a completed purchase opens inline with one status vocabulary", async ({ page }) => {
+  test("arrow keys move between queue items and a completed purchase opens in a readable modal with one status vocabulary", async ({ page }) => {
     const world = newWorld();
     world.invoices.push(
       { id: 720, invoiceNumber: "CM-720", status: "Draft", invoiceDate: "2026-11-10", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(720, 0)] },
@@ -370,11 +378,11 @@ test.describe("purchases master/detail at 1440px", () => {
     await expect(queue.getByRole("button", { name: /CM-722/ })).toBeFocused();
     await expect(queue.getByRole("button", { name: /CM-722/ })).toContainText("Received");
     await page.keyboard.press("Enter");
-    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    const detail = page.getByTestId("purchase-detail-modal");
     await expect(detail).toContainText("CM-722");
     await expect(detail).toContainText("Received");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(queue).toBeVisible();
+    // A completed purchase opens as a readable modal, not an empty persistent side workspace.
+    await expect(page.getByTestId("purchase-side-panel")).toHaveCount(0);
   });
 });
 
@@ -389,15 +397,14 @@ test.describe("history then New purchase at 1440px", () => {
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-770/ }).click();
-    await expect(page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal")).toContainText("CM-770");
+    await expect(page.getByTestId("purchase-detail-modal")).toContainText("CM-770");
     await page.getByRole("button", { name: "New purchase" }).click();
     const editorDialog = page.getByRole("dialog", { name: "Purchase editor" });
     await expect(editorDialog).toBeVisible();
     await expect(editorDialog).not.toContainText("CM-770");
-    await expect(page.getByTestId("purchase-side-panel")).not.toContainText("CM-770");
     await editorDialog.getByRole("button", { name: "Close Purchase editor" }).click();
     await expect(page.getByTestId("purchase-detail-modal")).toHaveCount(0);
-    await expect(page.getByTestId("purchase-side-panel")).toContainText("choose New purchase");
+    await expect(page.getByText("Select a purchase to review it here")).toHaveCount(0);
     await page.setViewportSize({ width: 900, height: 900 });
     await expect(page.getByTestId("purchase-detail-modal")).toHaveCount(0);
   });
@@ -442,7 +449,7 @@ test.describe("purchase queue while a void is in flight at 1440px", () => {
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     const queue = page.getByTestId("purchase-queue");
     await queue.getByRole("button", { name: /CM-740/ }).click();
-    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    const detail = page.getByTestId("purchase-detail-modal");
     await detail.getByLabel("Void reason").fill("Supplier sent the wrong goods");
     await detail.getByRole("button", { name: "Void receipt" }).click();
     await detail.getByRole("button", { name: "Yes, void this invoice" }).click();
@@ -464,7 +471,7 @@ test.describe("void receipt confirmation, refusal and retry at 1440px", () => {
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-750/ }).click();
-    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    const detail = page.getByTestId("purchase-detail-modal");
     const voidButton = detail.getByRole("button", { name: "Void receipt" });
 
     await expect(voidButton).toBeDisabled();
@@ -495,7 +502,7 @@ test.describe("void receipt confirmation, refusal and retry at 1440px", () => {
 test.describe("resizing while a void is in flight at 1440px", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("the void form is not remounted across the breakpoint, so the in-flight void is not duplicated", async ({ page }) => {
+  test("resizing across the breakpoint keeps the same void modal, so the in-flight void is not duplicated", async ({ page }) => {
     const world = newWorld();
     world.delayMs = 800;
     world.invoices.push(
@@ -504,12 +511,12 @@ test.describe("resizing while a void is in flight at 1440px", () => {
     await installWorld(page, world);
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-750/ }).click();
-    const detail = page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal");
+    const detail = page.getByTestId("purchase-detail-modal");
     await detail.getByLabel("Void reason").fill("Supplier sent the wrong goods");
     await detail.getByRole("button", { name: "Void receipt" }).click();
     await detail.getByRole("button", { name: "Yes, void this invoice" }).click();
     await page.setViewportSize({ width: 900, height: 900 });
-    await expect(page.getByTestId("purchase-side-panel").getByTestId("purchase-detail-modal")).toBeVisible();
+    await expect(page.getByTestId("purchase-detail-modal")).toBeVisible();
     await expect(page.getByText(/was voided and its inventory movements were reversed/).first()).toBeVisible();
     expect(world.posts.filter((post) => post.path.endsWith("/void"))).toHaveLength(1);
   });
@@ -735,6 +742,42 @@ for (const viewport of VIEWPORTS) {
       await reopened.getByLabel("Unit price").fill("48");
       await expect(page.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "matched");
       await expect(reopened.getByRole("button", { name: "Save & receive" })).toBeEnabled();
+    });
+  });
+}
+
+for (const width of [1280, 768, 390]) {
+  test.describe(`purchases overview at ${width}px`, () => {
+    test.use({ viewport: { width, height: 900 } });
+
+    test("Needs review and Purchase history are both visible with no empty pane or nested page scroll trap", async ({ page }) => {
+      const world = newWorld();
+      world.invoices.push(
+        { id: 780, invoiceNumber: "CM-780", status: "Draft", invoiceDate: "2026-11-10", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(780, 0)] },
+        { id: 781, invoiceNumber: "CM-781", status: "Completed", invoiceDate: "2026-11-09", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(781, 0)] },
+      );
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      const review = page.getByTestId("purchase-review-card");
+      const history = page.getByTestId("purchase-history-card");
+      await expect(review).toContainText("CM-780");
+      await expect(history).toContainText("CM-781");
+      await expect(page.getByLabel("Search purchases")).toBeVisible();
+      await expect(page.getByText("Select a purchase to review it here")).toHaveCount(0);
+      const [r, h] = [await review.boundingBox(), await history.boundingBox()];
+      if (width >= 1280) {
+        expect(h!.x).toBeGreaterThanOrEqual(r!.x + r!.width - 1); // side by side
+        expect(r!.width).toBeGreaterThan(h!.width); // review queue is the wider column
+      } else {
+        expect(h!.y).toBeGreaterThanOrEqual(r!.y + r!.height - 1); // stacked
+      }
+      // Cards do not trap the page in a tall scroll container: the queue wrapper itself never scrolls.
+      const wrapperScrolls = await page.getByTestId("purchase-queue").evaluate((el) => getComputedStyle(el).overflowY !== "visible");
+      expect(wrapperScrolls).toBe(false);
+      await expectNoOverflow(page);
+      await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-781/ }).click();
+      await expect(page.getByTestId("purchase-detail-modal")).toContainText("CM-781");
+      await expectNoOverflow(page);
     });
   });
 }
