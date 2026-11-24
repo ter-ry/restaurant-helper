@@ -36,7 +36,8 @@ Use one disposable supplier and a printed invoice with a known total (e.g. five-
 | Map all lines; try receive while still discrepant | Still blocked (Extracted items do not match the printed invoice) | Screenshot |
 | Correct lines to match (or **Add missing line**) → **Extracted items match the invoice** → **Save & receive** → confirm | Success message; invoice shows Received once | Invoice number, time |
 | Double-click confirm / refresh and retry receive | No second posting; on-hand changes once | Inventory delta (§3) |
-| Void or correct the received invoice | Status Voided / correction draft; on-hand reversed | Before/after on-hand |
+| **Before voiding:** do §3 on-hand/cost check and §5 recipe-cost propagation check while the receipt is still active | See §3 and §5 | Figures recorded while received |
+| Void or correct the received invoice (last step) | Status Voided / correction draft; on-hand, average cost and recipe cost return to their pre-receipt values | Before/after on-hand, cost |
 | (Optional) **Record audited override** with a ≥10 character reason | Override recorded with name; needs saved draft | Reason text |
 
 STOP if: receive succeeds while the banner says incomplete without an override; on-hand changes twice; a refusal is silent (no visible error); totals shown as `$0` instead of unknown.
@@ -67,23 +68,29 @@ Open the Square page and usage view (`/app/square`, usage tab). Record: connecti
 
 Open one recipe (e.g. Harbour Burger: price $18, cost $2.37 → food cost 13.2%). Record ingredient costs, total, price, food-cost %.
 
-- PASS: food-cost % = cost ÷ price (check by hand); an ingredient without cost shows **Cost unavailable**, never `$0`; after the §2 receive the changed supplier cost flows into the recipe cost.
-- STOP: unavailable cost displayed as `$0.00`; recipe cost unchanged after a cost-changing receive and reload.
+- Record the recipe baseline **before** the §2 receive, then check again after the receive while it is still active (before the void).
+- PASS: food-cost % = cost ÷ price (check by hand); an ingredient without cost shows **Cost unavailable**, never `$0`; while the receipt is active, a cost-changing receive flows into the recipe cost. After the void the cost correctly returns to the baseline (weighted average is restored), which is not a failure.
+- STOP: unavailable cost displayed as `$0.00`; recipe cost unchanged after a cost-changing receive and reload while the receipt is active.
 
 ## 6. Daily Close (`/app/daily-close`)
 
 Open a business date with known Square data. Record net sales, orders, tips, tax, food cost %, cash/expected cash, variance.
 
 - PASS: when expected cash cannot be verified, variance shows **Variance unavailable** with a reason (not `$0`); sales that Square cannot supply show **Unavailable**.
-- Cross-check: net sales equals the same date on Dashboard and Reports (§7).
+- Cross-check: net sales equals the same date on Dashboard and the dated Daily report (§7).
 - STOP: variance or sales `$0` while the source is unavailable; totals differ between pages for the same date.
 
-## 7. Owner Reports (`/owner/reports`)
+## 7. Dated sales reporting and Owner Reports
 
-Open as owner. Record the date-range label, sales, purchases and cost totals for the same period used in §1/§6. Export once if offered and open the file.
+**7a. Dated sales (`/app/dashboard?view=daily`, the Daily report).** Select the same business date as §6. Record net sales, orders and food-cost figures.
 
-- PASS: figures reconcile to Dashboard/Daily Close for the same date; export contains the same totals.
-- STOP: Reports link visible to non-owner (§8); unlabeled date range.
+- PASS: figures match Daily Close (§6) and the Dashboard for that date; unavailable data shows **Unavailable**, not `$0`.
+- STOP: totals differ between pages for the same date; unlabeled date range.
+
+**7b. Owner Reports (`/owner/reports`, owner only).** This page shows weekly invoice spend, export readiness and audit summaries, not dated sales. Record the purchases total and date-range label, then export once and open the file.
+
+- PASS: the purchases figure agrees with the invoices from §2; the export's purchase and audit rows match what the page shows.
+- STOP: Reports link visible to non-owner (§8).
 
 ## 8. Roles and viewports
 
