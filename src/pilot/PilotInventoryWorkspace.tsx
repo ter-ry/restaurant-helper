@@ -11,6 +11,7 @@ import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import {
   createPilotInventoryAdjustment,
   reversePilotInventoryAdjustment,
+  createPilotInventoryTransfer,
   createPilotInventoryWasteEvent,
   createPilotInventoryItem,
   createPilotSupplier,
@@ -27,6 +28,7 @@ import {
   type PilotSupplierSummary,
   updatePilotInventoryItem,
   updatePilotSupplier,
+  PilotApiError,
 } from "./pilotApi";
 import { NegativeStockNote, negativeStockByItem } from "./NegativeStockNote";
 import { formatDateTime, formatInventoryQuantity, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
@@ -38,6 +40,8 @@ import { subscribePilotCache } from "./pilotDataCache";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { SupplierMappingsPanel } from "./SupplierMappingsPanel";
 import { AdjustmentReversalAction } from "./AdjustmentReversalAction";
+import { InventoryTransferAction, type PendingTransfer } from "./InventoryTransferAction";
+import { VerifiedFreeEvidence, type PendingEvidenceRequest } from "./VerifiedFreeEvidence";
 
 interface InventoryDraft {
   id: number | null;
@@ -165,7 +169,7 @@ function formatLatestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchas
 
 export function PilotInventoryPage() {
   const navigate = useNavigate();
-  const { organization, currentLocation } = usePilotSession();
+  const { organization, currentLocation, locations } = usePilotSession();
   const [data, setData] = useState<PilotInventoryResponse | null>(null);
   const [suppliers, setSuppliers] = useState<PilotSupplierSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -200,16 +204,22 @@ export function PilotInventoryPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [reversalNotice, setReversalNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A 403 on load means this role cannot use Inventory; retrying cannot help, so the banner explains instead of offering Retry.
+  const [loadDenied, setLoadDenied] = useState(false);
   const [itemSort, setItemSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
+  // Bumped after every successful list load so panels with their own server data (free-stock evidence) re-read it on Refresh.
+  const [loadCount, setLoadCount] = useState(0);
   const load = async () => {
     setLoading(true);
     setError(null);
+    setLoadDenied(false);
 
     try {
       const [response, supplierResponse, negativeResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers(), fetchPilotNegativeStock().catch(() => null)]);
       setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setData(response);
+      setLoadCount((count) => count + 1);
       setSuppliers(supplierResponse.suppliers);
       if (workspaceMode === "browse" && !selectedId && !response.items.length) {
         setDraft(blankDraft());
@@ -233,6 +243,7 @@ export function PilotInventoryPage() {
       }
       setHasLoaded(true);
     } catch (err) {
+      setLoadDenied(err instanceof PilotApiError && err.status === 403);
       setError(err instanceof Error ? err.message : "Could not load inventory.");
     } finally {
       setLoading(false);
@@ -254,8 +265,8 @@ export function PilotInventoryPage() {
       setError(null);
     });
     const unsubscribeSuppliers = subscribePilotCache<{ suppliers: PilotSupplierSummary[] }>("/api/pilot/suppliers", (response) => {
+      // Supplier data arriving says nothing about whether the inventory list loaded, so it must not clear a load error.
       setSuppliers(response.suppliers);
-      setError(null);
     });
     return () => {
       unsubscribeInventory();
@@ -476,6 +487,7 @@ export function PilotInventoryPage() {
       setAdjustmentNote("");
       setAdjustmentModalOpen(false);
       await load();
+      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record adjustment.");
@@ -486,8 +498,22 @@ export function PilotInventoryPage() {
 
   // The workspace may be closed or switched to another item while a reversal is in flight; late responses for
   // an item that is no longer selected must not be installed into the new item's workspace.
+  const pendingTransferRef = useRef<Record<number, PendingTransfer>>({});
+  const pendingEvidenceRef = useRef<Record<number, PendingEvidenceRequest>>({});
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+
+  // Re-reads only the selected item's detail (history, cost, on-hand) after a change that already reloaded the list.
+  // The list is reloaded by Refresh and after mutations; prefer its on-hand and cost over the older item detail.
+  const reconciledItem = (detailItem: PilotInventoryItem) => {
+    const listed = data?.items.find((entry) => entry.id === detailItem.id);
+    return listed ? { ...detailItem, currentOnHand: listed.currentOnHand, averageUnitCost: listed.averageUnitCost } : detailItem;
+  };
+
+  const refreshItemDetailOnly = async (itemId: number) => {
+    const detail = await fetchPilotInventoryItem(itemId);
+    if (selectedIdRef.current === itemId) setItemDetail(detail);
+  };
 
   const refreshItemAfterReversal = async (itemId: number) => {
     // Reconcile with authoritative server state: item detail (history + linkage) and the inventory list (on-hand).
@@ -514,6 +540,21 @@ export function PilotInventoryPage() {
     }
   };
 
+  // Transfers (#233): the server applies both sides atomically; reconcile with authoritative state afterwards.
+  const transferStock = async (request: { destinationLocationId: number; quantity: number; reason: string; idempotencyKey: string }) => {
+    const source = itemDetail?.item;
+    if (!source) throw new Error("Open an item before transferring stock.");
+    const destination = (locations ?? []).find((entry) => entry.id === request.destinationLocationId);
+    const result = await createPilotInventoryTransfer({ sourceItemId: source.id, ...request });
+    const summary = `Transferred ${formatInventoryQuantity(result.quantity)} ${result.unit} of ${source.name} to ${destination?.name ?? "the other location"}. ${source.name} here is now ${formatInventoryQuantity(result.outMovement?.quantityAfter ?? 0)} ${result.unit}.`;
+    try {
+      await refreshItemAfterReversal(source.id);
+      return summary;
+    } catch {
+      return `${summary} Reload the page to see the latest history.`;
+    }
+  };
+
   const saveWaste = async () => {
     if (!draft.id || wasteQuantity <= 0) {
       setError("Enter a waste quantity greater than zero.");
@@ -537,6 +578,7 @@ export function PilotInventoryPage() {
       setWasteModalOpen(false);
       setMessage(`Waste recorded: ${formatInventoryQuantity(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
       await load();
+      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record waste.");
@@ -1005,6 +1047,12 @@ export function PilotInventoryPage() {
                   Stock counts →
                 </Button>
               </div>
+              {itemDetail?.item ? (
+                <div className="mt-3">
+                  <InventoryTransferAction pendingRef={pendingTransferRef} item={reconciledItem(itemDetail.item)} currentLocationId={currentLocation?.id} locations={locations ?? []} onTransfer={transferStock} disabled={demoReadOnly} />
+                </div>
+              ) : null}
+              {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={reconciledItem(itemDetail.item)} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
             </Card>
 
@@ -1320,7 +1368,7 @@ export function PilotInventoryPage() {
 
   return (
     <div className="workspace-page">
-      {error && !anyDialogOpen ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+      {error && !anyDialogOpen ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}{loadDenied ? " Ask an owner or manager for access to Inventory." : ""}</span>{loadDenied ? null : <Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button>}</div> : null}
       {workspaceMode === "browse" ? (
         <>
           <div className="inventory-toolbar pilot-inventory-toolbar workspace-card mb-3 rounded-xl border border-line bg-white p-2.5 shadow-soft sm:p-3">
@@ -1348,7 +1396,7 @@ export function PilotInventoryPage() {
                   }}
                 >{demoReadOnly ? "Read-only demo" : "Create item"}</Button>
                 <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={loading}>Refresh</Button>
-                <Button title="Includes out-of-stock and reorder-now items" type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"})</Button>
+                <Button title={`Urgent: out of stock or at/below minimum.${data?.summary.inventoryLowStockCount ? ` ${data.summary.inventoryLowStockCount} more running low (below PAR) are on the Reorder page.` : ""}`} type="button" icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/app/reorder-plan")}>Reorder list ({hasLoaded ? reorderCount : "—"} urgent)</Button>
               </div>
               <div className="pilot-mobile-actions relative sm:hidden">
                 <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-ink" type="button" aria-label="Open inventory actions" aria-expanded={inventoryActionMenuOpen} onClick={() => setInventoryActionMenuOpen((open) => !open)}>
@@ -1358,7 +1406,7 @@ export function PilotInventoryPage() {
                   <div className="absolute right-0 top-12 z-20 w-52 rounded-xl border border-line bg-white p-2 shadow-xl">
                     <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={demoReadOnly} onClick={() => { setInventoryActionMenuOpen(false); setInventoryTab("items"); startNewItem(); }}><Plus className="h-4 w-4" />{demoReadOnly ? "Read-only demo" : "Create item"}</button>
                     <button className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" disabled={loading} onClick={() => { setInventoryActionMenuOpen(false); void load(); }}><RefreshCcw className="h-4 w-4" />Refresh</button>
-                    <button title="Includes out-of-stock and reorder-now items" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/reorder-plan"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"})</button>
+                    <button title={`Urgent: out of stock or at/below minimum.${data?.summary.inventoryLowStockCount ? ` ${data.summary.inventoryLowStockCount} more running low (below PAR) are on the Reorder page.` : ""}`} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-ink hover:bg-slate-50" type="button" onClick={() => { setInventoryActionMenuOpen(false); navigate("/app/reorder-plan"); }}><Truck className="h-4 w-4" />Reorder list ({hasLoaded ? reorderCount : "—"} urgent)</button>
                   </div>
                 ) : null}
               </div>

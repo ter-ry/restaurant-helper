@@ -18,6 +18,7 @@ const inventoryMocks = vi.hoisted(() => ({
   createPilotInventoryWasteEvent: vi.fn(),
   createPilotSupplier: vi.fn(),
   updatePilotSupplier: vi.fn(),
+  fetchPilotCostVerifications: vi.fn(),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -48,6 +49,7 @@ vi.mock("../../src/pilot/pilotApi", async (importOriginal) => {
     createPilotInventoryWasteEvent: inventoryMocks.createPilotInventoryWasteEvent,
     createPilotSupplier: inventoryMocks.createPilotSupplier,
     updatePilotSupplier: inventoryMocks.updatePilotSupplier,
+    fetchPilotCostVerifications: inventoryMocks.fetchPilotCostVerifications,
   };
 });
 
@@ -237,6 +239,7 @@ describe("PilotInventoryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     navigateMock.mockReset();
+    inventoryMocks.fetchPilotCostVerifications.mockResolvedValue({ itemId: 0, verifications: [] });
     inventoryMocks.fetchPilotInventory.mockResolvedValue(createInventoryResponse());
     inventoryMocks.fetchPilotSuppliers.mockResolvedValue({
       suppliers: [
@@ -344,7 +347,7 @@ describe("PilotInventoryPage", () => {
         inventoryItemCount: 3,
         inventoryOutOfStockCount: 2,
         inventoryReorderNowCount: 1,
-        inventoryLowStockCount: 0,
+        inventoryLowStockCount: 4,
         inventoryValue: 275.04,
       },
     }));
@@ -355,9 +358,10 @@ describe("PilotInventoryPage", () => {
       </MemoryRouter>,
     );
 
-    const actions = await screen.findAllByRole("button", { name: "Reorder list (3)" });
+    const actions = await screen.findAllByRole("button", { name: "Reorder list (3 urgent)" });
     expect(actions.length).toBeGreaterThanOrEqual(1);
-    expect(actions[0]).toHaveAttribute("title", "Includes out-of-stock and reorder-now items");
+    expect(actions[0]).toHaveAttribute("title", expect.stringContaining("Urgent: out of stock or at/below minimum"));
+    expect(actions[0]).toHaveAttribute("title", expect.stringContaining("4 more running low (below PAR) are on the Reorder page."));
   });
 
   it("shows a background-revalidated inventory value without remounting", async () => {

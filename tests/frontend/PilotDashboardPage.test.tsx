@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotDashboardPage } from "../../src/pilot/PilotDashboardPage";
@@ -33,6 +33,9 @@ describe("PilotDashboardPage", () => {
         invoiceReviewQueueCount: 3,
         inventoryCountNeededCount: 1,
         recentPriceChangeCount: 2,
+        inventoryUrgentReorderCount: 2,
+        inventoryRunningLowCount: 5,
+        weeklyWindow: { label: "This week", startDate: "2026-11-16", endDate: "2026-11-22" },
       },
       recentInvoices: [],
       recentMovements: [
@@ -155,12 +158,15 @@ describe("PilotDashboardPage", () => {
     expect(todayHeading).toHaveClass("text-2xl");
     expect(todayHeading.closest(".rounded-2xl")?.querySelector('[aria-label="Refresh dashboard"]')).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Operations" })).toBeVisible();
-    expect(screen.getByText("Reorder pressure")).toBeVisible();
+    expect(screen.getByText("Reorder now")).toBeVisible();
     expect(screen.getByText("Review reorder")).toBeVisible();
     expect(screen.getByText("Square sync needs attention")).toBeVisible();
     expect(screen.getByText("Square variations need mapping")).toBeVisible();
     expect(screen.getByText("Daily Close is outstanding")).toBeVisible();
-    expect(screen.getByText("2 item(s) need ordering now.")).toBeVisible();
+    expect(screen.getByText("2 item(s) are out of stock or below their minimum. 5 more running low.")).toBeVisible();
+    expect(screen.getByText("2 urgent")).toBeVisible();
+    expect(screen.getByText(/5 running low \(below PAR, above minimum\)/)).toBeVisible();
+    expect(screen.getByText(/4 invoices · Nov 16 – Nov 22/)).toBeVisible();
     expect(screen.queryByText("These are unfinished records, not history. Reopen the exact invoice, count, daily close, or reorder draft you last touched.")).not.toBeInTheDocument();
     expect(screen.queryByText("The items that need attention now, from low stock through urgent reorder.")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeVisible();
@@ -178,5 +184,24 @@ describe("PilotDashboardPage", () => {
     expect(screen.getByText("Reorder plan draft").closest("a")).toHaveAttribute("href", "/app/inventory?view=reorder&planId=5");
 
     expect(screen.getByRole("link", { name: /Review reorder/ })).toHaveAttribute("href", "/app/inventory?view=reorder");
+  });
+  it("shows an error with Try again, not zeros or an all-clear, when the first load fails", async () => {
+    pilotApiMocks.fetchPilotDashboard.mockReset();
+    pilotApiMocks.fetchPilotDashboard.mockRejectedValueOnce(new Error("Dashboard service unavailable."));
+    pilotApiMocks.fetchPilotDashboard.mockResolvedValueOnce({
+      summary: { inventoryValue: 9000, inventoryItemCount: 45, weeklyInvoiceSpend: 1200, weeklyInvoiceCount: 4, monthlyInvoiceSpend: 3400, monthlyInvoiceCount: 12 },
+      recentMovements: [], recentPriceChanges: [],
+      workflow: { inventory: "Ready", reorder: "Clear", close: "Done", purchase: "Clear" },
+    });
+    render(<MemoryRouter><PilotDashboardPage /></MemoryRouter>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Dashboard service unavailable.");
+    expect(screen.queryByText("No current operational alerts.")).not.toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(pilotApiMocks.fetchPilotDashboard).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Needs attention")).toBeVisible();
+    expect(screen.getByText("$9,000.00")).toBeVisible();
   });
 });

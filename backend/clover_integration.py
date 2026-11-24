@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, redirect, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
-from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_request, parse_clover_timestamp
+from .clover import CloverRequestError, clover_authorize_url, clover_enabled, clover_environment, clover_request, clover_sandbox_pakms_probe, parse_clover_timestamp
 from .clover_catalog import CloverCatalogClient, CloverCatalogDisabled, CloverCatalogIncomplete, clover_catalog_enabled
 from .clover_orders import CloverOrderClient
 from .clover_inventory import apply_clover_order_inventory, clover_order_inventory_enabled
@@ -1029,6 +1029,72 @@ def clover_shadow_orders_fetch():
             "dryRun": (inventory_dry_run or not inventory_execute) if "inventory_dry_run" in locals() else True,
             "results": inventory_results if "inventory_results" in locals() else [],
         },
+    }), 200
+
+
+@bp.get("/api/integrations/clover/pakms-check")
+@login_required
+def clover_pakms_check():
+    """Owner-only, Sandbox-only check that the installed-app OAuth grant may call PAKMS.
+
+    The provider call is a GET that changes no Clover business data (no payment,
+    order, inventory or settings change). Flowtally-side it is NOT side-effect
+    free: it may rotate the single-use OAuth refresh token and rewrite the stored
+    token ciphertexts (stale token, or a PAKMS 401 triggers one forced refresh),
+    may mark the connection ``reauthorization_required`` when a refresh fails, and
+    writes a ``clover.pakms.checked`` audit row. Failed attempts (409/503) are
+    also audited as ``clover.pakms.check_failed`` with only an error code, so an
+    owner can see repeated failures; 403/404 denials are not audited because no
+    owner-authorized action took place.
+
+    Never returns the token, ciphertext or the PAKMS key; reports only status metadata.
+    """
+    try:
+        org_id = int(request.args.get("organizationId", ""))
+    except ValueError:
+        org_id = None
+    organization = _organization(org_id)
+    denied = _require(organization)
+    if denied is not None:
+        return denied
+    assert organization is not None
+    connection = CloverConnection.query.filter_by(organization_id=organization.id).first()
+    connection_id = connection.id if connection is not None else None
+    if connection is None or connection.status != "connected" or connection.environment != "sandbox" or clover_environment() != "sandbox":
+        return json_error("Clover sandbox authorization is required.", 409, code="clover_authorization_required")
+    try:
+        token = decrypt_integration_secret(connection.access_token_ciphertext)
+        if not token:
+            raise CloverRequestError("Clover authorization is required.", status_code=409, code="clover_authorization_required")
+        observed_ciphertext = connection.access_token_ciphertext
+        if _token_is_stale(connection):
+            token = _refresh_connection_token(connection, organization, observed_ciphertext=observed_ciphertext)
+        result = clover_sandbox_pakms_probe(token)
+        if result["httpStatus"] == 401:
+            token = _refresh_connection_token(connection, organization, observed_ciphertext=observed_ciphertext, force=True)
+            result = clover_sandbox_pakms_probe(token)
+    except SquareSecurityError:
+        return json_error("Clover authorization could not be read.", 502, code="clover_authorization_unreadable")
+    except CloverRequestError as exc:
+        db.session.rollback()
+        record_audit_event(event_type="clover.pakms.check_failed", entity_type="clover_connection", entity_id=connection_id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"errorCode": exc.code, "verified": False})
+        db.session.commit()
+        if exc.status_code == 409:
+            return json_error("Clover authorization must be renewed.", 409, code=exc.code)
+        return json_error("Clover PAKMS check could not be completed.", 503, code=exc.code)
+    http_status = result["httpStatus"]
+    verified = http_status == 200 and result["active"] is True and result["merchantUuid"] == connection.merchant_id
+    record_audit_event(event_type="clover.pakms.checked", entity_type="clover_connection", entity_id=connection.id, organization_id=organization.id, actor_user_id=current_user.id, metadata={"httpStatus": http_status, "verified": verified})
+    db.session.commit()
+    return jsonify({
+        "providerReadOnly": True,
+        "flowtallyWrites": "May refresh OAuth credentials and writes an audit row; no Clover business-data change.",
+        "endpoint": "GET /pakms/apikey (sandbox)",
+        "httpStatus": http_status,
+        "active": result["active"],
+        "merchantIdMatches": (result["merchantUuid"] == connection.merchant_id) if result["merchantUuid"] else None,
+        "verified": verified,
+        "errorCode": None if http_status == 200 else ("clover_unauthorized" if http_status == 401 else "clover_forbidden" if http_status == 403 else "clover_request_failed"),
     }), 200
 
 

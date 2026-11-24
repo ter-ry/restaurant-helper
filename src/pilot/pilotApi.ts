@@ -391,6 +391,17 @@ export interface PilotPurchaseReviewSummary {
   };
 }
 
+export interface PilotOcrEvidence {
+  status: "matched" | "incomplete" | "unverified" | "overridden";
+  printedSubtotal: number | null;
+  printedTax: number | null;
+  printedTotal: number | null;
+  expectedAmount: number | null;
+  lineTotal: number;
+  difference: number | null;
+  override: { reason: string | null; acknowledgedLineTotal: number; byUserId: number | null; at: string | null; validForCurrentLines: boolean } | null;
+}
+
 export interface PilotPurchaseInvoice {
   id: number;
   organizationId: number;
@@ -409,6 +420,8 @@ export interface PilotPurchaseInvoice {
   sourceFileKey: string;
   extractedText: string;
   extractionStatus: string;
+  /** Server-stored printed OCR amounts and reconciliation verdict (#169). Null for manually entered invoices. */
+  ocrEvidence?: PilotOcrEvidence | null;
   receivedAt: string | null;
   receivedByUserId: number | null;
   createdByUserId: number | null;
@@ -1171,7 +1184,19 @@ export interface PilotInvoiceOcrLine {
   lineTotalDifference?: number;
 }
 
+/** Backend check of extracted line totals against the printed subtotal/total. Optional: older responses omit it. */
+export interface PilotInvoiceOcrReconciliation {
+  status: "matched" | "incomplete" | "unverified";
+  lineTotalSum?: number | null;
+  expectedAmount?: number | null;
+  basis?: string | null;
+  difference?: number | null;
+  message?: string;
+}
+
 export interface PilotInvoiceOcrResponse {
+  /** Signed server record of the printed amounts; must be sent back when the extracted draft is first saved. */
+  evidenceToken?: string;
   provider: string;
   fileName: string;
   contentType: string;
@@ -1188,6 +1213,7 @@ export interface PilotInvoiceOcrResponse {
   warnings: string[];
   overallConfidence: number;
   needsReview: boolean;
+  reconciliation?: PilotInvoiceOcrReconciliation;
 }
 
 export async function uploadPilotInvoiceOcr(file: File) {
@@ -1207,6 +1233,14 @@ export async function fetchPilotPurchaseInvoice(invoiceId: number) {
 
 export async function fetchPilotPurchasePreview(invoiceId: number) {
   return requestJson<PilotPurchasePreview>(`/api/pilot/purchases/invoices/${invoiceId}/preview`);
+}
+
+export async function overridePilotOcrDiscrepancy(invoiceId: number, payload: { reason: string; acknowledgedLineTotal: number }) {
+  return requestCsrfJson<PilotPurchaseInvoice>(`/api/pilot/purchases/invoices/${invoiceId}/ocr-override`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function createPilotPurchaseInvoice(payload: Record<string, unknown>) {
@@ -1561,4 +1595,87 @@ export type PilotNegativeStock = { count: number; posCausedCount: number; items:
 /** Items below zero on hand, explained from the movement ledger (#199 Option A). Read-only. */
 export async function fetchPilotNegativeStock() {
   return requestJson<PilotNegativeStock>("/api/pilot/inventory/negative-stock");
+}
+
+export type PilotInventoryTransfer = {
+  id: number;
+  fromLocationId: number;
+  toLocationId: number;
+  fromItemId: number;
+  toItemId: number;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  reason: string;
+  idempotencyKey: string;
+  createdAt: string | null;
+  outMovement: PilotInventoryMovement | null;
+  inMovement: PilotInventoryMovement | null;
+  replayed: boolean;
+};
+
+/** Atomically moves stock to another location of the same organization (#233). The idempotency key is required. */
+export async function createPilotInventoryTransfer(payload: {
+  sourceItemId: number;
+  destinationLocationId: number;
+  quantity: number;
+  reason?: string;
+  idempotencyKey: string;
+}) {
+  try {
+    return await requestCsrfJson<PilotInventoryTransfer>("/api/pilot/inventory/transfers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    // A rejected transfer usually means stock changed under us; drop the cached lists so the caller re-reads them.
+    clearPilotDataCache();
+    throw error;
+  }
+}
+
+/** Verified-free ($0) inventory evidence for one item (#279). Rows are never deleted; revoked rows stay listed. */
+export type PilotCostVerification = {
+  id: number;
+  itemId: number;
+  quantity: number;
+  consumedQuantity: number;
+  remainingQuantity: number;
+  unit: string;
+  evidenceType: string;
+  evidenceNote: string;
+  correctionOfId: number | null;
+  verifiedAt: string | null;
+  revokedAt: string | null;
+  revokedReason: string;
+  replayed?: boolean;
+};
+
+export const COST_EVIDENCE_TYPES = ["supplier_free_goods", "donation", "promotional_sample", "other_documented"] as const;
+
+/** Always reads fresh from the server: this is the authoritative state shown after every mutation. */
+export async function fetchPilotCostVerifications(itemId: number) {
+  return requestJsonUncached<{ itemId: number; verifications: PilotCostVerification[] }>(`/api/pilot/inventory/items/${itemId}/cost-verifications`);
+}
+
+async function postVerification<T>(path: string, body: Record<string, unknown>) {
+  try {
+    return await requestCsrfJson<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  } finally {
+    // Evidence changes what can be transferred, so cached inventory lists are no longer trustworthy.
+    clearPilotDataCache();
+  }
+}
+
+export function createPilotCostVerification(itemId: number, payload: { evidenceType: string; evidenceNote: string; quantity: number; idempotencyKey: string }) {
+  return postVerification<PilotCostVerification>(`/api/pilot/inventory/items/${itemId}/cost-verifications`, payload);
+}
+
+export function revokePilotCostVerification(verificationId: number, payload: { reason: string }) {
+  return postVerification<PilotCostVerification>(`/api/pilot/inventory/cost-verifications/${verificationId}/revoke`, payload);
+}
+
+export function correctPilotCostVerification(verificationId: number, payload: { evidenceType: string; evidenceNote: string; quantity: number; reason: string; idempotencyKey: string }) {
+  return postVerification<PilotCostVerification>(`/api/pilot/inventory/cost-verifications/${verificationId}/correct`, payload);
 }

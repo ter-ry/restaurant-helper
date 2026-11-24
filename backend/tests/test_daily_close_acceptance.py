@@ -22,6 +22,7 @@ import pytest
 
 from backend.extensions import db
 from backend.models import (
+    SquareSyncJob,
     DailyCloseSession,
     InventoryItem,
     InventoryMovement,
@@ -65,11 +66,16 @@ def _setup(app, client, monkeypatch, *, environment="sandbox", square_location_i
         db.session.add(sq)
         db.session.flush()
         db.session.add(SquareLocationMapping(square_location_id=sq.id, restaurant_location_id=location.id, mapped_by_user_id=owner.id))
+    # A completed order import whose recorded window covers the test business dates (range-specific sales evidence).
+    db.session.add(SquareSyncJob(
+        square_connection_id=connection.id, job_type="orders", status="completed", completed_at=datetime(2026, 8, 30, 23, 0, tzinfo=timezone.utc),
+        cursor_json={"startAt": "2026-08-01T00:00:00Z", "endAt": "2026-09-30T00:00:00Z", "locationIds": list(square_location_ids)},
+    ))
     db.session.commit()
     selected = client.post("/api/organizations/select", headers={"X-CSRFToken": _csrf(client)}, json={"organizationId": organization.id})
     assert selected.status_code == 200
     # No network: order freshness is a Square API call and is outside what these tests assert.
-    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "fresh"})
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
     return organization.id, location.id, connection.id
 
 

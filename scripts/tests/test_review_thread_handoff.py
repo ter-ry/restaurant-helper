@@ -1,0 +1,306 @@
+"""Fail-closed tests for the read-only review-thread handoff classifier (#305)."""
+import copy
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import review_thread_handoff as h
+
+HEAD = "a" * 40
+OLD = "b" * 40
+
+
+def snap(**over):
+    s = {
+        "pr": {"number": 304, "state": "open", "user": {"login": "ter-ry"}, "head_sha": HEAD},
+        "threads_verified": True,
+        "threads": [{"id": "T1", "isResolved": True, "comments": []}],
+        "checks": [{"name": n, "head_sha": HEAD, "status": "completed", "conclusion": "success"}
+                   for n in ("backend", "frontend")],
+        "comments": [{"user": {"login": "reviewer"}, "body": f"APPROVE @ {HEAD}"}],
+    }
+    s.update(over)
+    return s
+
+
+def unresolved(body=None):
+    return [{"id": "T1", "isResolved": False, "comments": [{"body": body}] if body else []}]
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_all_resolved_green_approved_is_owner_merge_pending(self):
+        r = h.classify(snap())
+        self.assertEqual(r["state"], h.OWNER_MERGE_PENDING)
+        self.assertTrue(r["mark_owner_merge_ready"])
+
+    def test_green_and_approved_but_thread_unresolved_is_not_merge_ready(self):
+        r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD} test x")))
+        self.assertEqual(r["state"], h.FIX_PENDING_VERIFICATION)
+        self.assertFalse(r["mark_owner_merge_ready"])
+
+    def test_unresolved_without_fix_at_head_is_finding_open(self):
+        self.assertEqual(h.classify(snap(threads=unresolved()))["state"], h.FINDING_OPEN)
+
+    def test_fix_reply_at_old_sha_or_reverted_fix_stays_open(self):
+        self.assertEqual(h.classify(snap(threads=unresolved(f"Fixed @ {OLD}")))["state"], h.FINDING_OPEN)
+
+    def test_approval_at_wrong_sha_is_stale(self):
+        s = snap(comments=[{"user": {"login": "reviewer"}, "body": f"APPROVE @ {OLD}"}])
+        self.assertEqual(h.classify(s)["state"], h.APPROVAL_STALE)
+
+    def test_author_cannot_approve_own_pr(self):
+        s = snap(comments=[{"user": {"login": "Ter-Ry"}, "body": f"APPROVE @ {HEAD}"}])
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_request_changes_at_head_blocks(self):
+        s = snap(comments=[{"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}"},
+                           {"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}"}])
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_ci_for_other_sha_or_failing_is_not_green(self):
+        s = snap(checks=[{"name": n, "head_sha": OLD, "status": "completed", "conclusion": "success"}
+                         for n in ("backend", "frontend")])
+        self.assertEqual(h.classify(s)["state"], h.CI_NOT_GREEN)
+        s = snap()
+        s["checks"][0]["conclusion"] = "failure"
+        self.assertEqual(h.classify(s)["state"], h.CI_NOT_GREEN)
+
+    def test_new_unresolved_thread_after_approval_reopens(self):
+        s = snap()
+        s["threads"].append({"id": "T2", "isResolved": False, "comments": []})
+        self.assertEqual(h.classify(s)["state"], h.FINDING_OPEN)
+
+    def test_unverified_or_ambiguous_threads_fail_closed(self):
+        self.assertEqual(h.classify(snap(threads_verified=False))["state"], h.BLOCKED_UNVERIFIED)
+        self.assertEqual(h.classify(snap(threads_verified=None))["state"], h.BLOCKED_UNVERIFIED)
+        s = snap(threads=[{"id": "T9", "comments": []}])
+        self.assertEqual(h.classify(s)["state"], h.BLOCKED_UNVERIFIED)
+        s = snap()
+        s["pr"]["head_sha"] = "short"
+        self.assertEqual(h.classify(s)["state"], h.BLOCKED_UNVERIFIED)
+
+    def test_reviewer_without_resolve_permission_escalates(self):
+        r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}"), viewer_can_resolve=False))
+        self.assertIn("REVIEWER_CANNOT_RESOLVE_ESCALATE_TO_OWNER", r["reasons"])
+
+    def test_classify_does_not_mutate_input(self):
+        s = snap(threads=unresolved())
+        before = copy.deepcopy(s)
+        h.classify(s)
+        self.assertEqual(s, before)
+
+
+class CodexFindingTests(unittest.TestCase):
+    def _runs(self, order):
+        ok = {"name": "backend", "head_sha": HEAD, "status": "completed", "conclusion": "success",
+              "id": 1, "started_at": "2026-11-15T10:00:00Z"}
+        bad = dict(ok, conclusion="failure", id=2, started_at="2026-11-15T11:00:00Z")
+        runs = [ok, bad] if order else [bad, ok]
+        return runs + [{"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"}]
+
+    def test_older_success_newer_failure_both_orders_not_green(self):
+        for order in (True, False):
+            self.assertEqual(h.classify(snap(checks=self._runs(order)))["state"], h.CI_NOT_GREEN)
+
+    def test_newer_success_after_older_failure_is_green_both_orders(self):
+        for order in (True, False):
+            runs = self._runs(order)
+            runs[0 if order else 1]["conclusion"] = "failure"  # the older run
+            for r in runs:
+                if r["name"] == "backend":
+                    r["conclusion"] = "failure" if r["id"] == 1 else "success"
+            self.assertEqual(h.classify(snap(checks=runs))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_duplicate_runs_without_ordering_fail_closed(self):
+        runs = [{"name": "backend", "head_sha": HEAD, "status": "completed", "conclusion": c} for c in ("success", "failure")]
+        runs.append({"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"})
+        self.assertEqual(h.classify(snap(checks=runs))["state"], h.CI_NOT_GREEN)
+
+    def test_mixed_ordering_metadata_fails_closed_both_orders(self):
+        ok = {"name": "backend", "head_sha": HEAD, "status": "completed", "conclusion": "success",
+              "id": 1, "started_at": "2026-11-15T10:00:00Z"}
+        rerun = {"name": "backend", "head_sha": HEAD, "status": "queued", "id": 9, "started_at": None}
+        fe = {"name": "frontend", "head_sha": HEAD, "status": "completed", "conclusion": "success"}
+        for runs in ([ok, rerun, fe], [rerun, ok, fe]):
+            self.assertEqual(h.classify(snap(checks=runs))["state"], h.CI_NOT_GREEN)
+
+    def test_request_changes_superseded_by_later_approval(self):
+        c = [{"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}", "created_at": "2026-11-15T10:00:00Z"},
+             {"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}", "created_at": "2026-11-15T11:00:00Z"}]
+        self.assertEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+        self.assertEqual(h.classify(snap(comments=c[::-1]))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_later_request_changes_overrides_approval(self):
+        c = [{"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}", "created_at": "2026-11-15T10:00:00Z"},
+             {"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}", "created_at": "2026-11-15T11:00:00Z"}]
+        self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_other_reviewer_request_changes_still_blocks(self):
+        c = [{"user": {"login": "r1"}, "body": f"APPROVE @ {HEAD}"},
+             {"user": {"login": "r2"}, "body": f"REQUEST CHANGES @ {HEAD}"}]
+        self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_multiple_verdicts_without_timestamps_fail_closed(self):
+        c = [{"user": {"login": "r"}, "body": f"REQUEST CHANGES @ {HEAD}"},
+             {"user": {"login": "r"}, "body": f"APPROVE @ {HEAD}"}]
+        self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+    def test_missing_author_identity_fails_closed(self):
+        s = snap()
+        s["pr"]["user"] = {}
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+        s["pr"].pop("user")
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_missing_commenter_identity_fails_closed(self):
+        for user in (None, {}, {"login": ""}):
+            c = [{"user": user, "body": f"APPROVE @ {HEAD}"},
+                 {"user": {"login": "reviewer"}, "body": f"APPROVE @ {HEAD}"}]
+            self.assertNotEqual(h.classify(snap(comments=c))["state"], h.OWNER_MERGE_PENDING)
+
+
+class VerdictParsingTests(unittest.TestCase):
+    def _state(self, body):
+        return h.classify(snap(comments=[{"user": {"login": "reviewer"}, "body": body}]))["state"]
+
+    def test_negative_mention_is_not_a_verdict(self):
+        self.assertNotEqual(self._state(f"I cannot APPROVE @ {HEAD}: failure case untested."), h.OWNER_MERGE_PENDING)
+
+    def test_quoted_prior_approval_is_not_a_verdict(self):
+        self.assertNotEqual(self._state(f"> APPROVE @ {HEAD}\nWithdrawn, see below."), h.OWNER_MERGE_PENDING)
+
+    def test_midline_reference_is_not_a_verdict(self):
+        self.assertNotEqual(self._state(f"Replaces my earlier APPROVE @ {HEAD}"), h.OWNER_MERGE_PENDING)
+
+    def test_real_reviewer_formats_still_count(self):
+        for body in (f"APPROVE @ {HEAD}", f"**CLAUDE-R1 independent review: APPROVE @ {HEAD}** (comment)",
+                     f"**CLAUDE-R1: APPROVE @ {HEAD}**\nFindings: none"):
+            self.assertEqual(self._state(body), h.OWNER_MERGE_PENDING, body)
+
+
+class OnlineDedupTests(unittest.TestCase):
+    def test_online_mode_loads_comments_so_existing_marker_suppresses_message(self):
+        import io, os, contextlib
+        from unittest import mock
+        r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}")))
+        marker_comment = {"user": {"login": "w"}, "body": h.handoff_message(r, []), "created_at": "x"}
+        pr = {"state": "open", "user": {"login": "ter-ry"}, "head_sha": HEAD}
+        threads = {"threads_verified": True, "threads": unresolved(f"Fixed @ {HEAD}"), "head_sha": HEAD}
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "t"}), \
+             mock.patch.object(h, "fetch_rest_context", return_value=(pr, [marker_comment], [])), \
+             mock.patch.object(h, "fetch_threads", return_value=threads), \
+             contextlib.redirect_stdout(out):
+            h.main(["--pr", "304"])
+        import json
+        data = json.loads(out.getvalue())
+        self.assertEqual(data["state"], h.FIX_PENDING_VERIFICATION)
+        self.assertIsNone(data["message"])
+
+    def _fake_rest(self, reviews):
+        head = HEAD
+        def fake(url, token):
+            if "/reviews" in url:
+                return reviews
+            if "/issues/" in url:
+                return [{"user": {"login": "reviewer"}, "body": f"APPROVE @ {head}", "created_at": "2026-11-15T10:00:00Z"}]
+            if "/check-runs" in url:
+                return {"total_count": 2, "check_runs": [
+                    {"name": n, "status": "completed", "conclusion": "success", "id": 1, "started_at": "t"}
+                    for n in ("backend", "frontend")]}
+            return {"state": "open", "user": {"login": "ter-ry"}, "head": {"sha": head}}
+        return fake
+
+    def test_formal_changes_requested_review_supersedes_comment_approval(self):
+        from unittest import mock
+        rv = [{"user": {"login": "reviewer"}, "state": "CHANGES_REQUESTED", "commit_id": HEAD,
+               "body": "", "submitted_at": "2026-11-15T11:00:00Z"}]
+        with mock.patch.object(h, "_rest", self._fake_rest(rv)):
+            pr, comments, checks = h.fetch_rest_context("o", "r", 1, "t")
+        s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_formal_review_at_old_commit_does_not_block_head_approval(self):
+        from unittest import mock
+        rv = [{"user": {"login": "reviewer"}, "state": "CHANGES_REQUESTED", "commit_id": OLD,
+               "body": "", "submitted_at": "2026-11-15T11:00:00Z"}]
+        with mock.patch.object(h, "_rest", self._fake_rest(rv)):
+            pr, comments, checks = h.fetch_rest_context("o", "r", 1, "t")
+        s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
+        self.assertEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_dismissed_review_body_cannot_authorize_readiness(self):
+        from unittest import mock
+        rv = [{"user": {"login": "r2"}, "state": "DISMISSED", "commit_id": HEAD,
+               "body": f"APPROVE @ {HEAD}", "submitted_at": "2026-11-15T11:00:00Z"}]
+        fake = self._fake_rest(rv)
+        def no_comment_approval(url, token):
+            return [] if "/issues/" in url else fake(url, token)
+        with mock.patch.object(h, "_rest", no_comment_approval):
+            pr, comments, checks = h.fetch_rest_context("o", "r", 1, "t")
+        self.assertEqual(comments, [])
+        s = snap(pr={"number": 1, "state": "open", **pr}, comments=comments, checks=checks)
+        self.assertNotEqual(h.classify(s)["state"], h.OWNER_MERGE_PENDING)
+
+    def test_thread_comment_overflow_fails_closed(self):
+        import io, json
+        from unittest import mock
+        payload = {"data": {"repository": {"pullRequest": {"headRefOid": HEAD, "reviewThreads": {
+            "pageInfo": {"hasNextPage": False}, "nodes": [{"id": "T1", "isResolved": False, "viewerCanResolve": True,
+            "comments": {"pageInfo": {"hasNextPage": True}, "nodes": [{"body": "x"}]}}]}}}}}
+        with mock.patch.object(h, "urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            self.assertFalse(h.fetch_threads("o", "r", 1, "t")["threads_verified"])
+
+    def test_rest_failure_fails_closed(self):
+        import io, os, contextlib
+        from unittest import mock
+        from urllib.error import URLError
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "t"}), \
+             mock.patch.object(h, "fetch_rest_context", side_effect=URLError("x")), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(h.main(["--pr", "1"]), 2)
+
+
+class HandoffMessageTests(unittest.TestCase):
+    def test_message_once_per_state_and_head(self):
+        r = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}")))
+        msg = h.handoff_message(r, [])
+        self.assertIn(HEAD, msg)
+        self.assertIn("T1", msg)
+        self.assertIsNone(h.handoff_message(r, [{"body": msg}]))  # duplicate suppressed
+
+    def test_changed_head_gets_new_message(self):
+        r1 = h.classify(snap(threads=unresolved(f"Fixed @ {HEAD}")))
+        s2 = snap(threads=unresolved(f"Fixed @ {OLD}"))
+        s2["pr"]["head_sha"] = OLD
+        r2 = h.classify(s2)
+        m1 = h.handoff_message(r1, [])
+        self.assertIsNotNone(h.handoff_message(r2, [{"body": m1}]))
+
+    def test_no_message_when_nothing_to_hand_off(self):
+        self.assertIsNone(h.handoff_message(h.classify(snap()), []))
+
+    def test_never_emits_resolve_or_approve_action(self):
+        msg = h.handoff_message(h.classify(snap(threads=unresolved())), [])
+        self.assertIn("Nothing here is approval", msg)
+        self.assertFalse(h.classify(snap(threads=unresolved()))["mark_owner_merge_ready"])
+
+
+class FetchTests(unittest.TestCase):
+    def test_missing_token_fails_closed_without_network(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(h.main(["--pr", "1"]), 2)
+
+    def test_network_error_is_unverified(self):
+        from unittest import mock
+        from urllib.error import URLError
+        with mock.patch.object(h, "urlopen", side_effect=URLError("down")):
+            self.assertFalse(h.fetch_threads("o", "r", 1, "t")["threads_verified"])
+
+
+if __name__ == "__main__":
+    unittest.main()

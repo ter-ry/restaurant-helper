@@ -1978,6 +1978,8 @@ def sync_square_orders_for_range(
         _mark_square_sync_success(connection)
         job.status = "completed"
         job.completed_at = _now()
+        # Record the exact imported window so consumers can prove a business date was covered (additive keys).
+        result = {**result, "startAt": start_at.isoformat().replace("+00:00", "Z"), "endAt": end_at.isoformat().replace("+00:00", "Z")}
         job.cursor_json = result
         response_payload = {"connection": _serialize_connection(connection), "job": {"id": job.id, "status": job.status, "cursorJson": result}}
         actor_user_id = current_user.id

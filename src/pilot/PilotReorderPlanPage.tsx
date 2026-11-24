@@ -420,6 +420,7 @@ export function PilotReorderPlanPage() {
       setMessage(`Completed reorder plan ${completed.name}. It is now locked in history.`);
       setConfirmCompletion(false);
     } catch (err) {
+      setConfirmCompletion(false);
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
     } finally {
       setSaving(false);
@@ -518,7 +519,7 @@ export function PilotReorderPlanPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           {[
-            { label: "Needs reorder", value: hasLoaded ? formatNumber(currentSuggestions.length) : "—", helper: hasLoaded ? `${formatNumber(currentUrgentCount)} below minimum` : "Loading" },
+            { label: "Needs reorder", value: hasLoaded ? formatNumber(currentSuggestions.length) : "—", helper: hasLoaded ? `${formatNumber(currentUrgentCount)} urgent (at/below minimum) + ${formatNumber(currentSuggestions.length - currentUrgentCount)} running low (below PAR)` : "Loading" },
             { label: "Cost unavailable", value: hasLoaded ? formatNumber(currentUnknownPriceCount) : "—", helper: "estimate unavailable" },
             { label: "Draft plans", value: hasLoaded ? formatNumber(draftPlanCount) : "—", helper: hasLoaded ? `${formatNumber(preparedPlanCount)} prepared` : "Loading" },
             { label: "Completed plans", value: hasLoaded ? formatNumber(completedPlanCount) : "—", helper: "history preserved" },

@@ -525,6 +525,166 @@ class Revocation(Offline):
         self.assertNotIn("paths:", text)  # a required check must report on every PR
 
 
+class UnattendedTier0Policy(Offline):
+    """Live writes: run-level gate (switches + explicit dispatch or unattended variable), per-PR eligibility, write cap."""
+    LIVE = {rt.ENABLE_VARIABLE: "true", rt.LIVE_WRITES_VARIABLE: "true", "GITHUB_EVENT_NAME": "workflow_dispatch"}
+    UNATT = {**LIVE, "GITHUB_EVENT_NAME": "schedule", rt.UNATTENDED_VARIABLE: "true"}
+
+    def test_hardcoded_pr_allowlist_is_gone(self):
+        self.assertFalse(hasattr(rt, "LIVE_ACCEPTANCE_PRS"))
+        self.assertEqual((rt.MAX_LIVE_WRITES_PER_RUN, rt.UNATTENDED_VARIABLE), (3, "FLOWTALLY_TRUSTED_REVIEW_UNATTENDED"))
+
+    def test_run_level_gate_matrix(self):
+        allow = rt.live_target_allowed
+        self.assertTrue(allow(self.LIVE, 296))
+        self.assertTrue(allow(self.LIVE, 272))                         # any explicit target; per-PR policy decides
+        self.assertFalse(allow(self.LIVE, 0))                          # blank dispatch = reconcile all: needs unattended
+        self.assertFalse(allow(self.LIVE, True))
+        self.assertFalse(allow(self.LIVE, -5))
+        self.assertFalse(allow({**self.LIVE, "GITHUB_EVENT_NAME": "schedule"}, 296))   # schedule without the variable
+        self.assertFalse(allow({k: v for k, v in self.LIVE.items() if k != "GITHUB_EVENT_NAME"}, 296))
+        self.assertFalse(allow({**self.LIVE, rt.LIVE_WRITES_VARIABLE: "false"}, 296))
+        self.assertFalse(allow({**self.LIVE, rt.ENABLE_VARIABLE: "false"}, 296))
+        self.assertTrue(allow(self.UNATT, 0))
+        self.assertTrue(allow({**self.UNATT, "GITHUB_EVENT_NAME": "workflow_dispatch"}, 0))
+        for bad in ("True", "1", "yes", "", " true"):
+            self.assertFalse(allow({**self.UNATT, rt.UNATTENDED_VARIABLE: bad}, 0), bad)
+        self.assertFalse(allow({**self.UNATT, rt.LIVE_WRITES_VARIABLE: "false"}, 0))
+        self.assertFalse(allow({**self.UNATT, rt.ENABLE_VARIABLE: "false"}, 0))
+        self.assertFalse(allow({**self.UNATT, "GITHUB_EVENT_NAME": "pull_request_target"}, 0))
+        self.assertFalse(allow({**self.UNATT, "GITHUB_EVENT_NAME": "push"}, 0))
+
+    def _ev(self):
+        return collector_for(RW(reviewer_world())).collect(N)
+
+    def test_eligible_tier0_same_repo_open_develop_pr(self):
+        self.assertEqual(rt.live_eligibility(self._ev(), cfg()), [])
+
+    def test_eligibility_blockers_fail_closed(self):
+        def mut(fn):
+            ev = self._ev()
+            fn(ev)
+            return rt.live_eligibility(ev, cfg())
+        self.assertIn("live_base_not_develop", mut(lambda e: e["pr"]["base"].update(ref="main")))
+        self.assertIn("live_not_open", mut(lambda e: e["pr"].update(state="closed")))
+        self.assertIn("live_draft_or_unknown", mut(lambda e: e["pr"].update(draft=True)))
+        self.assertIn("live_draft_or_unknown", mut(lambda e: e["pr"].pop("draft")))
+        self.assertIn("live_fork_or_unknown_head", mut(lambda e: e["pr"]["head"]["repo"].update(id=RID + 1)))
+        self.assertIn("live_fork_or_unknown_head", mut(lambda e: e["pr"]["head"].update(repo=None)))
+        self.assertIn("live_no_changed_files", mut(lambda e: e.update(changed_files=[])))
+        self.assertIn("live_no_changed_files", mut(lambda e: e.update(changed_files=None)))
+        for path in ("backend/app.py", "src/App.tsx", ".github/workflows/x.yml", "docs/x.png", "AGENTS.md", "scripts/x.py", "docs/../src/a.md"):
+            self.assertIn("live_not_tier0_only", mut(lambda e, p=path: e.update(changed_files=["docs/ok.md", p])), path)
+        self.assertIn("live_too_many_files", mut(lambda e: e.update(changed_files=[f"docs/{i}.md" for i in range(rt.MAX_LIVE_CHANGED_FILES + 1)])))
+        self.assertIn("live_no_pr", rt.live_eligibility({}, cfg()))
+
+    def test_review_posts_nothing_when_ineligible_even_with_all_switches(self):
+        orig = rt.live_eligibility
+        rt.live_eligibility = lambda ev, c: ["live_not_tier0_only"]
+        try:
+            res, fake = do_review()
+        finally:
+            rt.live_eligibility = orig
+        self.assertEqual((res["action"], fake.posts), ("dry_run", []))
+        self.assertIn("live_not_tier0_only", res["reasons"])
+
+    def test_verifier_success_needs_eligibility_but_failure_always_publishes(self):
+        w_ok, w_none = verifier_world(), verifier_world(approve=False)   # build worlds before patching
+        orig = rt.live_eligibility
+        rt.live_eligibility = lambda ev, c: ["live_draft_or_unknown"]
+        try:
+            res, fake = do_verify(w_ok)
+            self.assertEqual((res["action"], res["conclusion"], fake.posts), ("dry_run", "success", []))
+            res2, fake2 = do_verify(w_none)      # no approval => failure verdict
+        finally:
+            rt.live_eligibility = orig
+        self.assertEqual((res2["action"], res2["conclusion"]), ("posted", "failure"))
+
+    def test_capped_poster_caps_grants_only_never_revocations(self):
+        sent = []
+        cp = rt.CappedPoster(lambda p, b: sent.append(p) or {"status": 200}, limit=2)
+        g = {"event": "APPROVE"}
+        self.assertEqual([cp("/a", g)["status"], cp("/b", {"conclusion": "success"})["status"], cp("/c", g)["status"]], [200, 200, 429])
+        self.assertEqual([cp(f"/r{i}", {"conclusion": "failure"})["status"] for i in range(6)], [200] * 6)  # revocations uncapped
+        self.assertEqual((cp.count, len(sent)), (2, 8))
+        self.assertEqual(cp("/x", None)["status"], 200)  # non-grant shapes are not counted
+
+    def _real_world_review(self, **mods):
+        w = reviewer_world()
+        mods_fn = mods.pop("fn")
+        mods_fn(w[f"{ROOT}/pulls/{N}"][0]["body"], w)
+        return do_review(w)
+
+    def test_real_review_path_posts_nothing_for_draft_fork_or_non_tier0(self):
+        def draft(pr, w): pr["draft"] = True
+        def fork(pr, w): pr["head"]["repo"]["id"] = RID + 7
+        def src(pr, w): w[f"{ROOT}/pulls/{N}/files"] = [ok([{"filename": "src/App.tsx", "status": "modified"}])]
+        for name, fn in (("draft", draft), ("fork", fork), ("src", src)):
+            res, fake = self._real_world_review(fn=fn)
+            self.assertNotEqual(res["action"], "posted", (name, res))
+            self.assertEqual(fake.posts, [], name)
+
+    def test_cap_refusal_is_error_not_posted_through_review_and_verify(self):
+        cp = rt.CappedPoster(lambda p, b: {"status": 200, "body": {}}, limit=0)
+        fake = RW(reviewer_world())
+        res = rt.review_pr(N, env=ENV, collector=collector_for(fake), read=fake, post=cp, cfg=cfg(), key=KEY, now=NOW,
+                           session_id="s", nonce="n")
+        self.assertEqual((res["action"], res["reasons"]), ("error", ["review_post_unconfirmed"]))
+        w = verifier_world()
+        f2 = RW(copy.deepcopy(w)); orig = f2.get
+        f2.get = lambda path, params: ok({"total_count": 0, "check_runs": []}) if path == CHECKS and params.get("check_name") == att.CHECK_NAME else orig(path, params)
+        res2 = rt.verify_pr(N, env=ENV, collector=collector_for(f2), read=f2, post=cp, cfg=cfg(), now=NOW)
+        self.assertEqual((res2["action"], res2["reasons"]), ("error", ["check_post_unconfirmed"]))
+
+    def test_eligibility_requires_numeric_repo_id_in_cfg(self):
+        ev = self._ev()
+        ev["pr"]["head"]["repo"] = None
+        for bad in ({}, {"repo_id": None}, {"repo_id": True}):
+            self.assertIn("live_fork_or_unknown_head", rt.live_eligibility(ev, bad))
+
+    def _run(self, role, argv, env):
+        seen = {}
+        class Http:
+            def post(self, *a):
+                raise AssertionError("no write expected in this test")
+        orig = (rt._common, rt.build_collector, rt.review_pr, rt.verify_pr, rt.load_signing_key, rt.load_public_key, rt._need_int, rt.list_target_prs)
+        def rv(n, **kw):
+            seen.setdefault("posts", []).append((n, kw["post"])); return {"action": "dry_run"}
+        try:
+            rt._common = lambda e, r, now: ({"repository": REPO, "repo_id": RID}, (Http(), "tok", 1))
+            rt.build_collector = lambda *a: None
+            rt.review_pr = rt.verify_pr = rv
+            rt.load_signing_key = lambda pem: type("K", (), {"public_key": lambda s: type("P", (), {"public_bytes": lambda s, *a: b"x" * 32})()})()
+            rt.load_public_key = lambda v: b"x" * 32
+            rt._need_int = lambda e, n: 1
+            rt.list_target_prs = lambda *a: [272, 296]
+            code = rt.run([role, *argv], {**env, "FLOWTALLY_REVIEWER_SIGNING_KEY": "k", "FLOWTALLY_REVIEWER_PUBLIC_KEY": "k"}, NOW)
+        finally:
+            (rt._common, rt.build_collector, rt.review_pr, rt.verify_pr, rt.load_signing_key, rt.load_public_key, rt._need_int, rt.list_target_prs) = orig
+        return code, seen.get("posts")
+
+    def test_run_passes_poster_by_policy(self):
+        for role in ("reviewer", "verifier"):
+            code, posts = self._run(role, ["--pr", "296"], self.LIVE)
+            self.assertEqual((code, [(n, p is not None) for n, p in posts]), (0, [(296, True)]), role)
+            code, posts = self._run(role, ["--pr", "272"], self.LIVE)
+            self.assertEqual([(n, p is not None) for n, p in posts], [(272, True)], role)   # explicit owner dispatch
+            for argv, env in (([], self.LIVE), ([], {**self.LIVE, "GITHUB_EVENT_NAME": "schedule"}),
+                              (["--pr", "296"], {**self.LIVE, "GITHUB_EVENT_NAME": "schedule"})):
+                code, posts = self._run(role, argv, env)
+                self.assertTrue(posts and all(p is None for _, p in posts), (role, argv, env))
+            code, posts = self._run(role, [], self.UNATT)                 # unattended schedule reconciles all, one shared capped poster
+            self.assertEqual([(n, isinstance(p, rt.CappedPoster)) for n, p in posts], [(272, True), (296, True)], role)
+            self.assertIs(posts[0][1], posts[1][1])
+
+    def test_workflow_still_has_only_dispatch_and_schedule_and_runs_pass_pr_arg(self):
+        text = (Path(__file__).resolve().parents[2] / ".github/workflows/trusted-review.yml").read_text()
+        self.assertEqual(text.count('${PR_NUMBER:+--pr "$PR_NUMBER"}'), 2)
+        self.assertIn("github.event.inputs.pr_number", text)
+        self.assertEqual(text.count("FLOWTALLY_TRUSTED_REVIEW_UNATTENDED: ${{ vars.FLOWTALLY_TRUSTED_REVIEW_UNATTENDED }}"), 2)
+        self.assertNotIn("pull_request", text.split("jobs:")[0].replace("# ", "").split("on:")[1])
+
+
 class Targets(Offline):
     def test_all_open_prs_are_processed_not_a_fixed_prefix(self):
         page = [{"number": i, "head": {"repo": {"id": RID}}} for i in range(1, 61)]
@@ -630,11 +790,11 @@ class Guards(Offline):
             rt.trusted_runtime_sha(ok_tip, REPO, "9" * 40)
 
     def test_permission_models(self):
-        self.assertEqual(rt.verifier_permission_problems({"checks": "write", "variables": "read", "pull_requests": "read"}), [])
-        self.assertIn("forbidden_write:pull_requests", rt.verifier_permission_problems({"checks": "write", "variables": "read", "pull_requests": "write"}))
-        self.assertIn("forbidden_write:contents", rt.verifier_permission_problems({"checks": "write", "variables": "read", "contents": "write"}))
-        self.assertIn("missing:checks_write", rt.verifier_permission_problems({"variables": "read"}))
-        self.assertIn("forbidden_write:checks", att.reviewer_permission_problems({"checks": "write", "pull_requests": "write", "variables": "read"}))
+        self.assertEqual(rt.verifier_permission_problems({"checks": "write", "actions_variables": "read", "pull_requests": "read"}), [])
+        self.assertIn("forbidden_write:pull_requests", rt.verifier_permission_problems({"checks": "write", "actions_variables": "read", "pull_requests": "write"}))
+        self.assertIn("forbidden_write:contents", rt.verifier_permission_problems({"checks": "write", "actions_variables": "read", "contents": "write"}))
+        self.assertIn("missing:checks_write", rt.verifier_permission_problems({"actions_variables": "read"}))
+        self.assertIn("forbidden_write:checks", att.reviewer_permission_problems({"checks": "write", "pull_requests": "write", "actions_variables": "read"}))
         self.assertEqual(att.reviewer_permission_problems(rt.REVIEWER_TOKEN_PERMISSIONS), [])
         self.assertEqual(rt.verifier_permission_problems(rt.VERIFIER_TOKEN_PERMISSIONS), [])
 
@@ -662,14 +822,128 @@ class Guards(Offline):
 
             def post(self, path, body):
                 self.posted = body
-                return {"status": 201, "headers": {}, "body": {"token": "t", "permissions": {"checks": "write"}, "repositories": self.repos}}
+                return {"status": 201, "headers": {}, "body": {"token": "t", "permissions": dict(rt.VERIFIER_TOKEN_PERMISSIONS), "repositories": self.repos}}
 
         j = J([{"full_name": REPO}])
         self.assertEqual(rt.mint_installation_token(j, REPO, rt.VERIFIER_TOKEN_PERMISSIONS)[0], "t")
-        self.assertEqual(j.posted["repositories"], ["restaurant-helper"])
+        self.assertEqual(j.posted, {"repositories": ["restaurant-helper"]})
         for repos in ([], [{"full_name": REPO}, {"full_name": "ter-ry/other"}], [{"full_name": "ter-ry/other"}]):
             with self.assertRaises(rt.ConfigError):
                 rt.mint_installation_token(J(repos), REPO, rt.VERIFIER_TOKEN_PERMISSIONS)
+
+    def _mint(self, status, body, perms=None):
+        class J:
+            def get(self, path, params=None):
+                return ok({"id": 9})
+
+            def post(self, path, payload):
+                self.sent = payload
+                return {"status": status, "headers": {"Authorization": "Bearer SECRETJWT"}, "body": body}
+
+        j = J()
+        return j, rt.mint_installation_token(j, REPO, perms or rt.VERIFIER_TOKEN_PERMISSIONS)
+
+    def test_token_refusals_give_safe_status_and_category(self):
+        cases = [(401, {"message": "A JSON web token could not be decoded"}, "http_401:unauthorized_app_jwt"),
+                 (404, {"message": "Not Found"}, "http_404:installation_not_found"),
+                 (403, {"message": "Resource not accessible by integration"}, "http_403:forbidden:repo_scope_mismatch"),
+                 (403, {"message": "This installation has not been approved for the new permissions"}, "http_403:forbidden:installation_not_updated"),
+                 (422, {"message": "The permissions requested are not granted to this installation."}, "http_422:unprocessable:installation_not_updated"),
+                 (422, {"message": "Validation Failed", "errors": [{"field": "permissions", "code": "invalid"}]}, "http_422:unprocessable:unclassified"),
+                 (422, {"message": "variables is not a permitted key"}, "http_422:unprocessable:invalid_permissions"),
+                 (500, None, "http_500:github_server_error"), (418, "html", "http_418:unexpected_status")]
+        for status, body, expected in cases:
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(status, body)
+            self.assertTrue(str(cm.exception).startswith("installation_token_refused:" + expected), (status, str(cm.exception)))
+
+    def test_refusal_never_leaks_provider_text_or_secrets(self):
+        body = {"message": "SECRETJWT ghs_TOKEN -----BEGIN PRIVATE KEY----- permission customer@example.com"}
+        with self.assertRaises(rt.ConfigError) as cm:
+            self._mint(422, body)
+        for needle in ("SECRETJWT", "ghs_", "PRIVATE", "customer", "Bearer"):
+            self.assertNotIn(needle, str(cm.exception))
+
+    def test_token_request_has_no_permissions_override_and_one_repo(self):
+        """Live 2026-11-12 422: GitHub's token request has no Variables key (neither "variables" nor
+        "actions_variables"). Send only the single repository; verify the granted map instead."""
+        for perms in (rt.REVIEWER_TOKEN_PERMISSIONS, rt.VERIFIER_TOKEN_PERMISSIONS):
+            j, (tok, granted) = self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": dict(perms)}, perms)
+            self.assertEqual(j.sent, {"repositories": [REPO.split("/")[1]]})
+            self.assertEqual(granted, perms)
+
+    def test_granted_permissions_must_match_allowlist_exactly(self):
+        base = dict(rt.VERIFIER_TOKEN_PERMISSIONS)
+        bad = {"extra_write": {**base, "contents": "write"},
+               "extra_key": {**base, "administration": "read"},
+               "higher_level": {**base, "pull_requests": "write"},
+               "missing_checks": {k: v for k, v in base.items() if k != "checks"},
+               "missing_variables": {k: v for k, v in base.items() if k != "actions_variables"},
+               "variables_too_weak": {**base, "actions_variables": "none"}}
+        for name, granted in bad.items():
+            with self.assertRaises(rt.ConfigError, msg=name) as cm:
+                self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": granted})
+            self.assertTrue(str(cm.exception).startswith("installation_token_permissions_not_allowlisted:"), (name, str(cm.exception)))
+        with self.assertRaises(rt.ConfigError) as cm:  # hostile key text is never echoed
+            self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": {**base, "ghs_SECRET token": "read"}})
+        self.assertNotIn("ghs_", str(cm.exception))
+        self.assertIn("unexpected:invalid_key", str(cm.exception))
+
+    def test_variables_alias_in_granted_map_is_normalized(self):
+        granted = {k: v for k, v in rt.VERIFIER_TOKEN_PERMISSIONS.items() if k != "actions_variables"}
+        granted["variables"] = "read"
+        _, (_, out) = self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": granted})
+        self.assertEqual(out["actions_variables"], "read")
+        self.assertNotIn("variables", out)
+
+    def test_conflicting_variables_aliases_keep_the_higher_level(self):
+        for first, second in (("actions_variables", "variables"), ("variables", "actions_variables")):
+            base = {k: v for k, v in rt.VERIFIER_TOKEN_PERMISSIONS.items() if k != "actions_variables"}
+            granted = {**base, first: "read", second: "write"}
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}], "permissions": granted})
+            self.assertTrue(str(cm.exception).startswith("installation_token_permissions_not_allowlisted:"), (first, str(cm.exception)))
+
+    def test_incomplete_success_response_fails_closed(self):
+        for body in (None, {}, {"token": 5}, {"permissions": {}}):
+            with self.assertRaises(rt.ConfigError) as cm:
+                self._mint(201, body)
+            self.assertTrue(str(cm.exception).startswith("installation_token_incomplete_response:http_201"))
+        with self.assertRaises(rt.ConfigError):
+            self._mint(201, {"token": "t", "repositories": [{"full_name": REPO}]})  # permissions missing
+
+    def test_installation_lookup_failure_is_categorized(self):
+        class J:
+            def get(self, path, params=None):
+                return {"status": 404, "headers": {}, "body": {"message": "Not Found"}}
+        with self.assertRaises(rt.ConfigError) as cm:
+            rt.mint_installation_token(J(), REPO, rt.VERIFIER_TOKEN_PERMISSIONS)
+        self.assertEqual(str(cm.exception), "app_installation_not_found:http_404:installation_not_found")
+
+    def test_successful_token_is_single_repo_and_permissions_unchanged(self):
+        for perms in (rt.REVIEWER_TOKEN_PERMISSIONS, rt.VERIFIER_TOKEN_PERMISSIONS):
+            j, (tok, granted) = self._mint(201, {"token": "t", "permissions": dict(perms), "repositories": [{"full_name": REPO}]}, perms)
+            self.assertEqual((tok, j.sent), ("t", {"repositories": ["restaurant-helper"]}))
+        self.assertEqual(rt.VERIFIER_TOKEN_PERMISSIONS["checks"], "write")
+        self.assertEqual(rt.REVIEWER_TOKEN_PERMISSIONS["pull_requests"], "write")
+        self.assertEqual([k for k, v in rt.REVIEWER_TOKEN_PERMISSIONS.items() if v == "write"], ["pull_requests"])
+        self.assertEqual([k for k, v in rt.VERIFIER_TOKEN_PERMISSIONS.items() if v == "write"], ["checks"])
+
+    def test_cli_reports_refusal_status_without_secrets(self):
+        env = dict(ENV, **{rt.LIVE_WRITES_VARIABLE: "false"})
+        orig = rt._common
+        def refuse(*a, **k):
+            raise rt.ConfigError("installation_token_refused:http_422:unprocessable:invalid_permissions")
+        rt._common = refuse
+        try:
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = rt.run(["reviewer"], env)
+        finally:
+            rt._common = orig
+        out = json.loads(buf.getvalue())
+        self.assertEqual((code, out["action"], out["reasons"]), (1, "error", ["installation_token_refused:http_422:unprocessable:invalid_permissions"]))
 
     def test_pr_listing_excludes_forks_and_fails_on_truncation(self):
         page = [{"number": 1, "head": {"repo": {"id": RID}}}, {"number": 2, "head": {"repo": {"id": 5}}}, {"number": 3, "head": {"repo": None}}]

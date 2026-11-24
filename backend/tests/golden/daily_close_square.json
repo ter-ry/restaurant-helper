@@ -100,7 +100,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -108,6 +108,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -124,7 +126,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -132,6 +134,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -273,7 +277,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -281,6 +285,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -297,7 +303,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -305,6 +311,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -481,7 +489,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -489,6 +497,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -505,7 +515,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -513,6 +523,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -654,7 +666,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -662,6 +674,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -678,7 +692,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -686,6 +700,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -850,7 +866,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -858,6 +874,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -874,7 +892,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -882,6 +900,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -931,7 +951,7 @@
       "discounts": 40.0,
       "environment": "production",
       "freshness": {
-        "state": "fresh"
+        "state": "current"
       },
       "grossSales": 800.0,
       "lastSyncAt": "2026-08-30T23:00:00",
@@ -939,6 +959,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
@@ -1170,7 +1192,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -1178,6 +1200,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1194,7 +1218,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -1202,6 +1226,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1343,7 +1369,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -1351,6 +1377,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1367,7 +1395,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -1375,6 +1403,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -1551,7 +1581,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -1559,6 +1589,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1575,7 +1607,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -1583,6 +1615,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1724,7 +1758,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -1732,6 +1766,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1748,7 +1784,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -1756,6 +1792,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -1920,7 +1958,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -1928,6 +1966,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -1944,7 +1984,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -1952,6 +1992,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -2001,7 +2043,7 @@
       "discounts": 40.0,
       "environment": "production",
       "freshness": {
-        "state": "fresh"
+        "state": "current"
       },
       "grossSales": 800.0,
       "lastSyncAt": "2026-08-30T23:00:00",
@@ -2009,6 +2051,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
@@ -2137,7 +2181,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -2145,6 +2189,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2161,7 +2207,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -2169,6 +2215,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2295,7 +2343,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -2303,6 +2351,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2319,7 +2369,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -2327,6 +2377,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -2488,7 +2540,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -2496,6 +2548,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2512,7 +2566,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -2520,6 +2574,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2646,7 +2702,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -2654,6 +2710,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2670,7 +2728,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -2678,6 +2736,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -2827,7 +2887,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -2835,6 +2895,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -2851,7 +2913,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -2859,6 +2921,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -2908,7 +2972,7 @@
       "discounts": 40.0,
       "environment": "production",
       "freshness": {
-        "state": "fresh"
+        "state": "current"
       },
       "grossSales": 800.0,
       "lastSyncAt": "2026-08-30T23:00:00",
@@ -2916,6 +2980,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],
@@ -3059,7 +3125,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -3067,6 +3133,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3083,7 +3151,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -3091,6 +3159,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3232,7 +3302,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -3240,6 +3310,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3256,7 +3328,7 @@
             "discounts": 40.0,
             "environment": "production",
             "freshness": {
-              "state": "fresh"
+              "state": "current"
             },
             "grossSales": 800.0,
             "lastSyncAt": "2026-08-30T23:00:00",
@@ -3264,6 +3336,8 @@
             "netSales": 740.0,
             "orders": 30,
             "refunds": 20.0,
+            "salesStatus": "available",
+            "salesUnavailableReason": null,
             "squareLocationIds": [
               "LOC-A"
             ],
@@ -3440,7 +3514,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -3448,6 +3522,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3464,7 +3540,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -3472,6 +3548,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3613,7 +3691,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -3621,6 +3699,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3637,7 +3717,7 @@
           "discounts": 40.0,
           "environment": "production",
           "freshness": {
-            "state": "fresh"
+            "state": "current"
           },
           "grossSales": 800.0,
           "lastSyncAt": "2026-08-30T23:00:00",
@@ -3645,6 +3725,8 @@
           "netSales": 740.0,
           "orders": 30,
           "refunds": 20.0,
+          "salesStatus": "available",
+          "salesUnavailableReason": null,
           "squareLocationIds": [
             "LOC-A"
           ],
@@ -3809,7 +3891,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -3817,6 +3899,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -3833,7 +3917,7 @@
         "discounts": 40.0,
         "environment": "production",
         "freshness": {
-          "state": "fresh"
+          "state": "current"
         },
         "grossSales": 800.0,
         "lastSyncAt": "2026-08-30T23:00:00",
@@ -3841,6 +3925,8 @@
         "netSales": 740.0,
         "orders": 30,
         "refunds": 20.0,
+        "salesStatus": "available",
+        "salesUnavailableReason": null,
         "squareLocationIds": [
           "LOC-A"
         ],
@@ -3890,7 +3976,7 @@
       "discounts": 40.0,
       "environment": "production",
       "freshness": {
-        "state": "fresh"
+        "state": "current"
       },
       "grossSales": 800.0,
       "lastSyncAt": "2026-08-30T23:00:00",
@@ -3898,6 +3984,8 @@
       "netSales": 740.0,
       "orders": 30,
       "refunds": 20.0,
+      "salesStatus": "available",
+      "salesUnavailableReason": null,
       "squareLocationIds": [
         "LOC-A"
       ],

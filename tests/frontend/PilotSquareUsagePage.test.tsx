@@ -99,6 +99,15 @@ describe("PilotSquareUsagePage", () => {
     expect(screen.queryByText("What should I investigate?")).not.toBeInTheDocument();
   });
 
+  it("recovers from a failed Usage request with Retry", async () => {
+    mockApi.fetchSquareUsage.mockRejectedValueOnce(new Error("Failed to fetch"));
+    renderPage();
+    expect(await screen.findByText("Usage data unavailable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByText("Usage data unavailable")).not.toBeInTheDocument());
+    expect(mockApi.fetchSquareUsage).toHaveBeenCalledTimes(2);
+  });
+
   it("shows the backend stock-count basis and equations when a variance row is opened", async () => {
     mockApi.fetchSquareUsage.mockResolvedValueOnce(buildResponse());
     renderPage();

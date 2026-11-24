@@ -2,13 +2,19 @@ name: develop-automerge
 
 # DISABLED BY DEFAULT (issue #270). Runs only when the owner sets repository variable
 # FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED=true AND creates the `develop-automerge` environment
-# holding the merge credential. Variable contract is shared with #287: FLOWTALLY_REPO_ID,
-# REVIEWER_BOT_USER_ID, REVIEWER_BOT_LOGIN, VERIFIER_APP_ID, TRUSTED_COAUTHOR_EMAILS. Merges only into `develop`, never `main`. Dry-run unless
+# holding the merge GitHub App private key (no stored token). Variable contract is shared with #287: FLOWTALLY_REPO_ID,
+# REVIEWER_BOT_USER_ID, REVIEWER_BOT_LOGIN, VERIFIER_APP_ID, TRUSTED_COAUTHOR_EMAILS, plus FLOWTALLY_MERGE_APP_ID (variable)
+# and FLOWTALLY_MERGE_APP_PRIVATE_KEY (environment secret). A separate ruleset-observer environment produces a short-lived signed ruleset artifact; it is the only source of bypass evidence when the merge App response is redacted. A fresh installation token is minted in-process each run. Merges only into `develop`, never `main`. Dry-run unless
 # FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES=true. See docs/DEVELOP_MERGE_POLICY.md.
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      preflight_rulesets:
+        description: "Read-only: check main/develop rulesets with the restricted merge App token (no merge, no writes)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,9 +24,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ruleset-observer:
+    if: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: ruleset-observer
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install cryptography
+      - name: Collect and sign active rulesets
+        env:
+          FLOWTALLY_RULESET_OBSERVER_TOKEN: ${{ secrets.FLOWTALLY_RULESET_OBSERVER_TOKEN }}
+          FLOWTALLY_RULESET_OBSERVER_PRIVATE_KEY: ${{ secrets.FLOWTALLY_RULESET_OBSERVER_PRIVATE_KEY }}
+          FLOWTALLY_RULESET_OBSERVER_APP_ID: ${{ vars.FLOWTALLY_RULESET_OBSERVER_APP_ID }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/ruleset_observer.py --output ruleset-attestation.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ruleset-attestation
+          path: ruleset-attestation.json
+          if-no-files-found: error
   controller:
     # Scheduled runs always execute the default-branch copy of this file and script.
     if: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    needs: ruleset-observer
     runs-on: ubuntu-latest
     environment: develop-automerge
     timeout-minutes: 10
@@ -33,9 +67,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install cryptography
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruleset-attestation
+          path: .ruleset-attestation
       - name: Run controller
         env:
-          GITHUB_TOKEN: ${{ secrets.DEVELOP_AUTOMERGE_TOKEN }}
+          FLOWTALLY_MERGE_APP_ID: ${{ vars.FLOWTALLY_MERGE_APP_ID }}
+          FLOWTALLY_MERGE_APP_PRIVATE_KEY: ${{ secrets.FLOWTALLY_MERGE_APP_PRIVATE_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED }}
           FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES: ${{ vars.FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES }}
@@ -44,4 +83,7 @@ jobs:
           REVIEWER_BOT_LOGIN: ${{ vars.REVIEWER_BOT_LOGIN }}
           VERIFIER_APP_ID: ${{ vars.VERIFIER_APP_ID }}
           TRUSTED_COAUTHOR_EMAILS: ${{ vars.TRUSTED_COAUTHOR_EMAILS }}
-        run: python scripts/develop_automerge_controller.py
+          FLOWTALLY_RULESET_ATTESTATION_PATH: .ruleset-attestation/ruleset-attestation.json
+          FLOWTALLY_RULESET_ATTESTATION_PUBLIC_KEY: ${{ vars.FLOWTALLY_RULESET_ATTESTATION_PUBLIC_KEY }}
+          FLOWTALLY_RULESET_OBSERVER_APP_ID: ${{ vars.FLOWTALLY_RULESET_OBSERVER_APP_ID }}
+        run: python scripts/develop_automerge_controller.py ${{ inputs.preflight_rulesets && '--preflight-rulesets' || '' }}

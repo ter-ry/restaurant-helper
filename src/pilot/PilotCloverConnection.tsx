@@ -27,6 +27,7 @@ export function PilotCloverConnection() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const statusRequestId = useRef(0);
   const catalogRequestId = useRef(0);
   const activeOrganizationId = useRef<number | null>(null);
@@ -103,6 +104,44 @@ export function PilotCloverConnection() {
     };
   }, [load, userId]);
 
+  const disconnect = async () => {
+    if (busy || !organizationId) return;
+    if (typeof window !== "undefined" && !window.confirm("Disconnect Clover for this organization? Menu mappings stay saved, but Clover data will stop appearing until you reconnect.")) return;
+    const requestedOrganizationId = organizationId;
+    catalogRequestId.current += 1;
+    setCatalog(null);
+    setCatalogLoading(false);
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await disconnectPilotClover(requestedOrganizationId);
+      if (activeOrganizationId.current !== requestedOrganizationId) return;
+      // Show the server's disconnect answer immediately so a failed follow-up read can never hide this card.
+      setConnectionOrganizationId(requestedOrganizationId);
+      setConnection(result.connection);
+      setShadowOrders([]);
+      setShadowRetrievedAt(null);
+      clearCatalog();
+      setNotice("Clover disconnected.");
+      try {
+        const status = await fetchPilotCloverStatus(requestedOrganizationId);
+        if (activeOrganizationId.current !== requestedOrganizationId) return;
+        setEnabled(status.enabled);
+        setCatalogEnabled(Boolean(status.catalogEnabled));
+        setMappingEnabled(Boolean(status.mappingEnabled));
+        setShadowOrdersEnabled(Boolean(status.shadowOrdersEnabled));
+        setConnection(status.connection);
+      } catch {
+        if (activeOrganizationId.current === requestedOrganizationId) setError("Clover was disconnected, but the latest status could not be reloaded. Use Refresh to retry.");
+      }
+    } catch (err) {
+      if (activeOrganizationId.current === requestedOrganizationId) setError(err instanceof Error ? err.message : "Could not disconnect Clover.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadCatalog = async () => {
     const currentConnection = connectionOrganizationId === organizationId ? connection : null;
     if (!organizationId || statusOrganizationId !== organizationId || !catalogEnabled || currentConnection?.status !== "connected") return;
@@ -155,7 +194,8 @@ export function PilotCloverConnection() {
           {!statusReady || loading ? "Checking" : connected ? "Connected" : expired ? "Reauthorization required" : "Disconnected"}
         </Badge>
       </div>
-      {error ? <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</p> : null}
+      {error ? <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</p> : null}
+      {notice ? <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{notice}</p> : null}
       {launchedFromClover ? (
         <div className="mt-4 rounded-xl border border-line bg-slate-50 p-3 text-sm text-muted">
           <p className="font-semibold text-ink">Clover launched Flowtally</p>
@@ -171,27 +211,7 @@ export function PilotCloverConnection() {
           <p><span className="font-semibold text-ink">Environment:</span> {currentConnection?.environment}</p>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button type="button" variant="secondary" disabled={demoReadOnly || busy} onClick={() => void beginPilotCloverConnection(organizationId)}><ExternalLink className="mr-2 h-4 w-4" />Reconnect</Button>
-            <Button type="button" variant="ghost" disabled={demoReadOnly || busy} onClick={async () => {
-              const requestedOrganizationId = organizationId;
-              catalogRequestId.current += 1;
-              setCatalog(null);
-              setCatalogLoading(false);
-              setBusy(true);
-              try {
-                const result = await disconnectPilotClover(requestedOrganizationId);
-                if (activeOrganizationId.current === requestedOrganizationId && organizationId === requestedOrganizationId) {
-                  setConnectionOrganizationId(requestedOrganizationId);
-                  setConnection(result.connection);
-                  setShadowOrders([]);
-                  setShadowRetrievedAt(null);
-                  clearCatalog();
-                }
-              } catch (err) {
-                if (activeOrganizationId.current === requestedOrganizationId) setError(err instanceof Error ? err.message : "Could not disconnect Clover.");
-              } finally {
-                setBusy(false);
-              }
-            }}><Unplug className="mr-2 h-4 w-4" />Disconnect</Button>
+            <Button type="button" variant="ghost" disabled={demoReadOnly || busy} onClick={() => void disconnect()}><Unplug className="mr-2 h-4 w-4" />{busy ? "Disconnecting…" : "Disconnect"}</Button>
             {catalogEnabled ? <Button type="button" variant="secondary" disabled={catalogLoading || busy} onClick={() => void loadCatalog()}><RefreshCw className="mr-2 h-4 w-4" />{catalogLoading ? "Loading catalog…" : "Preview catalog"}</Button> : null}
           </div>
           {currentCatalog ? (
