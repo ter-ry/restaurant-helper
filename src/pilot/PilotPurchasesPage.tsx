@@ -939,13 +939,26 @@ export function PilotPurchasesPage() {
   };
 
   const editorStatus = purchaseStatus({ status: draft.status }, reviewSummary.state as "READY" | "REVIEW" | "BLOCKING");
-  const footerSummary = unresolvedLineCount > 0
+  const mappingSummary = unresolvedLineCount > 0
     ? `Map ${unresolvedLineCount} ${unresolvedLineCount === 1 ? "item" : "items"} to inventory before receiving`
-    : reviewSummary.blockers.length
-    ? `${reviewSummary.blockers.length} ${reviewSummary.blockers.length === 1 ? "issue" : "issues"} to resolve before receiving`
-    : reviewSummary.warnings.length
-      ? "Check the highlighted items, then receive"
-      : "Everything reconciles";
+    : null;
+  const otherIssueCount = Math.max(0, reviewSummary.blockers.length - (ocrCheck?.status === "incomplete" && !ocrOverrideValid ? 1 : 0) - (unresolvedLineCount > 0 ? 1 : 0));
+  // The printed-total discrepancy is independent of mapping: it is always shown beside the actions so it is never
+  // hidden by another blocker or by scroll position. All amounts come from the shared reconciliation check.
+  const ocrSummary = ocrCheck
+    ? ocrCheck.status === "matched"
+      ? { tone: "ok", text: `Invoice matches: captured items ${formatMoney(ocrCheck.itemsTotal)} = printed ${formatMoney(ocrCheck.expectedAmount ?? ocrCheck.itemsTotal)}` }
+      : ocrCheck.status === "incomplete"
+        ? ocrOverrideValid
+          ? { tone: "warn", text: `Invoice mismatch overridden (audited): captured items ${formatMoney(ocrCheck.itemsTotal)} / printed ${formatMoney(ocrCheck.expectedAmount ?? 0)}` }
+          : { tone: "bad", text: `Invoice mismatch: captured items ${formatMoney(ocrCheck.itemsTotal)} / printed ${formatMoney(ocrCheck.expectedAmount ?? 0)} (difference ${formatMoney(Math.abs(ocrCheck.difference ?? 0))})` }
+        : { tone: "warn", text: `Invoice total not verified: captured items ${formatMoney(ocrCheck.itemsTotal)}; the printed amount could not be read` }
+    : null;
+  const footerSummary = [
+    mappingSummary,
+    otherIssueCount > 0 ? `${otherIssueCount} ${otherIssueCount === 1 ? "issue" : "issues"} to resolve before receiving` : null,
+  ].filter(Boolean).join(" · ")
+    || (reviewSummary.warnings.length ? "Check the highlighted items, then receive" : ocrSummary && ocrSummary.tone !== "ok" ? "" : "Everything reconciles");
   const editorContent = (
     <div className={ocrPreviewUrl ? "grid gap-5 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]" : ""}>
       {ocrPreviewUrl ? (
@@ -1241,8 +1254,11 @@ export function PilotPurchasesPage() {
           ) : null}
         </div>
         {!finalizedStatus ? (
-          <div data-testid="purchase-action-bar" className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
-            <p className={`min-w-0 text-sm font-semibold ${reviewSummary.blockers.length ? "text-danger" : "text-muted"}`}>{footerSummary}</p>
+          <div data-testid="purchase-action-bar" className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_12px_-8px_rgba(15,23,42,0.18)]">
+            <div className="min-w-0 space-y-1">
+              {ocrSummary ? <p data-testid="ocr-sticky-summary" data-tone={ocrSummary.tone} className={`text-sm font-semibold ${ocrSummary.tone === "bad" ? "text-danger" : ocrSummary.tone === "warn" ? "text-amber-800" : "text-emerald-800"}`}>{ocrSummary.text}</p> : null}
+              {footerSummary ? <p className={`text-sm font-semibold ${reviewSummary.blockers.length ? "text-danger" : "text-muted"}`}>{footerSummary}</p> : null}
+            </div>
             <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
               <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
                 Review
