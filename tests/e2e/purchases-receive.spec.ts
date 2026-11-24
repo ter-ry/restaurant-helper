@@ -389,7 +389,7 @@ test.describe("purchases master/detail at 1440px", () => {
 test.describe("history then New purchase at 1440px", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("New purchase drops the open received purchase, so narrowing the window never shows the old receipt over the new editor", async ({ page }) => {
+  test("after closing a received purchase, New purchase opens a clean editor and never shows the old receipt", async ({ page }) => {
     const world = newWorld();
     world.invoices.push(
       { id: 770, invoiceNumber: "CM-770", status: "Completed", invoiceDate: "2026-11-09", subtotal: 5, tax: 0, totalAmount: 5, lineItems: [savedLine(770, 0)] },
@@ -398,6 +398,9 @@ test.describe("history then New purchase at 1440px", () => {
     await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
     await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-770/ }).click();
     await expect(page.getByTestId("purchase-detail-modal")).toContainText("CM-770");
+    // The receipt is a modal now: it must be closed before a new purchase can start, and then leaves nothing behind.
+    await page.getByTestId("purchase-detail-modal").getByRole("button", { name: /^Close/ }).first().click();
+    await expect(page.getByTestId("purchase-detail-modal")).toHaveCount(0);
     await page.getByRole("button", { name: "New purchase" }).click();
     const editorDialog = page.getByRole("dialog", { name: "Purchase editor" });
     await expect(editorDialog).toBeVisible();
