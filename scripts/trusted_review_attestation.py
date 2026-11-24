@@ -45,7 +45,7 @@ _ATTEST_FIELDS = ("repo_id", "pr", "head_sha", "base_sha", "changed_files_sha256
 _SELF_PROTECTED = ("scripts/trusted_review", "scripts/tests/test_trusted_review", "docs/trusted_review")
 # Permissions that give a path to merge, deploy, workflow edit or self-vouching.
 _FORBIDDEN_REVIEWER_WRITE = frozenset({"contents", "actions", "administration", "workflows", "secrets",
-                                       "deployments", "checks", "statuses", "variables"})
+                                       "deployments", "checks", "statuses", "variables", "actions_variables"})
 
 
 @dataclass(frozen=True)
@@ -415,6 +415,6 @@ def reviewer_permission_problems(permissions: Any) -> list[str]:
     out = [f"forbidden_write:{k}" for k, v in sorted(permissions.items()) if k in _FORBIDDEN_REVIEWER_WRITE and v == "write"]
     if permissions.get("pull_requests") != "write":
         out.append("missing:pull_requests_write")
-    if permissions.get("variables") not in ("read",):
+    if permissions.get("actions_variables") not in ("read",):
         out.append("missing:variables_read")
     return out

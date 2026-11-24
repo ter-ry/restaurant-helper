@@ -41,6 +41,19 @@ Positioning:
 - Prefer realistic restaurant and cafe sample data.
 - User-triggered server mutations must never feel silent: show in-progress, success, and failure states; re-fetch or otherwise reconcile with authoritative server state after success; refresh dependent UI; prevent accidental duplicate submissions; and avoid leaving stale client state that requires a manual browser reload.
 
+## Full-MVP Milestone Delivery (owner direction, 2026-11-23)
+
+For the approved full-MVP workstreams [#315](https://github.com/ter-ry/restaurant-helper/issues/315) (CLAUDE-W1/backend) and [#351](https://github.com/ter-ry/restaurant-helper/issues/351) (CLAUDE-W2/frontend), **the unit of delivery is a complete, testable customer journey, not a series of one-button or one-assertion PRs**. This section clarifies the "keep changes narrow" and "focused PR" guidance below: scope must stay coherent and reviewable, but all related normal, failure, retry, persistence, authorization and accounting/inventory states should be addressed together. It does not authorize new features, speculative fixes, unreproduced defects or extra file permissions.
+
+- **Before coding:** reconcile the current `main`, open PRs, claims, prior merged coverage and acceptance evidence. Choose the highest-priority approved incomplete milestone. List the milestone's falsifiable acceptance criteria and note what is already covered; do not reimplement existing functionality or create duplicate tests.
+- **One durable claim:** maintain one milestone branch/PR and a GitHub issue work claim across scheduled sessions. On each run continue the same unfinished PR; record completed and remaining criteria, exact head, tests, blockers and next code action. Do not close or release the milestone claim simply because a small slice is merged.
+- **Integrated completion:** test a realistic journey end to end with isolated local fixtures. W1 should verify purchasing-to-inventory receive-once, retries, correction/void/reversal, ledger and valuation using disposable PostgreSQL tests; W2 should verify its frontend operator journeys through mocks/browser tests and coordinate API contracts with W1. Correctly distinguish local/mock evidence from live Showcase/provider acceptance.
+- **PR boundary:** prefer one coherent milestone PR containing implementation and integrated regression coverage. Separate PRs are allowed when independent review, security/financial risk, ownership conflicts or safe CI boundaries genuinely require them; document the specific reason and how the slices complete the parent milestone. Do not split merely to maximize PR throughput or generate routine hourly progress.
+- **No-defect path:** where the implementation is already sound, complete the missing integrated acceptance coverage or document why the existing tests fully satisfy every criterion; advance to the next approved milestone rather than opening cosmetic cleanup.
+- **Review remains mandatory:** exact-head CI, independent review, unresolved-thread resolution, protected-branch policy, owner-only merges to `main`, deploy/migration/live-service restrictions and all other safety gates remain unchanged. Do not enable unattended `develop` merging or switch worker base branches until its controlled security acceptance is complete.
+
+This milestone policy supersedes PR-size preferences only; it does not override more restrictive rules for high-risk files, security changes, deployment, credentials, finances, POS or Production.
+
 ## Verification
 
 - Run `npm run build` (`npm.cmd run build` on Windows) before finishing.
@@ -112,6 +125,8 @@ Agents coordinate through GitHub only. The owner is never the message relay betw
 - `APPROVE @ <sha>`: acceptance criteria met, tests inspected for the real execution path, no open findings.
 - `REQUEST CHANGES @ <sha>`: each finding has file/line, observed vs expected and a suggested test or fix.
 - `BLOCKED @ <sha>`: cannot review or cannot approve; state the missing evidence or owner decision.
+
+**Review-thread handoff** (runbook: `docs/REVIEW_THREAD_HANDOFF.md`). After each fix push, reply `Fixed @ <head SHA>` with evidence on the exact inline thread, then read GitHub's real `isResolved` flag at the current head; never infer resolution from a reply or from Codex/CI green. If a thread is still unresolved, hand it to the independent reviewer in one deduplicated comment (PR, thread, SHA, what to verify; `scripts/review_thread_handoff.py` generates it). The reviewer verifies and resolves the specific thread, or posts `REQUEST CHANGES @ <sha>`; a reviewer without resolve permission escalates to the owner. Do not write `OWNER MERGE READY` while any required thread is unresolved or thread state is unverified. No mass-resolving, no impersonating a reviewer.
 
 Every review lists findings as `OPEN`, `RESOLVED @ <sha>` or `WITHDRAWN`. On a new head SHA, review the diff since the last reviewed SHA (`git diff <old>..<new>`) and re-verify only the previously open findings; do not repeat resolved or outdated ones. Green CI is evidence, never approval by itself. Financial, POS, database, security and inventory PRs need review by an agent session other than the author, or the owner. An agent never reviews or approves its own PR. Approval is a recommendation; only the owner merges.
 

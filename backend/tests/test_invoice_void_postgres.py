@@ -56,6 +56,15 @@ def _rows(sql: str, **params):
         engine.dispose()
 
 
+def _rows_exec(sql: str, **params):
+    engine = _admin_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(sql), params)
+    finally:
+        engine.dispose()
+
+
 def _ledger_state(org_id: int):
     return {
         "movements": _rows("select id, inventory_item_id, source_type, source_record_id, source_line_id, quantity_before, quantity_delta, quantity_after, unit, reason from inventory_movements where organization_id = :o order by id", o=org_id),
@@ -276,6 +285,8 @@ def test_void_excludes_the_invoice_from_spend_and_price_history(postgres_app):
     client = world.client()
     kept = _received(world, client, [(flour, 5, 4.0)])  # $20.00
     voided = _received(world, client, [(flour, 5, 6.0)])  # $30.00
+    # Month-to-date spend counts only invoices dated this business month (#169); the shared helper dates them in July.
+    _rows_exec("update purchase_invoices set invoice_date = (now() at time zone 'America/Toronto')::date where id in (:a, :b)", a=kept, b=voided)
     before = client.get("/api/pilot/dashboard", base_url=BASE).get_json()["summary"]
     assert before["monthlyInvoiceSpend"] == pytest.approx(50.0)
 

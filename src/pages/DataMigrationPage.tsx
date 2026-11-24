@@ -18,6 +18,7 @@ import {
   type DataImportJobDetail,
   type DataImportJobSummary,
   uploadImportJob,
+  dataImportScopeLabel,
 } from "../lib/dataImports";
 
 type LoadState = "loading" | "signedOut" | "permissionDenied" | "ready" | "error";
@@ -34,6 +35,8 @@ export function DataMigrationPage() {
   const [selectedJob, setSelectedJob] = useState<DataImportJobDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [mappingError, setMappingError] = useState<string | null>(null);
   const [entityScope, setEntityScope] = useState("supplier");
@@ -93,15 +96,18 @@ export function DataMigrationPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentOrganizationId, selectedJobId]);
+    // Initial load only. Selecting a job (click or mutation result) must not restart this effect: a failed
+    // follow-up read would replace the whole workspace with the load-error screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrganizationId]);
 
-  async function refresh() {
+  async function refresh(preferredJobId?: number) {
     if (!currentOrganizationId) {
       return;
     }
     const response = await listImportJobs(currentOrganizationId);
     setJobs(response.jobs);
-    const targetJobId = selectedJobId ?? response.jobs[0]?.id ?? null;
+    const targetJobId = preferredJobId ?? selectedJobId ?? response.jobs[0]?.id ?? null;
     setSelectedJobId(targetJobId);
     setSelectedJob(targetJobId ? await fetchImportJob(targetJobId).then((payload) => payload.job) : null);
   }
@@ -113,21 +119,41 @@ export function DataMigrationPage() {
     await refresh();
   }
 
-  async function mutate(label: string, handler: () => Promise<DataImportJobDetail>) {
-    if (!selectedJob) {
-      return;
+  const MUTATION_DONE: Record<string, string> = {
+    upload: "File uploaded. Next, review the column mapping.",
+    mapping: "Mapping saved.",
+    preview: "Preview refreshed from the server.",
+    approve: "Import approved. You can now execute it.",
+    execute: "Import executed. Review the result below.",
+    rollback: "Import rolled back.",
+  };
+
+  // Returns true only when the server accepted the change. Never runs two mutations at once.
+  async function mutate(label: string, handler: () => Promise<DataImportJobDetail>, options: { needsJob?: boolean } = {}): Promise<boolean> {
+    if (saving || (options.needsJob !== false && !selectedJob)) {
+      return false;
     }
     setSaving(label);
-    setError(null);
+    setActionError(null);
+    setNotice(null);
+    let accepted = false;
     try {
       const payload = await handler();
+      accepted = true;
       setSelectedJob(payload);
-      await refresh();
+      setSelectedJobId(payload.id);
+      setNotice(MUTATION_DONE[label] ?? "Saved.");
+      try {
+        await refresh(payload.id);
+      } catch {
+        setNotice(`${MUTATION_DONE[label] ?? "Saved."} The job list could not be refreshed; use the refresh button.`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update the import job.");
+      setActionError(err instanceof Error ? err.message : "Could not update the import job.");
     } finally {
       setSaving(null);
     }
+    return accepted;
   }
 
   function initializeMapping(job: DataImportJobDetail) {
@@ -161,9 +187,11 @@ export function DataMigrationPage() {
     formData.append("organizationId", String(currentOrganizationId));
     formData.append("entityScope", scopeInput?.value ?? entityScope);
     formData.append("file", file, file.name);
-    await mutate("upload", async () => (await uploadImportJob(formData)).job);
-    form.reset();
-    setEntityScope(scopeInput?.value ?? entityScope);
+    const accepted = await mutate("upload", async () => (await uploadImportJob(formData)).job, { needsJob: false });
+    if (accepted) {
+      form.reset();
+      setEntityScope(scopeInput?.value ?? entityScope);
+    }
   }
 
   async function saveMapping() {
@@ -260,11 +288,16 @@ export function DataMigrationPage() {
 
   return (
     <PageLayout title="Data migration" eyebrow="Flowtally onboarding" description="Upload supplier, inventory and opening-balance files, map the columns, preview the results, and execute safely.">
-      <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
+      <div aria-live="polite" className="mb-4 space-y-2">
+        {saving ? <p role="status" className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm font-semibold text-ink">Working… please wait, do not close this page.</p> : null}
+        {notice && !saving ? <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{notice}</p> : null}
+        {actionError ? <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{actionError}</p> : null}
+      </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_1fr]">
         <Card className="p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-ink">Import jobs</h2>
-            <button className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void refresh()}>
+            <button aria-label="Refresh import jobs" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void refresh().catch((err) => setActionError(err instanceof Error ? err.message : "Could not refresh imports."))} disabled={saving !== null}>
               <RefreshCw className="h-4 w-4" />
             </button>
           </div>
@@ -274,11 +307,12 @@ export function DataMigrationPage() {
                 key={job.id}
                 className={`w-full rounded-2xl border px-4 py-3 text-left transition ${job.id === selectedJobId ? "border-brand-200 bg-brand-50" : "border-line bg-white hover:bg-slate-50"}`}
                 type="button"
-                onClick={() => void refreshJob(job.id)}
+                onClick={() => void refreshJob(job.id).catch((err) => setActionError(err instanceof Error ? err.message : "Could not load that import."))}
+                disabled={saving !== null}
               >
                 <p className="text-sm font-semibold text-ink">{job.sourceFileName || `Job ${job.id}`}</p>
                 <p className="mt-1 text-xs text-muted">
-                  {job.entityScope} · {job.status} · {job.rowCount} rows
+                  {dataImportScopeLabel(job.entityScope)} · {job.status} · {job.rowCount} rows
                 </p>
               </button>
             ))}
@@ -286,12 +320,12 @@ export function DataMigrationPage() {
           </div>
         </Card>
 
-        <div className="grid gap-6">
+        <div className="grid min-w-0 grid-cols-1 gap-6">
           <Card className="p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted">Current organization</p>
-                <h1 className="mt-2 text-3xl font-bold text-ink">{currentOrganizationId ? `Organization #${currentOrganizationId}` : "No organization selected"}</h1>
+                <h1 className="mt-2 text-3xl font-bold text-ink">{currentOrganizationId ? (session?.organizations?.find((entry) => entry.selected)?.organization.name ?? "Current organization") : "No organization selected"}</h1>
                 <p className="mt-2 text-sm leading-6 text-muted">Use this workspace for CSV and XLSX setup files. Preview never touches live tables until you execute the import.</p>
               </div>
               {selectedJob ? (
@@ -311,7 +345,7 @@ export function DataMigrationPage() {
 
           <SupportAccessBanner grant={session?.supportAccessGrant} />
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
             <Card className="p-6">
               <h2 className="text-lg font-bold text-ink">Upload a migration file</h2>
               <p className="mt-2 text-sm leading-6 text-muted">Start with one entity type per file. Suppliers, inventory items, supplier-item mappings, and opening inventory all use the same safe preview flow.</p>
@@ -321,7 +355,7 @@ export function DataMigrationPage() {
                   <select name="entity-scope" className="mt-1 w-full rounded-2xl border border-line bg-slate-50 px-3 py-2 text-sm outline-none" value={entityScope} onChange={(event) => setEntityScope(event.target.value)}>
                     {DATA_IMPORT_ENTITY_SCOPES.map((scope) => (
                       <option key={scope} value={scope}>
-                        {scope}
+                        {dataImportScopeLabel(scope)}
                       </option>
                     ))}
                   </select>
@@ -330,9 +364,9 @@ export function DataMigrationPage() {
                   <span className="text-sm font-semibold text-ink">File</span>
                   <input name="import-file" type="file" accept=".csv,.xlsx" className="mt-1 block w-full rounded-2xl border border-line bg-slate-50 px-3 py-2 text-sm outline-none" />
                 </label>
-                <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="submit">
+                <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="submit" disabled={saving !== null}>
                   <UploadCloud className="h-4 w-4" />
-                  Upload file
+                  {saving === "upload" ? "Uploading…" : "Upload file"}
                 </button>
               </form>
               {uploadError ? <p className="mt-3 text-sm text-rose-700">{uploadError}</p> : null}
@@ -341,7 +375,7 @@ export function DataMigrationPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-bold text-ink">Import state</h2>
-                {selectedJob ? <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">{selectedJob.entityScope}</span> : null}
+                {selectedJob ? <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">{dataImportScopeLabel(selectedJob.entityScope)}</span> : null}
               </div>
               {selectedJob ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -380,11 +414,11 @@ export function DataMigrationPage() {
                     <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => initializeMapping(selectedJob)}>
                       Suggest mappings
                     </button>
-                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void saveMapping()}>
-                      Save mapping
+                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" type="button" onClick={() => void saveMapping()} disabled={saving !== null}>
+                      {saving === "mapping" ? "Saving…" : "Save mapping"}
                     </button>
-                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void preview()}>
-                      Preview
+                    <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void preview()} disabled={saving !== null}>
+                      {saving === "preview" ? "Previewing…" : "Preview"}
                     </button>
                   </div>
                 </div>
@@ -427,21 +461,21 @@ export function DataMigrationPage() {
                 {mappingError ? <p className="mt-3 text-sm text-rose-700">{mappingError}</p> : null}
               </Card>
 
-              <div className="grid gap-6 lg:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
                 <Card className="p-6">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-bold text-ink">Preview and execution</h2>
                     <div className="flex flex-wrap gap-2">
-                      <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void approve()} disabled={selectedJob.blockedRowCount > 0}>
+                      <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void approve()} disabled={saving !== null || selectedJob.blockedRowCount > 0}>
                         <CheckCircle2 className="h-4 w-4" />
-                        Approve
+                        {saving === "approve" ? "Approving…" : "Approve"}
                       </button>
-                      <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60" type="button" onClick={() => void execute()} disabled={selectedJob.status !== "APPROVED"}>
-                        Execute
+                      <button className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60" type="button" onClick={() => void execute()} disabled={saving !== null || selectedJob.status !== "APPROVED"}>
+                        {saving === "execute" ? "Executing…" : "Execute"}
                       </button>
-                      <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void rollback()} disabled={!["COMPLETED", "COMPLETED_WITH_WARNINGS"].includes(selectedJob.status)}>
+                      <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => void rollback()} disabled={saving !== null || !["COMPLETED", "COMPLETED_WITH_WARNINGS"].includes(selectedJob.status)}>
                         <RotateCcw className="h-4 w-4" />
-                        Rollback
+                        {saving === "rollback" ? "Rolling back…" : "Rollback"}
                       </button>
                     </div>
                   </div>
@@ -484,7 +518,7 @@ export function DataMigrationPage() {
                     </div>
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wide text-muted">Sample rows</p>
-                      <pre className="mt-2 max-h-72 overflow-auto rounded-2xl border border-line bg-slate-50 p-4 text-xs text-slate-700">{prettyJson(sampleRows)}</pre>
+                      <pre className="mt-2 max-h-72 max-w-full overflow-auto rounded-2xl border border-line bg-slate-50 p-4 text-xs text-slate-700">{prettyJson(sampleRows)}</pre>
                     </div>
                   </div>
                 </Card>

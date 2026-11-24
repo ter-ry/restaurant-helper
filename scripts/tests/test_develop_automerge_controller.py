@@ -143,7 +143,35 @@ class Gates(Base):
         self.assertNoMerge(mutate(lambda w: w.update({f"{ROOT}/actions/variables/FLOWTALLY_TRUSTED_REVIEW_ENABLED": [ok({"name": "FLOWTALLY_TRUSTED_REVIEW_ENABLED", "value": "false"})]})), reason="TRUSTED_REVIEW_DISABLED")
 
     def test_missing_verifier_check(self):
-        self.assertNoMerge(mutate(lambda w: w.update({"verifier": [ok({"total_count": 0, "check_runs": []})]})), reason="VERIFIER_PROOF_MISSING_OR_INVALID")
+        rep = self.assertNoMerge(mutate(lambda w: w.update({"verifier": [ok({"total_count": 0, "check_runs": []})]})),
+                                 reason="VERIFIER_PROOF_MISSING_OR_INVALID")
+        self.assertEqual(rep.errors, [], rep.as_dict())  # Ordinary blocker must not turn the run red.
+
+    def test_kill_switch_off_with_no_verifier_check_is_a_clean_noop(self):
+        def m(w):
+            w[f"{ROOT}/actions/variables/FLOWTALLY_TRUSTED_REVIEW_ENABLED"] = [
+                ok({"name": "FLOWTALLY_TRUSTED_REVIEW_ENABLED", "value": "false"})]
+            w["verifier"] = [ok({"total_count": 0, "check_runs": []})]
+        rep = self.assertNoMerge(mutate(m), cfg=replace(CFG, live_writes=False),
+                                 reason="TRUSTED_REVIEW_DISABLED")
+        self.assertEqual(rep.errors, [], rep.as_dict())
+
+    def test_verifier_bad_shape_or_truncation_is_still_infra_error(self):
+        bad_responses = [
+            {"total_count": 1, "check_runs": []},  # Truncated response
+            {"total_count": 0, "check_runs": None},
+            {"total_count": True, "check_runs": []},
+            {"total_count": 1, "check_runs": ["not a check run"]},
+            {"total_count": 1, "check_runs": [{**VERIFIER, "name": "other-check"}]},
+        ]
+        for body in bad_responses:
+            rep = self.assertNoMerge(mutate(lambda w, body=body: w.update({"verifier": [ok(body)]})))
+            self.assertTrue(any(e.startswith("INFRA_ERROR") for e in rep.errors), rep.as_dict())
+
+    def test_verifier_api_denied_is_still_infra_error(self):
+        rep = self.assertNoMerge(mutate(lambda w: w.update({
+            "verifier": [{"status": 403, "headers": {}, "body": None}]})))
+        self.assertTrue(any(e.startswith("INFRA_ERROR") for e in rep.errors), rep.as_dict())
 
     def test_verifier_check_wrong_app(self):
         def m(w): w["verifier"][0]["body"]["check_runs"][0]["app"]["id"] = 1
@@ -158,8 +186,11 @@ class Gates(Base):
         self.assertNoMerge(mutate(m), reason="VERIFIER_PROOF_MISSING_OR_INVALID")
 
     def test_duplicate_verifier_checks_ambiguous(self):
-        def m(w): w["verifier"][0]["body"]["check_runs"].append(copy.deepcopy(VERIFIER))
-        self.assertNoMerge(mutate(m))
+        def m(w):
+            w["verifier"][0]["body"]["check_runs"].append(copy.deepcopy(VERIFIER))
+            w["verifier"][0]["body"]["total_count"] = 2
+        rep = self.assertNoMerge(mutate(m), reason="VERIFIER_PROOF_MISSING_OR_INVALID")
+        self.assertEqual(rep.errors, [], rep.as_dict())  # Ambiguous proof, not a GitHub API outage.
 
     def test_no_formal_approval_at_head(self):
         def m(w): w[f"{ROOT}/pulls/{N}/reviews"][0]["body"][0]["state"] = "COMMENTED"
@@ -320,6 +351,37 @@ class ReviewFindings(Base):
         listing_calls = [c for c in f.calls if c[1] == f"{ROOT}/pulls" and c[2].get("state") == "open"]
         self.assertTrue(any("base" not in c[2] for c in listing_calls))  # overlap query is not base-filtered
 
+# Shapes captured from GitHub's live REST API for this repository on 2026-11-13 (GET /rules/branches/develop
+# and GET /rulesets/{id}); `develop` is guarded by a RULESET and classic protection answers 404 "Branch not
+# protected". LIVE_* is the ruleset exactly as it stood then (it does not yet satisfy this actuator).
+_RS = 26858821
+LIVE_RULES = [
+    {"type": "deletion", "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "non_fast_forward", "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "required_linear_history", "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": False,
+     "required_reviewers": [], "require_code_owner_review": False, "require_last_push_approval": False,
+     "required_review_thread_resolution": True, "require_extra_approval_for_unattributed_changes": False,
+     "allowed_merge_methods": ["squash"]}, "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": True, "do_not_enforce_on_create": False,
+     "required_status_checks": [{"context": "frontend", "integration_id": 15368}, {"context": "backend", "integration_id": 15368}]},
+     "ruleset_source_type": "Repository", "ruleset_source": REPO, "ruleset_id": _RS},
+]
+LIVE_DETAIL = {"id": _RS, "name": "Protect Develop", "enforcement": "active", "bypass_actors": [], "current_user_can_bypass": "never",
+               "conditions": {"ref_name": {"exclude": [], "include": ["refs/heads/develop"]}}}
+LIVE_RULESET = {"rules": LIVE_RULES, "rulesets": {str(_RS): LIVE_DETAIL}}
+
+
+def hardened_ruleset():
+    p = copy.deepcopy(LIVE_RULESET)
+    for r in p["rules"]:
+        if r["type"] == "pull_request":
+            r["parameters"].update(required_approving_review_count=1, dismiss_stale_reviews_on_push=True)
+        if r["type"] == "required_status_checks":
+            r["parameters"]["required_status_checks"].append({"context": "trusted-review-verified", "integration_id": 777})
+            r["parameters"]["required_status_checks"].append({"context": "trusted-review-security-tests", "integration_id": 15368})
+    return p
+
 
 class Protection(Base):
     def test_good_protection_has_no_problems(self):
@@ -354,6 +416,87 @@ class Protection(Base):
         p = copy.deepcopy(PROTECTION)
         p["required_status_checks"] = {"strict": True, "checks": [{"context": c} for c in dc.REQUIRED_CONTEXTS]}
         self.assertEqual(dc.protection_problems(p), [])
+
+
+class Rulesets(Base):
+    def test_live_develop_ruleset_is_correctly_insufficient(self):
+        # Verified live: no approval required, stale reviews kept, and the verifier check is not required.
+        self.assertEqual(dc.ruleset_problems(LIVE_RULESET, 777), [
+            "RULESET_REVIEW_COUNT_TOO_LOW", "RULESET_STALE_REVIEWS_NOT_DISMISSED", "RULESET_MISSING_REQUIRED_CONTEXTS"])
+
+    def test_hardened_ruleset_has_no_problems(self):
+        self.assertEqual(dc.ruleset_problems(hardened_ruleset(), 777), [])
+
+    def test_each_ruleset_weakening_is_detected(self):
+        def rule(p, t):
+            return next(r for r in p["rules"] if r["type"] == t)
+        cases = {
+            "RULESET_UNAVAILABLE": lambda p: p.update(rules=[]),
+            "RULESET_FORCE_PUSH_ALLOWED": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "non_fast_forward"]),
+            "RULESET_DELETION_ALLOWED": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "deletion"]),
+            "RULESET_NO_REQUIRED_REVIEW": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "pull_request"]),
+            "RULESET_REVIEW_COUNT_TOO_LOW": lambda p: rule(p, "pull_request")["parameters"].update(required_approving_review_count=0),
+            "RULESET_STALE_REVIEWS_NOT_DISMISSED": lambda p: rule(p, "pull_request")["parameters"].update(dismiss_stale_reviews_on_push=False),
+            "RULESET_CONVERSATIONS_NOT_REQUIRED": lambda p: rule(p, "pull_request")["parameters"].update(required_review_thread_resolution=False),
+            "RULESET_MERGE_METHOD_NOT_ALLOWED": lambda p: rule(p, "pull_request")["parameters"].update(allowed_merge_methods=["merge", "rebase"]),
+            "RULESET_NO_REQUIRED_CHECKS": lambda p: p.update(rules=[r for r in p["rules"] if r["type"] != "required_status_checks"]),
+            "RULESET_NOT_STRICT": lambda p: rule(p, "required_status_checks")["parameters"].update(strict_required_status_checks_policy=False),
+            "RULESET_MISSING_REQUIRED_CONTEXTS": lambda p: rule(p, "required_status_checks")["parameters"].update(
+                required_status_checks=[{"context": "backend", "integration_id": 15368}]),
+            "RULESET_VERIFIER_SOURCE_NOT_PINNED": lambda p: [c.update(integration_id=999) for c in rule(p, "required_status_checks")["parameters"]["required_status_checks"] if c["context"] == "trusted-review-verified"],
+            "RULESET_NOT_ACTIVE": lambda p: p["rulesets"][str(_RS)].update(enforcement="evaluate"),
+            "RULESET_BYPASS_ACTORS_PRESENT": lambda p: p["rulesets"][str(_RS)].update(bypass_actors=[{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]),
+            "RULESET_DETAIL_UNAVAILABLE": lambda p: p["rulesets"].clear(),
+        }
+        for reason, fn in cases.items():
+            p = hardened_ruleset()
+            fn(p)
+            self.assertIn(reason, dc.ruleset_problems(p, 777), reason)
+        p = hardened_ruleset()
+        p["rulesets"][str(_RS)].pop("bypass_actors")      # unknown bypass list is treated as present
+        self.assertIn("RULESET_BYPASS_ACTORS_PRESENT", dc.ruleset_problems(p, 777))
+        self.assertIn("RULESET_VERIFIER_SOURCE_NOT_PINNED", dc.ruleset_problems(hardened_ruleset(), None))
+        p = hardened_ruleset()
+        next(r for r in p["rules"] if r["type"] == "pull_request")["parameters"]["allowed_merge_methods"] = "squash_foo"
+        self.assertIn("RULESET_MERGE_METHOD_NOT_ALLOWED", dc.ruleset_problems(p, 777))
+        for junk in (None, [], "x", {"rules": "x", "rulesets": {}}, {"rules": [1], "rulesets": {}}):
+            self.assertEqual(dc.ruleset_problems(junk, 777), ["RULESET_UNAVAILABLE"])
+
+    def _ruleset_world(self, rs):
+        w = build()
+        w[f"{ROOT}/branches/develop/protection"] = [{"status": 404, "headers": {}, "body": {"message": "Branch not protected"}}]
+        w[f"{ROOT}/rules/branches/develop"] = [ok(rs["rules"])]
+        w[f"{ROOT}/rulesets/{_RS}"] = [ok(rs["rulesets"][str(_RS)])]
+        return w
+
+    def test_classic_404_falls_back_to_hardened_ruleset_and_merges(self):
+        rep, f = self.run_(self._ruleset_world(hardened_ruleset()))
+        self.assertEqual(rep.errors, [], rep.as_dict())
+        self.assertEqual(len(f.puts), 1)
+
+    def test_classic_404_with_the_live_ruleset_does_not_merge(self):
+        self.assertNoMerge(self._ruleset_world(LIVE_RULESET), reason="RULESET_REVIEW_COUNT_TOO_LOW")
+
+    def test_classic_404_and_rules_unreadable_fails_closed_and_red(self):
+        w = build()
+        w[f"{ROOT}/branches/develop/protection"] = [{"status": 404, "headers": {}, "body": {}}]
+        rep = self.assertNoMerge(w, reason="PROTECTION_UNAVAILABLE")
+        self.assertTrue(rep.errors)   # infra error: the run goes red, never silently green
+
+    def test_truncated_rules_listing_is_an_explicit_unavailable_error(self):
+        w = self._ruleset_world(hardened_ruleset())
+        w[f"{ROOT}/rules/branches/develop"] = [ok([dict(LIVE_RULES[0]) for _ in range(100)])]
+        rep = self.assertNoMerge(w, reason="PROTECTION_UNAVAILABLE")
+        self.assertIn("rules:truncated", json.dumps(rep.as_dict()))
+
+    def test_bypass_actor_on_ruleset_blocks_merge(self):
+        rs = hardened_ruleset()
+        rs["rulesets"][str(_RS)]["bypass_actors"] = [{"actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"}]
+        self.assertNoMerge(self._ruleset_world(rs), reason="RULESET_BYPASS_ACTORS_PRESENT")
+
+    def test_ruleset_is_not_read_when_classic_protection_is_sufficient(self):
+        _, f = self.run_()
+        self.assertFalse([c for c in f.calls if "/rules" in c[1]])
 
 
 class Actuator(Base):
@@ -421,6 +564,408 @@ class Actuator(Base):
         finally:
             os.environ.clear()
             os.environ.update(old)
+
+
+def _pem():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    k = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+
+
+def _resp(status, body=None):
+    return {"status": status, "headers": {}, "body": body}
+
+
+class JwtFake:
+    """Stands in for the App-JWT transport; records calls, never touches the network."""
+
+    def __init__(self, inst=None, tok=None):
+        self.inst = inst if inst is not None else _resp(200, {"id": 42})
+        self.tok = tok if tok is not None else _resp(201, {"token": "ghs_FAKE", "repositories": [{"full_name": REPO}],
+                                                          "permissions": dict(dc.MERGE_TOKEN_PERMISSIONS)})
+        self.posts = []
+
+    def get(self, path, params=None):
+        return self.inst
+
+    def post(self, path, body):
+        self.posts.append((path, body))
+        return self.tok
+
+
+class MergeIdentity(unittest.TestCase):
+    ENV = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pem = _pem()
+
+    def env(self, **kw):
+        e = {dc.MERGE_APP_ID_VARIABLE: "9001", dc.MERGE_APP_KEY_SECRET: self.pem}
+        e.update(kw)
+        return {k: v for k, v in e.items() if v is not None}
+
+    def mint(self, env=None, jwt=None):
+        jwt = jwt or JwtFake()
+        tok = dc.mint_merge_token(env or self.env(), REPO, 777, NOW, transport_factory=lambda _jwt: jwt)
+        return tok, jwt
+
+    def reason(self, env=None, jwt=None):
+        with self.assertRaises(dc.app_auth.ConfigError) as cm:
+            self.mint(env, jwt)
+        return str(cm.exception)
+
+    def test_happy_path_mints_single_repo_token_without_permission_override(self):
+        tok, jwt = self.mint()
+        self.assertEqual(tok, "ghs_FAKE")
+        self.assertEqual(jwt.posts, [("/app/installations/42/access_tokens", {"repositories": [REPO.split("/")[1]]})])
+
+    def test_permission_mismatches_fail_closed(self):
+        base = dict(dc.MERGE_TOKEN_PERMISSIONS)
+        cases = {
+            "extra_admin": {**base, "administration": "read"},
+            "extra_workflows": {**base, "workflows": "write"},
+            "contents_admin": {**base, "contents": "admin"},
+            "missing_contents_write": {**base, "contents": "read"},
+            "missing_pr_write": {k: v for k, v in base.items() if k != "pull_requests"},
+        }
+        for name, perms in cases.items():
+            jwt = JwtFake(tok=_resp(201, {"token": "ghs_FAKE", "repositories": [{"full_name": REPO}], "permissions": perms}))
+            self.assertIn("installation_token_permissions_not_allowlisted", self.reason(jwt=jwt), name)
+
+    def test_repo_scope_mismatch_and_incomplete_responses(self):
+        for repos in ([], [{"full_name": REPO}, {"full_name": "ter-ry/other"}], [{"full_name": "ter-ry/other"}], None):
+            jwt = JwtFake(tok=_resp(201, {"token": "ghs_FAKE", "repositories": repos, "permissions": dict(dc.MERGE_TOKEN_PERMISSIONS)}))
+            self.assertEqual(self.reason(jwt=jwt), "installation_token_not_single_repo")
+        jwt = JwtFake(tok=_resp(201, {"repositories": [{"full_name": REPO}], "permissions": {}}))
+        self.assertIn("incomplete_response", self.reason(jwt=jwt))
+        jwt = JwtFake(tok=_resp(201, {"token": "x", "repositories": [{"full_name": REPO}]}))
+        self.assertEqual(self.reason(jwt=jwt), "installation_token_permissions_unknown")
+
+    def test_authentication_failures_are_categorised_and_never_echo_secrets(self):
+        for status, cat in ((401, "unauthorized_app_jwt"), (404, "installation_not_found"), (500, "github_server_error"),
+                            (429, "rate_limited")):
+            jwt = JwtFake(tok=_resp(status, {"message": "Bad credentials ghs_SECRET -----BEGIN"}))
+            r = self.reason(jwt=jwt)
+            self.assertTrue(r.endswith(cat), r)
+            self.assertNotIn("SECRET", r)
+        r = self.reason(jwt=JwtFake(inst=_resp(404, {"message": "Not Found"})))
+        self.assertTrue(r.startswith("app_installation_not_found:http_404"), r)
+        r = self.reason(jwt=JwtFake(tok=_resp(403, {"message": "The permissions requested are not granted to this installation"})))
+        self.assertIn("forbidden:installation_not_updated", r)
+
+    def test_missing_or_bad_configuration(self):
+        self.assertEqual(self.reason(self.env(**{dc.MERGE_APP_KEY_SECRET: None})), "merge_app_private_key_missing")
+        self.assertEqual(self.reason(self.env(**{dc.MERGE_APP_ID_VARIABLE: None})), "merge_app_id_missing_or_invalid")
+        self.assertEqual(self.reason(self.env(**{dc.MERGE_APP_ID_VARIABLE: "abc"})), "merge_app_id_missing_or_invalid")
+        self.assertEqual(self.reason(self.env(**{dc.MERGE_APP_ID_VARIABLE: "0"})), "merge_app_id_missing_or_invalid")
+        r = self.reason(self.env(**{dc.MERGE_APP_KEY_SECRET: "not a pem SECRETWORD"}))
+        self.assertEqual(r, "merge_app_private_key_unusable")
+
+    def test_merge_app_must_be_a_separate_identity(self):
+        self.assertEqual(self.reason(self.env(**{dc.MERGE_APP_ID_VARIABLE: "777"})), "merge_app_must_differ_from_verifier_app")
+        for name in dc.FOREIGN_SECRETS:
+            self.assertTrue(self.reason(self.env(**{name: "x"})).startswith("foreign_credentials_present:"), name)
+
+    def test_main_disabled_never_touches_secrets_or_network(self):
+        import os
+        old = dict(os.environ)
+        try:
+            os.environ.pop(dc.ENABLE_VARIABLE, None)
+            os.environ[dc.MERGE_APP_KEY_SECRET] = "should-not-be-read"
+            self.assertEqual(dc.main([]), 0)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_main_armed_without_app_credentials_fails_without_network(self):
+        import os
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({dc.ENABLE_VARIABLE: "true", "GITHUB_REPOSITORY": REPO, "FLOWTALLY_REPO_ID": str(RID),
+                               "REVIEWER_BOT_USER_ID": "555", "REVIEWER_BOT_LOGIN": "bot", "VERIFIER_APP_ID": "777"})
+            self.assertEqual(dc.main([]), 1)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_workflow_uses_app_secret_not_a_stored_token(self):
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/develop-automerge.yml").read_text()
+        self.assertNotIn("DEVELOP_AUTOMERGE_TOKEN", wf)
+        self.assertNotIn("GITHUB_TOKEN:", wf)
+        self.assertIn("FLOWTALLY_MERGE_APP_PRIVATE_KEY: ${{ secrets.FLOWTALLY_MERGE_APP_PRIVATE_KEY }}", wf)
+        self.assertIn("FLOWTALLY_MERGE_APP_ID: ${{ vars.FLOWTALLY_MERGE_APP_ID }}", wf)
+        self.assertIn("environment: develop-automerge", wf)
+        self.assertIn("github.ref == 'refs/heads/main'", wf)
+        self.assertIn("FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED == 'true'", wf)
+        for name in ("REVIEWER_APP_PRIVATE_KEY", "VERIFIER_APP_PRIVATE_KEY", "SIGNING_KEY"):
+            self.assertNotIn(name, wf)
+
+
+MAIN_RULES = [{"type": "pull_request", "ruleset_id": 7, "parameters": {"required_approving_review_count": 1}},
+              {"type": "non_fast_forward", "ruleset_id": 7},
+              {"type": "deletion", "ruleset_id": 7}]
+MAIN_SET = {"enforcement": "active", "bypass_actors": []}
+OK_SHA = "a" * 40
+
+
+class Inner:
+    def __init__(self, rules=None, ruleset=None, rules_status=200):
+        self.gets, self.puts = [], []
+        self.rules = MAIN_RULES if rules is None else rules
+        self.ruleset = MAIN_SET if ruleset is None else ruleset
+        self.rules_status = rules_status
+
+    def get(self, path, params):
+        self.gets.append(path)
+        if path.endswith("/rules/branches/main"):
+            return _resp(self.rules_status, self.rules)
+        if "/rulesets/" in path:
+            return _resp(200, self.ruleset)
+        return _resp(200, {})
+
+    def graphql(self, q, v):
+        return _resp(200, {})
+
+    def put(self, path, body):
+        self.puts.append((path, body))
+        return _resp(200, {"merged": True})
+
+
+class WriteGuard(unittest.TestCase):
+    PATH = f"/repos/{REPO}/pulls/12/merge"
+    BODY = {"sha": OK_SHA, "merge_method": "squash"}
+
+    def guard(self, **kw):
+        inner = Inner(**kw)
+        return dc.GuardedTransport(inner, REPO), inner
+
+    def test_allowed_merge_after_main_check_and_checked_once(self):
+        g, inner = self.guard()
+        g.put(self.PATH, self.BODY)
+        g.put(f"/repos/{REPO}/pulls/13/merge", self.BODY)
+        self.assertEqual(len(inner.puts), 2)
+        self.assertEqual(sum(p.endswith("/rules/branches/main") for p in inner.gets), 1)
+
+    def test_every_other_write_is_refused_without_a_network_call(self):
+        bad = [(f"/repos/{REPO}/git/refs/heads/main", {"sha": OK_SHA, "force": True}),
+               (f"/repos/{REPO}/pulls/12/merge/", self.BODY),
+               (f"/repos/{REPO}/pulls/12", {"base": "main"}),
+               (f"/repos/ter-ry/other/pulls/12/merge", self.BODY),
+               (f"/repos/{REPO}/pulls/x/merge", self.BODY),
+               (f"/repos/{REPO}/contents/README.md", {"message": "x"}),
+               (self.PATH, {"sha": OK_SHA, "merge_method": "merge"}),
+               (self.PATH, {"sha": OK_SHA, "merge_method": "squash", "commit_title": "x"}),
+               (self.PATH, {"sha": "abc", "merge_method": "squash"}),
+               (self.PATH, {"merge_method": "squash"}), (self.PATH, None)]
+        for path, body in bad:
+            g, inner = self.guard()
+            with self.assertRaises(PermissionError):
+                g.put(path, body)
+            self.assertEqual((inner.puts, inner.gets), ([], []), (path, body))
+
+    def test_graphql_mutations_and_arbitrary_queries_are_refused(self):
+        g, inner = self.guard()
+        for q in ("mutation { mergePullRequest(input:{pullRequestId:\"x\"}) { clientMutationId } }",
+                  "mutation{createRef(input:{}){clientMutationId}}", "query { viewer { login } }", ""):
+            with self.assertRaises(PermissionError):
+                g.graphql(q, {})
+        self.assertEqual(inner.gets, [])
+        self.assertEqual(g.graphql(dc.Collector_THREADS_QUERY, {})["status"], 200)
+
+    def test_merge_path_must_match_exactly(self):
+        for path in (self.PATH + "\n", self.PATH + "/", self.PATH + "?x=1", " " + self.PATH, self.PATH + "\r"):
+            g, inner = self.guard()
+            with self.assertRaises(PermissionError, msg=repr(path)):
+                g.put(path, self.BODY)
+            self.assertEqual((inner.puts, inner.gets), ([], []))
+
+    def test_unprotected_or_bypassable_main_refuses_the_write(self):
+        cases = {
+            "no_rules": dict(rules=[]),
+            "rules_unreadable": dict(rules_status=403),
+            "no_pr_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "pull_request"]),
+            "no_force_push_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "non_fast_forward"]),
+            "no_deletion_rule": dict(rules=[r for r in MAIN_RULES if r["type"] != "deletion"]),
+            "zero_approvals": dict(rules=[{"type": "pull_request", "ruleset_id": 7,
+                                           "parameters": {"required_approving_review_count": 0}}] + MAIN_RULES[1:]),
+            "approvals_missing": dict(rules=[{"type": "pull_request", "ruleset_id": 7}] + MAIN_RULES[1:]),
+            "approvals_bool": dict(rules=[{"type": "pull_request", "ruleset_id": 7,
+                                           "parameters": {"required_approving_review_count": True}}] + MAIN_RULES[1:]),
+            "bypass_actor": dict(ruleset={"enforcement": "active", "bypass_actors": [{"actor_id": 1}]}),
+            "bypass_missing": dict(ruleset={"enforcement": "active"}),
+            "not_active": dict(ruleset={"enforcement": "evaluate", "bypass_actors": []}),
+            "bad_rule_shape": dict(rules=["x"]),
+            "bad_ruleset_id": dict(rules=[{"type": "pull_request", "ruleset_id": "7"}]),
+        }
+        for name, kw in cases.items():
+            g, inner = self.guard(**kw)
+            with self.assertRaises(PermissionError, msg=name):
+                g.put(self.PATH, self.BODY)
+            self.assertEqual(inner.puts, [], name)
+
+    def test_reads_pass_through_and_main_failure_is_not_cached(self):
+        g, inner = self.guard(rules_status=500)
+        self.assertEqual(g.get("/x", {})["status"], 200)
+        for _ in range(2):
+            with self.assertRaises(PermissionError):
+                g.put(self.PATH, self.BODY)
+        self.assertEqual(sum(p.endswith("/rules/branches/main") for p in inner.gets), 2)
+
+    def test_refused_write_surfaces_as_unconfirmed_merge_not_a_crash(self):
+        f = Fake()
+        guard = dc.GuardedTransport(f, REPO)  # Fake has no main rules (404): guard must refuse
+        rep = dc.run_once(guard, CFG, clock)
+        self.assertEqual(f.puts, [])
+        self.assertFalse(rep.merged["merged_confirmed"])
+        self.assertTrue(any(e.startswith("MERGE_NOT_CONFIRMED") for e in rep.errors))
+
+
+DEV_RULES = [{"type": "pull_request", "ruleset_id": 8}, {"type": "required_status_checks", "ruleset_id": 8},
+             {"type": "non_fast_forward", "ruleset_id": 8}, {"type": "deletion", "ruleset_id": 8}]
+DEV_SET = {"enforcement": "active", "bypass_actors": []}
+
+
+class PfTransport:
+    """Branch-aware read double; records every call so tests can prove nothing else was used."""
+
+    def __init__(self, main=None, develop=None, details=None):
+        self.gets, self.puts = [], []
+        self.table = {"main": main or (200, MAIN_RULES), "develop": develop or (200, DEV_RULES)}
+        self.details = {"7": (200, MAIN_SET), "8": (200, DEV_SET)}
+        self.details.update(details or {})
+
+    def get(self, path, params):
+        self.gets.append(path)
+        for b, (st, body) in self.table.items():
+            if path.endswith(f"/rules/branches/{b}"):
+                return _resp(st, body)
+        rid = path.rsplit("/", 1)[-1]
+        st, body = self.details.get(rid, (404, None))
+        return _resp(st, body)
+
+    def put(self, path, body):  # pragma: no cover - must never be reached
+        self.puts.append(path)
+        raise AssertionError("write attempted")
+
+    def graphql(self, q, v):  # pragma: no cover
+        raise AssertionError("graphql attempted")
+
+
+class RulesetPreflight(unittest.TestCase):
+    def run_pf(self, **kw):
+        t = PfTransport(**kw)
+        return dc.run_preflight(t, REPO, 777), t
+
+    def reasons(self, rep, branch):
+        return next(b for b in rep["branches"] if b["branch"] == branch)["reasons"]
+
+    def test_main_valid_empty_bypass_passes_and_only_reads(self):
+        rep, t = self.run_pf(develop=(404, None))
+        main = next(b for b in rep["branches"] if b["branch"] == "main")
+        self.assertEqual(main, {"branch": "main", "status": "PASS", "reasons": []})
+        self.assertEqual(t.puts, [])
+        self.assertTrue(rep["read_only"])
+        self.assertTrue(all(p.startswith(f"/repos/{REPO}/rule") for p in t.gets))
+
+    def test_http_403_and_404_are_distinguished(self):
+        for code in (403, 404):
+            rep, _ = self.run_pf(main=(code, None))
+            self.assertEqual(self.reasons(rep, "main"), [f"RULES_HTTP_{code}"])
+            self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_omitted_bypass_actors_is_distinct_from_nonempty(self):
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active"})})
+        self.assertIn("BYPASS_ACTORS_OMITTED", self.reasons(rep, "main"))
+        self.assertNotIn("BYPASS_ACTORS_NONEMPTY", self.reasons(rep, "main"))
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "bypass_actors": [{"actor_id": 1}]})})
+        self.assertIn("BYPASS_ACTORS_NONEMPTY", self.reasons(rep, "main"))
+        self.assertNotIn("BYPASS_ACTORS_OMITTED", self.reasons(rep, "main"))
+        self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_bad_bypass_shape_and_detail_errors_block(self):
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "bypass_actors": None})})
+        self.assertIn("BYPASS_ACTORS_BAD_SHAPE", self.reasons(rep, "main"))
+        rep, _ = self.run_pf(details={"7": (403, None)})
+        self.assertIn("RULESET_DETAIL_HTTP_403", self.reasons(rep, "main"))
+        rep, _ = self.run_pf(details={"7": (200, ["x"])})
+        self.assertIn("RULESET_DETAIL_BAD_SHAPE", self.reasons(rep, "main"))
+
+    def test_truncated_and_malformed_rule_lists_block(self):
+        rep, _ = self.run_pf(main=(200, [{"type": "deletion", "ruleset_id": 7}] * 100))
+        self.assertEqual(self.reasons(rep, "main"), ["RULES_TRUNCATED"])
+        rep, _ = self.run_pf(main=(200, {"message": "x"}))
+        self.assertEqual(self.reasons(rep, "main"), ["RULES_BAD_SHAPE"])
+        rep, _ = self.run_pf(main=(200, []))
+        self.assertEqual(rep["branches"][0]["status"], "BLOCKED")
+
+    def test_missing_main_pr_rule_blocks(self):
+        rep, _ = self.run_pf(main=(200, [r for r in MAIN_RULES if r["type"] != "pull_request"]))
+        self.assertIn("MAIN_DIRECT_PUSH_ALLOWED", self.reasons(rep, "main"))
+
+    def test_develop_is_evaluated_with_ruleset_problems(self):
+        rep, _ = self.run_pf()
+        self.assertEqual(rep["status"], "BLOCKED")  # parameterless rules: fail closed
+        self.assertIn("RULESET_NO_REQUIRED_REVIEW", self.reasons(rep, "develop"))
+
+    def test_fully_valid_main_and_develop_pass(self):
+        full = [{"type": "pull_request", "ruleset_id": 8, "parameters": {
+                    "required_approving_review_count": 1, "dismiss_stale_reviews_on_push": True,
+                    "required_review_thread_resolution": True, "allowed_merge_methods": ["squash"]}},
+                {"type": "required_status_checks", "ruleset_id": 8, "parameters": {
+                    "strict_required_status_checks_policy": True, "required_status_checks": [
+                        {"context": c, "integration_id": 777 if c == dc.VERIFIER_CHECK else None}
+                        for c in sorted(dc.REQUIRED_CONTEXTS)]}},
+                {"type": "non_fast_forward", "ruleset_id": 8}, {"type": "deletion", "ruleset_id": 8}]
+        rep, t = self.run_pf(develop=(200, full))
+        self.assertEqual(rep["status"], "PASS", rep)
+        self.assertEqual(t.puts, [])
+
+    def test_report_never_contains_response_bodies(self):
+        rep, _ = self.run_pf(details={"7": (200, {"enforcement": "active", "secret_marker": "TOPSECRET"})})
+        self.assertNotIn("TOPSECRET", json.dumps(rep))
+
+    def test_read_only_transport_refuses_writes(self):
+        ro = dc._ReadOnlyTransport(PfTransport())
+        with self.assertRaises(PermissionError):
+            ro.put("/x", {})
+        with self.assertRaises(PermissionError):
+            ro.graphql("q", {})
+
+    def test_exception_is_reported_by_class_only(self):
+        class Boom(PfTransport):
+            def get(self, path, params):
+                raise RuntimeError("token ghs_SECRET")
+        rep = dc.run_preflight(Boom(), REPO, 777)
+        self.assertNotIn("ghs_SECRET", json.dumps(rep))
+        self.assertEqual(rep["status"], "BLOCKED")
+
+    def test_workflow_exposes_manual_preflight_input_only(self):
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/develop-automerge.yml").read_text()
+        self.assertIn("preflight_rulesets", wf)
+        self.assertIn("--preflight-rulesets", wf)
+        self.assertIn("github.ref == 'refs/heads/main'", wf)
+
+
+class RedactedBypassStaysBlocked(unittest.TestCase):
+    """#307 security regression: an unchanged updated_at never substitutes for a visible empty bypass list."""
+
+    def test_omitted_bypass_with_pinned_looking_metadata_is_blocked(self):
+        detail = {"id": 7, "enforcement": "active", "source": REPO, "source_type": "Repository",
+                  "updated_at": "2026-11-02T20:36:36.327-05:00", "current_user_can_bypass": "never"}
+        p = {"rules": MAIN_RULES, "rulesets": {"7": detail}}
+        self.assertIn("MAIN_RULESET_BYPASS_ACTORS_PRESENT", dc.main_guard_problems(p))
+        self.assertFalse(hasattr(dc, "OWNER_ATTESTED_EMPTY_BYPASS"))
+
+    def test_main_guard_requires_approval_and_visible_empty_bypass(self):
+        ok = {"rules": MAIN_RULES, "rulesets": {"7": MAIN_SET}}
+        self.assertEqual(dc.main_guard_problems(ok), [])
+        zero = {"rules": [{"type": "pull_request", "ruleset_id": 7,
+                           "parameters": {"required_approving_review_count": 0}}] + MAIN_RULES[1:],
+                "rulesets": {"7": MAIN_SET}}
+        self.assertIn("MAIN_APPROVAL_NOT_REQUIRED", dc.main_guard_problems(zero))
 
 
 if __name__ == "__main__":

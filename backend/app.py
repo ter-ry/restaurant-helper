@@ -32,7 +32,7 @@ from .platform_admin import bp as platform_admin_bp
 from .square_integration import bp as square_integration_bp
 from .clover_integration import bp as clover_integration_bp
 from .policy import enforce_endpoint_permission
-from .seed import DEMO_RESTAURANT_NAME, SeedResult, seed_pilot_data, seed_official_demo_data, seed_showcase_tenant
+from .seed import DEMO_RESTAURANT_NAME, SeedResult, demo_supplier_for_category, seed_pilot_data, seed_official_demo_data, seed_showcase_tenant
 from .showcase_inventory import ShowcaseInventoryError, replenish_showcase_inventory
 from .validation import RequestValidationError
 from .utils import json_error
@@ -328,11 +328,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         ]
         for name, category, unit, minimum, par in extra_items:
             if not InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
-                db.session.add(InventoryItem(organization_id=organization.id, location_id=location.id, supplier_id=supplier.id if supplier else None, name=name, normalized_name=name.lower(), category=category, stock_unit=unit, current_on_hand=Decimal(str(par + 2)), min_quantity=Decimal(str(minimum)), par_level=Decimal(str(par)), preferred_supplier_name=supplier.name if supplier else "", latest_purchase_price=Decimal("4.50"), last_purchase_unit=unit, last_purchase_conversion_factor=Decimal("1"), average_daily_usage=Decimal("0.5")))
-        recipe_names = ["Harbour Burger", "Chicken Rice Bowl", "Breakfast Hash", "House Salad", "Iced Latte", "Berry Parfait"]
-        for name in recipe_names:
-            if not Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=name.lower()).first():
-                db.session.add(Recipe(organization_id=organization.id, location_id=location.id, name=name, normalized_name=name.lower(), description="Canonical demo recipe", yield_quantity=Decimal("1"), yield_unit="batch", created_by_user_id=result.owner_id, updated_by_user_id=result.owner_id))
+                supplier = demo_supplier_for_category(organization.id, category)
+                db.session.add(InventoryItem(organization_id=organization.id, location_id=location.id, supplier_id=supplier.id if supplier else None, name=name, normalized_name=name.lower(), category=category, stock_unit=unit, current_on_hand=Decimal(str(par + 2)), min_quantity=Decimal(str(minimum)), par_level=Decimal(str(par)), preferred_supplier_name=supplier.name if supplier else "", latest_purchase_price=Decimal("4.50"), average_unit_cost=Decimal("4.50"), last_purchase_unit=unit, last_purchase_conversion_factor=Decimal("1"), average_daily_usage=Decimal("0.5")))
         waste_item = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Chicken Breast").first()
         if waste_item and not InventoryWasteEvent.query.filter_by(organization_id=organization.id, location_id=location.id, reason="Demo spoilage").first():
             before = Decimal(str(waste_item.current_on_hand))

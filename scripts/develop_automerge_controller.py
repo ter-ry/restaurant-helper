@@ -31,11 +31,17 @@ from typing import Any, Mapping
 try:  # package-style and script-style imports both work
     from scripts import develop_merge_policy as policy
     from scripts import trusted_review_attestation as attest
+    from scripts import trusted_review_runtime as app_auth
+    from scripts import ruleset_attestation as ruleset_attest
     from scripts.trusted_review_evidence_collector import Collector
+    from scripts.trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY
 except ImportError:  # pragma: no cover
     import develop_merge_policy as policy  # type: ignore
     import trusted_review_attestation as attest  # type: ignore
+    import trusted_review_runtime as app_auth  # type: ignore
+    import ruleset_attestation as ruleset_attest  # type: ignore
     from trusted_review_evidence_collector import Collector  # type: ignore
+    from trusted_review_evidence_collector import THREADS_QUERY as Collector_THREADS_QUERY  # type: ignore
 
 ENABLE_VARIABLE = "FLOWTALLY_DEVELOP_AUTO_MERGE_ENABLED"
 LIVE_WRITES_VARIABLE = "FLOWTALLY_DEVELOP_AUTO_MERGE_LIVE_WRITES"
@@ -44,6 +50,15 @@ ALLOWED_BASE = policy.ALLOWED_BASE  # "develop"
 VERIFIER_CHECK = attest.CHECK_NAME
 REQUIRED_CONTEXTS = frozenset(policy.REQUIRED_CHECKS) | {VERIFIER_CHECK}
 MERGE_METHOD = "squash"
+# Merge identity (#270): a dedicated GitHub App, separate from the reviewer and verifier Apps. A fresh
+# single-repository installation token is minted in-process on every run; no token is ever stored.
+MERGE_APP_ID_VARIABLE = "FLOWTALLY_MERGE_APP_ID"
+MERGE_APP_KEY_SECRET = "FLOWTALLY_MERGE_APP_PRIVATE_KEY"
+# Exact allowlist of the granted permission map. `contents: write` is required by PUT /pulls/{n}/merge and
+# is repository-wide, NOT branch-specific; see GuardedTransport and docs/DEVELOP_AUTOMERGE_SETUP.md.
+MERGE_TOKEN_PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read", "checks": "read",
+                           "statuses": "read", "issues": "read", "actions_variables": "read", "actions": "read"}
+FOREIGN_SECRETS = (*app_auth.REVIEWER_ONLY_SECRETS, *app_auth.VERIFIER_ONLY_SECRETS, "DEVELOP_AUTOMERGE_TOKEN")
 _ISSUE_REF = re.compile(r"(?im)^\s*(?:closes|fixes|resolves)\s+#(\d+)\s*$")
 _DEP_LINE = re.compile(r"(?im)^\s*(?:depends on|blocked by)\s*:\s*(.+)$")
 
@@ -58,6 +73,7 @@ class Config:
     enabled: bool = False
     live_writes: bool = False
     trusted_coauthor_emails: tuple[str, ...] = ()
+    ruleset_attestation: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +157,89 @@ def protection_problems(p: Any) -> list[str]:
     return out
 
 
+def ruleset_problems(p: Any, verifier_app_id: Any = None) -> list[str]:
+    """Reasons the repository RULESETS that apply to `develop` are NOT strong enough. Empty = acceptable.
+
+    `p` is ``{"rules": <GET /rules/branches/develop>, "rulesets": {id: <GET /rulesets/{id}>}}``. The rules
+    endpoint lists only active rules for the branch; each contributing ruleset is read to prove it is
+    active and has NO bypass actors (a ruleset has no `enforce_admins`; an empty bypass list is the
+    equivalent). Anything missing, mistyped or ambiguous fails closed.
+    """
+    if not isinstance(p, Mapping) or not isinstance(p.get("rules"), list) or not isinstance(p.get("rulesets"), Mapping):
+        return ["RULESET_UNAVAILABLE"]
+    rules = [r for r in p["rules"] if isinstance(r, Mapping)]
+    if len(rules) != len(p["rules"]) or not rules:
+        return ["RULESET_UNAVAILABLE"]
+    out: list[str] = []
+    ids = {r.get("ruleset_id") for r in rules}
+    for rid in sorted(i for i in ids if isinstance(i, int)):
+        d = p["rulesets"].get(str(rid))
+        if not isinstance(d, Mapping):
+            out.append("RULESET_DETAIL_UNAVAILABLE")
+            continue
+        if d.get("enforcement") != "active":
+            out.append("RULESET_NOT_ACTIVE")
+        if d.get("bypass_actors") != []:
+            out.append("RULESET_BYPASS_ACTORS_PRESENT")  # missing/unknown is treated like present
+    if any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
+        out.append("RULESET_DETAIL_UNAVAILABLE")
+    by_type: dict[str, list[Mapping[str, Any]]] = {}
+    for r in rules:
+        by_type.setdefault(str(r.get("type")), []).append(r)
+    if "non_fast_forward" not in by_type:
+        out.append("RULESET_FORCE_PUSH_ALLOWED")
+    if "deletion" not in by_type:
+        out.append("RULESET_DELETION_ALLOWED")
+    prs = [r.get("parameters") for r in by_type.get("pull_request", [])]
+    if not prs or any(not isinstance(x, Mapping) for x in prs):
+        out.append("RULESET_NO_REQUIRED_REVIEW")
+    else:
+        count = max((x.get("required_approving_review_count") for x in prs
+                     if isinstance(x.get("required_approving_review_count"), int) and not isinstance(x.get("required_approving_review_count"), bool)), default=0)
+        if count < 1:
+            out.append("RULESET_REVIEW_COUNT_TOO_LOW")
+        if not any(x.get("dismiss_stale_reviews_on_push") is True for x in prs):
+            out.append("RULESET_STALE_REVIEWS_NOT_DISMISSED")
+        if not any(x.get("required_review_thread_resolution") is True for x in prs):
+            out.append("RULESET_CONVERSATIONS_NOT_REQUIRED")
+        for x in prs:  # every PR rule must still permit the one merge method this actuator uses
+            allowed = x.get("allowed_merge_methods")
+            if allowed is not None and not (isinstance(allowed, list) and MERGE_METHOD in allowed):
+                out.append("RULESET_MERGE_METHOD_NOT_ALLOWED")
+    scs = [r.get("parameters") for r in by_type.get("required_status_checks", [])]
+    if not scs or any(not isinstance(x, Mapping) for x in scs):
+        out.append("RULESET_NO_REQUIRED_CHECKS")
+    else:
+        if not any(x.get("strict_required_status_checks_policy") is True for x in scs):
+            out.append("RULESET_NOT_STRICT")
+        names: set[str] = set()
+        verifier_sources: set[Any] = set()
+        for x in scs:
+            for c in x.get("required_status_checks") or []:
+                if isinstance(c, Mapping) and isinstance(c.get("context"), str):
+                    names.add(c["context"])
+                    if c["context"] == VERIFIER_CHECK:
+                        verifier_sources.add(c.get("integration_id"))
+        if not REQUIRED_CONTEXTS <= names:
+            out.append("RULESET_MISSING_REQUIRED_CONTEXTS")
+        elif verifier_sources != {verifier_app_id} or verifier_app_id is None:
+            out.append("RULESET_VERIFIER_SOURCE_NOT_PINNED")  # the check must come from the verifier App only
+    return list(dict.fromkeys(out))
+
+
+def merge_gate_problems(extras: Mapping[str, Any], verifier_app_id: Any) -> list[str]:
+    """Classic branch protection OR rulesets must each be sufficient on their own (both are additive)."""
+    classic = extras.get("protection")
+    ruleset = extras.get("ruleset_protection")
+    c = protection_problems(classic) if classic is not None else ["PROTECTION_UNAVAILABLE"]
+    if not c:
+        return []
+    if ruleset is None:
+        return c
+    r = ruleset_problems(ruleset, verifier_app_id)
+    return [] if not r else r + ([] if classic is None else c)
+
+
 # ---------------------------------------------------------------- planning (pure)
 def build_snapshot(evidence: Mapping[str, Any], extras: Mapping[str, Any], cfg: Config) -> dict[str, Any]:
     """Map collector evidence + controller-fetched extras onto the develop_merge_policy snapshot."""
@@ -212,7 +311,7 @@ def _plan(evidence: Any, extras: Any, cfg: Config, now: datetime) -> Plan:
     if not isinstance(fresh, Mapping) or (fresh.get("base_ref"), fresh.get("base_sha"), fresh.get("head_sha"), fresh.get("state")) \
             != (ALLOWED_BASE, base, head, "open"):
         reasons.append("LIVE_PR_IDENTITY_MISMATCH")  # retargeted, moved or closed since collection
-    reasons += protection_problems(extras.get("protection"))
+    reasons += merge_gate_problems(extras, cfg.verifier_app_id)
     if attest.verify_check_source(extras.get("verifier_check"), head or "", cfg.verifier_app_id, now):
         reasons.append("VERIFIER_PROOF_MISSING_OR_INVALID")
     snap_extras = {**extras, "verifier_ok": "VERIFIER_PROOF_MISSING_OR_INVALID" not in reasons}
@@ -264,14 +363,45 @@ def gather_extras(t: Any, cfg: Config, evidence: Mapping[str, Any]) -> dict[str,
             None if b.get("mergeable") is None else False)
 
     safe("mergeable", "mergeable", live_pr)
-    safe("protection", "protection", lambda: _body(t.get(f"{root}/branches/{ALLOWED_BASE}/protection", {}), "protection"))
+    def protection():
+        if cfg.ruleset_attestation is not None:
+            branches = cfg.ruleset_attestation.get("payload", {}).get("branches", {})
+            extras["ruleset_protection"] = branches.get(ALLOWED_BASE)
+            return True
+        # GitHub returns 404 "Branch not protected" for classic protection when only a ruleset guards the
+        # branch (verified live 2026-11-13), so a failed classic read falls through to the ruleset view.
+        classic = t.get(f"{root}/branches/{ALLOWED_BASE}/protection", {})
+        extras["protection"] = classic.get("body") if isinstance(classic, Mapping) and classic.get("status") == 200 else None
+        if extras["protection"] is not None and not protection_problems(extras["protection"]):
+            return True  # classic protection alone is sufficient; no need to read rulesets
+        rules = _body(t.get(f"{root}/rules/branches/{ALLOWED_BASE}", {"per_page": 100}), "rules")
+        if isinstance(rules, list) and len(rules) >= 100:
+            raise RuntimeError("rules:truncated")
+        details: dict[str, Any] = {}
+        for r in rules if isinstance(rules, list) else []:
+            rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
+            if isinstance(rid, int) and not isinstance(rid, bool) and str(rid) not in details:
+                details[str(rid)] = _body(t.get(f"{root}/rulesets/{rid}", {}), "ruleset")
+        extras["ruleset_protection"] = {"rules": rules, "rulesets": details}
+        if extras["protection"] is None and not rules:
+            raise RuntimeError("protection:unavailable")
+        return True
+
+    safe("protection_loaded", "protection", protection)
 
     def verifier():
         body = _body(t.get(f"{root}/commits/{head}/check-runs", {"check_name": VERIFIER_CHECK, "per_page": 100}), "verifier")
-        runs = [r for r in body.get("check_runs", []) if r.get("name") == VERIFIER_CHECK]
-        if len(runs) != 1:
-            raise RuntimeError("verifier_check_count_%d" % len(runs))
-        return runs[0]
+        # Zero checks (or multiple conflicting checks) is normal evidence that this PR is
+        # NOT eligible to merge. Only malformed, denied, or truncated API data is infra.
+        if not isinstance(body, Mapping):
+            raise RuntimeError("verifier:bad_shape")
+        entries, total = body.get("check_runs"), body.get("total_count")
+        if (not isinstance(entries, list) or not isinstance(total, int) or isinstance(total, bool)
+                or total != len(entries) or any(not isinstance(r, Mapping) for r in entries)):
+            raise RuntimeError("verifier:bad_shape_or_truncated")
+        if any(r.get("name") != VERIFIER_CHECK for r in entries):
+            raise RuntimeError("verifier:unexpected_check_name")
+        return entries[0] if len(entries) == 1 else None
 
     safe("verifier_check", "verifier", verifier)
     safe("issue", "issue", lambda: _issue_evidence(t, cfg, evidence))
@@ -421,6 +551,137 @@ def _merge(t: Any, cfg: Config, p: Plan, rep: RunReport) -> dict[str, Any]:
     return result
 
 
+# ---------------------------------------------------------------- write guard (defense in depth)
+def main_guard_problems(p: Any) -> list[str]:
+    """Reasons `main` is NOT protected well enough to hold a repository-wide contents:write token.
+
+    `p` is ``{"rules": <GET /rules/branches/main>, "rulesets": {id: <GET /rulesets/{id}>}}``. GitHub App
+    permissions are repository-wide, so the only thing stopping this token from pushing to `main` is a
+    ruleset that requires a pull request and has no bypass actors. Missing or ambiguous data fails closed.
+    """
+    if not isinstance(p, Mapping) or not isinstance(p.get("rules"), list) or not isinstance(p.get("rulesets"), Mapping):
+        return ["MAIN_RULESET_UNAVAILABLE"]
+    rules = [r for r in p["rules"] if isinstance(r, Mapping)]
+    if not rules or len(rules) != len(p["rules"]):
+        return ["MAIN_RULESET_UNAVAILABLE"]
+    out: list[str] = []
+    ids = {r.get("ruleset_id") for r in rules}
+    if any(not isinstance(i, int) or isinstance(i, bool) for i in ids):
+        out.append("MAIN_RULESET_UNAVAILABLE")
+    for rid in sorted(i for i in ids if isinstance(i, int) and not isinstance(i, bool)):
+        d = p["rulesets"].get(str(rid))
+        if not isinstance(d, Mapping):
+            out.append("MAIN_RULESET_UNAVAILABLE")
+            continue
+        if d.get("enforcement") != "active":
+            out.append("MAIN_RULESET_NOT_ACTIVE")
+        if d.get("bypass_actors") != []:
+            out.append("MAIN_RULESET_BYPASS_ACTORS_PRESENT")
+    # A repository-wide contents:write token could otherwise merge its own PR to main: require a real
+    # non-author approval on every pull_request rule. Zero, missing or malformed counts fail closed.
+    pr_rules = [r for r in rules if r.get("type") == "pull_request"]
+    for r in pr_rules:
+        params = r.get("parameters")
+        count = params.get("required_approving_review_count") if isinstance(params, Mapping) else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            out.append("MAIN_APPROVAL_NOT_REQUIRED")
+    types = {str(r.get("type")) for r in rules}
+    for needed, code in (("pull_request", "MAIN_DIRECT_PUSH_ALLOWED"), ("non_fast_forward", "MAIN_FORCE_PUSH_ALLOWED"),
+                         ("deletion", "MAIN_DELETION_ALLOWED")):
+        if needed not in types:
+            out.append(code)
+    return list(dict.fromkeys(out))
+
+
+class GuardedTransport:
+    """The only write path the controller can reach with the merge token.
+
+    * Reads pass straight through. GraphQL passes only the collector's constant read-only threads query.
+    * The sole permitted write is ``PUT /repos/{repo}/pulls/{n}/merge`` with exactly ``sha`` and a squash
+      ``merge_method``. Any other method, path or body is refused before it leaves the process.
+    * Before the first write of a run, `main` is read and must pass `main_guard_problems`; otherwise the
+      write is refused. This does not make the App token branch-specific (it is not), it refuses to
+      operate while the ruleset that actually protects `main` is missing or bypassable.
+    """
+
+    def __init__(self, inner: Any, repository: str, ruleset_attestation: Mapping[str, Any] | None = None):
+        self._t, self._repo, self._main_ok = inner, repository, False
+        self._ruleset_attestation = ruleset_attestation
+        self._merge_path = re.compile(r"^/repos/" + re.escape(repository) + r"/pulls/[1-9][0-9]{0,8}/merge$")
+
+    def get(self, path: str, params: dict) -> Any:
+        return self._t.get(path, params)
+
+    def graphql(self, query: str, variables: dict) -> Any:
+        # Only the collector's constant, read-only review-thread query may pass; a GraphQL mutation
+        # (mergePullRequest, createRef, createCommitOnBranch, ...) must not leave the process.
+        if query != Collector_THREADS_QUERY:
+            raise PermissionError("WRITE_REFUSED:GRAPHQL_QUERY_NOT_ALLOWED")
+        return self._t.graphql(query, variables)
+
+    def _check_main(self) -> None:
+        root = f"/repos/{self._repo}"
+        if self._ruleset_attestation is not None:
+            branches = self._ruleset_attestation.get("payload", {}).get("branches", {})
+            problems = main_guard_problems(branches.get("main"))
+            if problems:
+                raise PermissionError("WRITE_REFUSED:" + ",".join(problems))
+            self._main_ok = True
+            return
+        resp = self._t.get(f"{root}/rules/branches/main", {"per_page": 100})
+        rules = resp.get("body") if isinstance(resp, Mapping) and resp.get("status") == 200 else None
+        if not isinstance(rules, list) or len(rules) >= 100:
+            raise PermissionError("WRITE_REFUSED:MAIN_RULESET_UNAVAILABLE")
+        details: dict[str, Any] = {}
+        for r in rules:
+            rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
+            if isinstance(rid, int) and not isinstance(rid, bool) and str(rid) not in details:
+                d = self._t.get(f"{root}/rulesets/{rid}", {})
+                details[str(rid)] = d.get("body") if isinstance(d, Mapping) and d.get("status") == 200 else None
+        problems = main_guard_problems({"rules": rules, "rulesets": details})
+        if problems:
+            raise PermissionError("WRITE_REFUSED:" + ",".join(problems))
+        self._main_ok = True
+
+    def put(self, path: str, body: Any) -> Any:
+        if not (isinstance(path, str) and self._merge_path.fullmatch(path)):
+            raise PermissionError("WRITE_REFUSED:PATH_NOT_ALLOWED")
+        if not (isinstance(body, Mapping) and set(body) == {"sha", "merge_method"} and body["merge_method"] == MERGE_METHOD
+                and isinstance(body["sha"], str) and re.fullmatch(r"[0-9a-f]{40}", body["sha"])):
+            raise PermissionError("WRITE_REFUSED:BODY_NOT_ALLOWED")
+        if self._ruleset_attestation is not None and not ruleset_attest.is_unexpired(
+                self._ruleset_attestation, datetime.now(timezone.utc)):
+            raise PermissionError("WRITE_REFUSED:RULESET_ATTESTATION_EXPIRED")
+        if not self._main_ok:
+            self._check_main()
+        return self._t.put(path, body)
+
+
+# ---------------------------------------------------------------- merge identity (fresh App token per run)
+def mint_merge_token(env: Mapping[str, str], repository: str, verifier_app_id: int, now: datetime,
+                     transport_factory: Any = None) -> str:
+    """Mint a fresh single-repository installation token for the merge App. Raises ConfigError (fixed text)."""
+    present = [n for n in FOREIGN_SECRETS if env.get(n)]
+    if present:  # a merge job must never hold reviewer/verifier keys or a stored merge token
+        raise app_auth.ConfigError("foreign_credentials_present:" + ",".join(present))
+    raw = env.get(MERGE_APP_ID_VARIABLE, "")
+    if not raw.isdigit() or int(raw) <= 0:
+        raise app_auth.ConfigError("merge_app_id_missing_or_invalid")
+    app_id = int(raw)
+    if app_id == verifier_app_id:
+        raise app_auth.ConfigError("merge_app_must_differ_from_verifier_app")
+    key = env.get(MERGE_APP_KEY_SECRET, "")
+    if not key.strip():
+        raise app_auth.ConfigError("merge_app_private_key_missing")
+    try:
+        jwt = app_auth.mint_app_jwt(app_id, key, now)
+    except Exception as exc:  # noqa: BLE001 - never echo key material
+        raise app_auth.ConfigError("merge_app_private_key_unusable") from exc
+    factory = transport_factory or app_auth.HttpTransport
+    token, _granted = app_auth.mint_installation_token(factory(jwt), repository, MERGE_TOKEN_PERMISSIONS)
+    return token
+
+
 # ---------------------------------------------------------------- CLI transport (stdlib only)
 class UrllibTransport:
     def __init__(self, token: str, api: str = "https://api.github.com"):
@@ -455,9 +716,141 @@ def _int_env(name: str) -> int:
     return int(os.environ[name])
 
 
+# ---------------------------------------------------------------- restricted-credential ruleset preflight (read-only)
+PREFLIGHT_BRANCHES = ("main", ALLOWED_BASE)
+
+
+class _ReadOnlyTransport:
+    """GET only. Any other method raises before leaving the process (the preflight can never write)."""
+
+    def __init__(self, inner: Any):
+        self._t = inner
+
+    def get(self, path: str, params: dict) -> Any:
+        return self._t.get(path, params)
+
+    def put(self, path: str, body: Any) -> Any:
+        raise PermissionError("PREFLIGHT_READ_ONLY")
+
+    def graphql(self, query: str, variables: dict) -> Any:
+        raise PermissionError("PREFLIGHT_READ_ONLY")
+
+
+def _http_reason(prefix: str, resp: Any) -> str | None:
+    """Fixed reason code for a non-200 or malformed response; None when the response is a 200."""
+    if not isinstance(resp, Mapping) or not isinstance(resp.get("status"), int) or isinstance(resp.get("status"), bool):
+        return f"{prefix}_BAD_RESPONSE"
+    st = resp["status"]
+    if st == 200:
+        return None
+    return f"{prefix}_HTTP_{st}" if st in (401, 403, 404, 429) else f"{prefix}_HTTP_OTHER"
+
+
+def preflight_branch(t: Any, repository: str, branch: str, verifier_app_id: Any) -> dict[str, Any]:
+    """Read one branch's rules and every referenced ruleset with the restricted token; never writes.
+
+    Returns ``{"branch", "status": "PASS"|"BLOCKED", "reasons": [fixed codes]}``. No response bodies,
+    tokens or ruleset contents are returned. A ruleset detail whose `bypass_actors` field is omitted is
+    reported as BYPASS_ACTORS_OMITTED (the restricted App cannot prove there is no bypass), distinct from
+    an explicitly non-empty list (BYPASS_ACTORS_NONEMPTY). Only an explicit empty list passes.
+    """
+    root = f"/repos/{repository}"
+    reasons: list[str] = []
+    resp = t.get(f"{root}/rules/branches/{branch}", {"per_page": 100})
+    bad = _http_reason("RULES", resp)
+    if bad:
+        return {"branch": branch, "status": "BLOCKED", "reasons": [bad]}
+    rules = resp.get("body")
+    if not isinstance(rules, list):
+        return {"branch": branch, "status": "BLOCKED", "reasons": ["RULES_BAD_SHAPE"]}
+    if len(rules) >= 100:
+        return {"branch": branch, "status": "BLOCKED", "reasons": ["RULES_TRUNCATED"]}
+    details: dict[str, Any] = {}
+    for r in rules:
+        rid = r.get("ruleset_id") if isinstance(r, Mapping) else None
+        if not isinstance(rid, int) or isinstance(rid, bool) or str(rid) in details:
+            continue
+        d = t.get(f"{root}/rulesets/{rid}", {})
+        bad = _http_reason("RULESET_DETAIL", d)
+        if bad:
+            reasons.append(bad)
+            details[str(rid)] = None
+            continue
+        body = d.get("body")
+        details[str(rid)] = body
+        if not isinstance(body, Mapping):
+            reasons.append("RULESET_DETAIL_BAD_SHAPE")
+        elif "bypass_actors" not in body:
+            reasons.append("BYPASS_ACTORS_OMITTED")
+        elif not isinstance(body["bypass_actors"], list):
+            reasons.append("BYPASS_ACTORS_BAD_SHAPE")
+        elif body["bypass_actors"]:
+            reasons.append("BYPASS_ACTORS_NONEMPTY")
+    payload = {"rules": rules, "rulesets": details}
+    reasons += main_guard_problems(payload) if branch == "main" else ruleset_problems(payload, verifier_app_id)
+    reasons = list(dict.fromkeys(reasons))
+    return {"branch": branch, "status": "BLOCKED" if reasons else "PASS", "reasons": reasons}
+
+
+def run_preflight(t: Any, repository: str, verifier_app_id: Any) -> dict[str, Any]:
+    ro = _ReadOnlyTransport(t)
+    out = []
+    for b in PREFLIGHT_BRANCHES:
+        try:
+            out.append(preflight_branch(ro, repository, b, verifier_app_id))
+        except Exception as exc:  # noqa: BLE001 - class name only, never provider text
+            out.append({"branch": b, "status": "BLOCKED", "reasons": [f"PREFLIGHT_ERROR_{type(exc).__name__}"]})
+    return {"mode": "preflight", "read_only": True, "branches": out,
+            "status": "PASS" if all(x["status"] == "PASS" for x in out) else "BLOCKED"}
+
+
+def preflight_main(env: Mapping[str, str]) -> int:
+    """Read-only preflight CLI: needs only the merge App credentials and the pinned verifier App id."""
+    try:
+        verifier_app_id = _int_env("VERIFIER_APP_ID")
+        repository = env["GITHUB_REPOSITORY"]
+        token = mint_merge_token(env, repository, verifier_app_id, datetime.now(timezone.utc))
+        report = run_preflight(UrllibTransport(token), repository, verifier_app_id)
+    except app_auth.ConfigError as exc:
+        print(json.dumps({"mode": "preflight", "status": "error", "reason": str(exc)}))
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"mode": "preflight", "status": "error", "error": type(exc).__name__}))
+        return 1
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["status"] == "PASS" else 1
+
+
+def load_ruleset_attestation(env: Mapping[str, str]) -> Mapping[str, Any]:
+    """Verify the observer artifact before the merge transport is created."""
+    path = env.get("FLOWTALLY_RULESET_ATTESTATION_PATH", "")
+    public = env.get("FLOWTALLY_RULESET_ATTESTATION_PUBLIC_KEY", "")
+    try:
+        if not path or not public or not env.get("FLOWTALLY_RULESET_OBSERVER_APP_ID", "").isdigit():
+            raise ValueError
+        with open(path, encoding="utf-8") as handle:
+            document = json.load(handle)
+        import base64
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        raw = base64.urlsafe_b64decode(public + "=" * (-len(public) % 4))
+        key = Ed25519PublicKey.from_public_bytes(raw)
+        ok, reason = ruleset_attest.verify(document, public_key=key, repository=env["GITHUB_REPOSITORY"],
+                                            observer_app_id=int(env["FLOWTALLY_RULESET_OBSERVER_APP_ID"]),
+                                            now=datetime.now(timezone.utc))
+        if not ok:
+            raise app_auth.ConfigError("ruleset_attestation_invalid:" + reason)
+        return document
+    except app_auth.ConfigError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - never expose artifact contents
+        raise app_auth.ConfigError("ruleset_attestation_unusable") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit 0 only for a clean run (including a clean no-op/dry-run); nonzero on any error."""
     env = os.environ
+    if "--preflight-rulesets" in (sys.argv[1:] if argv is None else argv):
+        return preflight_main(env)
     if env.get(ENABLE_VARIABLE) != "true":
         print(json.dumps({"status": "disabled", "reason": f"{ENABLE_VARIABLE} is not 'true'"}))
         return 0
@@ -468,7 +861,13 @@ def main(argv: list[str] | None = None) -> int:
             verifier_app_id=_int_env("VERIFIER_APP_ID"), enabled=True,
             live_writes=env.get(LIVE_WRITES_VARIABLE) == "true",
             trusted_coauthor_emails=tuple(e for e in env.get("TRUSTED_COAUTHOR_EMAILS", "").split(",") if e))
-        rep = run_once(UrllibTransport(env["GITHUB_TOKEN"]), cfg)
+        token = mint_merge_token(env, cfg.repository, cfg.verifier_app_id, datetime.now(timezone.utc))
+        attestation = load_ruleset_attestation(env)
+        cfg = replace(cfg, ruleset_attestation=attestation)
+        rep = run_once(GuardedTransport(UrllibTransport(token), cfg.repository, attestation), cfg)
+    except app_auth.ConfigError as exc:  # fixed-vocabulary reason only: no token, key or provider text
+        print(json.dumps({"status": "error", "error": "ConfigError", "reason": str(exc)}))
+        return 1
     except Exception as exc:  # noqa: BLE001
         print(json.dumps({"status": "error", "error": type(exc).__name__}))
         return 1

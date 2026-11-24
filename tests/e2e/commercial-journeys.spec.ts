@@ -50,6 +50,8 @@ type MockState = {
   csrfToken: string;
   currentOrganization: OrganizationSummary | null;
   pilotPurchaseFlow?: EmptyPurchaseFlowState;
+  /** Optional OCR response for the purchases OCR endpoint; the default fixture is used when unset. */
+  ocrOverride?: unknown;
   invitations: Array<{
     id: number;
     organizationId: number;
@@ -823,6 +825,10 @@ async function installMockApi(page: Page, state: MockState) {
         createdAt: null,
         updatedAt: null,
       });
+    }
+
+    if (purchaseFlow && path === "/api/pilot/purchases/ocr" && method === "POST" && state.ocrOverride) {
+      return jsonResponse(route, state.ocrOverride);
     }
 
     if (purchaseFlow && path === "/api/pilot/purchases/ocr" && method === "POST") {
@@ -2417,9 +2423,37 @@ test("owner audit history shows filtered organization activity", async ({ page }
 
   await page.goto("/owner/audit", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Owner audit history" })).toBeVisible();
-  await expect(page.getByText("invitation.created")).toBeVisible();
+  await expect(page.getByText("Invitation: created")).toBeVisible();
   await page.getByPlaceholder("Search event type, entity or metadata").fill("square");
-  await expect(page.getByText("square.connection.updated")).toBeVisible();
+  await expect(page.getByText("Square: connection updated")).toBeVisible();
+});
+
+test("owner reaches Reports from the app navigation on desktop and mobile", async ({ page }) => {
+  const state: MockState = {
+    session: makeActiveOwnerSession(),
+    csrfToken: "csrf-token",
+    currentOrganization: makeOrganization(),
+    invitations: [],
+    auditEvents: [],
+    supportGrants: [],
+    squareConnection: null,
+    importJobs: [],
+    importJob: null,
+  };
+  await installMockApi(page, state);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await expect(page).toHaveURL(/\/owner\/reports$/);
+  await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await expect(page).toHaveURL(/\/owner\/reports$/);
+  await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
 });
 
 test("owner reports and exports surface authenticated reporting data", async ({ page }) => {
@@ -2441,7 +2475,7 @@ test("owner reports and exports surface authenticated reporting data", async ({ 
   await page.goto("/owner/reports", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Reports & exports" })).toBeVisible();
   await expect(page.getByText("Demo Bistro", { exact: true })).toBeVisible();
-  await expect(page.getByText("Weekly invoice spend")).toBeVisible();
+  await expect(page.getByText("Invoice spend, this week")).toBeVisible();
   await expect(page.getByRole("button", { name: "Download purchase CSV" })).toBeVisible();
   await expect(page.getByText("Dairy Co leads spending this period.")).toBeVisible();
 
@@ -2451,6 +2485,37 @@ test("owner reports and exports surface authenticated reporting data", async ({ 
   expect(download.suggestedFilename()).toBe("flowtally-owner-report-demo-bistro.csv");
   expect(await download.path()).not.toBeNull();
 });
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`owner reports error state offers Try again and recovers at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const state: MockState = {
+      session: makeActiveOwnerSession(),
+      csrfToken: "csrf-token",
+      currentOrganization: makeOrganization(),
+      invitations: [],
+      auditEvents: [],
+      supportGrants: [],
+      squareConnection: null,
+      importJobs: [],
+      importJob: null,
+    };
+    await installMockApi(page, state);
+    let fail = true;
+    await page.route("**/api/pilot/audit-events**", (route) => (fail ? jsonResponse(route, { error: "Audit trail is temporarily unavailable." }, 503) : route.fallback()));
+
+    await page.goto("/owner/reports", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("Audit trail is temporarily unavailable.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download summary CSV" })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+    fail = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("button", { name: "Download summary CSV" })).toBeVisible();
+    await expect(page.getByText("Audit trail is temporarily unavailable.")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+}
 
 test("empty purchases workspace supports supplier, inventory item, and first receipt setup", async ({ page }) => {
   const organization = makeOrganization({ id: 5, name: "Starter Cafe" });
@@ -2557,6 +2622,75 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(page.getByTestId("purchase-details-panel")).toBeVisible();
 });
 
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`purchase receive is single-submit, survives a failure and retries at ${viewport.width}px (#327)`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const organization = makeOrganization({ id: 8, name: "Receive Cafe" });
+    const state: MockState = {
+      session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 12, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+      csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+    };
+    const purchaseFlow = makeEmptyPurchaseFlowState();
+    purchaseFlow.suppliers.push({ id: 23, name: "North Bay Dairy", categoryFocus: "Dairy", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true });
+    purchaseFlow.inventoryItems.push({ id: 30, name: "2% Milk", stockUnit: "case" });
+    enableEmptyPurchaseWorkflow(state, purchaseFlow);
+    await installMockApi(page, state);
+
+    // Count receive POSTs; the first one fails with 503 (nothing applied), later ones fall through to the fake.
+    let receivePosts = 0;
+    await page.route("**/api/pilot/purchases/invoices/*/receive", async (route) => {
+      receivePosts += 1;
+      if (receivePosts === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporarily unavailable" }) });
+      }
+      return route.fallback();
+    });
+
+    // Authoritative re-read used by the page to reconcile after a failed receive (server state: saved, not received).
+    await page.route(/\/api\/pilot\/purchases\/invoices\/\d+$/, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const id = Number(route.request().url().split("/").at(-1));
+      const invoice = purchaseFlow.invoices.find((entry) => entry.id === id);
+      return route.fulfill({ status: invoice ? 200 : 404, contentType: "application/json", body: JSON.stringify(invoice ?? { error: "Not found" }) });
+    });
+
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "New purchase" }).click();
+    await page.getByLabel("Supplier").selectOption("North Bay Dairy");
+    await page.getByLabel("Invoice number").fill("NB-327");
+    await page.getByLabel("Description").fill("2% Milk");
+    await page.getByLabel("Inventory item").selectOption("30");
+    await page.locator('label:has-text("Purchase unit") input').first().fill("case");
+    await page.locator('label:has-text("Inventory unit") input').first().fill("case");
+    await page.locator('label:has-text("Conversion") input').first().fill("1");
+    await page.locator('label:has-text("Quantity") input').first().fill("2");
+    await page.locator('label:has-text("Unit price") input').first().fill("4.50");
+    const editorCard = page.getByTestId("purchase-editor-card");
+    await editorCard.getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "Save ready" }).click();
+    await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
+    await editorCard.getByRole("button", { name: "Review" }).click();
+    await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
+
+    await page.getByRole("button", { name: "Receive into inventory" }).click();
+    await page.getByRole("button", { name: "Confirm receive" }).dblclick();
+    await expect.poll(() => receivePosts).toBe(1);
+    // Failure is visible and the draft is still on screen (not silently lost).
+    await expect(page.getByText(/was saved but not received/)).toBeVisible({ timeout: 10000 });
+    await expect(editorCard).toBeVisible();
+
+    // Retry from the preserved server draft succeeds exactly once more.
+    await editorCard.getByRole("button", { name: "Review" }).click();
+    await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
+    await page.getByRole("button", { name: "Receive into inventory" }).click();
+    await page.getByRole("button", { name: "Confirm receive" }).click();
+    await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible({ timeout: 10000 });
+    expect(receivePosts).toBe(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
 test("purchase review exception blocks an unmapped line until it is resolved", async ({ page }) => {
   const organization = makeOrganization({ id: 6, name: "Exception Cafe" });
   const state: MockState = {
@@ -2603,6 +2737,168 @@ test("OCR upload opens the structured review workspace with source evidence", as
   await expect(page.getByText("Review Mystery greens before receiving.")).toBeVisible();
   await expect(page.getByText("Needs mapping")).toBeVisible();
 });
+
+function makeOcrResponse(overrides: { subtotal: number | null; tax?: number | null; total: number | null; lines: Array<{ name: string; quantity: number; unitPrice: number }>; warnings?: string[]; reconciliation?: unknown }) {
+  // null mirrors the real backend (invoice_ocr.find_amount): a missing amount is value 0 with confidence 0 and needsReview.
+  const field = (value: number | string | null) => (value === null ? { value: 0, confidence: 0, needsReview: true } : { value, confidence: 0.97, needsReview: false });
+  return {
+    provider: "mock-ocr", fileName: "invoice.pdf", contentType: "application/pdf",
+    rawText: "Exception Foods EX-300",
+    fields: {
+      supplier: field("Exception Foods"), invoiceDate: field("2026-11-10"), invoiceNumber: field("EX-300"),
+      subtotal: field(overrides.subtotal), tax: field(overrides.tax ?? 0), total: field(overrides.total),
+    },
+    lineItems: overrides.lines.map((line) => ({ itemName: line.name, originalDescription: line.name, quantity: line.quantity, unit: "head", unitPrice: line.unitPrice, lineTotal: Math.round(line.quantity * line.unitPrice * 100) / 100, confidence: 0.97, needsReview: false, rawSourceLine: `${line.name} ${line.quantity}` })),
+    warnings: overrides.warnings ?? [], overallConfidence: 0.9, needsReview: Boolean(overrides.warnings?.length),
+    ...(overrides.reconciliation ? { reconciliation: overrides.reconciliation } : {}),
+  };
+}
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  async function openOcrDraft(page: import("@playwright/test").Page, ocr: unknown) {
+    await page.setViewportSize(viewport);
+    const organization = makeOrganization({ id: 7, name: "OCR Cafe" });
+    const state: MockState = {
+      session: makeActiveOwnerSession({ currentOrganizationId: organization.id, currentLocationId: 11, organizations: [{ organization, membershipRole: "owner", selected: true }] }),
+      csrfToken: "csrf-token", currentOrganization: organization, invitations: [], auditEvents: [], supportGrants: [], squareConnection: null, importJobs: [], importJob: null,
+      ocrOverride: ocr,
+    };
+    const purchaseFlow = makeEmptyPurchaseFlowState();
+    purchaseFlow.suppliers.push({ id: 22, name: "Exception Foods", categoryFocus: "Produce", contactName: "", contactPhone: "", contactEmail: "", orderingNotes: "", notes: "", isActive: true });
+    purchaseFlow.inventoryItems.push({ id: 42, name: "Lettuce", stockUnit: "head" });
+    enableEmptyPurchaseWorkflow(state, purchaseFlow);
+    const writes: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (request.method() !== "GET" && /\/api\/pilot\/purchases\/invoices/.test(pathname)) writes.push(`${request.method()} ${pathname}`);
+    });
+    await installMockApi(page, state);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "New purchase" }).click();
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Upload invoice" }).click();
+    await (await chooser).setFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("mock invoice") });
+    await expect(page.getByRole("heading", { name: /Review EX-300/ })).toBeVisible();
+    return writes;
+  }
+  const noOverflow = async (page: import("@playwright/test").Page) => {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  };
+
+  test(`incomplete OCR extraction shows the exact shortfall and keeps receiving blocked at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({
+      subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }],
+      warnings: ["Some rows could not be read from the document."],
+      reconciliation: { status: "incomplete", lineTotalSum: 15, expectedAmount: 106.5, basis: "subtotal", difference: 91.5, message: "backend message" },
+    }));
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    await expect(banner).toContainText("Extracted items total $15.00, but the invoice subtotal is $106.50. Difference: $91.50. Review missing or incorrect items before receiving.");
+    await expect(banner).toContainText("Some rows could not be read from the document.");
+    await expect(banner).toContainText("Nothing was added or adjusted for you");
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $91.50)");
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
+    await noOverflow(page);
+    expect(writes).toEqual([]);
+  });
+
+  test(`manual correction clears the warning only when the lines match the printed total at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    await page.getByRole("button", { name: "Add missing line" }).click();
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    await expect(banner).toContainText("Difference: $91.50");
+    await page.getByLabel("Unit price").first().fill("21.3");
+    await expect(banner).toHaveAttribute("data-status", "matched");
+    await expect(banner).toContainText("Extracted items total $106.50, which matches the invoice subtotal.");
+    await page.getByLabel("Unit price").first().fill("20");
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    await expect(banner).toContainText("Difference: $6.50");
+    // No client-side confirmation can clear the gap: an override is a server-side audited record on a saved draft.
+    await expect(page.getByRole("button", { name: "Record audited override" })).toBeDisabled();
+    await expect(page.getByTestId("ocr-override-form")).toContainText("Save the draft first");
+    await page.getByLabel("Unit price").first().fill("4");
+    await expect(banner).toContainText("Difference: $86.50");
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
+    await noOverflow(page);
+    expect(writes).toEqual([]);
+  });
+
+  test(`an unsaved incomplete draft cannot be overridden, so the receive blocker stays at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    const summary = page.getByTestId("purchase-review-summary");
+    await expect(summary).toContainText("Extracted items do not match the printed invoice");
+    await expect(page.getByLabel(/Reason these lines are correct/)).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Record audited override" })).toBeDisabled();
+    await expect(summary).toContainText("Extracted items do not match the printed invoice");
+    expect(writes).toEqual([]);
+  });
+
+  test(`Continue manually keeps the extracted draft checked against the printed invoice at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    await page.getByRole("button", { name: "Continue manually" }).click();
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    // A line edit recomputes the draft totals; the printed-invoice blocker must survive it.
+    await page.getByLabel("Unit price").first().fill("4");
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
+    expect(writes).toEqual([]);
+  });
+
+  test(`saving an incomplete OCR draft keeps the printed-invoice check and the receive blocker at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    // The edit recomputes the draft totals; saving then assigns the purchase an id.
+    await page.getByLabel("Unit price").first().fill("4");
+    await page.getByRole("button", { name: "Save draft" }).first().click();
+    await expect(page.getByText(/saved successfully/).first()).toBeVisible();
+    expect(writes.filter((entry) => entry.startsWith("POST"))).toHaveLength(1);
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "incomplete");
+    await expect(banner).toContainText("Difference: $86.50");
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
+    await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
+    // Nothing was received: the only writes are the draft save.
+    expect(writes.some((entry) => entry.includes("/receive"))).toBe(false);
+  });
+
+  test(`a readable total with no printed subtotal is compared with the total, not a phantom $0 subtotal at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: null, tax: null, total: 15, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "matched");
+    await expect(banner).toContainText("matches the invoice total");
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).not.toContainText("do not match the printed invoice");
+    expect(writes).toEqual([]);
+  });
+
+  test(`a successful extraction shows a confirmation, not a warning, at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 15, total: 15, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "matched");
+    await expect(banner).toContainText("Extracted items total $15.00, which matches the invoice subtotal.");
+    await expect(page.getByRole("button", { name: "Add missing line" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    await expect(page.getByTestId("purchase-review-summary")).not.toContainText("do not match the printed invoice");
+    await noOverflow(page);
+    expect(writes).toEqual([]);
+  });
+
+  test(`unreadable invoice totals are shown as not verified, never as matched, at ${viewport.width}px`, async ({ page }) => {
+    const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: null, tax: null, total: null, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
+    const banner = page.getByTestId("ocr-reconciliation-banner");
+    await expect(banner).toHaveAttribute("data-status", "unverified");
+    await expect(banner).toContainText("could not be read");
+    await expect(banner).toContainText("not verified");
+    await noOverflow(page);
+    expect(writes).toEqual([]);
+  });
+}
 
 
 test("Clover Daily Close shows the provider, exact figures and unavailable cash at phone width without horizontal overflow", async ({ page }) => {

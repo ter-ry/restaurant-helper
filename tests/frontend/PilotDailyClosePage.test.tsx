@@ -141,6 +141,54 @@ describe("PilotDailyClosePage", () => {
     await waitFor(() => expect(pilotApiMocks.openPilotDailyClose).toHaveBeenCalledWith({ locationId: 7, businessDate: "2026-08-30" }));
   });
 
+  it("offers Try again after a failed first load and blocks Start close until it succeeds", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockRejectedValueOnce(new Error("Service unavailable"));
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValueOnce({
+      session: null,
+      snapshot: { healthStatus: "Open", inventoryValue: 0, sales: {}, usage: { totals: {}, ingredientUsage: [] }, variance: { quantity: null, percent: null, value: 0 }, square: {}, readyToFinalize: true },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-09-01",
+      square: {},
+    });
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    expect(await screen.findByText("Service unavailable")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Start close" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByText("Service unavailable")).toBeNull());
+    expect(pilotApiMocks.fetchPilotDailyClose).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start close" })).toBeEnabled();
+  });
+
+  it("keeps Start close disabled while a retry is still pending", async () => {
+    let resolveRetry: (value: unknown) => void = () => undefined;
+    pilotApiMocks.fetchPilotDailyClose.mockRejectedValueOnce(new Error("Service unavailable"));
+    pilotApiMocks.fetchPilotDailyClose.mockReturnValueOnce(new Promise((resolve) => { resolveRetry = resolve; }));
+
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+
+    await screen.findByText("Service unavailable");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(pilotApiMocks.fetchPilotDailyClose).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Start close" })).toBeDisabled();
+    resolveRetry({
+      session: null,
+      snapshot: { healthStatus: "Open", inventoryValue: 0, sales: {}, usage: { totals: {}, ingredientUsage: [] }, variance: { quantity: null, percent: null, value: 0 }, square: {}, readyToFinalize: true },
+      usage: { totals: {}, ingredientUsage: [] },
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-09-01",
+      square: {},
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start close" })).toBeEnabled());
+  });
+
   it("renders date-only business dates without a timezone shift", async () => {
     pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
       session: null,
@@ -358,6 +406,55 @@ describe("PilotDailyClosePage", () => {
     await screen.findByText("Active daily close");
     expect(screen.queryByRole("button", { name: "Sync sales" })).not.toBeInTheDocument();
     expect(pilotApiMocks.syncPilotDailyCloseSales).not.toHaveBeenCalled();
+  });
+
+  it("shows Sales unavailable with the reason instead of $0 when Square sales are unverified", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: { id: 12, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: [], notes: "", completedAt: null, completedByUserId: null, createdByUserId: 1, createdAt: "2026-08-30T00:00:00Z", updatedAt: "2026-08-30T00:00:00Z" },
+      snapshot: {
+        healthStatus: "Open",
+        inventoryValue: 1250,
+        sales: { netSales: 0, orders: 0, refunds: 0, cancelledOrders: 0, salesStatus: "unavailable", salesUnavailableReason: "Orders for this business date have not been imported from Square yet, so sales cannot be confirmed." },
+        usage: { period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" }, coverage: {}, totals: { theoreticalUsage: 0, actualUsage: null, discrepancy: null, discrepancyPercent: null }, contributingMenuItems: [], unmappedVariations: [], ingredientUsage: [] },
+        variance: { quantity: null, percent: null, value: 0 },
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: false,
+      },
+      usage: null,
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+    expect(await screen.findByTestId("square-sales-unavailable")).toHaveTextContent("Sales unavailable");
+    expect(screen.getByTestId("square-sales-unavailable-reason")).toHaveTextContent("Orders for this business date have not been imported");
+    expect(screen.queryByText("Net sales")).not.toBeInTheDocument();
+  });
+
+  it("shows $0.00 for a verified zero-sales Square day", async () => {
+    pilotApiMocks.fetchPilotDailyClose.mockResolvedValue({
+      session: { id: 12, organizationId: 42, locationId: 7, businessDate: "2026-08-30", status: "DRAFT", summarySnapshot: {}, usageSnapshot: {}, exceptionsSnapshot: [], notes: "", completedAt: null, completedByUserId: null, createdByUserId: 1, createdAt: "2026-08-30T00:00:00Z", updatedAt: "2026-08-30T00:00:00Z" },
+      snapshot: {
+        healthStatus: "Open",
+        inventoryValue: 1250,
+        sales: { netSales: 0, orders: 0, refunds: 0, cancelledOrders: 0, salesStatus: "available", salesUnavailableReason: null },
+        usage: { period: { startAt: "2026-08-29T00:00:00Z", endAt: "2026-08-30T00:00:00Z" }, coverage: {}, totals: { theoreticalUsage: 0, actualUsage: null, discrepancy: null, discrepancyPercent: null }, contributingMenuItems: [], unmappedVariations: [], ingredientUsage: [] },
+        variance: { quantity: null, percent: null, value: 0 },
+        square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+        readyToFinalize: false,
+      },
+      usage: null,
+      exceptions: [],
+      history: [],
+      location: { id: 7, name: "Line Kitchen", timezone: "America/Toronto" },
+      businessDate: "2026-08-30",
+      square: { squareStatus: "Connected", squareSynced: true, locationMapped: true },
+    });
+    render(<MemoryRouter><PilotDailyClosePage /></MemoryRouter>);
+    expect(await screen.findByText("Net sales")).toBeVisible();
+    expect(screen.queryByTestId("square-sales-unavailable")).not.toBeInTheDocument();
   });
 
   it("shows Connect Square when the close is disconnected", async () => {

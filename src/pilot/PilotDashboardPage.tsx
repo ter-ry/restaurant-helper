@@ -18,14 +18,18 @@ export function PilotDashboardPage() {
   useEffect(() => { void load(); }, []);
 
   const summary = (data?.summary ?? {}) as Record<string, number>;
+  const weeklyWindow = (data?.summary as { weeklyWindow?: { startDate?: string; endDate?: string } } | undefined)?.weeklyWindow;
+  const weekRange = weeklyWindow?.startDate && weeklyWindow?.endDate ? `${formatDate(weeklyWindow.startDate)} – ${formatDate(weeklyWindow.endDate)}` : null;
+  const urgentReorderCount = summary.inventoryUrgentReorderCount ?? data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0;
+  const runningLowCount = summary.inventoryRunningLowCount;
   const attentionItems = useMemo(() => [
-    { key: "reorder", title: "Reorder pressure", detail: `${data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0} item(s) need ordering now.`, count: data?.operationalAttention?.reorder.count ?? summary.inventoryItemsToReorderCount ?? 0, to: "/app/inventory?view=reorder", action: "Review reorder", tone: "warning" as const },
+    { key: "reorder", title: "Reorder now", detail: `${urgentReorderCount} item(s) are out of stock or below their minimum.${runningLowCount ? ` ${runningLowCount} more running low.` : ""}`, count: urgentReorderCount, to: "/app/inventory?view=reorder", action: "Review reorder", tone: "warning" as const },
     { key: "invoice", title: "Invoices need review", detail: `${data?.summary.invoiceReviewQueueCount ?? 0} invoice(s) are waiting for review.`, count: data?.summary.invoiceReviewQueueCount ?? 0, to: "/app/purchases", action: "Review invoices", tone: "warning" as const },
-    { key: "price", title: "Supplier price changes", detail: `${data?.summary.recentPriceChangeCount ?? 0} captured change(s) this week.`, count: data?.summary.recentPriceChangeCount ?? 0, to: "/app/purchases", action: "Review price changes", tone: "orange" as const },
+    { key: "price", title: "Supplier price changes", detail: `${data?.summary.recentPriceChangeCount ?? 0} captured change(s)${weekRange ? ` (${weekRange})` : " this week"}.`, count: data?.summary.recentPriceChangeCount ?? 0, to: "/app/purchases", action: "Review price changes", tone: "orange" as const },
     { key: "close", title: "Daily Close is outstanding", detail: "Today's close is still open or has not been started.", count: data?.operationalAttention?.dailyClose.count ?? 0, to: "/app/daily-close", action: "Complete close", tone: "warning" as const },
     { key: "square", title: "Square sync needs attention", detail: "The connected Square integration has an active sync issue.", count: data?.operationalAttention?.square.syncErrorCount ?? 0, to: "/app/square", action: "Review Square", tone: "danger" as const },
     { key: "mapping", title: "Square variations need mapping", detail: "Mapped variations are required before sales can drive recipe usage.", count: data?.operationalAttention?.square.unmappedVariationCount ?? 0, to: "/app/square", action: "Review mappings", tone: "warning" as const },
-  ].filter((item) => item.count > 0), [data?.operationalAttention, data?.summary, summary.inventoryItemsToReorderCount]);
+  ].filter((item) => item.count > 0), [data?.operationalAttention, data?.summary, urgentReorderCount, runningLowCount]);
 
   const resumeItems = useMemo(() => [
     ...(data?.pendingDraftInvoices ?? []).slice(0, 1).map((invoice) => ({ key: "purchase-" + invoice.id, label: "Purchase draft", detail: invoice.invoiceNumber ? "Invoice " + invoice.invoiceNumber : "Invoice awaiting review", to: "/app/purchases?invoiceId=" + invoice.id })),
@@ -36,14 +40,16 @@ export function PilotDashboardPage() {
 
   const topMetrics = [
     { label: "Inventory value", value: loading ? "—" : formatMoney(data?.summary.inventoryValue), helper: `${formatNumber(data?.summary.inventoryItemCount)} items tracked` },
-    { label: "Purchases this week", value: loading ? "—" : formatMoney(data?.summary.weeklyInvoiceSpend), helper: `${formatNumber(data?.summary.weeklyInvoiceCount)} invoices` },
+    { label: "Purchases this week", value: loading ? "—" : formatMoney(data?.summary.weeklyInvoiceSpend), helper: `${formatNumber(data?.summary.weeklyInvoiceCount)} invoices${weekRange ? ` · ${weekRange}` : ""}` },
+    { label: "Reorder status", value: loading ? "—" : `${formatNumber(urgentReorderCount)} urgent`, helper: runningLowCount == null ? "Out of stock or below minimum" : `${formatNumber(runningLowCount)} running low (below PAR, above minimum)` },
     { label: "Month-to-date spend", value: loading ? "—" : formatMoney(data?.summary.monthlyInvoiceSpend), helper: `${formatNumber(data?.summary.monthlyInvoiceCount)} invoices this month` },
   ];
 
   return <div className="workspace-page">
     <div className="flex items-center justify-between"><h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Dashboard</h1></div>
-    {error ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div> : null}
+    {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{data ? `${error} Showing the last loaded figures.` : error}</span><button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50" type="button" onClick={() => void load()} disabled={loading}><RefreshCcw className="h-4 w-4" />{loading ? "Trying…" : "Try again"}</button></div> : null}
     {loading && !data ? <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" aria-busy="true">Loading dashboard data...</div> : null}
+    {!data ? null : <>
 
     {data?.insights ? <Card className="pilot-dashboard-today border-brand-100 bg-brand-50/30 p-4 sm:p-5">
       <div className="section-header mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h2 className="text-2xl font-bold tracking-tight text-ink">Today</h2><button aria-label="Refresh dashboard" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" type="button" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</button></div>
@@ -66,7 +72,7 @@ export function PilotDashboardPage() {
 
     <Card className="pilot-dashboard-operations p-4">
       <SectionHeader title="Operations" />
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{topMetrics.map((metric) => <div key={metric.label} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</p><p className="mt-1 text-lg font-bold text-ink">{metric.value}</p><p className="mt-1 text-xs leading-5 text-muted">{metric.helper}</p></div>)}</div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{topMetrics.map((metric) => <div key={metric.label} className="rounded-xl border border-line bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-muted">{metric.label}</p><p className="mt-1 text-lg font-bold text-ink">{metric.value}</p><p className="mt-1 text-xs leading-5 text-muted">{metric.helper}</p></div>)}</div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{[
         ["Inventory", data?.workflow.inventory ?? "Not ready", "/app/inventory", ShoppingCart],
         ["Reorder", data?.workflow.reorder ?? "Alert", "/app/inventory?view=reorder", PackageSearch],
@@ -83,5 +89,6 @@ export function PilotDashboardPage() {
         <div><h2 className="text-sm font-bold text-ink">Inventory activity</h2><div className="mt-3 space-y-2">{(data?.recentMovements ?? []).slice(0, 5).map((movement) => <div key={movement.id} className="flex items-center justify-between rounded-xl bg-slate-50 p-3"><div><p className="font-semibold text-ink">{movement.inventoryItemName}</p><p className="text-sm text-muted">{movement.reason}</p></div><span className="text-sm font-semibold text-ink">{movement.quantityDelta > 0 ? "+" : ""}{formatNumber(movement.quantityDelta)} {movement.unit}<br /><span className="text-xs text-muted">{formatDateTime(movement.createdAt)}</span></span></div>)}</div></div>
       </div>
     </details>
+    </>}
   </div>;
 }

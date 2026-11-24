@@ -584,7 +584,7 @@ export function PilotMenuCostingPage() {
         <Card className="workspace-card text-sm text-muted">{initialLoading ? "Loading menu costing…" : "Refreshing menu costing…"}</Card>
       ) : null}
       {error && !editorOpen ? (
-        <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <Card role="alert" className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{error}</p></div>
             <Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button>
@@ -853,9 +853,9 @@ export function PilotMenuCostingPage() {
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{menuItem.name}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-muted">{menuItem.category}</td>
                       <td className="whitespace-nowrap px-3 py-2">Price {formatMoney(menuItem.sellingPrice)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Cost {formatCost(menuItem.recipeCostPerYield)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{menuItem.recipeCostPerYield == null || !Number.isFinite(Number(menuItem.recipeCostPerYield)) ? formatCost(null) : `Cost ${formatCost(menuItem.recipeCostPerYield)}`}</td>
                       <td className="whitespace-nowrap px-3 py-2">Food cost {menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Contribution {formatCost(menuItem.grossProfit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{menuItem.grossProfit == null || !Number.isFinite(Number(menuItem.grossProfit)) ? "Contribution unavailable" : `Contribution ${formatCost(menuItem.grossProfit)}`}</td>
                       <td className="whitespace-nowrap px-3 py-2"><Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Cost available" : "Needs review"}</Badge></td>
                     </tr>
                   ))}

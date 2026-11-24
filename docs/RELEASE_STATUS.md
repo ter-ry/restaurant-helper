@@ -1,6 +1,6 @@
 # Flowtally — Full MVP Release Status
 
-Last reconciled 2026-11-05 against live GitHub (main `9d2099c`, issue #225, PR #236) for the owner-approved **full agreed MVP feature-freeze**, including **Square and Clover**. Binding scope and final checklist: [RELEASE_PLAN.md](RELEASE_PLAN.md) (unchanged by this update). Do not mistake a green CI build or early Square-only pilot for a completed full freeze. The owner-controlled release-control issue is [#211](https://github.com/ter-ry/restaurant-helper/issues/211); it is not edited from here.
+Last reconciled 2026-11-16 against live GitHub (main `a46bb23`, issue #315) for the owner-approved **full agreed MVP feature-freeze**, including **Square and Clover**. Binding scope and final checklist: [RELEASE_PLAN.md](RELEASE_PLAN.md) (unchanged by this update). Do not mistake a green CI build or early Square-only pilot for a completed full freeze. The owner-controlled release-control issue is [#211](https://github.com/ter-ry/restaurant-helper/issues/211); it is not edited from here.
 
 **Status vocabulary:** Missing / In progress / Implemented but unverified / Automated tests passed / Sandbox or Showcase verified / Complete and verified / Explicit owner-approved deferral / Blocked.
 
@@ -8,30 +8,13 @@ Last reconciled 2026-11-05 against live GitHub (main `9d2099c`, issue #225, PR #
 
 ## NEXT TASK — work from GitHub queue
 
-Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval. Snapshot at 2026-11-05:
+Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval. Snapshot at 2026-11-16 (live GitHub wins):
 
-- **Open PRs (live, 2026-11-05, as of 17:11Z; heads move quickly, so re-check GitHub; each needs an independent review verdict at its current head before owner merge):**
-
-  | PR | Issue | Head | CI at head | Review state |
-  |---|---|---|---|---|
-  | [#238](https://github.com/ter-ry/restaurant-helper/pull/238) 768px UI/mutation-state fixes | #223 | `534204e` | frontend passed, backend in progress | `REQUEST CHANGES @ 3b52734` replied to; re-review of `534204e` requested on the PR (only tests changed since `cca3528`) |
-  | [#239](https://github.com/ter-ry/restaurant-helper/pull/239) import verification and fixes | #224 | `44bc61a` | passed | `REQUEST CHANGES @ bd20749` addressed in `44bc61a`; re-review pending |
-  | [#241](https://github.com/ter-ry/restaurant-helper/pull/241) Clover Daily Close provider integration | #222 | latest head in the PR's HEAD UPDATE comment | CI result in that comment | `REQUEST CHANGES @ 3294b79` was the last verdict; its sole blocker (#240) is merged (#247) and the branch is refreshed; fresh independent review requested, none recorded yet |
-  | [#242](https://github.com/ter-ry/restaurant-helper/pull/242) supplier soft archive | #229 | `2e154c1` | passed | `REQUEST CHANGES @ 2e154c1` open |
-  | [#243](https://github.com/ter-ry/restaurant-helper/pull/243) negative-stock acceptance tests | #230 | `3b8d229` | passed | no review recorded |
-  | [#236](https://github.com/ter-ry/restaurant-helper/pull/236) this document | #225 | see PR | see PR | `REQUEST CHANGES @ 33782a5` addressed by this update |
-
-  Documentation overlap: #241 edits one row of this file (Clover Daily Close) and #239 edits one line of `docs/private-pilot-gap-checklist.md` (bulk import). Both are single-line hunks; whichever of #236, #239 and #241 merges second needs a one-line conflict resolution in that row; guidance is in the #236 review-response comment.
-- **Owner decisions approved 2026-11-05 (decision issues #168, #195, #196, #197, #198, #199 closed). Policy is settled; every implementation below is still pending, not done:**
-  - #168 received-invoice void/correction is in the MVP: append-only compensating movements exactly once, corrected invoice re-received with lineage, unsafe cases rejected. Implementation #232.
-  - #195 supplier soft archive only, no hard delete. Implementation #229.
-  - #196 append-only, once-only adjustment reversal that cannot drive stock negative. Implementation #231.
-  - #197 atomic inter-location transfers preserving source weighted-average cost. Implementation #233.
-  - #198 retain and verify CSV/XLSX import and add in-app multi-select bulk edit of inventory items. Verification #224; implementation #234.
-  - #199 manual receipts/corrections/adjustments may not go negative; POS consumption may, flagged for review. Baseline tests #230; Daily Close/Reorder visibility #237.
-- **Implementation queue state:** #229 review-ready (PR #242); #230 in progress (PR #243); #234 (bulk edit) is in progress on branch `claude/inventory-bulk-edit` (review-only PR, evidence in the PR); #231, #232, #233 and #237 are **blocked on sequencing, not on a decision**: #231 waits for #229 and #230 to merge; #232 for #231; #233 for #230 and #231; #234 for #224 and #229; #237 for #222 and #230. #240 (signed-ledger quantity in Clover usage) is ready and owner-unblocked since #219 merged. #227 (import re-upload/rollback can change on-hand outside the ledger) is blocked pending #239.
-- **Independent reviewer wanted (not the author):** [#228](https://github.com/ter-ry/restaurant-helper/issues/228) post-merge review of the Daily Close cash policy and frozen CSV export (#209).
-- **Still open for the owner:** #174 pricing, terms, support; #165 deployed SHA/Alembic/flag per environment (no evidence yet); #166 controlled Clover Sandbox validation (blocked); #169 Showcase walkthrough; #172 Playwright in the cloud environment; #175 release-candidate validation (blocked); #164 Clover review (recorded, kept open for the owner); #170 UI walkthrough (open, needs-owner). Closed with recorded owner decisions: #142 and #143 on 2026-11-05 (not Showcase evidence; see matrix) and #171 (see below).
+- **Open PRs:** #296 (trusted-review dry-run docs note), #282 (first-pilot commercial policy and onboarding checklists, #281, review-ready), #272 (develop CI smoke test, #268). None touches product code.
+- **Merged since the 2026-11-05 snapshot (all with CI at merge; "merged" is not Showcase evidence):** #238 768px fixes, #239 import verification, #241 Clover Daily Close integration, #242 supplier soft archive, #243 negative-stock tests, #246 import ledger guard, #247 Clover signed-ledger usage, #250 POS-negative visibility, #251 inventory row locks, #254 adjustment reversal, #255 bulk edit, #256 OCR draft correction tests, #261 invoice-number 409, #264 Clover cash/DST evidence, #265 invoice void/correction, #267 Clover owner reports, #277 transfers, #303 partial receipts into POS-negative stock, #304/#308/#313/#314 verified-free inventory evidence, #293 schedule demo e2e, and the develop-lane/trusted-review automation (#269, #274, #283, #285, #287, #288, #294-#301, #307).
+- **All six owner decisions of 2026-11-05 (#168, #195, #196, #197, #198, #199) now have merged implementations** (see the checklist). Implemented and tested is not Showcase-verified.
+- **Open issues by gate:** #316 (W2) verified-free UI browser acceptance, ready; #315 (this reconciliation); #270/#305/#280/#275 trusted-review automation (CI-infra, owner-gated app/credentials); review-ready or blocked leftovers #232, #213, #167 (labels may be stale; verify before relying on them).
+- **Owner actions still open:** #174 pricing, terms, support; #165 deployed SHA/Alembic/flag per environment (no evidence); #166 controlled Clover Sandbox validation; #169 Showcase walkthrough on current main; #175 release-candidate validation (blocked); #164 Clover review; #278 decision inbox. Payroll remains the only owner-deferred item.
 
 **Progression rule:** after every PR/review or newly created issue, re-query GitHub and continue with another eligible independent task. Stop only at genuine human/permission/session/usage blockers. Never duplicate another agent's work.
 
@@ -39,12 +22,12 @@ Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs.
 
 | Item | Verified state / limitation |
 |---|---|
-| Main | `9d2099c` (#235 merged 2026-11-05T11:46-05:00; #219 merged just before as `d2ae685`) |
-| CI on main | [run 42067857772](https://github.com/ter-ry/restaurant-helper/actions/runs/42067857772) on `9d2099c`: backend, frontend, build success |
-| GitHub Pages | [run 42067843909](https://github.com/ter-ry/restaurant-helper/actions/runs/42067843909) success on `9d2099c`. This is the static site only, **not** evidence of any Render backend deployment |
+| Main | `a46bb23` (#307 merged); CI at that head not re-verified in this docs update |
+| CI on main | Not re-queried here; check the Actions tab. The 2026-11-05 run 42067857772 was on `9d2099c` and is stale |
+| GitHub Pages | Static site only, **not** evidence of any Render backend deployment; latest deploy run not re-verified here |
 | Protected main | Active `Protect Main` ruleset verified read-only (#171, closed 2026-11-05); details below |
-| Open PRs | #236, #238, #239, #241, #242, #243 (table in NEXT TASK) |
-| Latest Alembic in code | `0026_clover_consumption_cost_snapshot` (no newer migration on main); **deployed database head unknown**, see Deployments |
+| Open PRs | #272, #282, #296 (see NEXT TASK) |
+| Latest Alembic in code | `0029_inventory_cost_verifications` (0027 invoice void lineage, 0028 inventory transfers); **deployed database head unknown**, see Deployments |
 | Clover execution | Inventory writes disabled by default and stay off. Reversal/refund handling (#186, `8f4b77f`) and Daily Close source-type exclusion (#184, `48ee7a2`) are merged. No flag-on evidence exists; controlled Sandbox validation #166 is blocked and owner-gated |
 | Process PRs | #200, #212, #220, #221 merged (coordination and reporting rules); #235 merged (onboarding/support runbook, #226). #217 was merged then reverted by #218 as unsafe environment automation |
 
@@ -54,16 +37,16 @@ A required row cannot be marked Complete without integration and acceptance evid
 
 | Area | Status | Evidence and remaining action |
 |---|---|---|
-| Suppliers and purchasing | Automated tests passed; Showcase not verified | Supplier-item mapping API/UI: #204 (`b26913f`; review APPROVE @ `0ee12dd` after the location-isolation and duplicate-race fixes). Per-line suggestion and issue list: #205 (`0d8ab01`; review APPROVE @ `cb6c83d`). OCR table quantity (#142) and receipt-dialog close (#143): closed 2026-11-05 on an owner decision (dated 2026-11-04) citing PR #144 and regression tests; **that decision is not Showcase evidence**, the manual check stays under #169. Owner policy approved 2026-11-05, **implementation pending**: #168 invoice void/correction (#232, blocked on #231), #195 supplier soft archive (#229; PR #242 open with `REQUEST CHANGES @ 2e154c1`), #198 bulk edit (#234, blocked on #224 and #229) and import verification (#224; PR #239 open). Draft correction after OCR is not claimed |
-| Inventory ledger/counts/waste/PAR | Automated tests passed; gaps open | Ledger/on-hand/cost reconciliation tests: #201 (`5788f28`; review APPROVE @ `c6bfa69`). Owner policy approved 2026-11-05, **implementation pending**: #196 adjustment reversal (#231, blocked on #229 and #230), #197 transfers (#233, blocked on #230 and #231), #199 negative stock (baseline tests #230 merged; Daily Close/Reorder/Inventory visibility #237: PR #250 open, review pending; partial-receipt rule question #249 needs-owner) |
+| Suppliers and purchasing | Automated tests passed; Showcase not verified | Supplier-item mapping #204, per-line suggestions #205, soft archive #242, bulk edit/import #239/#246/#255, invoice void/correction #265, OCR draft correction tests #256, duplicate-number 409 #261, all merged. #142/#143 closed on owner decision (not Showcase evidence). Manual check stays under #169 |
+| Inventory ledger/counts/waste/PAR | Automated tests passed; Showcase not verified | Reconciliation suite #201; adjustment reversal #254; transfers #277; row locking #251; negative-stock policy #243/#250/#303; verified-free evidence #304/#308/#313/#314. Open: browser acceptance #316 (W2) |
 | Square | Automated tests; October Showcase evidence predates current main | #169 repeat on current main including Daily Close and menu costing |
 | Clover catalog/mapping/shadow orders | Sandbox evidence in earlier docs | Do not claim production capability; complete all agreed full-MVP flows |
 | Clover inventory | Implemented, disabled | #182/#183 merged (above); #164 review recorded; #166 paid Sandbox test blocked, owner-gated. Verify reversals and idempotency there |
-| Clover Daily Close + food cost | In progress | Merged: #214 net-sales/cash-tender normalization (`b3f9b14`), #215 one active POS provider per location (`99bb33d`), #216 ledger-based usage and food cost (`9bee2ce`); each had an independent APPROVE at its final head. #219 usage PG/RLS tests and malformed-recipe fix merged (`d2ae685`; independent APPROVE @ `260be7b`). Open: PR #241 (#222) provider integration into the shared Daily Close (CI passed; `REQUEST CHANGES @ 3294b79` had one blocker, #240, now merged as #247 `c51dcaf`). Branch refreshed with #247; engine-driven Daily Close tests verify $2.75 / 27.5% and the corrected $3.00 / 30%, replay, historical cost snapshots, malformed/missing-recipe unavailable states, frozen closes, and PostgreSQL forced-RLS isolation. Reviewer finding (multi-quantity lines) investigated: ingestion already scales ingredients by quantity/yield, verified through ingestion, engine and Daily Close; a real void-after-apply gap was found and fixed. Fresh independent review requested; no approval yet. Parent #213 is blocked on #222 and #166. Not externally verified |
+| Clover Daily Close + food cost | Automated tests passed; not externally verified | Merged: #214, #215, #216, #219, #240/#247, #241 provider integration into Daily Close, #264 cash/DST evidence, #267 Clover Owner Reports. Parent #213 label still blocked on #166 (owner-gated Sandbox). No flag-on evidence |
 | Daily Close and variance (Square) | Automated tests passed; independent review gap | #209 (`f96f897`, head `4dd6d77`, CI green on head and on main): owner cash policy (staff count primary, verified expected cash only when every drawer shift is closed, Square drawer count kept as evidence, variance unavailable otherwise), exact-value acceptance suite, frozen CSV export, PostgreSQL/RLS test. **No independent verdict is recorded at `4dd6d77`**: the last reviewer comments cover `669a047` and the reverted `0f0a224`. Review is tracked in #228. Showcase under #169 |
 | Menu costing | Automated tests passed (Square); Clover costing merged via #216 | Exact-value acceptance tests: #202 (`0251f38`; review APPROVE @ `f95cf75`). Showcase not verified |
 | Scheduling demo | Automated tests passed; not manually verified | Derived availability/conflict preview: #203 (`33d4c70`; review APPROVE @ `35e0243` after the overnight-window dispute). Payroll explicitly deferred |
-| UI/UX | Partial | #187 (`04d6d72`) and #188 (`35f2f51`) merged. #170 evidence covers a seeded-pilot 390px walkthrough only; provider-connected states, 768px (#223: PR #238 open, CI passed, re-review of `cca3528` pending) and real devices are not covered |
+| UI/UX | Partial | #187, #188, #238 (768px), #313 merged. Provider-connected states and real devices not covered; #170 and #169 remain owner/Showcase steps |
 | RLS and security | Test suite strengthened | #179 (`67af60c`) and #180 (`6735678`) merged. Final RC validation #175 is blocked; no RC evidence yet |
 | Deployments | **Unknown** | See the table below |
 | Marketing onboarding | In progress | Claims audit #181 (`f64db55`) merged; #226 onboarding/support runbook merged as a draft built from verified features (#235, `9d2099c`); #174 pricing, terms and support decisions still pending |

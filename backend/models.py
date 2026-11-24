@@ -222,6 +222,18 @@ class PurchaseInvoice(TimestampMixin, db.Model):
     voided_at = db.Column(db.DateTime(timezone=True), nullable=True)
     voided_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.Text, nullable=False, default="")
+    # Printed amounts the OCR provider actually read (#169). Captured server-side from a signed extraction token,
+    # never from editable totals; NULL means "not read" (or a non-OCR invoice). Immutable after creation.
+    ocr_printed_subtotal = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_printed_tax = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_printed_total = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_evidence_captured_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Audited manual acknowledgement of a printed-amount discrepancy. Valid only for the exact line sum acknowledged.
+    ocr_override_reason = db.Column(db.Text, nullable=True)
+    ocr_override_line_total = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_override_expected_amount = db.Column(db.Numeric(12, 2), nullable=True)
+    ocr_override_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ocr_override_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")
@@ -292,6 +304,75 @@ class InventoryMovement(TimestampMixin, db.Model):
     location = db.relationship("RestaurantLocation")
     inventory_item = db.relationship("InventoryItem")
     actor = db.relationship("User")
+
+
+class InventoryTransfer(TimestampMixin, db.Model):
+    """One inter-location stock transfer (#233). Append-only: the paired out/in movements reference ``id``."""
+
+    __tablename__ = "inventory_transfers"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_inventory_transfer_idempotency"),
+        CheckConstraint("quantity > 0", name="ck_inventory_transfer_quantity_positive"),
+        CheckConstraint("from_location_id <> to_location_id", name="ck_inventory_transfer_distinct_locations"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    to_location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    from_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    to_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    unit = db.Column(db.String(60), nullable=False, default="each")
+    # Source weighted-average cost per stock unit at the moment of transfer (carried to the destination).
+    unit_cost = db.Column(db.Numeric(14, 6), nullable=False, default=Decimal("0"))
+    idempotency_key = db.Column(db.String(120), nullable=False)
+    reason = db.Column(db.Text, nullable=False, default="")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class InventoryCostVerification(TimestampMixin, db.Model):
+    """Explicit evidence that a quantity of an item is genuinely free ($0), not merely missing a cost (#279 Phase A).
+
+    Persistence only: no endpoint writes this yet. ``average_unit_cost == 0`` alone never means "free";
+    see ``backend/verified_free_cost.py`` and ``docs/verified-free-inventory-design.md``.
+    """
+
+    __tablename__ = "inventory_cost_verifications"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_inventory_cost_verification_idempotency"),
+        CheckConstraint("quantity > 0", name="ck_inventory_cost_verification_quantity_positive"),
+        CheckConstraint("consumed_quantity >= 0 AND consumed_quantity <= quantity", name="ck_inventory_cost_verification_consumed_range"),
+        CheckConstraint(
+            "evidence_type IN ('supplier_free_goods', 'donation', 'promotional_sample', 'other_documented')",
+            name="ck_inventory_cost_verification_evidence_type",
+        ),
+        CheckConstraint("length(trim(evidence_note)) > 0", name="ck_inventory_cost_verification_evidence_note"),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoked_reason = '') OR (revoked_at IS NOT NULL AND length(trim(revoked_reason)) > 0)",
+            name="ck_inventory_cost_verification_revocation",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("restaurant_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    inventory_item_id = db.Column(db.Integer, db.ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    consumed_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=Decimal("0"))
+    unit = db.Column(db.String(60), nullable=False, default="each")
+    evidence_type = db.Column(db.String(40), nullable=False)
+    evidence_note = db.Column(db.Text, nullable=False)
+    source_type = db.Column(db.String(60), nullable=False, default="")
+    source_record_id = db.Column(db.String(120), nullable=False, default="")
+    source_line_id = db.Column(db.String(120), nullable=False, default="")
+    idempotency_key = db.Column(db.String(120), nullable=False)
+    correction_of_id = db.Column(db.Integer, db.ForeignKey("inventory_cost_verifications.id", ondelete="RESTRICT"), nullable=True, index=True)
+    verified_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    verified_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    revoked_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revoked_reason = db.Column(db.Text, nullable=False, default="")
 
 
 class InventoryWasteEvent(TimestampMixin, db.Model):
@@ -1235,3 +1316,6 @@ class CloverShadowOrderLine(TimestampMixin, db.Model):
     order = db.relationship("CloverShadowOrder", back_populates="lines")
     organization = db.relationship("Organization")
     restaurant_location = db.relationship("RestaurantLocation")
+
+
+from . import evidence_shrink  # noqa: E402,F401  (registers the before_flush evidence invariant, #311)

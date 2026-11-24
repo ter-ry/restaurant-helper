@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotPurchasesPage } from "../../src/pilot/PilotPurchasesPage";
@@ -16,6 +16,7 @@ const mockApi = vi.hoisted(() => ({
   receivePilotPurchaseInvoice: vi.fn(),
   voidPilotPurchaseInvoice: vi.fn(),
   uploadPilotInvoiceOcr: vi.fn(),
+  overridePilotOcrDiscrepancy: vi.fn(),
 }));
 
 vi.mock("../../src/pilot/pilotApi", async () => {
@@ -32,6 +33,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     receivePilotPurchaseInvoice: mockApi.receivePilotPurchaseInvoice,
     voidPilotPurchaseInvoice: mockApi.voidPilotPurchaseInvoice,
     uploadPilotInvoiceOcr: mockApi.uploadPilotInvoiceOcr,
+    overridePilotOcrDiscrepancy: mockApi.overridePilotOcrDiscrepancy,
   };
 });
 
@@ -389,10 +391,22 @@ describe("PilotPurchasesPage", () => {
 
   it("persists corrected OCR fields through close and reopen before receiving once", async () => {
     const persisted = { ...createInvoice({ id: 3, invoiceNumber: "OCR-EDITED", status: "Draft", supplierName: "Fresh Dairy Toronto" }) };
+    // Stand-in for the server: stores the printed amounts once (from the token) and recomputes the verdict from the saved lines.
+    let override: { reason: string; acknowledgedLineTotal: number } | null = null;
+    const serverEvidence = (lineTotal: number) => {
+      const matched = Math.abs(48 - lineTotal) <= 0.01;
+      const overridden = !matched && override !== null && Math.abs(override.acknowledgedLineTotal - lineTotal) <= 0.01;
+      return {
+        status: matched ? "matched" : overridden ? "overridden" : "incomplete",
+        printedSubtotal: 48, printedTax: 6.24, printedTotal: 54.24, expectedAmount: 48, lineTotal, difference: Math.round((48 - lineTotal) * 100) / 100,
+        override: override ? { reason: override.reason, acknowledgedLineTotal: override.acknowledgedLineTotal, byUserId: 1, at: "2026-08-20T10:00:00Z", validForCurrentLines: overridden } : null,
+      };
+    };
     const persistPayload = (payload: Record<string, any>) => {
       const line = payload.lineItems[0];
       Object.assign(persisted, {
         ...payload,
+        ocrEvidence: serverEvidence(payload.lineItems.reduce((sum: number, entry: Record<string, any>) => sum + Number(entry.lineTotal), 0)),
         supplier: createInvoice({ id: 3, invoiceNumber: payload.invoiceNumber, status: payload.status || "Draft", supplierName: payload.supplierName }).supplier,
         lineItems: payload.lineItems.map((candidate: Record<string, any>, index: number) => ({
           ...createLine({ id: 31 + index }),
@@ -429,6 +443,7 @@ describe("PilotPurchasesPage", () => {
       fileName: "correct-me.pdf",
       contentType: "application/pdf",
       rawText: "OCR invoice",
+      evidenceToken: "signed-token",
       fields: {
         supplier: { value: "Fresh Dairy Toronto", confidence: 0.9, needsReview: false },
         invoiceDate: { value: "2026-08-20", confidence: 0.9, needsReview: false },
@@ -462,7 +477,14 @@ describe("PilotPurchasesPage", () => {
     mockApi.updatePilotPurchaseInvoice.mockImplementation(async (_invoiceId, payload) => {
       return persistPayload(payload);
     });
-    mockApi.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => {
+    mockApi.overridePilotOcrDiscrepancy.mockImplementation(async (_invoiceId: number, body: { reason: string; acknowledgedLineTotal: number }) => {
+      override = body;
+      (persisted as Record<string, any>).ocrEvidence = serverEvidence(body.acknowledgedLineTotal);
+      return persisted;
+    });
+    mockApi.receivePilotPurchaseInvoice.mockImplementation(async (invoiceId: number, ...rest: unknown[]) => {
+      void rest;
+      if ((persisted as Record<string, any>).ocrEvidence?.status === "incomplete") throw new PilotApiError("Resolve invoice review blockers before receiving.", 400);
       if (invoiceId !== persisted.id || persisted.status === "Completed") throw new PilotApiError("Already received", 409);
       persisted.status = "Completed";
       persisted.receivedAt = "2026-08-20T10:30:00.000Z";
@@ -479,6 +501,10 @@ describe("PilotPurchasesPage", () => {
     fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "30" } });
     expect(screen.getByLabelText("Line total")).toHaveValue(90);
+    // The corrected lines (90) no longer add up to the printed subtotal (48). The override is the server's audited
+    // record, so it needs a saved draft; the printed amounts come back from the server after reopening.
+    expect(screen.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    expect(screen.getByRole("button", { name: "Record audited override" })).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]);
 
     await waitFor(() => expect(mockApi.createPilotPurchaseInvoice).toHaveBeenCalledWith(expect.objectContaining({
@@ -486,6 +512,7 @@ describe("PilotPurchasesPage", () => {
       invoiceNumber: "OCR-EDITED",
       subtotal: 90,
       totalAmount: 96.24,
+      ocrEvidenceToken: "signed-token",
       lineItems: [expect.objectContaining({ quantity: 3, unitPrice: 30, lineTotal: 90, inventoryItemId: 301 })],
     })));
     expect(await screen.findByText("Invoice OCR-EDITED saved successfully.")).toBeVisible();
@@ -497,6 +524,13 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getByLabelText("Quantity")).toHaveValue(3);
     expect(screen.getByLabelText("Unit price")).toHaveValue(30);
     expect(screen.getByLabelText("Line total")).toHaveValue(90);
+
+    // After reopening, the incomplete verdict comes from the server-stored printed amounts, not React state.
+    expect(screen.getByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    fireEvent.change(screen.getByLabelText(/Reason these lines are correct/), { target: { value: "Supplier confirmed the larger order by phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record audited override" }));
+    await waitFor(() => expect(mockApi.overridePilotOcrDiscrepancy).toHaveBeenCalledWith(3, { reason: "Supplier confirmed the larger order by phone", acknowledgedLineTotal: 90 }));
+    expect(await screen.findByTestId("ocr-override-recorded")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
@@ -643,6 +677,65 @@ describe("PilotPurchasesPage", () => {
     expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Save ready" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeVisible();
+  });
+
+  it("applies a slow override result only to the purchase that requested it", async () => {
+    const evidence = { status: "incomplete" as const, printedSubtotal: 500, printedTax: 0, printedTotal: 500, expectedAmount: 500, lineTotal: 48, difference: 452, override: null };
+    const response = createPurchasesResponse();
+    const ocrDraft = createInvoice({ id: 5, invoiceNumber: "OCR-A", status: "Draft", supplierName: "Fresh Dairy Toronto", extractionStatus: "ocr", ocrEvidence: evidence });
+    response.invoices = [ocrDraft, ...response.invoices];
+    mockApi.fetchPilotPurchases.mockResolvedValue(response);
+    mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => response.invoices.find((entry) => entry.id === invoiceId)!);
+    mockApi.overridePilotOcrDiscrepancy.mockClear();
+    let resolveOverride: (invoice: PilotPurchaseInvoice) => void = () => undefined;
+    mockApi.overridePilotOcrDiscrepancy.mockImplementationOnce(() => new Promise<PilotPurchaseInvoice>((resolve) => { resolveOverride = resolve; }));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /OCR-A/ }));
+    expect(await screen.findByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    fireEvent.change(screen.getByLabelText(/Reason these lines are correct/), { target: { value: "Supplier confirmed the order by phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record audited override" }));
+    await waitFor(() => expect(mockApi.overridePilotOcrDiscrepancy).toHaveBeenCalledTimes(1));
+
+    // Switch to another purchase while the override request is still in flight.
+    fireEvent.click(screen.getByRole("button", { name: /Close/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /FD-1002/ }));
+    expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+    expect(screen.queryByTestId("ocr-reconciliation-banner")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveOverride({ ...ocrDraft, ocrEvidence: { ...evidence, status: "overridden", override: { reason: "Supplier confirmed the order by phone", acknowledgedLineTotal: 48, byUserId: 1, at: "2026-08-20T10:00:00Z", validForCurrentLines: true } } });
+    });
+    expect(screen.queryByTestId("ocr-reconciliation-banner")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Review FD-1002" })).toBeVisible();
+  });
+
+  it("keeps unsaved edits made while an override request is pending", async () => {
+    const evidence = { status: "incomplete" as const, printedSubtotal: 500, printedTax: 0, printedTotal: 500, expectedAmount: 500, lineTotal: 48, difference: 452, override: null };
+    const response = createPurchasesResponse();
+    const ocrDraft = createInvoice({ id: 5, invoiceNumber: "OCR-A", status: "Draft", supplierName: "Fresh Dairy Toronto", extractionStatus: "ocr", ocrEvidence: evidence });
+    response.invoices = [ocrDraft, ...response.invoices];
+    mockApi.fetchPilotPurchases.mockResolvedValue(response);
+    mockApi.fetchPilotPurchaseInvoice.mockImplementation(async (invoiceId: number) => response.invoices.find((entry) => entry.id === invoiceId)!);
+    mockApi.overridePilotOcrDiscrepancy.mockClear();
+    let resolveOverride: (invoice: PilotPurchaseInvoice) => void = () => undefined;
+    mockApi.overridePilotOcrDiscrepancy.mockImplementationOnce(() => new Promise<PilotPurchaseInvoice>((resolve) => { resolveOverride = resolve; }));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /OCR-A/ }));
+    expect(await screen.findByTestId("ocr-reconciliation-banner")).toHaveAttribute("data-status", "incomplete");
+    fireEvent.change(screen.getByLabelText(/Reason these lines are correct/), { target: { value: "Supplier confirmed the order by phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record audited override" }));
+    await waitFor(() => expect(mockApi.overridePilotOcrDiscrepancy).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "7" } });
+    expect(screen.getByLabelText("Quantity")).toHaveValue(7);
+    await act(async () => {
+      resolveOverride({ ...ocrDraft, ocrEvidence: { ...evidence, status: "incomplete", override: { reason: "Supplier confirmed the order by phone", acknowledgedLineTotal: 48, byUserId: 1, at: "2026-08-20T10:00:00Z", validForCurrentLines: false } } });
+    });
+    // The unsaved quantity survives, and the server's override record is attached to the same purchase.
+    expect(screen.getByLabelText("Quantity")).toHaveValue(7);
+    expect(screen.getByRole("heading", { name: "Review OCR-A" })).toBeVisible();
   });
 
   it("opens completed invoice history in a read-only detail modal", async () => {

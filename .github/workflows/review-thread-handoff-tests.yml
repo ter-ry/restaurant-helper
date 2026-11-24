@@ -1,0 +1,41 @@
+# Offline unit tests for the review-thread handoff utility. Read-only: no
+# secrets, no network, no GitHub writes, no pull_request_target.
+name: Review thread handoff tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/review_thread_handoff.py"
+      - "scripts/tests/test_review_thread_handoff.py"
+      - ".github/workflows/review-thread-handoff-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/review_thread_handoff.py"
+      - "scripts/tests/test_review_thread_handoff.py"
+      - ".github/workflows/review-thread-handoff-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  review-thread-handoff-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m py_compile scripts/review_thread_handoff.py
+      - name: Run handoff tests (fail on errors or fewer than 38 tests)
+        run: |
+          python -m unittest scripts.tests.test_review_thread_handoff -v 2> handoff-test.log
+          status=$?
+          cat handoff-test.log
+          [ "$status" -eq 0 ] || exit "$status"
+          ran=$(sed -n 's/^Ran \([0-9]*\) tests\{0,1\} in.*/\1/p' handoff-test.log)
+          [ "${ran:-0}" -ge 38 ] || { echo "expected >=38 tests, ran ${ran:-0}"; exit 1; }
