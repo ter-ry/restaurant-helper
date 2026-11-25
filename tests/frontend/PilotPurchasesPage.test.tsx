@@ -672,11 +672,10 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByTestId("purchase-lines-panel")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add item" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(await screen.findByTestId("purchase-review-panel")).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Save ready" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save & receive" })).toBeVisible();
   });
 
   it("applies a slow override result only to the purchase that requested it", async () => {
@@ -748,17 +747,16 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByTestId("purchase-detail-modal")).toBeVisible();
     expect(screen.getByText("Read-only")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Receive into inventory" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save & receive" })).not.toBeInTheDocument();
   });
 
   it("opens an explicit draft invoiceId in the editable purchase editor", async () => {
     renderPage("/app/purchases?invoiceId=2");
 
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(await screen.findByTestId("purchase-review-panel")).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Receive into inventory" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Save draft" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Save & receive" })).toBeVisible();
     expect(screen.queryByTestId("purchase-detail-modal")).not.toBeInTheDocument();
   });
 
@@ -768,7 +766,7 @@ describe("PilotPurchasesPage", () => {
     expect(await screen.findByTestId("purchase-detail-modal")).toBeVisible();
     expect(screen.getByText("Read-only")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Save draft" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Receive into inventory" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save & receive" })).not.toBeInTheDocument();
   });
 
   it("shows progress only on the clicked action and reports the save result inside the open editor dialog", async () => {
@@ -815,8 +813,7 @@ describe("PilotPurchasesPage", () => {
     await screen.findByRole("heading", { name: "New purchase" });
     fireEvent.click(screen.getByRole("button", { name: /FD-1002/ }));
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
     const confirmReceive = screen.getByRole("button", { name: "Confirm receive" });
     fireEvent.click(confirmReceive);
     fireEvent.click(confirmReceive);
@@ -838,8 +835,7 @@ describe("PilotPurchasesPage", () => {
 
     renderPage("/app/purchases?invoiceId=2");
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
 
     expect(await screen.findByText(/status could not be confirmed/i)).toBeVisible();
@@ -857,8 +853,7 @@ describe("PilotPurchasesPage", () => {
 
     renderPage("/app/purchases?invoiceId=2");
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
 
     expect(await screen.findByText(/received successfully/i)).toBeVisible();
@@ -872,8 +867,7 @@ describe("PilotPurchasesPage", () => {
 
     renderPage("/app/purchases?invoiceId=2");
     expect(await screen.findByRole("heading", { name: "Review FD-1002" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Receive into inventory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & receive" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
     await screen.findByRole("button", { name: "Refresh purchase status" });
     fireEvent.click(screen.getByRole("button", { name: "Refresh purchase status" }));

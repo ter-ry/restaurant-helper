@@ -75,6 +75,38 @@ interface PurchaseDraft {
 
 const commonUnits = ["each", "bag", "bottle", "box", "case", "dozen", "kg", "lb", "L", "ml", "pack", "roll", "tray"];
 
+// Full common-unit list in a real select (a native datalist filters itself by the current value, so "each" showed
+// only "each"), plus an explicit custom path so any supplier/stock unit already saved on an invoice stays valid.
+// Changing the unit never touches the conversion factor or the inventory mapping.
+function UnitSelect({ label, value, onChange, disabled, labelClass }: { label: string; value: string; onChange: (unit: string) => void; disabled?: boolean; labelClass: string }) {
+  const [custom, setCustom] = useState(false);
+  const known = commonUnits.includes(value);
+  const customMode = custom || (value !== "" && !known);
+  return (
+    <div className="block">
+      <label className="block">
+        <span className={labelClass}>{label}</span>
+        <select
+          aria-label={label}
+          className="input mt-1"
+          value={customMode ? "__custom" : value}
+          disabled={disabled}
+          onChange={(event) => {
+            if (event.target.value === "__custom") { setCustom(true); return; }
+            setCustom(false);
+            onChange(event.target.value);
+          }}
+        >
+          {value === "" && !customMode ? <option value="">Choose unit</option> : null}
+          {commonUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+          <option value="__custom">Custom unit…</option>
+        </select>
+      </label>
+      {customMode ? <input aria-label={`${label} (custom)`} className="input mt-1" value={value} placeholder="Type a unit" disabled={disabled} onChange={(event) => onChange(event.target.value)} /> : null}
+    </div>
+  );
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -212,7 +244,6 @@ export function PilotPurchasesPage() {
   const [error, setError] = useState<string | null>(null);
   const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [showReview, setShowReview] = useState(false);
   const [purchaseSearch, setPurchaseSearch] = useState("");
   const [purchaseFilter, setPurchaseFilter] = useState<"all" | "review" | "received" | "corrected">("all");
   const [showSupplierForm, setShowSupplierForm] = useState(false);
@@ -271,13 +302,11 @@ export function PilotPurchasesPage() {
         setSelectedId(resolvedInvoice.id);
         setDraft(invoiceToDraft(resolvedInvoice));
         setDetailInvoice(null);
-        setShowReview(false);
         setEditorOpen(true);
       } else {
         setSelectedId(null);
         setDraft(buildBlankDraft());
         setDetailInvoice(resolvedInvoice && (resolvedInvoice.status === "Completed" || resolvedInvoice.status === "Corrected") ? resolvedInvoice : null);
-        setShowReview(false);
       }
       setHasLoaded(true);
       return true;
@@ -406,7 +435,7 @@ export function PilotPurchasesPage() {
         ? `${line.description || "This item"}: quantity × unit price is ${formatMoney(roundCurrency((line.quantity || 0) * (line.unitPrice || 0)))}, but the line total is ${formatMoney(roundCurrency(line.lineTotal || 0))}. Review before receiving.`
         : null,
     ].filter(Boolean) as string[]);
-    const warnings = draft.lineItems.filter((line) => line.needsReview || line.confidence < 0.8).map((line) => `Review ${line.description || "this item"} before receiving.`);
+    const warnings = draft.lineItems.filter((line) => line.needsReview).map((line) => `Review ${line.description || "this item"} before receiving.`);
     const lineSubtotal = draft.lineItems.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0);
     const subtotalDifference = lineSubtotal - Number(draft.subtotal || 0);
     const totalDifference = Number(draft.subtotal || 0) + Number(draft.tax || 0) - Number(draft.totalAmount || 0);
@@ -427,6 +456,11 @@ export function PilotPurchasesPage() {
   // saved invoice summary may be stale after a quantity/mapping edit; the
   // backend revalidates the persisted payload before creating movements.
   const reviewSummary = localReviewSummary;
+  // The server-authoritative inventory preview describes the SAVED invoice only. Any unsaved edit invalidates it.
+  const draftMatchesSaved = useMemo(
+    () => Boolean(draft.id && selectedInvoice && selectedInvoice.id === draft.id && JSON.stringify(draft) === JSON.stringify(invoiceToDraft(selectedInvoice))),
+    [draft, selectedInvoice],
+  );
   const authoritativeReadyToReceive = localReviewSummary.readyToReceive;
 
   const recalculateTotals = (lines: DraftLine[], nextTax = draft.tax) => {
@@ -555,7 +589,6 @@ export function PilotPurchasesPage() {
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
-      setShowReview(false);
       setEditorOpen(false);
       setReceiveMessage(`Invoice ${saved.invoiceNumber || "purchase"} received into inventory.`);
       setReceiveConfirmOpen(false);
@@ -653,7 +686,6 @@ export function PilotPurchasesPage() {
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(null);
-      setShowReview(false);
       setEditorOpen(false);
       setReceiveMessage(`Invoice ${received.invoiceNumber} received into inventory.`);
       setReceiveConfirmOpen(false);
@@ -763,14 +795,12 @@ export function PilotPurchasesPage() {
       setSelectedId(null);
       setDraft(buildBlankDraft());
       setDetailInvoice(invoice);
-      setShowReview(false);
       setEditorOpen(false);
       return;
     }
     setDetailInvoice(null);
     setSelectedId(invoice.id);
     setDraft(invoiceToDraft(invoice));
-    setShowReview(false);
     setEditorOpen(true);
   };
 
@@ -836,7 +866,6 @@ export function PilotPurchasesPage() {
     setOcrEvidence(buildOcrPrintedEvidence(result));
     setOcrOverrideReason("");
     setOcrOverrideError(null);
-    setShowReview(false);
     setReceiveMessage(result.needsReview ? "Invoice extracted. Review the highlighted fields before saving." : "Invoice extracted. Review the draft before saving.");
   };
 
@@ -1013,9 +1042,8 @@ export function PilotPurchasesPage() {
             ) : null}
           </div>
         ) : null}
-        {receiveMessage ? <div aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
+        {receiveMessage && finalizedStatus ? <div aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
-        {!showReview ? (
           <div className="mt-4 grid gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-3 md:grid-cols-[minmax(12rem,1.3fr)_minmax(9rem,0.8fr)_minmax(11rem,0.9fr)] md:items-end">
             <div>
               <div className="flex items-center justify-between gap-3">
@@ -1034,18 +1062,8 @@ export function PilotPurchasesPage() {
             <label className="block"><span className="text-sm font-semibold text-ink">Invoice #</span><input aria-label="Invoice number" className="input mt-1" value={draft.invoiceNumber} placeholder="Optional" onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={finalizedStatus} /></label>
             <label className="block"><span className="text-sm font-semibold text-ink">Date</span><ThemedDateTimeInput className="input mt-1" type="date" value={draft.invoiceDate} onChange={(event) => setDraft((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={finalizedStatus} /></label>
           </div>
-        ) : null}
-
-        {!finalizedStatus && draft.id && !authoritativeReadyToReceive ? (
-          <div className="mt-4 flex justify-end">
-            <Button variant="secondary" type="button" onClick={() => setShowReview(true)}>
-              Review before saving
-            </Button>
-          </div>
-        ) : null}
 
         <div className="mt-4 flex flex-col gap-4">
-          {!showReview ? (
             <section className="order-2 space-y-4" data-testid="purchase-details-panel">
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="block rounded-2xl border border-line bg-slate-50 p-4">
@@ -1067,9 +1085,7 @@ export function PilotPurchasesPage() {
                 <textarea className="input mt-1 min-h-10" rows={1} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={finalizedStatus} placeholder="Optional purchase note" />
               </label>
             </section>
-          ) : null}
 
-          {!showReview ? (
             <section className="order-1 space-y-4" data-testid="purchase-lines-panel">
               <div className="rounded-2xl border border-line bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -1155,24 +1171,8 @@ export function PilotPurchasesPage() {
                         ) : null}
                         <div className="mt-2 border-t border-dashed border-line pt-2" role="group" aria-label={`Line ${index + 1} units and conversion`}>
                           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            <label className="block">
-                              <span className={labelClass}>Purchase unit</span>
-                              <input className="input mt-1" list={`purchase-units-${index}`} value={line.purchaseUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, purchaseUnit: event.target.value }))} disabled={finalizedStatus} />
-                              <datalist id={`purchase-units-${index}`}>
-                                {commonUnits.map((unit) => (
-                                  <option key={unit} value={unit} />
-                                ))}
-                              </datalist>
-                            </label>
-                            <label className="block">
-                              <span className={labelClass}>Inventory unit</span>
-                              <input className="input mt-1" list={`inventory-units-${index}`} value={line.inventoryUnit} onChange={(event) => updateLine(index, (current) => ({ ...current, inventoryUnit: event.target.value }))} disabled={finalizedStatus} />
-                              <datalist id={`inventory-units-${index}`}>
-                                {commonUnits.map((unit) => (
-                                  <option key={unit} value={unit} />
-                                ))}
-                              </datalist>
-                            </label>
+                            <UnitSelect label="Purchase unit" labelClass={labelClass} value={line.purchaseUnit} disabled={finalizedStatus} onChange={(unit) => updateLine(index, (current) => ({ ...current, purchaseUnit: unit }))} />
+                            <UnitSelect label="Inventory unit" labelClass={labelClass} value={line.inventoryUnit} disabled={finalizedStatus} onChange={(unit) => updateLine(index, (current) => ({ ...current, inventoryUnit: unit }))} />
                             <label className="col-span-2 block sm:col-span-1">
                               <span className={labelClass}>Conversion</span>
                               <input className="input mt-1" type="number" step="1" value={line.conversionFactor} onFocus={selectZeroValue} onChange={(event) => updateLine(index, (current) => ({ ...current, conversionFactor: Number(event.target.value) || 1 }))} disabled={finalizedStatus} />
@@ -1200,42 +1200,16 @@ export function PilotPurchasesPage() {
                 </div>
               </div>
             </section>
-          ) : null}
 
-          {showReview ? (
             <section className="order-3 space-y-4" data-testid="purchase-review-panel">
               <div className="rounded-2xl border border-line bg-white p-4" data-testid="purchase-review-summary">
-                <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink">Review summary</p><p className="mt-1 text-xs text-muted">Every line must reconcile before inventory is changed.</p></div><div className="flex flex-wrap items-center gap-2"><Badge tone={reviewSummary.state === "READY" ? "success" : reviewSummary.state === "BLOCKING" ? "danger" : "warning"}>{reviewSummary.state}</Badge>{unresolvedLineCount > 0 ? <Badge tone="warning">Needs mapping</Badge> : null}</div></div>
+                <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink">Review summary</p><p className="mt-1 text-xs text-muted">Read-only. Ready: every check passes. Review: flagged items to confirm. Blocking: receiving stays off until fixed.</p></div><div className="flex flex-wrap items-center gap-2"><Badge tone={reviewSummary.state === "READY" ? "success" : reviewSummary.state === "BLOCKING" ? "danger" : "warning"}>{reviewSummary.state}</Badge></div></div>
                 {reviewSummary.blockers.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-danger">{reviewSummary.blockers.map((message) => <li key={message}>{message}</li>)}</ul> : null}
                 {reviewSummary.warnings.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">{reviewSummary.warnings.map((message) => <li key={message}>{message}</li>)}</ul> : null}
                 {"reconciliation" in reviewSummary && reviewSummary.reconciliation ? (() => { const reconciliation = reviewSummary.reconciliation as NonNullable<PilotPurchaseInvoice["reviewSummary"]>["reconciliation"]; return <p className="mt-3 text-sm font-semibold text-ink">{reconciliation?.status === "matched" ? "Totals match" : `Totals differ by ${formatMoney(Math.abs(reconciliation?.totalDifference ?? 0))}`}</p>; })() : null}
-                {purchasePreview?.lines?.length ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-line text-muted"><th className="px-2 py-2">Inventory impact</th><th className="px-2 py-2">Before</th><th className="px-2 py-2">Receiving</th><th className="px-2 py-2">After</th><th className="px-2 py-2">Cost after</th><th className="px-2 py-2">Price change</th></tr></thead><tbody>{purchasePreview.lines.map((line) => <tr key={line.lineId} className="border-b border-line"><td className="px-2 py-2 font-semibold text-ink">{line.inventoryItemName || line.description}</td><td className="px-2 py-2">{line.currentOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">+{line.quantityDelta} {line.unit}</td><td className="px-2 py-2">{line.afterOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">{line.averageUnitCostAfter == null ? "—" : formatMoney(line.averageUnitCostAfter)}</td><td className="px-2 py-2">{line.priceChangePercent == null ? "—" : `${line.priceChangePercent > 0 ? "+" : ""}${formatNumber(line.priceChangePercent)}%`}</td></tr>)}</tbody></table><p className="mt-2 text-xs text-muted">Preview only. Inventory changes occur only after you receive.</p></div> : null}
+                {!draftMatchesSaved && !finalizedStatus ? <p data-testid="purchase-preview-stale" className="mt-4 rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-muted">{draft.id ? "Inventory impact is shown for the saved invoice. Save the draft to refresh it after your edits." : "Save the draft to preview the inventory impact."}</p> : null}
+                {draftMatchesSaved && purchasePreview?.lines?.length ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-line text-muted"><th className="px-2 py-2">Inventory impact</th><th className="px-2 py-2">Before</th><th className="px-2 py-2">Receiving</th><th className="px-2 py-2">After</th><th className="px-2 py-2">Cost after</th><th className="px-2 py-2">Price change</th></tr></thead><tbody>{purchasePreview.lines.map((line) => <tr key={line.lineId} className="border-b border-line"><td className="px-2 py-2 font-semibold text-ink">{line.inventoryItemName || line.description}</td><td className="px-2 py-2">{line.currentOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">+{line.quantityDelta} {line.unit}</td><td className="px-2 py-2">{line.afterOnHand ?? "—"} {line.unit}</td><td className="px-2 py-2">{line.averageUnitCostAfter == null ? "—" : formatMoney(line.averageUnitCostAfter)}</td><td className="px-2 py-2">{line.priceChangePercent == null ? "—" : `${line.priceChangePercent > 0 ? "+" : ""}${formatNumber(line.priceChangePercent)}%`}</td></tr>)}</tbody></table><p className="mt-2 text-xs text-muted">Preview only. Inventory changes occur only after you receive.</p></div> : null}
               </div>
-              <div className="rounded-2xl border border-line bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-ink">Review and send</p>
-                <p className="mt-1 text-sm text-muted">
-                  {finalizedStatus
-                    ? "This purchase is locked for review only. Completed and corrected records cannot be received again."
-                    : "Save a draft first, or mark it ready once every invoice item has been mapped to inventory."}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <Button disabled={saving || finalizedStatus} type="button" onClick={() => void saveDraft("Draft")}>
-                    {saving ? "Saving..." : "Save draft"}
-                  </Button>
-                  <Button disabled={saving || finalizedStatus} variant="secondary" type="button" onClick={() => void saveDraft("Ready")}>
-                    Save ready
-                  </Button>
-                  <Button
-                    disabled={saving || !draft.id || finalizedStatus || !authoritativeReadyToReceive}
-                    icon={<CheckCircle2 className="h-4 w-4" />}
-                    type="button"
-                    onClick={requestReceive}
-                  >
-                    Receive into inventory
-                  </Button>
-                </div>
-              </div>
-
               {draft.correctsInvoiceId ? (
                 <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-muted">
                   <p className="font-semibold text-ink">Corrected copy of a voided invoice</p>
@@ -1246,22 +1220,21 @@ export function PilotPurchasesPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-line bg-white p-4 text-sm text-muted">
-                <p className="font-semibold text-ink">Purchase status</p>
-                <p className="mt-1">Completed purchases become view-only and can no longer be received twice. Corrected purchases stay view-only and preserve the audit trail. Save ready is available only when every item is mapped.</p>
-              </div>
             </section>
-          ) : null}
         </div>
         {!finalizedStatus ? (
           <div data-testid="purchase-action-bar" className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_12px_-8px_rgba(15,23,42,0.18)]">
             <div className="min-w-0 space-y-1">
+              <div aria-live="polite" data-testid="purchase-action-feedback">
+                {receiveMessage ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">{receiveMessage}</p> : null}
+                {error && !receiveMessage ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">This action did not complete. Read the message at the top of the editor.</p> : null}
+              </div>
               {ocrSummary ? <p data-testid="ocr-sticky-summary" data-tone={ocrSummary.tone} className={`text-sm font-semibold ${ocrSummary.tone === "bad" ? "text-danger" : ocrSummary.tone === "warn" ? "text-amber-800" : "text-emerald-800"}`}>{ocrSummary.text}</p> : null}
               {footerSummary ? <p className={`text-sm font-semibold ${reviewSummary.blockers.length ? "text-danger" : "text-muted"}`}>{footerSummary}</p> : null}
             </div>
             <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-              <Button variant="ghost" disabled={ocrLoading} type="button" onClick={() => setShowReview(true)}>
-                Review
+              <Button variant="ghost" disabled={saving || ocrLoading} type="button" onClick={() => void saveDraft("Ready")}>
+                Save ready
               </Button>
               <Button variant="secondary" disabled={saving || ocrLoading} type="button" onClick={() => void saveDraft("Draft")}>
                 {savingAction === "draft" ? "Saving..." : "Save draft"}
@@ -1305,7 +1278,6 @@ export function PilotPurchasesPage() {
                 setReceiveMessage(null);
                 setDraft(buildBlankDraft());
                 clearOcrReview();
-                setShowReview(false);
                 setEditorOpen(true);
               })}
             >
