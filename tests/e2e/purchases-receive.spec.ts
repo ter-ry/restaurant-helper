@@ -274,6 +274,8 @@ for (const viewport of VIEWPORTS) {
       await editor.getByRole("button", { name: "Save & receive" }).click();
       await page.getByRole("dialog", { name: "Confirm receipt" }).getByRole("button", { name: "Confirm receive" }).click();
       await expect(page.getByRole("alert").filter({ hasText: "was saved but not received" })).toBeVisible();
+      await expect(page.getByTestId("purchase-action-feedback")).toContainText("did not complete");
+      await expect(page.getByTestId("purchase-action-feedback")).not.toContainText("Not saved");
       expect(world.invoices).toHaveLength(1);
       expect(world.onHand).toBe(12);
 

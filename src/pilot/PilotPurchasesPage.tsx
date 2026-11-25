@@ -1258,7 +1258,7 @@ export function PilotPurchasesPage() {
             <div className="min-w-0 space-y-1">
               <div aria-live="polite" role="status" data-testid="purchase-action-feedback">
                 {receiveMessage ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">{receiveMessage}</p> : null}
-                {error && !receiveMessage ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">Not saved. See the message at the top of the editor.</p> : null}
+                {error && !receiveMessage ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">This action did not complete. Read the message at the top of the editor.</p> : null}
               </div>
               {ocrSummary ? <p data-testid="ocr-sticky-summary" data-tone={ocrSummary.tone} className={`text-sm font-semibold ${ocrSummary.tone === "bad" ? "text-danger" : ocrSummary.tone === "warn" ? "text-amber-800" : "text-emerald-800"}`}>{ocrSummary.text}</p> : null}
               {footerSummary ? <p className={`text-sm font-semibold ${reviewSummary.blockers.length ? "text-danger" : "text-muted"}`}>{footerSummary}</p> : null}
