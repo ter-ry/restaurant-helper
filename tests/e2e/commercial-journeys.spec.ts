@@ -2587,10 +2587,10 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await inventoryItems.nth(1).selectOption("31");
   await expect(inventoryItems.nth(0)).toHaveValue("30");
   await expect(inventoryItems.nth(1)).toHaveValue("31");
-  await page.locator('label:has-text("Purchase unit") input').nth(0).fill("case");
-  await page.locator('label:has-text("Purchase unit") input').nth(1).fill("case");
-  await page.locator('label:has-text("Inventory unit") input').nth(0).fill("bag");
-  await page.locator('label:has-text("Inventory unit") input').nth(1).fill("bag");
+  await page.locator('label:has-text("Purchase unit") select').nth(0).selectOption("case");
+  await page.locator('label:has-text("Purchase unit") select').nth(1).selectOption("case");
+  await page.locator('label:has-text("Inventory unit") select').nth(0).selectOption("bag");
+  await page.locator('label:has-text("Inventory unit") select').nth(1).selectOption("bag");
   await page.locator('label:has-text("Conversion") input').nth(0).fill("1");
   await page.locator('label:has-text("Conversion") input').nth(1).fill("1");
   await page.locator('label:has-text("Quantity") input').nth(0).fill("2");
@@ -2605,15 +2605,13 @@ test("empty purchases workspace supports supplier, inventory item, and first rec
   await expect(inventoryItems.nth(0)).toHaveValue("30");
   await expect(inventoryItems.nth(1)).toHaveValue("31");
 
-  await editorCard.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
   await page.getByRole("button", { name: "Save ready" }).click();
   await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
-  await editorCard.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-panel")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
+  await expect(page.getByRole("button", { name: "Save & receive" })).toBeEnabled({ timeout: 10000 });
 
-  await page.getByRole("button", { name: "Receive into inventory" }).click();
+  await page.getByRole("button", { name: "Save & receive" }).click();
   await page.getByRole("button", { name: "Confirm receive" }).click();
   await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible();
   await expect(editorCard).toHaveCount(0);
@@ -2661,19 +2659,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await page.getByLabel("Invoice number").fill("NB-327");
     await page.getByLabel("Description").fill("2% Milk");
     await page.getByLabel("Inventory item").selectOption("30");
-    await page.locator('label:has-text("Purchase unit") input').first().fill("case");
-    await page.locator('label:has-text("Inventory unit") input').first().fill("case");
+    await page.locator('label:has-text("Purchase unit") select').first().selectOption("case");
+    await page.locator('label:has-text("Inventory unit") select').first().selectOption("case");
     await page.locator('label:has-text("Conversion") input').first().fill("1");
     await page.locator('label:has-text("Quantity") input').first().fill("2");
     await page.locator('label:has-text("Unit price") input').first().fill("4.50");
     const editorCard = page.getByTestId("purchase-editor-card");
-    await editorCard.getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Save ready" }).click();
     await expect(page.getByText(/Invoice .*saved successfully\./)).toBeVisible();
-    await editorCard.getByRole("button", { name: "Review" }).click();
-    await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
+    await expect(page.getByRole("button", { name: "Save & receive" })).toBeEnabled({ timeout: 10000 });
 
-    await page.getByRole("button", { name: "Receive into inventory" }).click();
+    await page.getByRole("button", { name: "Save & receive" }).click();
     await page.getByRole("button", { name: "Confirm receive" }).dblclick();
     await expect.poll(() => receivePosts).toBe(1);
     // Failure is visible and the draft is still on screen (not silently lost).
@@ -2681,9 +2677,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(editorCard).toBeVisible();
 
     // Retry from the preserved server draft succeeds exactly once more.
-    await editorCard.getByRole("button", { name: "Review" }).click();
-    await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeEnabled({ timeout: 10000 });
-    await page.getByRole("button", { name: "Receive into inventory" }).click();
+    await expect(page.getByRole("button", { name: "Save & receive" })).toBeEnabled({ timeout: 10000 });
+    await page.getByRole("button", { name: "Save & receive" }).click();
     await page.getByRole("button", { name: "Confirm receive" }).click();
     await expect(page.getByText(/Invoice .*received into inventory\./)).toBeVisible({ timeout: 10000 });
     expect(receivePosts).toBe(2);
@@ -2709,9 +2704,8 @@ test("purchase review exception blocks an unmapped line until it is resolved", a
   await page.getByLabel("Description").fill("Unmapped greens");
   await page.getByLabel("Quantity").fill("2");
   await page.getByLabel("Unit price").fill("3.20");
-  await page.getByRole("button", { name: "Review" }).click();
   await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
-  await expect(page.getByRole("button", { name: "Receive into inventory" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save & receive" })).toBeDisabled();
 });
 
 test("OCR upload opens the structured review workspace with source evidence", async ({ page }) => {
@@ -2732,7 +2726,6 @@ test("OCR upload opens the structured review workspace with source evidence", as
   await (await chooser).setFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("mock invoice") });
   await expect(page.getByText("Original document")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Review EX-105/ })).toBeVisible();
-  await page.getByRole("button", { name: "Review", exact: true }).click();
   await expect(page.getByText("Map Mystery greens to inventory.")).toBeVisible();
   await expect(page.getByText("Review Mystery greens before receiving.")).toBeVisible();
   await expect(page.getByText("Needs mapping")).toBeVisible();
@@ -2796,7 +2789,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(banner).toContainText("Extracted items total $15.00, but the invoice subtotal is $106.50. Difference: $91.50. Review missing or incorrect items before receiving.");
     await expect(banner).toContainText("Some rows could not be read from the document.");
     await expect(banner).toContainText("Nothing was added or adjusted for you");
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $91.50)");
     await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
     await noOverflow(page);
@@ -2821,7 +2813,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(page.getByTestId("ocr-override-form")).toContainText("Save the draft first");
     await page.getByLabel("Unit price").first().fill("4");
     await expect(banner).toContainText("Difference: $86.50");
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
     await noOverflow(page);
     expect(writes).toEqual([]);
@@ -2829,7 +2820,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
 
   test(`an unsaved incomplete draft cannot be overridden, so the receive blocker stays at ${viewport.width}px`, async ({ page }) => {
     const writes = await openOcrDraft(page, makeOcrResponse({ subtotal: 106.5, total: 106.5, lines: [{ name: "Lettuce", quantity: 5, unitPrice: 3 }] }));
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     const summary = page.getByTestId("purchase-review-summary");
     await expect(summary).toContainText("Extracted items do not match the printed invoice");
     await expect(page.getByLabel(/Reason these lines are correct/)).toBeDisabled();
@@ -2845,7 +2835,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(banner).toHaveAttribute("data-status", "incomplete");
     // A line edit recomputes the draft totals; the printed-invoice blocker must survive it.
     await page.getByLabel("Unit price").first().fill("4");
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
     expect(writes).toEqual([]);
   });
@@ -2860,7 +2849,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     const banner = page.getByTestId("ocr-reconciliation-banner");
     await expect(banner).toHaveAttribute("data-status", "incomplete");
     await expect(banner).toContainText("Difference: $86.50");
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).toContainText("Extracted items do not match the printed invoice (difference $86.50)");
     await expect(page.getByTestId("purchase-review-summary")).toContainText("BLOCKING");
     // Nothing was received: the only writes are the draft save.
@@ -2872,7 +2860,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     const banner = page.getByTestId("ocr-reconciliation-banner");
     await expect(banner).toHaveAttribute("data-status", "matched");
     await expect(banner).toContainText("matches the invoice total");
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).not.toContainText("do not match the printed invoice");
     expect(writes).toEqual([]);
   });
@@ -2883,7 +2870,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(banner).toHaveAttribute("data-status", "matched");
     await expect(banner).toContainText("Extracted items total $15.00, which matches the invoice subtotal.");
     await expect(page.getByRole("button", { name: "Add missing line" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByTestId("purchase-review-summary")).not.toContainText("do not match the printed invoice");
     await noOverflow(page);
     expect(writes).toEqual([]);

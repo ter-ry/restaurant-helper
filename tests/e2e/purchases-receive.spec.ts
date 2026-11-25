@@ -864,3 +864,89 @@ for (const width of [1440, 1280, 768, 390]) {
     });
   });
 }
+
+// Owner-reproduced 2026-11-25 (Showcase /app/purchases): a datalist "Purchase unit" showed only "each" when the value was
+// "each", so kg looked unavailable. Units are now a real select with every common unit plus a custom path, the review
+// summary lives inline in the editor (no second Review mode), and the server preview is hidden once edits are unsaved.
+for (const width of [390, 768, 1280]) {
+  test.describe(`purchase unit picker and inline inventory impact at ${width}px`, () => {
+    test(`each → kg is selectable, the stale preview is withheld until saved, and the unit survives save and reopen at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const world = newWorld();
+      const line = { ...savedLine(760, 0, 10), purchaseUnit: "each", inventoryUnit: "each" };
+      world.invoices.push({ id: 760, invoiceNumber: "QA-RCV-760", status: "Draft", invoiceDate: "2026-11-25", subtotal: 10, tax: 0, totalAmount: 10, lineItems: [line] });
+      await installWorld(page, world);
+      await page.route("**/api/pilot/purchases/invoices/760/preview", (route) => json(route, {
+        invoiceId: 760,
+        lines: [{ lineId: 7600, description: "Chicken breast 1", inventoryItemId: 30, inventoryItemName: "Chicken Breast", currentOnHand: 13.2, quantityDelta: 1, afterOnHand: 14.2, unit: "kg", averageUnitCostAfter: 8.56, priceChangePercent: null }],
+      }));
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByTestId("purchase-queue").getByRole("button", { name: /QA-RCV-760/ }).click();
+      const editor = page.getByTestId("purchase-editor-card");
+
+      // One consistent action area: no second Review mode and no duplicated Review and send controls.
+      await expect(editor.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
+      await expect(editor.getByText("Review and send")).toHaveCount(0);
+      const summary = editor.getByTestId("purchase-review-summary");
+      await expect(summary).toBeVisible();
+      await expect(summary).toContainText("Chicken Breast"); // inline, server-authoritative preview for the saved draft
+      await expect(summary).toContainText("14.2 kg");
+
+      const purchaseUnit = editor.getByLabel("Purchase unit", { exact: true });
+      await expect(purchaseUnit).toHaveValue("each");
+      const options = await purchaseUnit.locator("option").allTextContents();
+      expect(options).toEqual(expect.arrayContaining(["each", "kg", "lb", "case", "Custom unit…"])); // the full list, not just "each"
+      await purchaseUnit.selectOption("kg");
+      await editor.getByLabel("Inventory unit", { exact: true }).selectOption("kg");
+      await expect(editor.getByText("Adds 1 kg to inventory.")).toBeVisible();
+      await expect(editor.getByRole("spinbutton", { name: "Conversion" })).toHaveValue("1"); // switching units never rewrites the conversion
+
+      // Unsaved edit: the saved-invoice projection is withheld instead of shown stale.
+      await expect(summary).not.toContainText("14.2 kg");
+      await expect(editor.getByTestId("purchase-preview-stale")).toBeVisible();
+
+      // A nonstandard unit still works through the explicit custom path.
+      await purchaseUnit.selectOption("__custom");
+      await editor.getByLabel("Purchase unit (custom)").fill("sack");
+      await expect(editor.getByLabel("Purchase unit (custom)")).toHaveValue("sack");
+      await purchaseUnit.selectOption("kg");
+
+      await editor.getByTestId("purchase-action-bar").getByRole("button", { name: "Save draft" }).click();
+      await expect(page.getByTestId("purchase-action-feedback")).toContainText("saved successfully");
+      const patch = world.posts.filter((post) => post.method === "PATCH").at(-1);
+      expect(patch?.body.lineItems[0]).toMatchObject({ purchaseUnit: "kg", inventoryUnit: "kg", conversionFactor: 1 });
+      await expect(summary).toContainText("14.2 kg"); // preview returns once the draft matches the server again
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByTestId("purchase-queue").getByRole("button", { name: /QA-RCV-760/ }).click();
+      await expect(page.getByTestId("purchase-editor-card").getByLabel("Purchase unit", { exact: true })).toHaveValue("kg");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    });
+
+    test(`a saved nonstandard unit is preserved and shown through the custom path at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const world = newWorld();
+      world.invoices.push({ id: 761, invoiceNumber: "QA-RCV-761", status: "Draft", invoiceDate: "2026-11-25", subtotal: 10, tax: 0, totalAmount: 10, lineItems: [{ ...savedLine(761, 0, 10), purchaseUnit: "sack", inventoryUnit: "kg", conversionFactor: 25 }] });
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByTestId("purchase-queue").getByRole("button", { name: /QA-RCV-761/ }).click();
+      const editor = page.getByTestId("purchase-editor-card");
+      await expect(editor.getByLabel("Purchase unit (custom)")).toHaveValue("sack");
+      await expect(editor.getByRole("spinbutton", { name: "Conversion" })).toHaveValue("25");
+    });
+  });
+}
+
+test.describe("manual entry the operator confirmed is not flagged as low confidence", () => {
+  test("a mapped, confirmed line with the default manual confidence shows READY with no Review warning", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const world = newWorld();
+    world.invoices.push({ id: 770, invoiceNumber: "QA-RCV-770", status: "Draft", invoiceDate: "2026-11-25", subtotal: 10, tax: 0, totalAmount: 10, lineItems: [{ ...savedLine(770, 0, 10), confidence: 0.45, needsReview: false }] });
+    await installWorld(page, world);
+    await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("purchase-queue").getByRole("button", { name: /QA-RCV-770/ }).click();
+    const summary = page.getByTestId("purchase-editor-card").getByTestId("purchase-review-summary");
+    await expect(summary).toContainText("READY");
+    await expect(summary).not.toContainText("before receiving");
+  });
+});
