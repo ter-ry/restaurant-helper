@@ -1256,7 +1256,7 @@ export function PilotPurchasesPage() {
         {!finalizedStatus ? (
           <div data-testid="purchase-action-bar" className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_12px_-8px_rgba(15,23,42,0.18)]">
             <div className="min-w-0 space-y-1">
-              <div aria-live="polite" role="status" data-testid="purchase-action-feedback">
+              <div aria-live="polite" data-testid="purchase-action-feedback">
                 {receiveMessage ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">{receiveMessage}</p> : null}
                 {error && !receiveMessage ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">This action did not complete. Read the message at the top of the editor.</p> : null}
               </div>
