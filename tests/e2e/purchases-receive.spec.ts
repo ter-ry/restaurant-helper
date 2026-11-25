@@ -438,6 +438,24 @@ test.describe("purchase queue while a save is in flight at 1440px", () => {
   });
 });
 
+test.describe("save draft acknowledgement stays visible beside the sticky action bar", () => {
+  for (const width of [390, 1280]) {
+    test(`confirms the save inside the action bar at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      const world = newWorld();
+      world.invoices.push({ id: 740, invoiceNumber: "CM-740", status: "Draft", invoiceDate: "2026-11-10", subtotal: 4, tax: 0, totalAmount: 4, lineItems: [savedLine(740, 0)] });
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-740/ }).click();
+      const bar = page.getByTestId("purchase-action-bar");
+      await bar.getByRole("button", { name: "Save draft" }).click();
+      const feedback = bar.getByTestId("purchase-action-feedback");
+      await expect(feedback).toContainText("Invoice CM-740 saved successfully.");
+      await expect(feedback).toBeInViewport();
+    });
+  }
+});
+
 test.describe("purchase queue while a void is in flight at 1440px", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

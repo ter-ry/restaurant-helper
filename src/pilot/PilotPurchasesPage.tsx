@@ -1013,7 +1013,7 @@ export function PilotPurchasesPage() {
             ) : null}
           </div>
         ) : null}
-        {receiveMessage ? <div aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
+        {receiveMessage && finalizedStatus ? <div aria-live="polite" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{receiveMessage}</div> : null}
 
         {!showReview ? (
           <div className="mt-4 grid gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-3 md:grid-cols-[minmax(12rem,1.3fr)_minmax(9rem,0.8fr)_minmax(11rem,0.9fr)] md:items-end">
@@ -1256,6 +1256,10 @@ export function PilotPurchasesPage() {
         {!finalizedStatus ? (
           <div data-testid="purchase-action-bar" className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_12px_-8px_rgba(15,23,42,0.18)]">
             <div className="min-w-0 space-y-1">
+              <div aria-live="polite" role="status" data-testid="purchase-action-feedback">
+                {receiveMessage ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">{receiveMessage}</p> : null}
+                {error && !receiveMessage ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">Not saved. See the message at the top of the editor.</p> : null}
+              </div>
               {ocrSummary ? <p data-testid="ocr-sticky-summary" data-tone={ocrSummary.tone} className={`text-sm font-semibold ${ocrSummary.tone === "bad" ? "text-danger" : ocrSummary.tone === "warn" ? "text-amber-800" : "text-emerald-800"}`}>{ocrSummary.text}</p> : null}
               {footerSummary ? <p className={`text-sm font-semibold ${reviewSummary.blockers.length ? "text-danger" : "text-muted"}`}>{footerSummary}</p> : null}
             </div>
