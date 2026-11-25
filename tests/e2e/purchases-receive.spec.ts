@@ -590,7 +590,7 @@ for (const viewport of VIEWPORTS) {
       await expect(bar).toContainText("Map 2 items to inventory before receiving");
       await expect(editor.getByRole("button", { name: "Save & receive" })).toBeDisabled();
       await expect(editor.getByText("Needs mapping")).toHaveCount(2);
-      await editor.getByTestId("purchase-line-11").scrollIntoViewIfNeeded();
+      await page.locator("section.pilot-modal").last().evaluate((node) => { node.scrollTop = node.scrollHeight; }); // scrolled to the very end: the sticky bar rests below the last line
       const lastLine = await editor.getByTestId("purchase-line-11").boundingBox();
       const barBox = await bar.boundingBox();
       expect(lastLine && barBox && barBox.y >= lastLine.y + lastLine.height - 1).toBe(true); // never covers the last line
@@ -664,6 +664,7 @@ for (const width of [1440, 1280, 768, 390]) {
           }
         }
       }
+      await page.locator("section.pilot-modal").last().evaluate((node) => { node.scrollTop = node.scrollHeight; }); // scrolled to the very end: the sticky bar rests below the last line
       const lastLine = await editor.getByTestId("purchase-line-4").boundingBox();
       const barBox = await editor.getByTestId("purchase-action-bar").boundingBox();
       expect(lastLine && barBox && barBox.y >= lastLine.y + lastLine.height - 1).toBe(true);
@@ -781,6 +782,65 @@ for (const width of [1280, 768, 390]) {
       await page.getByTestId("purchase-queue").getByRole("button", { name: /CM-781/ }).click();
       await expect(page.getByTestId("purchase-detail-modal")).toContainText("CM-781");
       await expectNoOverflow(page);
+    });
+  });
+}
+
+for (const width of [1440, 1280, 768, 390]) {
+  test.describe(`sticky invoice mismatch summary while editing at ${width}px`, () => {
+    test.use({ viewport: { width, height: width >= 1280 ? 800 : 844 } });
+
+    test("the printed-total discrepancy stays on screen beside the actions while editing the last line, next to the mapping blocker", async ({ page }) => {
+      const world = newWorld();
+      world.ocrLineCount = 5;
+      world.ocrPrinted = { subtotal: 20, tax: 0, total: 20 };
+      await installWorld(page, world);
+      await page.goto("/app/purchases", { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "New purchase" }).click();
+      await page.getByLabel("Invoice file").setInputFiles("tests/e2e/fixtures/suppliers.csv");
+      const dialog = page.getByRole("dialog", { name: "Review uploaded invoice" });
+      const editor = dialog.getByTestId("purchase-editor-card");
+      await expect(editor.getByTestId("purchase-line-4")).toBeAttached();
+      const banner = dialog.getByTestId("ocr-reconciliation-banner");
+      const summary = dialog.getByTestId("ocr-sticky-summary");
+      const bar = dialog.getByTestId("purchase-action-bar");
+      await expect(banner).toHaveAttribute("data-status", "matched");
+      await expect(summary).toHaveAttribute("data-tone", "ok");
+
+      // Edit the last line at the bottom of the long invoice: 1 kg -> 0.5 kg.
+      const lastLine = editor.getByTestId("purchase-line-4");
+      await lastLine.scrollIntoViewIfNeeded();
+      await lastLine.getByLabel("Quantity").fill("0.5");
+
+      // The detailed banner is scrolled out of view, but the compact summary is not.
+      await expect(banner).not.toBeInViewport();
+      await expect(summary).toBeInViewport({ ratio: 1 });
+      await expect(summary).toHaveAttribute("data-tone", "bad");
+      await expect(summary).toContainText("$18.00");
+      await expect(summary).toContainText("$20.00");
+      await expect(summary).toContainText("$2.00");
+      // The independent mapping blocker is shown alongside it, never instead of it.
+      await expect(bar).toContainText("Map 5 items to inventory before receiving");
+      await expect(bar).toBeInViewport({ ratio: 1 });
+      const receive = bar.getByRole("button", { name: "Save & receive" });
+      await expect(receive).toBeDisabled();
+      await expect(receive).toBeInViewport({ ratio: 1 });
+      // Not announced as an alert on every keystroke: only the detailed banner carries the alert role.
+      expect(await summary.getAttribute("role")).toBeNull();
+
+      // The sticky bar must not cover the field being edited.
+      const barBox = await bar.boundingBox();
+      const fieldBox = await lastLine.getByLabel("Quantity").boundingBox();
+      expect(barBox && fieldBox && (fieldBox.y + fieldBox.height <= barBox.y + 1 || fieldBox.y >= barBox.y + barBox.height - 1)).toBe(true);
+      await expectNoOverflow(page);
+      await page.screenshot({ path: `test-results/purchase-sticky-summary-${width}.png` });
+
+      // Restoring the quantity clears the mismatch, the mapping blocker remains, nothing was posted.
+      await lastLine.getByLabel("Quantity").fill("1");
+      await expect(summary).toHaveAttribute("data-tone", "ok");
+      await expect(summary).not.toContainText("mismatch");
+      await expect(bar).toContainText("Map 5 items to inventory before receiving");
+      expect(world.posts.filter((post) => post.path.endsWith("/receive"))).toHaveLength(0);
     });
   });
 }
