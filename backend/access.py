@@ -66,14 +66,13 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.create_menu_costing_menu_item": "MENU_COSTING",
     "pilot_api.update_menu_costing_menu_item": "MENU_COSTING",
     "pilot_api.delete_menu_costing_menu_item": "MENU_COSTING",
-    "pilot_api.daily_close": "DAILY_CLOSE",
     "pilot_api.reports": "REPORTING",
-    "pilot_api.create_daily_close_session": "DAILY_CLOSE",
-    "pilot_api.get_daily_close_session": "DAILY_CLOSE",
-    "pilot_api.update_daily_close_session": "DAILY_CLOSE",
-    "pilot_api.finalize_daily_close_session": "DAILY_CLOSE",
     "pilot_api.list_audit_events": "REPORTING",
 }
+# Daily Close is served by the `daily_close` blueprint, not `pilot_api`, so it cannot be gated
+# from this map: access_state_for_request() below returns early for every other blueprint. It
+# enforces the DAILY_CLOSE module itself in daily_close._require_daily_close_access(), covered by
+# backend/tests/test_endpoint_authorization_coverage.py.
 
 
 def current_organization() -> Organization | None:

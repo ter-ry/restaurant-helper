@@ -8,7 +8,11 @@ Last reconciled 2026-11-16 against live GitHub (main `a46bb23`, issue #315) for 
 
 ## NEXT TASK — work from GitHub queue
 
-Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval. Snapshot at 2026-11-16 (live GitHub wins):
+Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs. No direct push to main, merge, deploy, flag-on Clover, live data or Sandbox transaction without owner approval.
+
+**2026-11-25 (CLAUDE-W1).** The remaining full-MVP gates are owner-controlled, not code: Showcase acceptance #169 (partial owner PASSes recorded 2026-11-24 for the purchase-editor shell, the OCR two-column preview and in-memory mismatch detection; save/reopen/receive/reversal still not exercised live), Clover paid-Sandbox acceptance #166, deployed SHA/Alembic/flag per environment #165, release-candidate sign-off #175, and pricing/terms #174. W1 Milestones B, C and D are merged. Release-candidate test evidence at the current head is in the section below.
+
+Older snapshot at 2026-11-16 (live GitHub wins):
 
 - **Open PRs:** #296 (trusted-review dry-run docs note), #282 (first-pilot commercial policy and onboarding checklists, #281, review-ready), #272 (develop CI smoke test, #268). None touches product code.
 - **Merged since the 2026-11-05 snapshot (all with CI at merge; "merged" is not Showcase evidence):** #238 768px fixes, #239 import verification, #241 Clover Daily Close integration, #242 supplier soft archive, #243 negative-stock tests, #246 import ledger guard, #247 Clover signed-ledger usage, #250 POS-negative visibility, #251 inventory row locks, #254 adjustment reversal, #255 bulk edit, #256 OCR draft correction tests, #261 invoice-number 409, #264 Clover cash/DST evidence, #265 invoice void/correction, #267 Clover owner reports, #277 transfers, #303 partial receipts into POS-negative stock, #304/#308/#313/#314 verified-free inventory evidence, #293 schedule demo e2e, and the develop-lane/trusted-review automation (#269, #274, #283, #285, #287, #288, #294-#301, #307).
@@ -22,14 +26,30 @@ Follow the **Session Start Routine** in `AGENTS.md` against live issues and PRs.
 
 | Item | Verified state / limitation |
 |---|---|
-| Main | `a46bb23` (#307 merged); CI at that head not re-verified in this docs update |
-| CI on main | Not re-queried here; check the Actions tab. The 2026-11-05 run 42067857772 was on `9d2099c` and is stale |
+| Main | `398f24a` (#398 merged 2026-11-25T01:34Z) |
+| CI on main | **Green at that exact head**: run [45526705259](https://github.com/ter-ry/restaurant-helper/actions/runs/45526705259), `backend` success and `frontend` success. The Pages deploy run 45526705348 also succeeded |
 | GitHub Pages | Static site only, **not** evidence of any Render backend deployment; latest deploy run not re-verified here |
 | Protected main | Active `Protect Main` ruleset verified read-only (#171, closed 2026-11-05); details below |
-| Open PRs | #272, #282, #296 (see NEXT TASK) |
-| Latest Alembic in code | `0029_inventory_cost_verifications` (0027 invoice void lineage, 0028 inventory transfers); **deployed database head unknown**, see Deployments |
+| Open PRs | #394 (Codex, manual integration verifier), #296, #282, #272 — verified 2026-11-25 |
+| Latest Alembic in code | `0030_purchase_invoice_ocr_evidence` (single head, chained onto 0029); **deployed database head unknown**, see Deployments |
 | Clover execution | Inventory writes disabled by default and stay off. Reversal/refund handling (#186, `8f4b77f`) and Daily Close source-type exclusion (#184, `48ee7a2`) are merged. No flag-on evidence exists; controlled Sandbox validation #166 is blocked and owner-gated |
 | Process PRs | #200, #212, #220, #221 merged (coordination and reporting rules); #235 merged (onboarding/support runbook, #226). #217 was merged then reverted by #218 as unsafe environment automation |
+
+## Release-candidate test evidence (#175) — first-hand, 2026-11-25 on `398f24a`
+
+Earlier W1 sessions could only report "PostgreSQL suites not run here (no DB)", so #175 had no recorded regression evidence. This run executed the gated suites on a disposable local PostgreSQL 16 cluster provisioned exactly like CI, with `flowtally_migrator` and `flowtally_runtime` both `NOSUPERUSER NOBYPASSRLS` so RLS is genuinely enforced. The recipe is in [AUTOMATION_READINESS.md](AUTOMATION_READINESS.md). **This is CI-equivalent automated evidence, not Showcase, Sandbox or Production acceptance.**
+
+| Suite | Result |
+|---|---|
+| `test_purchasing_inventory_lifecycle_postgres.py` (Milestone B journey) | 2 passed |
+| `test_migrations_postgres.py` | 11 passed |
+| `test_seed.py::test_migrations_upgrade_and_seed_on_fresh_database` | 1 passed |
+| `test_staging_postgres_roles.py` | 1 passed |
+| `test_postgres_rls.py` (whole file) | 46 passed, 12 skipped, 0 failed — the skips are the recorded support-access deferral |
+| `npm run build` | passed |
+| CI at this head | run [45526705259](https://github.com/ter-ry/restaurant-helper/actions/runs/45526705259): `backend` and `frontend` both success |
+
+What this does **not** establish: any deployed environment's SHA, Alembic head or Clover flag (#165), Showcase acceptance of the save/reopen/receive/reversal journey (#169), or Clover paid-Sandbox acceptance (#166). #175 still needs those owner steps.
 
 ## Full-MVP feature matrix — evidence status
 
