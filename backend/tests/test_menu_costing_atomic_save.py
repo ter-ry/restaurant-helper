@@ -183,3 +183,22 @@ def test_atomic_save_repoint_defaults_unit_to_new_item_stock_unit(client):
     # unchanged item keeps its unit when omitted
     again = _save(client, created["id"], {"name": "Dough", "ingredients": [{"id": row["id"], "inventoryItemId": flour, "quantityRequired": 2}]}).get_json()
     assert again["ingredients"][0]["unit"] == "kg"
+
+
+def test_atomic_save_swap_preserves_omitted_notes_and_allows_new_row_first(client):
+    _, (cheese, bread, butter) = _setup(client, "Notes Cafe")
+    created = _save(client, None, {"name": "Toast", "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2, "notes": "grated"},
+        {"inventoryItemId": bread, "quantityRequired": 1, "notes": "sliced"},
+    ]}).get_json()
+    r1, r2 = (i["id"] for i in created["ingredients"])
+    out = _save(client, created["id"], {"name": "Toast", "ingredients": [
+        {"inventoryItemId": butter, "quantityRequired": 1},  # new row listed first
+        {"id": r1, "inventoryItemId": bread, "quantityRequired": 2},
+        {"id": r2, "inventoryItemId": cheese, "quantityRequired": 1},
+    ]})
+    assert out.status_code == 200, out.get_json()
+    rows = {i["inventoryItemId"]: i for i in out.get_json()["ingredients"]}
+    assert rows[bread]["id"] == r1 and rows[bread]["notes"] == "grated"
+    assert rows[cheese]["id"] == r2 and rows[cheese]["notes"] == "sliced"
+    assert rows[butter]["id"] not in (r1, r2)

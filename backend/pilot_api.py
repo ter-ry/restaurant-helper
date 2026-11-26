@@ -4653,6 +4653,7 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
                 db.session.delete(row)
         db.session.flush()
         creators: dict[int, int | None] = {}
+        prior_notes: dict[int, str] = {}
         original_item_ids = {row_id: row.inventory_item_id for row_id, row in keep.items()}
         held = {row.inventory_item_id: row_id for row_id, row in keep.items()}
         pending = [rid for rid, row in keep.items() if entries_by_id[rid]["inventory_item_id"] != row.inventory_item_id]
@@ -4672,11 +4673,19 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
         # Swap/cycle rows are recreated with their ORIGINAL ids so a lost-response retry of the same payload
         # still resolves every id.
         creators = {rid: keep[rid].created_by_user_id for rid in pending}
+        prior_notes = {rid: keep[rid].notes for rid in pending}
         for rid in pending:
             db.session.delete(keep.pop(rid))
         db.session.flush()
 
-        for entry in parsed:
+        # Explicit-id rows (incl. recreated swap/cycle rows) go first and are flushed before any auto-id insert,
+        # so a freed id can never be handed to a new row.
+        ordered = [e for e in parsed if e["id"] is not None] + [e for e in parsed if e["id"] is None]
+        flushed_explicit = False
+        for entry in ordered:
+            if entry["id"] is None and not flushed_explicit:
+                db.session.flush()
+                flushed_explicit = True
             item = inventory_items[entry["inventory_item_id"]]
             unit = str(entry["unit"] if entry["unit"] is not None else (item.stock_unit or "each")).strip() or (item.stock_unit or "each")
             notes = str(entry["notes"]).strip() if entry["notes"] is not None else None
@@ -4690,7 +4699,7 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
                         inventory_item_id=item.id,
                         quantity_required=entry["quantity"],
                         unit=unit,
-                        notes=notes or "",
+                        notes=(notes if notes is not None else prior_notes.get(entry["id"], "")) or "",
                         sort_order=entry["sort_order"],
                         created_by_user_id=creators.get(entry["id"], current_user.id),
                         updated_by_user_id=current_user.id,
