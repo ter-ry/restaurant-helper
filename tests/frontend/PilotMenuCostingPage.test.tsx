@@ -7,6 +7,7 @@ const mockApi = vi.hoisted(() => ({
   fetchPilotMenuCosting: vi.fn(),
   fetchPilotInventory: vi.fn(),
   updatePilotMenuCostingRecipe: vi.fn(),
+  savePilotMenuCostingRecipeEditor: vi.fn(),
   updatePilotMenuCostingRecipeIngredient: vi.fn(),
   createPilotMenuCostingMenuItem: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     fetchPilotInventory: mockApi.fetchPilotInventory,
     createPilotMenuCostingRecipe: vi.fn(),
     updatePilotMenuCostingRecipe: mockApi.updatePilotMenuCostingRecipe,
+    savePilotMenuCostingRecipeEditor: mockApi.savePilotMenuCostingRecipeEditor,
     deletePilotMenuCostingRecipe: vi.fn(),
     createPilotMenuCostingRecipeIngredient: vi.fn(),
     updatePilotMenuCostingRecipeIngredient: mockApi.updatePilotMenuCostingRecipeIngredient,
@@ -51,6 +53,7 @@ describe("PilotMenuCostingPage", () => {
 
   beforeEach(() => {
     mockApi.updatePilotMenuCostingRecipe.mockReset();
+    mockApi.savePilotMenuCostingRecipeEditor.mockReset();
     mockApi.updatePilotMenuCostingRecipeIngredient.mockReset();
     mockApi.createPilotMenuCostingMenuItem.mockReset();
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
@@ -246,14 +249,12 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
     await waitFor(() => expect(screen.getByRole("heading", { name: "Edit recipe" })).toBeVisible());
     expect(screen.getAllByLabelText("Name")[0]).toHaveValue("Cheesy Toast");
-    fireEvent.change(screen.getByRole("combobox", { name: "Inventory item" }), { target: { value: "101" } });
-    expect(screen.getByDisplayValue("kg")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Inventory item" })).toHaveValue("Cheese · kg");
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue(2);
     expect(screen.getByText(/Cost basis:/)).toBeVisible();
     expect(screen.getByText(/Current inventory valuation/)).toBeVisible();
     expect(screen.getByText(/latest purchase cost is shown as a labeled estimate/)).toBeVisible();
-    expect(
-      screen.getByText((content) => content.includes("2 kg") && content.includes("$3.50/kg") && content.includes("ingredient cost")),
-    ).toBeVisible();
+    expect(screen.getAllByText(/\$7\.00/).length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Close Edit recipe" }));
 
@@ -318,7 +319,7 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
   });
 
-  it("preserves an unsaved recipe edit when saving an ingredient reloads the recipe", async () => {
+  it("edits ingredient rows locally and saves them with the recipe", async () => {
     render(<PilotMenuCostingPage />);
     await screen.findByText("Menu costing");
     fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
@@ -329,44 +330,29 @@ describe("PilotMenuCostingPage", () => {
     const server = await mockApi.fetchPilotMenuCosting.mock.results[0].value;
     const updated = structuredClone(server);
     updated.recipes[0].ingredients[0].quantityRequired = 3;
-    mockApi.updatePilotMenuCostingRecipeIngredient.mockResolvedValue(updated.recipes[0]);
+    const savedRecipe = { ...updated.recipes[0], name: "Changed locally" };
+    mockApi.savePilotMenuCostingRecipeEditor.mockResolvedValue(savedRecipe);
     mockApi.fetchPilotMenuCosting.mockResolvedValue(updated);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Quantity required"), { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update ingredient" }));
-    await waitFor(() => expect(screen.getByDisplayValue("Changed locally")).toBeVisible());
-    expect(screen.getByText(/3 kg/)).toBeVisible();
-
-    const savedRecipe = { ...updated.recipes[0], name: "Changed locally" };
-    mockApi.updatePilotMenuCostingRecipe.mockResolvedValue(savedRecipe);
+    fireEvent.change(screen.getByLabelText("Quantity for ingredient 1"), { target: { value: "3" } });
     mockApi.fetchPilotMenuCosting.mockResolvedValue({ ...updated, recipes: [savedRecipe] });
-    fireEvent.click(screen.getByRole("button", { name: "Update recipe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
     await waitFor(() => expect(screen.getByText("Recipe Changed locally saved.")).toBeVisible());
+    expect(mockApi.savePilotMenuCostingRecipeEditor).toHaveBeenCalledWith(1, expect.objectContaining({ ingredients: expect.any(Array) }));
     expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
-    expect(screen.getByText(/3 kg/)).toBeVisible();
   });
 
-  it("preserves an unsaved ingredient edit when saving recipe details, and keeps failed saves editable", async () => {
+  it("keeps a failed recipe-editor save editable", async () => {
     render(<PilotMenuCostingPage />);
     await screen.findByText("Menu costing");
     fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
     expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Quantity required"), { target: { value: "3" } });
     fireEvent.change(screen.getAllByLabelText("Name")[0], { target: { value: "Recipe renamed" } });
-    const server = await mockApi.fetchPilotMenuCosting.mock.results[0].value;
-    mockApi.updatePilotMenuCostingRecipe.mockResolvedValue({ ...server.recipes[0], name: "Recipe renamed" });
-    mockApi.fetchPilotMenuCosting.mockResolvedValue(server);
-    fireEvent.click(screen.getByRole("button", { name: "Update recipe" }));
-    await waitFor(() => expect(screen.getByText("Recipe Recipe renamed saved.")).toBeVisible());
-    expect(screen.getByDisplayValue("3")).toBeVisible();
-
-    mockApi.updatePilotMenuCostingRecipeIngredient.mockRejectedValue(new Error("Ingredient save failed"));
-    fireEvent.click(screen.getByRole("button", { name: "Update ingredient" }));
-    await waitFor(() => expect(screen.getByText("Ingredient save failed")).toBeVisible());
-    expect(screen.getByDisplayValue("3")).toBeVisible();
+    mockApi.savePilotMenuCostingRecipeEditor.mockRejectedValue(new Error("Recipe save failed"));
+    fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
+    await waitFor(() => expect(screen.getByText("Recipe save failed")).toBeVisible());
+    expect(screen.getByDisplayValue("Recipe renamed")).toBeVisible();
   });
 
   it("labels a new menu item save as Create (not Assign recipe) and reports a failed save inside the open dialog", async () => {

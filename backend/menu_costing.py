@@ -88,14 +88,17 @@ def serialize_recipe(recipe: Recipe) -> dict[str, Any]:
     raw_costs = [_ingredient_cost(ingredient) for ingredient in recipe.ingredients]
     costs = [cost for cost in raw_costs if cost is not None]
     cost_available = bool(raw_costs) and len(costs) == len(raw_costs) and recipe.yield_quantity is not None and Decimal(str(recipe.yield_quantity)) > 0
-    total_cost = sum(costs, start=Decimal("0")).quantize(MONEY) if cost_available else None
+    exact_total_cost = sum(costs, start=Decimal("0")) if cost_available else None
+    total_cost = exact_total_cost.quantize(MONEY) if exact_total_cost is not None else None
     if cost_available:
         displayed_line_total = sum((Decimal(str(ingredient["lineCost"])) for ingredient in ingredient_snapshots), start=Decimal("0")).quantize(MONEY)
         if displayed_line_total != total_cost:
             warnings.append("Ingredient lines are rounded to cents for display; recipe totals retain higher precision before currency rounding.")
     cost_per_yield = None
-    if total_cost is not None and Decimal(str(recipe.yield_quantity)) > 0:
-        cost_per_yield = (total_cost / Decimal(str(recipe.yield_quantity))).quantize(MONEY)
+    exact_cost_per_yield = None
+    if exact_total_cost is not None and Decimal(str(recipe.yield_quantity)) > 0:
+        exact_cost_per_yield = exact_total_cost / Decimal(str(recipe.yield_quantity))
+        cost_per_yield = exact_cost_per_yield.quantize(MONEY)
 
     return {
         "id": recipe.id,
@@ -112,6 +115,8 @@ def serialize_recipe(recipe: Recipe) -> dict[str, Any]:
         "ingredients": ingredient_snapshots,
         "totalCost": decimal_to_float(total_cost),
         "costPerYield": decimal_to_float(cost_per_yield),
+        "totalCostExact": decimal_to_float(exact_total_cost),
+        "costPerYieldExact": decimal_to_float(exact_cost_per_yield),
         "costAvailable": cost_available,
         "warnings": warnings,
         "createdByUserId": recipe.created_by_user_id,
@@ -125,6 +130,7 @@ def serialize_menu_item(menu_item: MenuItem) -> dict[str, Any]:
     recipe = menu_item.recipe
     recipe_snapshot = serialize_recipe(recipe) if recipe else None
     recipe_cost = Decimal(str(recipe_snapshot["costPerYield"])) if recipe_snapshot and recipe_snapshot["costPerYield"] is not None else None
+    recipe_cost_exact = Decimal(str(recipe_snapshot["costPerYieldExact"])) if recipe_snapshot and recipe_snapshot["costPerYieldExact"] is not None else None
     selling_price = _decimal(menu_item.selling_price, "0")
     gross_profit = None
     food_cost_percent = None
@@ -156,6 +162,8 @@ def serialize_menu_item(menu_item: MenuItem) -> dict[str, Any]:
         "notes": menu_item.notes,
         "recipe": recipe_snapshot,
         "recipeCostPerYield": decimal_to_float(recipe_cost),
+        "recipeCostPerYieldExact": decimal_to_float(recipe_cost_exact),
+        "recipeCostPerYieldRounded": decimal_to_float(recipe_snapshot["costPerYield"]) if recipe_snapshot else None,
         "grossProfit": decimal_to_float(gross_profit),
         "foodCostPercent": decimal_to_float(food_cost_percent),
         "grossMarginPercent": decimal_to_float(gross_margin_percent),

@@ -4405,6 +4405,95 @@ def delete_menu_costing_recipe(recipe_id: int):
     return jsonify({"ok": True}), 200
 
 
+@bp.put("/api/pilot/menu-costing/recipes/<int:recipe_id>/editor")
+@login_required
+def save_menu_costing_recipe_editor(recipe_id: int):
+    """Persist recipe metadata and its complete ingredient draft atomically."""
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    recipe = (
+        Recipe.query.filter_by(id=recipe_id, organization_id=organization.id, location_id=location.id)
+        .options(selectinload(Recipe.ingredients))
+        .first()
+    )
+    if recipe is None:
+        return json_error("Recipe not found.", 404)
+
+    payload = _json_body()
+    recipe_data = _menu_costing_recipe_payload(payload, recipe)
+    ingredients_payload = payload.get("ingredients")
+    if not isinstance(ingredients_payload, list):
+        raise RequestValidationError("Validation failed.", {"ingredients": "Send the complete ingredient list."})
+
+    rows: list[dict[str, Any]] = []
+    seen_inventory_ids: set[int] = set()
+    existing_by_id = {ingredient.id: ingredient for ingredient in recipe.ingredients}
+    for index, raw in enumerate(ingredients_payload):
+        if not isinstance(raw, dict):
+            raise RequestValidationError("Validation failed.", {f"ingredients[{index}]": "Ingredient must be an object."})
+        try:
+            inventory_item_id = int(raw.get("inventoryItemId"))
+        except (TypeError, ValueError):
+            raise RequestValidationError("Validation failed.", {f"ingredients[{index}].inventoryItemId": "Choose an inventory item."}) from None
+        if inventory_item_id in seen_inventory_ids:
+            raise RequestValidationError("Validation failed.", {f"ingredients[{index}].inventoryItemId": "An inventory item can appear only once."})
+        seen_inventory_ids.add(inventory_item_id)
+        inventory_item = InventoryItem.query.filter_by(id=inventory_item_id, organization_id=organization.id, location_id=location.id).first()
+        if inventory_item is None:
+            return json_error("Inventory item not found.", 404)
+        quantity = _to_quantity(raw.get("quantityRequired"), field=f"ingredients[{index}].quantityRequired")
+        if quantity <= 0:
+            raise RequestValidationError("Validation failed.", {f"ingredients[{index}].quantityRequired": "Quantity must be greater than zero."})
+        row_id = raw.get("id")
+        if row_id not in (None, ""):
+            try:
+                row_id_int = int(row_id)
+            except (TypeError, ValueError):
+                raise RequestValidationError("Validation failed.", {f"ingredients[{index}].id": "Enter a valid ingredient id."}) from None
+            ingredient = existing_by_id.get(row_id_int)
+        else:
+            ingredient = None
+        if row_id not in (None, "") and ingredient is None:
+            raise RequestValidationError("Validation failed.", {f"ingredients[{index}].id": "Ingredient does not belong to this recipe."})
+        rows.append({"ingredient": ingredient, "inventory_item": inventory_item, "quantity": quantity, "unit": str(raw.get("unit", inventory_item.stock_unit or "each")).strip() or (inventory_item.stock_unit or "each"), "notes": str(raw.get("notes", "")).strip(), "sort_order": _to_int(raw.get("sortOrder", index), field=f"ingredients[{index}].sortOrder", required=False)})
+
+    if recipe_data["normalized_name"] != recipe.normalized_name:
+        duplicate = Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=recipe_data["normalized_name"]).filter(Recipe.id != recipe.id).first()
+        if duplicate is not None:
+            return json_error("A recipe with that name already exists in this location.", 409)
+
+    try:
+        for field, value in recipe_data.items():
+            setattr(recipe, field, value)
+        recipe.updated_by_user_id = current_user.id
+        retained = {row["ingredient"] for row in rows if row["ingredient"] is not None}
+        for ingredient in recipe.ingredients:
+            if ingredient not in retained:
+                db.session.delete(ingredient)
+        db.session.flush()
+        for row in rows:
+            ingredient = row["ingredient"]
+            if ingredient is None:
+                ingredient = RecipeIngredient(organization_id=organization.id, recipe_id=recipe.id, created_by_user_id=current_user.id)
+                db.session.add(ingredient)
+            ingredient.inventory_item_id = row["inventory_item"].id
+            ingredient.quantity_required = row["quantity"]
+            ingredient.unit = row["unit"]
+            ingredient.notes = row["notes"]
+            ingredient.sort_order = row["sort_order"]
+            ingredient.updated_by_user_id = current_user.id
+        db.session.flush()
+        record_audit_event(event_type="menu_costing.recipe_editor_saved", entity_type="recipe", entity_id=recipe.id, organization_id=organization.id, location_id=location.id, actor_user_id=current_user.id, metadata={"ingredientCount": len(rows)})
+        db.session.expire(recipe, ["ingredients"])
+        response_payload = serialize_recipe(recipe)
+        return _commit_json(response_payload)
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("The recipe could not be saved because an ingredient is duplicated or no longer available.", 409)
+
+
 @bp.post("/api/pilot/menu-costing/recipes/<int:recipe_id>/ingredients")
 @login_required
 def create_menu_costing_recipe_ingredient(recipe_id: int):
