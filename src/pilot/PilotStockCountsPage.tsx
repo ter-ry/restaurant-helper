@@ -102,6 +102,7 @@ export function PilotStockCountsPage() {
   const [lineSort, setLineSort] = useState<{ key: "item" | "expected" | "counted" | "variance"; direction: SortDirection } | null>(null);
   const previousSelectedId = useRef<number | null>(null);
   const loadRequestRef = useRef(0);
+  const selectedIdRef = useRef<number | null>(null);
   const selectionSeededRef = useRef(false);
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
@@ -181,12 +182,19 @@ export function PilotStockCountsPage() {
 
   // Finalizing creates movements that change OTHER drafts' "later movement" flags; refresh them without blocking or touching the open count.
   const refreshOtherSessions = async (keepId: number) => {
+    const token = loadRequestRef.current; // read-only: do not cancel an in-flight load
     try {
       const { countSessions } = await fetchPilotCountSessions();
+      if (token !== loadRequestRef.current) return; // a newer load or mutation owns the list; drop this stale response
+      const fresh = new Map(countSessions.map((entry) => [entry.id, entry]));
       setSessions((current) => {
-        const kept = current.find((entry) => entry.id === keepId);
-        const fresh = countSessions.filter((entry) => entry.id !== keepId);
-        return kept ? [kept, ...fresh] : countSessions;
+        const merged = current.map((entry) =>
+          // Never replace the open count (its draft would reset and discard edits) or the one just finalized.
+          entry.id === keepId || entry.id === selectedIdRef.current ? entry : fresh.get(entry.id) ?? entry,
+        );
+        // Counts the response did not know about (created meanwhile) stay; ones only the server has are added.
+        const known = new Set(current.map((entry) => entry.id));
+        return [...merged, ...countSessions.filter((entry) => !known.has(entry.id))];
       });
     } catch {
       // Non-blocking; the server still rejects an unconfirmed finalize, and Refresh re-reads everything.
@@ -212,6 +220,7 @@ export function PilotStockCountsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
 
+  selectedIdRef.current = selectedId;
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedId) ?? null, [sessions, selectedId]);
   const draftSessions = useMemo(() => sessions.filter((session) => session.status === "Draft"), [sessions]);
   const completedSessions = useMemo(() => sessions.filter((session) => session.status === "Completed"), [sessions]);

@@ -317,6 +317,30 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole("dialog").getByRole("button", { name: "Complete count" })).toBeDisabled();
     });
 
+    test("a slow post-finalize refresh never discards edits on the next draft or the newly created count", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      const other: Session = JSON.parse(JSON.stringify(world.sessions[0]));
+      other.id = 12;
+      other.lines.forEach((line) => (line.counted = null));
+      world.sessions.push(other);
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      world.getDelayMs = 1500; // the post-finalize list refresh is slow
+      await dialog.getByRole("button", { name: "Complete count" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("tab", { name: /Active count/ }).click();
+      await page.getByRole("button", { name: /Draft #12/ }).click();
+      const qty = page.getByRole("dialog").getByLabel("Counted quantity for Whole Milk");
+      await qty.fill("19");
+      await page.waitForTimeout(2200); // let the slow refresh land
+      await expect(qty).toHaveValue("19");
+      await expect(page.getByText("Unsaved changes")).toBeVisible();
+    });
+
     test("a failed save and a failed finalize show the server reason, keep the draft editable and can be retried", async ({ page }) => {
       const world = draftWorld();
       world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
