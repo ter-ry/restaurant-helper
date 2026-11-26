@@ -116,3 +116,27 @@ def test_atomic_save_requires_menu_costing_module(client):
     select_org(client, org.id)
     assert _save(client, None, {"name": "Nope", "ingredients": []}).status_code == 403
     assert _save(client, 1, {"name": "Nope", "ingredients": []}).status_code == 403
+
+
+def test_atomic_save_retry_after_repoint_is_idempotent(client):
+    _, (cheese, bread, butter) = _setup(client)
+    created = _save(client, None, {"name": "Toast", "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2},
+        {"inventoryItemId": bread, "quantityRequired": 1},
+    ]}).get_json()
+    rid = created["id"]
+    row_cheese, row_bread = (i["id"] for i in created["ingredients"])
+    # Re-point the cheese row at butter (free target) and keep bread; ids must stay stable.
+    payload = {"name": "Toast", "ingredients": [
+        {"id": row_cheese, "inventoryItemId": butter, "quantityRequired": 2},
+        {"id": row_bread, "inventoryItemId": bread, "quantityRequired": 1},
+    ]}
+    first = _save(client, rid, payload)
+    assert first.status_code == 200
+    assert [i["id"] for i in first.get_json()["ingredients"]] == [row_cheese, row_bread]
+    # Lost-response retry of the identical payload: still 200 with an identical recipe.
+    retry = _save(client, rid, payload)
+    assert retry.status_code == 200
+    keys = ("id", "inventoryItemId", "quantityRequired", "unit", "sortOrder")
+    assert [{k: i[k] for k in keys} for i in retry.get_json()["ingredients"]] == [{k: i[k] for k in keys} for i in first.get_json()["ingredients"]]
+    assert retry.get_json()["totalCost"] == first.get_json()["totalCost"]

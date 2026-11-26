@@ -4640,15 +4640,35 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
                 setattr(recipe, field, value)
             recipe.updated_by_user_id = current_user.id
 
-        # Rows removed, or re-pointed at a different inventory item, are deleted first and flushed so the
-        # (recipe, inventory item) unique constraint cannot trip on swaps; re-pointed rows are recreated.
+        # Rows omitted from the request are deleted first. Rows re-pointed at a different inventory item are
+        # updated in place (stable ids, so a lost-response retry of the same payload still matches). Only rows
+        # whose target item is still held by another surviving row (a swap/cycle) cannot be re-pointed without
+        # tripping the (recipe, inventory item) unique constraint; those are deleted and recreated.
+        entries_by_id = {e["id"]: e for e in parsed if e["id"] is not None}
         keep: dict[int, RecipeIngredient] = {}
         for row_id, row in existing_by_id.items():
-            entry = next((e for e in parsed if e["id"] == row_id), None)
-            if entry is not None and entry["inventory_item_id"] == row.inventory_item_id:
+            if row_id in entries_by_id:
                 keep[row_id] = row
             else:
                 db.session.delete(row)
+        db.session.flush()
+        held = {row.inventory_item_id: row_id for row_id, row in keep.items()}
+        pending = [rid for rid, row in keep.items() if entries_by_id[rid]["inventory_item_id"] != row.inventory_item_id]
+        progressed = True
+        while pending and progressed:
+            progressed = False
+            for rid in list(pending):
+                row = keep[rid]
+                target = entries_by_id[rid]["inventory_item_id"]
+                if target not in held:
+                    held.pop(row.inventory_item_id, None)
+                    row.inventory_item_id = target
+                    held[target] = rid
+                    db.session.flush()
+                    pending.remove(rid)
+                    progressed = True
+        for rid in pending:
+            db.session.delete(keep.pop(rid))
         db.session.flush()
 
         for entry in parsed:
