@@ -140,3 +140,46 @@ def test_atomic_save_retry_after_repoint_is_idempotent(client):
     keys = ("id", "inventoryItemId", "quantityRequired", "unit", "sortOrder")
     assert [{k: i[k] for k in keys} for i in retry.get_json()["ingredients"]] == [{k: i[k] for k in keys} for i in first.get_json()["ingredients"]]
     assert retry.get_json()["totalCost"] == first.get_json()["totalCost"]
+
+
+def test_atomic_save_swap_keeps_ids_and_retry_is_idempotent(client):
+    _, (cheese, bread, butter) = _setup(client, "Swap Cafe")
+    created = _save(client, None, {"name": "Toast", "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2},
+        {"inventoryItemId": bread, "quantityRequired": 1},
+        {"inventoryItemId": butter, "quantityRequired": 1},
+    ]}).get_json()
+    rid = created["id"]
+    r1, r2, r3 = (i["id"] for i in created["ingredients"])
+    payload = {"name": "Toast", "ingredients": [  # 3-cycle: cheese->bread->butter->cheese
+        {"id": r1, "inventoryItemId": bread, "quantityRequired": 2},
+        {"id": r2, "inventoryItemId": butter, "quantityRequired": 1},
+        {"id": r3, "inventoryItemId": cheese, "quantityRequired": 1},
+    ]}
+    first = _save(client, rid, payload)
+    assert first.status_code == 200
+    keys = ("id", "inventoryItemId", "quantityRequired", "unit", "sortOrder")
+    snap = [{k: i[k] for k in keys} for i in first.get_json()["ingredients"]]
+    assert [x["id"] for x in snap] == [r1, r2, r3]
+    assert [x["inventoryItemId"] for x in snap] == [bread, butter, cheese]
+    retry = _save(client, rid, payload)
+    assert retry.status_code == 200
+    assert [{k: i[k] for k in keys} for i in retry.get_json()["ingredients"]] == snap
+
+
+def test_atomic_save_repoint_defaults_unit_to_new_item_stock_unit(client):
+    _, (cheese, _, _) = _setup(client, "Unit Cafe")
+    flour = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={"name": "Flour", "category": "Dry", "stockUnit": "kg", "currentOnHand": 0, "latestPurchasePrice": 2, "lastPurchaseConversionFactor": 1, "active": True},
+    ).get_json()["id"]
+    created = _save(client, None, {"name": "Dough", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 1}]}).get_json()
+    row = created["ingredients"][0]
+    assert row["unit"] == "each"
+    out = _save(client, created["id"], {"name": "Dough", "ingredients": [{"id": row["id"], "inventoryItemId": flour, "quantityRequired": 1}]}).get_json()
+    assert out["ingredients"][0]["unit"] == "kg"
+    assert out["ingredients"][0]["id"] == row["id"]
+    # unchanged item keeps its unit when omitted
+    again = _save(client, created["id"], {"name": "Dough", "ingredients": [{"id": row["id"], "inventoryItemId": flour, "quantityRequired": 2}]}).get_json()
+    assert again["ingredients"][0]["unit"] == "kg"

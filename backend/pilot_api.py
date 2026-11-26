@@ -4652,6 +4652,8 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
             else:
                 db.session.delete(row)
         db.session.flush()
+        creators: dict[int, int | None] = {}
+        original_item_ids = {row_id: row.inventory_item_id for row_id, row in keep.items()}
         held = {row.inventory_item_id: row_id for row_id, row in keep.items()}
         pending = [rid for rid, row in keep.items() if entries_by_id[rid]["inventory_item_id"] != row.inventory_item_id]
         progressed = True
@@ -4667,6 +4669,9 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
                     db.session.flush()
                     pending.remove(rid)
                     progressed = True
+        # Swap/cycle rows are recreated with their ORIGINAL ids so a lost-response retry of the same payload
+        # still resolves every id.
+        creators = {rid: keep[rid].created_by_user_id for rid in pending}
         for rid in pending:
             db.session.delete(keep.pop(rid))
         db.session.flush()
@@ -4679,6 +4684,7 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
             if row is None:
                 db.session.add(
                     RecipeIngredient(
+                        id=entry["id"],
                         organization_id=organization.id,
                         recipe_id=recipe.id,
                         inventory_item_id=item.id,
@@ -4686,13 +4692,15 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
                         unit=unit,
                         notes=notes or "",
                         sort_order=entry["sort_order"],
-                        created_by_user_id=current_user.id,
+                        created_by_user_id=creators.get(entry["id"], current_user.id),
                         updated_by_user_id=current_user.id,
                     )
                 )
             else:
                 row.quantity_required = entry["quantity"]
-                row.unit = unit if entry["unit"] is not None else row.unit
+                # An unchanged item keeps its unit when omitted; a re-pointed item defaults to its own stock unit.
+                if entry["unit"] is not None or original_item_ids.get(entry["id"]) != item.id:
+                    row.unit = unit
                 if notes is not None:
                     row.notes = notes
                 row.sort_order = entry["sort_order"]
