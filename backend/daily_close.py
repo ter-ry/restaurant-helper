@@ -149,6 +149,10 @@ def _sales_summary_for_day(connection: SquareConnection | None, location: Restau
         "tips": float(tips),
         "refunds": float(refunds),
         "netSales": float(net),
+        # Square's net_amount for Flowtally includes tips (gross - discounts + tips). Expose the pre-tip figure
+        # additively so reports/exports can label each correctly; netSales stays backward compatible.
+        "netSalesIncludesTips": True,
+        "netSalesExcludingTips": float(net - tips),
         "orders": orders,
         "cancelledOrders": cancelled_orders,
         **_sales_availability(connection, location_mapped),
@@ -494,6 +498,18 @@ def _location_uses_clover(organization_id: int, location: RestaurantLocation) ->
     )
 
 
+def _completion_eligibility(connection: SquareConnection | None, summary: dict[str, Any]) -> dict[str, Any]:
+    """Server-side finalization gate. A connected POS whose sales for the day are unverified (not synced,
+    unmapped, stale or partially imported) must be resolved before the close is frozen. Confirmed zero-sales
+    days (salesStatus available) and tenants without a connected POS remain finalizable. No override policy
+    exists until the owner decides one."""
+    blockers: list[dict[str, str]] = []
+    if connection is not None and connection.status == "connected" and summary.get("salesStatus") == "unavailable":
+        reason = str(summary.get("salesUnavailableReason") or "Sales for this business date could not be verified.")
+        blockers.append({"code": "sales_unverified", "message": "Sales not verified: " + reason})
+    return {"eligible": not blockers, "blockers": blockers}
+
+
 def _daily_close_snapshot(organization, location: RestaurantLocation, business_date: date) -> tuple[dict[str, Any], dict[str, Any], list[str], SquareConnection | None]:
     snapshot, usage, exceptions, connection = _build_daily_close_snapshot(organization, location, business_date)
     return _attach_negative_stock(snapshot, organization.id, location.id), usage, exceptions, connection
@@ -569,6 +585,10 @@ def _build_daily_close_snapshot(organization, location: RestaurantLocation, busi
         }
     exceptions = _daily_close_exceptions(connection, summary, usage, period_matches)
     attention_items = _attention_items(summary, usage, location, period_matches)
+    completion = _completion_eligibility(connection, summary)
+    for blocker in completion["blockers"]:
+        exceptions.insert(0, blocker["message"])
+        attention_items.insert(0, {"type": blocker["code"], "title": "Sales not verified", "severity": "error", "href": "/app/square", "detail": blocker["message"]})
     actual_usage = usage.get("totals", {}).get("actualUsage")
     theoretical_usage = usage.get("totals", {}).get("theoreticalUsage") or 0
     discrepancy = usage.get("totals", {}).get("discrepancy")
@@ -614,6 +634,8 @@ def _build_daily_close_snapshot(organization, location: RestaurantLocation, busi
     health_status = "Incomplete"
     if connection is None or connection.status != "connected":
         health_status = "Ready with warnings" if theoretical_usage or summary["orders"] else "Incomplete"
+    elif not completion["eligible"]:
+        health_status = "Incomplete"
     elif exceptions:
         health_status = "Ready with warnings"
     elif actual_usage is None:
@@ -649,7 +671,8 @@ def _build_daily_close_snapshot(organization, location: RestaurantLocation, busi
         "cashReconciliation": cash_reconciliation,
         "attentionItems": attention_items,
         "manualReconciliation": {},
-        "readyToFinalize": True,
+        "readyToFinalize": completion["eligible"],
+        "completion": completion,
     }
     snapshot = _merge_manual_reconciliation(snapshot, None)  # always expose the variance status fields
     return snapshot, usage, exceptions, connection
@@ -977,6 +1000,12 @@ def finalize_daily_close(session_id: int):
     if location is None:
         return json_error("Restaurant location not found.", 404)
     snapshot, usage, exceptions, _ = _daily_close_snapshot(organization, location, session_record.business_date)
+    completion = snapshot.get("completion") or {"eligible": True, "blockers": []}
+    if not completion["eligible"]:
+        response, status = json_error(completion["blockers"][0]["message"], 409, code=completion["blockers"][0]["code"])
+        body = response.get_json()
+        body["completion"] = completion
+        return jsonify(body), status
     # Preserve verified cash evidence: if Square cannot be read now but the draft already held verified
     # expected cash, keep that evidence (flagged) instead of silently dropping it from the frozen record.
     stored_cash = (session_record.summary_snapshot_json or {}).get("cashReconciliation") or {}

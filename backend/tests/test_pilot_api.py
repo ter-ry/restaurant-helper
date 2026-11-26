@@ -1420,6 +1420,9 @@ def test_daily_close_sync_sales_uses_business_date_bounds(app, client, monkeypat
 
 
 def test_completed_daily_close_keeps_stored_snapshot_after_source_mutation(app, client, monkeypatch):
+    # Finalizing requires verified sales (#315 Milestone D); this test is about snapshot immutability.
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
+    monkeypatch.setattr("backend.daily_close._order_import_covers_day", lambda *a, **k: True)
     login(client)
 
     with app.app_context():

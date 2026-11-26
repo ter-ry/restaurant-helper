@@ -54,11 +54,12 @@ def beef_world(app, client, monkeypatch):
     owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).one()
     organization, location = _create_square_usage_fixture(app, owner, organization_name=f"Negative Beef {uuid4().hex[:8]}")
     select_org(client, organization.id)
-    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "fresh"})
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
     with app.app_context():
         db.session.add(OrganizationModule(organization_id=organization.id, module_key="DAILY_CLOSE", status="ENABLED", enabled_at=datetime.now(timezone.utc)))
         connection = SquareConnection.query.filter_by(organization_id=organization.id).one()
         connection.inventory_depletion_activated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        connection.last_sync_at = datetime(2026, 8, 30, 23, 0, tzinfo=timezone.utc)
         beef = InventoryItem.query.filter_by(organization_id=organization.id, location_id=location.id, name="Beef").one()
         beef.current_on_hand = Decimal("0")
         beef.average_unit_cost = Decimal("7.25")
@@ -259,6 +260,16 @@ def test_a_square_sale_reversal_is_explained_not_an_other_adjustment(app, client
 
     reconciliation = _daily_close(client, location_id)["snapshot"]["reconciliation"]
     assert reconciliation["otherAdjustmentQuantity"] == 0.0  # +0.9 kg reversal is POS-explained
+
+
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _verified_square_sales(monkeypatch):
+    """Finalizing requires verified sales (#315 Milestone D); these tests are about negative stock, not sales coverage."""
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
+    monkeypatch.setattr("backend.daily_close._order_import_covers_day", lambda *a, **k: True)
 
 
 def test_finalized_close_freezes_the_negative_position_while_the_live_report_follows_receipts(app, client, beef_world):
