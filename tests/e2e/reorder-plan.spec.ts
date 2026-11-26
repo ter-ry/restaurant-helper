@@ -23,6 +23,7 @@ type World = {
   calls: { method: string; path: string; body: any }[];
   failNext: Record<string, number>;
   delayMs: number;
+  slowReadsMs: number;
 };
 
 const ORG = { id: 42, name: "Showcase Cafe", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE", setupTemplateKey: "GENERIC_RESTAURANT", setupFeeStatus: "confirmed", isProspect: false, activeAt: "2026-01-01T00:00:00Z", setupCompletedAt: "2026-01-01T00:00:00Z" };
@@ -42,7 +43,7 @@ const SUGGESTIONS = [
 const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
 
 function newWorld(): World {
-  return { plans: [], nextPlanId: 1, calls: [], failNext: {}, delayMs: 0 };
+  return { plans: [], nextPlanId: 1, calls: [], failNext: {}, delayMs: 0, slowReadsMs: 0 };
 }
 
 function lineFor(planId: number, index: number, s: (typeof SUGGESTIONS)[number], orderQuantity?: number): Line {
@@ -102,6 +103,9 @@ async function installWorld(page: Page, world: World) {
     }
     if (pathname === "/api/pilot/inventory/negative-stock") return json(route, { count: 0, posCausedCount: 0, items: [] });
 
+    if (method === "GET" && world.slowReadsMs && /^\/api\/pilot\/(reorder-plans?|inventory\/negative-stock)$/.test(pathname)) {
+      await new Promise((resolve) => setTimeout(resolve, world.slowReadsMs));
+    }
     if (pathname === "/api/pilot/reorder-plan") {
       if (world.failNext["GET suggestions"]) {
         world.failNext["GET suggestions"] -= 1;
@@ -214,6 +218,27 @@ for (const viewport of VIEWPORTS) {
       expect(world.plans[0].lines[0].orderQuantity).toBe(5);
       await expect(page.getByRole("spinbutton").first()).toHaveValue("5");
       await expectNoOverflow(page);
+    });
+
+    test("save confirms from the authoritative response without waiting for slow background re-reads", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await openReorder(page);
+      await page.getByRole("button", { name: "Add to draft" }).first().click();
+      await expect(page.getByText("Item added to the working order plan.")).toBeVisible();
+
+      world.slowReadsMs = 4000;
+      await page.getByRole("spinbutton").first().fill("7");
+      await page.getByRole("button", { name: "Save draft" }).click();
+      await expect(page.getByText(/Saved draft Reorder plan 1/)).toBeVisible({ timeout: 2000 });
+      await expect(page.getByRole("button", { name: "Save draft" })).toBeEnabled({ timeout: 2000 });
+      await expect(page.getByRole("spinbutton").first()).toHaveValue("7");
+      expect(callsTo(world, "PATCH", /reorder-plans\/1$/)).toHaveLength(2);
+
+      // An edit made while the background revalidation is in flight is not overwritten by it.
+      await page.getByRole("spinbutton").first().fill("9");
+      await page.waitForTimeout(4500);
+      await expect(page.getByRole("spinbutton").first()).toHaveValue("9");
     });
 
     test("a failed initial load shows an alert and Retry, never false zero metrics, and Retry recovers", async ({ page }) => {

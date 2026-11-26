@@ -132,6 +132,7 @@ export function PilotReorderPlanPage() {
   const [selectedRecommendationIds, setSelectedRecommendationIds] = useState<Set<number>>(new Set());
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const recommendationRequestRef = useRef(0);
+  const backgroundRevalidationRef = useRef(0);
   const draftRef = useRef<PilotReorderPlan | null>(null);
   const requestedPlanId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("planId");
@@ -189,6 +190,31 @@ export function PilotReorderPlanPage() {
       setError(err instanceof Error ? err.message : "Could not load the reorder plan.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Mutations return the authoritative plan, so the UI adopts it immediately and the
+  // list/recommendations are revalidated in the background. Any newer mutation or
+  // revalidation invalidates an in-flight one, so a slow stale response cannot overwrite
+  // fresher state, and the open draft is never touched (unsaved edits are preserved).
+  const upsertPlan = (plan: PilotReorderPlan) => {
+    setPlans((current) => current.some((entry) => entry.id === plan.id) ? current.map((entry) => entry.id === plan.id ? plan : entry) : [plan, ...current]);
+  };
+
+  const revalidateInBackground = async () => {
+    const requestId = ++backgroundRevalidationRef.current;
+    try {
+      const [suggestionsResponse, plansResponse, negativeResponse] = await Promise.all([fetchPilotReorderPlan(), fetchPilotReorderPlans(), fetchPilotNegativeStock().catch(() => null)]);
+      if (requestId !== backgroundRevalidationRef.current) return;
+      setNegativeStock(negativeStockByItem(negativeResponse?.items));
+      setCurrentSuggestions(suggestionsResponse.suggestions);
+      setCurrentGroups(suggestionsResponse.groupedBySupplier);
+      setInventoryItems(suggestionsResponse.inventoryItems ?? []);
+      setActiveInventoryItemCount(suggestionsResponse.activeInventoryItemCount ?? 0);
+      setRecommendationsRefreshedAt(suggestionsResponse.refreshedAt ?? null);
+      setPlans(plansResponse.plans);
+    } catch {
+      // The saved result above is already authoritative; the next explicit refresh reconciles.
     }
   };
 
@@ -280,11 +306,13 @@ export function PilotReorderPlanPage() {
     setMessage(null);
     setError(null);
     try {
+      backgroundRevalidationRef.current += 1;
       const plan = await createPilotReorderPlan();
-      await load(plan.id, { preserveMessage: true });
+      upsertPlan(plan);
       setSelectedPlanId(plan.id);
       adoptDraft(plan);
       setMessage(plan.lineCount ? "Draft reorder plan opened." : "Draft reorder plan created.");
+      void revalidateInBackground();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a reorder plan.");
     } finally {
@@ -348,6 +376,7 @@ export function PilotReorderPlanPage() {
     setPendingAction("save");
     setMessage(null);
     setError(null);
+    backgroundRevalidationRef.current += 1;
     try {
       const saved = await updatePilotReorderPlan(draft.id, {
         name: draft.name,
@@ -360,10 +389,11 @@ export function PilotReorderPlanPage() {
           supplierNameSnapshot: line.supplierName,
         })),
       });
-      await load(saved.id, { preserveMessage: true, preserveSelection: true, allowDirty: true });
+      upsertPlan(saved);
       setSelectedPlanId(saved.id);
       adoptDraft(saved);
       setMessage(`Saved draft ${saved.name}. It remains editable until you prepare it.`);
+      void revalidateInBackground();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reorder plan.");
     } finally {
@@ -380,6 +410,7 @@ export function PilotReorderPlanPage() {
     setPendingAction("prepare");
     setMessage(null);
     setError(null);
+    backgroundRevalidationRef.current += 1;
     try {
       const saved = await updatePilotReorderPlan(draft.id, {
         name: draft.name,
@@ -392,10 +423,11 @@ export function PilotReorderPlanPage() {
         })),
       });
       const prepared = await preparePilotReorderPlan(saved.id);
-      await load(prepared.id, { preserveMessage: true, allowDirty: true });
+      upsertPlan(prepared);
       setSelectedPlanId(prepared.id);
       adoptDraft(prepared);
       setMessage(`Prepared reorder plan ${prepared.name}. It is now review-only until completed.`);
+      void revalidateInBackground();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not prepare the reorder plan.");
     } finally {
@@ -412,13 +444,15 @@ export function PilotReorderPlanPage() {
     setPendingAction("complete");
     setMessage(null);
     setError(null);
+    backgroundRevalidationRef.current += 1;
     try {
       const completed = await completePilotReorderPlan(draft.id);
-      await load(null, { preserveMessage: true });
+      upsertPlan(completed);
       setSelectedPlanId(null);
       adoptDraft(null);
       setMessage(`Completed reorder plan ${completed.name}. It is now locked in history.`);
       setConfirmCompletion(false);
+      void revalidateInBackground();
     } catch (err) {
       setConfirmCompletion(false);
       setError(err instanceof Error ? err.message : "Could not complete the reorder plan.");
