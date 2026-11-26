@@ -205,9 +205,13 @@ def test_recipe_editor_is_atomic_tenant_scoped_and_handles_swaps(client):
     assert initial.status_code == 200
     assert [row["inventoryItemId"] for row in initial.get_json()["ingredients"]] == [first["id"], second["id"]]
     rows = initial.get_json()["ingredients"]
-    swapped = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json={"name": "Atomic renamed", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"id": rows[0]["id"], "inventoryItemId": second["id"], "quantityRequired": 1, "unit": "kg", "sortOrder": 0}, {"id": rows[1]["id"], "inventoryItemId": first["id"], "quantityRequired": 2, "unit": "kg", "sortOrder": 1}]})
+    swapped_payload = {"name": "Atomic renamed", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"id": rows[0]["id"], "inventoryItemId": second["id"], "quantityRequired": 1, "unit": "kg", "sortOrder": 0}, {"id": rows[1]["id"], "inventoryItemId": first["id"], "quantityRequired": 2, "unit": "kg", "sortOrder": 1}]}
+    swapped = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json=swapped_payload)
     assert swapped.status_code == 200
     assert {row["inventoryItemId"] for row in swapped.get_json()["ingredients"]} == {first["id"], second["id"]}
+    replayed = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json=swapped_payload)
+    assert replayed.status_code == 200
+    assert [row["inventoryItemId"] for row in replayed.get_json()["ingredients"]] == [second["id"], first["id"]]
     duplicate = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json={"name": "Should roll back", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"inventoryItemId": first["id"], "quantityRequired": 1, "unit": "kg"}, {"inventoryItemId": first["id"], "quantityRequired": 1, "unit": "kg"}]})
     assert duplicate.status_code == 400
     assert client.get("/api/pilot/menu-costing").get_json()["recipes"][0]["name"] == "Atomic renamed"

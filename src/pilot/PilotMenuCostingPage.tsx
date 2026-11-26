@@ -765,7 +765,7 @@ export function PilotMenuCostingPage() {
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-muted">Edit ingredients locally, then save the recipe once. Cost previews update as quantities change.</p>
-                  <Button variant="secondary" icon={<Plus className="h-4 w-4" />} type="button" onClick={addIngredientRow}>Add ingredient</Button>
+                  <Button variant="secondary" icon={<Plus className="h-4 w-4" />} type="button" onClick={addIngredientRow} disabled={savingRecipe}>Add ingredient</Button>
                 </div>
                 {ingredientRows.length ? ingredientRows.map((row, index) => {
                   const item = inventoryItems.find((candidate) => candidate.id === row.inventoryItemId);
@@ -779,11 +779,11 @@ export function PilotMenuCostingPage() {
                     : null;
                   const lineCost = previewUnitCost == null ? null : previewUnitCost * Number(row.quantityRequired);
                   return <div key={row.id ?? `new-${index}`} className="grid items-end gap-2 rounded-xl border border-line bg-white p-2 sm:grid-cols-[minmax(0,2fr)_6rem_6rem_7rem_auto]">
-                    <SearchableSelect label="Inventory item" value={row.inventoryItemId} options={selectableInventoryItems.map((candidate) => ({ value: candidate.id, label: `${candidate.name} · ${candidate.stockUnit}${candidate.active ? "" : " · inactive"}` }))} onChange={(value) => { const next = selectableInventoryItems.find((candidate) => candidate.id === value); updateIngredientRow(index, { inventoryItemId: value, unit: next?.stockUnit ?? row.unit }); }} placeholder="Search inventory" />
-                    <label><span className="sr-only">Quantity</span><input className="input w-full" aria-label={`Quantity for ingredient ${index + 1}`} type="number" min="0.0001" step="0.0001" value={row.quantityRequired} onChange={(event) => updateIngredientRow(index, { quantityRequired: event.target.value })} /></label>
-                    <label><span className="sr-only">Unit</span><input className="input w-full" aria-label={`Unit for ingredient ${index + 1}`} value={row.unit} onChange={(event) => updateIngredientRow(index, { unit: event.target.value })} /></label>
+                    <SearchableSelect label="Inventory item" value={row.inventoryItemId} options={selectableInventoryItems.map((candidate) => ({ value: candidate.id, label: `${candidate.name} · ${candidate.stockUnit}${candidate.active ? "" : " · inactive"}` }))} onChange={(value) => { const next = selectableInventoryItems.find((candidate) => candidate.id === value); updateIngredientRow(index, { inventoryItemId: value, unit: next?.stockUnit ?? row.unit }); }} placeholder="Search inventory" disabled={savingRecipe} />
+                    <label><span className="sr-only">Quantity</span><input className="input w-full" aria-label={`Quantity for ingredient ${index + 1}`} type="number" min="0.0001" step="0.0001" value={row.quantityRequired} disabled={savingRecipe} onChange={(event) => updateIngredientRow(index, { quantityRequired: event.target.value })} /></label>
+                    <label><span className="sr-only">Unit</span><input className="input w-full" aria-label={`Unit for ingredient ${index + 1}`} value={row.unit} disabled={savingRecipe} onChange={(event) => updateIngredientRow(index, { unit: event.target.value })} /></label>
                     <span className="pb-2 text-sm text-muted" aria-live="polite">{lineCost == null ? "Cost unavailable" : formatCost(lineCost)}</span>
-                    <Button variant="secondary" type="button" aria-label={`Remove ingredient ${index + 1}`} onClick={() => removeIngredientRow(index)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="secondary" type="button" aria-label={`Remove ingredient ${index + 1}`} onClick={() => removeIngredientRow(index)} disabled={savingRecipe}><Trash2 className="h-4 w-4" /></Button>
                   </div>;
                 }) : <div className="rounded-2xl border border-dashed border-line bg-slate-50 p-4 text-sm text-muted">Add the first ingredient to calculate the recipe cost.</div>}
                 <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveRecipe()} type="button" disabled={savingRecipe || recipeEditorMode === "create"}>

@@ -4246,6 +4246,32 @@ def _menu_costing_recipe_payload(payload: dict[str, Any], recipe: Recipe | None 
     }
 
 
+def _recipe_editor_replay_matches(recipe: Recipe, recipe_data: dict[str, Any], rows: list[dict[str, Any]]) -> bool:
+    """Recognize a retry whose first replacement transaction committed before its response was lost."""
+    if any(getattr(recipe, field) != value for field, value in {
+        "name": recipe_data["name"],
+        "normalized_name": recipe_data["normalized_name"],
+        "description": recipe_data["description"],
+        "yield_quantity": recipe_data["yield_quantity"],
+        "yield_unit": recipe_data["yield_unit"],
+        "active": recipe_data["active"],
+        "notes": recipe_data["notes"],
+    }.items()):
+        return False
+    current_rows = sorted(recipe.ingredients, key=lambda ingredient: (ingredient.sort_order, ingredient.id))
+    desired_rows = sorted(rows, key=lambda row: (row["sort_order"], row["inventory_item"].id))
+    if len(current_rows) != len(desired_rows):
+        return False
+    return all(
+        current.inventory_item_id == desired["inventory_item"].id
+        and current.quantity_required == desired["quantity"]
+        and current.unit == desired["unit"]
+        and current.notes == desired["notes"]
+        and current.sort_order == desired["sort_order"]
+        for current, desired in zip(current_rows, desired_rows)
+    )
+
+
 def _menu_costing_menu_item_payload(payload: dict[str, Any], menu_item: MenuItem | None = None) -> dict[str, Any]:
     name = str(payload.get("name", menu_item.name if menu_item else "")).strip()
     if not name:
@@ -4430,6 +4456,7 @@ def save_menu_costing_recipe_editor(recipe_id: int):
     rows: list[dict[str, Any]] = []
     seen_inventory_ids: set[int] = set()
     existing_by_id = {ingredient.id: ingredient for ingredient in recipe.ingredients}
+    invalid_row_id_field: str | None = None
     for index, raw in enumerate(ingredients_payload):
         if not isinstance(raw, dict):
             raise RequestValidationError("Validation failed.", {f"ingredients[{index}]": "Ingredient must be an object."})
@@ -4455,9 +4482,14 @@ def save_menu_costing_recipe_editor(recipe_id: int):
             ingredient = existing_by_id.get(row_id_int)
         else:
             ingredient = None
-        if row_id not in (None, "") and ingredient is None:
-            raise RequestValidationError("Validation failed.", {f"ingredients[{index}].id": "Ingredient does not belong to this recipe."})
+        if row_id not in (None, "") and ingredient is None and invalid_row_id_field is None:
+            invalid_row_id_field = f"ingredients[{index}].id"
         rows.append({"ingredient": ingredient, "inventory_item": inventory_item, "quantity": quantity, "unit": str(raw.get("unit", inventory_item.stock_unit or "each")).strip() or (inventory_item.stock_unit or "each"), "notes": str(raw.get("notes", "")).strip(), "sort_order": _to_int(raw.get("sortOrder", index), field=f"ingredients[{index}].sortOrder", required=False)})
+
+    if invalid_row_id_field is not None:
+        if _recipe_editor_replay_matches(recipe, recipe_data, rows):
+            return _commit_json(serialize_recipe(recipe))
+        raise RequestValidationError("Validation failed.", {invalid_row_id_field: "Ingredient does not belong to this recipe."})
 
     if recipe_data["normalized_name"] != recipe.normalized_name:
         duplicate = Recipe.query.filter_by(organization_id=organization.id, location_id=location.id, normalized_name=recipe_data["normalized_name"]).filter(Recipe.id != recipe.id).first()

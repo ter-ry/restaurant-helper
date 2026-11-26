@@ -370,6 +370,33 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
   });
 
+  it("locks ingredient controls while a save is pending", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
+    expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Quantity for ingredient 1"), { target: { value: "3" } });
+
+    const server = await mockApi.fetchPilotMenuCosting.mock.results.at(-1)!.value;
+    const savedRecipe = structuredClone(server.recipes[0]);
+    savedRecipe.ingredients[0].quantityRequired = 3;
+    let resolveSave: (recipe: typeof savedRecipe) => void = () => undefined;
+    mockApi.savePilotMenuCostingRecipeEditor.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    mockApi.fetchPilotMenuCosting.mockResolvedValue({ ...server, recipes: [savedRecipe] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
+    expect(await screen.findByRole("button", { name: "Saving recipe…" })).toBeDisabled();
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add ingredient" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove ingredient 1" })).toBeDisabled();
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue(3);
+
+    resolveSave(savedRecipe);
+    await waitFor(() => expect(screen.getByText("Recipe Cheesy Toast saved.")).toBeVisible());
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue(3);
+  });
+
   it("keeps a failed recipe-editor save editable", async () => {
     render(<PilotMenuCostingPage />);
     await screen.findByText("Menu costing");
