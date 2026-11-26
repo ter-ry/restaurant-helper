@@ -21,3 +21,7 @@ This refinement uses Menu Costing's recipe editor as the reference case for comp
 - Desktop and laptop layouts use the available horizontal space; mobile layouts continue to stack.
 - Optional fields remain discoverable, essential totals/actions remain visible, and no content is clipped by a fixed-height container.
 - Playwright covers Menu Costing at desktop, laptop, and mobile widths; focused frontend tests and the production build are required before review.
+
+## Follow-up dependency
+
+The compact ingredient rows in PR #407 stage local drafts and use the existing ingredient mutation responses for compatibility. A single atomic metadata-plus-ingredient save and any high-precision cost-per-yield contract change are W1-owned backend work because the current API exposes separate transactions and serializes currency at the recipe boundary. The dependency and requested contract are recorded on issue #315; no overlapping backend endpoint was added to this frontend PR.

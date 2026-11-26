@@ -156,7 +156,7 @@ for (const viewport of VIEWPORTS) {
       await page.goto("/app/menu-costing", { waitUntil: "domcontentloaded" });
       const row = page.getByRole("row", { name: /Cheesy Toast/ });
       await expect(row).toBeVisible();
-      await expect(row.getByRole("cell", { name: "Cost unavailable" })).toBeVisible();
+      await expect(row.getByRole("cell", { name: "Cost unavailable", exact: true })).toBeVisible();
       await expect(row.getByRole("cell", { name: "Food cost Unavailable" })).toBeVisible();
       await expect(row.getByRole("cell", { name: "Contribution unavailable" })).toBeVisible();
       await expect(row).toContainText("Needs review");
@@ -183,8 +183,8 @@ for (const viewport of VIEWPORTS) {
 
       expect(world.posts).toHaveLength(1);
       expect(world.posts[0]).toMatchObject({ name: "Avocado Toast", category: "Breakfast", sellingPrice: 16 });
-      // Authoritative refresh: the list was re-fetched and shows server-computed figures (2 / 16 = 12.5%).
-      expect(world.menuReads).toBeGreaterThan(readsBefore);
+      // The authoritative mutation response is applied immediately without a blocking list refetch.
+      expect(world.menuReads).toBe(readsBefore);
       await dialog.getByRole("button", { name: /close/i }).first().click();
       const row = page.getByRole("row", { name: /Avocado Toast/ });
       await expect(row.getByRole("cell", { name: "Price $16.00" })).toBeVisible();
