@@ -4562,7 +4562,8 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
     creating = recipe_id is None
     recipe = None
     if not creating:
-        recipe = _require_menu_costing_recipe(recipe_id, organization.id, location.id)
+        # Row lock serializes concurrent composition saves on PostgreSQL (no-op on SQLite).
+        recipe = Recipe.query.filter_by(id=recipe_id, organization_id=organization.id, location_id=location.id).with_for_update().first()
         if recipe is None:
             return json_error("Recipe not found.", 404)
     payload = _json_body()
