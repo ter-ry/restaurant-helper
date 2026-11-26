@@ -188,6 +188,33 @@ def test_menu_costing_acceptance_cafe_dataset(app, client):
     assert costing["costReadySalesAmount"] == 374.0
     assert costing["estimatedFoodCostPercent"] == round(51.48 / 374 * 100, 2)
     assert report.get_json()["sales"]["unmappedLines"] == []
+    assert costing["unmappedSalesAmount"] == 0.0
+    assert costing["costCoverageOfNetSalesPercent"] == 100.0
+
+    # An unmapped Square line must not let coverage read as complete: mapped-only coverage stays 100%, net-sales coverage drops.
+    with app.app_context():
+        connection = SquareConnection.query.filter_by(organization_id=organization_id).first()
+        gross = Decimal("126.00")
+        order = SquareOrder(
+            square_connection_id=connection.id, square_order_id="ORDER-UNMAPPED", square_location_id="LOC-1", restaurant_location_id=location_id,
+            order_state="COMPLETED", currency="CAD", gross_amount=gross, discount_amount=Decimal("0"), tax_amount=Decimal("0"), tip_amount=Decimal("0"),
+            refund_amount=Decimal("0"), net_amount=gross, item_quantity=Decimal("6"), line_count=1,
+            ordered_at=datetime(2026, 8, 8, 17, 0, tzinfo=timezone.utc), closed_at=datetime(2026, 8, 8, 17, 10, tzinfo=timezone.utc),
+            raw_payload_json={"id": "ORDER-UNMAPPED"},
+        )
+        db.session.add(order)
+        db.session.flush()
+        db.session.add(SquareOrderLine(
+            order=order, line_uid="line-unmapped", line_index=0, square_item_variation_id="VAR-UNMAPPED", name="Mystery Special", quantity=Decimal("6"),
+            gross_amount=gross, discount_amount=Decimal("0"), tax_amount=Decimal("0"), tip_amount=Decimal("0"), net_amount=gross,
+            raw_payload_json={"uid": "line-unmapped", "gross_sales_money": {"amount": 12600, "currency": "CAD"}},
+        ))
+        db.session.commit()
+    partial = client.get("/api/pilot/reports", query_string={"view": "daily", "date": "2026-08-08"}).get_json()
+    assert partial["costing"]["costCoveragePercent"] == 100.0  # mapped-only denominator unchanged
+    assert partial["costing"]["unmappedSalesAmount"] == 126.0
+    assert partial["costing"]["costCoverageOfNetSalesPercent"] == round(374 / 500 * 100, 2)  # 74.8
+    assert len(partial["sales"]["unmappedLines"]) == 1
 
     # Theoretical usage through the Square usage report (unrounded recipe quantities x units sold).
     usage = client.get("/api/integrations/square/usage", query_string={
