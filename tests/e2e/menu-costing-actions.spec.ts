@@ -145,7 +145,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
       const row = page.getByRole("row", { name: /Cheesy Toast/ });
-      await expect(row).toContainText("Food cost 16.7%");
+      await expect(row.getByRole("cell", { name: "Food cost 16.7%" })).toBeVisible();
       await expect(row).toContainText("Cost available");
     });
 
@@ -156,9 +156,9 @@ for (const viewport of VIEWPORTS) {
       await page.goto("/app/menu-costing", { waitUntil: "domcontentloaded" });
       const row = page.getByRole("row", { name: /Cheesy Toast/ });
       await expect(row).toBeVisible();
-      await expect(row).toContainText("Cost unavailable");
-      await expect(row).toContainText("Food cost Unavailable");
-      await expect(row).toContainText("Contribution unavailable");
+      await expect(row.getByRole("cell", { name: "Cost unavailable" })).toBeVisible();
+      await expect(row.getByRole("cell", { name: "Food cost Unavailable" })).toBeVisible();
+      await expect(row.getByRole("cell", { name: "Contribution unavailable" })).toBeVisible();
       await expect(row).toContainText("Needs review");
       await expect(row).not.toContainText("Cost available");
       await expect(row).not.toContainText("0%");
@@ -187,8 +187,8 @@ for (const viewport of VIEWPORTS) {
       expect(world.menuReads).toBeGreaterThan(readsBefore);
       await dialog.getByRole("button", { name: /close/i }).first().click();
       const row = page.getByRole("row", { name: /Avocado Toast/ });
-      await expect(row).toContainText("Price $16.00");
-      await expect(row).toContainText("Food cost 12.5%");
+      await expect(row.getByRole("cell", { name: "Price $16.00" })).toBeVisible();
+      await expect(row.getByRole("cell", { name: "Food cost 12.5%" })).toBeVisible();
       await noHorizontalOverflow(page);
     });
 
@@ -230,6 +230,19 @@ for (const viewport of VIEWPORTS) {
       expect(world.deletes).toEqual(["21"]);
       await expect(page.getByRole("row", { name: /Cheesy Toast/ })).toHaveCount(0);
       await noHorizontalOverflow(page);
+    });
+    test(`compact recipe editor is readable without horizontal overflow at ${viewport.width}px`, async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/app/menu-costing", { waitUntil: "domcontentloaded" });
+      await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
+      await page.getByRole("tab", { name: "Recipes" }).click();
+      await page.getByRole("button", { name: "New recipe" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByRole("heading", { name: "New recipe" })).toBeVisible();
+      await expect(dialog.getByLabel("Yield quantity")).toHaveCSS("width", /.+/);
+      await noHorizontalOverflow(page);
+      await page.screenshot({ path: `/tmp/flowtally-menu-costing-${viewport.width}.png`, fullPage: true });
     });
   });
 }

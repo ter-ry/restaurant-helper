@@ -21,6 +21,7 @@ import {
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { CompactField, CompactFieldGroup } from "../components/CompactField";
 import { Modal } from "../components/Modal";
 import { SectionHeader } from "../components/SectionHeader";
 import { usePilotSession } from "./PilotSessionProvider";
@@ -663,37 +664,34 @@ export function PilotMenuCostingPage() {
           />
           {showRecipeEditor ? (
             <>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Name</span>
-              <input className="input mt-1" value={recipeDraft.name} onChange={(event) => setRecipeDraft((current) => ({ ...current, name: event.target.value }))} />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Yield unit</span>
-              <input className="input mt-1" value={recipeDraft.yieldUnit} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldUnit: event.target.value }))} />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Yield quantity</span>
-              <input className="input mt-1" type="number" min="0.0001" step="0.0001" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: Number(event.target.value || 0) }))} />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Active</span>
-              <select className="input mt-1" value={recipeDraft.active ? "true" : "false"} onChange={(event) => setRecipeDraft((current) => ({ ...current, active: event.target.value === "true" }))}>
+          <div className="compact-form grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_8rem_8rem]">
+            <CompactField label="Name">
+              <input className="input" value={recipeDraft.name} onChange={(event) => setRecipeDraft((current) => ({ ...current, name: event.target.value }))} />
+            </CompactField>
+            <CompactField label="Yield unit">
+              <input className="input" value={recipeDraft.yieldUnit} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldUnit: event.target.value }))} />
+            </CompactField>
+            <CompactField label="Yield quantity">
+              <input className="input w-full" type="number" min="0.0001" step="0.0001" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: Number(event.target.value || 0) }))} />
+            </CompactField>
+            <CompactField label="Status">
+              <select className="input" value={recipeDraft.active ? "true" : "false"} onChange={(event) => setRecipeDraft((current) => ({ ...current, active: event.target.value === "true" }))}>
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
               </select>
-            </label>
+            </CompactField>
           </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Description</span>
-              <input className="input mt-1" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional description" />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Notes</span>
-              <input className="input mt-1" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
-            </label>
-          </div>
+          <details className="compact-form compact-optional mt-3">
+            <summary>Optional description and notes</summary>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <CompactField label="Description">
+                <input className="input" value={recipeDraft.description} onChange={(event) => setRecipeDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional description" />
+              </CompactField>
+              <CompactField label="Notes">
+                <input className="input" value={recipeDraft.notes} onChange={(event) => setRecipeDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
+              </CompactField>
+            </div>
+          </details>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveRecipe()} type="button" disabled={savingRecipe}>
               {savingRecipe ? "Saving…" : recipeDraft.id ? "Update recipe" : "Create recipe"}
@@ -731,11 +729,10 @@ export function PilotMenuCostingPage() {
             </div>
 
             {selectedRecipe ? (
-              <div className="mt-4 space-y-4">
+              <div className="compact-form mt-4 space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="text-sm font-medium text-ink">Inventory item</span>
-                    <select className="input mt-1" value={ingredientDraft.inventoryItemId} onChange={(event) => setIngredientDraft((current) => {
+                  <CompactField label="Inventory item" className="sm:col-span-2">
+                    <select className="input" value={ingredientDraft.inventoryItemId} onChange={(event) => setIngredientDraft((current) => {
                       const inventoryItemId = event.target.value ? Number(event.target.value) : "";
                       const item = activeInventoryItems.find((candidate) => candidate.id === inventoryItemId);
                       return { ...current, inventoryItemId, unit: item?.stockUnit ?? current.unit };
@@ -747,24 +744,27 @@ export function PilotMenuCostingPage() {
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-ink">Quantity required</span>
-                    <input className="input mt-1" type="number" min="0.0001" step="0.0001" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-ink">Unit</span>
-                    <input className="input mt-1" value={ingredientDraft.unit} onChange={(event) => setIngredientDraft((current) => ({ ...current, unit: event.target.value }))} />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-ink">Sort order</span>
-                    <input className="input mt-1" type="number" value={ingredientDraft.sortOrder} onChange={(event) => setIngredientDraft((current) => ({ ...current, sortOrder: Number(event.target.value || 0) }))} />
-                  </label>
+                  </CompactField>
+                  <CompactFieldGroup label="Quantity and unit" className="sm:col-span-2">
+                    <CompactField label="Quantity required">
+                      <input className="input w-full" type="number" min="0.0001" step="0.0001" value={ingredientDraft.quantityRequired} onChange={(event) => setIngredientDraft((current) => ({ ...current, quantityRequired: Number(event.target.value || 0) }))} />
+                    </CompactField>
+                    <CompactField label="Unit">
+                      <input className="input w-full" value={ingredientDraft.unit} onChange={(event) => setIngredientDraft((current) => ({ ...current, unit: event.target.value }))} />
+                    </CompactField>
+                  </CompactFieldGroup>
                 </div>
-                <label className="block">
-                  <span className="text-sm font-medium text-ink">Notes</span>
-                  <input className="input mt-1" value={ingredientDraft.notes} onChange={(event) => setIngredientDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional note" />
-                </label>
+                <details className="compact-optional">
+                  <summary>Optional ingredient details</summary>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <CompactField label="Sort order" hint="Controls the ingredient list order.">
+                      <input className="input w-28" type="number" value={ingredientDraft.sortOrder} onChange={(event) => setIngredientDraft((current) => ({ ...current, sortOrder: Number(event.target.value || 0) }))} />
+                    </CompactField>
+                    <CompactField label="Notes">
+                      <input className="input" value={ingredientDraft.notes} onChange={(event) => setIngredientDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional note" />
+                    </CompactField>
+                  </div>
+                </details>
                 <div className="flex flex-wrap gap-3">
                   <Button icon={<Plus className="h-4 w-4" />} onClick={() => void saveIngredient()} type="button" disabled={savingIngredient}>
                     {savingIngredient ? "Saving…" : selectedIngredientId ? "Update ingredient" : "Add ingredient"}
@@ -776,7 +776,7 @@ export function PilotMenuCostingPage() {
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm text-slate-700">
+                <div className="recipe-cost-summary rounded-2xl border border-line bg-slate-50 p-3 text-sm text-slate-700">
                   <div className="flex flex-wrap gap-4">
                     <span>Cost basis: <strong>{selectedRecipe.ingredients.some((ingredient) => ingredient.costBasis === "latest_purchase") ? "Current valuation / latest purchase estimate" : "Current inventory valuation"}</strong></span>
                     <span>Recipe cost: <strong>{formatCost(selectedRecipe.totalCost)}</strong></span>
@@ -852,10 +852,10 @@ export function PilotMenuCostingPage() {
                     <tr key={menuItem.id} tabIndex={0} className={`cursor-pointer border-b border-line transition hover:bg-brand-50/60 ${menuItem.id === selectedMenuItemId ? "bg-brand-50" : "bg-white"}`} onClick={() => openMenuItem(menuItem)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMenuItem(menuItem); } }}>
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{menuItem.name}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-muted">{menuItem.category}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Price {formatMoney(menuItem.sellingPrice)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{menuItem.recipeCostPerYield == null || !Number.isFinite(Number(menuItem.recipeCostPerYield)) ? formatCost(null) : `Cost ${formatCost(menuItem.recipeCostPerYield)}`}</td>
-                      <td className="whitespace-nowrap px-3 py-2">Food cost {menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{menuItem.grossProfit == null || !Number.isFinite(Number(menuItem.grossProfit)) ? "Contribution unavailable" : `Contribution ${formatCost(menuItem.grossProfit)}`}</td>
+                      <td aria-label={`Price ${formatMoney(menuItem.sellingPrice)}`} className="whitespace-nowrap px-3 py-2">{formatMoney(menuItem.sellingPrice)}</td>
+                      <td aria-label={`Cost ${menuItem.recipeCostPerYield == null || !Number.isFinite(Number(menuItem.recipeCostPerYield)) ? "unavailable" : formatCost(menuItem.recipeCostPerYield)}`} className="whitespace-nowrap px-3 py-2">{menuItem.recipeCostPerYield == null || !Number.isFinite(Number(menuItem.recipeCostPerYield)) ? formatCost(null) : formatCost(menuItem.recipeCostPerYield)}</td>
+                      <td aria-label={`Food cost ${menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}`} className="whitespace-nowrap px-3 py-2">{menuItem.foodCostPercent == null ? "Unavailable" : `${formatNumber(menuItem.foodCostPercent)}%`}</td>
+                      <td aria-label={`Contribution ${menuItem.grossProfit == null || !Number.isFinite(Number(menuItem.grossProfit)) ? "unavailable" : formatCost(menuItem.grossProfit)}`} className="whitespace-nowrap px-3 py-2">{menuItem.grossProfit == null || !Number.isFinite(Number(menuItem.grossProfit)) ? "Unavailable" : formatCost(menuItem.grossProfit)}</td>
                       <td className="whitespace-nowrap px-3 py-2"><Badge tone={menuItem.recipeId == null ? "warning" : statusTone(menuItem.costAvailable ? "complete" : "needs review")}>{menuItem.recipeId == null ? "Recipe needed" : menuItem.costAvailable ? "Cost available" : "Needs review"}</Badge></td>
                     </tr>
                   ))}
@@ -869,18 +869,15 @@ export function PilotMenuCostingPage() {
           </div>
           {showMenuItemEditor ? <Modal title={menuItemDraft.id ? "Edit menu item" : menuItemEditorMode === "create" ? "New menu item" : "Menu item editor"} size="large" onClose={requestMenuItemClose}>
             {dialogFeedback}
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="text-sm font-medium text-ink">Name</span>
-                <input className="input mt-1" value={menuItemDraft.name} onChange={(event) => setMenuItemDraft((current) => ({ ...current, name: event.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-ink">Category</span>
-                <input className="input mt-1" value={menuItemDraft.category} onChange={(event) => setMenuItemDraft((current) => ({ ...current, category: event.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-ink">Recipe</span>
-                <select className="input mt-1" value={menuItemDraft.recipeId} onChange={(event) => setMenuItemDraft((current) => ({ ...current, recipeId: event.target.value ? Number(event.target.value) : "" }))}>
+            <div className="compact-form mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1fr)_8rem]">
+              <CompactField label="Name">
+                <input className="input" value={menuItemDraft.name} onChange={(event) => setMenuItemDraft((current) => ({ ...current, name: event.target.value }))} />
+              </CompactField>
+              <CompactField label="Category">
+                <input className="input" value={menuItemDraft.category} onChange={(event) => setMenuItemDraft((current) => ({ ...current, category: event.target.value }))} />
+              </CompactField>
+              <CompactField label="Recipe">
+                <select className="input" value={menuItemDraft.recipeId} onChange={(event) => setMenuItemDraft((current) => ({ ...current, recipeId: event.target.value ? Number(event.target.value) : "" }))}>
                   <option value="">Recipe needed — assign later</option>
                   {recipes.map((recipe) => (
                     <option key={recipe.id} value={recipe.id}>
@@ -888,23 +885,23 @@ export function PilotMenuCostingPage() {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-ink">Selling price</span>
-                <input className="input mt-1" type="number" min="0" step="0.01" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: Number(event.target.value || 0) }))} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-ink">Active</span>
-                <select className="input mt-1" value={menuItemDraft.active ? "true" : "false"} onChange={(event) => setMenuItemDraft((current) => ({ ...current, active: event.target.value === "true" }))}>
+              </CompactField>
+              <CompactField label="Selling price">
+                <input className="input" type="number" min="0" step="0.01" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: Number(event.target.value || 0) }))} />
+              </CompactField>
+              <CompactField label="Status">
+                <select className="input" value={menuItemDraft.active ? "true" : "false"} onChange={(event) => setMenuItemDraft((current) => ({ ...current, active: event.target.value === "true" }))}>
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
-              </label>
+              </CompactField>
             </div>
-            <label className="mt-3 block">
-              <span className="text-sm font-medium text-ink">Notes</span>
-              <input className="input mt-1" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
-            </label>
+            <details className="compact-form compact-optional mt-3">
+              <summary>Optional menu item notes</summary>
+              <CompactField className="mt-2" label="Notes">
+                <input className="input" value={menuItemDraft.notes} onChange={(event) => setMenuItemDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes" />
+              </CompactField>
+            </details>
             {showMenuItemEditor ? (
               <>
             <div className="mt-4 flex flex-wrap gap-3">

@@ -217,10 +217,9 @@ describe("PilotMenuCostingPage", () => {
     expect(await screen.findByText("Menu costing")).toBeVisible();
     expect(screen.getAllByText("Cheesy Toast").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "Menu Costing" })).toBeVisible();
-    expect(screen.getAllByText("Cost $3.50").length).toBeGreaterThan(0);
-    expect(screen.getByText("29.2%")).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Cost $3.50" })).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Food cost 29.2%" })).toBeVisible();
     expect(screen.queryByText("High cost")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
       "Item",
       "Category",
@@ -268,7 +267,7 @@ describe("PilotMenuCostingPage", () => {
     await screen.findByText("Menu costing");
     expect(screen.getAllByText(/Cost unavailable/).length).toBeGreaterThan(0);
     expect(screen.queryByText("Cost $0.00")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Cost Cost unavailable|Contribution Cost unavailable/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: /Cost Cost unavailable|Contribution Cost unavailable/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
     expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
     fireEvent.change(screen.getByLabelText("Scenario selling price"), { target: { value: "15" } });
