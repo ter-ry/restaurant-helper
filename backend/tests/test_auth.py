@@ -124,8 +124,8 @@ def test_disabled_support_access_does_not_set_tenant_scope(monkeypatch):
     monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
     monkeypatch.setattr(
         tenant_context,
-        "_set_local_setting",
-        lambda name, value: captured.append((name, value or "")),
+        "_set_local_settings",
+        lambda _execute, values: captured.extend((name, value or "") for name, value in values.items()),
     )
     monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="pilot_api.dashboard"))
     monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
@@ -157,8 +157,8 @@ def test_explicit_setup_scope_is_preserved_for_onboarding_endpoint(monkeypatch):
     monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
     monkeypatch.setattr(
         tenant_context,
-        "_set_local_setting",
-        lambda name, value: captured.append((name, value or "")),
+        "_set_local_settings",
+        lambda _execute, values: captured.extend((name, value or "") for name, value in values.items()),
     )
     monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="commercial.create_prospect_organization"))
     monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
@@ -187,8 +187,8 @@ def test_authenticated_request_sets_user_identity_before_tenant_discovery(monkey
     monkeypatch.setattr(tenant_context, "_is_postgresql", lambda: True)
     monkeypatch.setattr(
         tenant_context,
-        "_set_local_setting",
-        lambda name, value: captured.append((name, value or "")),
+        "_set_local_settings",
+        lambda _execute, values: captured.extend((name, value or "") for name, value in values.items()),
     )
     monkeypatch.setattr(tenant_context, "request", SimpleNamespace(endpoint="pilot_api.dashboard"))
     monkeypatch.setattr(tenant_context, "current_user", SimpleNamespace(is_authenticated=True, id=77))
