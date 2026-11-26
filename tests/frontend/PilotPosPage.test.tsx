@@ -158,6 +158,14 @@ describe("POS workspace routing", () => {
     expect(screen.getByTestId("where")).toHaveTextContent("/app/pos/square?error=square_authorization_denied#mappings");
   });
 
+  it("carries a Square OAuth error to the Square workspace even when the location is unconnected", async () => {
+    api.fetchPilotCloverStatus.mockResolvedValue(cloverStatus(false));
+    renderAt("/app/square?error=square_authorization_denied");
+    await waitFor(() => expect(screen.getByText("Square workspace")).toBeVisible());
+    expect(screen.getByTestId("where")).toHaveTextContent("/app/pos/square?error=square_authorization_denied");
+    expect(screen.queryByText("Connect your point-of-sale")).not.toBeInTheDocument();
+  });
+
   it("sends a legacy Clover launch link to the Clover workspace", async () => {
     api.fetchPilotCloverStatus.mockResolvedValue(cloverStatus(true));
     api.fetchPilotCloverMappings.mockResolvedValue({ enabled: true, locationMapping: { id: 1 }, menuMappings: [] });

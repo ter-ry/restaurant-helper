@@ -64,6 +64,10 @@ export function PilotPosEntry() {
   if (resolution.kind === "unconnected" && resolution.cloverAvailable && new URLSearchParams(routerLocation.search).get("cloverLaunch") === "1") {
     return <Navigate to={`/app/pos/clover${carry}`} replace />;
   }
+  // A Square OAuth callback error must reach the Square workspace even if the location is not yet connected/mapped.
+  if (resolution.kind === "unconnected" && (new URLSearchParams(routerLocation.search).get("error") ?? "").startsWith("square_")) {
+    return <Navigate to={`/app/pos/square${carry}`} replace />;
+  }
   const name = currentLocation?.name ?? "this location";
 
   if (resolution.kind === "conflict") {
