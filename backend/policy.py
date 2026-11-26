@@ -78,6 +78,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "pilot_api.menu_costing": "menu_costing.manage",
     "pilot_api.create_menu_costing_recipe": "menu_costing.manage",
     "pilot_api.update_menu_costing_recipe": "menu_costing.manage",
+    "pilot_api.save_menu_costing_recipe_editor": "menu_costing.manage",
     "pilot_api.delete_menu_costing_recipe": "menu_costing.manage",
     "pilot_api.create_menu_costing_recipe_ingredient": "menu_costing.manage",
     "pilot_api.update_menu_costing_recipe_ingredient": "menu_costing.manage",

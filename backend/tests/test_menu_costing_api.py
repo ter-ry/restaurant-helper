@@ -186,3 +186,33 @@ def test_subcent_ingredient_lines_explain_currency_rounding(client):
     assert [ingredient["lineCost"] for ingredient in body["ingredients"]] == [0.0, 0.0]
     assert body["totalCost"] == 0.01
     assert any("rounded to cents" in warning for warning in body["warnings"])
+
+
+def test_recipe_editor_is_atomic_tenant_scoped_and_handles_swaps(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    organization = make_operational_organization(owner, name="Editor Cafe", location_name="Editor Kitchen", enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING"))
+    other = make_operational_organization(owner, name="Other Editor Cafe", location_name="Other Kitchen", enabled_modules=("PURCHASES", "INVENTORY", "MENU_COSTING"))
+    select_org(client, organization.id)
+    first = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "First", "category": "Prep", "stockUnit": "kg", "averageUnitCost": 2, "active": True}).get_json()
+    second = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "Second", "category": "Prep", "stockUnit": "kg", "averageUnitCost": 4, "active": True}).get_json()
+    foreign = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "Foreign", "category": "Prep", "stockUnit": "kg", "averageUnitCost": 9, "active": True}).get_json()
+    select_org(client, other.id)
+    foreign_id = client.post("/api/pilot/inventory/items", headers=csrf_headers(client), json={"name": "Other item", "category": "Prep", "stockUnit": "kg", "averageUnitCost": 9, "active": True}).get_json()["id"]
+    select_org(client, organization.id)
+    recipe = client.post("/api/pilot/menu-costing/recipes", headers=csrf_headers(client), json={"name": "Atomic", "yieldQuantity": 1, "yieldUnit": "serving"}).get_json()
+    initial = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json={"name": "Atomic", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"inventoryItemId": first["id"], "quantityRequired": "01", "unit": "kg", "sortOrder": 0}, {"inventoryItemId": second["id"], "quantityRequired": "2", "unit": "kg", "sortOrder": 1}]})
+    assert initial.status_code == 200
+    assert [row["inventoryItemId"] for row in initial.get_json()["ingredients"]] == [first["id"], second["id"]]
+    rows = initial.get_json()["ingredients"]
+    swapped = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json={"name": "Atomic renamed", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"id": rows[0]["id"], "inventoryItemId": second["id"], "quantityRequired": 1, "unit": "kg", "sortOrder": 0}, {"id": rows[1]["id"], "inventoryItemId": first["id"], "quantityRequired": 2, "unit": "kg", "sortOrder": 1}]})
+    assert swapped.status_code == 200
+    assert {row["inventoryItemId"] for row in swapped.get_json()["ingredients"]} == {first["id"], second["id"]}
+    duplicate = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json={"name": "Should roll back", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"inventoryItemId": first["id"], "quantityRequired": 1, "unit": "kg"}, {"inventoryItemId": first["id"], "quantityRequired": 1, "unit": "kg"}]})
+    assert duplicate.status_code == 400
+    assert client.get("/api/pilot/menu-costing").get_json()["recipes"][0]["name"] == "Atomic renamed"
+    cross_tenant = client.put(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers=csrf_headers(client), json={"name": "No leak", "yieldQuantity": 1, "yieldUnit": "serving", "ingredients": [{"inventoryItemId": foreign_id, "quantityRequired": 1, "unit": "kg"}]})
+    assert cross_tenant.status_code == 404
+    preflight = client.options(f"/api/pilot/menu-costing/recipes/{recipe['id']}/editor", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT"})
+    assert preflight.status_code in (200, 204)
+    assert "PUT" in preflight.headers["Access-Control-Allow-Methods"]

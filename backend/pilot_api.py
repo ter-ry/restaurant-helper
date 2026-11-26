@@ -4469,13 +4469,18 @@ def save_menu_costing_recipe_editor(recipe_id: int):
             setattr(recipe, field, value)
         recipe.updated_by_user_id = current_user.id
         retained = {row["ingredient"] for row in rows if row["ingredient"] is not None}
+        replaced = {
+            row["ingredient"]
+            for row in rows
+            if row["ingredient"] is not None and row["ingredient"].inventory_item_id != row["inventory_item"].id
+        }
         for ingredient in recipe.ingredients:
-            if ingredient not in retained:
+            if ingredient not in retained or ingredient in replaced:
                 db.session.delete(ingredient)
         db.session.flush()
         for row in rows:
             ingredient = row["ingredient"]
-            if ingredient is None:
+            if ingredient is None or ingredient in replaced:
                 ingredient = RecipeIngredient(organization_id=organization.id, recipe_id=recipe.id, created_by_user_id=current_user.id)
                 db.session.add(ingredient)
             ingredient.inventory_item_id = row["inventory_item"].id

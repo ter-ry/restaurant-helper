@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 
 type SearchableSelectProps = {
   label: string;
@@ -12,6 +12,8 @@ type SearchableSelectProps = {
 export function SearchableSelect({ label, value, options, onChange, placeholder = "Search…", className = "" }: SearchableSelectProps) {
   const listId = useId();
   const selected = options.find((option) => option.value === value);
+  const [searchText, setSearchText] = useState(selected?.label ?? "");
+  useEffect(() => setSearchText(selected?.label ?? ""), [selected?.label]);
   return (
     <label className={`block ${className}`}>
       <span className="sr-only">{label}</span>
@@ -20,8 +22,14 @@ export function SearchableSelect({ label, value, options, onChange, placeholder 
         list={listId}
         aria-label={label}
         placeholder={placeholder}
-        value={selected?.label ?? ""}
-        onChange={(event) => onChange(options.find((option) => option.label === event.target.value)?.value ?? "")}
+        value={searchText}
+        onChange={(event) => {
+          const nextText = event.target.value;
+          setSearchText(nextText);
+          const exact = options.find((option) => option.label === nextText);
+          if (exact) onChange(exact.value);
+          else if (nextText === "") onChange("");
+        }}
       />
       <datalist id={listId}>
         {options.map((option) => <option key={option.value} value={option.label} />)}
