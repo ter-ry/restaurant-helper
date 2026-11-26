@@ -208,6 +208,8 @@ for (const viewport of VIEWPORTS) {
       await dialog.getByLabel("Counted quantity for Espresso Beans").fill("8");
       await dialog.getByLabel("Counted quantity for Oat Milk").fill("12");
       await dialog.getByRole("button", { name: "Save draft" }).dblclick();
+      // Review must not open while the draft save is still in flight (owner #169 segment 4C).
+      await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeDisabled();
       await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeEnabled();
       expect(world.calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
       expect(world.calls.find((call) => call.method === "PATCH")!.body.lines).toEqual([
