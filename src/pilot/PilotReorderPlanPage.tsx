@@ -213,6 +213,7 @@ export function PilotReorderPlanPage() {
       setActiveInventoryItemCount(suggestionsResponse.activeInventoryItemCount ?? 0);
       setRecommendationsRefreshedAt(suggestionsResponse.refreshedAt ?? null);
       setPlans(plansResponse.plans);
+      setHasLoaded(true);
     } catch {
       // The saved result above is already authoritative; the next explicit refresh reconciles.
     }
@@ -326,6 +327,7 @@ export function PilotReorderPlanPage() {
     setPendingAction(null);
     setMessage(null);
     setError(null);
+    backgroundRevalidationRef.current += 1;
     try {
       const workingDraft = draft && draft.status === "Draft" ? draft : await createPilotReorderPlan();
       setSelectedPlanId(workingDraft.id);

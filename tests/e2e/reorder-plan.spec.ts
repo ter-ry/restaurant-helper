@@ -103,7 +103,7 @@ async function installWorld(page: Page, world: World) {
     }
     if (pathname === "/api/pilot/inventory/negative-stock") return json(route, { count: 0, posCausedCount: 0, items: [] });
 
-    if (method === "GET" && world.slowReadsMs && /^\/api\/pilot\/(reorder-plans?|inventory\/negative-stock)$/.test(pathname)) {
+    if (method === "GET" && world.slowReadsMs && /^\/api\/pilot\/(reorder-plan|inventory\/negative-stock)$/.test(pathname)) {
       await new Promise((resolve) => setTimeout(resolve, world.slowReadsMs));
     }
     if (pathname === "/api/pilot/reorder-plan") {
@@ -122,7 +122,10 @@ async function installWorld(page: Page, world: World) {
     if (pathname === "/api/pilot/reorder-plans") {
       if (method === "GET") {
         const active = world.plans.find((plan) => plan.status === "Draft");
-        return json(route, { plans: world.plans, activeDraftPlanId: active?.id ?? null });
+        // Serialise before any delay so a slow read returns the state as of request time (a stale snapshot).
+        const snapshot = { plans: JSON.parse(JSON.stringify(world.plans)), activeDraftPlanId: active?.id ?? null };
+        if (world.slowReadsMs) await new Promise((resolve) => setTimeout(resolve, world.slowReadsMs));
+        return json(route, snapshot);
       }
       if (world.delayMs) await new Promise((resolve) => setTimeout(resolve, world.delayMs));
       const plan: Plan = {
@@ -239,6 +242,37 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole("spinbutton").first().fill("9");
       await page.waitForTimeout(4500);
       await expect(page.getByRole("spinbutton").first()).toHaveValue("9");
+    });
+
+    test("a stale background read finishing after Add to draft does not revert the plan", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await openReorder(page);
+      await page.getByRole("button", { name: "Add to draft" }).first().click();
+      await expect(page.getByText("Item added to the working order plan.")).toBeVisible();
+
+      world.slowReadsMs = 2500;
+      await page.getByRole("button", { name: "Save draft" }).click();
+      await expect(page.getByText(/Saved draft Reorder plan 1/)).toBeVisible();
+      world.slowReadsMs = 0;
+      await page.getByRole("button", { name: "Add to draft" }).first().click();
+      await expect(page.getByText("Item added to the working order plan.")).toBeVisible();
+      await expect(page.getByText("2 lines").first()).toBeVisible();
+      await page.waitForTimeout(3200);
+      await expect(page.getByText("2 lines").first()).toBeVisible();
+      await expect(page.getByText("1 lines")).toHaveCount(0);
+    });
+
+    test("creating a draft after a failed first load recovers the loaded page", async ({ page }) => {
+      const world = newWorld();
+      world.failNext["GET suggestions"] = 1;
+      await installWorld(page, world);
+      await page.goto("/app/inventory?view=reorder", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("alert")).toContainText("could not process");
+      const start = page.getByRole("button", { name: /Start|reopen/i }).first();
+      await start.click();
+      await expect(page.getByText("Chicken Breast").first()).toBeVisible();
+      await expect(page.getByText("Refreshing reorder recommendations")).toHaveCount(0);
     });
 
     test("a failed initial load shows an alert and Retry, never false zero metrics, and Retry recovers", async ({ page }) => {
