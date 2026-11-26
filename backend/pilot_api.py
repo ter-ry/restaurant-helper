@@ -4584,6 +4584,7 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
     # Validate every ingredient before mutating anything.
     parsed: list[dict[str, Any]] = []
     seen_items: set[int] = set()
+    seen_ids: set[int] = set()
     for index, raw in enumerate(raw_ingredients or []):
         if not isinstance(raw, dict):
             raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1} is invalid."})
@@ -4605,6 +4606,10 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
                 existing_id = int(existing_id)
             except (TypeError, ValueError):
                 raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1}: invalid id."}) from None
+        if existing_id is not None:
+            if existing_id in seen_ids:
+                raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1}: id repeated."})
+            seen_ids.add(existing_id)
         parsed.append({"id": existing_id, "inventory_item_id": item_id, "quantity": quantity_required, "unit": raw.get("unit"), "notes": raw.get("notes"), "sort_order": index})
 
     inventory_items = {
@@ -4625,64 +4630,64 @@ def _save_menu_costing_recipe_composition(recipe_id: int | None):
     if not requested_ids <= set(existing_by_id):
         return json_error("Ingredient not found.", 404)
 
-    if creating:
-        recipe = Recipe(organization_id=organization.id, location_id=location.id, created_by_user_id=current_user.id, updated_by_user_id=current_user.id, **recipe_data)
-        db.session.add(recipe)
-    else:
-        for field, value in recipe_data.items():
-            setattr(recipe, field, value)
-        recipe.updated_by_user_id = current_user.id
-
-    # Rows removed, or re-pointed at a different inventory item, are deleted first and flushed so the
-    # (recipe, inventory item) unique constraint cannot trip on swaps; re-pointed rows are recreated.
-    keep: dict[int, RecipeIngredient] = {}
-    for row_id, row in existing_by_id.items():
-        entry = next((e for e in parsed if e["id"] == row_id), None)
-        if entry is not None and entry["inventory_item_id"] == row.inventory_item_id:
-            keep[row_id] = row
-        else:
-            db.session.delete(row)
-    db.session.flush()
-
-    for entry in parsed:
-        item = inventory_items[entry["inventory_item_id"]]
-        unit = str(entry["unit"] if entry["unit"] is not None else (item.stock_unit or "each")).strip() or (item.stock_unit or "each")
-        notes = str(entry["notes"]).strip() if entry["notes"] is not None else None
-        row = keep.get(entry["id"]) if entry["id"] is not None else None
-        if row is None:
-            db.session.add(
-                RecipeIngredient(
-                    organization_id=organization.id,
-                    recipe_id=recipe.id,
-                    inventory_item_id=item.id,
-                    quantity_required=entry["quantity"],
-                    unit=unit,
-                    notes=notes or "",
-                    sort_order=entry["sort_order"],
-                    created_by_user_id=current_user.id,
-                    updated_by_user_id=current_user.id,
-                )
-            )
-        else:
-            row.quantity_required = entry["quantity"]
-            row.unit = unit if entry["unit"] is not None else row.unit
-            if notes is not None:
-                row.notes = notes
-            row.sort_order = entry["sort_order"]
-            row.updated_by_user_id = current_user.id
-    db.session.flush()
-    record_audit_event(
-        event_type="menu_costing.recipe_created" if creating else "menu_costing.recipe_saved",
-        entity_type="recipe",
-        entity_id=recipe.id,
-        organization_id=organization.id,
-        location_id=location.id,
-        actor_user_id=current_user.id,
-        metadata={"name": recipe.name, "ingredientCount": len(parsed)},
-    )
-    db.session.refresh(recipe)
-    response_payload = serialize_recipe(recipe)
     try:
+        if creating:
+            recipe = Recipe(organization_id=organization.id, location_id=location.id, created_by_user_id=current_user.id, updated_by_user_id=current_user.id, **recipe_data)
+            db.session.add(recipe)
+        else:
+            for field, value in recipe_data.items():
+                setattr(recipe, field, value)
+            recipe.updated_by_user_id = current_user.id
+
+        # Rows removed, or re-pointed at a different inventory item, are deleted first and flushed so the
+        # (recipe, inventory item) unique constraint cannot trip on swaps; re-pointed rows are recreated.
+        keep: dict[int, RecipeIngredient] = {}
+        for row_id, row in existing_by_id.items():
+            entry = next((e for e in parsed if e["id"] == row_id), None)
+            if entry is not None and entry["inventory_item_id"] == row.inventory_item_id:
+                keep[row_id] = row
+            else:
+                db.session.delete(row)
+        db.session.flush()
+
+        for entry in parsed:
+            item = inventory_items[entry["inventory_item_id"]]
+            unit = str(entry["unit"] if entry["unit"] is not None else (item.stock_unit or "each")).strip() or (item.stock_unit or "each")
+            notes = str(entry["notes"]).strip() if entry["notes"] is not None else None
+            row = keep.get(entry["id"]) if entry["id"] is not None else None
+            if row is None:
+                db.session.add(
+                    RecipeIngredient(
+                        organization_id=organization.id,
+                        recipe_id=recipe.id,
+                        inventory_item_id=item.id,
+                        quantity_required=entry["quantity"],
+                        unit=unit,
+                        notes=notes or "",
+                        sort_order=entry["sort_order"],
+                        created_by_user_id=current_user.id,
+                        updated_by_user_id=current_user.id,
+                    )
+                )
+            else:
+                row.quantity_required = entry["quantity"]
+                row.unit = unit if entry["unit"] is not None else row.unit
+                if notes is not None:
+                    row.notes = notes
+                row.sort_order = entry["sort_order"]
+                row.updated_by_user_id = current_user.id
+        db.session.flush()
+        record_audit_event(
+            event_type="menu_costing.recipe_created" if creating else "menu_costing.recipe_saved",
+            entity_type="recipe",
+            entity_id=recipe.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={"name": recipe.name, "ingredientCount": len(parsed)},
+        )
+        db.session.refresh(recipe)
+        response_payload = serialize_recipe(recipe)
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -4696,7 +4701,7 @@ def save_new_menu_costing_recipe():
     return _save_menu_costing_recipe_composition(None)
 
 
-@bp.put("/api/pilot/menu-costing/recipes/<int:recipe_id>/save")
+@bp.post("/api/pilot/menu-costing/recipes/<int:recipe_id>/save")
 @login_required
 def save_menu_costing_recipe(recipe_id: int):
     return _save_menu_costing_recipe_composition(recipe_id)

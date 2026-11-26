@@ -27,7 +27,7 @@ def _setup(client, name="Atomic Cafe"):
 
 def _save(client, recipe_id, body):
     url = "/api/pilot/menu-costing/recipes/save" if recipe_id is None else f"/api/pilot/menu-costing/recipes/{recipe_id}/save"
-    method = client.post if recipe_id is None else client.put
+    method = client.post
     return method(url, headers=csrf_headers(client), json=body)
 
 
@@ -78,11 +78,13 @@ def test_atomic_save_rolls_back_on_any_invalid_line(client):
     _, (cheese, bread, _) = _setup(client, "Rollback Cafe")
     rid = _save(client, None, {"name": "Sandwich", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 2}]}).get_json()["id"]
 
+    ROW = client.get("/api/pilot/menu-costing").get_json()["recipes"][0]["ingredients"][0]["id"]
     for bad, status in (
         ([{"inventoryItemId": bread, "quantityRequired": 1}, {"inventoryItemId": cheese, "quantityRequired": 0}], 400),
         ([{"inventoryItemId": bread, "quantityRequired": 1}, {"inventoryItemId": bread, "quantityRequired": 1}], 409),
         ([{"inventoryItemId": bread, "quantityRequired": 1}, {"inventoryItemId": 999999, "quantityRequired": 1}], 404),
         ([{"id": 999999, "inventoryItemId": bread, "quantityRequired": 1}], 404),
+        ([{"id": ROW, "inventoryItemId": cheese, "quantityRequired": 1}, {"id": ROW, "inventoryItemId": bread, "quantityRequired": 1}], 400),
     ):
         r = _save(client, rid, {"name": "Renamed", "ingredients": bad})
         assert r.status_code in (status, 422), r.get_json()
@@ -105,3 +107,12 @@ def test_atomic_save_name_conflict_and_tenant_isolation(client):
     assert _save(client, a_recipe, {"name": "Hijack", "ingredients": []}).status_code == 404
     assert _save(client, None, {"name": "Mine", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 1}]}).status_code == 404
     assert RecipeIngredient.query.filter_by(recipe_id=a_recipe).count() == 1
+
+
+def test_atomic_save_requires_menu_costing_module(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    org = make_operational_organization(owner, name="No Costing", location_name="NC Kitchen", enabled_modules=("PURCHASES", "INVENTORY"))
+    select_org(client, org.id)
+    assert _save(client, None, {"name": "Nope", "ingredients": []}).status_code == 403
+    assert _save(client, 1, {"name": "Nope", "ingredients": []}).status_code == 403
