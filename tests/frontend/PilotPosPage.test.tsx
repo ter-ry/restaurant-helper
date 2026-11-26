@@ -1,6 +1,6 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PilotLegacySquareRedirect, PilotPosCloverRoute, PilotPosEntry, PilotPosLayout, PilotPosSquareRoute } from "../../src/pilot/PilotPosPage";
 import { resolvePosProvider } from "../../src/pilot/pos/posProvider";
@@ -30,7 +30,7 @@ vi.mock("../../src/pilot/PilotCloverConnection", () => ({ PilotCloverConnection:
 const squareConn = (mappedTo: number[]) => ({
   connection: { status: "connected", locations: [{ mappings: mappedTo.map((id) => ({ restaurantLocationId: id })) }] },
 });
-const cloverStatus = (connected: boolean) => ({ enabled: true, connection: { status: connected ? "connected" : "disconnected", environment: "sandbox" } });
+const cloverStatus = (connected: boolean) => ({ enabled: true, mappingEnabled: true, connection: { status: connected ? "connected" : "disconnected", environment: "sandbox" } });
 
 function Where() {
   const l = useLocation();
@@ -41,6 +41,7 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Where />
+      <Link to="/app/pos">go-pos</Link>
       <Routes>
         <Route path="/app/square" element={<PilotLegacySquareRedirect />} />
         <Route path="/app/pos" element={<PilotPosLayout />}>
@@ -169,5 +170,41 @@ describe("POS workspace routing", () => {
     api.fetchPilotCloverStatus.mockResolvedValue(cloverStatus(false));
     renderAt("/app/pos?cloverLaunch=1");
     expect(await screen.findByText("Clover connection panel")).toBeVisible();
+  });
+
+  it("lets Clover work when Square is disabled (403/404) instead of failing the whole POS layout", async () => {
+    const { PilotApiError } = await import("../../src/pilot/pilotApi");
+    api.fetchPilotSquareStatus.mockRejectedValue(new PilotApiError("Square disabled", 403));
+    api.fetchPilotCloverStatus.mockResolvedValue(cloverStatus(true));
+    api.fetchPilotCloverMappings.mockResolvedValue({ enabled: true, locationMapping: { id: 1 }, menuMappings: [] });
+    renderAt("/app/pos/clover");
+    expect(await screen.findByText("Clover connection panel")).toBeVisible();
+  });
+
+  it("does not call the feature-gated mapping endpoint when mapping is disabled, and never blocks Square", async () => {
+    api.fetchPilotSquareStatus.mockResolvedValue(squareConn([1]));
+    api.fetchPilotCloverStatus.mockResolvedValue({ ...cloverStatus(true), mappingEnabled: false });
+    renderAt("/app/pos");
+    expect(await screen.findByText("Square workspace")).toBeVisible();
+    expect(api.fetchPilotCloverMappings).not.toHaveBeenCalled();
+  });
+
+  it("re-resolves when returning to /app/pos after a provider change, without a browser reload", async () => {
+    api.fetchPilotSquareStatus.mockResolvedValueOnce(squareConn([1]));
+    renderAt("/app/pos");
+    expect(await screen.findByText("Square workspace")).toBeVisible();
+    // Square was disconnected inside its workspace; Clover is now the choice.
+    api.fetchPilotSquareStatus.mockResolvedValue({ connection: null });
+    api.fetchPilotCloverStatus.mockResolvedValue(cloverStatus(false));
+    fireEvent.click(screen.getByText("go-pos"));
+    expect(await screen.findByText("Connect your point-of-sale")).toBeVisible();
+    expect(screen.queryByText("Square workspace")).not.toBeInTheDocument();
+  });
+
+  it("keeps a Clover launch parameter when a provider guard redirects", async () => {
+    api.fetchPilotSquareStatus.mockResolvedValue(squareConn([1]));
+    renderAt("/app/pos/clover?cloverLaunch=1");
+    expect(await screen.findByText("Square workspace")).toBeVisible();
+    expect(screen.getByTestId("where")).toHaveTextContent("/app/pos/square?cloverLaunch=1");
   });
 });

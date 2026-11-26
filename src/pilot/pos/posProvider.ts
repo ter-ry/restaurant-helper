@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { PilotApiError, fetchPilotCloverMappings, fetchPilotCloverStatus, fetchPilotSquareStatus } from "../pilotApi";
 import { usePilotSession } from "../PilotSessionProvider";
 
@@ -52,10 +53,16 @@ export type PosProviderState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "no-location" }
-  | { status: "ready"; resolution: PosProviderResolution };
+  | { status: "ready"; resolution: PosProviderResolution; key: string };
 
 export function usePosProvider(): PosProviderState & { reload: () => void } {
   const { organization, currentLocation, user } = usePilotSession();
+  const routerLocation = useLocation();
+  // Every visit to the /app/pos entry re-resolves, so a connect/disconnect/mapping change made inside a
+  // workspace is reflected without a browser reload. Child routes keep the last entry key (no extra fetch).
+  const entryKey = useRef(routerLocation.key);
+  if (routerLocation.pathname.replace(/\/+$/, "") === "/app/pos") entryKey.current = routerLocation.key;
+  const key = entryKey.current;
   const [state, setState] = useState<PosProviderState>({ status: "loading" });
   const requestId = useRef(0);
   const organizationId = organization?.id ?? null;
@@ -72,7 +79,14 @@ export function usePosProvider(): PosProviderState & { reload: () => void } {
     setState({ status: "loading" });
     try {
       const [square, cloverStatus] = await Promise.all([
-        fetchPilotSquareStatus(organizationId),
+        fetchPilotSquareStatus(organizationId).then(
+          (status) => status.connection,
+          (err: unknown) => {
+            // Square can be disabled or restricted (403/404) while Clover is available: that is "no Square", not a failure.
+            if (err instanceof PilotApiError && (err.status === 403 || err.status === 404)) return null;
+            throw err;
+          },
+        ),
         fetchPilotCloverStatus(organizationId).then(
           (status) => ({ status, restricted: false }),
           (err: unknown) => {
@@ -83,7 +97,8 @@ export function usePosProvider(): PosProviderState & { reload: () => void } {
         ),
       ]);
       let locationMapped = false;
-      const cloverConnected = cloverStatus.status?.enabled && cloverStatus.status.connection?.status === "connected";
+      // Mapping reads are feature-gated (404 when off); without them a location cannot be confirmed as Clover.
+      const cloverConnected = cloverStatus.status?.enabled && cloverStatus.status.connection?.status === "connected" && cloverStatus.status.mappingEnabled;
       if (cloverConnected) {
         const mappings = await fetchPilotCloverMappings(organizationId, locationId);
         locationMapped = Boolean(mappings.locationMapping);
@@ -91,9 +106,10 @@ export function usePosProvider(): PosProviderState & { reload: () => void } {
       if (requestId.current !== id) return;
       setState({
         status: "ready",
+        key,
         resolution: resolvePosProvider({
           locationId,
-          squareConnection: square.connection,
+          squareConnection: square,
           clover: {
             enabled: Boolean(cloverStatus.status?.enabled),
             restricted: cloverStatus.restricted,
@@ -106,7 +122,7 @@ export function usePosProvider(): PosProviderState & { reload: () => void } {
       if (requestId.current !== id) return;
       setState({ status: "error", message: err instanceof Error ? err.message : "Could not determine the point-of-sale provider." });
     }
-  }, [organizationId, locationId]);
+  }, [organizationId, locationId, key]);
 
   useEffect(() => {
     void load();
@@ -115,5 +131,7 @@ export function usePosProvider(): PosProviderState & { reload: () => void } {
     };
   }, [load, userId]);
 
-  return { ...state, reload: () => void load() };
+  // A resolution from an earlier entry visit is never trusted: show "loading" until the fresh one lands.
+  const current: PosProviderState = state.status === "ready" && state.key !== key ? { status: "loading" } : state;
+  return { ...current, reload: () => void load() };
 }

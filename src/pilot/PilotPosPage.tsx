@@ -115,7 +115,8 @@ export function PilotPosEntry() {
 /** /app/pos/square: Square workspace; never shown for a location that uses Clover or is in conflict. */
 export function PilotPosSquareRoute() {
   const resolution = usePosResolution();
-  if (resolution.kind === "clover" || resolution.kind === "conflict") return <Navigate to="/app/pos" replace />;
+  const routerLocation = useLocation();
+  if (resolution.kind === "clover" || resolution.kind === "conflict") return <Navigate to={`/app/pos${routerLocation.search}${routerLocation.hash}`} replace />;
   return <PilotSquarePage />;
 }
 
@@ -123,7 +124,8 @@ export function PilotPosSquareRoute() {
 export function PilotPosCloverRoute() {
   const resolution = usePosResolution();
   const { currentLocation } = usePilotSession();
-  if (resolution.kind === "square" || resolution.kind === "conflict" || !resolution.cloverAvailable) return <Navigate to="/app/pos" replace />;
+  const routerLocation = useLocation();
+  if (resolution.kind === "square" || resolution.kind === "conflict" || !resolution.cloverAvailable) return <Navigate to={`/app/pos${routerLocation.search}${routerLocation.hash}`} replace />;
   return (
     <div className="space-y-4">
       <SectionHeader title="Clover" description={`Point-of-sale workspace for ${currentLocation?.name ?? "this location"}.`} />
