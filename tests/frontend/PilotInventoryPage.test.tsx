@@ -479,7 +479,7 @@ describe("PilotInventoryPage", () => {
       expect(dialogs).toHaveLength(2);
       return dialogs[1];
     });
-    expect(within(adjustmentDialog).getByLabelText("Quantity delta (kg)")).toHaveValue(0);
+    expect(within(adjustmentDialog).getByLabelText("Quantity delta (kg)")).toHaveValue(null);
     expect(within(adjustmentDialog).getByRole("button", { name: "Save stock movement" })).toBeDisabled();
     expect(within(adjustmentDialog).getByText("Movement note (optional)")).toBeVisible();
     expect(screen.getByText(/Item notes None/)).toBeVisible();
