@@ -179,6 +179,20 @@ export function PilotStockCountsPage() {
     }
   };
 
+  // Finalizing creates movements that change OTHER drafts' "later movement" flags; refresh them without blocking or touching the open count.
+  const refreshOtherSessions = async (keepId: number) => {
+    try {
+      const { countSessions } = await fetchPilotCountSessions();
+      setSessions((current) => {
+        const kept = current.find((entry) => entry.id === keepId);
+        const fresh = countSessions.filter((entry) => entry.id !== keepId);
+        return kept ? [kept, ...fresh] : countSessions;
+      });
+    } catch {
+      // Non-blocking; the server still rejects an unconfirmed finalize, and Refresh re-reads everything.
+    }
+  };
+
   // Apply an authoritative mutation response (POST/PATCH/finalize) without a blocking re-fetch.
   const applyServerSession = (session: PilotCountSession) => {
     loadRequestRef.current += 1; // invalidate any in-flight load so it cannot overwrite this newer state
@@ -382,6 +396,7 @@ export function PilotStockCountsPage() {
       setWorkflowTab("history");
       selectSessionInUrl(finalized.id);
       void refreshInventory(); // finalizing moves stock; refresh on-hand in the background
+      void refreshOtherSessions(finalized.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
     } finally {

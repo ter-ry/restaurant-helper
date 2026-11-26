@@ -295,6 +295,28 @@ for (const viewport of VIEWPORTS) {
       expect(world.sessions).toHaveLength(2);
     });
 
+    test("finalizing one draft refreshes the later-movement flag on an overlapping draft", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      const other: Session = JSON.parse(JSON.stringify(world.sessions[0]));
+      other.id = 12;
+      world.sessions.push(other);
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      // Finalizing #11 moves stock for Whole Milk, which #12 also counts.
+      world.sessions[1].lines.find((line) => line.inventoryItemId === 1)!.moved = true;
+      await dialog.getByRole("button", { name: "Complete count" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("tab", { name: /Active count/ }).click();
+      await page.getByRole("button", { name: /Draft #12/ }).click();
+      await expect(page.getByRole("dialog").getByText("Count inventory")).toBeVisible();
+      await page.getByRole("dialog").getByRole("button", { name: "Continue / review" }).click();
+      await expect(page.getByRole("dialog").getByRole("button", { name: "Complete count" })).toBeDisabled();
+    });
+
     test("a failed save and a failed finalize show the server reason, keep the draft editable and can be retried", async ({ page }) => {
       const world = draftWorld();
       world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
