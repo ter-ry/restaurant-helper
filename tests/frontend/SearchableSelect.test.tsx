@@ -14,4 +14,10 @@ describe("SearchableSelect", () => {
     fireEvent.change(input, { target: { value: "Chicken · kg" } });
     expect(onChange).toHaveBeenLastCalledWith(102);
   });
+
+  it("renders the selected inactive option while allowing active options for replacement", () => {
+    render(<SearchableSelect label="Inventory item" value={102} options={[{ value: 101, label: "Cheese · kg" }, { value: 102, label: "Legacy Spice · kg · inactive" }]} onChange={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Inventory item" })).toHaveValue("Legacy Spice · kg · inactive");
+    expect(screen.getByDisplayValue("Legacy Spice · kg · inactive")).toBeVisible();
+  });
 });

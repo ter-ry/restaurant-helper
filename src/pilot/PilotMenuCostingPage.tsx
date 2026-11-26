@@ -451,7 +451,7 @@ export function PilotMenuCostingPage() {
         : await createPilotMenuCostingRecipeIngredient(selectedRecipe.id, payload);
       setMessage(`Recipe ingredients for ${saved.name} updated.`);
       setSelectedIngredientId(null);
-      await load();
+      void load();
       setSelectedRecipeId(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the ingredient.");
@@ -489,7 +489,7 @@ export function PilotMenuCostingPage() {
       setSelectedMenuItemId(saved.id);
       setMenuItemEditorMode("edit");
       setMessage(`Menu item ${saved.name} saved.`);
-      await load();
+      void load();
       setSelectedMenuItemId(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the menu item.");
@@ -504,7 +504,7 @@ export function PilotMenuCostingPage() {
     try {
       await deletePilotMenuCostingRecipe(recipe.id);
       setMessage(`Recipe ${recipe.name} deleted.`);
-      await load();
+      void load();
       setSelectedRecipeId(null);
       setRecipeDraft(blankRecipeDraft());
       setRecipeEditorMode("hidden");
@@ -523,7 +523,7 @@ export function PilotMenuCostingPage() {
       const saved = await deletePilotMenuCostingRecipeIngredient(selectedRecipe.id, ingredient.id);
       setMessage(`Ingredient removed from ${saved.name}.`);
       setSelectedIngredientId(null);
-      await load();
+      void load();
       setSelectedRecipeId(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the ingredient.");
@@ -536,7 +536,7 @@ export function PilotMenuCostingPage() {
     try {
       await deletePilotMenuCostingMenuItem(menuItem.id);
       setMessage(`Menu item ${menuItem.name} deleted.`);
-      await load();
+      void load();
       setSelectedMenuItemId(null);
       setMenuItemDraft(blankMenuItemDraft());
       setMenuItemEditorMode("hidden");
@@ -768,8 +768,9 @@ export function PilotMenuCostingPage() {
                   <Button variant="secondary" icon={<Plus className="h-4 w-4" />} type="button" onClick={addIngredientRow}>Add ingredient</Button>
                 </div>
                 {ingredientRows.length ? ingredientRows.map((row, index) => {
-                  const item = activeInventoryItems.find((candidate) => candidate.id === row.inventoryItemId);
-                  const previewUnitCost = item && item.stockUnit.trim().toLowerCase() === row.unit.trim().toLowerCase()
+                  const item = inventoryItems.find((candidate) => candidate.id === row.inventoryItemId);
+                  const selectableInventoryItems = activeInventoryItems.concat(item && !item.active ? [item] : []);
+                  const previewUnitCost = item?.active && item.stockUnit.trim().toLowerCase() === row.unit.trim().toLowerCase()
                     ? Number(item.averageUnitCost ?? 0) > 0
                       ? Number(item.averageUnitCost)
                       : Number(item.latestPurchasePrice ?? 0) > 0 && Number(item.lastPurchaseConversionFactor ?? 0) > 0
@@ -778,7 +779,7 @@ export function PilotMenuCostingPage() {
                     : null;
                   const lineCost = previewUnitCost == null ? null : previewUnitCost * Number(row.quantityRequired);
                   return <div key={row.id ?? `new-${index}`} className="grid items-end gap-2 rounded-xl border border-line bg-white p-2 sm:grid-cols-[minmax(0,2fr)_6rem_6rem_7rem_auto]">
-                    <SearchableSelect label="Inventory item" value={row.inventoryItemId} options={activeInventoryItems.map((candidate) => ({ value: candidate.id, label: `${candidate.name} · ${candidate.stockUnit}` }))} onChange={(value) => { const next = activeInventoryItems.find((candidate) => candidate.id === value); updateIngredientRow(index, { inventoryItemId: value, unit: next?.stockUnit ?? row.unit }); }} placeholder="Search inventory" />
+                    <SearchableSelect label="Inventory item" value={row.inventoryItemId} options={selectableInventoryItems.map((candidate) => ({ value: candidate.id, label: `${candidate.name} · ${candidate.stockUnit}${candidate.active ? "" : " · inactive"}` }))} onChange={(value) => { const next = selectableInventoryItems.find((candidate) => candidate.id === value); updateIngredientRow(index, { inventoryItemId: value, unit: next?.stockUnit ?? row.unit }); }} placeholder="Search inventory" />
                     <label><span className="sr-only">Quantity</span><input className="input w-full" aria-label={`Quantity for ingredient ${index + 1}`} type="number" min="0.0001" step="0.0001" value={row.quantityRequired} onChange={(event) => updateIngredientRow(index, { quantityRequired: event.target.value })} /></label>
                     <label><span className="sr-only">Unit</span><input className="input w-full" aria-label={`Unit for ingredient ${index + 1}`} value={row.unit} onChange={(event) => updateIngredientRow(index, { unit: event.target.value })} /></label>
                     <span className="pb-2 text-sm text-muted" aria-live="polite">{lineCost == null ? "Cost unavailable" : formatCost(lineCost)}</span>
