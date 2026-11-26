@@ -104,6 +104,7 @@ export function PilotStockCountsPage() {
   const loadRequestRef = useRef(0);
   const selectionSeededRef = useRef(false);
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("sessionId");
     const parsed = Number(value);
@@ -119,6 +120,7 @@ export function PilotStockCountsPage() {
 
   // Inventory is only needed to pick items for a NEW count, so it never blocks the page or a mutation.
   const refreshInventory = async () => {
+    setInventoryError(null);
     try {
       const inventory = await fetchPilotInventory();
       setInventoryItems(inventory.items);
@@ -127,8 +129,9 @@ export function PilotStockCountsPage() {
         setSelectedItemIds(inventory.items.filter((item) => item.active).map((item) => item.id));
       }
       setInventoryLoaded(true);
-    } catch {
-      // A failed background refresh must not hide the saved count; New count stays gated until inventory loads.
+    } catch (err) {
+      // Keep the saved counts visible, but say why New count is unavailable and offer a retry.
+      setInventoryError(err instanceof Error ? err.message : "Could not load inventory items.");
     }
   };
 
@@ -181,6 +184,7 @@ export function PilotStockCountsPage() {
     loadRequestRef.current += 1; // invalidate any in-flight load so it cannot overwrite this newer state
     setLoading(false);
     setSessions((current) => [session, ...current.filter((entry) => entry.id !== session.id)]);
+    setWorkflowTab(session.status === "Completed" ? "history" : "active");
     setSelectedId(session.id);
     setDraft(sessionToDraft(session));
     setSavedDraftSignature(JSON.stringify(sessionToDraft(session)));
@@ -417,6 +421,7 @@ export function PilotStockCountsPage() {
         {initialLoading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading stock counts…</div> : null}
         {loading && hasLoaded ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Refreshing stock counts…</div> : null}
         {error ? <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+        {inventoryError && !inventoryLoaded ? <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>Inventory items could not be loaded, so a new count cannot be started yet. {inventoryError}</span><Button variant="secondary" type="button" onClick={() => void refreshInventory()}>Retry loading items</Button></div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">

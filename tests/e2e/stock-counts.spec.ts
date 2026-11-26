@@ -16,6 +16,7 @@ type World = {
   failNext: null | "save" | "finalize";
   movementOnStart: boolean;
   gets: string[];
+  failInventory: boolean;
   getDelayMs: number;
 };
 
@@ -36,7 +37,7 @@ const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ s
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function newWorld(): World {
-  return { sessions: [], calls: [], delayMs: 0, failNext: null, movementOnStart: false, gets: [], getDelayMs: 0 };
+  return { sessions: [], calls: [], delayMs: 0, failNext: null, movementOnStart: false, gets: [], getDelayMs: 0, failInventory: false };
 }
 
 function draftWorld(movement = false): World {
@@ -107,6 +108,7 @@ async function installWorld(page: Page, world: World) {
       });
     }
     if (pathname === "/api/pilot/inventory" && method === "GET") {
+      if (world.failInventory) return json(route, { error: "Inventory is temporarily unavailable." }, 500);
       return json(route, {
         items: ITEMS.map(itemPayload), movements: [], countSessions: [], reorderPlan: { suggestions: [], groupedBySupplier: [] },
         summary: { inventoryItemCount: ITEMS.length, inventoryOutOfStockCount: 0, inventoryReorderNowCount: 0, inventoryLowStockCount: 0, inventoryValue: 0 },
@@ -261,6 +263,36 @@ for (const viewport of VIEWPORTS) {
       expect(world.gets.length).toBe(baseline);
       expect(world.sessions[0].lines.find((line) => line.id === 100)!.counted).toBe(23);
       await expectNoOverflow(page);
+    });
+
+    test("a failed inventory load explains why New count is unavailable and Retry recovers", async ({ page }) => {
+      const world = draftWorld();
+      world.failInventory = true;
+      await installWorld(page, world);
+      await openCounts(page);
+      await expect(page.getByRole("alert").filter({ hasText: "Inventory items could not be loaded" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "New count" }).first()).toBeDisabled();
+      world.failInventory = false;
+      await page.getByRole("button", { name: "Retry loading items" }).click();
+      await expect(page.getByRole("button", { name: "New count" }).first()).toBeEnabled();
+      await expect(page.getByRole("alert").filter({ hasText: "Inventory items could not be loaded" })).toHaveCount(0);
+    });
+
+    test("starting a new count right after finalizing one opens the new draft", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      await dialog.getByRole("button", { name: "Complete count" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("button", { name: "New count" }).first().click();
+      await page.getByRole("button", { name: "Start count" }).click();
+      await expect(page.getByRole("dialog").getByText("Count inventory")).toBeVisible();
+      await expect(page.getByRole("dialog").getByLabel("Counted quantity for Whole Milk")).toBeEnabled();
+      expect(world.sessions).toHaveLength(2);
     });
 
     test("a failed save and a failed finalize show the server reason, keep the draft editable and can be retried", async ({ page }) => {
