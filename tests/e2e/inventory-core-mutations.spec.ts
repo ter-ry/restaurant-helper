@@ -171,6 +171,26 @@ for (const viewport of VIEWPORTS) {
       await expectNoOverflow(page);
     });
 
+    test("quantity fields can be cleared and retyped without a stuck 0 (owner QA, #351)", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+      await page.getByText("Oat Milk").first().click();
+      await page.getByRole("button", { name: "Adjust inventory" }).click();
+      const delta = page.getByLabel(/Quantity delta/);
+      await expect(delta).toHaveValue("");
+      await expect(page.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
+      await delta.fill("1");
+      await expect(delta).toHaveValue("1");
+      await delta.press("Backspace");
+      await expect(delta).toHaveValue("");
+      await delta.pressSequentially("1");
+      await expect(delta).toHaveValue("1");
+      await expect(page.getByRole("button", { name: "Save stock movement" })).toBeEnabled();
+      await delta.fill("");
+      await expect(page.getByRole("button", { name: "Save stock movement" })).toBeDisabled();
+    });
+
     test("adjustment: failure keeps the entry, success is applied exactly once", async ({ page }) => {
       const world = newWorld();
       await installWorld(page, world);

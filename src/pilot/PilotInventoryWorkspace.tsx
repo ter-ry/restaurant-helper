@@ -167,6 +167,12 @@ function formatLatestStockUnitCost(item: Pick<PilotInventoryItem, "latestPurchas
   return cost === null ? "Not yet available" : formatMoney(cost);
 }
 
+/** Empty, "-" or "." while typing parse to 0 (action stays disabled); never NaN/Infinity. */
+function parseQuantityDraft(text: string): number {
+  const value = Number(text);
+  return text.trim() !== "" && Number.isFinite(value) ? value : 0;
+}
+
 export function PilotInventoryPage() {
   const navigate = useNavigate();
   const { organization, currentLocation, locations } = usePilotSession();
@@ -191,11 +197,16 @@ export function PilotInventoryPage() {
   const [supplierSaving, setSupplierSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [supplierSearch, setSupplierSearch] = useState("");
-  const [adjustmentDelta, setAdjustmentDelta] = useState(0);
+  // Text drafts so the field can be cleared, show "-" or "1." while typing; parsed to a finite number only for validation/submit.
+  const [adjustmentDeltaText, setAdjustmentDeltaText] = useState("");
+  const adjustmentDelta = parseQuantityDraft(adjustmentDeltaText);
+  const setAdjustmentDelta = (_value: number) => setAdjustmentDeltaText("");
   const [adjustmentReason, setAdjustmentReason] = useState("Periodic review");
   const [adjustmentNote, setAdjustmentNote] = useState("");
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
-  const [wasteQuantity, setWasteQuantity] = useState(0);
+  const [wasteQuantityText, setWasteQuantityText] = useState("");
+  const wasteQuantity = parseQuantityDraft(wasteQuantityText);
+  const setWasteQuantity = (_value: number) => setWasteQuantityText("");
   const [wasteReason, setWasteReason] = useState("spoilage / expired");
   const [wasteNote, setWasteNote] = useState("");
   const [wasteOccurredAt, setWasteOccurredAt] = useState(() => locationNowDatetimeLocal("America/Toronto"));
@@ -1425,7 +1436,7 @@ export function PilotInventoryPage() {
           <div className="mt-5 space-y-4">
             <label className="block">
               <span className="text-sm font-semibold text-ink">Quantity delta ({draft.stockUnit})</span>
-              <input className="input mt-1" type="number" step="1" value={adjustmentDelta} onChange={(event) => setAdjustmentDelta(Number(event.target.value))} />
+              <input className="input mt-1" type="number" step="1" inputMode="decimal" placeholder="0" value={adjustmentDeltaText} onChange={(event) => setAdjustmentDeltaText(event.target.value)} />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-ink">Reason</span>
@@ -1449,7 +1460,7 @@ export function PilotInventoryPage() {
           {renderDialogFeedback({ withMessage: true })}
           <p className="text-sm text-muted">Waste is recorded separately from adjustments and becomes a linked inventory deduction.</p>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1" type="number" min="0" step="0.0001" value={wasteQuantity} onChange={(event) => setWasteQuantity(Number(event.target.value))} /></label>
+            <label className="block"><span className="text-sm font-semibold text-ink">Quantity ({draft.stockUnit})</span><input className="input mt-1" type="number" min="0" step="0.0001" inputMode="decimal" placeholder="0" value={wasteQuantityText} onChange={(event) => setWasteQuantityText(event.target.value)} /></label>
             <label className="block"><span className="text-sm font-semibold text-ink">Waste reason</span><select aria-label="Waste reason" className="input mt-1" value={wasteReason} onChange={(event) => setWasteReason(event.target.value)}><option value="spoilage / expired">Spoilage / expired</option><option value="prep waste">Prep waste</option><option value="cooking / production mistake">Cooking / production mistake</option><option value="damaged / breakage">Damaged / breakage</option><option value="staff meal">Staff meal</option><option value="complimentary / comped">Complimentary / comped</option><option value="other">Other</option></select></label>
             <label className="block"><span className="text-sm font-semibold text-ink">Date/time</span><ThemedDateTimeInput aria-label="Waste date/time" className="input mt-1" type="datetime-local" value={wasteOccurredAt} onChange={(event) => setWasteOccurredAt(event.target.value)} /></label>
             <label className="block"><span className="text-sm font-semibold text-ink">Note</span><input className="input mt-1" value={wasteNote} onChange={(event) => setWasteNote(event.target.value)} placeholder="Optional context" /></label>
