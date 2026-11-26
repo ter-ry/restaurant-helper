@@ -6,9 +6,10 @@ from typing import Any
 
 from flask import Response, has_request_context, jsonify, request, session
 from flask_login import current_user
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 
 from . import ocr_evidence
+from .extensions import db
 from .models import (
     AuditEvent,
     DailyCloseSession,
@@ -375,20 +376,33 @@ def serialize_inventory_movement(movement: InventoryMovement) -> dict[str, Any]:
     }
 
 
-def serialize_count_session_line(line: StockCountSessionLine) -> dict[str, Any]:
-    session = line.session
-    movement_count_since_start = 0
-    if session is not None and session.started_at is not None and line.inventory_item_id is not None:
-        query = InventoryMovement.query.filter(
-            InventoryMovement.organization_id == session.organization_id,
-            InventoryMovement.location_id == session.location_id,
-            InventoryMovement.inventory_item_id == line.inventory_item_id,
-            InventoryMovement.created_at > session.started_at,
-        )
-        if session.completed_at is not None:
-            query = query.filter(InventoryMovement.created_at < session.completed_at)
-            query = query.filter(~and_(InventoryMovement.source_type == "stock count reconciliation", InventoryMovement.source_record_id == str(session.id)))
-        movement_count_since_start = query.count()
+def _movement_counts_since_start(session: StockCountSession | None) -> dict[int, int]:
+    """Movements per inventory item since the count started, in ONE grouped query.
+
+    Replaces a COUNT query per line (N+1), which made GET /inventory and session
+    create/get scale with sessions x lines. Semantics are unchanged.
+    """
+    if session is None or session.started_at is None:
+        return {}
+    item_ids = [line.inventory_item_id for line in session.lines if line.inventory_item_id is not None]
+    if not item_ids:
+        return {}
+    query = db.session.query(InventoryMovement.inventory_item_id, func.count(InventoryMovement.id)).filter(
+        InventoryMovement.organization_id == session.organization_id,
+        InventoryMovement.location_id == session.location_id,
+        InventoryMovement.inventory_item_id.in_(item_ids),
+        InventoryMovement.created_at > session.started_at,
+    )
+    if session.completed_at is not None:
+        query = query.filter(InventoryMovement.created_at < session.completed_at)
+        query = query.filter(~and_(InventoryMovement.source_type == "stock count reconciliation", InventoryMovement.source_record_id == str(session.id)))
+    return {item_id: count for item_id, count in query.group_by(InventoryMovement.inventory_item_id).all()}
+
+
+def serialize_count_session_line(line: StockCountSessionLine, movement_counts: dict[int, int] | None = None) -> dict[str, Any]:
+    if movement_counts is None:
+        movement_counts = _movement_counts_since_start(line.session)
+    movement_count_since_start = movement_counts.get(line.inventory_item_id, 0) if line.inventory_item_id is not None else 0
 
     return {
         "id": line.id,
@@ -411,7 +425,8 @@ def serialize_count_session_line(line: StockCountSessionLine) -> dict[str, Any]:
 
 
 def serialize_count_session(session_record: StockCountSession) -> dict[str, Any]:
-    line_payloads = [serialize_count_session_line(line) for line in session_record.lines]
+    movement_counts = _movement_counts_since_start(session_record)
+    line_payloads = [serialize_count_session_line(line, movement_counts) for line in session_record.lines]
     counted_line_count = sum(1 for line in line_payloads if line["countedQuantity"] is not None)
     uncounted_line_count = sum(1 for line in line_payloads if line["countedQuantity"] is None)
     variance_total = round(sum((line["variance"] or 0) for line in line_payloads), 4)
