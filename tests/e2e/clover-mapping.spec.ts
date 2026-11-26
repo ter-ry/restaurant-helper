@@ -120,7 +120,7 @@ async function installWorld(page: Page, world: World) {
 }
 
 async function openMapping(page: Page) {
-  await page.goto("/app/square", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/pos/clover", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Preview catalog" }).click();
   const panel = page.getByLabel("Clover menu mapping");
   await expect(panel.getByText("Latte")).toBeVisible();
@@ -203,7 +203,7 @@ for (const viewport of VIEWPORTS) {
     test("disconnect asks first, shows the result and re-reads status; cancelling sends nothing", async ({ page }) => {
       const world = newWorld();
       await installWorld(page, world);
-      await page.goto("/app/square", { waitUntil: "domcontentloaded" });
+      await page.goto("/app/pos/clover", { waitUntil: "domcontentloaded" });
       const disconnect = page.getByRole("button", { name: "Disconnect", exact: true });
       await expect(disconnect).toBeVisible();
 

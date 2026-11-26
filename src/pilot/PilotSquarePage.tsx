@@ -26,7 +26,6 @@ import {
 } from "./pilotApi";
 import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { locationDateKey } from "./workspace/timezone";
-import { PilotCloverConnection } from "./PilotCloverConnection";
 
 function resolvedCatalogMapping(candidate: { mapping?: { flowtallyEntityId?: string | null } | null; flowtallyEntityId?: string | null }) {
   return candidate.mapping ?? (candidate.flowtallyEntityId !== undefined ? candidate : null);
@@ -413,8 +412,6 @@ export function PilotSquarePage() {
           </p>
         ) : null}
       </Card>
-
-      <PilotCloverConnection />
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
