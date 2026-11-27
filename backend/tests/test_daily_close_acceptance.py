@@ -867,6 +867,7 @@ def test_correction_that_clears_the_only_cash_warning_recomputes_effective_healt
     snap = dict(record.summary_snapshot_json)
     snap["attentionItems"] = [{"type": "cash_variance", "title": "Cash drawer short", "severity": "warning", "detail": "$5.00 short"}]
     snap["healthStatus"] = "Ready with warnings"
+    record.exceptions_snapshot_json = []  # the cash variance is the only warning
     snap["cashReconciliation"] = {**(snap.get("cashReconciliation") or {}), "expectedCash": 500.0}
     record.summary_snapshot_json = snap
     db.session.commit()
