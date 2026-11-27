@@ -1079,6 +1079,7 @@ export function PilotInventoryPage() {
           <ReadOnlyStat label="Stock status" value={<Badge tone={statusTone(status)}>{status}</Badge>} />
         </div>
 
+        {reconcileNotice}
         {itemDetailTab === "overview" ? (
           <div className="space-y-4">
             <Card className="p-4">
@@ -1101,7 +1102,6 @@ export function PilotInventoryPage() {
               ) : null}
               {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={reconciledItem(itemDetail.item)} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
-              {reconcileNotice}
             </Card>
 
             <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted">

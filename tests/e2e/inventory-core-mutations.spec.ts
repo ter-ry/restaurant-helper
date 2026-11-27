@@ -211,6 +211,9 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText(/Inventory updated: 8 L → 10 L/)).toBeVisible();
       await expect(page.getByText("10 L", { exact: true }).first()).toBeVisible();
       await expect(page.getByRole("alert").filter({ hasText: "could not be refreshed" })).toBeVisible();
+      // The notice is not tied to the Overview tab: it stays visible on History, where the stale entries are shown.
+      await page.getByRole("tab", { name: "History" }).click();
+      await expect(page.getByRole("alert").filter({ hasText: "could not be refreshed" })).toBeVisible();
       await page.getByRole("button", { name: "Retry" }).click();
       await expect(page.getByRole("alert").filter({ hasText: "could not be refreshed" })).toHaveCount(0);
       expect(posts(world, "/adjustments")).toHaveLength(1);
