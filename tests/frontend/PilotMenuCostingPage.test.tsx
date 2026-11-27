@@ -7,6 +7,7 @@ const mockApi = vi.hoisted(() => ({
   fetchPilotMenuCosting: vi.fn(),
   fetchPilotInventory: vi.fn(),
   savePilotMenuCostingRecipe: vi.fn(),
+  deletePilotMenuCostingRecipe: vi.fn(),
   updatePilotMenuCostingRecipeIngredient: vi.fn(),
   createPilotMenuCostingMenuItem: vi.fn(),
 }));
@@ -25,7 +26,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     fetchPilotMenuCosting: mockApi.fetchPilotMenuCosting,
     fetchPilotInventory: mockApi.fetchPilotInventory,
     savePilotMenuCostingRecipe: mockApi.savePilotMenuCostingRecipe,
-    deletePilotMenuCostingRecipe: vi.fn(),
+    deletePilotMenuCostingRecipe: mockApi.deletePilotMenuCostingRecipe,
     createPilotMenuCostingRecipeIngredient: vi.fn(),
     updatePilotMenuCostingRecipeIngredient: mockApi.updatePilotMenuCostingRecipeIngredient,
     deletePilotMenuCostingRecipeIngredient: vi.fn(),
@@ -50,6 +51,7 @@ describe("PilotMenuCostingPage", () => {
 
   beforeEach(() => {
     mockApi.savePilotMenuCostingRecipe.mockReset();
+    mockApi.deletePilotMenuCostingRecipe.mockReset();
     mockApi.updatePilotMenuCostingRecipeIngredient.mockReset();
     mockApi.createPilotMenuCostingMenuItem.mockReset();
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
@@ -349,6 +351,53 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Choose an inventory item for each ingredient");
     expect(mockApi.savePilotMenuCostingRecipe).not.toHaveBeenCalled();
+  });
+
+  it("refreshes linked menu-item costing after deleting a recipe", async () => {
+    const server = await mockApi.fetchPilotMenuCosting.mock.results[0].value;
+    const reconciled = structuredClone(server);
+    reconciled.recipes = [];
+    reconciled.menuItems[0] = {
+      ...reconciled.menuItems[0],
+      recipeId: null,
+      recipeCostPerYield: null,
+      grossProfit: null,
+      foodCostPercent: 100,
+      grossMarginPercent: null,
+      costAvailable: false,
+      warnings: ["Recipe needed"],
+    };
+    mockApi.deletePilotMenuCostingRecipe.mockResolvedValue({ ok: true });
+    mockApi.fetchPilotMenuCosting.mockReset();
+    mockApi.fetchPilotMenuCosting.mockResolvedValueOnce(server).mockResolvedValueOnce(reconciled);
+
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Delete recipe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(screen.getByText("Recipe Cheesy Toast deleted.")).toBeVisible());
+    expect(mockApi.fetchPilotMenuCosting).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("tab", { name: "Menu items" }));
+    expect((await screen.findAllByText("Recipe needed")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Cost $3.50")).not.toBeInTheDocument();
+  });
+
+  it("resets the ingredient draft and baseline when closing an unchanged recipe editor", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Close Edit recipe" }));
+    expect(screen.queryByRole("heading", { name: "Discard recipe changes?" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "New recipe" }));
+    expect(screen.getByRole("heading", { name: "New recipe" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Discard recipe changes?" })).not.toBeInTheDocument();
   });
 
   it("shows deleting progress and ignores a second click while a delete is in flight", async () => {

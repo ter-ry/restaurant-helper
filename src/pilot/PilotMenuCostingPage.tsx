@@ -367,7 +367,10 @@ export function PilotMenuCostingPage() {
 
   const closeRecipeEditor = () => {
     setSelectedRecipeId(null);
+    setRecipeDraft(blankRecipeDraft());
     setIngredientRows([]);
+    savedRecipeBaseline.current = blankRecipeDraft();
+    savedIngredientBaseline.current = [];
     setRecipeEditorMode("hidden");
   };
 
@@ -536,9 +539,8 @@ export function PilotMenuCostingPage() {
       await deletePilotMenuCostingRecipe(recipe.id);
       setMessage(`Recipe ${recipe.name} deleted.`);
       setData((current) => current ? { ...current, recipes: current.recipes.filter((candidate) => candidate.id !== recipe.id) } : current);
-      setSelectedRecipeId(null);
-      setRecipeDraft(blankRecipeDraft());
-      setRecipeEditorMode("hidden");
+      closeRecipeEditor();
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the recipe.");
     }
