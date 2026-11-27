@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+from backend.models import RecipeIngredient, User
+from backend.seed import LOCAL_OWNER_EMAIL
+from backend.tests.conftest import make_operational_organization
+from backend.tests.test_menu_costing_api import csrf_headers, login, select_org
+
+MODULES = ("PURCHASES", "INVENTORY", "MENU_COSTING")
+
+
+def _setup(client, name="Atomic Cafe"):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    org = make_operational_organization(owner, name=name, location_name=f"{name} Kitchen", enabled_modules=MODULES)
+    select_org(client, org.id)
+    ids = []
+    for item_name, price in (("Cheese", 4), ("Bread", 2), ("Butter", 3)):
+        r = client.post(
+            "/api/pilot/inventory/items",
+            headers=csrf_headers(client),
+            json={"name": item_name, "category": "Food", "stockUnit": "each", "currentOnHand": 0, "latestPurchasePrice": price, "lastPurchaseConversionFactor": 1, "active": True},
+        )
+        assert r.status_code == 201
+        ids.append(r.get_json()["id"])
+    return org, ids
+
+
+def _save(client, recipe_id, body):
+    url = "/api/pilot/menu-costing/recipes/save" if recipe_id is None else f"/api/pilot/menu-costing/recipes/{recipe_id}/save"
+    method = client.post
+    return method(url, headers=csrf_headers(client), json=body)
+
+
+def test_atomic_create_update_reorder_and_delete(client):
+    _, (cheese, bread, butter) = _setup(client)
+    created = _save(client, None, {"name": "Toast", "yieldQuantity": 1, "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2, "unit": "each"},
+        {"inventoryItemId": bread, "quantityRequired": 1},
+    ]})
+    assert created.status_code == 201
+    body = created.get_json()
+    assert [i["inventoryItemId"] for i in body["ingredients"]] == [cheese, bread]
+    assert body["totalCost"] == 10.0
+    rid = body["id"]
+    cheese_row = body["ingredients"][0]["id"]
+
+    # reorder, edit quantity, drop bread, add butter, rename: one call
+    updated = _save(client, rid, {"name": "Toast Deluxe", "ingredients": [
+        {"inventoryItemId": butter, "quantityRequired": 1},
+        {"id": cheese_row, "inventoryItemId": cheese, "quantityRequired": 3},
+    ]})
+    assert updated.status_code == 200
+    out = updated.get_json()
+    assert out["name"] == "Toast Deluxe"
+    assert [i["inventoryItemId"] for i in out["ingredients"]] == [butter, cheese]
+    assert out["totalCost"] == 15.0
+    assert cheese_row in [i["id"] for i in out["ingredients"]]
+
+    # authoritative state matches a fresh GET
+    fresh = client.get("/api/pilot/menu-costing").get_json()["recipes"][0]
+    assert fresh["totalCost"] == out["totalCost"]
+
+    # swap inventory items between rows (unique-constraint hazard) works
+    rows = {i["inventoryItemId"]: i["id"] for i in out["ingredients"]}
+    swapped = _save(client, rid, {"name": "Toast Deluxe", "ingredients": [
+        {"id": rows[butter], "inventoryItemId": cheese, "quantityRequired": 1},
+        {"id": rows[cheese], "inventoryItemId": butter, "quantityRequired": 1},
+    ]})
+    assert swapped.status_code == 200
+    assert [i["inventoryItemId"] for i in swapped.get_json()["ingredients"]] == [cheese, butter]
+
+    cleared = _save(client, rid, {"name": "Toast Deluxe", "ingredients": []})
+    assert cleared.status_code == 200
+    assert cleared.get_json()["ingredients"] == []
+
+
+def test_atomic_save_rolls_back_on_any_invalid_line(client):
+    _, (cheese, bread, _) = _setup(client, "Rollback Cafe")
+    rid = _save(client, None, {"name": "Sandwich", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 2}]}).get_json()["id"]
+
+    ROW = client.get("/api/pilot/menu-costing").get_json()["recipes"][0]["ingredients"][0]["id"]
+    for bad, status in (
+        ([{"inventoryItemId": bread, "quantityRequired": 1}, {"inventoryItemId": cheese, "quantityRequired": 0}], 400),
+        ([{"inventoryItemId": bread, "quantityRequired": 1}, {"inventoryItemId": bread, "quantityRequired": 1}], 409),
+        ([{"inventoryItemId": bread, "quantityRequired": 1}, {"inventoryItemId": 999999, "quantityRequired": 1}], 404),
+        ([{"id": 999999, "inventoryItemId": bread, "quantityRequired": 1}], 404),
+        ([{"id": ROW, "inventoryItemId": cheese, "quantityRequired": 1}, {"id": ROW, "inventoryItemId": bread, "quantityRequired": 1}], 400),
+    ):
+        r = _save(client, rid, {"name": "Renamed", "ingredients": bad})
+        assert r.status_code in (status, 422), r.get_json()
+        assert r.status_code != 200
+        state = client.get("/api/pilot/menu-costing").get_json()["recipes"][0]
+        assert state["name"] == "Sandwich"
+        assert [i["inventoryItemId"] for i in state["ingredients"]] == [cheese]
+
+
+def test_atomic_save_name_conflict_and_tenant_isolation(client):
+    _, (cheese, _, _) = _setup(client, "Tenant A")
+    a_recipe = _save(client, None, {"name": "Soup", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 1}]}).get_json()["id"]
+    other = _save(client, None, {"name": "Salad", "ingredients": []}).get_json()["id"]
+    assert _save(client, other, {"name": "soup", "ingredients": []}).status_code == 409
+    assert _save(client, None, {"name": "SOUP"}).status_code == 409
+
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    org_b = make_operational_organization(owner, name="Tenant B", location_name="B Kitchen", enabled_modules=MODULES)
+    select_org(client, org_b.id)
+    assert _save(client, a_recipe, {"name": "Hijack", "ingredients": []}).status_code == 404
+    assert _save(client, None, {"name": "Mine", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 1}]}).status_code == 404
+    assert RecipeIngredient.query.filter_by(recipe_id=a_recipe).count() == 1
+
+
+def test_atomic_save_requires_menu_costing_module(client):
+    login(client)
+    owner = User.query.filter_by(email=LOCAL_OWNER_EMAIL).first()
+    org = make_operational_organization(owner, name="No Costing", location_name="NC Kitchen", enabled_modules=("PURCHASES", "INVENTORY"))
+    select_org(client, org.id)
+    assert _save(client, None, {"name": "Nope", "ingredients": []}).status_code == 403
+    assert _save(client, 1, {"name": "Nope", "ingredients": []}).status_code == 403
+
+
+def test_atomic_save_retry_after_repoint_is_idempotent(client):
+    _, (cheese, bread, butter) = _setup(client)
+    created = _save(client, None, {"name": "Toast", "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2},
+        {"inventoryItemId": bread, "quantityRequired": 1},
+    ]}).get_json()
+    rid = created["id"]
+    row_cheese, row_bread = (i["id"] for i in created["ingredients"])
+    # Re-point the cheese row at butter (free target) and keep bread; ids must stay stable.
+    payload = {"name": "Toast", "ingredients": [
+        {"id": row_cheese, "inventoryItemId": butter, "quantityRequired": 2},
+        {"id": row_bread, "inventoryItemId": bread, "quantityRequired": 1},
+    ]}
+    first = _save(client, rid, payload)
+    assert first.status_code == 200
+    assert [i["id"] for i in first.get_json()["ingredients"]] == [row_cheese, row_bread]
+    # Lost-response retry of the identical payload: still 200 with an identical recipe.
+    retry = _save(client, rid, payload)
+    assert retry.status_code == 200
+    keys = ("id", "inventoryItemId", "quantityRequired", "unit", "sortOrder")
+    assert [{k: i[k] for k in keys} for i in retry.get_json()["ingredients"]] == [{k: i[k] for k in keys} for i in first.get_json()["ingredients"]]
+    assert retry.get_json()["totalCost"] == first.get_json()["totalCost"]
+
+
+def test_atomic_save_swap_keeps_ids_and_retry_is_idempotent(client):
+    _, (cheese, bread, butter) = _setup(client, "Swap Cafe")
+    created = _save(client, None, {"name": "Toast", "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2},
+        {"inventoryItemId": bread, "quantityRequired": 1},
+        {"inventoryItemId": butter, "quantityRequired": 1},
+    ]}).get_json()
+    rid = created["id"]
+    r1, r2, r3 = (i["id"] for i in created["ingredients"])
+    payload = {"name": "Toast", "ingredients": [  # 3-cycle: cheese->bread->butter->cheese
+        {"id": r1, "inventoryItemId": bread, "quantityRequired": 2},
+        {"id": r2, "inventoryItemId": butter, "quantityRequired": 1},
+        {"id": r3, "inventoryItemId": cheese, "quantityRequired": 1},
+    ]}
+    first = _save(client, rid, payload)
+    assert first.status_code == 200
+    keys = ("id", "inventoryItemId", "quantityRequired", "unit", "sortOrder")
+    snap = [{k: i[k] for k in keys} for i in first.get_json()["ingredients"]]
+    assert [x["id"] for x in snap] == [r1, r2, r3]
+    assert [x["inventoryItemId"] for x in snap] == [bread, butter, cheese]
+    retry = _save(client, rid, payload)
+    assert retry.status_code == 200
+    assert [{k: i[k] for k in keys} for i in retry.get_json()["ingredients"]] == snap
+
+
+def test_atomic_save_repoint_defaults_unit_to_new_item_stock_unit(client):
+    _, (cheese, _, _) = _setup(client, "Unit Cafe")
+    flour = client.post(
+        "/api/pilot/inventory/items",
+        headers=csrf_headers(client),
+        json={"name": "Flour", "category": "Dry", "stockUnit": "kg", "currentOnHand": 0, "latestPurchasePrice": 2, "lastPurchaseConversionFactor": 1, "active": True},
+    ).get_json()["id"]
+    created = _save(client, None, {"name": "Dough", "ingredients": [{"inventoryItemId": cheese, "quantityRequired": 1}]}).get_json()
+    row = created["ingredients"][0]
+    assert row["unit"] == "each"
+    out = _save(client, created["id"], {"name": "Dough", "ingredients": [{"id": row["id"], "inventoryItemId": flour, "quantityRequired": 1}]}).get_json()
+    assert out["ingredients"][0]["unit"] == "kg"
+    assert out["ingredients"][0]["id"] == row["id"]
+    # unchanged item keeps its unit when omitted
+    again = _save(client, created["id"], {"name": "Dough", "ingredients": [{"id": row["id"], "inventoryItemId": flour, "quantityRequired": 2}]}).get_json()
+    assert again["ingredients"][0]["unit"] == "kg"
+
+
+def test_atomic_save_swap_preserves_omitted_notes_and_allows_new_row_first(client):
+    _, (cheese, bread, butter) = _setup(client, "Notes Cafe")
+    created = _save(client, None, {"name": "Toast", "ingredients": [
+        {"inventoryItemId": cheese, "quantityRequired": 2, "notes": "grated"},
+        {"inventoryItemId": bread, "quantityRequired": 1, "notes": "sliced"},
+    ]}).get_json()
+    r1, r2 = (i["id"] for i in created["ingredients"])
+    out = _save(client, created["id"], {"name": "Toast", "ingredients": [
+        {"inventoryItemId": butter, "quantityRequired": 1},  # new row listed first
+        {"id": r1, "inventoryItemId": bread, "quantityRequired": 2},
+        {"id": r2, "inventoryItemId": cheese, "quantityRequired": 1},
+    ]})
+    assert out.status_code == 200, out.get_json()
+    rows = {i["inventoryItemId"]: i for i in out.get_json()["ingredients"]}
+    assert rows[bread]["id"] == r1 and rows[bread]["notes"] == "grated"
+    assert rows[cheese]["id"] == r2 and rows[cheese]["notes"] == "sliced"
+    assert rows[butter]["id"] not in (r1, r2)
