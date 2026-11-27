@@ -159,6 +159,7 @@ def install_performance(app):
         app_ms = (perf_counter() - metrics["started"]) * 1000
         record = {"event": "request_performance", "trace_id": metrics["trace_id"],
             "endpoint": request.endpoint or "unmatched", "status": response.status_code,
+            "response_bytes": response.content_length if response.content_length is not None else (None if response.direct_passthrough else len(response.get_data())),
             "app_ms": round(app_ms, 3), "handler_ms": round(metrics["handler_ms"], 3),
             "thread_cpu_ms": round((thread_time() - metrics["cpu_started"]) * 1000, 3),
             "sql_ms": round(metrics["sql_ms"], 3), "sql_count": metrics["sql_count"],
