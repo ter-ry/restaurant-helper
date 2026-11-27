@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -1057,6 +1058,7 @@ def finalize_daily_close(session_id: int):
 # the original snapshot, so the original is always still readable.
 CORRECTION_EVENT = "daily_close.correction"
 MIN_CORRECTION_REASON = 10
+MAX_COUNTED_CASH = 10_000_000
 
 
 def _session_corrections(session_record: DailyCloseSession) -> list[AuditEvent]:
@@ -1089,6 +1091,12 @@ def _correction_payload(session_record: DailyCloseSession, only_if_corrected: bo
     fields = _effective_manual_fields(session_record, events)
     import copy
     effective = copy.deepcopy(dict(session_record.summary_snapshot_json or {}))
+    # Drop the staff-count warnings from the copy so health is recomputed from the non-cash state; the
+    # merge re-adds them if the corrected count still warrants one. The stored original is untouched.
+    remaining = [i for i in (effective.get("attentionItems") or []) if i.get("type") not in {"cash_variance", "cash_count_disagreement"}]
+    effective["attentionItems"] = remaining
+    if effective.get("healthStatus") == "Ready with warnings" and not remaining:
+        effective["healthStatus"] = "Ready"
     effective = _merge_manual_reconciliation(effective, None, {"reconciliation": {"countedCash": fields["countedCash"]}})
     effective["notes"] = fields["notes"]
     effective["corrected"] = True
@@ -1139,8 +1147,8 @@ def correct_completed_daily_close(session_id: int):
                 value = float(raw)
             except (TypeError, ValueError):
                 return json_error("Counted cash must be a number.", 400)
-            if value < 0 or value != value:
-                return json_error("Counted cash cannot be negative.", 400)
+            if not math.isfinite(value) or value < 0 or value > MAX_COUNTED_CASH:
+                return json_error("Counted cash must be a finite amount between 0 and 10,000,000.", 400)
             after["countedCash"] = round(value, 2)
     if "notes" in payload:
         after["notes"] = str(payload.get("notes") or "").strip()

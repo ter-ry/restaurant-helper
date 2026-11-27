@@ -794,6 +794,8 @@ def test_completed_close_correction_is_audited_and_original_stays_immutable(app,
     assert _post(client, url, {"reason": "short"}).status_code == 400
     assert _post(client, url, {"reason": "Miscounted the float drawer", "countedCash": -5}).status_code == 400
     assert _post(client, url, {"reason": "Miscounted the float drawer"}).status_code == 400  # nothing to change
+    for bad in (1e30, "1e30", "inf", "nan", 10_000_001):
+        assert _post(client, url, {"reason": "Absurd amount should be refused", "countedCash": bad}).status_code == 400
     assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 0
 
     ok = _post(client, url, {"reason": "Miscounted the float drawer", "countedCash": 480, "notes": "Recounted by manager"})
@@ -857,3 +859,20 @@ def test_correction_is_tenant_isolated(app, client, monkeypatch):
     assert client.post("/api/organizations/select", headers={"X-CSRFToken": _csrf(client)}, json={"organizationId": other.id}).status_code == 200
     resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Cross tenant attempt here", "countedCash": 1})
     assert resp.status_code == 404
+
+
+def test_correction_that_clears_the_only_cash_warning_recomputes_effective_health(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    snap = dict(record.summary_snapshot_json)
+    snap["attentionItems"] = [{"type": "cash_variance", "title": "Cash drawer short", "severity": "warning", "detail": "$5.00 short"}]
+    snap["healthStatus"] = "Ready with warnings"
+    snap["cashReconciliation"] = {**(snap.get("cashReconciliation") or {}), "expectedCash": 500.0}
+    record.summary_snapshot_json = snap
+    db.session.commit()
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Recount matched the drawer", "countedCash": 500})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["snapshot"]["healthStatus"] == "Ready with warnings"  # original unchanged
+    assert body["effectiveSnapshot"]["healthStatus"] == "Ready"
+    assert not any(i["type"] == "cash_variance" for i in body["effectiveSnapshot"]["attentionItems"])
