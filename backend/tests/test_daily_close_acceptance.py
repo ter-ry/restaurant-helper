@@ -876,3 +876,17 @@ def test_correction_that_clears_the_only_cash_warning_recomputes_effective_healt
     assert body["snapshot"]["healthStatus"] == "Ready with warnings"  # original unchanged
     assert body["effectiveSnapshot"]["healthStatus"] == "Ready"
     assert not any(i["type"] == "cash_variance" for i in body["effectiveSnapshot"]["attentionItems"])
+
+
+def test_notes_only_correction_keeps_non_cash_warnings_in_effective_health(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    snap = dict(record.summary_snapshot_json)
+    snap["attentionItems"] = []
+    snap["healthStatus"] = "Ready with warnings"
+    record.summary_snapshot_json = snap
+    record.exceptions_snapshot_json = ["Recipe or inventory mapping gaps exist."]
+    db.session.commit()
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Clarify the closing note", "notes": "Clarified"})
+    assert resp.status_code == 200
+    assert resp.get_json()["effectiveSnapshot"]["healthStatus"] == "Ready with warnings"

@@ -1095,7 +1095,8 @@ def _correction_payload(session_record: DailyCloseSession, only_if_corrected: bo
     # merge re-adds them if the corrected count still warrants one. The stored original is untouched.
     remaining = [i for i in (effective.get("attentionItems") or []) if i.get("type") not in {"cash_variance", "cash_count_disagreement"}]
     effective["attentionItems"] = remaining
-    if effective.get("healthStatus") == "Ready with warnings" and not remaining:
+    # Frozen exceptions (recipe/mapping/sync/refund) are all non-cash evidence: they keep the warning.
+    if effective.get("healthStatus") == "Ready with warnings" and not remaining and not (session_record.exceptions_snapshot_json or []):
         effective["healthStatus"] = "Ready"
     effective = _merge_manual_reconciliation(effective, None, {"reconciliation": {"countedCash": fields["countedCash"]}})
     effective["notes"] = fields["notes"]
