@@ -20,6 +20,7 @@ PERMISSION_ROLES: dict[str, set[str]] = {
     "stock_counts.manage": {"owner", "manager"},
     "reorder.manage": {"owner", "manager"},
     "menu_costing.manage": {"owner", "manager"},
+    "daily_close.correct": {"owner", "manager"},
     "organization.manage": {"owner"},
     "memberships.manage": {"owner"},
     "audit.view": {"owner"},
