@@ -6,8 +6,7 @@ import { formatMenuCostingQuantity, formatMenuCostingUnitCost, PilotMenuCostingP
 const mockApi = vi.hoisted(() => ({
   fetchPilotMenuCosting: vi.fn(),
   fetchPilotInventory: vi.fn(),
-  updatePilotMenuCostingRecipe: vi.fn(),
-  savePilotMenuCostingRecipeEditor: vi.fn(),
+  savePilotMenuCostingRecipe: vi.fn(),
   updatePilotMenuCostingRecipeIngredient: vi.fn(),
   createPilotMenuCostingMenuItem: vi.fn(),
 }));
@@ -25,9 +24,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     ...actual,
     fetchPilotMenuCosting: mockApi.fetchPilotMenuCosting,
     fetchPilotInventory: mockApi.fetchPilotInventory,
-    createPilotMenuCostingRecipe: vi.fn(),
-    updatePilotMenuCostingRecipe: mockApi.updatePilotMenuCostingRecipe,
-    savePilotMenuCostingRecipeEditor: mockApi.savePilotMenuCostingRecipeEditor,
+    savePilotMenuCostingRecipe: mockApi.savePilotMenuCostingRecipe,
     deletePilotMenuCostingRecipe: vi.fn(),
     createPilotMenuCostingRecipeIngredient: vi.fn(),
     updatePilotMenuCostingRecipeIngredient: mockApi.updatePilotMenuCostingRecipeIngredient,
@@ -52,8 +49,7 @@ describe("PilotMenuCostingPage", () => {
   });
 
   beforeEach(() => {
-    mockApi.updatePilotMenuCostingRecipe.mockReset();
-    mockApi.savePilotMenuCostingRecipeEditor.mockReset();
+    mockApi.savePilotMenuCostingRecipe.mockReset();
     mockApi.updatePilotMenuCostingRecipeIngredient.mockReset();
     mockApi.createPilotMenuCostingMenuItem.mockReset();
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
@@ -359,14 +355,14 @@ describe("PilotMenuCostingPage", () => {
     const updated = structuredClone(server);
     updated.recipes[0].ingredients[0].quantityRequired = 3;
     const savedRecipe = { ...updated.recipes[0], name: "Changed locally" };
-    mockApi.savePilotMenuCostingRecipeEditor.mockResolvedValue(savedRecipe);
+    mockApi.savePilotMenuCostingRecipe.mockResolvedValue(savedRecipe);
     mockApi.fetchPilotMenuCosting.mockResolvedValue(updated);
 
     fireEvent.change(screen.getByLabelText("Quantity for ingredient 1"), { target: { value: "3" } });
     mockApi.fetchPilotMenuCosting.mockResolvedValue({ ...updated, recipes: [savedRecipe] });
     fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
     await waitFor(() => expect(screen.getByText("Recipe Changed locally saved.")).toBeVisible());
-    expect(mockApi.savePilotMenuCostingRecipeEditor).toHaveBeenCalledWith(1, expect.objectContaining({ ingredients: expect.any(Array) }));
+    expect(mockApi.savePilotMenuCostingRecipe).toHaveBeenCalledWith(1, expect.objectContaining({ ingredients: expect.any(Array) }));
     expect(screen.getByDisplayValue("Changed locally")).toBeVisible();
   });
 
@@ -382,7 +378,7 @@ describe("PilotMenuCostingPage", () => {
     const savedRecipe = structuredClone(server.recipes[0]);
     savedRecipe.ingredients[0].quantityRequired = 3;
     let resolveSave: (recipe: typeof savedRecipe) => void = () => undefined;
-    mockApi.savePilotMenuCostingRecipeEditor.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    mockApi.savePilotMenuCostingRecipe.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
     mockApi.fetchPilotMenuCosting.mockResolvedValue({ ...server, recipes: [savedRecipe] });
 
     fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
@@ -404,7 +400,7 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
     expect(await screen.findByRole("heading", { name: "Edit recipe" })).toBeVisible();
     fireEvent.change(screen.getAllByLabelText("Name")[0], { target: { value: "Recipe renamed" } });
-    mockApi.savePilotMenuCostingRecipeEditor.mockRejectedValue(new Error("Recipe save failed"));
+    mockApi.savePilotMenuCostingRecipe.mockRejectedValue(new Error("Recipe save failed"));
     fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
     await waitFor(() => expect(screen.getByText("Recipe save failed")).toBeVisible());
     expect(screen.getByDisplayValue("Recipe renamed")).toBeVisible();

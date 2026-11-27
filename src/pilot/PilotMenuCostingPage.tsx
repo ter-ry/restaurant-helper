@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
 import {
   createPilotMenuCostingMenuItem,
-  createPilotMenuCostingRecipe,
   createPilotMenuCostingRecipeIngredient,
   deletePilotMenuCostingMenuItem,
   deletePilotMenuCostingRecipe,
@@ -10,8 +9,7 @@ import {
   fetchPilotInventory,
   fetchPilotMenuCosting,
   updatePilotMenuCostingMenuItem,
-  updatePilotMenuCostingRecipe,
-  savePilotMenuCostingRecipeEditor,
+  savePilotMenuCostingRecipe,
   updatePilotMenuCostingRecipeIngredient,
   type PilotInventoryItem,
   type PilotMenuCostingMenuItem,
@@ -397,9 +395,7 @@ export function PilotMenuCostingPage() {
         active: recipeDraft.active,
         notes: recipeDraft.notes,
       };
-      const saved = recipeDraft.id
-        ? await savePilotMenuCostingRecipeEditor(recipeDraft.id, { ...payload, ingredients: ingredientRows })
-        : await createPilotMenuCostingRecipe(payload);
+      const saved = await savePilotMenuCostingRecipe(recipeDraft.id, { ...payload, ingredients: ingredientRows });
       setRecipeDraft(draftFromRecipe(saved));
       setIngredientRows(saved.ingredients.map(draftFromIngredient));
       savedRecipeBaseline.current = draftFromRecipe(saved);

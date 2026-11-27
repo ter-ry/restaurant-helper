@@ -4431,9 +4431,7 @@ def delete_menu_costing_recipe(recipe_id: int):
     return jsonify({"ok": True}), 200
 
 
-@bp.put("/api/pilot/menu-costing/recipes/<int:recipe_id>/editor")
-@login_required
-def save_menu_costing_recipe_editor(recipe_id: int):
+def _legacy_menu_costing_recipe_editor_not_registered(recipe_id: int):
     """Persist recipe metadata and its complete ingredient draft atomically."""
     context = _menu_costing_context()
     if context is None:

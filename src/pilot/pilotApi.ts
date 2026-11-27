@@ -1488,9 +1488,12 @@ export async function updatePilotMenuCostingRecipe(recipeId: number, payload: Re
   });
 }
 
-export async function savePilotMenuCostingRecipeEditor(recipeId: number, payload: Record<string, unknown>) {
-  return requestCsrfJson<PilotMenuCostingRecipe>(`/api/pilot/menu-costing/recipes/${recipeId}/editor`, {
-    method: "PUT",
+export async function savePilotMenuCostingRecipe(recipeId: number | null, payload: Record<string, unknown>) {
+  const path = recipeId == null
+    ? "/api/pilot/menu-costing/recipes/save"
+    : `/api/pilot/menu-costing/recipes/${recipeId}/save`;
+  return requestCsrfJson<PilotMenuCostingRecipe>(path, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
