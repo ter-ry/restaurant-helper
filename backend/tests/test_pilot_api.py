@@ -3092,3 +3092,37 @@ def test_supplier_item_mapping_unique_violation_race_is_a_deterministic_409(app,
     assert client.patch(f"{base}/{other['id']}", headers=csrf_headers(client), json={"supplierItemName": "Racy Sack"}).status_code == 409
     with app.app_context():
         assert SupplierItemMapping.query.filter_by(supplier_id=supplier["id"]).count() == 2
+
+
+def test_inventory_count_session_serialization_uses_constant_movement_queries(app, client):
+    """GET /inventory must not run one COUNT per count-session line (N+1 perf regression)."""
+    from sqlalchemy import event
+
+    login(client)
+    headers = csrf_headers(client)
+    inventory = client.get("/api/pilot/inventory").get_json()
+    item_ids = [item["id"] for item in inventory["items"] if item.get("active", True)][:4]
+    assert len(item_ids) >= 2
+    for _ in range(3):
+        created = client.post("/api/pilot/inventory/count-sessions", headers=headers, json={"itemIds": item_ids})
+        assert created.status_code == 201
+        assert len(created.get_json()["lines"]) == len(item_ids)
+
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, *args):
+        if "inventory_movements.inventory_item_id AS" in statement and "count(inventory_movements.id)" in statement and "created_at >" in statement:
+            statements.append(statement)
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        payload = client.get("/api/pilot/inventory").get_json()
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    sessions = payload["countSessions"]
+    assert len(sessions) >= 3
+    assert all(len(entry["lines"]) == len(item_ids) for entry in sessions[:3])
+    # One grouped query per session, not one per line.
+    assert len(statements) <= len(sessions)
