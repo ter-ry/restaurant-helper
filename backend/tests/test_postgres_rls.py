@@ -3315,7 +3315,8 @@ def test_postgres_daily_close_cash_policy_persists_through_finalize_and_matches_
 
     monkeypatch.setattr("backend.daily_close._square_request", fake_square)
     monkeypatch.setattr("backend.daily_close._connection_token", lambda connection: "token")
-    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "fresh"})
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
+    monkeypatch.setattr("backend.daily_close._order_import_covers_day", lambda *a, **k: True)  # verified sales are required to finalize (#315 Milestone D)
 
     client = postgres_app.test_client()
     _login_user(client, owner_email, owner_password)

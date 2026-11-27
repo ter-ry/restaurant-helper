@@ -81,6 +81,10 @@
             "unreconciledShiftCount": 0,
             "varianceStatus": "available"
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {
@@ -106,6 +110,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -132,6 +138,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -258,6 +266,10 @@
             "unreconciledShiftCount": 0,
             "varianceStatus": "available"
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {
@@ -283,6 +295,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -309,6 +323,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -470,6 +486,10 @@
           "unreconciledShiftCount": 0,
           "varianceStatus": "available"
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {
@@ -495,6 +515,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -521,6 +543,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -647,6 +671,10 @@
           "unreconciledShiftCount": 0,
           "varianceStatus": "available"
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {
@@ -672,6 +700,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -698,6 +728,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -847,6 +879,10 @@
         "unreconciledShiftCount": 0,
         "varianceStatus": "available"
       },
+      "completion": {
+        "blockers": [],
+        "eligible": true
+      },
       "healthStatus": "Ready with warnings",
       "inventoryValue": 0.0,
       "manualReconciliation": {
@@ -872,6 +908,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -898,6 +936,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -957,6 +997,8 @@
       "lastSyncAt": "2026-08-30T23:00:00",
       "locationMapped": true,
       "netSales": 740.0,
+      "netSalesExcludingTips": 680.0,
+      "netSalesIncludesTips": true,
       "orders": 30,
       "refunds": 20.0,
       "salesStatus": "available",
@@ -1173,6 +1215,10 @@
             "unreconciledShiftCount": 0,
             "varianceStatus": "available"
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {
@@ -1198,6 +1244,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -1224,6 +1272,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -1350,6 +1400,10 @@
             "unreconciledShiftCount": 0,
             "varianceStatus": "available"
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {
@@ -1375,6 +1429,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -1401,6 +1457,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -1562,6 +1620,10 @@
           "unreconciledShiftCount": 0,
           "varianceStatus": "available"
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {
@@ -1587,6 +1649,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -1613,6 +1677,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -1739,6 +1805,10 @@
           "unreconciledShiftCount": 0,
           "varianceStatus": "available"
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {
@@ -1764,6 +1834,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -1790,6 +1862,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -1939,6 +2013,10 @@
         "unreconciledShiftCount": 0,
         "varianceStatus": "available"
       },
+      "completion": {
+        "blockers": [],
+        "eligible": true
+      },
       "healthStatus": "Ready with warnings",
       "inventoryValue": 0.0,
       "manualReconciliation": {
@@ -1964,6 +2042,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -1990,6 +2070,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -2049,6 +2131,8 @@
       "lastSyncAt": "2026-08-30T23:00:00",
       "locationMapped": true,
       "netSales": 740.0,
+      "netSalesExcludingTips": 680.0,
+      "netSalesIncludesTips": true,
       "orders": 30,
       "refunds": 20.0,
       "salesStatus": "available",
@@ -2164,6 +2248,10 @@
             "varianceStatus": "unavailable",
             "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {},
@@ -2187,6 +2275,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -2213,6 +2303,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -2326,6 +2418,10 @@
             "varianceStatus": "unavailable",
             "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {},
@@ -2349,6 +2445,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -2375,6 +2473,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -2523,6 +2623,10 @@
           "varianceStatus": "unavailable",
           "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {},
@@ -2546,6 +2650,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -2572,6 +2678,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -2685,6 +2793,10 @@
           "varianceStatus": "unavailable",
           "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {},
@@ -2708,6 +2820,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -2734,6 +2848,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -2870,6 +2986,10 @@
         "varianceStatus": "unavailable",
         "varianceUnavailableReason": "Enter the physically counted cash to calculate the variance."
       },
+      "completion": {
+        "blockers": [],
+        "eligible": true
+      },
       "healthStatus": "Ready with warnings",
       "inventoryValue": 0.0,
       "manualReconciliation": {},
@@ -2893,6 +3013,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -2919,6 +3041,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -2978,6 +3102,8 @@
       "lastSyncAt": "2026-08-30T23:00:00",
       "locationMapped": true,
       "netSales": 740.0,
+      "netSalesExcludingTips": 680.0,
+      "netSalesIncludesTips": true,
       "orders": 30,
       "refunds": 20.0,
       "salesStatus": "available",
@@ -3106,6 +3232,10 @@
             "unreconciledShiftCount": 0,
             "varianceStatus": "available"
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {
@@ -3131,6 +3261,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -3157,6 +3289,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -3283,6 +3417,10 @@
             "unreconciledShiftCount": 0,
             "varianceStatus": "available"
           },
+          "completion": {
+            "blockers": [],
+            "eligible": true
+          },
           "healthStatus": "Ready with warnings",
           "inventoryValue": 0.0,
           "manualReconciliation": {
@@ -3308,6 +3446,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -3334,6 +3474,8 @@
             "lastSyncAt": "2026-08-30T23:00:00",
             "locationMapped": true,
             "netSales": 740.0,
+            "netSalesExcludingTips": 680.0,
+            "netSalesIncludesTips": true,
             "orders": 30,
             "refunds": 20.0,
             "salesStatus": "available",
@@ -3495,6 +3637,10 @@
           "unreconciledShiftCount": 0,
           "varianceStatus": "available"
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {
@@ -3520,6 +3666,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -3546,6 +3694,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -3672,6 +3822,10 @@
           "unreconciledShiftCount": 0,
           "varianceStatus": "available"
         },
+        "completion": {
+          "blockers": [],
+          "eligible": true
+        },
         "healthStatus": "Ready with warnings",
         "inventoryValue": 0.0,
         "manualReconciliation": {
@@ -3697,6 +3851,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -3723,6 +3879,8 @@
           "lastSyncAt": "2026-08-30T23:00:00",
           "locationMapped": true,
           "netSales": 740.0,
+          "netSalesExcludingTips": 680.0,
+          "netSalesIncludesTips": true,
           "orders": 30,
           "refunds": 20.0,
           "salesStatus": "available",
@@ -3872,6 +4030,10 @@
         "unreconciledShiftCount": 0,
         "varianceStatus": "available"
       },
+      "completion": {
+        "blockers": [],
+        "eligible": true
+      },
       "healthStatus": "Ready with warnings",
       "inventoryValue": 0.0,
       "manualReconciliation": {
@@ -3897,6 +4059,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -3923,6 +4087,8 @@
         "lastSyncAt": "2026-08-30T23:00:00",
         "locationMapped": true,
         "netSales": 740.0,
+        "netSalesExcludingTips": 680.0,
+        "netSalesIncludesTips": true,
         "orders": 30,
         "refunds": 20.0,
         "salesStatus": "available",
@@ -3982,6 +4148,8 @@
       "lastSyncAt": "2026-08-30T23:00:00",
       "locationMapped": true,
       "netSales": 740.0,
+      "netSalesExcludingTips": 680.0,
+      "netSalesIncludesTips": true,
       "orders": 30,
       "refunds": 20.0,
       "salesStatus": "available",
