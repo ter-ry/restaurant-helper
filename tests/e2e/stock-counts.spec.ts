@@ -15,6 +15,9 @@ type World = {
   delayMs: number;
   failNext: null | "save" | "finalize";
   movementOnStart: boolean;
+  gets: string[];
+  failInventory: boolean;
+  getDelayMs: number;
 };
 
 const ORG = { id: 42, name: "Showcase Cafe", lifecycleStatus: "ACTIVE", setupStatus: "COMPLETE", subscriptionStatus: "ACTIVE", setupTemplateKey: "GENERIC_RESTAURANT", setupFeeStatus: "confirmed", isProspect: false, activeAt: "2026-01-01T00:00:00Z", setupCompletedAt: "2026-01-01T00:00:00Z" };
@@ -34,7 +37,7 @@ const json = (route: Route, payload: unknown, status = 200) => route.fulfill({ s
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function newWorld(): World {
-  return { sessions: [], calls: [], delayMs: 0, failNext: null, movementOnStart: false };
+  return { sessions: [], calls: [], delayMs: 0, failNext: null, movementOnStart: false, gets: [], getDelayMs: 0, failInventory: false };
 }
 
 function draftWorld(movement = false): World {
@@ -84,6 +87,10 @@ async function installWorld(page: Page, world: World) {
       body = {};
     }
     if (method !== "GET") world.calls.push({ method, path: pathname, body });
+    else if (pathname.startsWith("/api/pilot/inventory")) {
+      world.gets.push(pathname);
+      if (world.getDelayMs) await sleep(world.getDelayMs);
+    }
 
     if (pathname === "/api/auth/me") {
       return json(route, {
@@ -101,6 +108,7 @@ async function installWorld(page: Page, world: World) {
       });
     }
     if (pathname === "/api/pilot/inventory" && method === "GET") {
+      if (world.failInventory) return json(route, { error: "Inventory is temporarily unavailable." }, 500);
       return json(route, {
         items: ITEMS.map(itemPayload), movements: [], countSessions: [], reorderPlan: { suggestions: [], groupedBySupplier: [] },
         summary: { inventoryItemCount: ITEMS.length, inventoryOutOfStockCount: 0, inventoryReorderNowCount: 0, inventoryLowStockCount: 0, inventoryValue: 0 },
@@ -231,6 +239,106 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByLabel("Counted quantity for Whole Milk")).toBeDisabled();
       await expect(page.getByRole("button", { name: "Complete count" })).toHaveCount(0);
       await expectNoOverflow(page);
+    });
+
+    test("create and save use the server response and never wait on a re-fetch waterfall", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await openCounts(page);
+      await expect.poll(() => world.gets.includes("/api/pilot/inventory")).toBe(true);
+      const baseline = world.gets.length;
+      // Any refresh after this point is made deliberately slow: the UI must not be held hostage by it.
+      world.getDelayMs = 4000;
+      await page.getByRole("button", { name: "New count" }).first().click();
+      await page.getByRole("button", { name: "Start count" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByLabel("Counted quantity for Whole Milk")).toBeVisible({ timeout: 2000 });
+      await dialog.getByLabel("Counted quantity for Whole Milk").fill("23");
+      await dialog.getByLabel("Counted quantity for Espresso Beans").fill("8");
+      await dialog.getByLabel("Counted quantity for Oat Milk").fill("12");
+      await dialog.getByRole("button", { name: "Save draft" }).click();
+      await expect(dialog.getByRole("button", { name: "Save draft" })).toBeEnabled({ timeout: 2000 });
+      await expect(dialog.getByRole("button", { name: "Continue / review" })).toBeEnabled();
+      expect(world.calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
+      expect(world.gets.length).toBe(baseline);
+      expect(world.sessions[0].lines.find((line) => line.id === 100)!.counted).toBe(23);
+      await expectNoOverflow(page);
+    });
+
+    test("a failed inventory load explains why New count is unavailable and Retry recovers", async ({ page }) => {
+      const world = draftWorld();
+      world.failInventory = true;
+      await installWorld(page, world);
+      await openCounts(page);
+      await expect(page.getByRole("alert").filter({ hasText: "Inventory items could not be loaded" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "New count" }).first()).toBeDisabled();
+      world.failInventory = false;
+      await page.getByRole("button", { name: "Retry loading items" }).click();
+      await expect(page.getByRole("button", { name: "New count" }).first()).toBeEnabled();
+      await expect(page.getByRole("alert").filter({ hasText: "Inventory items could not be loaded" })).toHaveCount(0);
+    });
+
+    test("starting a new count right after finalizing one opens the new draft", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      await dialog.getByRole("button", { name: "Complete count" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("button", { name: "New count" }).first().click();
+      await page.getByRole("button", { name: "Start count" }).click();
+      await expect(page.getByRole("dialog").getByText("Count inventory")).toBeVisible();
+      await expect(page.getByRole("dialog").getByLabel("Counted quantity for Whole Milk")).toBeEnabled();
+      expect(world.sessions).toHaveLength(2);
+    });
+
+    test("finalizing one draft refreshes the later-movement flag on an overlapping draft", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      const other: Session = JSON.parse(JSON.stringify(world.sessions[0]));
+      other.id = 12;
+      world.sessions.push(other);
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      // Finalizing #11 moves stock for Whole Milk, which #12 also counts.
+      world.sessions[1].lines.find((line) => line.inventoryItemId === 1)!.moved = true;
+      await dialog.getByRole("button", { name: "Complete count" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("tab", { name: /Active count/ }).click();
+      await page.getByRole("button", { name: /Draft #12/ }).click();
+      await expect(page.getByRole("dialog").getByText("Count inventory")).toBeVisible();
+      await page.getByRole("dialog").getByRole("button", { name: "Continue / review" }).click();
+      await expect(page.getByRole("dialog").getByRole("button", { name: "Complete count" })).toBeDisabled();
+    });
+
+    test("a slow post-finalize refresh never discards edits on the next draft or the newly created count", async ({ page }) => {
+      const world = draftWorld();
+      world.sessions[0].lines.forEach((line) => (line.counted = line.expected));
+      const other: Session = JSON.parse(JSON.stringify(world.sessions[0]));
+      other.id = 12;
+      other.lines.forEach((line) => (line.counted = null));
+      world.sessions.push(other);
+      await installWorld(page, world);
+      await openCounts(page);
+      await page.getByRole("button", { name: /Draft #11/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Continue / review" }).click();
+      world.getDelayMs = 1500; // the post-finalize list refresh is slow
+      await dialog.getByRole("button", { name: "Complete count" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("tab", { name: /Active count/ }).click();
+      await page.getByRole("button", { name: /Draft #12/ }).click();
+      const qty = page.getByRole("dialog").getByLabel("Counted quantity for Whole Milk");
+      await qty.fill("19");
+      await page.waitForTimeout(2200); // let the slow refresh land
+      await expect(qty).toHaveValue("19");
+      await expect(page.getByText("Unsaved changes")).toBeVisible();
     });
 
     test("a failed save and a failed finalize show the server reason, keep the draft editable and can be retried", async ({ page }) => {
