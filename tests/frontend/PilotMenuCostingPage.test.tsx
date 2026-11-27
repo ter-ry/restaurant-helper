@@ -244,10 +244,9 @@ describe("PilotMenuCostingPage", () => {
     expect(await screen.findByText("Menu costing")).toBeVisible();
     expect(screen.getAllByText("Cheesy Toast").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "Menu Costing" })).toBeVisible();
-    expect(screen.getAllByText("Cost $3.50").length).toBeGreaterThan(0);
-    expect(screen.getByText("29.2%")).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Cost $3.50" })).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Food cost 29.2%" })).toBeVisible();
     expect(screen.queryByText("High cost")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Food cost 29.2%").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
       "Item",
       "Category",
@@ -293,7 +292,7 @@ describe("PilotMenuCostingPage", () => {
     await screen.findByText("Menu costing");
     expect(screen.getAllByText(/Cost unavailable/).length).toBeGreaterThan(0);
     expect(screen.queryByText("Cost $0.00")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Cost Cost unavailable|Contribution Cost unavailable/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: /Cost Cost unavailable|Contribution Cost unavailable/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
     expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
     fireEvent.change(screen.getByLabelText("Scenario selling price"), { target: { value: "15" } });
@@ -308,7 +307,34 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Edit menu item" }));
     fireEvent.click(screen.getByText("Recipe Needed Item"));
     expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
-    expect(screen.getByLabelText("Scenario selling price")).toHaveValue(null);
+    expect(screen.getByLabelText("Scenario selling price")).toHaveValue("");
+  });
+
+  it("keeps ingredient drafts local, supports natural numeric typing, and searches inventory by keyboard", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    await screen.findByRole("heading", { name: "Edit recipe" });
+
+    const quantity = screen.getByLabelText("Quantity required");
+    fireEvent.change(quantity, { target: { value: "" } });
+    expect(quantity).toHaveValue("");
+    fireEvent.change(quantity, { target: { value: "0.25" } });
+    expect(quantity).toHaveValue("0.25");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ingredient" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add ingredient" }));
+    expect(screen.getByRole("combobox", { name: "Ingredient 2" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Ingredient 3" })).toBeVisible();
+    expect(mockApi.createPilotMenuCostingRecipeIngredient).not.toHaveBeenCalled();
+
+    const newItem = screen.getByRole("combobox", { name: "Ingredient 2" });
+    fireEvent.focus(newItem);
+    fireEvent.keyDown(newItem, { key: "ArrowDown" });
+    expect(screen.getByRole("listbox")).toBeVisible();
+    fireEvent.keyDown(newItem, { key: "Enter" });
+    expect(screen.getAllByLabelText("Unit")[1]).toHaveValue("kg");
   });
 
   it("shows deleting progress and ignores a second click while a delete is in flight", async () => {
@@ -413,6 +439,7 @@ describe("PilotMenuCostingPage", () => {
     const dialog = await screen.findByRole("dialog");
     // With no recipe chosen the button still creates the menu item; it must not claim to assign a recipe.
     expect(within(dialog).queryByRole("button", { name: "Assign recipe" })).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Selling price"), { target: { value: "0" } });
     mockApi.createPilotMenuCostingMenuItem.mockRejectedValue(new Error("Menu item save failed"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Create menu item" }));
     // The page-level banner sits behind the dialog overlay, so the error must be announced inside it.

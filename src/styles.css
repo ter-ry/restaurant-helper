@@ -661,6 +661,59 @@ textarea.input {
 .pilot-theme .workspace-page { gap: 1rem; }
 .pilot-theme .workspace-page .workspace-card { padding: 0.875rem; }
 
+/* Compact authenticated-app density. Keep the base input target readable and
+   keep shared Button touch targets unchanged; forms get their density from
+   field chrome, grouping and proportional widths instead of tiny controls. */
+.pilot-theme .compact-form {
+  --compact-control-height: 2.25rem;
+}
+
+.pilot-theme .compact-form .input,
+.pilot-theme .compact-form input,
+.pilot-theme .compact-form select,
+.pilot-theme .compact-form textarea {
+  min-height: var(--compact-control-height);
+  padding: 0.45rem 0.625rem;
+}
+
+.pilot-theme .compact-form textarea.input {
+  min-height: 4.5rem;
+}
+
+.pilot-theme .compact-field > .input,
+.pilot-theme .compact-field > input,
+.pilot-theme .compact-field > select,
+.pilot-theme .compact-field > textarea {
+  margin-top: 0.25rem;
+}
+
+.pilot-theme .compact-optional {
+  border-top: 1px solid var(--pilot-line);
+  padding-top: 0.625rem;
+}
+
+.pilot-theme .compact-optional > summary {
+  cursor: pointer;
+  color: var(--pilot-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pilot-theme .compact-optional[open] > summary {
+  color: var(--pilot-text);
+}
+
+.pilot-theme .pilot-modal-body {
+  min-width: 0;
+}
+
+.pilot-theme .recipe-cost-summary {
+  position: sticky;
+  bottom: 0.5rem;
+  z-index: 2;
+  box-shadow: 0 -0.5rem 1rem -0.75rem rgba(0, 0, 0, 0.28);
+}
+
 .pilot-theme .workspace-table-wrap {
   border-color: var(--pilot-line) !important;
   border-radius: 0.5rem;
