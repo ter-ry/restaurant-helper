@@ -334,6 +334,23 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getAllByLabelText("Unit")[1]).toHaveValue("kg");
   });
 
+  it("does not save an old ingredient id when search text is not committed", async () => {
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
+    await screen.findByRole("heading", { name: "Edit recipe" });
+
+    const inventory = screen.getAllByRole("combobox", { name: "Inventory item" })[0];
+    fireEvent.change(inventory, { target: { value: "Che" } });
+    fireEvent.blur(inventory);
+    expect(inventory).toHaveValue("Che");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save recipe and ingredients" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Choose an inventory item for each ingredient");
+    expect(mockApi.savePilotMenuCostingRecipe).not.toHaveBeenCalled();
+  });
+
   it("shows deleting progress and ignores a second click while a delete is in flight", async () => {
     const api = await import("../../src/pilot/pilotApi");
     let release: () => void = () => undefined;

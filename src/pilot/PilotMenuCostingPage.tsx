@@ -88,18 +88,20 @@ function SearchableAutocomplete({
 }) {
   const selected = options.find((option) => option.id === value);
   const [query, setQuery] = useState(selected?.label ?? "");
+  const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const filtered = options.filter((option) => `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(query.toLowerCase())).slice(0, 12);
 
   useEffect(() => {
-    setQuery(selected?.label ?? "");
-  }, [selected?.id, selected?.label]);
+    if (!editing) setQuery(selected?.label ?? "");
+  }, [editing, selected?.id, selected?.label]);
 
   const choose = (option: SearchableOption | undefined) => {
     if (!option) return;
     onChange(option.id);
     setQuery(option.label);
+    setEditing(false);
     setOpen(false);
   };
 
@@ -114,19 +116,27 @@ function SearchableAutocomplete({
         aria-controls={`${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-options`}
         value={query}
         placeholder={placeholder}
-        onFocus={() => setOpen(true)}
-        onChange={(event) => { setQuery(event.target.value); setOpen(true); setHighlighted(0); if (!event.target.value && allowEmpty) onChange(""); }}
+        onFocus={() => { setEditing(true); setOpen(true); }}
+        onChange={(event) => {
+          const nextQuery = event.target.value;
+          setEditing(true);
+          setQuery(nextQuery);
+          setOpen(true);
+          setHighlighted(0);
+          const exact = options.find((option) => option.label === nextQuery);
+          onChange(exact?.id ?? "");
+        }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setHighlighted((current) => Math.min(current + 1, Math.max(filtered.length - 1, 0))); }
           if (event.key === "ArrowUp") { event.preventDefault(); setHighlighted((current) => Math.max(current - 1, 0)); }
           if (event.key === "Enter") { event.preventDefault(); choose(filtered[highlighted]); }
           if (event.key === "Escape") setOpen(false);
         }}
-        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onBlur={() => window.setTimeout(() => { setOpen(false); }, 120)}
       />
       {open ? (
         <div id={`${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-options`} role="listbox" className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-xl border border-line bg-white p-1 shadow-lg">
-          {allowEmpty ? <button type="button" role="option" aria-selected={value === ""} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted hover:bg-slate-50" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(""); setQuery(""); setOpen(false); }}>No selection</button> : null}
+          {allowEmpty ? <button type="button" role="option" aria-selected={value === ""} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted hover:bg-slate-50" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(""); setQuery(""); setEditing(false); setOpen(false); }}>No selection</button> : null}
           {filtered.length ? filtered.map((option, index) => (
             <button key={option.id} type="button" role="option" aria-selected={option.id === value} className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${index === highlighted ? "bg-brand-50" : "hover:bg-slate-50"}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}>
               <span className="block font-semibold text-ink">{option.label}</span>
@@ -431,6 +441,10 @@ export function PilotMenuCostingPage() {
       setError("Yield quantity must be a finite value greater than zero.");
       return;
     }
+    if (ingredientRows.some((row) => row.inventoryItemId === "")) {
+      setError("Choose an inventory item for each ingredient before saving.");
+      return;
+    }
     setSavingRecipe(true);
     setError(null);
     setMessage(null);
@@ -474,6 +488,19 @@ export function PilotMenuCostingPage() {
 
   const removeIngredientRow = (index: number) => setIngredientRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index).map((row, rowIndex) => ({ ...row, sortOrder: String(rowIndex) })));
 
+  const applySavedMenuItem = (saved: PilotMenuCostingMenuItem) => {
+    setData((current) => current ? {
+      ...current,
+      menuItems: current.menuItems.some((item) => item.id === saved.id)
+        ? current.menuItems.map((item) => item.id === saved.id ? saved : item)
+        : [...current.menuItems, saved],
+    } : current);
+    setSelectedMenuItemId(saved.id);
+    setMenuItemEditorMode("edit");
+    setMenuItemDraft(draftFromMenuItem(saved));
+    setWhatIfPrice("");
+  };
+
   const saveMenuItem = async () => {
     const sellingPrice = Number(menuItemDraft.sellingPrice);
     if (menuItemDraft.sellingPrice.trim() === "" || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
@@ -493,11 +520,8 @@ export function PilotMenuCostingPage() {
         notes: menuItemDraft.notes,
       };
       const saved = menuItemDraft.id ? await updatePilotMenuCostingMenuItem(menuItemDraft.id, payload) : await createPilotMenuCostingMenuItem(payload);
-      setSelectedMenuItemId(saved.id);
-      setMenuItemEditorMode("edit");
+      applySavedMenuItem(saved);
       setMessage(`Menu item ${saved.name} saved.`);
-      void load();
-      setSelectedMenuItemId(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the menu item.");
     } finally {
@@ -511,7 +535,7 @@ export function PilotMenuCostingPage() {
     try {
       await deletePilotMenuCostingRecipe(recipe.id);
       setMessage(`Recipe ${recipe.name} deleted.`);
-      void load();
+      setData((current) => current ? { ...current, recipes: current.recipes.filter((candidate) => candidate.id !== recipe.id) } : current);
       setSelectedRecipeId(null);
       setRecipeDraft(blankRecipeDraft());
       setRecipeEditorMode("hidden");
@@ -529,8 +553,10 @@ export function PilotMenuCostingPage() {
     try {
       const saved = await deletePilotMenuCostingRecipeIngredient(selectedRecipe.id, ingredient.id);
       setMessage(`Ingredient removed from ${saved.name}.`);
-      void load();
-      setSelectedRecipeId(saved.id);
+      applySavedRecipe(saved);
+      savedRecipeBaseline.current = draftFromRecipe(saved);
+      savedIngredientBaseline.current = saved.ingredients.map(rowFromIngredient);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the ingredient.");
     }
@@ -542,7 +568,7 @@ export function PilotMenuCostingPage() {
     try {
       await deletePilotMenuCostingMenuItem(menuItem.id);
       setMessage(`Menu item ${menuItem.name} deleted.`);
-      void load();
+      setData((current) => current ? { ...current, menuItems: current.menuItems.filter((candidate) => candidate.id !== menuItem.id) } : current);
       setSelectedMenuItemId(null);
       setMenuItemDraft(blankMenuItemDraft());
       setMenuItemEditorMode("hidden");
