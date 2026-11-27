@@ -178,6 +178,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers["Vary"] = "Origin"
                 response.headers["Access-Control-Allow-Credentials"] = "true"
+                # Export pagination/completeness metadata must be readable by the split-origin frontend.
+                response.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-Export-Complete, X-Export-Row-Count, X-Next-Cursor"
             response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRFToken, X-CSRF-Token")
             response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         return response

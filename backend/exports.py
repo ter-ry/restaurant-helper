@@ -75,7 +75,7 @@ def _csv_bytes(header: list[str], rows: list[list[str]]) -> str:
 
 _PURCHASE_HEADER = [
     "invoice_date", "supplier", "invoice_number", "status", "subtotal", "tax", "total", "line_total_sum",
-    "ocr_total_override", "received_at", "corrects_invoice_number",
+    "ocr_total_override", "received_at", "corrects_invoice_number", "correction_reason",
 ]
 _HISTORY_EXTRA = ["voided_at", "void_reason", "corrected_by_invoice_number", "created_at"]
 
@@ -91,13 +91,13 @@ def _query(location_id: int, start: date, end: date, statuses: set[str] | None):
     return query.options(joinedload(PurchaseInvoice.supplier)).order_by(PurchaseInvoice.invoice_date.asc(), PurchaseInvoice.id.asc())
 
 
-def _number_map(invoices: list[PurchaseInvoice], location_id: int) -> dict[int, str]:
-    """invoice id -> number for lineage columns; the other side of a correction may sit outside the date range."""
+def _number_map(invoices: list[PurchaseInvoice], location_id: int) -> dict[int, tuple[str, str]]:
+    """invoice id -> (number, void reason) for lineage columns; the other side of a correction may sit outside the date range."""
     ids = {i.corrects_invoice_id for i in invoices if i.corrects_invoice_id} | {i.corrected_by_invoice_id for i in invoices if i.corrected_by_invoice_id}
     if not ids:
         return {}
-    rows = PurchaseInvoice.query.filter(PurchaseInvoice.location_id == location_id, PurchaseInvoice.id.in_(ids)).with_entities(PurchaseInvoice.id, PurchaseInvoice.invoice_number).all()
-    return {row.id: row.invoice_number for row in rows}
+    rows = PurchaseInvoice.query.filter(PurchaseInvoice.location_id == location_id, PurchaseInvoice.id.in_(ids)).with_entities(PurchaseInvoice.id, PurchaseInvoice.invoice_number, PurchaseInvoice.void_reason).all()
+    return {row.id: (row.invoice_number, row.void_reason or "") for row in rows}
 
 
 def _line_sums(invoice_ids: list[int]) -> dict[int, Decimal]:
@@ -133,13 +133,14 @@ def build_purchases_csv(location_id: int, start: date, end: date, *, history: bo
             money(sums.get(invoice.id, 0)),
             "yes" if invoice.ocr_override_at is not None else "no",
             isoformat(invoice.received_at) or "",
-            csv_safe(numbers.get(invoice.corrects_invoice_id, "") if invoice.corrects_invoice_id else ""),
+            csv_safe(numbers.get(invoice.corrects_invoice_id, ("", ""))[0] if invoice.corrects_invoice_id else ""),
+            csv_safe(numbers.get(invoice.corrects_invoice_id, ("", ""))[1] if invoice.corrects_invoice_id else ""),
         ]
         if history:
             row += [
                 isoformat(invoice.voided_at) or "",
                 csv_safe(invoice.void_reason),
-                csv_safe(numbers.get(invoice.corrected_by_invoice_id, "") if invoice.corrected_by_invoice_id else ""),
+                csv_safe(numbers.get(invoice.corrected_by_invoice_id, ("", ""))[0] if invoice.corrected_by_invoice_id else ""),
                 isoformat(invoice.created_at) or "",
             ]
         rows.append(row)

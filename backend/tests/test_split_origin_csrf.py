@@ -246,3 +246,12 @@ def test_cors_preflight_allows_post_and_rejects_untrusted_origin(client):
     assert response.status_code == 200
     assert "Access-Control-Allow-Origin" not in response.headers
     assert "Access-Control-Allow-Credentials" not in response.headers
+
+
+def test_cors_exposes_export_pagination_headers_to_trusted_frontend(client):
+    response = client.get("/api/health", base_url=API_BASE_URL, headers={"Origin": TRUSTED_FRONTEND_ORIGIN})
+    exposed = {h.strip() for h in response.headers["Access-Control-Expose-Headers"].split(",")}
+    assert {"X-Export-Complete", "X-Next-Cursor", "X-Export-Row-Count", "Content-Disposition"} <= exposed
+
+    untrusted = client.get("/api/health", base_url=API_BASE_URL, headers={"Origin": "https://evil.example"})
+    assert "Access-Control-Expose-Headers" not in untrusted.headers

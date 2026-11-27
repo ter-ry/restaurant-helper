@@ -51,6 +51,7 @@ def test_bookkeeping_excludes_drafts_and_voided_originals_and_history_keeps_the_
     assert numbers == {f"EXP-{tag}-C1"}, numbers  # corrected copy only: no draft, no voided original, no double count
     row = next(r for r in book if tag in r["invoice_number"])
     assert row["status"] == "Completed" and row["corrects_invoice_number"] == f"EXP-{tag}"
+    assert row["correction_reason"] == "'+wrong quantity"  # the voided original is excluded, so the reason travels with the correction
     assert row["total"] == row["line_total_sum"] == "20.00"
     assert row["supplier"].startswith("'=")  # formula-injection safe
 
