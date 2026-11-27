@@ -37,6 +37,10 @@ type World = {
   /** Remaining GET /api/pilot/inventory calls that should be answered from fresh server state (counted for refresh proof). */
   inventoryReads: number;
   seen: Map<string, unknown>;
+  /** Hold GET inventory/item-detail responses this long (a slow re-read after a saved movement). */
+  slowReadsMs: number;
+  /** Answer the next N GET inventory/item-detail reads with 503. */
+  failReads: number;
 };
 
 function newWorld(): World {
@@ -47,7 +51,7 @@ function newWorld(): World {
       { id: 32, name: "Oat Milk", category: "Dairy", stockUnit: "L", currentOnHand: 8, minQuantity: 2, parLevel: 6, supplierId: null, active: true },
     ],
     invoice: { status: "Completed", voidReason: "", voidedAt: null, correctedByInvoiceId: null },
-    posts: [], delayMs: 0, dropNextResponse: false, refuseNext: null, inventoryReads: 0, seen: new Map(),
+    posts: [], delayMs: 0, dropNextResponse: false, refuseNext: null, inventoryReads: 0, seen: new Map(), slowReadsMs: 0, failReads: 0,
   };
 }
 
@@ -86,6 +90,13 @@ async function installWorld(page: Page, world: World) {
       });
     }
     if (pathname === "/api/pilot/suppliers") return json(route, { suppliers: SUPPLIERS });
+    if (method === "GET" && /^\/api\/pilot\/inventory(\/items\/\d+)?$/.test(pathname)) {
+      if (world.failReads > 0) {
+        world.failReads -= 1;
+        return json(route, { error: "The server could not process this request. Try again." }, 503);
+      }
+      if (world.slowReadsMs) await sleep(world.slowReadsMs);
+    }
     if (pathname === "/api/pilot/inventory" && method === "GET") {
       world.inventoryReads += 1;
       return json(route, {
@@ -169,6 +180,41 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText("17 L", { exact: true }).first()).toBeVisible();
       await expect(page.getByRole("heading", { name: "Record waste / loss" })).toHaveCount(0);
       await expectNoOverflow(page);
+    });
+
+    test("waste: success is confirmed at once, a slow re-read shows Updating, then the server figures land", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+      await page.getByText("Whole Milk").first().click();
+      await page.getByRole("button", { name: "Record waste" }).click();
+      await page.getByLabel("Quantity (L)").fill("3");
+      world.slowReadsMs = 1500;
+      await page.getByRole("button", { name: "Record waste", exact: true }).last().click();
+      await expect(page.getByText(/Waste recorded: 3 L/)).toBeVisible({ timeout: 1200 });
+      await expect(page.getByRole("heading", { name: "Record waste / loss" })).toHaveCount(0);
+      await expect(page.getByText("Updating stock, value and history…")).toBeVisible();
+      await expect(page.getByText("Updating stock, value and history…")).toHaveCount(0, { timeout: 4000 });
+      await expect(page.getByText("17 L", { exact: true }).first()).toBeVisible();
+      expect(posts(world, "/waste-events")).toHaveLength(1);
+    });
+
+    test("adjustment: the saved movement shows the new on-hand at once, and a failed re-read offers Retry without a second movement", async ({ page }) => {
+      const world = newWorld();
+      await installWorld(page, world);
+      await page.goto("/app/inventory", { waitUntil: "domcontentloaded" });
+      await page.getByText("Oat Milk").first().click();
+      await page.getByRole("button", { name: "Adjust inventory" }).click();
+      await page.getByLabel(/Quantity delta/).fill("2");
+      world.failReads = 2;
+      await page.getByRole("button", { name: "Save stock movement" }).last().click();
+      await expect(page.getByText(/Inventory updated: 8 L → 10 L/)).toBeVisible();
+      await expect(page.getByText("10 L", { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole("alert").filter({ hasText: "could not be refreshed" })).toBeVisible();
+      await page.getByRole("button", { name: "Retry" }).click();
+      await expect(page.getByRole("alert").filter({ hasText: "could not be refreshed" })).toHaveCount(0);
+      expect(posts(world, "/adjustments")).toHaveLength(1);
+      await expect(page.getByText("10 L", { exact: true }).first()).toBeVisible();
     });
 
     test("quantity fields can be cleared and retyped without a stuck 0 (owner QA, #351)", async ({ page }) => {

@@ -221,13 +221,17 @@ export function PilotInventoryPage() {
 
   // Bumped after every successful list load so panels with their own server data (free-stock evidence) re-read it on Refresh.
   const [loadCount, setLoadCount] = useState(0);
-  const load = async () => {
+  // Latest-wins: an older list load that resolves after a newer one must not overwrite the newer state.
+  const loadSeqRef = useRef(0);
+  const load = async (): Promise<boolean> => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError(null);
     setLoadDenied(false);
 
     try {
       const [response, supplierResponse, negativeResponse] = await Promise.all([fetchPilotInventory(), fetchPilotSuppliers(), fetchPilotNegativeStock().catch(() => null)]);
+      if (seq !== loadSeqRef.current) return true;
       setNegativeStock(negativeStockByItem(negativeResponse?.items));
       setData(response);
       setLoadCount((count) => count + 1);
@@ -253,11 +257,14 @@ export function PilotInventoryPage() {
         setSupplierDraft(blankSupplierDraft());
       }
       setHasLoaded(true);
+      return true;
     } catch (err) {
+      if (seq !== loadSeqRef.current) return true;
       setLoadDenied(err instanceof PilotApiError && err.status === 403);
       setError(err instanceof Error ? err.message : "Could not load inventory.");
+      return false;
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   };
 
@@ -484,7 +491,7 @@ export function PilotInventoryPage() {
       const delta = adjustmentDelta;
       const beforeOnHand = draft.currentOnHand;
       const afterOnHand = beforeOnHand + delta;
-      await createPilotInventoryAdjustment(draft.id, {
+      const movement = await createPilotInventoryAdjustment(draft.id, {
         reason: adjustmentReason,
         quantityDelta: delta,
         movementType: delta < 0 ? "manual decrease" : "manual increase",
@@ -493,13 +500,18 @@ export function PilotInventoryPage() {
         note: adjustmentNote,
       });
       setDraft((current) => (current ? { ...current, currentOnHand: afterOnHand } : current));
+      // The saved movement carries the authoritative on-hand; show it immediately in the list-backed header too.
+      if (typeof movement?.quantityAfter === "number" && Number.isFinite(movement.quantityAfter)) {
+        const onHand = movement.quantityAfter;
+        const itemId = draft.id;
+        setData((current) => current ? { ...current, items: current.items.map((item) => item.id === itemId ? { ...item, currentOnHand: onHand } : item) } : current);
+      }
       setMessage(`Inventory updated: ${formatInventoryQuantity(beforeOnHand)} ${draft.stockUnit} → ${formatInventoryQuantity(afterOnHand)} ${draft.stockUnit} (${delta >= 0 ? "+" : ""}${formatInventoryQuantity(delta)} ${draft.stockUnit}).`);
       setAdjustmentDelta(0);
       setAdjustmentNote("");
       setAdjustmentModalOpen(false);
-      await load();
-      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
+      void reconcileAfterMovement(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record adjustment.");
     } finally {
@@ -521,10 +533,35 @@ export function PilotInventoryPage() {
     return listed ? { ...detailItem, currentOnHand: listed.currentOnHand, averageUnitCost: listed.averageUnitCost } : detailItem;
   };
 
+  const detailSeqRef = useRef(0);
   const refreshItemDetailOnly = async (itemId: number) => {
+    const seq = ++detailSeqRef.current;
     const detail = await fetchPilotInventoryItem(itemId);
-    if (selectedIdRef.current === itemId) setItemDetail(detail);
+    if (seq === detailSeqRef.current && selectedIdRef.current === itemId) setItemDetail(detail);
   };
+
+  // After a saved stock movement the list, valuation and item history are re-read together (not one after the other).
+  // The saved result is already shown from the server response; this only brings the rest of the screen up to date,
+  // says so while it runs, and offers Retry (never a second movement) if the re-read fails.
+  const [reconcile, setReconcile] = useState<{ state: "idle" | "updating" | "failed"; itemId: number | null }>({ state: "idle", itemId: null });
+  const reconcileSeqRef = useRef(0);
+  const reconcileAfterMovement = async (itemId: number) => {
+    const seq = ++reconcileSeqRef.current;
+    setReconcile({ state: "updating", itemId });
+    const [listOk, detailOk] = await Promise.all([load(), refreshItemDetailOnly(itemId).then(() => true, () => false)]);
+    if (seq !== reconcileSeqRef.current) return;
+    setReconcile({ state: listOk && detailOk ? "idle" : "failed", itemId });
+  };
+  const reconcileNotice = reconcile.state === "updating"
+    ? <p role="status" className="mt-2 text-xs text-muted">Updating stock, value and history…</p>
+    : reconcile.state === "failed"
+      ? (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span>Saved, but the latest stock and history could not be refreshed. The figures shown may be out of date.</span>
+          <button type="button" className="font-semibold underline" onClick={() => void reconcileAfterMovement(reconcile.itemId ?? 0)}>Retry</button>
+        </div>
+      )
+      : null;
 
   const refreshItemAfterReversal = async (itemId: number) => {
     // Reconcile with authoritative server state: item detail (history + linkage) and the inventory list (on-hand).
@@ -588,9 +625,8 @@ export function PilotInventoryPage() {
       setWasteNote("");
       setWasteModalOpen(false);
       setMessage(`Waste recorded: ${formatInventoryQuantity(saved.quantity)} ${saved.unit}${saved.totalCost !== null ? ` (${formatMoney(saved.totalCost)})` : ""}.`);
-      await load();
-      await refreshItemDetailOnly(draft.id).catch(() => undefined);
       setSelectedId(draft.id);
+      void reconcileAfterMovement(draft.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record waste.");
     } finally {
@@ -1065,6 +1101,7 @@ export function PilotInventoryPage() {
               ) : null}
               {itemDetail?.item ? <VerifiedFreeEvidence refreshSignal={loadCount} pendingRef={pendingEvidenceRef} item={reconciledItem(itemDetail.item)} onChanged={() => refreshItemAfterReversal(itemDetail.item.id)} disabled={demoReadOnly} /> : null}
               {message ? <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</p> : null}
+              {reconcileNotice}
             </Card>
 
             <div className="rounded-2xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted">
@@ -1424,6 +1461,7 @@ export function PilotInventoryPage() {
             </div>
           </div>
           {message && !anyDialogOpen ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
+          {reconcileNotice}
           {inventoryTab === "suppliers" ? renderSupplierWorkspace() : renderItemTable()}
         </>
       ) : null}
