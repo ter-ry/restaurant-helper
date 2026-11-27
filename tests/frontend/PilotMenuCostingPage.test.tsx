@@ -272,8 +272,8 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getAllByText("Cheesy Toast")[0]);
     await waitFor(() => expect(screen.getByRole("heading", { name: "Edit recipe" })).toBeVisible());
     expect(screen.getAllByLabelText("Name")[0]).toHaveValue("Cheesy Toast");
-    expect(screen.getByRole("combobox", { name: "Inventory item" })).toHaveValue("Cheese · kg");
-    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue(2);
+    expect(screen.getByRole("combobox", { name: "Inventory item" })).toHaveValue("Cheese");
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue("2");
     expect(screen.getByText(/Cost basis:/)).toBeVisible();
     expect(screen.getByText(/Current inventory valuation/)).toBeVisible();
     expect(screen.getByText(/latest purchase cost is shown as a labeled estimate/)).toBeVisible();
@@ -317,7 +317,7 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getAllByText("Cheesy Toast").at(0)!);
     await screen.findByRole("heading", { name: "Edit recipe" });
 
-    const quantity = screen.getByLabelText("Quantity required");
+    const quantity = screen.getByLabelText("Quantity for ingredient 1");
     fireEvent.change(quantity, { target: { value: "" } });
     expect(quantity).toHaveValue("");
     fireEvent.change(quantity, { target: { value: "0.25" } });
@@ -325,11 +325,8 @@ describe("PilotMenuCostingPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add ingredient" }));
     fireEvent.click(screen.getByRole("button", { name: "Add ingredient" }));
-    expect(screen.getByRole("combobox", { name: "Ingredient 2" })).toBeVisible();
-    expect(screen.getByRole("combobox", { name: "Ingredient 3" })).toBeVisible();
-    expect(mockApi.createPilotMenuCostingRecipeIngredient).not.toHaveBeenCalled();
-
-    const newItem = screen.getByRole("combobox", { name: "Ingredient 2" });
+    expect(screen.getAllByRole("combobox", { name: "Inventory item" })).toHaveLength(3);
+    const newItem = screen.getAllByRole("combobox", { name: "Inventory item" })[1];
     fireEvent.focus(newItem);
     fireEvent.keyDown(newItem, { key: "ArrowDown" });
     expect(screen.getByRole("listbox")).toBeVisible();
@@ -412,11 +409,11 @@ describe("PilotMenuCostingPage", () => {
     expect(screen.getByLabelText("Quantity for ingredient 1")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Add ingredient" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Remove ingredient 1" })).toBeDisabled();
-    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue(3);
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue("3");
 
     resolveSave(savedRecipe);
     await waitFor(() => expect(screen.getByText("Recipe Cheesy Toast saved.")).toBeVisible());
-    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue(3);
+    expect(screen.getByLabelText("Quantity for ingredient 1")).toHaveValue("3");
   });
 
   it("keeps a failed recipe-editor save editable", async () => {

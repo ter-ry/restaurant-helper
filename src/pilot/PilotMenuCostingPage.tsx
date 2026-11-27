@@ -28,7 +28,6 @@ import { WorkspacePageHeader } from "./workspace/WorkspacePageHeader";
 import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { formatMoney, formatNumber, statusTone } from "./workspace/pilotWorkspaceUtils";
 import { sortRows, type SortDirection } from "../components/DataTable";
-import { SearchableSelect } from "../components/SearchableSelect";
 
 interface RecipeDraft {
   id: number | null;
@@ -211,6 +210,10 @@ function draftFromIngredient(ingredient: PilotMenuCostingRecipeIngredient): Ingr
   };
 }
 
+function rowFromIngredient(ingredient: PilotMenuCostingRecipeIngredient): IngredientRowDraft {
+  return { ...draftFromIngredient(ingredient), key: `saved-${ingredient.id}`, isNew: false };
+}
+
 function draftFromMenuItem(menuItem: PilotMenuCostingMenuItem): MenuItemDraft {
   return {
     id: menuItem.id,
@@ -233,8 +236,7 @@ export function PilotMenuCostingPage() {
   const [recipeEditorMode, setRecipeEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [menuItemEditorMode, setMenuItemEditorMode] = useState<"hidden" | "create" | "edit">("hidden");
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
-  const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(blankIngredientDraft());
-  const [ingredientRows, setIngredientRows] = useState<IngredientDraft[]>([]);
+  const [ingredientRows, setIngredientRows] = useState<IngredientRowDraft[]>([]);
   const [menuItemDraft, setMenuItemDraft] = useState<MenuItemDraft>(blankMenuItemDraft());
   const [whatIfPrice, setWhatIfPrice] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ kind: "recipe" | "ingredient" | "menu-item"; id: number; label: string } | null>(null);
@@ -242,18 +244,15 @@ export function PilotMenuCostingPage() {
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [savingRecipe, setSavingRecipe] = useState(false);
-  const [savingIngredient, setSavingIngredient] = useState(false);
   const [savingMenuItem, setSavingMenuItem] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recipeSort, setRecipeSort] = useState<{ key: "name" | "yield" | "cost" | "ingredients" | "status"; direction: SortDirection } | null>(null);
-  const savingIngredientRef = useRef(false);
   const previousRecipeId = useRef<number | null>(null);
-  const previousIngredientId = useRef<number | null>(null);
   const savedRecipeBaseline = useRef<RecipeDraft>(blankRecipeDraft());
-  const savedIngredientBaseline = useRef<IngredientDraft[]>([]);
+  const savedIngredientBaseline = useRef<IngredientRowDraft[]>([]);
   const loadRequestId = useRef(0);
 
   const load = async () => {
@@ -308,11 +307,9 @@ export function PilotMenuCostingPage() {
     if (selectedRecipe) {
       if (recipeChanged) {
         setRecipeDraft(draftFromRecipe(selectedRecipe));
-        setIngredientRows(selectedRecipe.ingredients.map(draftFromIngredient));
+        setIngredientRows(selectedRecipe.ingredients.map(rowFromIngredient));
         savedRecipeBaseline.current = draftFromRecipe(selectedRecipe);
-        savedIngredientBaseline.current = selectedRecipe.ingredients.map(draftFromIngredient);
-        setSelectedIngredientId(null);
-        setIngredientDraft(blankIngredientDraft());
+        savedIngredientBaseline.current = selectedRecipe.ingredients.map(rowFromIngredient);
       }
       setRecipeEditorMode("edit");
     }
@@ -404,7 +401,7 @@ export function PilotMenuCostingPage() {
   };
 
   const startNewRecipe = () => {
-    const open = () => { setError(null); setMessage(null); setSelectedRecipeId(null); setSelectedIngredientId(null); setIngredientRows([]); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); };
+    const open = () => { setError(null); setMessage(null); setSelectedRecipeId(null); setIngredientRows([]); setRecipeDraft(blankRecipeDraft()); setRecipeEditorMode("create"); };
     if (recipeDirty || ingredientDirty) {
       setPendingDiscard({ title: "Discard recipe changes?", message: "Unsaved recipe or ingredient changes will be lost.", confirm: open });
       return;
@@ -448,9 +445,9 @@ export function PilotMenuCostingPage() {
       };
       const saved = await savePilotMenuCostingRecipe(recipeDraft.id, { ...payload, ingredients: ingredientRows });
       setRecipeDraft(draftFromRecipe(saved));
-      setIngredientRows(saved.ingredients.map(draftFromIngredient));
+      setIngredientRows(saved.ingredients.map(rowFromIngredient));
       savedRecipeBaseline.current = draftFromRecipe(saved);
-      savedIngredientBaseline.current = saved.ingredients.map(draftFromIngredient);
+      savedIngredientBaseline.current = saved.ingredients.map(rowFromIngredient);
       setSelectedRecipeId(saved.id);
       setRecipeEditorMode("edit");
       setMessage(`Recipe ${saved.name} saved.`);
@@ -469,55 +466,13 @@ export function PilotMenuCostingPage() {
     }
   };
 
-  const saveIngredientRow = async (row: IngredientRowDraft) => {
-    if (!selectedRecipe) {
-      return;
-    }
-    const quantityRequired = Number(row.quantityRequired);
-    if (row.inventoryItemId === "") {
-      setError("Choose an inventory item for the ingredient.");
-      return;
-    }
-    if (!ingredientDraft.quantityRequired.trim() || !Number.isFinite(Number(ingredientDraft.quantityRequired)) || Number(ingredientDraft.quantityRequired) <= 0) {
-      setError("Ingredient quantity must be a finite value greater than zero.");
-      return;
-    }
-
-    if (savingIngredientRef.current) return;
-    savingIngredientRef.current = true;
-    setSavingIngredient(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const payload = {
-        inventoryItemId: ingredientDraft.inventoryItemId,
-        quantityRequired: Number(ingredientDraft.quantityRequired),
-        unit: ingredientDraft.unit,
-        sortOrder: ingredientDraft.sortOrder,
-        notes: ingredientDraft.notes,
-      };
-      const saved = row.id
-        ? await updatePilotMenuCostingRecipeIngredient(selectedRecipe.id, row.id, payload)
-        : await createPilotMenuCostingRecipeIngredient(selectedRecipe.id, payload);
-      setMessage(`Recipe ingredients for ${saved.name} updated.`);
-      setSelectedIngredientId(null);
-      void load();
-      setSelectedRecipeId(saved.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the ingredient.");
-    } finally {
-      savingIngredientRef.current = false;
-      setSavingIngredient(false);
-    }
-  };
-
-  const updateIngredientRow = (index: number, patch: Partial<IngredientDraft>) => {
+  const updateIngredientRow = (index: number, patch: Partial<IngredientRowDraft>) => {
     setIngredientRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
   };
 
-  const addIngredientRow = () => setIngredientRows((rows) => [...rows, { ...blankIngredientDraft(), sortOrder: rows.length }]);
+  const addIngredientRow = () => setIngredientRows((rows) => [...rows, { ...blankIngredientDraft(), sortOrder: String(rows.length), key: `new-${Date.now()}-${rows.length}`, isNew: true }]);
 
-  const removeIngredientRow = (index: number) => setIngredientRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index).map((row, rowIndex) => ({ ...row, sortOrder: rowIndex })));
+  const removeIngredientRow = (index: number) => setIngredientRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index).map((row, rowIndex) => ({ ...row, sortOrder: String(rowIndex) })));
 
   const saveMenuItem = async () => {
     const sellingPrice = Number(menuItemDraft.sellingPrice);
@@ -574,7 +529,6 @@ export function PilotMenuCostingPage() {
     try {
       const saved = await deletePilotMenuCostingRecipeIngredient(selectedRecipe.id, ingredient.id);
       setMessage(`Ingredient removed from ${saved.name}.`);
-      setSelectedIngredientId(null);
       void load();
       setSelectedRecipeId(saved.id);
     } catch (err) {
@@ -759,8 +713,7 @@ export function PilotMenuCostingPage() {
               <span className="text-sm font-medium text-ink">Yield quantity</span>
               <input className="input mt-1" type="number" min="0.0001" step="0.0001" value={recipeDraft.yieldQuantity} onChange={(event) => setRecipeDraft((current) => ({ ...current, yieldQuantity: event.target.value }))} />
             </label>
-            <label className="block">
-              <span className="text-sm font-medium text-ink">Active</span>
+            <CompactField label="Active">
               <select className="input mt-1" value={recipeDraft.active ? "true" : "false"} onChange={(event) => setRecipeDraft((current) => ({ ...current, active: event.target.value === "true" }))}>
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
@@ -832,8 +785,8 @@ export function PilotMenuCostingPage() {
                     : null;
                   const lineCost = previewUnitCost == null ? null : previewUnitCost * Number(row.quantityRequired);
                   return <div key={row.id ?? `new-${index}`} className="grid items-end gap-2 rounded-xl border border-line bg-white p-2 sm:grid-cols-[minmax(0,2fr)_6rem_6rem_7rem_auto]">
-                    <SearchableSelect label="Inventory item" value={row.inventoryItemId} options={selectableInventoryItems.map((candidate) => ({ value: candidate.id, label: `${candidate.name} · ${candidate.stockUnit}${candidate.active ? "" : " · inactive"}` }))} onChange={(value) => { const next = selectableInventoryItems.find((candidate) => candidate.id === value); updateIngredientRow(index, { inventoryItemId: value, unit: next?.stockUnit ?? row.unit }); }} placeholder="Search inventory" disabled={savingRecipe} />
-                    <label><span className="sr-only">Quantity</span><input className="input w-full" aria-label={`Quantity for ingredient ${index + 1}`} type="number" min="0.0001" step="0.0001" value={row.quantityRequired} disabled={savingRecipe} onChange={(event) => updateIngredientRow(index, { quantityRequired: event.target.value })} /></label>
+                    <SearchableAutocomplete label="Inventory item" value={row.inventoryItemId} options={selectableInventoryItems.map((candidate) => ({ id: candidate.id, label: candidate.name, detail: `${candidate.stockUnit}${candidate.active ? "" : " · inactive"} · ${candidate.active ? formatMenuCostingUnitCost(candidate.averageUnitCost) : "Cost unavailable"}` }))} onChange={(value) => { const next = selectableInventoryItems.find((candidate) => candidate.id === value); updateIngredientRow(index, { inventoryItemId: value, unit: next?.stockUnit ?? row.unit }); }} placeholder="Search inventory" />
+                    <label><span className="sr-only">Quantity</span><input className="input w-full" aria-label={`Quantity for ingredient ${index + 1}`} type="text" inputMode="decimal" value={row.quantityRequired} disabled={savingRecipe} onChange={(event) => updateIngredientRow(index, { quantityRequired: event.target.value })} /></label>
                     <label><span className="sr-only">Unit</span><input className="input w-full" aria-label={`Unit for ingredient ${index + 1}`} value={row.unit} disabled={savingRecipe} onChange={(event) => updateIngredientRow(index, { unit: event.target.value })} /></label>
                     <span className="pb-2 text-sm text-muted" aria-live="polite">{lineCost == null ? "Cost unavailable" : formatCost(lineCost)}</span>
                     <Button variant="secondary" type="button" aria-label={`Remove ingredient ${index + 1}`} onClick={() => removeIngredientRow(index)} disabled={savingRecipe}><Trash2 className="h-4 w-4" /></Button>
@@ -957,7 +910,7 @@ export function PilotMenuCostingPage() {
                   <span>Ingredient margin: <strong>{selectedMenuItem.grossMarginPercent == null ? "Unavailable" : `${formatNumber(selectedMenuItem.grossMarginPercent)}%`}</strong></span>
                 </div>
                 <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-3">
-                  <label className="block"><span className="text-xs font-bold uppercase tracking-wide text-muted">Scenario selling price</span><input className="input mt-1 w-40" type="number" min="0" step="0.01" value={whatIfPrice} onChange={(event) => setWhatIfPrice(event.target.value)} placeholder="Optional" /></label>
+                  <label className="block"><span className="text-xs font-bold uppercase tracking-wide text-muted">Scenario selling price</span><input aria-label="Scenario selling price" className="input mt-1 w-40" type="text" inputMode="decimal" value={whatIfPrice} onChange={(event) => setWhatIfPrice(event.target.value)} placeholder="Optional" /></label>
                   {whatIfPrice !== "" ? <div className="text-sm text-muted">{(selectedMenuItem.recipeCostPerYieldExact ?? selectedMenuItem.recipeCostPerYield) == null || !Number.isFinite(Number(whatIfPrice)) || Number(whatIfPrice) <= 0 ? "Scenario cost unavailable" : `Food cost ${formatNumber(((selectedMenuItem.recipeCostPerYieldExact ?? selectedMenuItem.recipeCostPerYield)! / Number(whatIfPrice)) * 100)}% · Contribution ${formatMoney(Number(whatIfPrice) - (selectedMenuItem.recipeCostPerYieldExact ?? selectedMenuItem.recipeCostPerYield)!)} · Scenario only`}</div> : null}
                 </div>
                 {selectedMenuItem.warnings.length ? (
