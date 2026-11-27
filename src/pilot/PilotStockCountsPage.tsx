@@ -91,7 +91,6 @@ export function PilotStockCountsPage() {
   const [itemSearch, setItemSearch] = useState("");
   const [lineSearch, setLineSearch] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
-  const [selectionSeeded, setSelectionSeeded] = useState(false);
   const [workflowTab, setWorkflowTab] = useState<"active" | "history">("active");
   const [showNewCount, setShowNewCount] = useState(false);
   const [countWorkspaceOpen, setCountWorkspaceOpen] = useState(false);
@@ -102,6 +101,11 @@ export function PilotStockCountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [lineSort, setLineSort] = useState<{ key: "item" | "expected" | "counted" | "variance"; direction: SortDirection } | null>(null);
   const previousSelectedId = useRef<number | null>(null);
+  const loadRequestRef = useRef(0);
+  const selectedIdRef = useRef<number | null>(null);
+  const selectionSeededRef = useRef(false);
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(location.search).get("sessionId");
     const parsed = Number(value);
@@ -115,34 +119,45 @@ export function PilotStockCountsPage() {
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
   };
 
+  // Inventory is only needed to pick items for a NEW count, so it never blocks the page or a mutation.
+  const refreshInventory = async () => {
+    setInventoryError(null);
+    try {
+      const inventory = await fetchPilotInventory();
+      setInventoryItems(inventory.items);
+      if (!selectionSeededRef.current) {
+        selectionSeededRef.current = true;
+        setSelectedItemIds(inventory.items.filter((item) => item.active).map((item) => item.id));
+      }
+      setInventoryLoaded(true);
+    } catch (err) {
+      // Keep the saved counts visible, but say why New count is unavailable and offer a retry.
+      setInventoryError(err instanceof Error ? err.message : "Could not load inventory items.");
+    }
+  };
+
   const load = async (preferredSessionId: number | null = requestedSessionId) => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError(null);
 
     try {
-      const [sessionList, inventory] = await Promise.all([fetchPilotCountSessions(), fetchPilotInventory()]);
-      setInventoryItems(inventory.items);
+      const targetSessionId = preferredSessionId ?? selectedId;
+      // Known target: fetch list + detail in parallel (no dependent round trip). Detail failure falls back to the list copy.
+      const detailPromise = targetSessionId ? fetchPilotCountSession(targetSessionId).catch(() => null) : null;
+      const sessionList = await fetchPilotCountSessions();
       let nextSessions = sessionList.countSessions;
       let current: PilotCountSession | null = null;
-
-      const targetSessionId = preferredSessionId ?? selectedId;
       if (targetSessionId) {
-        try {
-          current = await fetchPilotCountSession(targetSessionId);
-          if (current) {
-            const currentId = current.id;
-            nextSessions = [current, ...nextSessions.filter((entry) => entry.id !== currentId)];
-          }
-        } catch {
-          current = sessionList.countSessions.find((entry) => entry.id === targetSessionId) ?? null;
+        current = (await detailPromise) ?? nextSessions.find((entry) => entry.id === targetSessionId) ?? null;
+        if (current) {
+          const currentId = current.id;
+          nextSessions = [current, ...nextSessions.filter((entry) => entry.id !== currentId)];
         }
       }
+      if (requestId !== loadRequestRef.current) return; // a newer load/mutation owns the screen; never overwrite it
 
       setSessions(nextSessions);
-      if (!selectionSeeded) {
-        setSelectedItemIds(inventory.items.filter((item) => item.active).map((item) => item.id));
-        setSelectionSeeded(true);
-      }
       const activeSession = current ?? nextSessions.find((entry) => entry.status === "Draft") ?? nextSessions[0] ?? null;
       if (activeSession) {
         setWorkflowTab(activeSession.status === "Completed" ? "history" : "active");
@@ -156,11 +171,46 @@ export function PilotStockCountsPage() {
         setConfirmConcurrency(false);
       }
       setHasLoaded(true);
+      void refreshInventory();
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Could not load count sessions.");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
+  };
+
+  // Finalizing creates movements that change OTHER drafts' "later movement" flags; refresh them without blocking or touching the open count.
+  const refreshOtherSessions = async (keepId: number) => {
+    const token = loadRequestRef.current; // read-only: do not cancel an in-flight load
+    try {
+      const { countSessions } = await fetchPilotCountSessions();
+      if (token !== loadRequestRef.current) return; // a newer load or mutation owns the list; drop this stale response
+      const fresh = new Map(countSessions.map((entry) => [entry.id, entry]));
+      setSessions((current) => {
+        const merged = current.map((entry) =>
+          // Never replace the open count (its draft would reset and discard edits) or the one just finalized.
+          entry.id === keepId || entry.id === selectedIdRef.current ? entry : fresh.get(entry.id) ?? entry,
+        );
+        // Counts the response did not know about (created meanwhile) stay; ones only the server has are added.
+        const known = new Set(current.map((entry) => entry.id));
+        return [...merged, ...countSessions.filter((entry) => !known.has(entry.id))];
+      });
+    } catch {
+      // Non-blocking; the server still rejects an unconfirmed finalize, and Refresh re-reads everything.
+    }
+  };
+
+  // Apply an authoritative mutation response (POST/PATCH/finalize) without a blocking re-fetch.
+  const applyServerSession = (session: PilotCountSession) => {
+    loadRequestRef.current += 1; // invalidate any in-flight load so it cannot overwrite this newer state
+    setLoading(false);
+    setSessions((current) => [session, ...current.filter((entry) => entry.id !== session.id)]);
+    setWorkflowTab(session.status === "Completed" ? "history" : "active");
+    setSelectedId(session.id);
+    setDraft(sessionToDraft(session));
+    setSavedDraftSignature(JSON.stringify(sessionToDraft(session)));
+    setHasLoaded(true);
   };
 
   useEffect(() => {
@@ -170,6 +220,7 @@ export function PilotStockCountsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
 
+  selectedIdRef.current = selectedId;
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedId) ?? null, [sessions, selectedId]);
   const draftSessions = useMemo(() => sessions.filter((session) => session.status === "Draft"), [sessions]);
   const completedSessions = useMemo(() => sessions.filter((session) => session.status === "Completed"), [sessions]);
@@ -286,9 +337,7 @@ export function PilotStockCountsPage() {
         notes: "Quick stock count",
         itemIds: activeIds,
       });
-      setSelectedId(created.id);
-      setDraft(sessionToDraft(created));
-      setSavedDraftSignature(JSON.stringify(sessionToDraft(created)));
+      applyServerSession(created);
       setConfirmConcurrency(false);
       setShowConcurrencyDetails(false);
       setMessage(`Stock count ${created.id} started.`);
@@ -296,7 +345,6 @@ export function PilotStockCountsPage() {
       setCountWorkspaceStage("count");
       setCountWorkspaceOpen(true);
       selectSessionInUrl(created.id);
-      await load(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start a stock count.");
     } finally {
@@ -324,11 +372,9 @@ export function PilotStockCountsPage() {
           note: line.note,
         })),
       });
-      setDraft(sessionToDraft(saved));
-      setSavedDraftSignature(JSON.stringify(sessionToDraft(saved)));
+      applyServerSession(saved);
       setMessage(`Stock count ${saved.id} saved.`);
       selectSessionInUrl(saved.id);
-      await load(saved.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this stock count.");
     } finally {
@@ -352,13 +398,14 @@ export function PilotStockCountsPage() {
 
     try {
       const finalized = await finalizePilotCountSession(draft.id, { confirmConcurrency });
-      setDraft(sessionToDraft(finalized));
-      setSavedDraftSignature(JSON.stringify(sessionToDraft(finalized)));
+      applyServerSession(finalized);
       setConfirmConcurrency(false);
       setMessage(`Stock count ${finalized.id} finalized.`);
       setCountWorkspaceOpen(false);
+      setWorkflowTab("history");
       selectSessionInUrl(finalized.id);
-      await load(finalized.id);
+      void refreshInventory(); // finalizing moves stock; refresh on-hand in the background
+      void refreshOtherSessions(finalized.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finalize this stock count.");
     } finally {
@@ -386,7 +433,7 @@ export function PilotStockCountsPage() {
             <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Stock Counts</h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button disabled={creating || saving || loading} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>
+            <Button disabled={creating || saving || loading || !inventoryLoaded} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>
               New count
             </Button>
             <Button variant="secondary" icon={<RefreshCcw className="h-4 w-4" />} type="button" onClick={() => void load()} disabled={creating || saving || loading}>
@@ -398,6 +445,7 @@ export function PilotStockCountsPage() {
         {initialLoading ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Loading stock counts…</div> : null}
         {loading && hasLoaded ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted">Refreshing stock counts…</div> : null}
         {error ? <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>{error}</span><Button variant="secondary" type="button" onClick={() => void load()} disabled={loading}>Retry</Button></div> : null}
+        {inventoryError && !inventoryLoaded ? <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>Inventory items could not be loaded, so a new count cannot be started yet. {inventoryError}</span><Button variant="secondary" type="button" onClick={() => void refreshInventory()}>Retry loading items</Button></div> : null}
         {message ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{message}</div> : null}
 
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
@@ -416,7 +464,7 @@ export function PilotStockCountsPage() {
 
       {workflowTab === "active" && !draft ? (
         <Card className="workspace-card p-5">
-          <SectionHeader title="No count in progress" description="Start a count when the team is ready to enter physical quantities." action={<Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>New stock count</Button>} />
+          <SectionHeader title="No count in progress" description="Start a count when the team is ready to enter physical quantities." action={<Button disabled={creating || saving || !inventoryLoaded} icon={<Plus className="h-4 w-4" />} type="button" onClick={() => setShowNewCount(true)}>New stock count</Button>} />
         </Card>
       ) : null}
 
