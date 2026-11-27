@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reports workspace browser fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from "react";
+      import { createRoot } from "react-dom/client";
+      import "/src/styles.css";
+      import { ReportsWorkspace } from "/src/pilot/reports/ReportsWorkspace.tsx";
+
+      const snapshot = {
+        salesStatus: "available",
+        overview: {
+          metrics: [{ label: "Net sales", value: "$1,200" }],
+          salesTrend: [
+            { label: "Mon", value: 120, displayValue: "$120" },
+            { label: "Tue", value: null },
+            { label: "Wed", value: 0 },
+            { label: "Thu", value: 240, displayValue: "$240" },
+          ],
+          purchaseTrend: [{ label: "Mon", value: 0 }, { label: "Tue", value: 80, displayValue: "$80" }],
+        },
+        sales: { metrics: [{ label: "Orders", value: "24" }], byItem: [{ label: "Latte", value: "$240" }] },
+        purchases: { metrics: [{ label: "Received invoices", value: "3" }], receivedSpendLabel: "$80", pendingSpendLabel: "$0", historyCountLabel: "4 records" },
+        inventory: { metrics: [{ label: "Low stock", value: "2" }], exceptions: [{ label: "Milk", value: "Reorder now" }] },
+        exports: { bookkeepingReady: true, auditReady: true, historyReady: true, notes: ["Complete for this range."] },
+      };
+
+      createRoot(document.getElementById("root")).render(React.createElement(ReportsWorkspace, {
+        today: "2026-11-27",
+        snapshot,
+        onExport: () => {},
+      }));
+    </script>
+  </body>
+</html>
