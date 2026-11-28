@@ -12,6 +12,10 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import func, or_
+from sqlalchemy.orm import joinedload, selectinload
+
+from .extensions import db
 from .menu_costing import serialize_menu_item
 from .models import (
     InventoryItem,
@@ -144,14 +148,26 @@ def _sales_totals(orders: list[SquareOrder], summaries: list[SquareDailySalesSum
 def _menu_sales(orders: list[SquareOrder], connection: SquareConnection | None, menu_items: list[MenuItem]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if connection is None:
         return [], []
-    object_ids = {obj.square_object_id: obj.id for obj in SquareCatalogObject.query.filter_by(square_connection_id=connection.id, is_deleted=False).all()}
-    mappings = {
-        object_id: mapping
-        for object_id, mapping in (
-            (square_id, SquareCatalogMapping.query.filter_by(square_catalog_object_id=obj_id, mapping_type="menu_item").first())
-            for square_id, obj_id in object_ids.items()
+    # One joined query instead of one mapping lookup per catalog object; the lowest
+    # mapping id wins per object (same as the former per-object .first()).
+    mappings: dict[str, SquareCatalogMapping] = {}
+    rows = (
+        db.session.query(SquareCatalogObject.square_object_id, SquareCatalogMapping)
+        .join(SquareCatalogMapping, SquareCatalogMapping.square_catalog_object_id == SquareCatalogObject.id)
+        .filter(
+            SquareCatalogObject.square_connection_id == connection.id,
+            SquareCatalogObject.is_deleted.is_(False),
+            SquareCatalogMapping.mapping_type == "menu_item",
         )
-        if mapping is not None and mapping.status == "mapped" and mapping.flowtally_entity_type == "menu_item"
+        .order_by(SquareCatalogMapping.id.asc())
+        .all()
+    )
+    for square_id, mapping in rows:
+        mappings.setdefault(square_id, mapping)
+    mappings = {
+        square_id: mapping
+        for square_id, mapping in mappings.items()
+        if mapping.status == "mapped" and mapping.flowtally_entity_type == "menu_item"
     }
     menu_by_id = {item.id: item for item in menu_items}
     buckets: dict[int, dict[str, Any]] = {}
@@ -263,12 +279,55 @@ def build_report(*, location: RestaurantLocation, view: str, start: date | None 
         return build_clover_report(location=location, view=view, start=start_date, end=end_date, prior_start=prior_start, prior_end=prior_end)
     organization_id = location.organization_id
     items = InventoryItem.query.filter_by(organization_id=organization_id, location_id=location.id, active=True).all()
-    invoices = PurchaseInvoice.query.filter_by(organization_id=organization_id, location_id=location.id).all()
-    sessions = StockCountSession.query.filter_by(organization_id=organization_id, location_id=location.id).all()
+    # Fetch only the window the report needs (current + prior period).  Python-side
+    # predicates below stay authoritative for timezone/state semantics; the SQL
+    # bounds are deliberately padded supersets so no in-scope row is dropped.
+    window_start = prior_start or start_date
+    window_end = end_date
+    invoices = (
+        PurchaseInvoice.query.options(joinedload(PurchaseInvoice.supplier), selectinload(PurchaseInvoice.lines))
+        .filter(
+            PurchaseInvoice.organization_id == organization_id,
+            PurchaseInvoice.location_id == location.id,
+            PurchaseInvoice.invoice_date >= window_start,
+            PurchaseInvoice.invoice_date <= window_end,
+        )
+        .all()
+    )
+    sessions = (
+        StockCountSession.query.options(selectinload(StockCountSession.lines))
+        .filter(
+            StockCountSession.organization_id == organization_id,
+            StockCountSession.location_id == location.id,
+            StockCountSession.status == "Completed",
+            StockCountSession.completed_at >= datetime.combine(start_date - timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc),
+            StockCountSession.completed_at < datetime.combine(end_date + timedelta(days=2), datetime.min.time(), tzinfo=timezone.utc),
+        )
+        .all()
+    )
     connection = SquareConnection.query.filter_by(organization_id=organization_id).first()
-    orders = _orders_for_period(SquareOrder.query.filter_by(restaurant_location_id=location.id).all(), location, start_date, end_date)
-    prior_orders = _orders_for_period(SquareOrder.query.filter_by(restaurant_location_id=location.id).all(), location, prior_start, prior_end) if prior_start and prior_end else []
-    summaries = SquareDailySalesSummary.query.filter_by(restaurant_location_id=location.id).all()
+    order_moment = func.coalesce(SquareOrder.ordered_at, SquareOrder.closed_at, SquareOrder.created_at)
+    all_orders = (
+        SquareOrder.query.options(selectinload(SquareOrder.lines))
+        .filter(
+            SquareOrder.restaurant_location_id == location.id,
+            or_(
+                order_moment.is_(None),
+                (order_moment >= datetime.combine(window_start - timedelta(days=2), datetime.min.time(), tzinfo=timezone.utc))
+                & (order_moment < datetime.combine(window_end + timedelta(days=3), datetime.min.time(), tzinfo=timezone.utc)),
+            ),
+        )
+        .all()
+    )
+    orders = _orders_for_period(all_orders, location, start_date, end_date)
+    prior_orders = _orders_for_period(all_orders, location, prior_start, prior_end) if prior_start and prior_end else []
+    summaries = (
+        SquareDailySalesSummary.query.filter(
+            SquareDailySalesSummary.restaurant_location_id == location.id,
+            SquareDailySalesSummary.sale_date >= window_start,
+            SquareDailySalesSummary.sale_date <= window_end,
+        ).all()
+    )
     menu_items = MenuItem.query.filter_by(organization_id=organization_id, location_id=location.id, active=True).all()
     totals = _sales_totals(orders, summaries, start_date, end_date)
     prior_totals = _sales_totals(prior_orders, summaries, prior_start, prior_end) if prior_start and prior_end else None
