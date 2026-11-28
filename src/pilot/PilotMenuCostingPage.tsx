@@ -78,6 +78,7 @@ function SearchableAutocomplete({
   onChange,
   placeholder,
   allowEmpty = false,
+  onSearchStateChange,
 }: {
   label: string;
   options: SearchableOption[];
@@ -85,6 +86,7 @@ function SearchableAutocomplete({
   onChange: (value: number | "") => void;
   placeholder: string;
   allowEmpty?: boolean;
+  onSearchStateChange?: (state: "committed" | "searching" | "cleared") => void;
 }) {
   const selected = options.find((option) => option.id === value);
   const [query, setQuery] = useState(selected?.label ?? "");
@@ -100,6 +102,7 @@ function SearchableAutocomplete({
   const choose = (option: SearchableOption | undefined) => {
     if (!option) return;
     onChange(option.id);
+    onSearchStateChange?.("committed");
     setQuery(option.label);
     setEditing(false);
     setOpen(false);
@@ -125,6 +128,7 @@ function SearchableAutocomplete({
           setHighlighted(0);
           const exact = options.find((option) => option.label === nextQuery);
           onChange(exact?.id ?? "");
+          onSearchStateChange?.(exact ? "committed" : "searching");
         }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setHighlighted((current) => Math.min(current + 1, Math.max(filtered.length - 1, 0))); }
@@ -136,7 +140,7 @@ function SearchableAutocomplete({
       />
       {open ? (
         <div id={`${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-options`} role="listbox" className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-xl border border-line bg-white p-1 shadow-lg">
-          {allowEmpty ? <button type="button" role="option" aria-selected={value === ""} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted hover:bg-slate-50" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(""); setQuery(""); setEditing(false); setOpen(false); }}>No selection</button> : null}
+          {allowEmpty ? <button type="button" role="option" aria-selected={value === ""} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted hover:bg-slate-50" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(""); onSearchStateChange?.("cleared"); setQuery(""); setEditing(false); setOpen(false); }}>No selection</button> : null}
           {filtered.length ? filtered.map((option, index) => (
             <button key={option.id} type="button" role="option" aria-selected={option.id === value} className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${index === highlighted ? "bg-brand-50" : "hover:bg-slate-50"}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}>
               <span className="block font-semibold text-ink">{option.label}</span>
@@ -248,6 +252,7 @@ export function PilotMenuCostingPage() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(blankRecipeDraft());
   const [ingredientRows, setIngredientRows] = useState<IngredientRowDraft[]>([]);
   const [menuItemDraft, setMenuItemDraft] = useState<MenuItemDraft>(blankMenuItemDraft());
+  const [menuItemRecipeSearchState, setMenuItemRecipeSearchState] = useState<"committed" | "searching" | "cleared">("committed");
   const [whatIfPrice, setWhatIfPrice] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ kind: "recipe" | "ingredient" | "menu-item"; id: number; label: string } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<PendingDiscard | null>(null);
@@ -329,10 +334,12 @@ export function PilotMenuCostingPage() {
   useEffect(() => {
     if (selectedMenuItem) {
       setMenuItemDraft(draftFromMenuItem(selectedMenuItem));
+      setMenuItemRecipeSearchState("committed");
       setMenuItemEditorMode("edit");
       setWhatIfPrice("");
     } else {
       setMenuItemDraft(blankMenuItemDraft());
+      setMenuItemRecipeSearchState("committed");
       setWhatIfPrice("");
     }
   }, [selectedMenuItem]);
@@ -376,6 +383,7 @@ export function PilotMenuCostingPage() {
 
   const closeMenuItemEditor = () => {
     setSelectedMenuItemId(null);
+    setMenuItemRecipeSearchState("committed");
     setMenuItemEditorMode("hidden");
   };
 
@@ -423,7 +431,7 @@ export function PilotMenuCostingPage() {
   };
 
   const startNewMenuItem = () => {
-    const open = () => { setError(null); setMessage(null); setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemEditorMode("create"); };
+    const open = () => { setError(null); setMessage(null); setSelectedMenuItemId(null); setMenuItemDraft(blankMenuItemDraft()); setMenuItemRecipeSearchState("committed"); setMenuItemEditorMode("create"); };
     if (menuItemDirty) {
       setPendingDiscard({ title: "Discard menu item changes?", message: "Unsaved menu item changes will be lost.", confirm: open });
       return;
@@ -499,12 +507,17 @@ export function PilotMenuCostingPage() {
         : [...current.menuItems, saved],
     } : current);
     setSelectedMenuItemId(saved.id);
+    setMenuItemRecipeSearchState("committed");
     setMenuItemEditorMode("edit");
     setMenuItemDraft(draftFromMenuItem(saved));
     setWhatIfPrice("");
   };
 
   const saveMenuItem = async () => {
+    if (menuItemRecipeSearchState === "searching") {
+      setError("Choose a recipe or select No selection before saving the menu item.");
+      return;
+    }
     const sellingPrice = Number(menuItemDraft.sellingPrice);
     if (menuItemDraft.sellingPrice.trim() === "" || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
       setError("Selling price must be a finite non-negative value.");
@@ -884,7 +897,7 @@ export function PilotMenuCostingPage() {
               <CompactField label="Category">
                 <input className="input" value={menuItemDraft.category} onChange={(event) => setMenuItemDraft((current) => ({ ...current, category: event.target.value }))} />
               </CompactField>
-              <SearchableAutocomplete label="Recipe" options={recipes.map((recipe) => ({ id: recipe.id, label: recipe.name, detail: `${formatMenuCostingQuantity(recipe.yieldQuantity)} ${recipe.yieldUnit}` }))} value={menuItemDraft.recipeId} allowEmpty onChange={(recipeId) => setMenuItemDraft((current) => ({ ...current, recipeId }))} placeholder="Search recipes" />
+              <SearchableAutocomplete label="Recipe" options={recipes.map((recipe) => ({ id: recipe.id, label: recipe.name, detail: `${formatMenuCostingQuantity(recipe.yieldQuantity)} ${recipe.yieldUnit}` }))} value={menuItemDraft.recipeId} allowEmpty onSearchStateChange={setMenuItemRecipeSearchState} onChange={(recipeId) => setMenuItemDraft((current) => ({ ...current, recipeId }))} placeholder="Search recipes" />
               <CompactField label="Selling price">
                 <input className="input" inputMode="decimal" type="text" value={menuItemDraft.sellingPrice} onChange={(event) => setMenuItemDraft((current) => ({ ...current, sellingPrice: event.target.value }))} />
               </CompactField>

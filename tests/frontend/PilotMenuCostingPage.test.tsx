@@ -10,6 +10,7 @@ const mockApi = vi.hoisted(() => ({
   deletePilotMenuCostingRecipe: vi.fn(),
   updatePilotMenuCostingRecipeIngredient: vi.fn(),
   createPilotMenuCostingMenuItem: vi.fn(),
+  updatePilotMenuCostingMenuItem: vi.fn(),
 }));
 
 vi.mock("../../src/pilot/PilotSessionProvider", () => ({
@@ -31,7 +32,7 @@ vi.mock("../../src/pilot/pilotApi", async () => {
     updatePilotMenuCostingRecipeIngredient: mockApi.updatePilotMenuCostingRecipeIngredient,
     deletePilotMenuCostingRecipeIngredient: vi.fn(),
     createPilotMenuCostingMenuItem: mockApi.createPilotMenuCostingMenuItem,
-    updatePilotMenuCostingMenuItem: vi.fn(),
+    updatePilotMenuCostingMenuItem: mockApi.updatePilotMenuCostingMenuItem,
     deletePilotMenuCostingMenuItem: vi.fn(),
   };
 });
@@ -54,6 +55,7 @@ describe("PilotMenuCostingPage", () => {
     mockApi.deletePilotMenuCostingRecipe.mockReset();
     mockApi.updatePilotMenuCostingRecipeIngredient.mockReset();
     mockApi.createPilotMenuCostingMenuItem.mockReset();
+    mockApi.updatePilotMenuCostingMenuItem.mockReset();
     mockApi.fetchPilotMenuCosting.mockResolvedValue({
       organizationId: 42,
       locationId: 7,
@@ -310,6 +312,27 @@ describe("PilotMenuCostingPage", () => {
     fireEvent.click(screen.getByText("Recipe Needed Item"));
     expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
     expect(screen.getByLabelText("Scenario selling price")).toHaveValue("");
+  });
+
+  it("blocks unfinished menu-item recipe search but allows explicit no selection", async () => {
+    const server = await mockApi.fetchPilotMenuCosting.mock.results[0].value;
+    mockApi.updatePilotMenuCostingMenuItem.mockResolvedValue(server.menuItems[0]);
+    render(<PilotMenuCostingPage />);
+    await screen.findByText("Menu costing");
+    fireEvent.click(screen.getAllByText("Cheesy Toast").at(-1)!);
+    expect(await screen.findByRole("heading", { name: "Edit menu item" })).toBeVisible();
+
+    const recipe = screen.getByRole("combobox", { name: "Recipe" });
+    fireEvent.change(recipe, { target: { value: "Che" } });
+    fireEvent.change(screen.getByLabelText("Selling price"), { target: { value: "13" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update menu item" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Choose a recipe or select No selection");
+    expect(mockApi.updatePilotMenuCostingMenuItem).not.toHaveBeenCalled();
+
+    fireEvent.focus(recipe);
+    fireEvent.click(screen.getByRole("option", { name: "No selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update menu item" }));
+    await waitFor(() => expect(mockApi.updatePilotMenuCostingMenuItem).toHaveBeenCalledWith(21, expect.objectContaining({ recipeId: null, sellingPrice: 13 })));
   });
 
   it("keeps ingredient drafts local, supports natural numeric typing, and searches inventory by keyboard", async () => {
