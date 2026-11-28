@@ -1097,7 +1097,9 @@ def _correction_payload(session_record: DailyCloseSession, only_if_corrected: bo
     effective["attentionItems"] = remaining
     # Frozen exceptions (recipe/mapping/sync/refund) are all non-cash evidence: they keep the warning.
     if effective.get("healthStatus") == "Ready with warnings" and not remaining and not (session_record.exceptions_snapshot_json or []):
-        effective["healthStatus"] = "Ready"
+        # Same rule as the original build: verified physical usage on file means Reconciled, otherwise Ready.
+        has_actual = ((session_record.usage_snapshot_json or {}).get("totals") or {}).get("actualUsage") is not None
+        effective["healthStatus"] = "Reconciled" if has_actual else "Ready"
     effective = _merge_manual_reconciliation(effective, None, {"reconciliation": {"countedCash": fields["countedCash"]}})
     effective["notes"] = fields["notes"]
     effective["corrected"] = True
@@ -1137,6 +1139,26 @@ def correct_completed_daily_close(session_id: int):
     if "countedCash" not in payload and "notes" not in payload:
         return json_error("Provide countedCash and/or notes to correct.", 400)
     events = _session_corrections(session_record)
+    raw_key = payload.get("idempotencyKey")
+    key = str(raw_key).strip()[:120] if raw_key not in (None, "") and isinstance(raw_key, (str, int)) and not isinstance(raw_key, bool) else ""
+    if key:
+        # A retry of an already-committed request is recognised by its key, whatever the values are now.
+        prior = next((e for e in events if (e.metadata_json or {}).get("idempotencyKey") == key), None)
+        if prior is not None:
+            applied = (prior.metadata_json or {}).get("after") or {}
+            same = True
+            try:
+                if "countedCash" in payload:
+                    raw = payload["countedCash"]
+                    same &= (applied.get("countedCash") is None) if raw in (None, "") else round(float(raw), 2) == applied.get("countedCash")
+                if "notes" in payload:
+                    same &= str(payload.get("notes") or "").strip() == applied.get("notes")
+            except (TypeError, ValueError):
+                same = False
+            if not same:
+                return json_error("That idempotency key was already used for a different correction.", 409, code="idempotency_conflict")
+            snapshot = dict(session_record.summary_snapshot_json or {})
+            return jsonify({"session": _serialize_session_with_snapshot(session_record, snapshot), "snapshot": snapshot, "replayed": True, **_correction_payload(session_record)}), 200
     before = _effective_manual_fields(session_record, events)
     after = dict(before)
     if "countedCash" in payload:
@@ -1160,7 +1182,7 @@ def correct_completed_daily_close(session_id: int):
     record_audit_event(
         event_type=CORRECTION_EVENT, entity_type="daily_close_session", entity_id=session_record.id,
         organization_id=organization.id, location_id=session_record.location_id, actor_user_id=current_user.id,
-        metadata={"businessDate": session_record.business_date.isoformat(), "reason": reason, "before": before, "after": after},
+        metadata={"businessDate": session_record.business_date.isoformat(), "reason": reason, "before": before, "after": after, **({"idempotencyKey": key} if key else {})},
     )
     try:
         db.session.commit()

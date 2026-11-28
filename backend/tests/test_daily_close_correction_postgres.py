@@ -120,3 +120,17 @@ def test_other_tenant_cannot_correct_and_a_failed_write_rolls_back(postgres_app,
     snapshot, notes, _, afters = _state(world, session_id)
     assert afters == [] and snapshot == ORIGINAL and notes == "Original note"
     assert _correct(client, session_id, countedCash=1).status_code == 200  # lock released, retry succeeds
+
+
+def test_retry_after_an_intervening_correction_is_a_replay_not_a_third_write(postgres_app):
+    world = _make_world(postgres_app)
+    session_id = _completed_close(world)
+    client = world.client()
+    assert _correct(client, session_id, countedCash=480, idempotencyKey="a").status_code == 200
+    assert _correct(client, session_id, countedCash=500, idempotencyKey="b").status_code == 200
+    retry = _correct(client, session_id, countedCash=480, idempotencyKey="a")
+    assert retry.status_code == 200 and retry.get_json()["replayed"] is True
+    assert retry.get_json()["effectiveSnapshot"]["manualReconciliation"]["countedCash"] == 500.0
+    snapshot, notes, _, afters = _state(world, session_id)
+    assert [a["countedCash"] for a in afters] == [480.0, 500.0] and snapshot == ORIGINAL
+    assert _correct(client, session_id, countedCash=1, idempotencyKey="a").status_code == 409

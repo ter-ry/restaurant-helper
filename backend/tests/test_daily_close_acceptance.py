@@ -891,3 +891,36 @@ def test_notes_only_correction_keeps_non_cash_warnings_in_effective_health(app, 
     resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Clarify the closing note", "notes": "Clarified"})
     assert resp.status_code == 200
     assert resp.get_json()["effectiveSnapshot"]["healthStatus"] == "Ready with warnings"
+
+
+def test_correction_retry_with_idempotency_key_is_a_replay_even_after_a_later_correction(app, client, monkeypatch):
+    from backend.models import AuditEvent
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    url = f"/api/pilot/daily-close/{session_id}/corrections"
+    first = _post(client, url, {"reason": "Manager recount one", "countedCash": 480, "idempotencyKey": "k-1"})
+    assert first.status_code == 200 and not first.get_json().get("replayed")
+    assert _post(client, url, {"reason": "Manager recount two", "countedCash": 500, "idempotencyKey": "k-2"}).status_code == 200
+    # Lost response for k-1 is retried after k-2 landed: must not restore the obsolete 480.
+    retry = _post(client, url, {"reason": "Manager recount one", "countedCash": 480, "idempotencyKey": "k-1"})
+    assert retry.status_code == 200 and retry.get_json()["replayed"] is True
+    assert retry.get_json()["effectiveSnapshot"]["manualReconciliation"]["countedCash"] == 500.0
+    assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 2
+    clash = _post(client, url, {"reason": "Different request reusing key", "countedCash": 123, "idempotencyKey": "k-1"})
+    assert clash.status_code == 409 and clash.get_json().get("code") == "idempotency_conflict"
+    assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 2
+
+
+def test_clearing_the_last_cash_warning_restores_reconciled_when_physical_usage_is_verified(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    snap = dict(record.summary_snapshot_json)
+    snap["attentionItems"] = [{"type": "cash_variance", "title": "Cash drawer short", "severity": "warning", "detail": "$5.00 short"}]
+    snap["healthStatus"] = "Ready with warnings"
+    snap["cashReconciliation"] = {**(snap.get("cashReconciliation") or {}), "expectedCash": 500.0}
+    record.summary_snapshot_json = snap
+    record.exceptions_snapshot_json = []
+    record.usage_snapshot_json = {"totals": {"actualUsage": 12.5}}
+    db.session.commit()
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Recount matched the drawer", "countedCash": 500})
+    assert resp.status_code == 200
+    assert resp.get_json()["effectiveSnapshot"]["healthStatus"] == "Reconciled"
