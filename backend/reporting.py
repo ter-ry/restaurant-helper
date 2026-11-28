@@ -292,6 +292,9 @@ def build_report(*, location: RestaurantLocation, view: str, start: date | None 
     usage = _usage_variance(location, items, orders, connection, start_date, end_date)
     cost_ready_sales = sum((_dec(row["netAmount"]) for row in menu_sales if row["costAvailable"]), Decimal("0"))
     total_menu_sales = sum((_dec(row["netAmount"]) for row in menu_sales), Decimal("0"))
+    # costCoveragePercent only measures mapped menu sales; the net-sales variant keeps unmapped Square sales in the denominator so they never imply full coverage.
+    net_item_sales = _dec(totals["net_item_sales"])
+    unmapped_sales = sum((_dec(row["grossAmount"]) for row in unmapped), Decimal("0"))
     exceptions = []
     exceptions.extend({"type": "reorder_now", "severity": "warning", "entityType": "inventory_item", "entityId": row["inventoryItemId"], "title": f"{row['inventoryItemName']} needs reordering", "href": "/app/reorder-plan"} for row in reorder if row["stockStatus"] in {"Out of stock", "Reorder now"})
     if unmapped:
@@ -306,7 +309,7 @@ def build_report(*, location: RestaurantLocation, view: str, start: date | None 
         "sales": {"currency": "CAD", "grossItemSales": _money(totals["gross"]), "netItemSales": _money(totals["net_item_sales"]), "discounts": _money(totals["discount"]), "tax": _money(totals["tax"]), "tips": _money(totals["tip"]), "refunds": _money(totals["refund"]), "totalCollected": _money(totals["net"]), "orderCount": totals["orders"], "unitsSold": float(totals["units"]) if totals["units"] is not None else None, "cancelledOrderCount": totals["cancelled"], "source": totals["source"], "byMenuItem": menu_sales, "unmappedLines": unmapped},
         "purchasing": purchasing,
         "inventory": {"summary": _inventory_summary(location.id), "statusCounts": {"inStock": statuses.count("In stock"), "lowStock": statuses.count("Low stock"), "reorderNow": statuses.count("Reorder now"), "outOfStock": statuses.count("Out of stock")}, "reorderNow": reorder, "recentMovements": [serialize_inventory_movement(movement) for movement in InventoryMovement.query.filter_by(organization_id=organization_id, location_id=location.id).order_by(InventoryMovement.created_at.desc()).limit(20).all()]},
-        "costing": {"costReadySalesAmount": _money(cost_ready_sales), "totalMappedMenuSalesAmount": _money(total_menu_sales), "estimatedFoodCostPercent": _money((sum((_dec(row["currentCostPerSale"]) * _dec(row["quantity"]) for row in menu_sales if row["costAvailable"]), Decimal("0")) / cost_ready_sales) * 100) if cost_ready_sales else None, "costCoveragePercent": _money((cost_ready_sales / total_menu_sales) * 100) if total_menu_sales else 0},
+        "costing": {"costReadySalesAmount": _money(cost_ready_sales), "totalMappedMenuSalesAmount": _money(total_menu_sales), "estimatedFoodCostPercent": _money((sum((_dec(row["currentCostPerSale"]) * _dec(row["quantity"]) for row in menu_sales if row["costAvailable"]), Decimal("0")) / cost_ready_sales) * 100) if cost_ready_sales else None, "costCoveragePercent": _money((cost_ready_sales / total_menu_sales) * 100) if total_menu_sales else 0, "unmappedSalesAmount": _money(unmapped_sales), "costCoverageOfNetSalesPercent": _money((cost_ready_sales / net_item_sales) * 100) if net_item_sales > 0 else None},
         "variance": variance,
         "usageVariance": usage,
         "changes": {"sales": _period_delta(totals["net"], prior_totals["net"]) if prior_totals else None, "orders": _period_delta(Decimal(totals["orders"]), Decimal(prior_totals["orders"])) if prior_totals else None, "purchaseSpend": _period_delta(Decimal(str(purchasing["spend"])), Decimal(str(_purchasing(invoices, prior_start, prior_end)["spend"]))) if prior_totals else None, "menuMovers": menu_sales} if view == "weekly" else None,

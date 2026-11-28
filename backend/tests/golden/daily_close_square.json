@@ -1048,10 +1048,12 @@
   "dailyReport": {
     "changes": null,
     "costing": {
+      "costCoverageOfNetSalesPercent": 0.0,
       "costCoveragePercent": 0,
       "costReadySalesAmount": 0.0,
       "estimatedFoodCostPercent": null,
-      "totalMappedMenuSalesAmount": 0.0
+      "totalMappedMenuSalesAmount": 0.0,
+      "unmappedSalesAmount": 0.0
     },
     "exceptions": [
       {
@@ -4219,10 +4221,12 @@
       }
     },
     "costing": {
+      "costCoverageOfNetSalesPercent": 0.0,
       "costCoveragePercent": 0,
       "costReadySalesAmount": 0.0,
       "estimatedFoodCostPercent": null,
-      "totalMappedMenuSalesAmount": 0.0
+      "totalMappedMenuSalesAmount": 0.0,
+      "unmappedSalesAmount": 0.0
     },
     "exceptions": [
       {
