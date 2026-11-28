@@ -86,6 +86,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "pilot_api.update_menu_costing_menu_item": "menu_costing.manage",
     "pilot_api.delete_menu_costing_menu_item": "menu_costing.manage",
     "pilot_api.list_audit_events": "audit.view",
+    "pilot_api.export_audit_events": "audit.view",
+    "pilot_api.export_purchases_bookkeeping": "operational.read",
+    "pilot_api.export_purchase_history": "operational.read",
 }
 
 

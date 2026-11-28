@@ -11,7 +11,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, Response, jsonify, request, session
 from flask_login import current_user, login_required
 
 from .audit import record_audit_event
@@ -60,6 +60,7 @@ from .models import (
 )
 from .menu_costing import current_inventory_unit_cost, serialize_menu_item, serialize_recipe
 from .square_integration import ensure_square_orders_fresh
+from . import exports as exports_service
 from . import ocr_evidence
 from .ocr import ALLOWED_INVOICE_EXTENSIONS, validate_upload_content
 from .policy import require_permission
@@ -4677,3 +4678,78 @@ def list_audit_events():
     )
     return jsonify({"events": [serialize_audit_event(event) for event in events]}), 200
 
+
+
+def _csv_response(text: str, filename: str, row_count: int, **headers: str):
+    response = Response(text, mimetype="text/csv")
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Export-Row-Count"] = str(row_count)
+    for key, value in headers.items():
+        response.headers[key] = value
+    return response
+
+
+def _purchases_export(history: bool):
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    _, membership, _, location = context
+    permission_error = _require_role(membership, "operational.read")
+    if permission_error is not None:
+        return permission_error
+    try:
+        start, end = exports_service.parse_date_range(request.args.get("from"), request.args.get("to"))
+    except exports_service.ExportRequestError as exc:
+        return json_error(str(exc), 400)
+    text, count = exports_service.build_purchases_csv(location.id, start, end, history=history)
+    kind = "purchase-history" if history else "purchases-bookkeeping"
+    return _csv_response(text, f"{kind}-{start.isoformat()}-{end.isoformat()}.csv", count)
+
+
+@bp.get("/api/pilot/exports/purchases-bookkeeping")
+@login_required
+def export_purchases_bookkeeping():
+    """Received (financially valid) invoices only; voided originals and drafts are excluded (owner decision 2026-11-27)."""
+    return _purchases_export(history=False)
+
+
+@bp.get("/api/pilot/exports/purchase-history")
+@login_required
+def export_purchase_history():
+    """Every invoice status with the void/correction trail."""
+    return _purchases_export(history=True)
+
+
+@bp.get("/api/pilot/audit-events/export")
+@login_required
+def export_audit_events():
+    """Complete, paginated audit export for an explicit date range (``format=json`` default, or ``csv``)."""
+    context = _require_context()
+    if context is None:
+        return json_error("No pilot organization is available for the current account.", 404)
+    organization, membership, _, location = context
+    permission_error = _require_role(membership, "audit.view")
+    if permission_error is not None:
+        return permission_error
+    try:
+        start, end = exports_service.parse_date_range(request.args.get("from"), request.args.get("to"))
+        limit = int(request.args.get("limit", exports_service.AUDIT_DEFAULT_PAGE))
+        cursor_raw = request.args.get("cursor")
+        cursor = int(cursor_raw) if cursor_raw not in (None, "") else None
+    except exports_service.ExportRequestError as exc:
+        return json_error(str(exc), 400)
+    except ValueError:
+        return json_error("'limit' and 'cursor' must be integers.", 400)
+    if not 1 <= limit <= exports_service.AUDIT_MAX_PAGE:
+        return json_error(f"'limit' must be between 1 and {exports_service.AUDIT_MAX_PAGE}.", 400)
+    export_format = request.args.get("format", "json")
+    if export_format not in {"json", "csv"}:
+        return json_error("'format' must be json or csv.", 400)
+    page = exports_service.audit_page(organization.id, location.timezone, start, end, cursor=cursor, limit=limit)
+    if export_format == "csv":
+        return _csv_response(
+            exports_service.audit_csv(page["events"]), f"audit-events-{start.isoformat()}-{end.isoformat()}.csv", page["count"],
+            **{"X-Export-Complete": "true" if page["complete"] else "false", "X-Next-Cursor": "" if page["nextCursor"] is None else str(page["nextCursor"])},
+        )
+    return jsonify(page), 200

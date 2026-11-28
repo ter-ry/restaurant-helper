@@ -68,6 +68,9 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.delete_menu_costing_menu_item": "MENU_COSTING",
     "pilot_api.reports": "REPORTING",
     "pilot_api.list_audit_events": "REPORTING",
+    "pilot_api.export_audit_events": "REPORTING",
+    "pilot_api.export_purchases_bookkeeping": "PURCHASES",
+    "pilot_api.export_purchase_history": "PURCHASES",
 }
 # Daily Close is served by the `daily_close` blueprint, not `pilot_api`, so it cannot be gated
 # from this map: access_state_for_request() below returns early for every other blueprint. It
