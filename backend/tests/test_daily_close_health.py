@@ -100,6 +100,9 @@ def test_connected_square_without_physical_counts_is_ready(app, client, monkeypa
         },
     )
 
+    # Verified, fully imported sales are required for a clean "Ready" (#315 Milestone D).
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
+    monkeypatch.setattr("backend.daily_close._order_import_covers_day", lambda *a, **k: True)
     response = client.get(
         "/api/pilot/daily-close",
         query_string={"locationId": location_id, "businessDate": "2026-08-30"},

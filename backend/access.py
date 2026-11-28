@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import request, session
+from flask import has_request_context, request, session
 from flask_login import current_user
 
 from .models import Organization, OrganizationModule, SupportAccessGrant
@@ -83,7 +83,21 @@ def current_organization() -> Organization | None:
 
 
 def organization_module_status(organization_id: int, module_key: str) -> OrganizationModule | None:
-    return OrganizationModule.query.filter_by(organization_id=organization_id, module_key=module_key).first()
+    """Module row for an organization, read through a per-request cache.
+
+    The access gate checks the endpoint module and each dependency in the same
+    request; one query per organization replaces one query per module key. The
+    cache lives in the request environ, so it never outlives the request.
+    """
+    if not has_request_context():
+        return OrganizationModule.query.filter_by(organization_id=organization_id, module_key=module_key).first()
+    cache = request.environ.setdefault("flowtally.request_cache", {})
+    cache_key = f"organization_modules:{organization_id}"
+    modules = cache.get(cache_key)
+    if modules is None:
+        modules = {module.module_key: module for module in OrganizationModule.query.filter_by(organization_id=organization_id).all()}
+        cache[cache_key] = modules
+    return modules.get(module_key)
 
 
 def organization_has_enabled_module(organization_id: int, module_key: str) -> bool:

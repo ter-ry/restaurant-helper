@@ -645,6 +645,8 @@ def test_dashboard_close_status_read_by_the_owner_csv_export_tracks_the_close(ap
     from datetime import datetime as _dt, timezone as _tz
 
     _, location_id, _ = _setup(app, client, monkeypatch)
+    # Finalizing requires verified sales (#315 Milestone D); this test is about the dashboard status literals.
+    monkeypatch.setattr("backend.daily_close._order_import_covers_day", lambda *a, **k: True)
     today = _dt.now(_tz.utc).date().isoformat()  # the dashboard compares against today's (UTC) date
 
     def close_status():
@@ -695,3 +697,75 @@ def test_persisted_summary_snapshot_the_csv_export_reads_stays_frozen_after_late
         assert body["session"]["status"] == "COMPLETED"
     # ...while the live report does follow the new POS data (the two are intentionally separate).
     assert _report_sales(client, view="daily", date=DAY)["orderCount"] == 99
+
+
+# --------------------------------------------------------------------------------------------------
+# Milestone D (#315): a connected POS with unverified sales must not be finalized server-side.
+# --------------------------------------------------------------------------------------------------
+def test_finalize_is_blocked_when_square_orders_are_stale_then_succeeds_once_verified(app, client, monkeypatch):
+    org_id, location_id, connection_id = _setup(app, client, monkeypatch)
+    _seed_sales(connection_id, location_id)
+    session_id = _open(client, location_id)["session"]["id"]
+
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "stale"})
+    draft = _get(client, location_id).get_json()
+    assert draft["snapshot"]["sales"]["salesStatus"] == "unavailable"
+    assert draft["snapshot"]["healthStatus"] == "Incomplete"
+    assert draft["snapshot"]["readyToFinalize"] is False
+    assert draft["snapshot"]["completion"]["blockers"][0]["code"] == "sales_unverified"
+    assert any("Sales not verified" in e for e in draft["exceptions"])
+
+    blocked = _post(client, f"/api/pilot/daily-close/{session_id}/finalize")
+    assert blocked.status_code == 409
+    body = blocked.get_json()
+    assert body["code"] == "sales_unverified" and body["completion"]["eligible"] is False
+    db.session.expire_all()
+    record = db.session.get(DailyCloseSession, session_id)
+    assert record.status == "DRAFT" and record.completed_at is None and not record.summary_snapshot_json.get("completion", {}).get("blockers")
+
+    # Retry after the operator re-syncs: same session finalizes once; a second finalize stays read-only.
+    monkeypatch.setattr("backend.daily_close.ensure_square_orders_fresh", lambda *a, **k: {"state": "current"})
+    ok = _post(client, f"/api/pilot/daily-close/{session_id}/finalize")
+    assert ok.status_code == 200 and ok.get_json()["snapshot"]["sales"]["salesStatus"] == "available"
+    assert _post(client, f"/api/pilot/daily-close/{session_id}/finalize").status_code == 409
+
+
+def test_finalize_is_blocked_by_partial_order_import_coverage(app, client, monkeypatch):
+    _, location_id, connection_id = _setup(app, client, monkeypatch)
+    _seed_sales(connection_id, location_id)
+    # Replace the full-range import with a one-hour window: the day is only partially imported.
+    SquareSyncJob.query.filter_by(square_connection_id=connection_id).delete()
+    db.session.add(SquareSyncJob(
+        square_connection_id=connection_id, job_type="orders", status="completed", completed_at=datetime(2026, 8, 30, 23, 0, tzinfo=timezone.utc),
+        cursor_json={"startAt": "2026-08-30T17:45:00Z", "endAt": "2026-08-30T18:45:00Z", "locationIds": ["LOC-A"]},
+    ))
+    db.session.commit()
+    session_id = _open(client, location_id)["session"]["id"]
+    snap = _get(client, location_id).get_json()["snapshot"]
+    assert snap["sales"]["salesStatus"] == "unavailable"
+    blocked = _post(client, f"/api/pilot/daily-close/{session_id}/finalize")
+    assert blocked.status_code == 409 and blocked.get_json()["code"] == "sales_unverified"
+
+
+def test_confirmed_zero_sales_day_and_no_pos_tenant_remain_finalizable(app, client, monkeypatch):
+    _, location_id, _ = _setup(app, client, monkeypatch)  # verified + fully imported, but no sales rows: a real zero day
+    session_id = _open(client, location_id)["session"]["id"]
+    final = _post(client, f"/api/pilot/daily-close/{session_id}/finalize")
+    assert final.status_code == 200
+    sales = final.get_json()["snapshot"]["sales"]
+    assert sales["salesStatus"] == "available" and sales["orders"] == 0 and sales["netSales"] == 0
+
+    SquareConnection.query.delete()
+    db.session.commit()
+    other = _post(client, "/api/pilot/daily-close", {"locationId": location_id, "businessDate": "2026-08-31"}).get_json()["session"]["id"]
+    assert _post(client, f"/api/pilot/daily-close/{other}/finalize").status_code == 200  # no POS to verify against
+
+
+def test_net_sales_definition_is_explicit_and_tips_are_separable(app, client, monkeypatch):
+    _, location_id, connection_id = _setup(app, client, monkeypatch)
+    _summary(connection_id, location_id, "LOC-A", gross_amount=180, discount_amount=2.7, tip_amount=4.5, net_amount=181.8, order_count=8)
+    db.session.commit()
+    sales = _get(client, location_id).get_json()["snapshot"]["sales"]
+    assert sales["netSales"] == 181.8 and sales["tips"] == 4.5
+    assert sales["netSalesIncludesTips"] is True
+    assert sales["netSalesExcludingTips"] == 177.3

@@ -21,10 +21,16 @@ def _is_postgresql() -> bool:
         return False
 
 
-def _set_local_setting(name: str, value: str | None) -> None:
-    if not _is_postgresql():
+def _set_local_settings(execute, values: dict[str, str | None]) -> None:
+    """Install transaction-local settings in ONE round trip (was one per setting)."""
+    items = list(values.items())
+    if not items:
         return
-    db.session.execute(text("select set_config(:name, :value, true)"), {"name": name, "value": value or ""})
+    params: dict[str, str] = {}
+    for index, (name, value) in enumerate(items):
+        params[f"n{index}"] = name
+        params[f"v{index}"] = value or ""
+    execute(text("select " + ", ".join(f"set_config(:n{i}, :v{i}, true)" for i in range(len(items)))), params)
 
 
 @event.listens_for(Session, "after_begin")
@@ -34,11 +40,7 @@ def _restore_request_tenant_context(session, transaction, connection) -> None:
     context = getattr(g, "flowtally_tenant_context", None)
     if not context:
         return
-    for name, value in context.items():
-        connection.execute(
-            text("select set_config(:name, :value, true)"),
-            {"name": name, "value": value},
-        )
+    _set_local_settings(connection.execute, context)
 
 
 def apply_request_tenant_context(*, access_scope: str | None = None, organization_id: int | None = None, support_grant_id: int | None = None) -> None:
@@ -50,7 +52,7 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
     grant_id = support_grant_id
 
     if current_user.is_authenticated:
-        _set_local_setting("flowtally.user_id", str(current_user.id))
+        _set_local_settings(db.session.execute, {"flowtally.user_id": str(current_user.id)})
         role = get_platform_role(current_user.id)
         if role and role.is_active and role.role == "setup_admin":
             scope = "setup"
@@ -62,7 +64,7 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
                 org_id = None
                 grant_id = None
     else:
-        _set_local_setting("flowtally.user_id", "")
+        _set_local_settings(db.session.execute, {"flowtally.user_id": ""})
 
     if org_id is None and scope != "public":
         organization, membership, _ = get_current_organization_bundle()
@@ -75,9 +77,14 @@ def apply_request_tenant_context(*, access_scope: str | None = None, organizatio
         elif access_scope is None and request.endpoint == "commercial.create_prospect_organization":
             scope = "public"
 
-    _set_local_setting("flowtally.access_scope", scope)
-    _set_local_setting("flowtally.organization_id", str(org_id) if org_id is not None else "")
-    _set_local_setting("flowtally.support_grant_id", str(grant_id) if grant_id is not None else "")
+    _set_local_settings(
+        db.session.execute,
+        {
+            "flowtally.access_scope": scope,
+            "flowtally.organization_id": str(org_id) if org_id is not None else "",
+            "flowtally.support_grant_id": str(grant_id) if grant_id is not None else "",
+        },
+    )
     if has_request_context():
         g.flowtally_tenant_context = {
             "flowtally.access_scope": scope,

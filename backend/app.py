@@ -125,7 +125,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     def load_user(user_id: str) -> User | None:
         if not user_id:
             return None
-        user = User.query.filter_by(id=int(user_id)).first()
+        # Identity-map lookup. reject_inactive_sessions runs first on every request with a
+        # session user and has just refreshed this row (expire_all + query), so this costs
+        # no second database round trip.
+        user = db.session.get(User, int(user_id))
         if user is None or not user.is_active:
             return None
         return user
@@ -144,6 +147,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             user = User.query.filter_by(id=int(user_id)).first()
         except (TypeError, ValueError):
             user = None
+        # Hold a strong reference for the request: the session identity map is weak, and
+        # load_user relies on this row still being resident.
+        g.flowtally_session_user = user
         if user is None or not user.is_active:
             logout_user()
             return json_error("Authentication required.", 401)
