@@ -769,3 +769,158 @@ def test_net_sales_definition_is_explicit_and_tips_are_separable(app, client, mo
     assert sales["netSales"] == 181.8 and sales["tips"] == 4.5
     assert sales["netSalesIncludesTips"] is True
     assert sales["netSalesExcludingTips"] == 177.3
+
+
+# --- Completed-close correction policy: immutable original + audited, authorized corrections -----------
+def _completed_close(app, client, monkeypatch, counted=495):
+    org_id, location_id, connection_id = _setup(app, client, monkeypatch)
+    _seed_sales(connection_id, location_id)
+    db.session.commit()
+    session_id = _open(client, location_id)["session"]["id"]
+    assert _patch(client, f"/api/pilot/daily-close/{session_id}", {"notes": "Original note", "reconciliation": {"countedCash": counted}}).status_code == 200
+    assert _post(client, f"/api/pilot/daily-close/{session_id}/finalize").status_code == 200
+    return org_id, location_id, session_id
+
+
+def test_completed_close_correction_is_audited_and_original_stays_immutable(app, client, monkeypatch):
+    from backend.models import AuditEvent
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    original_snapshot = dict(record.summary_snapshot_json)
+    original_completed_at = record.completed_at
+    url = f"/api/pilot/daily-close/{session_id}/corrections"
+
+    assert _post(client, url, {"countedCash": 480}).status_code == 400  # reason required
+    assert _post(client, url, {"reason": "short"}).status_code == 400
+    assert _post(client, url, {"reason": "Miscounted the float drawer", "countedCash": -5}).status_code == 400
+    assert _post(client, url, {"reason": "Miscounted the float drawer"}).status_code == 400  # nothing to change
+    for bad in ([], {}, True, [1], 1e30, "1e30", "inf", "nan", 10_000_001):
+        assert _post(client, url, {"reason": "Absurd amount should be refused", "countedCash": bad}).status_code == 400
+    assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 0
+
+    ok = _post(client, url, {"reason": "Miscounted the float drawer", "countedCash": 480, "notes": "Recounted by manager"})
+    assert ok.status_code == 200
+    body = ok.get_json()
+    assert body["snapshot"]["manualReconciliation"]["countedCash"] == 495.0  # original frozen
+    assert body["effectiveSnapshot"]["manualReconciliation"]["countedCash"] == 480.0
+    assert body["effectiveSnapshot"]["corrected"] is True
+    assert body["effectiveSnapshot"]["sales"] == original_snapshot["sales"]  # sales are never corrected here
+    assert len(body["corrections"]) == 1
+    entry = body["corrections"][0]
+    assert entry["reason"] == "Miscounted the float drawer"
+    assert entry["before"] == {"countedCash": 495.0, "notes": "Original note"}
+    assert entry["after"] == {"countedCash": 480.0, "notes": "Recounted by manager"}
+
+    # Duplicate submit of the same values is rejected, not appended twice.
+    dup = _post(client, url, {"reason": "Miscounted the float drawer", "countedCash": 480, "notes": "Recounted by manager"})
+    assert dup.status_code == 409
+    assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 1
+
+    # A second correction chains from the effective values.
+    second = _post(client, url, {"reason": "Added the missed tip jar cash", "countedCash": 500})
+    assert second.status_code == 200
+    assert second.get_json()["corrections"][1]["before"]["countedCash"] == 480.0
+
+    db.session.expire_all()
+    record = db.session.get(DailyCloseSession, session_id)
+    assert record.summary_snapshot_json == original_snapshot
+    assert record.notes == "Original note" and record.completed_at == original_completed_at and record.status == "COMPLETED"
+    got = _get(client, location_id).get_json()
+    assert got["snapshot"]["manualReconciliation"]["countedCash"] == 495.0
+    assert got["effectiveSnapshot"]["manualReconciliation"]["countedCash"] == 500.0
+    assert len(got["corrections"]) == 2
+    # Read-only rules for ordinary edits still hold.
+    assert _patch(client, f"/api/pilot/daily-close/{session_id}", {"notes": "x", "reconciliation": {"countedCash": 1}}).status_code == 409
+
+
+def test_correction_requires_completed_close_and_manager_role(app, client, monkeypatch):
+    from backend.models import OrganizationMembership
+    from backend.policy import PERMISSION_ROLES
+    org_id, location_id, connection_id = _setup(app, client, monkeypatch)
+    _seed_sales(connection_id, location_id)
+    db.session.commit()
+    session_id = _open(client, location_id)["session"]["id"]
+    url = f"/api/pilot/daily-close/{session_id}/corrections"
+    draft = _post(client, url, {"reason": "Trying to correct a draft", "countedCash": 1})
+    assert draft.status_code == 409 and draft.get_json().get("code") == "not_completed"
+    assert _post(client, f"/api/pilot/daily-close/{session_id}/finalize").status_code == 200
+    # Only owner/manager roles exist today; prove the permission gate itself is enforced.
+    monkeypatch.setitem(PERMISSION_ROLES, "daily_close.correct", {"owner"})
+    membership = OrganizationMembership.query.filter_by(organization_id=org_id).first()
+    membership.role = "manager"
+    db.session.commit()
+    denied = _post(client, url, {"reason": "Staff must not rewrite a close", "countedCash": 1})
+    assert denied.status_code == 403
+
+
+def test_correction_is_tenant_isolated(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    other = make_operational_organization(User.query.filter_by(email=LOCAL_OWNER_EMAIL).first(), name=f"Other {uuid4().hex[:6]}", location_name="Other", enabled_modules=MODULES)
+    assert client.post("/api/organizations/select", headers={"X-CSRFToken": _csrf(client)}, json={"organizationId": other.id}).status_code == 200
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Cross tenant attempt here", "countedCash": 1})
+    assert resp.status_code == 404
+
+
+def test_correction_that_clears_the_only_cash_warning_recomputes_effective_health(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    snap = dict(record.summary_snapshot_json)
+    snap["attentionItems"] = [{"type": "cash_variance", "title": "Cash drawer short", "severity": "warning", "detail": "$5.00 short"}]
+    snap["healthStatus"] = "Ready with warnings"
+    record.exceptions_snapshot_json = []  # the cash variance is the only warning
+    snap["cashReconciliation"] = {**(snap.get("cashReconciliation") or {}), "expectedCash": 500.0}
+    record.summary_snapshot_json = snap
+    db.session.commit()
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Recount matched the drawer", "countedCash": 500})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["snapshot"]["healthStatus"] == "Ready with warnings"  # original unchanged
+    assert body["effectiveSnapshot"]["healthStatus"] == "Ready"
+    assert not any(i["type"] == "cash_variance" for i in body["effectiveSnapshot"]["attentionItems"])
+
+
+def test_notes_only_correction_keeps_non_cash_warnings_in_effective_health(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    snap = dict(record.summary_snapshot_json)
+    snap["attentionItems"] = []
+    snap["healthStatus"] = "Ready with warnings"
+    record.summary_snapshot_json = snap
+    record.exceptions_snapshot_json = ["Recipe or inventory mapping gaps exist."]
+    db.session.commit()
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Clarify the closing note", "notes": "Clarified"})
+    assert resp.status_code == 200
+    assert resp.get_json()["effectiveSnapshot"]["healthStatus"] == "Ready with warnings"
+
+
+def test_correction_retry_with_idempotency_key_is_a_replay_even_after_a_later_correction(app, client, monkeypatch):
+    from backend.models import AuditEvent
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    url = f"/api/pilot/daily-close/{session_id}/corrections"
+    first = _post(client, url, {"reason": "Manager recount one", "countedCash": 480, "idempotencyKey": "k-1"})
+    assert first.status_code == 200 and not first.get_json().get("replayed")
+    assert _post(client, url, {"reason": "Manager recount two", "countedCash": 500, "idempotencyKey": "k-2"}).status_code == 200
+    # Lost response for k-1 is retried after k-2 landed: must not restore the obsolete 480.
+    retry = _post(client, url, {"reason": "Manager recount one", "countedCash": 480, "idempotencyKey": "k-1"})
+    assert retry.status_code == 200 and retry.get_json()["replayed"] is True
+    assert retry.get_json()["effectiveSnapshot"]["manualReconciliation"]["countedCash"] == 500.0
+    assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 2
+    clash = _post(client, url, {"reason": "Different request reusing key", "countedCash": 123, "idempotencyKey": "k-1"})
+    assert clash.status_code == 409 and clash.get_json().get("code") == "idempotency_conflict"
+    assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 2
+
+
+def test_clearing_the_last_cash_warning_restores_reconciled_when_physical_usage_is_verified(app, client, monkeypatch):
+    org_id, location_id, session_id = _completed_close(app, client, monkeypatch)
+    record = db.session.get(DailyCloseSession, session_id)
+    snap = dict(record.summary_snapshot_json)
+    snap["attentionItems"] = [{"type": "cash_variance", "title": "Cash drawer short", "severity": "warning", "detail": "$5.00 short"}]
+    snap["healthStatus"] = "Ready with warnings"
+    snap["cashReconciliation"] = {**(snap.get("cashReconciliation") or {}), "expectedCash": 500.0}
+    record.summary_snapshot_json = snap
+    record.exceptions_snapshot_json = []
+    record.usage_snapshot_json = {"totals": {"actualUsage": 12.5}}
+    db.session.commit()
+    resp = _post(client, f"/api/pilot/daily-close/{session_id}/corrections", {"reason": "Recount matched the drawer", "countedCash": 500})
+    assert resp.status_code == 200
+    assert resp.get_json()["effectiveSnapshot"]["healthStatus"] == "Reconciled"

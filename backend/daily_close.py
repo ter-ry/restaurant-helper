@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -10,8 +11,9 @@ from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from .access import organization_has_enabled_module, organization_is_operational
+from .audit import record_audit_event
 from .extensions import db
-from .models import DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareSyncJob
+from .models import AuditEvent, DailyCloseSession, InventoryItem, InventoryMovement, InventoryWasteEvent, RestaurantLocation, SquareConnection, SquareDailySalesSummary, SquareLocation, SquareLocationMapping, SquareSyncJob
 from .square_integration import (
     _build_square_usage_report,
     _connection_token,
@@ -24,6 +26,7 @@ from .square_integration import (
 from .clover_daily_close import build_clover_snapshot
 from .negative_stock import negative_stock_attention_item, negative_stock_summary
 from .pos import POS_SALE_SOURCE_TYPES, PosProvider
+from .policy import membership_has_permission
 from .pos_provider import other_active_provider
 from .utils import get_current_organization_bundle, json_error, serialize_daily_close_session
 
@@ -803,6 +806,8 @@ def daily_close():
     return jsonify(
         {
             "session": _serialize_session_with_snapshot(session_record, snapshot) if session_record else None,
+            # Keys appear only once a completed close has been corrected (absent = never corrected).
+            **(_correction_payload(session_record, only_if_corrected=True) if session_record is not None else {}),
             "snapshot": snapshot,
             "usage": usage,
             "exceptions": exceptions,
@@ -1042,3 +1047,147 @@ def finalize_daily_close(session_id: int):
             "square": snapshot.get("square"),
         }
     ), 200
+
+
+# --- Completed-close correction policy -------------------------------------------------------------
+# A completed close is an immutable record: its frozen snapshot, notes and completed_at never change. A
+# manager/owner may append an explicit, reasoned correction to the two staff-entered fields only (counted
+# cash and notes). POS sales, tips and inventory usage come from provider/ledger evidence and are not
+# correctable here; they are fixed at the source (inventory adjustments/reversals stay in the ledger).
+# Each correction is an audit event holding the before/after values; the corrected view is derived from
+# the original snapshot, so the original is always still readable.
+CORRECTION_EVENT = "daily_close.correction"
+MIN_CORRECTION_REASON = 10
+MAX_COUNTED_CASH = 10_000_000
+
+
+def _session_corrections(session_record: DailyCloseSession) -> list[AuditEvent]:
+    return (
+        AuditEvent.query.filter_by(
+            organization_id=session_record.organization_id, event_type=CORRECTION_EVENT,
+            entity_type="daily_close_session", entity_id=str(session_record.id),
+        ).order_by(AuditEvent.id.asc()).all()
+    )
+
+
+def _effective_manual_fields(session_record: DailyCloseSession, events: list[AuditEvent]) -> dict[str, Any]:
+    original = (session_record.summary_snapshot_json or {}).get("manualReconciliation") or {}
+    fields = {"countedCash": original.get("countedCash"), "notes": session_record.notes or ""}
+    for event in events:
+        after = (event.metadata_json or {}).get("after") or {}
+        for key in ("countedCash", "notes"):
+            if key in after:
+                fields[key] = after[key]
+    return fields
+
+
+def _correction_payload(session_record: DailyCloseSession, only_if_corrected: bool = False) -> dict[str, Any]:
+    empty: dict[str, Any] = {} if only_if_corrected else {"corrections": [], "effectiveSnapshot": None}
+    if session_record.status != "COMPLETED":
+        return empty
+    events = _session_corrections(session_record)
+    if not events:
+        return empty
+    fields = _effective_manual_fields(session_record, events)
+    import copy
+    effective = copy.deepcopy(dict(session_record.summary_snapshot_json or {}))
+    # Drop the staff-count warnings from the copy so health is recomputed from the non-cash state; the
+    # merge re-adds them if the corrected count still warrants one. The stored original is untouched.
+    remaining = [i for i in (effective.get("attentionItems") or []) if i.get("type") not in {"cash_variance", "cash_count_disagreement"}]
+    effective["attentionItems"] = remaining
+    # Frozen exceptions (recipe/mapping/sync/refund) are all non-cash evidence: they keep the warning.
+    if effective.get("healthStatus") == "Ready with warnings" and not remaining and not (session_record.exceptions_snapshot_json or []):
+        # Same rule as the original build: verified physical usage on file means Reconciled, otherwise Ready.
+        has_actual = ((session_record.usage_snapshot_json or {}).get("totals") or {}).get("actualUsage") is not None
+        effective["healthStatus"] = "Reconciled" if has_actual else "Ready"
+    effective = _merge_manual_reconciliation(effective, None, {"reconciliation": {"countedCash": fields["countedCash"]}})
+    effective["notes"] = fields["notes"]
+    effective["corrected"] = True
+    return {
+        "corrections": [
+            {
+                "id": event.id, "sequence": index + 1, "createdAt": event.created_at.isoformat() if event.created_at else None,
+                "actorUserId": event.actor_user_id, "reason": (event.metadata_json or {}).get("reason"),
+                "before": (event.metadata_json or {}).get("before"), "after": (event.metadata_json or {}).get("after"),
+            }
+            for index, event in enumerate(events)
+        ],
+        "effectiveSnapshot": effective,
+    }
+
+
+@bp.post("/api/pilot/daily-close/<int:session_id>/corrections")
+@login_required
+def correct_completed_daily_close(session_id: int):
+    context = _require_daily_close_access()
+    if isinstance(context, tuple) and len(context) == 2 and hasattr(context[0], "status_code"):
+        return context
+    organization, membership, locations = context
+    if not membership_has_permission(membership.role, "daily_close.correct"):
+        return json_error("You do not have permission to do that.", 403, errors={"permission": "Access is restricted for this action."})
+    payload = request.get_json(silent=True) or {}
+    session_record = DailyCloseSession.query.filter_by(id=session_id, organization_id=organization.id).with_for_update().first()
+    if session_record is None:
+        return json_error("Daily close session not found.", 404)
+    if session_record.status != "COMPLETED":
+        return json_error("Only a completed daily close can be corrected; edit the draft instead.", 409, code="not_completed")
+    if not any(entry.id == session_record.location_id for entry in locations):
+        return json_error("Restaurant location not found.", 404)
+    reason = str(payload.get("reason") or "").strip()
+    if len(reason) < MIN_CORRECTION_REASON:
+        return json_error(f"Explain the correction (at least {MIN_CORRECTION_REASON} characters).", 400, errors={"reason": "A reason is required."})
+    if "countedCash" not in payload and "notes" not in payload:
+        return json_error("Provide countedCash and/or notes to correct.", 400)
+    events = _session_corrections(session_record)
+    raw_key = payload.get("idempotencyKey")
+    key = str(raw_key).strip()[:120] if raw_key not in (None, "") and isinstance(raw_key, (str, int)) and not isinstance(raw_key, bool) else ""
+    if key:
+        # A retry of an already-committed request is recognised by its key, whatever the values are now.
+        prior = next((e for e in events if (e.metadata_json or {}).get("idempotencyKey") == key), None)
+        if prior is not None:
+            applied = (prior.metadata_json or {}).get("after") or {}
+            same = True
+            try:
+                if "countedCash" in payload:
+                    raw = payload["countedCash"]
+                    same &= (applied.get("countedCash") is None) if raw in (None, "") else round(float(raw), 2) == applied.get("countedCash")
+                if "notes" in payload:
+                    same &= str(payload.get("notes") or "").strip() == applied.get("notes")
+            except (TypeError, ValueError):
+                same = False
+            if not same:
+                return json_error("That idempotency key was already used for a different correction.", 409, code="idempotency_conflict")
+            snapshot = dict(session_record.summary_snapshot_json or {})
+            return jsonify({"session": _serialize_session_with_snapshot(session_record, snapshot), "snapshot": snapshot, "replayed": True, **_correction_payload(session_record)}), 200
+    before = _effective_manual_fields(session_record, events)
+    after = dict(before)
+    if "countedCash" in payload:
+        raw = payload.get("countedCash")
+        if raw is None or raw == "":
+            after["countedCash"] = None
+        else:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                return json_error("Counted cash must be a number.", 400)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                return json_error("Counted cash must be a number.", 400)
+            if not math.isfinite(value) or value < 0 or value > MAX_COUNTED_CASH:
+                return json_error("Counted cash must be a finite amount between 0 and 10,000,000.", 400)
+            after["countedCash"] = round(value, 2)
+    if "notes" in payload:
+        after["notes"] = str(payload.get("notes") or "").strip()
+    if after == before:
+        return json_error("That correction does not change the recorded values.", 409, code="no_change")
+    record_audit_event(
+        event_type=CORRECTION_EVENT, entity_type="daily_close_session", entity_id=session_record.id,
+        organization_id=organization.id, location_id=session_record.location_id, actor_user_id=current_user.id,
+        metadata={"businessDate": session_record.business_date.isoformat(), "reason": reason, "before": before, "after": after, **({"idempotencyKey": key} if key else {})},
+    )
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    snapshot = dict(session_record.summary_snapshot_json or {})
+    return jsonify({"session": _serialize_session_with_snapshot(session_record, snapshot), "snapshot": snapshot, **_correction_payload(session_record)}), 200
