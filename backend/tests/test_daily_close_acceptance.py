@@ -794,7 +794,7 @@ def test_completed_close_correction_is_audited_and_original_stays_immutable(app,
     assert _post(client, url, {"reason": "short"}).status_code == 400
     assert _post(client, url, {"reason": "Miscounted the float drawer", "countedCash": -5}).status_code == 400
     assert _post(client, url, {"reason": "Miscounted the float drawer"}).status_code == 400  # nothing to change
-    for bad in (1e30, "1e30", "inf", "nan", 10_000_001):
+    for bad in ([], {}, True, [1], 1e30, "1e30", "inf", "nan", 10_000_001):
         assert _post(client, url, {"reason": "Absurd amount should be refused", "countedCash": bad}).status_code == 400
     assert AuditEvent.query.filter_by(event_type="daily_close.correction").count() == 0
 

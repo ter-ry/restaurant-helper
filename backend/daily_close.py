@@ -1141,9 +1141,11 @@ def correct_completed_daily_close(session_id: int):
     after = dict(before)
     if "countedCash" in payload:
         raw = payload.get("countedCash")
-        if raw in {None, ""}:
+        if raw is None or raw == "":
             after["countedCash"] = None
         else:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                return json_error("Counted cash must be a number.", 400)
             try:
                 value = float(raw)
             except (TypeError, ValueError):
